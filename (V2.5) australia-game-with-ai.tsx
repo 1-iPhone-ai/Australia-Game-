@@ -1948,7 +1948,7 @@ function AustraliaGame() {
 
   // Lock body scroll when modals are open
   useEffect(() => {
-    if (uiState.showSettings || uiState.showProgress || uiState.showSaveLoadModal || uiState.showNotifications) {
+    if (uiState.showSettings || uiState.showProgress || uiState.showSaveLoadModal || uiState.showNotifications || loadPreview.isOpen) {
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
     } else {
@@ -1960,7 +1960,7 @@ function AustraliaGame() {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [uiState.showSettings, uiState.showProgress, uiState.showSaveLoadModal, uiState.showNotifications]);
+  }, [uiState.showSettings, uiState.showProgress, uiState.showSaveLoadModal, uiState.showNotifications, loadPreview.isOpen]);
 
   // Initialize resource prices
   useEffect(() => {
@@ -2480,19 +2480,30 @@ function AustraliaGame() {
       : 'Single Player';
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 className="text-2xl font-bold">Load Save Preview</h3>
-              <p className="text-sm opacity-75">{loadPreview.filename || 'Manual Save File'}</p>
+      <div
+        className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 overflow-hidden"
+        onClick={closeLoadPreview}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-2xl h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className="p-6 pb-4 border-b border-gray-700">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-bold">Load Save Preview</h3>
+                <p className="text-sm opacity-75">{loadPreview.filename || 'Manual Save File'}</p>
+              </div>
+              <button onClick={closeLoadPreview} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>
+                ✕
+              </button>
             </div>
-            <button onClick={closeLoadPreview} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>
-              ✕
-            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 200px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="font-bold mb-2">Save Details</div>
               <p>Saved At: {saveDate}</p>
@@ -2526,40 +2537,24 @@ function AustraliaGame() {
               <p>Challenges Won: {data.player.challengesCompleted.length}</p>
               <p>Regions Visited: {data.player.visitedRegions.length}/8</p>
             </div>
-          </div>
-
-          {gameState.gameMode === 'game' && (
-            <div className="mt-4 p-3 rounded-lg bg-red-500 bg-opacity-20 text-sm text-red-200">
-              Loading will overwrite your current game progress. Continue?
             </div>
-          )}
 
-          <div className="flex flex-col md:flex-row md:justify-end gap-3 mt-6">
-            <button onClick={closeLoadPreview} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg w-full md:w-auto`}>
-              Cancel
-            </button>
-            <button onClick={confirmLoadGame} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg w-full md:w-auto`}>
-              Load Game
-            </button>
+            {gameState.gameMode === 'game' && (
+              <div className="mt-4 p-3 rounded-lg bg-red-500 bg-opacity-20 text-sm text-red-200">
+                Loading will overwrite your current game progress. Continue?
+              </div>
+            )}
           </div>
-          <div className={`${themeStyles.border} border rounded-lg p-4`}>
-            <h4 className="text-lg font-bold mb-4">💾 Save & Load</h4>
-            <div className="space-y-4">
-              <p className="text-sm opacity-75">
-                Save your progress or load a previous game from a JSON file.
-              </p>
-              <button
-                onClick={() => {
-                  closeLoadPreview();
-                  updateUiState({ showSaveLoadModal: true });
-                }}
-                className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
-              >
-                💾 Save / Load Game
+
+          {/* Fixed Footer */}
+          <div className="p-6 pt-4 border-t border-gray-700">
+            <div className="flex flex-col md:flex-row md:justify-end gap-3">
+              <button onClick={closeLoadPreview} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg w-full md:w-auto`}>
+                Cancel
               </button>
-              <p className="text-xs opacity-75 text-center">
-                Quick tip: Press <kbd className="px-2 py-1 bg-black bg-opacity-30 rounded">Ctrl+S</kbd> anytime to quick save
-              </p>
+              <button onClick={confirmLoadGame} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg w-full md:w-auto`}>
+                Load Game
+              </button>
             </div>
           </div>
         </div>
