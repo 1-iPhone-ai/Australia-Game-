@@ -1945,6 +1945,22 @@ function AustraliaGame() {
     }
   }, [gameState.currentTurn]);
 
+  // Lock body scroll when settings modal is open
+  useEffect(() => {
+    if (uiState.showSettings) {
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+    } else {
+      // Restore body scroll
+      document.body.style.overflow = 'unset';
+    }
+
+    // Cleanup on unmount
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [uiState.showSettings]);
+
   // Initialize resource prices
   useEffect(() => {
     if (Object.keys(gameState.resourcePrices).length === 0) {
@@ -2160,7 +2176,7 @@ function AustraliaGame() {
         onClick={() => updateUiState({ showSettings: false })}
       >
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[90vh] flex flex-col`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
@@ -2175,7 +2191,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="overflow-y-auto p-6 pt-4 flex-1 min-h-0">
+          <div className="overflow-y-auto p-6 pt-4 flex-1 min-h-0" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div className="space-y-6">
               <div className={`${themeStyles.border} border rounded-lg p-4`}>
                 <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
