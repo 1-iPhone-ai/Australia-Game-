@@ -319,6 +319,7 @@ const KEYBOARD_SHORTCUTS = {
 };
 
 const GAME_VERSION = "4.0.0";
+const MINIMUM_WAGER = 50; // Minimum wager required for challenges
 
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
@@ -1160,26 +1161,38 @@ function AustraliaGame() {
 
   // AI Strategy: Evaluate best challenge to take
   const evaluateChallenge = useCallback((challenge, aiState, difficulty) => {
+    // Check if AI can afford minimum wager
+    if (aiState.money < MINIMUM_WAGER) {
+      return {
+        challenge,
+        score: -Infinity, // Can't afford challenge
+        successChance: 0,
+        wager: 0,
+        expectedValue: 0
+      };
+    }
+
     const successChance = calculateAiSuccessChance(challenge, aiState);
     const maxWager = Math.min(aiState.money, 500);
-    const potentialReward = maxWager * challenge.reward;
-    const expectedValue = potentialReward * successChance - maxWager * (1 - successChance);
-    
+    const actualWager = Math.max(MINIMUM_WAGER, maxWager); // Ensure at least minimum wager
+    const potentialReward = actualWager * challenge.reward;
+    const expectedValue = potentialReward * successChance - actualWager * (1 - successChance);
+
     // Adjust for difficulty profile
     const profile = AI_DIFFICULTY_PROFILES[difficulty];
     const riskAdjusted = expectedValue * profile.riskTolerance;
-    
+
     // Bonus for strategy match
     let strategyBonus = 0;
     if (aiState.character.aiStrategy === "challenge-focused") {
       strategyBonus = 50;
     }
-    
+
     return {
       challenge,
       score: riskAdjusted + strategyBonus,
       successChance,
-      wager: maxWager,
+      wager: actualWager,
       expectedValue
     };
   }, [calculateAiSuccessChance]);
