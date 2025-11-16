@@ -375,7 +375,7 @@ interface ConfirmationDialog {
 }
 
 interface AIAction {
-  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn';
+  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability';
   description: string;
   data?: any;
 }
@@ -1124,6 +1124,25 @@ function AustraliaGame() {
   }, [addNotification]);
 
   // =========================================
+  // MONEY VALIDATION HELPERS
+  // =========================================
+
+  // Centralized money floor validation - ensures money never goes negative
+  const validateMoney = useCallback((amount: number): number => {
+    return Math.max(0, Math.floor(amount));
+  }, []);
+
+  // Safe money deduction - returns validated amount after deduction
+  const deductMoney = useCallback((currentMoney: number, deduction: number): number => {
+    return validateMoney(currentMoney - deduction);
+  }, [validateMoney]);
+
+  // Safe money addition - returns validated amount after addition
+  const addMoney = useCallback((currentMoney: number, addition: number): number => {
+    return validateMoney(currentMoney + addition);
+  }, [validateMoney]);
+
+  // =========================================
   // AI DECISION MAKING ENGINE
   // =========================================
 
@@ -1272,92 +1291,233 @@ function AustraliaGame() {
     return { resource, score, price };
   }, []);
 
-  // Main AI decision engine
-  const makeAiDecision = useCallback((aiState, gameState, playerState) => {
-    const difficulty = gameState.aiDifficulty;
-    const profile = AI_DIFFICULTY_PROFILES[difficulty];
-    
-    // Sometimes make mistakes based on difficulty
-    if (Math.random() < profile.mistakeChance) {
-      return {
-        type: 'think',
-        description: 'Contemplating strategy...',
-        data: null
-      };
+  // AI Strategy: Evaluate special ability usage
+  const evaluateSpecialAbility = useCallback((aiState, gameState) => {
+    const ability = aiState.character.specialAbility;
+    if (!ability || aiState.specialAbilityUses <= 0) return -Infinity;
+
+    let score = 0;
+
+    switch (ability.name) {
+      case "Tourist Luck":
+        // Use if we have risky challenges available
+        const currentRegion = REGIONS[aiState.currentRegion];
+        const riskyChallenges = currentRegion?.challenges.filter(c =>
+          !aiState.challengesCompleted.includes(c.name) &&
+          c.difficulty >= 2
+        ) || [];
+        score = riskyChallenges.length > 0 ? 80 : 0;
+        break;
+
+      case "Market Insight":
+        // Use if we have resources to sell
+        score = aiState.inventory.length > 5 ? 100 : 30;
+        break;
+
+      case "Scout Ahead":
+        // Use if we're planning to travel
+        const unvisitedRegions = Object.keys(REGIONS).filter(r =>
+          r !== aiState.currentRegion && !aiState.visitedRegions.includes(r)
+        );
+        score = unvisitedRegions.length > 0 ? 60 : 20;
+        break;
+
+      case "Calculate Odds":
+        // Use on easy challenges for guaranteed win
+        const easyChallenges = currentRegion?.challenges.filter(c =>
+          !aiState.challengesCompleted.includes(c.name) &&
+          c.difficulty < 2 &&
+          aiState.money >= MINIMUM_WAGER
+        ) || [];
+        score = easyChallenges.length > 0 ? 150 : 0; // High priority for guaranteed win
+        break;
+
+      default:
+        score = 0;
     }
 
-    const decisions: Array<{ type: string; description: string; data: any; score: number }> = [];
-    
-    // Evaluate challenges in current region
-    const currentRegion = REGIONS[aiState.currentRegion];
-    const availableChallenges = currentRegion?.challenges.filter(c => 
-      !aiState.challengesCompleted.includes(c.name)
-    ) || [];
-    
-    availableChallenges.forEach(challenge => {
-      const evaluation = evaluateChallenge(challenge, aiState, difficulty);
-      if (evaluation.score > 0 && aiState.money >= evaluation.wager) {
-        decisions.push({
-          type: 'challenge',
-          description: `Attempt ${challenge.name}`,
-          data: { challenge, wager: evaluation.wager, successChance: evaluation.successChance },
-          score: evaluation.score * profile.decisionQuality
-        });
+    return score;
+  }, []);
+
+  // Main AI decision engine
+  const makeAiDecision = useCallback((aiState, gameState, playerState) => {
+    try {
+      const difficulty = gameState.aiDifficulty;
+      const profile = AI_DIFFICULTY_PROFILES[difficulty];
+
+      // Validate AI state
+      if (!aiState || !aiState.currentRegion || !REGIONS[aiState.currentRegion]) {
+        console.error('Invalid AI state or region:', aiState);
+        return {
+          type: 'end_turn',
+          description: 'Invalid state - ending turn',
+          data: null,
+          score: 0
+        };
       }
-    });
-    
-    // Evaluate travel options
-    Object.keys(REGIONS).forEach(region => {
-      if (region !== aiState.currentRegion) {
-        const evaluation = evaluateTravel(region, aiState, difficulty, gameState.resourcePrices);
-        if (evaluation.score > 0) {
+
+      // Sometimes make mistakes based on difficulty
+      if (Math.random() < profile.mistakeChance) {
+        return {
+          type: 'think',
+          description: 'Contemplating strategy...',
+          data: null
+        };
+      }
+
+      const decisions: Array<{ type: string; description: string; data: any; score: number }> = [];
+
+      // Evaluate special ability usage
+      if (aiState.specialAbilityUses > 0 && aiState.character?.specialAbility) {
+        const abilityScore = evaluateSpecialAbility(aiState, gameState);
+        if (abilityScore > 0) {
           decisions.push({
-            type: 'travel',
-            description: `Travel to ${REGIONS[region].name}`,
-            data: { region, cost: evaluation.cost },
-            score: evaluation.score * profile.decisionQuality
+            type: 'special_ability',
+            description: `Use ${aiState.character.specialAbility.name}`,
+            data: { ability: aiState.character.specialAbility },
+            score: abilityScore * profile.decisionQuality
           });
         }
       }
-    });
-    
-    // Evaluate selling resources
-    const uniqueResources = Array.from(new Set(aiState.inventory));
-    uniqueResources.forEach(resource => {
-      const evaluation = evaluateResourceSale(resource, aiState, gameState.resourcePrices);
-      if (evaluation.score > 100) { // Only sell if price is decent
-        decisions.push({
-          type: 'sell',
-          description: `Sell ${resource}`,
-          data: { resource, price: evaluation.price },
-          score: evaluation.score * profile.decisionQuality
-        });
-      }
-    });
-    
-    // If we have good options, choose the best one
-    if (decisions.length > 0) {
-      decisions.sort((a, b) => b.score - a.score);
-      const bestDecision = decisions[0];
-      
-      // Add some randomness to make AI less predictable
-      const randomIndex = Math.floor(Math.random() * Math.min(3, decisions.length));
-      return decisions[randomIndex];
-    }
-    
-    // No good options, end turn
-    return {
-      type: 'end_turn',
-      description: 'Ending turn',
-      data: null,
-      score: 0
-    };
-  }, [evaluateChallenge, evaluateTravel, evaluateResourceSale, calculateAiSuccessChance]);
 
-  // Execute AI action
+      // Evaluate challenges in current region
+      const currentRegion = REGIONS[aiState.currentRegion];
+      const availableChallenges = currentRegion?.challenges.filter(c =>
+        !aiState.challengesCompleted.includes(c.name)
+      ) || [];
+
+      availableChallenges.forEach(challenge => {
+        try {
+          const evaluation = evaluateChallenge(challenge, aiState, difficulty);
+          if (evaluation.score > 0 && aiState.money >= evaluation.wager) {
+            decisions.push({
+              type: 'challenge',
+              description: `Attempt ${challenge.name}`,
+              data: { challenge, wager: evaluation.wager, successChance: evaluation.successChance },
+              score: evaluation.score * profile.decisionQuality
+            });
+          }
+        } catch (error) {
+          console.error('Error evaluating challenge:', challenge, error);
+        }
+      });
+
+      // Evaluate travel options
+      Object.keys(REGIONS).forEach(region => {
+        if (region !== aiState.currentRegion) {
+          try {
+            const evaluation = evaluateTravel(region, aiState, difficulty, gameState.resourcePrices);
+            if (evaluation.score > 0) {
+              decisions.push({
+                type: 'travel',
+                description: `Travel to ${REGIONS[region].name}`,
+                data: { region, cost: evaluation.cost },
+                score: evaluation.score * profile.decisionQuality
+              });
+            }
+          } catch (error) {
+            console.error('Error evaluating travel to region:', region, error);
+          }
+        }
+      });
+
+      // Evaluate selling resources
+      const uniqueResources = Array.from(new Set(aiState.inventory));
+      uniqueResources.forEach(resource => {
+        try {
+          const evaluation = evaluateResourceSale(resource, aiState, gameState.resourcePrices);
+          if (evaluation.score > 100) { // Only sell if price is decent
+            decisions.push({
+              type: 'sell',
+              description: `Sell ${resource}`,
+              data: { resource, price: evaluation.price },
+              score: evaluation.score * profile.decisionQuality
+            });
+          }
+        } catch (error) {
+          console.error('Error evaluating resource sale:', resource, error);
+        }
+      });
+
+      // If we have good options, choose the best one
+      if (decisions.length > 0) {
+        decisions.sort((a, b) => b.score - a.score);
+        const bestDecision = decisions[0];
+
+        // Add some randomness to make AI less predictable
+        const randomIndex = Math.floor(Math.random() * Math.min(3, decisions.length));
+        return decisions[randomIndex];
+      }
+
+      // No good options, end turn
+      return {
+        type: 'end_turn',
+        description: 'Ending turn',
+        data: null,
+        score: 0
+      };
+    } catch (error) {
+      console.error('Critical error in AI decision making:', error);
+      // Graceful fallback - end turn
+      return {
+        type: 'end_turn',
+        description: 'Error - ending turn safely',
+        data: null,
+        score: 0
+      };
+    }
+  }, [evaluateChallenge, evaluateTravel, evaluateResourceSale, evaluateSpecialAbility, calculateAiSuccessChance]);
+
+  // Execute AI action with validation
   const executeAiAction = useCallback((action: AIAction) => {
     setCurrentAiAction(action);
-    
+
+    // Validate action before execution
+    try {
+      switch (action.type) {
+        case 'challenge':
+          // Validate AI has money for wager
+          if (action.data?.wager && aiPlayer.money < action.data.wager) {
+            addNotification(`🤖 ${aiPlayer.name} can't afford challenge (needs $${action.data.wager})`, 'ai', false);
+            return;
+          }
+          break;
+
+        case 'travel':
+          // Validate AI has money for travel
+          if (action.data?.cost && aiPlayer.money < action.data.cost) {
+            addNotification(`🤖 ${aiPlayer.name} can't afford travel (needs $${action.data.cost})`, 'ai', false);
+            return;
+          }
+          // Validate region exists
+          if (action.data?.region && !REGIONS[action.data.region]) {
+            console.error('Invalid region:', action.data.region);
+            return;
+          }
+          break;
+
+        case 'sell':
+          // Validate AI has resource in inventory
+          if (action.data?.resource && !aiPlayer.inventory.includes(action.data.resource)) {
+            addNotification(`🤖 ${aiPlayer.name} doesn't have ${action.data.resource} to sell`, 'ai', false);
+            return;
+          }
+          break;
+
+        case 'special_ability':
+          // Validate AI has special ability uses left
+          if (aiPlayer.specialAbilityUses <= 0) {
+            addNotification(`🤖 ${aiPlayer.name} has no special ability uses left`, 'ai', false);
+            return;
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Action validation error:', error);
+      return;
+    }
+
+    // Execute validated action
     switch (action.type) {
       case 'challenge':
         const { challenge, wager, successChance } = action.data;
@@ -1403,7 +1563,7 @@ function AustraliaGame() {
 
           setAiPlayer(prev => ({
             ...prev,
-            money: prev.money + reward,
+            money: addMoney(prev.money, reward),
             challengesCompleted: [...prev.challengesCompleted, challenge.name],
             consecutiveWins: prev.consecutiveWins + 1,
             ...levelUpData
@@ -1441,7 +1601,7 @@ function AustraliaGame() {
         } else {
           setAiPlayer(prev => ({
             ...prev,
-            money: Math.max(0, prev.money - wager),
+            money: deductMoney(prev.money, wager),
             consecutiveWins: 0
           }));
           
@@ -1458,7 +1618,7 @@ function AustraliaGame() {
         setAiPlayer(prev => ({
           ...prev,
           currentRegion: region,
-          money: Math.max(0, prev.money - cost),
+          money: deductMoney(prev.money, cost),
           visitedRegions: prev.visitedRegions.includes(region)
             ? prev.visitedRegions
             : [...prev.visitedRegions, region]
@@ -1517,7 +1677,7 @@ function AustraliaGame() {
             return {
               ...prev,
               inventory: newInventory,
-              money: prev.money + finalPrice
+              money: addMoney(prev.money, finalPrice)
             };
           });
           
@@ -1529,6 +1689,25 @@ function AustraliaGame() {
         }
         break;
         
+      case 'special_ability':
+        const { ability } = action.data;
+
+        // Use the special ability
+        setAiPlayer(prev => ({
+          ...prev,
+          specialAbilityUses: Math.max(0, prev.specialAbilityUses - 1)
+        }));
+
+        addNotification(
+          `🤖 ${aiPlayer.name} used ${ability.name}!`,
+          'ai',
+          true
+        );
+
+        // Note: The actual effect of special abilities is applied during challenge/sell/travel
+        // This just marks that the ability was used and decrements the counter
+        break;
+
       case 'think':
         addNotification(
           `🤖 ${aiPlayer.name} is thinking...`,
@@ -1537,9 +1716,9 @@ function AustraliaGame() {
         );
         break;
     }
-    
+
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
-  }, [aiPlayer, addNotification]);
+  }, [aiPlayer, addNotification, addMoney, deductMoney]);
 
   // AI Turn Management
   const performAiTurn = useCallback(async () => {
@@ -1953,12 +2132,33 @@ function AustraliaGame() {
       // Reset special ability
       dispatchPlayer({ type: 'RESET_SPECIAL_ABILITY' });
       
-      // Update resource prices
+      // Update resource prices based on market trend
       const newPrices = {};
+      const currentPrices = gameState.resourcePrices;
+
       Object.keys(RESOURCE_CATEGORIES).forEach(resource => {
-        const basePrice = 100;
-        const variance = Math.random() * 100 - 50;
-        newPrices[resource] = Math.max(50, Math.floor(basePrice + variance));
+        const currentPrice = currentPrices[resource] || 100;
+        let variance = Math.random() * 100 - 50; // Base variance: -50 to +50
+
+        // Apply market trend bias
+        switch (gameState.marketTrend) {
+          case 'rising':
+            variance += 30; // Bias towards higher prices (+30 to +80)
+            break;
+          case 'falling':
+            variance -= 30; // Bias towards lower prices (-80 to -30)
+            break;
+          case 'volatile':
+            variance *= 1.5; // Larger swings (-75 to +75)
+            break;
+          case 'stable':
+            variance *= 0.5; // Smaller changes (-25 to +25)
+            break;
+        }
+
+        // Apply change to current price rather than base price
+        const newPrice = currentPrice + variance;
+        newPrices[resource] = Math.max(50, Math.min(250, Math.floor(newPrice))); // Cap at 50-250
       });
       dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: newPrices });
       
