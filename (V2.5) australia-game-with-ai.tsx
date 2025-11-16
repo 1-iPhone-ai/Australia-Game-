@@ -3544,7 +3544,6 @@ function AustraliaGame() {
         {renderProgressDashboard()}
         {renderHelpModal()}
         {renderSettingsModal()}
-        {renderSaveLoadModal()}
         {renderEndGameModesModal()}
         {renderConfirmationDialog()}
         {renderNotificationHistory()}
@@ -4081,6 +4080,7 @@ function AustraliaGame() {
       {uiState.showCampaignSelect && renderCampaignSelect()}
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
+      {renderSaveLoadModal()}
       {renderLoadPreviewModal()}
       <input
         type="file"
