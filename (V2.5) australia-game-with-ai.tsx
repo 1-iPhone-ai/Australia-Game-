@@ -1480,13 +1480,19 @@ function AustraliaGame() {
     
     // End AI turn
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     addNotification(`🤖 ${aiPlayer.name} ended their turn`, 'ai', true);
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+
+    // In AI mode, advance the day after AI completes their turn
+    // This happens BEFORE switching back to player
+    advanceDay();
+
+    // Now switch to player turn for the new day
     dispatchGameState({ type: 'SET_TURN', payload: 'player' });
     setCurrentAiAction(null);
-    
-  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification]);
+
+  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, advanceDay]);
 
   // Auto-trigger AI turn
   useEffect(() => {
@@ -1933,25 +1939,10 @@ function AustraliaGame() {
 
   // When turn switches to player, reset their actions
   useEffect(() => {
-    if (gameState.currentTurn === 'player' && gameState.selectedMode === 'ai') {
+    if (gameState.currentTurn === 'player') {
       dispatchPlayer({ type: 'RESET_ACTIONS' });
     }
-  }, [gameState.currentTurn, gameState.selectedMode]);
-
-  // When both players have taken their turns
-  useEffect(() => {
-    if (gameState.selectedMode === 'ai' && 
-        gameState.currentTurn === 'player' && 
-        gameState.actionsThisTurn === 0 &&
-        gameState.day > 1) {
-      // Both players completed their turns, advance day
-      const checkBothTurnsComplete = setTimeout(() => {
-        advanceDay();
-      }, 500);
-      
-      return () => clearTimeout(checkBothTurnsComplete);
-    }
-  }, [gameState.currentTurn, gameState.actionsThisTurn, gameState.selectedMode, gameState.day, advanceDay]);
+  }, [gameState.currentTurn]);
 
   // Initialize resource prices
   useEffect(() => {
@@ -2164,8 +2155,9 @@ function AustraliaGame() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-6">
+        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col`}>
+          {/* Fixed Header */}
+          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
             <h3 className="text-2xl font-bold">⚙️ Game Settings</h3>
             <button
               onClick={() => updateUiState({ showSettings: false })}
@@ -2175,7 +2167,9 @@ function AustraliaGame() {
             </button>
           </div>
 
-          <div className="space-y-6">
+          {/* Scrollable Content */}
+          <div className="overflow-y-auto p-6 pt-4">
+            <div className="space-y-6">
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
               <div className="space-y-4">
@@ -2257,8 +2251,13 @@ function AustraliaGame() {
                 </div>
               </div>
             </div>
+            </div>
           </div>
-          <button onClick={() => updateUiState({ showSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold mt-6`}>Close</button>
+
+          {/* Fixed Footer */}
+          <div className="p-6 pt-4 border-t border-gray-700">
+            <button onClick={() => updateUiState({ showSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
+          </div>
         </div>
       </div>
     );
