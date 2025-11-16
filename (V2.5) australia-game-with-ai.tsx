@@ -673,7 +673,8 @@ function AustraliaGame() {
     notificationFilter: 'all',
     quickActionsOpen: true,
     showAiStats: false,
-    showDayTransition: false
+    showDayTransition: false,
+    showSaveLoadModal: false
   });
 
   // Day transition state
@@ -1947,7 +1948,7 @@ function AustraliaGame() {
 
   // Lock body scroll when modals are open
   useEffect(() => {
-    if (uiState.showSettings || uiState.showProgress) {
+    if (uiState.showSettings || uiState.showProgress || uiState.showSaveLoadModal) {
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
     } else {
@@ -1959,7 +1960,7 @@ function AustraliaGame() {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [uiState.showSettings, uiState.showProgress]);
+  }, [uiState.showSettings, uiState.showProgress, uiState.showSaveLoadModal]);
 
   // Initialize resource prices
   useEffect(() => {
@@ -2286,6 +2287,99 @@ function AustraliaGame() {
     );
   };
 
+  // Save/Load Game Modal
+  const renderSaveLoadModal = () => {
+    if (!uiState.showSaveLoadModal) return null;
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => updateUiState({ showSaveLoadModal: false })}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-lg w-full flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
+            <h3 className="text-2xl font-bold">💾 Save / Load Game</h3>
+            <button
+              onClick={() => updateUiState({ showSaveLoadModal: false })}
+              className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            <div className="space-y-4">
+              {/* Save Game Section */}
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="font-bold text-lg mb-3">💾 Save Current Game</h4>
+                <p className="text-sm opacity-75 mb-4">
+                  Download your current game progress as a JSON file. You can load it later to continue from where you left off.
+                </p>
+                <div className="mb-3">
+                  <label className="block text-sm font-semibold mb-2">Save Description (Optional)</label>
+                  <input
+                    type="text"
+                    value={saveDescription}
+                    onChange={(e) => setSaveDescription(e.target.value)}
+                    placeholder={`Day ${gameState.day} - ${player.name}`}
+                    className={`w-full px-3 py-2 rounded ${themeStyles.input} border ${themeStyles.border}`}
+                    maxLength={50}
+                  />
+                  <p className="text-xs opacity-75 mt-1">Appears in the save preview and filename.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    handleSaveGame(saveDescription);
+                    updateUiState({ showSaveLoadModal: false });
+                  }}
+                  disabled={gameState.gameMode === 'menu'}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  💾 Download Save File
+                </button>
+                {gameState.gameMode === 'menu' && (
+                  <p className="text-xs text-yellow-500 mt-2">Start a game first before saving</p>
+                )}
+              </div>
+
+              {/* Load Game Section */}
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="font-bold text-lg mb-3">📂 Load Saved Game</h4>
+                <p className="text-sm opacity-75 mb-4">
+                  Upload a previously saved JSON file to restore your game progress.
+                </p>
+                <button
+                  onClick={() => {
+                    openLoadDialog();
+                    updateUiState({ showSaveLoadModal: false });
+                  }}
+                  className={`${themeStyles.buttonSecondary} px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  📂 Upload Save File
+                </button>
+              </div>
+
+              {/* Quick Tip */}
+              <div className="text-xs opacity-75 text-center pt-2 border-t border-gray-700">
+                💡 Quick tip: Press <kbd className="px-2 py-1 bg-black bg-opacity-30 rounded">Ctrl+S</kbd> anytime to quick save
+              </div>
+            </div>
+          </div>
+
+          {/* Fixed Footer */}
+          <div className="p-6 pt-4 border-t border-gray-700">
+            <button onClick={() => updateUiState({ showSaveLoadModal: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // End-Game Modes Modal
   const renderEndGameModesModal = () => {
     if (!uiState.showEndGameModes || !gameState.allChallengesCompleted) return null;
@@ -2451,33 +2545,20 @@ function AustraliaGame() {
           <div className={`${themeStyles.border} border rounded-lg p-4`}>
             <h4 className="text-lg font-bold mb-4">💾 Save & Load</h4>
             <div className="space-y-4">
-              <div>
-                <label className="block font-semibold mb-2">Save Description</label>
-                <input
-                  type="text"
-                  value={saveDescription}
-                  onChange={(e) => setSaveDescription(e.target.value)}
-                  placeholder="e.g. Day 5 before Uluru challenge"
-                  className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 w-full`}
-                />
-                <p className="text-xs opacity-75 mt-1">Appears in the save preview and filename.</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleSaveGame(saveDescription)}
-                  className={`${themeStyles.button} text-white px-4 py-2 rounded-lg font-semibold`}
-                >
-                  💾 Save Game
-                </button>
-                <button
-                  onClick={openLoadDialog}
-                  className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg font-semibold`}
-                >
-                  📂 Load Game
-                </button>
-              </div>
-              <p className="text-xs opacity-75">
-                Quick tip: Press Ctrl+S anytime during the game to quick save.
+              <p className="text-sm opacity-75">
+                Save your progress or load a previous game from a JSON file.
+              </p>
+              <button
+                onClick={() => {
+                  closeLoadPreview();
+                  updateUiState({ showSaveLoadModal: true });
+                }}
+                className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+              >
+                💾 Save / Load Game
+              </button>
+              <p className="text-xs opacity-75 text-center">
+                Quick tip: Press <kbd className="px-2 py-1 bg-black bg-opacity-30 rounded">Ctrl+S</kbd> anytime to quick save
               </p>
             </div>
           </div>
@@ -2946,10 +3027,10 @@ function AustraliaGame() {
               🤖 AI Opponent Mode
             </button>
             <button
-              onClick={openLoadDialog}
+              onClick={() => updateUiState({ showSaveLoadModal: true })}
               className={`${themeStyles.buttonSecondary} px-6 py-3 rounded-lg w-full font-bold`}
             >
-              ?? Load Saved Game
+              💾 Save / Load Game
             </button>
           </div>
           
@@ -3180,11 +3261,11 @@ function AustraliaGame() {
         {/* Action Buttons Bar */}
         <div className="flex flex-wrap gap-2 mb-4">
           <button
-            onClick={() => handleSaveGame(saveDescription)}
+            onClick={() => updateUiState({ showSaveLoadModal: true })}
             className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg flex items-center space-x-2`}
           >
             <span>💾</span>
-            <span>Save Game</span>
+            <span>Save / Load</span>
             <kbd className="ml-2 px-2 py-0.5 bg-black bg-opacity-30 rounded text-xs">Ctrl+S</kbd>
           </button>
           <button
@@ -3455,6 +3536,7 @@ function AustraliaGame() {
         {renderProgressDashboard()}
         {renderHelpModal()}
         {renderSettingsModal()}
+        {renderSaveLoadModal()}
         {renderEndGameModesModal()}
         {renderConfirmationDialog()}
         {renderNotificationHistory()}
