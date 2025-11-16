@@ -326,6 +326,10 @@ type GameSettingsState = {
   aiMaxActionsPerTurn: number;
   allowActionOverride: boolean;
   overrideCost: number;
+  totalDays: number;
+  playerActionsPerDay: number;
+  aiActionsPerDay: number;
+  showDayTransition: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -379,7 +383,11 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   maxActionsPerTurn: 3,
   aiMaxActionsPerTurn: 3,
   allowActionOverride: true,
-  overrideCost: 1000
+  overrideCost: 1000,
+  totalDays: 30,
+  playerActionsPerDay: 3,
+  aiActionsPerDay: 3,
+  showDayTransition: false
 };
 
 const DEFAULT_DONT_ASK: DontAskAgainPrefs = {
@@ -664,7 +672,16 @@ function AustraliaGame() {
     showEndGameModes: false,
     notificationFilter: 'all',
     quickActionsOpen: true,
-    showAiStats: false
+    showAiStats: false,
+    showDayTransition: false
+  });
+
+  // Day transition state
+  const [dayTransitionData, setDayTransitionData] = useState({
+    prevDay: 1,
+    newDay: 2,
+    playerEarned: 0,
+    aiEarned: 0
   });
 
   // Enhanced notification system
@@ -914,7 +931,12 @@ function AustraliaGame() {
       maxActionsPerTurn: typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
       aiMaxActionsPerTurn: typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn,
       allowActionOverride: Boolean(settingsData.allowActionOverride),
-      overrideCost: typeof settingsData.overrideCost === 'number' ? settingsData.overrideCost : DEFAULT_GAME_SETTINGS.overrideCost
+      overrideCost: typeof settingsData.overrideCost === 'number' ? settingsData.overrideCost : DEFAULT_GAME_SETTINGS.overrideCost,
+      // New settings with backwards compatibility
+      totalDays: typeof settingsData.totalDays === 'number' ? settingsData.totalDays : DEFAULT_GAME_SETTINGS.totalDays,
+      playerActionsPerDay: typeof settingsData.playerActionsPerDay === 'number' ? settingsData.playerActionsPerDay : (typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.playerActionsPerDay),
+      aiActionsPerDay: typeof settingsData.aiActionsPerDay === 'number' ? settingsData.aiActionsPerDay : (typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiActionsPerDay),
+      showDayTransition: typeof settingsData.showDayTransition === 'boolean' ? settingsData.showDayTransition : DEFAULT_GAME_SETTINGS.showDayTransition
     };
 
     const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -1425,12 +1447,12 @@ function AustraliaGame() {
   // AI Turn Management
   const performAiTurn = useCallback(async () => {
     if (gameState.currentTurn !== 'ai' || gameState.isAiThinking) return;
-    
+
     dispatchGameState({ type: 'SET_AI_THINKING', payload: true });
     dispatchGameState({ type: 'RESET_ACTIONS' });
-    
+
     const profile = AI_DIFFICULTY_PROFILES[gameState.aiDifficulty];
-    const maxActions = gameState.maxActionsPerTurn;
+    const maxActions = gameSettings.aiActionsPerDay;
     
     addNotification(`🤖 ${aiPlayer.name}'s turn begins`, 'ai', true);
     
@@ -1863,27 +1885,51 @@ function AustraliaGame() {
   }, [player, gameState, addNotification, showConfirmation, updatePersonalRecords]);
 
   const advanceDay = useCallback(() => {
+    const prevDay = gameState.day;
+    const newDay = prevDay + 1;
+
+    // Show day transition screen if enabled
+    if (gameSettings.showDayTransition) {
+      setDayTransitionData({
+        prevDay: prevDay,
+        newDay: newDay,
+        playerEarned: player.money - (personalRecords.maxMoney || player.character.startingMoney),
+        aiEarned: aiPlayer.money - (aiPlayer.character.startingMoney || 1000)
+      });
+      updateUiState({ showDayTransition: true });
+
+      // Auto-dismiss after 2 seconds
+      setTimeout(() => {
+        updateUiState({ showDayTransition: false });
+      }, 2000);
+    } else {
+      // Show brief notification instead
+      addNotification(`Day ${newDay} begins`, 'info', true);
+    }
+
     dispatchGameState({ type: 'NEXT_DAY' });
-    
+
     // Update weather
     const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Stormy"];
     const newWeather = weatherOptions[Math.floor(Math.random() * weatherOptions.length)];
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
-    
+
     // Market trend
     const trends = ["rising", "falling", "stable", "volatile"];
     const newTrend = trends[Math.floor(Math.random() * trends.length)];
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
-    
-    addNotification(`Day ${gameState.day + 1} begins`, 'info', true);
-    addNotification(`Market trend: ${newTrend}`, 'market', true);
-    addNotification(`Weather: ${newWeather}`, 'info', true);
-    
-    // Check for game end
-    if (gameState.day >= 30) {
-      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
+
+    if (!gameSettings.showDayTransition) {
+      addNotification(`Market trend: ${newTrend}`, 'market', true);
+      addNotification(`Weather: ${newWeather}`, 'info', true);
     }
-  }, [gameState, addNotification]);
+
+    // Check for game end - use configurable totalDays
+    if (gameState.day >= gameSettings.totalDays) {
+      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
+      addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days)`, 'success', true);
+    }
+  }, [gameState, gameSettings, player, aiPlayer, personalRecords, addNotification]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -1947,7 +1993,7 @@ function AustraliaGame() {
 
   // Helper function to check if action limit reached
   const isActionLimitReached = () => {
-    return gameSettings.actionLimitsEnabled && player.actionsUsedThisTurn >= gameSettings.maxActionsPerTurn;
+    return gameSettings.actionLimitsEnabled && player.actionsUsedThisTurn >= gameSettings.playerActionsPerDay;
   };
 
   // Helper function to check if all challenges are completed
@@ -1990,7 +2036,7 @@ function AustraliaGame() {
             showConfirmation(
               'endDay',
               'Action Limit Reached',
-              `You have reached your action limit (${gameSettings.maxActionsPerTurn}). Pay $${gameSettings.overrideCost} to continue?`,
+              `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay $${gameSettings.overrideCost} to continue?`,
               'Pay & Continue',
               () => {
                 if (player.money >= gameSettings.overrideCost && gameSettings.allowActionOverride) {
@@ -2026,7 +2072,7 @@ function AustraliaGame() {
             showConfirmation(
               'endDay',
               'Action Limit Reached',
-              `You have reached your action limit (${gameSettings.maxActionsPerTurn}). Pay $${gameSettings.overrideCost} to continue?`,
+              `You have reached your action limit (${gameSettings.playerActionsPerDay}). Pay $${gameSettings.overrideCost} to continue?`,
               'Pay & Continue',
               () => {
                 if (player.money >= gameSettings.overrideCost && gameSettings.allowActionOverride) {
@@ -2095,7 +2141,7 @@ function AustraliaGame() {
     }
     
     // End turn
-    if (gameState.day < 30) {
+    if (gameState.day < gameSettings.totalDays) {
       actions.push({
         label: 'End Turn',
         icon: '⏭️',
@@ -2131,6 +2177,37 @@ function AustraliaGame() {
 
           <div className="space-y-6">
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
+              <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block font-semibold mb-2">Total Days: {gameSettings.totalDays}</label>
+                  <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
+                  <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays}</div>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-2">Player Actions Per Day: {gameSettings.playerActionsPerDay}</label>
+                  <input type="range" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, playerActionsPerDay: parseInt(e.target.value), maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                  <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}</div>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-2">AI Actions Per Day: {gameSettings.aiActionsPerDay}</label>
+                  <input type="range" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionsPerDay: parseInt(e.target.value), aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">Show Day Transition Screen</div>
+                    <div className="text-sm opacity-75">Display summary between days</div>
+                  </div>
+                  <button
+                    onClick={() => setGameSettings(prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
+                    className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                  >
+                    {gameSettings.showDayTransition ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <h4 className="text-lg font-bold mb-4">⏱️ Action Limits</h4>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -2149,12 +2226,13 @@ function AustraliaGame() {
                 </div>
                 <div>
                   <label className="block font-semibold mb-2">Max Actions (Human): {gameSettings.maxActionsPerTurn}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
-                  <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.maxActionsPerTurn}</div>
+                  <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                  <div className="text-xs opacity-75 mt-1">Use "Player Actions Per Day" above to adjust</div>
                 </div>
                 <div>
                   <label className="block font-semibold mb-2">Max Actions (AI): {gameSettings.aiMaxActionsPerTurn}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                  <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                  <div className="text-xs opacity-75 mt-1">Use "AI Actions Per Day" above to adjust</div>
                 </div>
               </div>
             </div>
@@ -2272,7 +2350,8 @@ function AustraliaGame() {
     if (!loadPreview.isOpen || !loadPreview.data) return null;
     const data = loadPreview.data;
     const saveDate = new Date(data.metadata.timestamp).toLocaleString();
-    const progressPercent = Math.min(100, Math.round((data.gameState.day / 30) * 100));
+    const totalDays = data.gameSettings?.totalDays || 30;
+    const progressPercent = Math.min(100, Math.round((data.gameState.day / totalDays) * 100));
     const regionName = REGIONS[data.player.currentRegion]?.name || data.player.currentRegion;
     const netWorth = data.player.money + (Array.isArray(data.player.inventory)
       ? data.player.inventory.reduce((total, resource) => {
@@ -2303,7 +2382,7 @@ function AustraliaGame() {
               <p>Saved At: {saveDate}</p>
               <p>Version: {data.metadata.gameVersion}</p>
               <p>Description: {data.metadata.saveDescription || 'Manual Save'}</p>
-              <p>Day: {data.gameState.day} / 30 ({progressPercent}%)</p>
+              <p>Day: {data.gameState.day} / {totalDays} ({progressPercent}%)</p>
             </div>
 
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
@@ -2411,6 +2490,42 @@ function AustraliaGame() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Day Transition Screen
+  const renderDayTransitionScreen = () => {
+    if (!uiState.showDayTransition) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow}`}>
+          <div className="text-4xl mb-4">🌅</div>
+          <h3 className="text-3xl font-bold mb-4">Day {dayTransitionData.prevDay} Complete</h3>
+
+          {gameState.selectedMode === 'ai' && (
+            <div className="space-y-3 mb-6">
+              <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                <div className="text-sm opacity-75 mb-1">Your Earnings</div>
+                <div className="text-2xl font-bold text-green-400">${dayTransitionData.playerEarned.toLocaleString()}</div>
+              </div>
+              <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                <div className="text-sm opacity-75 mb-1">AI Earnings</div>
+                <div className="text-2xl font-bold text-pink-400">${dayTransitionData.aiEarned.toLocaleString()}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="text-xl mb-6">Starting Day {dayTransitionData.newDay}...</div>
+
+          <button
+            onClick={() => updateUiState({ showDayTransition: false })}
+            className={`${themeStyles.button} text-white px-6 py-3 rounded-lg font-bold w-full`}
+          >
+            Continue
+          </button>
         </div>
       </div>
     );
@@ -2914,7 +3029,10 @@ function AustraliaGame() {
         
         {/* Turn Indicator */}
         {renderTurnIndicator()}
-        
+
+        {/* Day Transition Screen */}
+        {renderDayTransitionScreen()}
+
         {/* Quick Actions Bar - only show on player turn */}
         {isPlayerTurn && getQuickActions.length > 0 && uiState.quickActionsOpen && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40">
@@ -2991,7 +3109,24 @@ function AustraliaGame() {
             <div className="flex items-center space-x-4">
               <div>
                 <div className="text-sm opacity-75">Day</div>
-                <div className="font-bold">{gameState.day} / 30</div>
+                <div className="font-bold">{gameState.day} / {gameSettings.totalDays}</div>
+              </div>
+              <div>
+                <div className="text-sm opacity-75">
+                  {gameState.currentTurn === 'player' ? 'Your Actions' : 'AI Actions'}
+                </div>
+                <div className="font-bold">
+                  {gameState.currentTurn === 'player' ? (
+                    <>
+                      {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}
+                      {player.actionsUsedThisTurn > gameSettings.playerActionsPerDay && ' ⚡'}
+                    </>
+                  ) : (
+                    <>
+                      {aiPlayer.actionsUsedThisTurn} / {gameSettings.aiActionsPerDay}
+                    </>
+                  )}
+                </div>
               </div>
               <div>
                 <div className="text-sm opacity-75">Season</div>
