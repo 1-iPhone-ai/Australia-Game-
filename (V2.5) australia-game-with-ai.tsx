@@ -1492,7 +1492,8 @@ function AustraliaGame() {
     dispatchGameState({ type: 'SET_TURN', payload: 'player' });
     setCurrentAiAction(null);
 
-  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, advanceDay]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, gameSettings]);
 
   // Auto-trigger AI turn
   useEffect(() => {
