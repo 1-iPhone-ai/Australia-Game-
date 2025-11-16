@@ -1945,9 +1945,9 @@ function AustraliaGame() {
     }
   }, [gameState.currentTurn]);
 
-  // Lock body scroll when settings modal is open
+  // Lock body scroll when modals are open
   useEffect(() => {
-    if (uiState.showSettings) {
+    if (uiState.showSettings || uiState.showProgress) {
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
     } else {
@@ -1959,7 +1959,7 @@ function AustraliaGame() {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [uiState.showSettings]);
+  }, [uiState.showSettings, uiState.showProgress]);
 
   // Initialize resource prices
   useEffect(() => {
@@ -2673,9 +2673,16 @@ function AustraliaGame() {
     const timeProgress = (gameState.day / 30) * 100;
     
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto`}>
-          <div className="flex justify-between items-center mb-6">
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => updateUiState({ showProgress: false })}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
             <h3 className="text-2xl font-bold">📊 Progress Dashboard</h3>
             <button
               onClick={() => updateUiState({ showProgress: false })}
@@ -2684,8 +2691,10 @@ function AustraliaGame() {
               ✕
             </button>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Time Progress */}
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="flex justify-between items-center mb-2">
@@ -2849,6 +2858,12 @@ function AustraliaGame() {
                 </div>
               </div>
             </div>
+            </div>
+          </div>
+
+          {/* Fixed Footer */}
+          <div className="p-6 pt-4 border-t border-gray-700">
+            <button onClick={() => updateUiState({ showProgress: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
       </div>
