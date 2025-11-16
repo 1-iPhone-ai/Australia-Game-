@@ -2155,8 +2155,14 @@ function AustraliaGame() {
     if (!uiState.showSettings) return null;
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col`}>
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => updateUiState({ showSettings: false })}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Fixed Header */}
           <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
             <h3 className="text-2xl font-bold">⚙️ Game Settings</h3>
