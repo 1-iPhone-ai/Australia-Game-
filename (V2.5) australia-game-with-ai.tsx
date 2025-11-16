@@ -1948,7 +1948,7 @@ function AustraliaGame() {
 
   // Lock body scroll when modals are open
   useEffect(() => {
-    if (uiState.showSettings || uiState.showProgress || uiState.showSaveLoadModal) {
+    if (uiState.showSettings || uiState.showProgress || uiState.showSaveLoadModal || uiState.showNotifications) {
       // Prevent body scroll
       document.body.style.overflow = 'hidden';
     } else {
@@ -1960,7 +1960,7 @@ function AustraliaGame() {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [uiState.showSettings, uiState.showProgress, uiState.showSaveLoadModal]);
+  }, [uiState.showSettings, uiState.showProgress, uiState.showSaveLoadModal, uiState.showNotifications]);
 
   // Initialize resource prices
   useEffect(() => {
@@ -3865,20 +3865,28 @@ function AustraliaGame() {
     );
     
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col`}>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-2xl font-bold">📜 Notification History</h3>
-            <button
-              onClick={() => updateUiState({ showNotifications: false })}
-              className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
-            >
-              ✕
-            </button>
-          </div>
-          
-          {/* Filters */}
-          <div className="flex flex-wrap gap-2 mb-4">
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => updateUiState({ showNotifications: false })}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className="p-6 pb-4 border-b border-gray-700">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-2xl font-bold">📜 Notification History</h3>
+              <button
+                onClick={() => updateUiState({ showNotifications: false })}
+                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-2">
             <button
               onClick={() => updateUiState({ notificationFilter: 'all' })}
               className={`px-3 py-1 rounded text-sm ${
@@ -3907,20 +3915,22 @@ function AustraliaGame() {
                 </button>
               );
             })}
+            </div>
+
+            {/* Clear all button */}
+            {notifications.length > 0 && (
+              <button
+                onClick={clearAllNotifications}
+                className={`${themeStyles.error} text-white px-4 py-2 rounded mt-3 text-sm w-full`}
+              >
+                Clear All
+              </button>
+            )}
           </div>
-          
-          {/* Clear all button */}
-          {notifications.length > 0 && (
-            <button
-              onClick={clearAllNotifications}
-              className={`${themeStyles.error} text-white px-4 py-2 rounded mb-4 text-sm`}
-            >
-              Clear All
-            </button>
-          )}
-          
-          {/* Notifications list */}
-          <div className="flex-1 overflow-y-auto space-y-2">
+
+          {/* Scrollable Notifications List */}
+          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 280px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-2">
             {filteredNotifications.length === 0 ? (
               <div className="text-center py-8 opacity-60">
                 No notifications yet
@@ -3957,6 +3967,12 @@ function AustraliaGame() {
               })
             )}
             <div ref={notificationEndRef} />
+            </div>
+          </div>
+
+          {/* Fixed Footer */}
+          <div className="p-6 pt-4 border-t border-gray-700">
+            <button onClick={() => updateUiState({ showNotifications: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
       </div>
