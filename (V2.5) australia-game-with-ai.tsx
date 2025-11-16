@@ -320,6 +320,7 @@ const KEYBOARD_SHORTCUTS = {
 
 const GAME_VERSION = "4.0.0";
 const MINIMUM_WAGER = 50; // Minimum wager required for challenges
+const MAX_INVENTORY = 50; // Maximum inventory capacity for players and AI
 
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
@@ -449,7 +450,11 @@ function playerReducer(state, action) {
     case 'RESET_STREAK':
       return { ...state, consecutiveWins: 0 };
     case 'COLLECT_RESOURCES':
-      return { ...state, inventory: [...state.inventory, ...action.payload.resources] };
+      // Enforce inventory capacity limit
+      const newResources = action.payload.resources;
+      const availableSpace = MAX_INVENTORY - state.inventory.length;
+      const resourcesToAdd = availableSpace > 0 ? newResources.slice(0, availableSpace) : [];
+      return { ...state, inventory: [...state.inventory, ...resourcesToAdd] };
     case 'SELL_RESOURCE':
       const updatedInventory = [...state.inventory];
       const index = updatedInventory.indexOf(action.payload.resource);
@@ -1225,7 +1230,16 @@ function AustraliaGame() {
     if (aiState.character.aiStrategy === "exploration-focused") {
       score += aiState.visitedRegions.includes(region) ? 0 : 150;
     }
-    
+
+    // Penalize travel if inventory is full (can't collect resources)
+    const inventoryFullness = aiState.inventory.length / MAX_INVENTORY;
+    if (inventoryFullness >= 1.0) {
+      // Only travel for challenges, not resources
+      score = score * 0.3;
+    } else if (inventoryFullness > 0.8) {
+      score = score * 0.7; // Reduce travel priority when near full
+    }
+
     return { region, score, cost };
   }, [calculateAiTravelCost]);
 
@@ -1233,20 +1247,28 @@ function AustraliaGame() {
   const evaluateResourceSale = useCallback((resource, aiState, resourcePrices) => {
     const price = resourcePrices[resource] || 100;
     let score = price;
-    
+
     // Strategy adjustments
     if (aiState.character.name === "Businessman") {
       score *= 1.1;
     }
-    
+
     if (aiState.masteryUnlocks.includes("Investment Genius")) {
       score *= 1.15;
     }
-    
+
     // Consider inventory count
     const count = aiState.inventory.filter(r => r === resource).length;
     if (count > 3) score *= 1.2; // Sell duplicates
-    
+
+    // Prioritize selling when inventory is getting full
+    const inventoryFullness = aiState.inventory.length / MAX_INVENTORY;
+    if (inventoryFullness > 0.8) {
+      score *= 2.0; // Urgently sell when >80% full
+    } else if (inventoryFullness > 0.6) {
+      score *= 1.5; // Prioritize selling when >60% full
+    }
+
     return { resource, score, price };
   }, []);
 
@@ -1343,28 +1365,79 @@ function AustraliaGame() {
         
         if (success) {
           let reward = Math.floor(wager * challenge.reward);
-          
+
           if (aiPlayer.character.name === "Tourist") {
             reward = Math.floor(reward * 1.2);
           }
-          
+
           if (aiPlayer.character.name === "Businessman") {
             reward = Math.floor(reward * 1.1);
           }
-          
+
+          // Calculate XP gain and check for level up
+          const xpGain = challenge.difficulty * 20;
+          const newXp = aiPlayer.xp + xpGain;
+          const xpForNextLevel = aiPlayer.level * 100;
+
+          let levelUpData = {};
+          let didLevelUp = false;
+
+          if (newXp >= xpForNextLevel) {
+            // Level up!
+            didLevelUp = true;
+            levelUpData = {
+              xp: newXp - xpForNextLevel,
+              level: aiPlayer.level + 1,
+              stats: {
+                strength: aiPlayer.stats.strength + 1,
+                charisma: aiPlayer.stats.charisma + 1,
+                luck: aiPlayer.stats.luck + 1,
+                intelligence: aiPlayer.stats.intelligence + 1
+              }
+            };
+          } else {
+            levelUpData = {
+              xp: newXp
+            };
+          }
+
           setAiPlayer(prev => ({
             ...prev,
             money: prev.money + reward,
             challengesCompleted: [...prev.challengesCompleted, challenge.name],
             consecutiveWins: prev.consecutiveWins + 1,
-            xp: prev.xp + challenge.difficulty * 20
+            ...levelUpData
           }));
-          
+
           addNotification(
             `🤖 ${aiPlayer.name} completed ${challenge.name} and won $${reward}!`,
             'ai',
             false
           );
+
+          if (didLevelUp) {
+            addNotification(
+              `🤖 ${aiPlayer.name} leveled up to level ${aiPlayer.level + 1}!`,
+              'levelup',
+              true
+            );
+          }
+
+          // Check for mastery unlocks (after state update, so we use the old level + 1)
+          const newLevel = didLevelUp ? aiPlayer.level + 1 : aiPlayer.level;
+          Object.entries(aiPlayer.character.masteryTree || {}).forEach(([name, mastery]) => {
+            if (newLevel >= (mastery as any).unlockLevel && !aiPlayer.masteryUnlocks.includes(name)) {
+              setAiPlayer(prev => ({
+                ...prev,
+                masteryUnlocks: [...prev.masteryUnlocks, name]
+              }));
+              addNotification(
+                `🤖 ${aiPlayer.name} unlocked mastery: ${name}!`,
+                'levelup',
+                true
+              );
+            }
+          });
         } else {
           setAiPlayer(prev => ({
             ...prev,
@@ -1391,20 +1464,30 @@ function AustraliaGame() {
             : [...prev.visitedRegions, region]
         }));
         
-        // Collect resource
+        // Collect resource (if inventory not full)
         const regionResources = REGIONAL_RESOURCES[region] || [];
         if (regionResources.length > 0) {
           const collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
-          setAiPlayer(prev => ({
-            ...prev,
-            inventory: [...prev.inventory, collectedResource]
-          }));
-          
-          addNotification(
-            `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name} and found ${collectedResource}`,
-            'ai',
-            false
-          );
+
+          // Check inventory capacity
+          if (aiPlayer.inventory.length < MAX_INVENTORY) {
+            setAiPlayer(prev => ({
+              ...prev,
+              inventory: [...prev.inventory, collectedResource]
+            }));
+
+            addNotification(
+              `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name} and found ${collectedResource}`,
+              'ai',
+              false
+            );
+          } else {
+            addNotification(
+              `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name} (inventory full, couldn't collect ${collectedResource})`,
+              'ai',
+              false
+            );
+          }
         } else {
           addNotification(
             `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name}`,
@@ -1737,12 +1820,17 @@ function AustraliaGame() {
         updateUiState({ showTravelModal: false });
         addNotification(`Traveled to ${REGIONS[region].name} for $${cost}`, 'travel');
         
-        // Collect resources
+        // Collect resources (if inventory not full)
         const regionResources = REGIONAL_RESOURCES[region] || [];
         if (regionResources.length > 0) {
           const collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
-          dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
-          addNotification(`Found ${collectedResource}!`, 'resource');
+
+          if (player.inventory.length < MAX_INVENTORY) {
+            dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
+            addNotification(`Found ${collectedResource}!`, 'resource');
+          } else {
+            addNotification(`Inventory full (${MAX_INVENTORY}/${MAX_INVENTORY})! Couldn't collect ${collectedResource}`, 'warning');
+          }
         }
         
         dispatchGameState({ type: 'INCREMENT_ACTIONS' });
@@ -2051,7 +2139,7 @@ function AustraliaGame() {
     // Resources to sell
     if (player.inventory.length > 0) {
       actions.push({
-        label: `Sell Resources (${player.inventory.length})`,
+        label: `Sell Resources (${player.inventory.length}/${MAX_INVENTORY})`,
         icon: '💰',
         action: () => {
           if (actionLimitReached) {
@@ -2684,7 +2772,7 @@ function AustraliaGame() {
                 </div>
                 <div>
                   <div className="opacity-75">Inventory</div>
-                  <div className="font-bold">{aiPlayer.inventory.length} items</div>
+                  <div className="font-bold">{aiPlayer.inventory.length}/{MAX_INVENTORY} items</div>
                 </div>
                 <div>
                   <div className="opacity-75">Current Region</div>
@@ -3302,7 +3390,7 @@ function AustraliaGame() {
             className={`${themeStyles.button} text-white px-4 py-2 rounded-lg flex items-center space-x-2 disabled:opacity-50`}
           >
             <span>💰</span>
-            <span>Market ({player.inventory.length})</span>
+            <span>Market ({player.inventory.length}/{MAX_INVENTORY})</span>
             <kbd className="ml-2 px-2 py-0.5 bg-black bg-opacity-30 rounded text-xs">R</kbd>
           </button>
           
