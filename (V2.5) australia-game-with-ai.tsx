@@ -2170,87 +2170,87 @@ function AustraliaGame() {
           {/* Scrollable Content */}
           <div className="overflow-y-auto p-6 pt-4">
             <div className="space-y-6">
-            <div className={`${themeStyles.border} border rounded-lg p-4`}>
-              <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
-              <div className="space-y-4">
-                <div>
-                  <label className="block font-semibold mb-2">Total Days: {gameSettings.totalDays}</label>
-                  <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
-                  <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays}</div>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-2">Player Actions Per Day: {gameSettings.playerActionsPerDay}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, playerActionsPerDay: parseInt(e.target.value), maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
-                  <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}</div>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-2">AI Actions Per Day: {gameSettings.aiActionsPerDay}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionsPerDay: parseInt(e.target.value), aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
-                </div>
-                <div className="flex items-center justify-between">
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
+                <div className="space-y-4">
                   <div>
-                    <div className="font-semibold">Show Day Transition Screen</div>
-                    <div className="text-sm opacity-75">Display summary between days</div>
+                    <label className="block font-semibold mb-2">Total Days: {gameSettings.totalDays}</label>
+                    <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
+                    <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays}</div>
                   </div>
-                  <button
-                    onClick={() => setGameSettings(prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
-                    className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
-                  >
-                    {gameSettings.showDayTransition ? 'ON' : 'OFF'}
-                  </button>
+                  <div>
+                    <label className="block font-semibold mb-2">Player Actions Per Day: {gameSettings.playerActionsPerDay}</label>
+                    <input type="range" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, playerActionsPerDay: parseInt(e.target.value), maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                    <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}</div>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-2">AI Actions Per Day: {gameSettings.aiActionsPerDay}</label>
+                    <input type="range" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionsPerDay: parseInt(e.target.value), aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Show Day Transition Screen</div>
+                      <div className="text-sm opacity-75">Display summary between days</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.showDayTransition ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className={`${themeStyles.border} border rounded-lg p-4`}>
-              <h4 className="text-lg font-bold mb-4">⏱️ Action Limits</h4>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">Enable Action Limits</div>
-                    <div className="text-sm opacity-75">Restrict actions per turn</div>
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">⏱️ Action Limits</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Enable Action Limits</div>
+                      <div className="text-sm opacity-75">Restrict actions per turn</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }));
+                      }}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }));
-                    }}
-                    className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
-                  >
-                    {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-2">Max Actions (Human): {gameSettings.maxActionsPerTurn}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
-                  <div className="text-xs opacity-75 mt-1">Use "Player Actions Per Day" above to adjust</div>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-2">Max Actions (AI): {gameSettings.aiMaxActionsPerTurn}</label>
-                  <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
-                  <div className="text-xs opacity-75 mt-1">Use "AI Actions Per Day" above to adjust</div>
+                  <div>
+                    <label className="block font-semibold mb-2">Max Actions (Human): {gameSettings.maxActionsPerTurn}</label>
+                    <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                    <div className="text-xs opacity-75 mt-1">Use "Player Actions Per Day" above to adjust</div>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-2">Max Actions (AI): {gameSettings.aiMaxActionsPerTurn}</label>
+                    <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                    <div className="text-xs opacity-75 mt-1">Use "AI Actions Per Day" above to adjust</div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className={`${themeStyles.border} border rounded-lg p-4`}>
-              <h4 className="text-lg font-bold mb-4">💸 Action Override</h4>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">Allow Override</div>
-                    <div className="text-sm opacity-75">Pay to exceed limit</div>
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">💸 Action Override</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Allow Override</div>
+                      <div className="text-sm opacity-75">Pay to exceed limit</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, allowActionOverride: !prev.allowActionOverride }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowActionOverride ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.allowActionOverride ? 'ON' : 'OFF'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setGameSettings(prev => ({ ...prev, allowActionOverride: !prev.allowActionOverride }))}
-                    className={`px-4 py-2 rounded font-semibold ${gameSettings.allowActionOverride ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
-                  >
-                    {gameSettings.allowActionOverride ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                <div>
-                  <label className="block font-semibold mb-2">Override Cost: ${gameSettings.overrideCost}</label>
-                  <input type="range" min="100" max="5000" step="100" value={gameSettings.overrideCost} onChange={(e) => setGameSettings(prev => ({ ...prev, overrideCost: parseInt(e.target.value) }))} className="w-full" />
+                  <div>
+                    <label className="block font-semibold mb-2">Override Cost: ${gameSettings.overrideCost}</label>
+                    <input type="range" min="100" max="5000" step="100" value={gameSettings.overrideCost} onChange={(e) => setGameSettings(prev => ({ ...prev, overrideCost: parseInt(e.target.value) }))} className="w-full" />
+                  </div>
                 </div>
               </div>
-            </div>
             </div>
           </div>
 
