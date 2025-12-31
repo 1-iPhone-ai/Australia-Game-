@@ -420,6 +420,9 @@ type GameSettingsState = {
   playerActionsPerDay: number;
   aiActionsPerDay: number;
   showDayTransition: boolean;
+  // Challenge Risk/Reward options (optional features)
+  dynamicWagerEnabled: boolean;
+  doubleOrNothingEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -477,7 +480,10 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   totalDays: 30,
   playerActionsPerDay: 3,
   aiActionsPerDay: 3,
-  showDayTransition: false
+  showDayTransition: false,
+  // Challenge features (disabled by default for classic gameplay)
+  dynamicWagerEnabled: false,
+  doubleOrNothingEnabled: false
 };
 
 const DEFAULT_DONT_ASK: DontAskAgainPrefs = {
@@ -2709,25 +2715,207 @@ function AustraliaGame() {
   }, [gameState.resourcePrices]);
 
   // =========================================
-  // THEME SYSTEM
+  // THEME SYSTEM - Comprehensive Light/Dark Mode
   // =========================================
 
   const themeStyles = useMemo(() => {
     const isDark = uiState.theme === "dark";
     return {
-      background: isDark ? "bg-gray-900" : "bg-gray-100",
-      text: isDark ? "text-white" : "text-gray-900",
-      card: isDark ? "bg-gray-800" : "bg-white",
-      border: isDark ? "border-gray-700" : "border-gray-300",
-      button: isDark ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-500 hover:bg-blue-600",
-      buttonSecondary: isDark ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-300 hover:bg-gray-400",
-      accent: isDark ? "bg-purple-600" : "bg-purple-500",
-      shadow: isDark ? "shadow-2xl" : "shadow-lg",
+      // === BACKGROUNDS ===
+      background: isDark ? "bg-gray-900" : "bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50",
+      backgroundSecondary: isDark ? "bg-gray-800" : "bg-white",
+      backgroundTertiary: isDark ? "bg-gray-700" : "bg-gray-50",
+      backgroundHover: isDark ? "hover:bg-gray-700" : "hover:bg-gray-100",
+      backgroundActive: isDark ? "bg-gray-600" : "bg-gray-200",
       overlay: isDark ? "bg-black bg-opacity-70" : "bg-black bg-opacity-50",
-      success: isDark ? "bg-green-700" : "bg-green-500",
-      error: isDark ? "bg-red-700" : "bg-red-500",
-      warning: isDark ? "bg-yellow-700" : "bg-yellow-500",
-      ai: isDark ? "bg-pink-600" : "bg-pink-500",
+      overlayLight: isDark ? "bg-black bg-opacity-50" : "bg-white bg-opacity-70",
+
+      // === CARDS & CONTAINERS ===
+      card: isDark ? "bg-gray-800" : "bg-white",
+      cardHover: isDark ? "hover:bg-gray-750" : "hover:bg-gray-50",
+      cardElevated: isDark ? "bg-gray-800 shadow-2xl" : "bg-white shadow-xl",
+      panel: isDark ? "bg-gray-800/90 backdrop-blur-sm" : "bg-white/90 backdrop-blur-sm",
+      tooltip: isDark ? "bg-gray-700" : "bg-gray-800 text-white",
+      modal: isDark ? "bg-gray-800" : "bg-white",
+
+      // === TYPOGRAPHY ===
+      text: isDark ? "text-white" : "text-gray-900",
+      textSecondary: isDark ? "text-gray-300" : "text-gray-600",
+      textMuted: isDark ? "text-gray-400" : "text-gray-500",
+      textDisabled: isDark ? "text-gray-500" : "text-gray-400",
+      heading: isDark ? "text-white" : "text-gray-900",
+      label: isDark ? "text-gray-300" : "text-gray-700",
+      link: isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-600 hover:text-blue-700",
+      placeholder: isDark ? "placeholder-gray-500" : "placeholder-gray-400",
+
+      // === BORDERS & DIVIDERS ===
+      border: isDark ? "border-gray-700" : "border-gray-200",
+      borderLight: isDark ? "border-gray-600" : "border-gray-300",
+      borderFocus: isDark ? "focus:border-blue-500" : "focus:border-blue-400",
+      divider: isDark ? "border-gray-700" : "border-gray-200",
+      ring: isDark ? "ring-gray-600" : "ring-gray-300",
+      ringFocus: isDark ? "focus:ring-blue-500" : "focus:ring-blue-400",
+
+      // === PRIMARY BUTTONS ===
+      button: isDark
+        ? "bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg shadow-blue-500/25"
+        : "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-lg shadow-blue-500/30",
+      buttonDisabled: isDark
+        ? "bg-gray-600 text-gray-400 cursor-not-allowed"
+        : "bg-gray-300 text-gray-500 cursor-not-allowed",
+
+      // === SECONDARY BUTTONS ===
+      buttonSecondary: isDark
+        ? "bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white border border-gray-600"
+        : "bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 border border-gray-300 shadow-sm",
+
+      // === GHOST/TERTIARY BUTTONS ===
+      buttonGhost: isDark
+        ? "bg-transparent hover:bg-gray-700/50 text-gray-300 hover:text-white"
+        : "bg-transparent hover:bg-gray-100 text-gray-600 hover:text-gray-900",
+      buttonTertiary: isDark
+        ? "bg-gray-700/50 hover:bg-gray-600/50 text-gray-300"
+        : "bg-gray-100 hover:bg-gray-200 text-gray-700",
+
+      // === ACCENT BUTTONS ===
+      accent: isDark
+        ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25"
+        : "bg-purple-500 hover:bg-purple-600 text-white shadow-lg shadow-purple-500/30",
+      accentSecondary: isDark
+        ? "bg-purple-600/20 text-purple-400 border border-purple-500/30"
+        : "bg-purple-50 text-purple-700 border border-purple-200",
+
+      // === STATUS COLORS ===
+      success: isDark ? "bg-green-600" : "bg-green-500",
+      successLight: isDark ? "bg-green-600/20 text-green-400" : "bg-green-50 text-green-700",
+      successBorder: isDark ? "border-green-500" : "border-green-400",
+      error: isDark ? "bg-red-600" : "bg-red-500",
+      errorLight: isDark ? "bg-red-600/20 text-red-400" : "bg-red-50 text-red-700",
+      errorBorder: isDark ? "border-red-500" : "border-red-400",
+      warning: isDark ? "bg-yellow-600" : "bg-yellow-500",
+      warningLight: isDark ? "bg-yellow-600/20 text-yellow-400" : "bg-yellow-50 text-yellow-700",
+      warningBorder: isDark ? "border-yellow-500" : "border-yellow-400",
+      info: isDark ? "bg-blue-600" : "bg-blue-500",
+      infoLight: isDark ? "bg-blue-600/20 text-blue-400" : "bg-blue-50 text-blue-700",
+
+      // === AI/SPECIAL ===
+      ai: isDark
+        ? "bg-gradient-to-r from-pink-600 to-purple-600 text-white"
+        : "bg-gradient-to-r from-pink-500 to-purple-500 text-white",
+      aiLight: isDark ? "bg-pink-600/20 text-pink-400" : "bg-pink-50 text-pink-700",
+
+      // === INPUTS ===
+      input: isDark
+        ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20"
+        : "bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20",
+      inputDisabled: isDark
+        ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed"
+        : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed",
+      select: isDark
+        ? "bg-gray-700 border-gray-600 text-white"
+        : "bg-white border-gray-300 text-gray-900",
+      checkbox: isDark
+        ? "bg-gray-700 border-gray-500 checked:bg-blue-600"
+        : "bg-white border-gray-300 checked:bg-blue-500",
+      toggle: isDark
+        ? "bg-gray-600 peer-checked:bg-blue-600"
+        : "bg-gray-300 peer-checked:bg-blue-500",
+      slider: isDark
+        ? "bg-gray-600 accent-blue-500"
+        : "bg-gray-300 accent-blue-500",
+
+      // === SHADOWS ===
+      shadow: isDark ? "shadow-2xl shadow-black/50" : "shadow-xl shadow-gray-200/50",
+      shadowSm: isDark ? "shadow-lg shadow-black/30" : "shadow-md shadow-gray-200/40",
+      shadowInner: isDark ? "shadow-inner shadow-black/30" : "shadow-inner shadow-gray-200/50",
+
+      // === SCROLLBAR ===
+      scrollbar: isDark
+        ? "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-500"
+        : "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-gray-400",
+
+      // === PROGRESS BARS ===
+      progressTrack: isDark ? "bg-gray-700" : "bg-gray-200",
+      progressBar: isDark ? "bg-gradient-to-r from-blue-500 to-purple-500" : "bg-gradient-to-r from-blue-400 to-purple-400",
+
+      // === BADGES ===
+      badge: isDark ? "bg-gray-700 text-gray-300" : "bg-gray-100 text-gray-700",
+      badgePrimary: isDark ? "bg-blue-600/30 text-blue-400" : "bg-blue-100 text-blue-700",
+      badgeSuccess: isDark ? "bg-green-600/30 text-green-400" : "bg-green-100 text-green-700",
+      badgeWarning: isDark ? "bg-yellow-600/30 text-yellow-400" : "bg-yellow-100 text-yellow-700",
+      badgeError: isDark ? "bg-red-600/30 text-red-400" : "bg-red-100 text-red-700",
+
+      // === TABS ===
+      tab: isDark
+        ? "text-gray-400 hover:text-white border-b-2 border-transparent hover:border-gray-500"
+        : "text-gray-500 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300",
+      tabActive: isDark
+        ? "text-white border-b-2 border-blue-500"
+        : "text-blue-600 border-b-2 border-blue-500",
+
+      // === TABLES ===
+      tableHeader: isDark ? "bg-gray-700 text-gray-300" : "bg-gray-50 text-gray-600",
+      tableRow: isDark ? "border-gray-700 hover:bg-gray-700/50" : "border-gray-200 hover:bg-gray-50",
+      tableRowAlt: isDark ? "bg-gray-800/50" : "bg-gray-50/50",
+
+      // === LISTS ===
+      listItem: isDark
+        ? "border-gray-700 hover:bg-gray-700/50"
+        : "border-gray-200 hover:bg-gray-50",
+      listItemActive: isDark
+        ? "bg-blue-600/20 border-blue-500"
+        : "bg-blue-50 border-blue-400",
+
+      // === ACCORDIONS ===
+      accordionHeader: isDark
+        ? "bg-gray-700 hover:bg-gray-600"
+        : "bg-gray-100 hover:bg-gray-200",
+      accordionContent: isDark ? "bg-gray-800" : "bg-white",
+
+      // === NAVIGATION ===
+      nav: isDark ? "bg-gray-800/95 backdrop-blur-md" : "bg-white/95 backdrop-blur-md",
+      navItem: isDark
+        ? "text-gray-300 hover:text-white hover:bg-gray-700"
+        : "text-gray-600 hover:text-gray-900 hover:bg-gray-100",
+      navItemActive: isDark
+        ? "text-white bg-blue-600"
+        : "text-blue-600 bg-blue-50",
+
+      // === GRADIENTS ===
+      gradientPrimary: isDark
+        ? "bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600"
+        : "bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500",
+      gradientSuccess: isDark
+        ? "bg-gradient-to-r from-green-600 to-emerald-600"
+        : "bg-gradient-to-r from-green-400 to-emerald-400",
+      gradientWarning: isDark
+        ? "bg-gradient-to-r from-yellow-600 to-orange-600"
+        : "bg-gradient-to-r from-yellow-400 to-orange-400",
+      gradientDanger: isDark
+        ? "bg-gradient-to-r from-red-600 to-pink-600"
+        : "bg-gradient-to-r from-red-500 to-pink-500",
+
+      // === SPECIAL EFFECTS ===
+      glow: isDark ? "shadow-lg shadow-blue-500/30" : "shadow-lg shadow-blue-400/20",
+      glowSuccess: isDark ? "shadow-lg shadow-green-500/30" : "shadow-lg shadow-green-400/20",
+      glowWarning: isDark ? "shadow-lg shadow-yellow-500/30" : "shadow-lg shadow-yellow-400/20",
+      glowDanger: isDark ? "shadow-lg shadow-red-500/30" : "shadow-lg shadow-red-400/20",
+
+      // === MENU SCREEN SPECIFIC ===
+      menuBackground: isDark
+        ? "bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900"
+        : "bg-gradient-to-br from-blue-50 via-indigo-100 to-purple-100",
+      menuCard: isDark
+        ? "bg-gray-800/80 backdrop-blur-lg border-gray-700"
+        : "bg-white/80 backdrop-blur-lg border-white shadow-2xl",
+      menuTitle: isDark
+        ? "text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400"
+        : "text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600",
+
+      // === KEYBOARD SHORTCUTS ===
+      kbd: isDark
+        ? "bg-gray-700 border-gray-600 text-gray-300 shadow-sm"
+        : "bg-gray-100 border-gray-300 text-gray-600 shadow-sm",
     };
   }, [uiState.theme]);
 
@@ -2916,7 +3104,7 @@ function AustraliaGame() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
+          <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
             <h3 className="text-2xl font-bold">⚙️ Game Settings</h3>
             <button
               onClick={() => updateUiState({ showSettings: false })}
@@ -2927,7 +3115,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
             <div className="space-y-6">
               <div className={`${themeStyles.border} border rounded-lg p-4`}>
                 <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
@@ -3010,11 +3198,40 @@ function AustraliaGame() {
                   </div>
                 </div>
               </div>
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">🎰 Challenge Options</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Dynamic Wager System</div>
+                      <div className="text-sm opacity-75">Scale max wager based on challenge difficulty (default: fixed $50-500)</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, dynamicWagerEnabled: !prev.dynamicWagerEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.dynamicWagerEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.dynamicWagerEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Double or Nothing</div>
+                      <div className="text-sm opacity-75">After winning, risk reward for double payout</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, doubleOrNothingEnabled: !prev.doubleOrNothingEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.doubleOrNothingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.doubleOrNothingEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-6 pt-4 border-t border-gray-700">
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
@@ -3036,7 +3253,7 @@ function AustraliaGame() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
+          <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
             <h3 className="text-2xl font-bold">💾 Save / Load Game</h3>
             <button
               onClick={() => updateUiState({ showSaveLoadModal: false })}
@@ -3100,14 +3317,14 @@ function AustraliaGame() {
               </div>
 
               {/* Quick Tip */}
-              <div className="text-xs opacity-75 text-center pt-2 border-t border-gray-700">
+              <div className={`text-xs opacity-75 text-center pt-2 border-t ${themeStyles.border}`}>
                 💡 Quick tip: Press <kbd className="px-2 py-1 bg-black bg-opacity-30 rounded">Ctrl+S</kbd> anytime to quick save
               </div>
             </div>
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-6 pt-4 border-t border-gray-700">
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showSaveLoadModal: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
@@ -3128,7 +3345,7 @@ function AustraliaGame() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-3xl w-full max-h-[80vh] overflow-y-auto`}>
+        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-3xl w-full max-h-[80vh] overflow-y-auto ${themeStyles.scrollbar}`}>
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-bold">🏆 End-Game Modes</h3>
             <button onClick={() => updateUiState({ showEndGameModes: false })} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
@@ -3224,7 +3441,7 @@ function AustraliaGame() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className="p-6 pb-4 border-b border-gray-700">
+          <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-2xl font-bold">Load Save Preview</h3>
@@ -3237,7 +3454,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 200px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 200px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="font-bold mb-2">Save Details</div>
@@ -3282,7 +3499,7 @@ function AustraliaGame() {
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-6 pt-4 border-t border-gray-700">
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <div className="flex flex-col md:flex-row md:justify-end gap-3">
               <button onClick={closeLoadPreview} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg w-full md:w-auto`}>
                 Cancel
@@ -3510,7 +3727,7 @@ function AustraliaGame() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-700">
+          <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
             <h3 className="text-2xl font-bold">📊 Progress Dashboard</h3>
             <button
               onClick={() => updateUiState({ showProgress: false })}
@@ -3521,7 +3738,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Time Progress */}
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
@@ -3789,7 +4006,7 @@ function AustraliaGame() {
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-6 pt-4 border-t border-gray-700">
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showProgress: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
@@ -3802,47 +4019,77 @@ function AustraliaGame() {
 
   // Menu Screen with AI Mode Option
   const renderMenu = () => {
+    const isDark = uiState.theme === "dark";
+
     return (
-      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-lg w-full text-center ${themeStyles.shadow}`}>
-          <h1 className="text-5xl font-bold mb-2">🦘</h1>
-          <h1 className="text-4xl font-bold mb-4">Aussie Adventure</h1>
-          <p className="mb-6 opacity-75">Explore Australia, take on challenges, and become the ultimate adventurer!</p>
-          
+      <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-center justify-center p-6 relative overflow-hidden`}>
+        {/* Animated background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className={`absolute top-20 left-10 w-72 h-72 ${isDark ? 'bg-blue-500/10' : 'bg-blue-300/20'} rounded-full blur-3xl animate-pulse`}></div>
+          <div className={`absolute bottom-20 right-10 w-96 h-96 ${isDark ? 'bg-purple-500/10' : 'bg-purple-300/20'} rounded-full blur-3xl animate-pulse`} style={{ animationDelay: '1s' }}></div>
+          <div className={`absolute top-1/2 left-1/2 w-64 h-64 ${isDark ? 'bg-amber-500/5' : 'bg-amber-300/15'} rounded-full blur-3xl animate-pulse`} style={{ animationDelay: '2s' }}></div>
+        </div>
+
+        <div className={`${themeStyles.menuCard} rounded-2xl p-8 max-w-lg w-full text-center relative z-10`}>
+          {/* Logo and Title */}
+          <div className="mb-6">
+            <div className="text-6xl mb-3 animate-bounce" style={{ animationDuration: '2s' }}>🦘</div>
+            <h1 className={`text-4xl font-extrabold mb-2 ${themeStyles.menuTitle}`}>
+              Aussie Adventure
+            </h1>
+            <p className={`${themeStyles.textMuted} text-sm`}>
+              Explore Australia, take on challenges, and become the ultimate adventurer!
+            </p>
+          </div>
+
           {/* Character Selection */}
           <div className="mb-6">
-            <h3 className="font-bold mb-3 text-lg">Choose Your Character</h3>
+            <h3 className={`${themeStyles.heading} text-lg mb-4 flex items-center justify-center gap-2`}>
+              <span>👤</span> Choose Your Character
+            </h3>
             <div className="grid grid-cols-2 gap-3">
               {CHARACTERS.map((char, index) => (
                 <button
                   key={index}
                   onClick={() => updateUiState({ selectedCharacter: index })}
-                  className={`${themeStyles.border} border-2 rounded-lg p-4 transition-all ${
+                  className={`relative rounded-xl p-4 transition-all duration-300 transform hover:scale-105 ${
                     uiState.selectedCharacter === index
-                      ? 'border-blue-500 bg-blue-500 bg-opacity-20'
-                      : 'border-gray-600 hover:border-gray-500'
+                      ? isDark
+                        ? 'bg-gradient-to-br from-blue-600/30 to-purple-600/30 border-2 border-blue-400 shadow-lg shadow-blue-500/20'
+                        : 'bg-gradient-to-br from-blue-100 to-purple-100 border-2 border-blue-500 shadow-lg shadow-blue-300/50'
+                      : isDark
+                        ? 'bg-gray-700/50 border-2 border-gray-600 hover:border-gray-500 hover:bg-gray-700/70'
+                        : 'bg-white/50 border-2 border-gray-200 hover:border-gray-300 hover:bg-white/80'
                   }`}
                 >
+                  {uiState.selectedCharacter === index && (
+                    <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                      ✓
+                    </div>
+                  )}
                   <div className="text-4xl mb-2">{char.avatar}</div>
-                  <div className="font-bold">{char.name}</div>
-                  <div className="text-xs opacity-75 mt-1">{char.ability}</div>
-                  <div className="text-xs mt-1">${char.startingMoney}</div>
+                  <div className={`font-bold ${themeStyles.text}`}>{char.name}</div>
+                  <div className={`text-xs ${themeStyles.textMuted} mt-1`}>{char.ability}</div>
+                  <div className={`text-xs mt-2 font-semibold ${isDark ? 'text-green-400' : 'text-green-600'}`}>
+                    💰 ${char.startingMoney}
+                  </div>
                 </button>
               ))}
             </div>
           </div>
-          
+
           {/* Player Name Input */}
           <div className="mb-6">
+            <label className={`${themeStyles.label} text-sm mb-2 block text-left`}>Your Name</label>
             <input
               type="text"
-              placeholder="Enter your name"
+              placeholder="Enter your adventurer name..."
               value={uiState.playerName}
               onChange={(e) => updateUiState({ playerName: e.target.value })}
-              className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-4 py-2 w-full`}
+              className={`${themeStyles.input} rounded-xl px-4 py-3 w-full text-center font-medium`}
             />
           </div>
-          
+
           {/* Game Mode Selection */}
           <div className="space-y-3">
             <button
@@ -3861,32 +4108,57 @@ function AustraliaGame() {
                 addNotification('Welcome to Australia! 🦘', 'info', true);
                 addNotification('Press ? for keyboard shortcuts', 'info', true);
               }}
-              className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-[1.02] ${
+                isDark
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-lg shadow-blue-500/30'
+                  : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/40'
+              }`}
             >
               🎮 Single Player Mode
             </button>
-            
+
             <button
               onClick={() => updateUiState({ showCampaignSelect: true })}
-              className={`${themeStyles.accent} text-white px-6 py-3 rounded-lg w-full font-bold`}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-[1.02] ${
+                isDark
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg shadow-purple-500/30'
+                  : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-500/40'
+              }`}
             >
               🤖 AI Opponent Mode
             </button>
+
             <button
               onClick={() => updateUiState({ showSaveLoadModal: true })}
-              className={`${themeStyles.buttonSecondary} px-6 py-3 rounded-lg w-full font-bold`}
+              className={`w-full py-3 rounded-xl font-semibold transition-all duration-300 ${
+                isDark
+                  ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600'
+                  : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200 shadow-sm'
+              }`}
             >
               💾 Save / Load Game
             </button>
           </div>
-          
-          {/* Theme Toggle */}
-          <button
-            onClick={() => updateUiState({ theme: uiState.theme === "dark" ? "light" : "dark" })}
-            className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg mt-6`}
-          >
-            {uiState.theme === "dark" ? "☀️" : "🌙"} Toggle Theme
-          </button>
+
+          {/* Theme Toggle & Settings */}
+          <div className="mt-6 pt-4 border-t border-opacity-20 flex items-center justify-center gap-3">
+            <button
+              onClick={() => updateUiState({ theme: uiState.theme === "dark" ? "light" : "dark" })}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 flex items-center gap-2 ${
+                isDark
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+            >
+              {uiState.theme === "dark" ? "☀️" : "🌙"}
+              <span className="text-sm">{uiState.theme === "dark" ? "Light" : "Dark"} Mode</span>
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div className={`mt-4 text-xs ${themeStyles.textDisabled}`}>
+            Press <kbd className={`px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>?</kbd> for keyboard shortcuts
+          </div>
         </div>
       </div>
     );
@@ -3895,85 +4167,134 @@ function AustraliaGame() {
   // Campaign/AI Difficulty Selection
   const renderCampaignSelect = () => {
     if (!uiState.showCampaignSelect) return null;
-    
+    const isDark = uiState.theme === "dark";
+
+    const difficultyColors: Record<string, { bg: string, border: string, glow: string }> = {
+      easy: {
+        bg: isDark ? 'from-green-600/20 to-emerald-600/20' : 'from-green-100 to-emerald-100',
+        border: isDark ? 'border-green-500' : 'border-green-400',
+        glow: isDark ? 'shadow-green-500/20' : 'shadow-green-400/30'
+      },
+      medium: {
+        bg: isDark ? 'from-yellow-600/20 to-amber-600/20' : 'from-yellow-100 to-amber-100',
+        border: isDark ? 'border-yellow-500' : 'border-yellow-400',
+        glow: isDark ? 'shadow-yellow-500/20' : 'shadow-yellow-400/30'
+      },
+      hard: {
+        bg: isDark ? 'from-red-600/20 to-orange-600/20' : 'from-red-100 to-orange-100',
+        border: isDark ? 'border-red-500' : 'border-red-400',
+        glow: isDark ? 'shadow-red-500/20' : 'shadow-red-400/30'
+      },
+      expert: {
+        bg: isDark ? 'from-purple-600/20 to-pink-600/20' : 'from-purple-100 to-pink-100',
+        border: isDark ? 'border-purple-500' : 'border-purple-400',
+        glow: isDark ? 'shadow-purple-500/20' : 'shadow-purple-400/30'
+      }
+    };
+
     return (
-      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-2xl w-full ${themeStyles.shadow}`}>
-          <h2 className="text-3xl font-bold mb-6 text-center">🤖 Select AI Difficulty</h2>
-          
+      <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-center justify-center p-6 relative overflow-hidden`}>
+        {/* Background effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className={`absolute top-10 right-20 w-80 h-80 ${isDark ? 'bg-purple-500/10' : 'bg-purple-300/20'} rounded-full blur-3xl animate-pulse`}></div>
+          <div className={`absolute bottom-10 left-20 w-64 h-64 ${isDark ? 'bg-blue-500/10' : 'bg-blue-300/20'} rounded-full blur-3xl animate-pulse`} style={{ animationDelay: '1s' }}></div>
+        </div>
+
+        <div className={`${themeStyles.menuCard} rounded-2xl p-8 max-w-2xl w-full relative z-10`}>
+          <div className="text-center mb-8">
+            <div className="text-5xl mb-3">🤖</div>
+            <h2 className={`text-3xl font-extrabold ${themeStyles.menuTitle}`}>Select AI Difficulty</h2>
+            <p className={`${themeStyles.textMuted} mt-2`}>Choose your opponent's skill level</p>
+          </div>
+
           <div className="space-y-4">
-            {Object.entries(AI_DIFFICULTY_PROFILES).map(([key, profile]) => (
-              <button
-                key={key}
-                onClick={() => {
-                  const aiCharIndex = Math.floor(Math.random() * CHARACTERS.length);
-                  const aiChar = CHARACTERS[aiCharIndex];
-                  
-                  dispatchPlayer({
-                    type: 'RESET_PLAYER',
-                    payload: {
-                      characterIndex: uiState.selectedCharacter,
-                      name: uiState.playerName || "Player"
-                    }
-                  });
-                  
-                  setAiPlayer({
-                    money: aiChar.startingMoney,
-                    currentRegion: "QLD",
-                    inventory: [],
-                    visitedRegions: ["QLD"],
-                    challengesCompleted: [],
-                    character: aiChar,
-                    level: 1,
-                    xp: 0,
-                    stats: { ...aiChar.startingStats },
-                    consecutiveWins: 0,
-                    specialAbilityUses: aiChar.specialAbility.usesLeft,
-                    masteryUnlocks: [],
-                    name: `${aiChar.name} AI`,
-                    actionsUsedThisTurn: 0
-                  });
-                  
-                  dispatchGameState({ type: 'SET_SELECTED_MODE', payload: 'ai' });
-                  dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: key });
-                  dispatchGameState({ type: 'SET_TURN', payload: 'player' });
-                  dispatchGameState({ type: 'SET_GAME_MODE', payload: 'game' });
-                  dispatchGameState({ type: 'RESET_GAME' });
-                  updateUiState({ showCampaignSelect: false });
-                  addNotification(`AI Battle started! Difficulty: ${profile.name}`, 'ai', true);
-                  addNotification('Press ? for keyboard shortcuts', 'info', true);
-                }}
-                className={`${themeStyles.border} border rounded-lg p-6 w-full text-left hover:border-blue-500 transition-all`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="font-bold text-lg mb-2">{profile.name}</div>
-                    <p className="text-sm opacity-75 mb-2">{profile.description}</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs opacity-75">
-                      <div>Decision Quality: {Math.round(profile.decisionQuality * 100)}%</div>
-                      <div>Risk Tolerance: {Math.round(profile.riskTolerance * 100)}%</div>
-                      <div>Planning Depth: Level {profile.planningDepth}</div>
-                      <div>Mistake Rate: {Math.round(profile.mistakeChance * 100)}%</div>
+            {Object.entries(AI_DIFFICULTY_PROFILES).map(([key, profile]) => {
+              const colors = difficultyColors[key] || difficultyColors.medium;
+              return (
+                <button
+                  key={key}
+                  onClick={() => {
+                    const aiCharIndex = Math.floor(Math.random() * CHARACTERS.length);
+                    const aiChar = CHARACTERS[aiCharIndex];
+
+                    dispatchPlayer({
+                      type: 'RESET_PLAYER',
+                      payload: {
+                        characterIndex: uiState.selectedCharacter,
+                        name: uiState.playerName || "Player"
+                      }
+                    });
+
+                    setAiPlayer({
+                      money: aiChar.startingMoney,
+                      currentRegion: "QLD",
+                      inventory: [],
+                      visitedRegions: ["QLD"],
+                      challengesCompleted: [],
+                      character: aiChar,
+                      level: 1,
+                      xp: 0,
+                      stats: { ...aiChar.startingStats },
+                      consecutiveWins: 0,
+                      specialAbilityUses: aiChar.specialAbility.usesLeft,
+                      masteryUnlocks: [],
+                      name: `${aiChar.name} AI`,
+                      actionsUsedThisTurn: 0
+                    });
+
+                    dispatchGameState({ type: 'SET_SELECTED_MODE', payload: 'ai' });
+                    dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: key });
+                    dispatchGameState({ type: 'SET_TURN', payload: 'player' });
+                    dispatchGameState({ type: 'SET_GAME_MODE', payload: 'game' });
+                    dispatchGameState({ type: 'RESET_GAME' });
+                    updateUiState({ showCampaignSelect: false });
+                    addNotification(`AI Battle started! Difficulty: ${profile.name}`, 'ai', true);
+                    addNotification('Press ? for keyboard shortcuts', 'info', true);
+                  }}
+                  className={`w-full text-left rounded-xl p-5 transition-all duration-300 transform hover:scale-[1.02] border-2 bg-gradient-to-r ${colors.bg} ${colors.border} hover:shadow-lg ${colors.glow}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className={`font-bold text-xl mb-1 ${themeStyles.text}`}>{profile.name}</div>
+                      <p className={`text-sm ${themeStyles.textSecondary} mb-3`}>{profile.description}</p>
+                      <div className={`grid grid-cols-2 gap-2 text-xs ${themeStyles.textMuted}`}>
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-500">🎯</span> Decision: {Math.round(profile.decisionQuality * 100)}%
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-yellow-500">⚡</span> Risk: {Math.round(profile.riskTolerance * 100)}%
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-purple-500">🧠</span> Planning: Lvl {profile.planningDepth}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-red-500">❌</span> Mistakes: {Math.round(profile.mistakeChance * 100)}%
+                        </div>
+                      </div>
+                    </div>
+                    <div className={`px-4 py-2 rounded-lg text-sm font-bold ml-4 text-white ${
+                      key === 'easy' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                      key === 'medium' ? 'bg-gradient-to-r from-yellow-500 to-amber-500' :
+                      key === 'hard' ? 'bg-gradient-to-r from-red-500 to-orange-500' :
+                      'bg-gradient-to-r from-purple-500 to-pink-500'
+                    }`}>
+                      {key.toUpperCase()}
                     </div>
                   </div>
-                  <div className={`px-3 py-1 rounded text-sm ml-4 ${
-                    key === 'easy' ? 'bg-green-600' :
-                    key === 'medium' ? 'bg-yellow-600' :
-                    key === 'hard' ? 'bg-red-600' :
-                    'bg-purple-600'
-                  }`}>
-                    {profile.name.toUpperCase()}
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
-          
+
           <button
             onClick={() => updateUiState({ showCampaignSelect: false })}
-            className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg w-full mt-6`}
+            className={`w-full mt-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+              isDark
+                ? 'bg-gray-700/80 hover:bg-gray-600 text-gray-200 border border-gray-600'
+                : 'bg-white/80 hover:bg-white text-gray-700 border border-gray-200'
+            }`}
           >
-            Back
+            ← Back to Menu
           </button>
         </div>
       </div>
@@ -4226,8 +4547,8 @@ function AustraliaGame() {
             </button>
           )}
 
-          {/* Double or Nothing Button - Shows after winning a challenge */}
-          {gameState.doubleOrNothingAvailable && isPlayerTurn && (
+          {/* Double or Nothing Button - Shows after winning a challenge (only if enabled in settings) */}
+          {gameSettings.doubleOrNothingEnabled && gameState.doubleOrNothingAvailable && isPlayerTurn && (
             <button
               onClick={handleDoubleOrNothing}
               className="bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-2 rounded-lg flex items-center space-x-2 animate-pulse"
@@ -4533,7 +4854,7 @@ function AustraliaGame() {
         {/* Travel Modal */}
         {uiState.showTravelModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-96 overflow-y-auto`}>
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-96 overflow-y-auto ${themeStyles.scrollbar}`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">✈️ Travel</h3>
                 <button
@@ -4631,11 +4952,12 @@ function AustraliaGame() {
                 </div>
               </div>
 
-              <div className="space-y-3 overflow-y-auto flex-1">
+              <div className={`space-y-3 overflow-y-auto flex-1 ${themeStyles.scrollbar}`}>
                 {currentRegion.challenges.map((challenge: any, index: number) => {
                   const isCompleted = player.challengesCompleted.includes(challenge.name);
                   const successChance = calculateSuccessChance(challenge);
-                  const dynamicMaxWager = calculateMaxWager(challenge);
+                  // Use dynamic wager only if enabled, otherwise fixed $500 max
+                  const dynamicMaxWager = gameSettings.dynamicWagerEnabled ? calculateMaxWager(challenge) : 500;
                   const maxWager = Math.min(player.money, dynamicMaxWager);
 
                   // Calculate weather/season bonuses for display
@@ -4677,7 +4999,9 @@ function AustraliaGame() {
                         <div className="text-right">
                           <div className="text-sm">Difficulty: {'⭐'.repeat(challenge.difficulty)}</div>
                           <div className="text-sm">Reward: {challenge.reward}x</div>
-                          <div className="text-xs opacity-50">Max bet: ${dynamicMaxWager}</div>
+                          {gameSettings.dynamicWagerEnabled && (
+                            <div className="text-xs opacity-50">Max bet: ${dynamicMaxWager}</div>
+                          )}
                         </div>
                       </div>
 
@@ -4703,7 +5027,8 @@ function AustraliaGame() {
                             >
                               Take Challenge (${Math.min(uiState.wagerAmount, maxWager)})
                             </button>
-                            {maxWager >= 200 && (
+                            {/* Max button only shows when dynamic wager is enabled */}
+                            {gameSettings.dynamicWagerEnabled && maxWager >= 200 && (
                               <button
                                 onClick={() => takeChallenge(challenge, maxWager)}
                                 disabled={player.money < maxWager || !isPlayerTurn}
@@ -4821,7 +5146,7 @@ function AustraliaGame() {
                   No resources to sell. Collect some resources first!
                 </div>
               ) : (
-                <div className="space-y-3 overflow-y-auto flex-1">
+                <div className={`space-y-3 overflow-y-auto flex-1 ${themeStyles.scrollbar}`}>
                   {(() => {
                     // Get unique resources with counts
                     let resourceData = Array.from(new Set(player.inventory)).map(resource => ({
@@ -5057,7 +5382,7 @@ function AustraliaGame() {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className="p-6 pb-4 border-b border-gray-700">
+          <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-2xl font-bold">📜 Notification History</h3>
               <button
@@ -5112,7 +5437,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Notifications List */}
-          <div className="flex-1 overflow-y-scroll p-6 pt-4" style={{ maxHeight: 'calc(90vh - 280px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 280px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
             <div className="space-y-2">
             {filteredNotifications.length === 0 ? (
               <div className="text-center py-8 opacity-60">
@@ -5154,7 +5479,7 @@ function AustraliaGame() {
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-6 pt-4 border-t border-gray-700">
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showNotifications: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
