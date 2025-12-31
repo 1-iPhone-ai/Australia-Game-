@@ -481,9 +481,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   playerActionsPerDay: 3,
   aiActionsPerDay: 3,
   showDayTransition: false,
-  // Challenge features (enabled by default)
-  dynamicWagerEnabled: true,
-  doubleOrNothingEnabled: true
+  // Challenge features (disabled by default for classic gameplay)
+  dynamicWagerEnabled: false,
+  doubleOrNothingEnabled: false
 };
 
 const DEFAULT_DONT_ASK: DontAskAgainPrefs = {
