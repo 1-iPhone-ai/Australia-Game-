@@ -853,6 +853,12 @@ function AustraliaGame() {
   const notificationEndRef = useRef<HTMLDivElement>(null);
   const aiTurnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const aiPlayerRef = useRef(aiPlayer);
+
+  // Keep aiPlayerRef in sync with aiPlayer state
+  useEffect(() => {
+    aiPlayerRef.current = aiPlayer;
+  }, [aiPlayer]);
 
   // =========================================
   // NOTIFICATION SYSTEM
@@ -1606,21 +1612,24 @@ function AustraliaGame() {
   const executeAiAction = useCallback((action: AIAction) => {
     setCurrentAiAction(action);
 
+    // Get fresh AI state from ref to avoid stale closure
+    const currentAi = aiPlayerRef.current;
+
     // Validate action before execution
     try {
       switch (action.type) {
         case 'challenge':
           // Validate AI has money for wager
-          if (action.data?.wager && aiPlayer.money < action.data.wager) {
-            addNotification(`🤖 ${aiPlayer.name} can't afford challenge (needs $${action.data.wager})`, 'ai', false);
+          if (action.data?.wager && currentAi.money < action.data.wager) {
+            addNotification(`🤖 ${currentAi.name} can't afford challenge (needs $${action.data.wager})`, 'ai', false);
             return;
           }
           break;
 
         case 'travel':
           // Validate AI has money for travel
-          if (action.data?.cost && aiPlayer.money < action.data.cost) {
-            addNotification(`🤖 ${aiPlayer.name} can't afford travel (needs $${action.data.cost})`, 'ai', false);
+          if (action.data?.cost && currentAi.money < action.data.cost) {
+            addNotification(`🤖 ${currentAi.name} can't afford travel (needs $${action.data.cost})`, 'ai', false);
             return;
           }
           // Validate region exists
@@ -1632,16 +1641,16 @@ function AustraliaGame() {
 
         case 'sell':
           // Validate AI has resource in inventory
-          if (action.data?.resource && !aiPlayer.inventory.includes(action.data.resource)) {
-            addNotification(`🤖 ${aiPlayer.name} doesn't have ${action.data.resource} to sell`, 'ai', false);
+          if (action.data?.resource && !currentAi.inventory.includes(action.data.resource)) {
+            addNotification(`🤖 ${currentAi.name} doesn't have ${action.data.resource} to sell`, 'ai', false);
             return;
           }
           break;
 
         case 'special_ability':
           // Validate AI has special ability uses left
-          if (aiPlayer.specialAbilityUses <= 0) {
-            addNotification(`🤖 ${aiPlayer.name} has no special ability uses left`, 'ai', false);
+          if (currentAi.specialAbilityUses <= 0) {
+            addNotification(`🤖 ${currentAi.name} has no special ability uses left`, 'ai', false);
             return;
           }
           break;
@@ -1656,22 +1665,22 @@ function AustraliaGame() {
       case 'challenge':
         const { challenge, wager, successChance } = action.data;
         const success = Math.random() < successChance;
-        
+
         if (success) {
           let reward = Math.floor(wager * challenge.reward);
 
-          if (aiPlayer.character.name === "Tourist") {
+          if (currentAi.character.name === "Tourist") {
             reward = Math.floor(reward * 1.2);
           }
 
-          if (aiPlayer.character.name === "Businessman") {
+          if (currentAi.character.name === "Businessman") {
             reward = Math.floor(reward * 1.1);
           }
 
           // Calculate XP gain and check for level up
           const xpGain = challenge.difficulty * 20;
-          const newXp = aiPlayer.xp + xpGain;
-          const xpForNextLevel = aiPlayer.level * 100;
+          const newXp = currentAi.xp + xpGain;
+          const xpForNextLevel = currentAi.level * 100;
 
           let levelUpData = {};
           let didLevelUp = false;
@@ -1681,12 +1690,12 @@ function AustraliaGame() {
             didLevelUp = true;
             levelUpData = {
               xp: newXp - xpForNextLevel,
-              level: aiPlayer.level + 1,
+              level: currentAi.level + 1,
               stats: {
-                strength: aiPlayer.stats.strength + 1,
-                charisma: aiPlayer.stats.charisma + 1,
-                luck: aiPlayer.stats.luck + 1,
-                intelligence: aiPlayer.stats.intelligence + 1
+                strength: currentAi.stats.strength + 1,
+                charisma: currentAi.stats.charisma + 1,
+                luck: currentAi.stats.luck + 1,
+                intelligence: currentAi.stats.intelligence + 1
               }
             };
           } else {
@@ -1704,29 +1713,29 @@ function AustraliaGame() {
           }));
 
           addNotification(
-            `🤖 ${aiPlayer.name} completed ${challenge.name} and won $${reward}!`,
+            `🤖 ${currentAi.name} completed ${challenge.name} and won $${reward}!`,
             'ai',
             false
           );
 
           if (didLevelUp) {
             addNotification(
-              `🤖 ${aiPlayer.name} leveled up to level ${aiPlayer.level + 1}!`,
+              `🤖 ${currentAi.name} leveled up to level ${currentAi.level + 1}!`,
               'levelup',
               true
             );
           }
 
           // Check for mastery unlocks (after state update, so we use the old level + 1)
-          const newLevel = didLevelUp ? aiPlayer.level + 1 : aiPlayer.level;
-          Object.entries(aiPlayer.character.masteryTree || {}).forEach(([name, mastery]) => {
-            if (newLevel >= (mastery as any).unlockLevel && !aiPlayer.masteryUnlocks.includes(name)) {
+          const newLevel = didLevelUp ? currentAi.level + 1 : currentAi.level;
+          Object.entries(currentAi.character.masteryTree || {}).forEach(([name, mastery]) => {
+            if (newLevel >= (mastery as any).unlockLevel && !currentAi.masteryUnlocks.includes(name)) {
               setAiPlayer(prev => ({
                 ...prev,
                 masteryUnlocks: [...prev.masteryUnlocks, name]
               }));
               addNotification(
-                `🤖 ${aiPlayer.name} unlocked mastery: ${name}!`,
+                `🤖 ${currentAi.name} unlocked mastery: ${name}!`,
                 'levelup',
                 true
               );
@@ -1738,9 +1747,9 @@ function AustraliaGame() {
             money: deductMoney(prev.money, wager),
             consecutiveWins: 0
           }));
-          
+
           addNotification(
-            `🤖 ${aiPlayer.name} failed ${challenge.name} and lost $${wager}`,
+            `🤖 ${currentAi.name} failed ${challenge.name} and lost $${wager}`,
             'ai',
             false
           );
@@ -1757,54 +1766,54 @@ function AustraliaGame() {
             ? prev.visitedRegions
             : [...prev.visitedRegions, region]
         }));
-        
+
         // Collect resource (if inventory not full)
         const regionResources = REGIONAL_RESOURCES[region] || [];
         if (regionResources.length > 0) {
           const collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
 
           // Check inventory capacity
-          if (aiPlayer.inventory.length < MAX_INVENTORY) {
+          if (currentAi.inventory.length < MAX_INVENTORY) {
             setAiPlayer(prev => ({
               ...prev,
               inventory: [...prev.inventory, collectedResource]
             }));
 
             addNotification(
-              `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name} and found ${collectedResource}`,
+              `🤖 ${currentAi.name} traveled to ${REGIONS[region].name} and found ${collectedResource}`,
               'ai',
               false
             );
           } else {
             addNotification(
-              `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name} (inventory full, couldn't collect ${collectedResource})`,
+              `🤖 ${currentAi.name} traveled to ${REGIONS[region].name} (inventory full, couldn't collect ${collectedResource})`,
               'ai',
               false
             );
           }
         } else {
           addNotification(
-            `🤖 ${aiPlayer.name} traveled to ${REGIONS[region].name}`,
+            `🤖 ${currentAi.name} traveled to ${REGIONS[region].name}`,
             'ai',
             false
           );
         }
         break;
-        
+
       case 'sell':
         const { resource, price } = action.data;
-        const index = aiPlayer.inventory.indexOf(resource);
+        const index = currentAi.inventory.indexOf(resource);
         if (index > -1) {
           let finalPrice = price;
-          
-          if (aiPlayer.character.name === "Businessman") {
+
+          if (currentAi.character.name === "Businessman") {
             finalPrice = Math.floor(price * 1.1);
           }
-          
-          if (aiPlayer.masteryUnlocks.includes("Investment Genius")) {
+
+          if (currentAi.masteryUnlocks.includes("Investment Genius")) {
             finalPrice = Math.floor(finalPrice * 1.15);
           }
-          
+
           setAiPlayer(prev => {
             const newInventory = [...prev.inventory];
             newInventory.splice(index, 1);
@@ -1814,15 +1823,15 @@ function AustraliaGame() {
               money: addMoney(prev.money, finalPrice)
             };
           });
-          
+
           addNotification(
-            `🤖 ${aiPlayer.name} sold ${resource} for $${finalPrice}`,
+            `🤖 ${currentAi.name} sold ${resource} for $${finalPrice}`,
             'ai',
             false
           );
         }
         break;
-        
+
       case 'special_ability':
         const { ability } = action.data;
 
@@ -1833,7 +1842,7 @@ function AustraliaGame() {
         }));
 
         addNotification(
-          `🤖 ${aiPlayer.name} used ${ability.name}!`,
+          `🤖 ${currentAi.name} used ${ability.name}!`,
           'ai',
           true
         );
@@ -1844,7 +1853,7 @@ function AustraliaGame() {
 
       case 'think':
         addNotification(
-          `🤖 ${aiPlayer.name} is thinking...`,
+          `🤖 ${currentAi.name} is thinking...`,
           'ai',
           false
         );
@@ -1852,7 +1861,7 @@ function AustraliaGame() {
     }
 
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
-  }, [aiPlayer, addNotification, addMoney, deductMoney]);
+  }, [addNotification, addMoney, deductMoney]);
 
   // AI Turn Management
   const performAiTurn = useCallback(async () => {
@@ -1863,35 +1872,39 @@ function AustraliaGame() {
 
     const profile = AI_DIFFICULTY_PROFILES[gameState.aiDifficulty];
     const maxActions = gameSettings.aiActionsPerDay;
-    
-    addNotification(`🤖 ${aiPlayer.name}'s turn begins`, 'ai', true);
-    
+
+    addNotification(`🤖 ${aiPlayerRef.current.name}'s turn begins`, 'ai', true);
+
     // AI takes multiple actions per turn
     for (let i = 0; i < maxActions; i++) {
       // Thinking delay
-      const thinkingTime = profile.thinkingTimeMin + 
+      const thinkingTime = profile.thinkingTimeMin +
         Math.random() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
-      
+
       await new Promise(resolve => setTimeout(resolve, thinkingTime));
-      
-      // Make decision
-      const decision = makeAiDecision(aiPlayer, gameState, player);
-      
+
+      // Use ref to get latest AI state (fixes stale closure issue)
+      const currentAiState = aiPlayerRef.current;
+
+      // Make decision with fresh state
+      const decision = makeAiDecision(currentAiState, gameState, player);
+
       if (decision.type === 'end_turn') {
+        addNotification(`🤖 ${currentAiState.name} has no more actions to take`, 'ai', false);
         break;
       }
-      
+
       // Execute action
       executeAiAction(decision as AIAction);
-      
+
       // Small delay between actions for visibility
       await new Promise(resolve => setTimeout(resolve, 800));
     }
-    
+
     // End AI turn
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    addNotification(`🤖 ${aiPlayer.name} ended their turn`, 'ai', true);
+    addNotification(`🤖 ${aiPlayerRef.current.name} ended their turn`, 'ai', true);
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
 
     // In AI mode, advance the day after AI completes their turn
