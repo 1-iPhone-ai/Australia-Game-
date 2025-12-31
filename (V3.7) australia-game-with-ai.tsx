@@ -5064,8 +5064,9 @@ function AustraliaGame() {
         {/* Market Modal */}
         {uiState.showMarket && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[80vh] flex flex-col`}>
-              <div className="flex justify-between items-center mb-4">
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[85vh] flex flex-col`}>
+              {/* Fixed Header */}
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
                 <h3 className="text-xl font-bold">💰 Resource Market</h3>
                 <button
                   onClick={() => updateUiState({ showMarket: false })}
@@ -5075,92 +5076,94 @@ function AustraliaGame() {
                 </button>
               </div>
 
-              {/* Market Trend Display */}
-              <div className={`${themeStyles.border} border rounded-lg p-3 mb-4`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold">Market Trend:</span>
-                  <span className={`font-bold ${
-                    gameState.marketTrend === 'rising' ? 'text-green-500' :
-                    gameState.marketTrend === 'falling' ? 'text-red-500' :
-                    gameState.marketTrend === 'volatile' ? 'text-yellow-500' :
-                    'text-blue-500'
-                  }`}>
-                    {gameState.marketTrend === 'rising' ? '📈 Rising' :
-                     gameState.marketTrend === 'falling' ? '📉 Falling' :
-                     gameState.marketTrend === 'volatile' ? '⚡ Volatile' :
-                     '➡️ Stable'}
-                  </span>
-                </div>
-                {/* Season effect on prices */}
-                <div className="text-xs opacity-75 mt-1">
-                  Season: {gameState.season} - {SEASON_EFFECTS[gameState.season]?.description || ''}
-                </div>
-                {/* Market Insight - Price Predictions */}
-                {activeSpecialAbility === 'Market Insight' && (
-                  <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
-                    <div className="text-xs text-blue-400 font-bold mb-2">🔮 Market Insight Active - Next Turn Predictions:</div>
-                    <div className="text-xs space-y-1">
-                      {gameState.marketTrend === 'rising' && <div className="text-green-400">↗ Prices likely to increase by 10-20%</div>}
-                      {gameState.marketTrend === 'falling' && <div className="text-red-400">↘ Prices likely to decrease by 10-20%</div>}
-                      {gameState.marketTrend === 'volatile' && <div className="text-yellow-400">⚡ Prices may swing +/- 30%</div>}
-                      {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
-                    </div>
-                    {/* Price History */}
-                    {gameState.priceHistory.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-blue-500 border-opacity-20">
-                        <div className="text-blue-400 font-bold mb-1">Price History (Last 5 days):</div>
-                        <div className="flex space-x-2 overflow-x-auto text-xs">
-                          {gameState.priceHistory.slice(-5).map((history, idx) => (
-                            <div key={idx} className="bg-blue-500 bg-opacity-10 rounded p-1 min-w-max">
-                              D{history.day}
-                            </div>
-                          ))}
-                        </div>
+              {/* Scrollable Content */}
+              <div className={`flex-1 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`}>
+                {/* Market Trend Display */}
+                <div className={`${themeStyles.border} border rounded-lg p-3 mb-4`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold">Market Trend:</span>
+                    <span className={`font-bold ${
+                      gameState.marketTrend === 'rising' ? 'text-green-500' :
+                      gameState.marketTrend === 'falling' ? 'text-red-500' :
+                      gameState.marketTrend === 'volatile' ? 'text-yellow-500' :
+                      'text-blue-500'
+                    }`}>
+                      {gameState.marketTrend === 'rising' ? '📈 Rising' :
+                       gameState.marketTrend === 'falling' ? '📉 Falling' :
+                       gameState.marketTrend === 'volatile' ? '⚡ Volatile' :
+                       '➡️ Stable'}
+                    </span>
+                  </div>
+                  {/* Season effect on prices */}
+                  <div className="text-xs opacity-75 mt-1">
+                    Season: {gameState.season} - {SEASON_EFFECTS[gameState.season]?.description || ''}
+                  </div>
+                  {/* Market Insight - Price Predictions */}
+                  {activeSpecialAbility === 'Market Insight' && (
+                    <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
+                      <div className="text-xs text-blue-400 font-bold mb-2">🔮 Market Insight Active - Next Turn Predictions:</div>
+                      <div className="text-xs space-y-1">
+                        {gameState.marketTrend === 'rising' && <div className="text-green-400">↗ Prices likely to increase by 10-20%</div>}
+                        {gameState.marketTrend === 'falling' && <div className="text-red-400">↘ Prices likely to decrease by 10-20%</div>}
+                        {gameState.marketTrend === 'volatile' && <div className="text-yellow-400">⚡ Prices may swing +/- 30%</div>}
+                        {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Inventory Sorting & Filtering Controls */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <select
-                  value={uiState.inventorySort}
-                  onChange={(e) => updateUiState({ inventorySort: e.target.value as any })}
-                  className={`${themeStyles.border} border rounded px-2 py-1 text-sm bg-transparent`}
-                >
-                  <option value="default">Sort: Default</option>
-                  <option value="value">Sort: Value ↓</option>
-                  <option value="quantity">Sort: Quantity ↓</option>
-                  <option value="category">Sort: Category</option>
-                </select>
-                <select
-                  value={uiState.inventoryFilter}
-                  onChange={(e) => updateUiState({ inventoryFilter: e.target.value as any })}
-                  className={`${themeStyles.border} border rounded px-2 py-1 text-sm bg-transparent`}
-                >
-                  <option value="all">Filter: All</option>
-                  <option value="luxury">Luxury</option>
-                  <option value="food">Food</option>
-                  <option value="industrial">Industrial</option>
-                  <option value="agricultural">Agricultural</option>
-                  <option value="energy">Energy</option>
-                  <option value="financial">Financial</option>
-                </select>
-                {player.inventory.length > 0 && (
-                  <div className="text-sm opacity-75 ml-auto">
-                    {player.inventory.length}/{MAX_INVENTORY} items
-                  </div>
-                )}
-              </div>
-
-              {player.inventory.length === 0 ? (
-                <div className="text-center py-8 opacity-60">
-                  No resources to sell. Collect some resources first!
+                      {/* Price History */}
+                      {gameState.priceHistory.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-blue-500 border-opacity-20">
+                          <div className="text-blue-400 font-bold mb-1">Price History (Last 5 days):</div>
+                          <div className="flex space-x-2 overflow-x-auto text-xs">
+                            {gameState.priceHistory.slice(-5).map((history, idx) => (
+                              <div key={idx} className="bg-blue-500 bg-opacity-10 rounded p-1 min-w-max">
+                                D{history.day}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className={`space-y-3 overflow-y-auto flex-1 ${themeStyles.scrollbar}`}>
-                  {(() => {
+
+                {/* Inventory Sorting & Filtering Controls */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <select
+                    value={uiState.inventorySort}
+                    onChange={(e) => updateUiState({ inventorySort: e.target.value as any })}
+                    className={`${themeStyles.select} rounded px-2 py-1 text-sm`}
+                  >
+                    <option value="default">Sort: Default</option>
+                    <option value="value">Sort: Value ↓</option>
+                    <option value="quantity">Sort: Quantity ↓</option>
+                    <option value="category">Sort: Category</option>
+                  </select>
+                  <select
+                    value={uiState.inventoryFilter}
+                    onChange={(e) => updateUiState({ inventoryFilter: e.target.value as any })}
+                    className={`${themeStyles.select} rounded px-2 py-1 text-sm`}
+                  >
+                    <option value="all">Filter: All</option>
+                    <option value="luxury">Luxury</option>
+                    <option value="food">Food</option>
+                    <option value="industrial">Industrial</option>
+                    <option value="agricultural">Agricultural</option>
+                    <option value="energy">Energy</option>
+                    <option value="financial">Financial</option>
+                  </select>
+                  {player.inventory.length > 0 && (
+                    <div className="text-sm opacity-75 ml-auto">
+                      {player.inventory.length}/{MAX_INVENTORY} items
+                    </div>
+                  )}
+                </div>
+
+                {player.inventory.length === 0 ? (
+                  <div className="text-center py-8 opacity-60">
+                    No resources to sell. Collect some resources first!
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {(() => {
                     // Get unique resources with counts
                     let resourceData = Array.from(new Set(player.inventory)).map(resource => ({
                       resource,
@@ -5249,8 +5252,19 @@ function AustraliaGame() {
                       );
                     });
                   })()}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
+
+              {/* Fixed Footer */}
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <button
+                  onClick={() => updateUiState({ showMarket: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close Market
+                </button>
+              </div>
             </div>
           </div>
         )}
