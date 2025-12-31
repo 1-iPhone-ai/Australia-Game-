@@ -683,6 +683,11 @@ function AustraliaGame() {
     showSaveLoadModal: false
   });
 
+  // Special ability state tracking
+  const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
+  const [failedChallengeData, setFailedChallengeData] = useState<{challenge: any, wager: number} | null>(null);
+  const [usedFreeChallengeThisTurn, setUsedFreeChallengeThisTurn] = useState(false);
+
   // Day transition state
   const [dayTransitionData, setDayTransitionData] = useState({
     prevDay: 1,
@@ -1818,7 +1823,7 @@ function AustraliaGame() {
 
       switch (shortcut.action) {
         case 'endTurn':
-          if (gameState.currentTurn === 'player' && gameState.day < 30) {
+          if (gameState.currentTurn === 'player' && gameState.day < gameSettings.totalDays) {
             handleEndTurn();
           }
           break;
@@ -2011,8 +2016,8 @@ function AustraliaGame() {
             addNotification(`Inventory full (${MAX_INVENTORY}/${MAX_INVENTORY})! Couldn't collect ${collectedResource}`, 'warning');
           }
         }
-        
-        dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+
+        incrementAction();
       }
     };
 
@@ -2024,11 +2029,23 @@ function AustraliaGame() {
       confirmTravel,
       { region, cost }
     );
-  }, [player, calculateTravelCost, addNotification, showConfirmation]);
+  }, [player, calculateTravelCost, addNotification, showConfirmation, incrementAction]);
 
   const takeChallenge = useCallback((challenge, wager) => {
-    const successChance = calculateSuccessChance(challenge);
-    
+    let successChance = calculateSuccessChance(challenge);
+
+    // Calculate Odds: Guarantee success on challenges under difficulty 2
+    const hasCalculateOdds = activeSpecialAbility === 'Calculate Odds';
+    if (hasCalculateOdds && challenge.difficulty < 2) {
+      successChance = 1.0;
+    }
+
+    // Tourist Luck: +20% bonus to success chance when active
+    const hasTouristLuck = activeSpecialAbility === 'Tourist Luck';
+    if (hasTouristLuck) {
+      successChance = Math.min(0.95, successChance + 0.2);
+    }
+
     const confirmChallenge = () => {
       if (player.money < wager) {
         addNotification('Not enough money!', 'error');
@@ -2036,27 +2053,49 @@ function AustraliaGame() {
       }
 
       const success = Math.random() < successChance;
-      
+
       if (success) {
         let reward = Math.floor(wager * challenge.reward);
-        
+
         if (player.character.name === "Tourist") {
           reward = Math.floor(reward * 1.2);
         }
-        
+
         if (player.character.name === "Businessman") {
           reward = Math.floor(reward * 1.1);
         }
-        
+
+        // Apply Lucky Streak mastery bonus
+        if (player.masteryUnlocks.includes("Lucky Streak") && player.consecutiveWins > 0) {
+          const streakBonus = Math.min(0.5, player.consecutiveWins * 0.1);
+          reward = Math.floor(reward * (1 + streakBonus));
+          addNotification(`Lucky Streak! +${Math.round(streakBonus * 100)}% bonus`, 'success');
+        }
+
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
         dispatchPlayer({ type: 'COMPLETE_CHALLENGE', payload: challenge.name });
-        dispatchPlayer({ type: 'GAIN_XP', payload: challenge.difficulty * 20 });
-        
-        addNotification(`${challenge.name} completed! Won $${reward}`, 'success');
+
+        // Apply Quick Study mastery - 50% more XP
+        let xpGain = challenge.difficulty * 20;
+        if (player.masteryUnlocks.includes("Quick Study")) {
+          xpGain = Math.floor(xpGain * 1.5);
+        }
+        dispatchPlayer({ type: 'GAIN_XP', payload: xpGain });
+
+        addNotification(`${challenge.name} completed! Won $${reward}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
         updatePersonalRecords('challenge', reward);
         updatePersonalRecords('consecutiveWins', player.consecutiveWins + 1);
         updatePersonalRecords('earned', reward);
-        
+
+        // Clear active special ability after use
+        if (activeSpecialAbility) {
+          setActiveSpecialAbility(null);
+          dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
+        }
+
+        // Clear failed challenge data
+        setFailedChallengeData(null);
+
         // Check for mastery unlocks
         Object.entries(player.character.masteryTree || {}).forEach(([name, mastery]) => {
           if (player.level >= (mastery as any).unlockLevel && !player.masteryUnlocks.includes(name)) {
@@ -2065,20 +2104,40 @@ function AustraliaGame() {
           }
         });
       } else {
+        // Challenge failed
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
         dispatchPlayer({ type: 'RESET_STREAK' });
         addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
+
+        // Store failed challenge for Tourist Luck retry
+        if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
+          setFailedChallengeData({ challenge, wager });
+          addNotification('Tourist Luck available! You can retry this challenge.', 'info', true);
+        }
+
+        // Clear active special ability after use
+        if (activeSpecialAbility) {
+          setActiveSpecialAbility(null);
+          dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
+        }
       }
-      
+
       updateUiState({ showChallenges: false });
-      dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+
+      // Challenge Master mastery: First challenge of the turn doesn't consume an action
+      if (player.masteryUnlocks.includes("Challenge Master") && !usedFreeChallengeThisTurn) {
+        setUsedFreeChallengeThisTurn(true);
+        addNotification('⚔️ Challenge Master! Free challenge attempt!', 'success');
+      } else {
+        incrementAction();
+      }
     };
 
-    if (successChance < 0.5) {
+    if (successChance < 0.5 && !hasCalculateOdds) {
       showConfirmation(
         'challenge',
         'Risky Challenge',
-        `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager $${wager}?`,
+        `This challenge has only a ${Math.round(successChance * 100)}% success rate. Wager $${wager}?${hasTouristLuck ? ' (Tourist Luck active!)' : ''}`,
         'Take Challenge',
         confirmChallenge,
         { challenge, wager, successChance }
@@ -2086,7 +2145,7 @@ function AustraliaGame() {
     } else {
       confirmChallenge();
     }
-  }, [player, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords]);
+  }, [player, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction]);
 
   const sellResource = useCallback((resource, price) => {
     const confirmSell = () => {
@@ -2107,7 +2166,7 @@ function AustraliaGame() {
         updatePersonalRecords('resource', { resource, price: finalPrice });
         updatePersonalRecords('earned', finalPrice);
         updatePersonalRecords('money', player.money + finalPrice);
-        dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+        incrementAction();
       }
     };
 
@@ -2123,14 +2182,63 @@ function AustraliaGame() {
     } else {
       confirmSell();
     }
-  }, [player, addNotification, showConfirmation, updatePersonalRecords]);
+  }, [player, addNotification, showConfirmation, updatePersonalRecords, incrementAction]);
+
+  const activateSpecialAbility = useCallback(() => {
+    if (!player.character.specialAbility) return;
+    if (player.specialAbilityUses <= 0) {
+      addNotification('No special ability uses remaining!', 'warning');
+      return;
+    }
+
+    const abilityName = player.character.specialAbility.name;
+
+    // Activate the ability
+    setActiveSpecialAbility(abilityName);
+    addNotification(`${abilityName} activated! Use it in your next action.`, 'success', true);
+
+    // Special handling for different abilities
+    if (abilityName === 'Market Insight') {
+      // Open market to show predictions
+      updateUiState({ showMarket: true });
+    } else if (abilityName === 'Scout Ahead') {
+      // Open travel to show resources
+      updateUiState({ showTravelModal: true });
+    }
+  }, [player, addNotification]);
+
+  const retryFailedChallenge = useCallback(() => {
+    if (!failedChallengeData) return;
+    if (player.specialAbilityUses <= 0) {
+      addNotification('No special ability uses remaining!', 'warning');
+      return;
+    }
+
+    setActiveSpecialAbility('Tourist Luck');
+    takeChallenge(failedChallengeData.challenge, failedChallengeData.wager);
+  }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
+
+  // Helper function to increment actions with Efficiency Expert mastery check
+  const incrementAction = useCallback(() => {
+    // Efficiency Expert mastery: 30% chance to not consume action
+    if (player.masteryUnlocks.includes("Efficiency Expert")) {
+      if (Math.random() < 0.3) {
+        addNotification('⚡ Efficiency Expert! Action performed instantly!', 'success');
+        return; // Don't increment action
+      }
+    }
+    dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+  }, [player.masteryUnlocks, addNotification]);
 
   const handleEndTurn = useCallback(() => {
     if (gameState.currentTurn !== 'player') return;
-    
+
     const confirmEndTurn = () => {
       // Reset special ability
       dispatchPlayer({ type: 'RESET_SPECIAL_ABILITY' });
+      setActiveSpecialAbility(null);
+      setFailedChallengeData(null);
+      setUsedFreeChallengeThisTurn(false);
       
       // Update resource prices based on market trend
       const newPrices = {};
@@ -3046,8 +3154,8 @@ function AustraliaGame() {
     const aiScore = gameState.selectedMode === 'ai' ? calculateFinalScore(aiPlayer) : 0;
     const scoreComparison = playerScore - aiScore;
     
-    const daysRemaining = 30 - gameState.day;
-    const timeProgress = (gameState.day / 30) * 100;
+    const daysRemaining = gameSettings.totalDays - gameState.day;
+    const timeProgress = (gameState.day / gameSettings.totalDays) * 100;
     
     return (
       <div
@@ -3076,7 +3184,7 @@ function AustraliaGame() {
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="flex justify-between items-center mb-2">
                 <h4 className="font-bold">⏰ Time</h4>
-                <span className="text-sm">Day {gameState.day} / 30</span>
+                <span className="text-sm">Day {gameState.day} / {gameSettings.totalDays}</span>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-4 mb-2">
                 <div
@@ -3593,7 +3701,37 @@ function AustraliaGame() {
             <span>Market ({player.inventory.length}/{MAX_INVENTORY})</span>
             <kbd className="ml-2 px-2 py-0.5 bg-black bg-opacity-30 rounded text-xs">R</kbd>
           </button>
-          
+
+          {/* Special Ability Button */}
+          {player.character.specialAbility && (
+            <button
+              onClick={activateSpecialAbility}
+              disabled={!isPlayerTurn || player.specialAbilityUses <= 0 || activeSpecialAbility !== null}
+              className={`${activeSpecialAbility ? 'bg-gradient-to-r from-purple-600 to-blue-600' : themeStyles.accent} text-white px-4 py-2 rounded-lg flex items-center space-x-2 disabled:opacity-50 relative`}
+            >
+              <span>✨</span>
+              <span>{player.character.specialAbility.name.split(' ')[0]}</span>
+              <span className="bg-black bg-opacity-40 px-1.5 py-0.5 rounded text-xs">{player.specialAbilityUses}</span>
+              {activeSpecialAbility && (
+                <span className="absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full px-2 py-0.5 animate-pulse">
+                  ACTIVE
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Tourist Luck Retry Button - Only shows after failed challenge */}
+          {failedChallengeData && player.character.name === "Tourist" && player.specialAbilityUses > 0 && (
+            <button
+              onClick={retryFailedChallenge}
+              disabled={!isPlayerTurn}
+              className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-4 py-2 rounded-lg flex items-center space-x-2 disabled:opacity-50 animate-pulse"
+            >
+              <span>🍀</span>
+              <span>Retry Challenge</span>
+            </button>
+          )}
+
           <button
             onClick={() => updateUiState({ showProgress: true })}
             className={`${themeStyles.accent} text-white px-4 py-2 rounded-lg flex items-center space-x-2`}
@@ -3635,7 +3773,7 @@ function AustraliaGame() {
           
           <button
             onClick={handleEndTurn}
-            disabled={!isPlayerTurn || gameState.day >= 30}
+            disabled={!isPlayerTurn || gameState.day >= gameSettings.totalDays}
             className={`${themeStyles.button} text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center space-x-2`}
           >
             <span>⏭️</span>
@@ -3861,13 +3999,26 @@ function AustraliaGame() {
                   return (
                     <div key={code} className={`${themeStyles.border} border rounded-lg p-4`}>
                       <div className="flex justify-between items-center">
-                        <div>
+                        <div className="flex-1">
                           <div className="font-bold">{region.name}</div>
                           <div className="text-sm opacity-75">
                             {isAdjacent ? '📍 Adjacent' : code === 'TAS' ? '🏝️ Island' : '📍 Distant'}
                           </div>
+                          {/* Scout Ahead - Show resources for adjacent regions */}
+                          {activeSpecialAbility === 'Scout Ahead' && isAdjacent && REGIONAL_RESOURCES[code] && (
+                            <div className="mt-2 text-xs">
+                              <div className="text-blue-400 font-bold">🔍 Scout Ahead - Resources:</div>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {REGIONAL_RESOURCES[code].map((resource: string) => (
+                                  <span key={resource} className="bg-blue-500 bg-opacity-20 text-blue-300 px-2 py-0.5 rounded">
+                                    {resource}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right">
+                        <div className="text-right ml-4">
                           <div className={`font-bold ${canAfford ? 'text-green-500' : 'text-red-500'}`}>
                             ${cost}
                           </div>
@@ -3984,6 +4135,18 @@ function AustraliaGame() {
                      '➡️ Stable'}
                   </span>
                 </div>
+                {/* Market Insight - Price Predictions */}
+                {activeSpecialAbility === 'Market Insight' && (
+                  <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
+                    <div className="text-xs text-blue-400 font-bold mb-2">🔮 Market Insight Active - Next Turn Predictions:</div>
+                    <div className="text-xs space-y-1">
+                      {gameState.marketTrend === 'rising' && <div className="text-green-400">↗ Prices likely to increase by 10-20%</div>}
+                      {gameState.marketTrend === 'falling' && <div className="text-red-400">↘ Prices likely to decrease by 10-20%</div>}
+                      {gameState.marketTrend === 'volatile' && <div className="text-yellow-400">⚡ Prices may swing +/- 30%</div>}
+                      {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
+                    </div>
+                  </div>
+                )}
               </div>
               
               {player.inventory.length === 0 ? (
