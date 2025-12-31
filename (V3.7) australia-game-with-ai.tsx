@@ -1994,6 +1994,41 @@ function AustraliaGame() {
   // GAME LOGIC FUNCTIONS
   // =========================================
 
+  // Helper function to increment actions with Efficiency Expert mastery check
+  const incrementAction = useCallback(() => {
+    // Efficiency Expert mastery: 30% chance to not consume action
+    if (player.masteryUnlocks.includes("Efficiency Expert")) {
+      if (Math.random() < 0.3) {
+        addNotification('⚡ Efficiency Expert! Action performed instantly!', 'success');
+        return; // Don't increment action
+      }
+    }
+    dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+  }, [player.masteryUnlocks, addNotification]);
+
+  const activateSpecialAbility = useCallback(() => {
+    if (!player.character.specialAbility) return;
+    if (player.specialAbilityUses <= 0) {
+      addNotification('No special ability uses remaining!', 'warning');
+      return;
+    }
+
+    const abilityName = player.character.specialAbility.name;
+
+    // Activate the ability
+    setActiveSpecialAbility(abilityName);
+    addNotification(`${abilityName} activated! Use it in your next action.`, 'success', true);
+
+    // Special handling for different abilities
+    if (abilityName === 'Market Insight') {
+      // Open market to show predictions
+      updateUiState({ showMarket: true });
+    } else if (abilityName === 'Scout Ahead') {
+      // Open travel to show resources
+      updateUiState({ showTravelModal: true });
+    }
+  }, [player.character, player.specialAbilityUses, addNotification, setActiveSpecialAbility, updateUiState]);
+
   const travelToRegion = useCallback((region) => {
     const cost = calculateTravelCost(player.currentRegion, region);
     
@@ -2184,29 +2219,6 @@ function AustraliaGame() {
     }
   }, [player, addNotification, showConfirmation, updatePersonalRecords, incrementAction]);
 
-  const activateSpecialAbility = useCallback(() => {
-    if (!player.character.specialAbility) return;
-    if (player.specialAbilityUses <= 0) {
-      addNotification('No special ability uses remaining!', 'warning');
-      return;
-    }
-
-    const abilityName = player.character.specialAbility.name;
-
-    // Activate the ability
-    setActiveSpecialAbility(abilityName);
-    addNotification(`${abilityName} activated! Use it in your next action.`, 'success', true);
-
-    // Special handling for different abilities
-    if (abilityName === 'Market Insight') {
-      // Open market to show predictions
-      updateUiState({ showMarket: true });
-    } else if (abilityName === 'Scout Ahead') {
-      // Open travel to show resources
-      updateUiState({ showTravelModal: true });
-    }
-  }, [player, addNotification]);
-
   const retryFailedChallenge = useCallback(() => {
     if (!failedChallengeData) return;
     if (player.specialAbilityUses <= 0) {
@@ -2217,18 +2229,6 @@ function AustraliaGame() {
     setActiveSpecialAbility('Tourist Luck');
     takeChallenge(failedChallengeData.challenge, failedChallengeData.wager);
   }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
-
-  // Helper function to increment actions with Efficiency Expert mastery check
-  const incrementAction = useCallback(() => {
-    // Efficiency Expert mastery: 30% chance to not consume action
-    if (player.masteryUnlocks.includes("Efficiency Expert")) {
-      if (Math.random() < 0.3) {
-        addNotification('⚡ Efficiency Expert! Action performed instantly!', 'success');
-        return; // Don't increment action
-      }
-    }
-    dispatchGameState({ type: 'INCREMENT_ACTIONS' });
-  }, [player.masteryUnlocks, addNotification]);
 
   const handleEndTurn = useCallback(() => {
     if (gameState.currentTurn !== 'player') return;
