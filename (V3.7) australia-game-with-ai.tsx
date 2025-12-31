@@ -161,6 +161,94 @@ const RESOURCE_CATEGORIES = {
   "Education": "service"
 };
 
+// Weather effects on gameplay
+const WEATHER_EFFECTS = {
+  "Sunny": {
+    challengeModifier: { physical: 0.05, wildlife: 0.05, social: 0.1, educational: 0 },
+    travelCostModifier: 1.0,
+    resourceBonus: 0,
+    description: "Perfect weather for outdoor activities"
+  },
+  "Cloudy": {
+    challengeModifier: { physical: 0, wildlife: 0, social: 0, educational: 0.05 },
+    travelCostModifier: 1.0,
+    resourceBonus: 0,
+    description: "Mild conditions, good for indoor activities"
+  },
+  "Rainy": {
+    challengeModifier: { physical: -0.1, wildlife: -0.05, social: -0.05, educational: 0.1 },
+    travelCostModifier: 1.15,
+    resourceBonus: 0.1,
+    description: "Slippery conditions, but great for museums"
+  },
+  "Stormy": {
+    challengeModifier: { physical: -0.2, wildlife: -0.15, social: -0.1, educational: 0.05 },
+    travelCostModifier: 1.3,
+    resourceBonus: 0.15,
+    description: "Dangerous conditions, higher travel costs"
+  }
+};
+
+// Season effects on gameplay
+const SEASON_EFFECTS = {
+  "Summer": {
+    challengeModifier: { physical: 0.1, wildlife: 0.05, social: 0.1, educational: -0.05 },
+    travelCostModifier: 1.1,
+    resourcePriceModifier: { food: 0.9, luxury: 1.1 },
+    bonusResourceChance: 0.1,
+    description: "Hot weather, beach activities thrive"
+  },
+  "Autumn": {
+    challengeModifier: { physical: 0, wildlife: 0, social: 0.05, educational: 0.05 },
+    travelCostModifier: 1.0,
+    resourcePriceModifier: { agricultural: 1.2, food: 1.1 },
+    bonusResourceChance: 0.15,
+    description: "Harvest season, stable conditions"
+  },
+  "Winter": {
+    challengeModifier: { physical: -0.1, wildlife: -0.1, social: 0, educational: 0.1 },
+    travelCostModifier: 1.2,
+    resourcePriceModifier: { energy: 1.3, industrial: 1.1 },
+    bonusResourceChance: 0.05,
+    description: "Cold weather, some regions harder to reach"
+  },
+  "Spring": {
+    challengeModifier: { physical: 0.05, wildlife: 0.15, social: 0.05, educational: 0 },
+    travelCostModifier: 0.9,
+    resourcePriceModifier: { luxury: 0.95, agricultural: 0.9 },
+    bonusResourceChance: 0.25,
+    description: "Wildlife active, bonus resources more common"
+  }
+};
+
+// Dynamic regional events
+const REGIONAL_EVENTS = [
+  { id: "mining_boom", name: "Mining Boom", region: "WA", duration: 3, effect: { resourcePrice: { "Gold": 1.5, "Iron Ore": 1.3 } }, description: "Gold rush in Western Australia!" },
+  { id: "coral_bleaching", name: "Coral Bleaching", region: "QLD", duration: 2, effect: { resourcePrice: { "Coral": 1.8 }, resourceRarity: { "Coral": 0.5 } }, description: "Coral becomes rare but valuable" },
+  { id: "wine_festival", name: "Wine Festival", region: "VIC", duration: 2, effect: { challengeBonus: { social: 0.15 }, resourcePrice: { "Wine": 1.4 } }, description: "Festival in Victoria boosts social events" },
+  { id: "tech_conference", name: "Tech Conference", region: "ACT", duration: 2, effect: { challengeBonus: { educational: 0.2 }, resourcePrice: { "Research Funds": 1.5 } }, description: "Educational challenges easier in Canberra" },
+  { id: "outback_drought", name: "Outback Drought", region: "NT", duration: 3, effect: { travelCost: 1.4, resourcePrice: { "Aboriginal Art": 1.6 } }, description: "Harsh conditions in the outback" },
+  { id: "seafood_boom", name: "Seafood Boom", region: "TAS", duration: 2, effect: { resourcePrice: { "Seafood": 1.5, "Timber": 1.2 } }, description: "Tasmania's seafood in high demand" },
+  { id: "tourism_surge", name: "Tourism Surge", region: "NSW", duration: 2, effect: { challengeBonus: { physical: 0.1, social: 0.1 } }, description: "Sydney sees tourist influx" },
+  { id: "energy_crisis", name: "Energy Crisis", region: "SA", duration: 3, effect: { resourcePrice: { "Uranium": 1.7, "Natural Gas": 1.4 } }, description: "Energy resources in high demand" }
+];
+
+// AI mood states based on performance
+const AI_MOOD_STATES = {
+  confident: { emoji: "😎", tauntChance: 0.4, riskModifier: 1.2, messages: ["I'm crushing it!", "Can't stop me now!", "Too easy!"] },
+  neutral: { emoji: "🤖", tauntChance: 0.1, riskModifier: 1.0, messages: ["Calculating...", "Interesting move.", "Noted."] },
+  desperate: { emoji: "😰", tauntChance: 0.05, riskModifier: 0.7, messages: ["Need to catch up!", "This isn't over!", "Time to take risks..."] },
+  aggressive: { emoji: "😤", tauntChance: 0.3, riskModifier: 1.4, messages: ["Watch this!", "All in!", "No holding back!"] }
+};
+
+// Challenge streak bonus tiers (universal for all characters)
+const STREAK_BONUSES = {
+  3: { xpBonus: 0.05, rewardBonus: 0, label: "Hot Streak", emoji: "🔥" },
+  5: { xpBonus: 0.1, rewardBonus: 0.1, label: "On Fire", emoji: "🔥🔥" },
+  7: { xpBonus: 0.15, rewardBonus: 0.15, label: "Unstoppable", emoji: "🔥🔥🔥" },
+  10: { xpBonus: 0.2, rewardBonus: 0.25, label: "Legendary", emoji: "⭐🔥⭐" }
+};
+
 // Enhanced Characters with mastery progression
 const CHARACTERS = [
   {
@@ -520,7 +608,8 @@ const initialGameState = {
   season: "Summer",
   weather: "Sunny",
   resourcePrices: {},
-  activeEvents: [],
+  priceHistory: [] as Array<{day: number, prices: Record<string, number>}>,
+  activeEvents: [] as Array<{id: string, name: string, region: string, duration: number, remainingDays: number, effect: any, description: string}>,
   marketTrend: "stable",
   gameMode: "menu",
   selectedMode: null,
@@ -531,7 +620,14 @@ const initialGameState = {
   maxActionsPerTurn: 3,
   actionLimitsEnabled: true,
   playerActionsThisTurn: 0,
-  allChallengesCompleted: false
+  allChallengesCompleted: false,
+  // New enhancement fields
+  aiMood: "neutral" as keyof typeof AI_MOOD_STATES,
+  netWorthHistory: [] as Array<{day: number, playerWorth: number, aiWorth: number}>,
+  bestDayRecord: { day: 0, earned: 0 },
+  supplyDemand: {} as Record<string, number>, // Tracks how much of each resource has been sold
+  doubleOrNothingAvailable: false,
+  lastChallengeReward: 0
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -580,9 +676,32 @@ function gameStateReducer(state, action) {
       return { ...state, maxActionsPerTurn: action.payload };
     case 'SET_ALL_CHALLENGES_COMPLETED':
       return { ...state, allChallengesCompleted: action.payload };
+    // New enhancement actions
+    case 'SET_AI_MOOD':
+      return { ...state, aiMood: action.payload };
+    case 'ADD_PRICE_HISTORY':
+      const newHistory = [...state.priceHistory, action.payload].slice(-10); // Keep last 10 days
+      return { ...state, priceHistory: newHistory };
+    case 'ADD_NET_WORTH_HISTORY':
+      const newWorthHistory = [...state.netWorthHistory, action.payload].slice(-30);
+      return { ...state, netWorthHistory: newWorthHistory };
+    case 'UPDATE_BEST_DAY':
+      if (action.payload.earned > state.bestDayRecord.earned) {
+        return { ...state, bestDayRecord: action.payload };
+      }
+      return state;
+    case 'UPDATE_SUPPLY_DEMAND':
+      const newSupplyDemand = { ...state.supplyDemand };
+      const resource = action.payload.resource;
+      newSupplyDemand[resource] = (newSupplyDemand[resource] || 0) + action.payload.amount;
+      return { ...state, supplyDemand: newSupplyDemand };
+    case 'SET_DOUBLE_OR_NOTHING':
+      return { ...state, doubleOrNothingAvailable: action.payload.available, lastChallengeReward: action.payload.reward || 0 };
+    case 'UPDATE_ACTIVE_EVENTS':
+      return { ...state, activeEvents: action.payload };
     case 'RESET_GAME':
-      return { 
-        ...initialGameState, 
+      return {
+        ...initialGameState,
         gameMode: state.gameMode,
         selectedMode: state.selectedMode,
         aiDifficulty: state.aiDifficulty
@@ -680,7 +799,11 @@ function AustraliaGame() {
     quickActionsOpen: true,
     showAiStats: false,
     showDayTransition: false,
-    showSaveLoadModal: false
+    showSaveLoadModal: false,
+    // New inventory management options
+    inventorySort: 'default' as 'default' | 'value' | 'quantity' | 'category',
+    inventoryFilter: 'all' as 'all' | 'luxury' | 'food' | 'industrial' | 'agricultural' | 'energy' | 'financial' | 'service',
+    showDoubleOrNothing: false
   });
 
   // Special ability state tracking
@@ -1928,6 +2051,19 @@ function AustraliaGame() {
   }, [applyLoadedState, closeLoadPreview, loadPreview]);
 
   const calculateTravelCost = useCallback((fromRegion, toRegion) => {
+    // Weather modifier for travel costs
+    const weatherModifier = WEATHER_EFFECTS[gameState.weather]?.travelCostModifier || 1.0;
+    // Season modifier for travel costs
+    const seasonModifier = SEASON_EFFECTS[gameState.season]?.travelCostModifier || 1.0;
+
+    // Check for active event affecting travel to this region
+    let eventModifier = 1.0;
+    gameState.activeEvents.forEach(event => {
+      if (event.region === toRegion && event.effect?.travelCost) {
+        eventModifier *= event.effect.travelCost;
+      }
+    });
+
     if (ADJACENT_REGIONS[fromRegion]?.includes(toRegion)) {
       let baseCost = 200;
       if (player.character.name === "Explorer") {
@@ -1936,9 +2072,11 @@ function AustraliaGame() {
       if (player.masteryUnlocks.includes("Pathfinder")) {
         return 0;
       }
+      // Apply weather, season, and event modifiers
+      baseCost = baseCost * weatherModifier * seasonModifier * eventModifier;
       return Math.floor(baseCost);
     }
-    
+
     let baseCost = toRegion === "TAS" ? 800 : 500;
     if (player.character.name === "Explorer") {
       baseCost *= 0.75;
@@ -1946,8 +2084,10 @@ function AustraliaGame() {
     if (player.masteryUnlocks.includes("Fast Travel")) {
       return 300;
     }
+    // Apply weather, season, and event modifiers
+    baseCost = baseCost * weatherModifier * seasonModifier * eventModifier;
     return Math.floor(baseCost);
-  }, [player.character, player.masteryUnlocks]);
+  }, [player.character, player.masteryUnlocks, gameState.weather, gameState.season, gameState.activeEvents]);
 
   const calculateSuccessChance = useCallback((challenge) => {
     const baseChance = 0.5;
@@ -1956,13 +2096,27 @@ function AustraliaGame() {
       challenge.type === "social" ? "charisma" :
       challenge.type === "wildlife" ? "luck" : "intelligence"
     ] || 3) * 0.05;
-    
+
     const difficultyPenalty = challenge.difficulty * 0.1;
     const characterBonus = player.character.name === "Tourist" ? 0.1 : 0;
     const levelBonus = player.level * 0.02;
-    
-    return Math.min(0.95, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus));
-  }, [player.stats, player.character, player.level]);
+
+    // Weather effect on challenge success
+    const weatherEffect = WEATHER_EFFECTS[gameState.weather]?.challengeModifier?.[challenge.type] || 0;
+
+    // Season effect on challenge success
+    const seasonEffect = SEASON_EFFECTS[gameState.season]?.challengeModifier?.[challenge.type] || 0;
+
+    // Active event effects (check if there's an event in current region that affects this challenge type)
+    let eventBonus = 0;
+    gameState.activeEvents.forEach(event => {
+      if (event.region === player.currentRegion && event.effect?.challengeBonus?.[challenge.type]) {
+        eventBonus += event.effect.challengeBonus[challenge.type];
+      }
+    });
+
+    return Math.min(0.95, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus));
+  }, [player.stats, player.character, player.level, player.currentRegion, gameState.weather, gameState.season, gameState.activeEvents]);
 
   const calculateFinalScore = useCallback((playerData) => {
     return playerData.money + 
@@ -2066,6 +2220,34 @@ function AustraliaGame() {
     );
   }, [player, calculateTravelCost, addNotification, showConfirmation, incrementAction]);
 
+  // Calculate dynamic max wager based on difficulty and level
+  const calculateMaxWager = useCallback((challenge) => {
+    const baseMax = 500;
+    const levelBonus = player.level * 50; // +50 per level
+    const difficultyBonus = challenge.difficulty * 100; // +100 per difficulty level
+    return Math.min(2000, baseMax + levelBonus + difficultyBonus);
+  }, [player.level]);
+
+  // Handle double or nothing
+  const handleDoubleOrNothing = useCallback(() => {
+    if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) return;
+
+    const doubleReward = gameState.lastChallengeReward * 2;
+    const success = Math.random() < 0.5; // 50/50 chance
+
+    if (success) {
+      dispatchPlayer({ type: 'UPDATE_MONEY', payload: gameState.lastChallengeReward }); // Add the extra amount
+      addNotification(`Double or Nothing SUCCESS! Won extra $${gameState.lastChallengeReward}! Total: $${doubleReward}`, 'success', true);
+      updatePersonalRecords('earned', gameState.lastChallengeReward);
+    } else {
+      dispatchPlayer({ type: 'UPDATE_MONEY', payload: -gameState.lastChallengeReward }); // Lose the original reward
+      addNotification(`Double or Nothing FAILED! Lost your $${gameState.lastChallengeReward} reward!`, 'error', true);
+    }
+
+    dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
+    updateUiState({ showDoubleOrNothing: false });
+  }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords]);
+
   const takeChallenge = useCallback((challenge, wager) => {
     let successChance = calculateSuccessChance(challenge);
 
@@ -2100,11 +2282,26 @@ function AustraliaGame() {
           reward = Math.floor(reward * 1.1);
         }
 
-        // Apply Lucky Streak mastery bonus
+        // Apply Lucky Streak mastery bonus (Tourist-specific)
         if (player.masteryUnlocks.includes("Lucky Streak") && player.consecutiveWins > 0) {
           const streakBonus = Math.min(0.5, player.consecutiveWins * 0.1);
           reward = Math.floor(reward * (1 + streakBonus));
           addNotification(`Lucky Streak! +${Math.round(streakBonus * 100)}% bonus`, 'success');
+        }
+
+        // Universal streak bonuses (apply to all characters)
+        const newStreak = player.consecutiveWins + 1;
+        const streakTiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a);
+        let appliedStreakBonus = null;
+        for (const tier of streakTiers) {
+          if (newStreak >= tier) {
+            appliedStreakBonus = STREAK_BONUSES[tier];
+            break;
+          }
+        }
+        if (appliedStreakBonus && !player.masteryUnlocks.includes("Lucky Streak")) {
+          // Only apply universal bonus if Lucky Streak mastery isn't active (to avoid double-dipping)
+          reward = Math.floor(reward * (1 + appliedStreakBonus.rewardBonus));
         }
 
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
@@ -2115,12 +2312,27 @@ function AustraliaGame() {
         if (player.masteryUnlocks.includes("Quick Study")) {
           xpGain = Math.floor(xpGain * 1.5);
         }
+        // Apply universal streak XP bonus
+        if (appliedStreakBonus) {
+          xpGain = Math.floor(xpGain * (1 + appliedStreakBonus.xpBonus));
+        }
         dispatchPlayer({ type: 'GAIN_XP', payload: xpGain });
+
+        // Show streak notification
+        if (appliedStreakBonus) {
+          addNotification(`${appliedStreakBonus.emoji} ${appliedStreakBonus.label}! ${newStreak} wins in a row!`, 'success');
+        }
 
         addNotification(`${challenge.name} completed! Won $${reward}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
         updatePersonalRecords('challenge', reward);
-        updatePersonalRecords('consecutiveWins', player.consecutiveWins + 1);
+        updatePersonalRecords('consecutiveWins', newStreak);
         updatePersonalRecords('earned', reward);
+
+        // Enable double or nothing for this reward
+        if (reward >= 100) {
+          dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: true, reward: reward } });
+          addNotification('Double or Nothing available! Risk your reward for 2x!', 'info', true);
+        }
 
         // Clear active special ability after use
         if (activeSpecialAbility) {
@@ -2143,6 +2355,9 @@ function AustraliaGame() {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
         dispatchPlayer({ type: 'RESET_STREAK' });
         addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
+
+        // Disable double or nothing on failure
+        dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
 
         // Store failed challenge for Tourist Luck retry
         if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
@@ -2182,22 +2397,84 @@ function AustraliaGame() {
     }
   }, [player, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction]);
 
+  // Calculate regional demand bonus for selling resources
+  const calculateRegionalBonus = useCallback((resource: string, region: string) => {
+    const resourceCategory = RESOURCE_CATEGORIES[resource];
+    const localResources = REGIONAL_RESOURCES[region] || [];
+
+    // If the resource is NOT local to the region, it's more valuable (regional demand)
+    if (!localResources.includes(resource)) {
+      // Food sells better in industrial/mining regions
+      if (resourceCategory === 'food' && ['WA', 'SA', 'NT'].includes(region)) {
+        return 1.2; // 20% bonus
+      }
+      // Luxury items sell better in urban areas
+      if (resourceCategory === 'luxury' && ['NSW', 'VIC', 'ACT'].includes(region)) {
+        return 1.15; // 15% bonus
+      }
+      // Energy resources sell better in industrial regions
+      if (resourceCategory === 'energy' && ['NSW', 'VIC', 'QLD'].includes(region)) {
+        return 1.1; // 10% bonus
+      }
+    }
+    return 1.0; // No bonus
+  }, []);
+
+  // Calculate supply/demand modifier (selling lots of one resource lowers price)
+  const calculateSupplyDemandModifier = useCallback((resource: string) => {
+    const soldAmount = gameState.supplyDemand[resource] || 0;
+    // Every 5 units sold reduces price by 5%, max 25% reduction
+    const reduction = Math.min(0.25, soldAmount * 0.01);
+    return 1 - reduction;
+  }, [gameState.supplyDemand]);
+
   const sellResource = useCallback((resource, price) => {
     const confirmSell = () => {
       const index = player.inventory.indexOf(resource);
       if (index > -1) {
         let finalPrice = price;
-        
-        if (player.character.name === "Businessman") {
-          finalPrice = Math.floor(price * 1.1);
+
+        // Apply regional demand bonus
+        const regionalBonus = calculateRegionalBonus(resource, player.currentRegion);
+        finalPrice = Math.floor(finalPrice * regionalBonus);
+
+        // Apply supply/demand modifier
+        const supplyDemandMod = calculateSupplyDemandModifier(resource);
+        finalPrice = Math.floor(finalPrice * supplyDemandMod);
+
+        // Apply active event effects on resource prices
+        gameState.activeEvents.forEach(event => {
+          if (event.effect?.resourcePrice?.[resource]) {
+            finalPrice = Math.floor(finalPrice * event.effect.resourcePrice[resource]);
+          }
+        });
+
+        // Apply season effects on resource prices
+        const resourceCategory = RESOURCE_CATEGORIES[resource];
+        const seasonMod = SEASON_EFFECTS[gameState.season]?.resourcePriceModifier?.[resourceCategory];
+        if (seasonMod) {
+          finalPrice = Math.floor(finalPrice * seasonMod);
         }
-        
+
+        if (player.character.name === "Businessman") {
+          finalPrice = Math.floor(finalPrice * 1.1);
+        }
+
         if (player.masteryUnlocks.includes("Investment Genius")) {
           finalPrice = Math.floor(finalPrice * 1.15);
         }
-        
+
         dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource, price: finalPrice } });
-        addNotification(`Sold ${resource} for $${finalPrice}`, 'money');
+
+        // Update supply/demand tracking
+        dispatchGameState({ type: 'UPDATE_SUPPLY_DEMAND', payload: { resource, amount: 1 } });
+
+        // Show bonus notification if applicable
+        const bonusMessages = [];
+        if (regionalBonus > 1) bonusMessages.push(`+${Math.round((regionalBonus - 1) * 100)}% regional demand`);
+        if (supplyDemandMod < 1) bonusMessages.push(`${Math.round((1 - supplyDemandMod) * 100)}% oversupply`);
+
+        addNotification(`Sold ${resource} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`, 'money');
         updatePersonalRecords('resource', { resource, price: finalPrice });
         updatePersonalRecords('earned', finalPrice);
         updatePersonalRecords('money', player.money + finalPrice);
@@ -2217,7 +2494,7 @@ function AustraliaGame() {
     } else {
       confirmSell();
     }
-  }, [player, addNotification, showConfirmation, updatePersonalRecords, incrementAction]);
+  }, [player, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier]);
 
   const retryFailedChallenge = useCallback(() => {
     if (!failedChallengeData) return;
@@ -2305,6 +2582,14 @@ function AustraliaGame() {
     const prevDay = gameState.day;
     const newDay = prevDay + 1;
 
+    // Track net worth history for progress dashboard
+    const playerWorth = player.money + player.inventory.reduce((sum, r) => sum + (gameState.resourcePrices[r] || 100), 0);
+    const aiWorth = aiPlayer.money + aiPlayer.inventory.reduce((sum, r) => sum + (gameState.resourcePrices[r] || 100), 0);
+    dispatchGameState({ type: 'ADD_NET_WORTH_HISTORY', payload: { day: prevDay, playerWorth, aiWorth } });
+
+    // Track price history for Market Insight
+    dispatchGameState({ type: 'ADD_PRICE_HISTORY', payload: { day: prevDay, prices: { ...gameState.resourcePrices } } });
+
     // Show day transition screen if enabled
     if (gameSettings.showDayTransition) {
       setDayTransitionData({
@@ -2336,9 +2621,50 @@ function AustraliaGame() {
     const newTrend = trends[Math.floor(Math.random() * trends.length)];
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
 
+    // Process active events - decrease remaining days and remove expired ones
+    const updatedEvents = gameState.activeEvents
+      .map(event => ({ ...event, remainingDays: event.remainingDays - 1 }))
+      .filter(event => event.remainingDays > 0);
+
+    // Chance to spawn new event (20% chance per day)
+    if (Math.random() < 0.2 && updatedEvents.length < 3) {
+      const availableEvents = REGIONAL_EVENTS.filter(
+        e => !updatedEvents.some(active => active.id === e.id)
+      );
+      if (availableEvents.length > 0) {
+        const newEvent = availableEvents[Math.floor(Math.random() * availableEvents.length)];
+        const activeEvent = { ...newEvent, remainingDays: newEvent.duration };
+        updatedEvents.push(activeEvent);
+        addNotification(`Event: ${newEvent.name} in ${REGIONS[newEvent.region]?.name || newEvent.region}!`, 'event', true);
+      }
+    }
+    dispatchGameState({ type: 'UPDATE_ACTIVE_EVENTS', payload: updatedEvents });
+
+    // Calculate AI mood based on performance difference
+    const moneyDiff = aiPlayer.money - player.money;
+    const worthDiff = aiWorth - playerWorth;
+    let newMood: keyof typeof AI_MOOD_STATES = 'neutral';
+    if (worthDiff > 500) {
+      newMood = 'confident';
+    } else if (worthDiff < -500) {
+      newMood = 'desperate';
+    } else if (Math.abs(worthDiff) < 200 && gameState.day > 10) {
+      newMood = 'aggressive';
+    }
+    dispatchGameState({ type: 'SET_AI_MOOD', payload: newMood });
+
+    // AI taunt based on mood
+    if (gameState.selectedMode === 'ai') {
+      const moodState = AI_MOOD_STATES[newMood];
+      if (Math.random() < moodState.tauntChance) {
+        const taunt = moodState.messages[Math.floor(Math.random() * moodState.messages.length)];
+        addNotification(`${moodState.emoji} AI: "${taunt}"`, 'ai', false);
+      }
+    }
+
     if (!gameSettings.showDayTransition) {
       addNotification(`Market trend: ${newTrend}`, 'market', true);
-      addNotification(`Weather: ${newWeather}`, 'info', true);
+      addNotification(`Weather: ${newWeather} - ${WEATHER_EFFECTS[newWeather]?.description || ''}`, 'info', true);
     }
 
     // Check for game end - use configurable totalDays
@@ -3129,6 +3455,23 @@ function AustraliaGame() {
                 {AI_DIFFICULTY_PROFILES[gameState.aiDifficulty].description}
               </p>
             </div>
+
+            {/* AI Mood */}
+            <div className={`${themeStyles.border} border rounded-lg p-4`}>
+              <h4 className="font-bold mb-2">Current Mood</h4>
+              <div className="flex items-center space-x-3">
+                <span className="text-4xl">{AI_MOOD_STATES[gameState.aiMood]?.emoji}</span>
+                <div>
+                  <div className="font-bold capitalize">{gameState.aiMood}</div>
+                  <div className="text-sm opacity-75">
+                    {gameState.aiMood === 'confident' && 'Playing aggressively, taking more risks'}
+                    {gameState.aiMood === 'neutral' && 'Playing balanced strategy'}
+                    {gameState.aiMood === 'desperate' && 'May make risky moves to catch up'}
+                    {gameState.aiMood === 'aggressive' && 'Going all-in on high-value plays'}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3207,6 +3550,105 @@ function AustraliaGame() {
                 <div>Cash: ${player.money.toLocaleString()}</div>
                 <div>Inventory: ${getInventoryValue.toLocaleString()}</div>
               </div>
+            </div>
+
+            {/* Net Worth History Graph */}
+            {gameState.netWorthHistory.length > 1 && (
+              <div className={`${themeStyles.border} border rounded-lg p-4 md:col-span-2`}>
+                <h4 className="font-bold mb-3">📈 Net Worth History</h4>
+                <div className="h-32 flex items-end space-x-1">
+                  {gameState.netWorthHistory.slice(-15).map((entry, index) => {
+                    const maxWorth = Math.max(...gameState.netWorthHistory.map(e => Math.max(e.playerWorth, e.aiWorth || 0)));
+                    const playerHeight = (entry.playerWorth / maxWorth) * 100;
+                    const aiHeight = gameState.selectedMode === 'ai' ? (entry.aiWorth / maxWorth) * 100 : 0;
+                    return (
+                      <div key={index} className="flex-1 flex space-x-0.5" title={`Day ${entry.day}: You $${entry.playerWorth}${gameState.selectedMode === 'ai' ? `, AI $${entry.aiWorth}` : ''}`}>
+                        <div
+                          className="flex-1 bg-green-500 rounded-t transition-all"
+                          style={{ height: `${playerHeight}%` }}
+                        />
+                        {gameState.selectedMode === 'ai' && (
+                          <div
+                            className="flex-1 bg-pink-500 rounded-t transition-all"
+                            style={{ height: `${aiHeight}%` }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-center space-x-4 mt-2 text-xs">
+                  <div className="flex items-center space-x-1">
+                    <div className="w-3 h-3 bg-green-500 rounded"></div>
+                    <span>You</span>
+                  </div>
+                  {gameState.selectedMode === 'ai' && (
+                    <div className="flex items-center space-x-1">
+                      <div className="w-3 h-3 bg-pink-500 rounded"></div>
+                      <span>AI</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Active Events */}
+            {gameState.activeEvents.length > 0 && (
+              <div className={`${themeStyles.border} border rounded-lg p-4 md:col-span-2`}>
+                <h4 className="font-bold mb-3">⚡ Active Events</h4>
+                <div className="space-y-2">
+                  {gameState.activeEvents.map((event, index) => (
+                    <div key={index} className="flex justify-between items-center bg-gray-700 bg-opacity-50 rounded-lg p-2">
+                      <div>
+                        <div className="font-bold text-sm">{event.name}</div>
+                        <div className="text-xs opacity-75">{REGIONS[event.region]?.name || event.region} - {event.description}</div>
+                      </div>
+                      <div className="text-sm bg-yellow-500 bg-opacity-20 text-yellow-400 px-2 py-1 rounded">
+                        {event.remainingDays} days
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Best Day Record */}
+            {gameState.bestDayRecord.earned > 0 && (
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="font-bold mb-2">🌟 Best Day</h4>
+                <div className="text-2xl font-bold text-yellow-500">
+                  Day {gameState.bestDayRecord.day}
+                </div>
+                <div className="text-sm opacity-75">
+                  Earned ${gameState.bestDayRecord.earned.toLocaleString()}
+                </div>
+              </div>
+            )}
+
+            {/* Streak Status */}
+            <div className={`${themeStyles.border} border rounded-lg p-4`}>
+              <h4 className="font-bold mb-2">🔥 Current Streak</h4>
+              <div className="text-2xl font-bold">
+                {player.consecutiveWins} wins
+              </div>
+              {(() => {
+                const streakTiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => a - b);
+                const nextTier = streakTiers.find(t => t > player.consecutiveWins);
+                const currentTierKey = streakTiers.filter(t => t <= player.consecutiveWins).pop();
+                const currentTier = currentTierKey ? STREAK_BONUSES[currentTierKey] : null;
+                return (
+                  <>
+                    {currentTier && (
+                      <div className="text-sm text-yellow-400">{currentTier.emoji} {currentTier.label}</div>
+                    )}
+                    {nextTier && (
+                      <div className="text-xs opacity-75 mt-1">
+                        {nextTier - player.consecutiveWins} more for {STREAK_BONUSES[nextTier].label}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             
             {/* Regions Explored */}
@@ -3650,14 +4092,66 @@ function AustraliaGame() {
                   )}
                 </div>
               </div>
-              <div>
+              <div className="relative group">
                 <div className="text-sm opacity-75">Season</div>
                 <div className="font-bold">{gameState.season}</div>
+                {/* Season effect tooltip */}
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+                  <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs whitespace-nowrap shadow-lg`}>
+                    <div className="font-bold mb-1">{SEASON_EFFECTS[gameState.season]?.description}</div>
+                    <div className="space-y-0.5 opacity-75">
+                      <div>Travel: {SEASON_EFFECTS[gameState.season]?.travelCostModifier > 1 ? `+${Math.round((SEASON_EFFECTS[gameState.season].travelCostModifier - 1) * 100)}%` : SEASON_EFFECTS[gameState.season]?.travelCostModifier < 1 ? `-${Math.round((1 - SEASON_EFFECTS[gameState.season].travelCostModifier) * 100)}%` : 'Normal'}</div>
+                      <div>Bonus Resources: +{Math.round((SEASON_EFFECTS[gameState.season]?.bonusResourceChance || 0) * 100)}%</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
+              <div className="relative group">
                 <div className="text-sm opacity-75">Weather</div>
-                <div className="font-bold">{gameState.weather}</div>
+                <div className={`font-bold ${gameState.weather === 'Stormy' ? 'text-yellow-400' : gameState.weather === 'Rainy' ? 'text-blue-400' : ''}`}>
+                  {gameState.weather === 'Sunny' ? '☀️' : gameState.weather === 'Cloudy' ? '☁️' : gameState.weather === 'Rainy' ? '🌧️' : '⛈️'} {gameState.weather}
+                </div>
+                {/* Weather effect tooltip */}
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+                  <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs whitespace-nowrap shadow-lg`}>
+                    <div className="font-bold mb-1">{WEATHER_EFFECTS[gameState.weather]?.description}</div>
+                    <div className="space-y-0.5 opacity-75">
+                      <div>Travel Cost: {WEATHER_EFFECTS[gameState.weather]?.travelCostModifier > 1 ? `+${Math.round((WEATHER_EFFECTS[gameState.weather].travelCostModifier - 1) * 100)}%` : 'Normal'}</div>
+                      {Object.entries(WEATHER_EFFECTS[gameState.weather]?.challengeModifier || {}).map(([type, mod]) => (
+                        mod !== 0 && <div key={type}>{type}: {(mod as number) > 0 ? '+' : ''}{Math.round((mod as number) * 100)}%</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
+              {/* AI Mood (only in AI mode) */}
+              {gameState.selectedMode === 'ai' && (
+                <div>
+                  <div className="text-sm opacity-75">AI Mood</div>
+                  <div className="font-bold">
+                    {AI_MOOD_STATES[gameState.aiMood]?.emoji} {gameState.aiMood.charAt(0).toUpperCase() + gameState.aiMood.slice(1)}
+                  </div>
+                </div>
+              )}
+              {/* Active Events Indicator */}
+              {gameState.activeEvents.length > 0 && (
+                <div className="relative group">
+                  <div className="text-sm opacity-75">Events</div>
+                  <div className="font-bold text-yellow-400">
+                    ⚡ {gameState.activeEvents.length} Active
+                  </div>
+                  <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block z-50">
+                    <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs shadow-lg min-w-48`}>
+                      {gameState.activeEvents.map((event, idx) => (
+                        <div key={idx} className="mb-1 last:mb-0">
+                          <div className="font-bold">{event.name}</div>
+                          <div className="opacity-75">{REGIONS[event.region]?.name} - {event.remainingDays}d left</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3730,6 +4224,31 @@ function AustraliaGame() {
               <span>🍀</span>
               <span>Retry Challenge</span>
             </button>
+          )}
+
+          {/* Double or Nothing Button - Shows after winning a challenge */}
+          {gameState.doubleOrNothingAvailable && isPlayerTurn && (
+            <button
+              onClick={handleDoubleOrNothing}
+              className="bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-2 rounded-lg flex items-center space-x-2 animate-pulse"
+            >
+              <span>🎲</span>
+              <span>Double or Nothing (${gameState.lastChallengeReward})</span>
+            </button>
+          )}
+
+          {/* Streak Indicator */}
+          {player.consecutiveWins >= 3 && (
+            <div className="flex items-center px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg text-white text-sm">
+              {(() => {
+                const streakTiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a);
+                const currentTierKey = streakTiers.find(t => t <= player.consecutiveWins);
+                const tier = currentTierKey ? STREAK_BONUSES[currentTierKey] : null;
+                return tier ? (
+                  <span>{tier.emoji} {tier.label} ({player.consecutiveWins})</span>
+                ) : null;
+              })()}
+            </div>
           )}
 
           <button
@@ -3848,18 +4367,22 @@ function AustraliaGame() {
                   const isPlayerVisited = player.visitedRegions.includes(code);
                   const isAdjacent = adjacentRegions.includes(code);
                   
+                  const hasEvent = gameState.activeEvents.some(e => e.region === code);
+                  const travelCost = !isPlayerHere ? calculateTravelCost(player.currentRegion, code) : 0;
+                  const canAfford = player.money >= travelCost;
+
                   return (
                     <div
                       key={code}
-                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all hover:scale-110 ${
+                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all hover:scale-110 group ${
                         isPlayerHere || isAiHere ? 'z-20' : 'z-10'
-                      }`}
+                      } ${isAdjacent && !isPlayerHere ? 'hover:z-30' : ''}`}
                       style={{
                         left: `${region.position.x}%`,
                         top: `${region.position.y}%`,
                       }}
                       onClick={() => {
-                        if (isPlayerTurn && (isAdjacent || code === "TAS")) {
+                        if (isPlayerTurn && !isPlayerHere && canAfford) {
                           travelToRegion(code);
                         }
                       }}
@@ -3870,10 +4393,12 @@ function AustraliaGame() {
                             ? 'border-green-500 bg-green-500 text-white animate-pulse'
                             : isAiHere
                             ? 'border-pink-500 bg-pink-500 text-white animate-pulse'
+                            : isAdjacent && canAfford
+                            ? 'border-yellow-500 bg-yellow-600 text-white hover:bg-yellow-500'
                             : isPlayerVisited
                             ? 'border-blue-500 bg-blue-500 text-white'
                             : 'border-gray-600 bg-gray-700 text-gray-400'
-                        } ${themeStyles.shadow}`}
+                        } ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''}`}
                       >
                         {code}
                       </div>
@@ -3887,12 +4412,39 @@ function AustraliaGame() {
                           AI
                         </div>
                       )}
+                      {/* Event indicator */}
+                      {hasEvent && !isPlayerHere && !isAiHere && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center text-xs">
+                          ⚡
+                        </div>
+                      )}
+                      {/* Travel cost tooltip on hover */}
+                      {!isPlayerHere && (
+                        <div className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-8 hidden group-hover:block z-40">
+                          <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs shadow-lg min-w-32`}>
+                            <div className="font-bold mb-1">{region.name}</div>
+                            <div className={canAfford ? 'text-green-400' : 'text-red-400'}>
+                              Travel: ${travelCost}
+                            </div>
+                            {REGIONAL_RESOURCES[code] && (
+                              <div className="mt-1 opacity-75">
+                                Resources: {REGIONAL_RESOURCES[code].slice(0, 2).join(', ')}
+                              </div>
+                            )}
+                            {hasEvent && (
+                              <div className="text-yellow-400 mt-1">
+                                ⚡ {gameState.activeEvents.find(e => e.region === code)?.name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
-              
-              <div className="mt-4 flex justify-center space-x-4 text-sm">
+
+              <div className="mt-4 flex flex-wrap justify-center gap-3 text-sm">
                 <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 bg-green-500 rounded-full"></div>
                   <span>You</span>
@@ -3904,12 +4456,16 @@ function AustraliaGame() {
                   </div>
                 )}
                 <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 bg-yellow-600 rounded-full"></div>
+                  <span>Adjacent</span>
+                </div>
+                <div className="flex items-center space-x-2">
                   <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
                   <span>Visited</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 bg-gray-700 rounded-full"></div>
-                  <span>Unvisited</span>
+                  <div className="w-4 h-4 bg-gray-700 rounded-full border-2 border-yellow-400"></div>
+                  <span>Event</span>
                 </div>
               </div>
             </div>
@@ -4042,7 +4598,7 @@ function AustraliaGame() {
         {/* Challenges Modal */}
         {uiState.showChallenges && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-96 overflow-y-auto`}>
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[80vh] flex flex-col`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">🎯 Challenges in {currentRegion.name}</h3>
                 <button
@@ -4052,28 +4608,79 @@ function AustraliaGame() {
                   ✕
                 </button>
               </div>
-              
-              <div className="space-y-3">
+
+              {/* Weather & Season Effects Banner */}
+              <div className={`${themeStyles.border} border rounded-lg p-3 mb-4 text-xs`}>
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <span className="opacity-75">Weather:</span>{' '}
+                    <span className={gameState.weather === 'Stormy' ? 'text-yellow-400' : gameState.weather === 'Rainy' ? 'text-blue-400' : 'text-green-400'}>
+                      {gameState.weather}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="opacity-75">Season:</span>{' '}
+                    <span className="text-purple-400">{gameState.season}</span>
+                  </div>
+                  {/* Show active event effects */}
+                  {gameState.activeEvents.filter(e => e.region === player.currentRegion).map(event => (
+                    <div key={event.id} className="text-yellow-400">
+                      ⚡ {event.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3 overflow-y-auto flex-1">
                 {currentRegion.challenges.map((challenge: any, index: number) => {
                   const isCompleted = player.challengesCompleted.includes(challenge.name);
                   const successChance = calculateSuccessChance(challenge);
-                  const maxWager = Math.min(player.money, 500);
-                  
+                  const dynamicMaxWager = calculateMaxWager(challenge);
+                  const maxWager = Math.min(player.money, dynamicMaxWager);
+
+                  // Calculate weather/season bonuses for display
+                  const weatherMod = WEATHER_EFFECTS[gameState.weather]?.challengeModifier?.[challenge.type] || 0;
+                  const seasonMod = SEASON_EFFECTS[gameState.season]?.challengeModifier?.[challenge.type] || 0;
+                  const eventMod = gameState.activeEvents
+                    .filter(e => e.region === player.currentRegion && e.effect?.challengeBonus?.[challenge.type])
+                    .reduce((sum, e) => sum + (e.effect.challengeBonus[challenge.type] || 0), 0);
+
                   return (
                     <div key={index} className={`${themeStyles.border} border rounded-lg p-4 ${isCompleted ? 'opacity-50' : ''}`}>
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <div className="font-bold">{challenge.name}</div>
                           <div className="text-sm opacity-75">{challenge.type} challenge</div>
-                          <div className="text-sm">Success: {Math.round(successChance * 100)}%</div>
+                          <div className="flex items-center space-x-2 text-sm">
+                            <span className={successChance >= 0.5 ? 'text-green-400' : 'text-red-400'}>
+                              Success: {Math.round(successChance * 100)}%
+                            </span>
+                            {/* Show modifiers */}
+                            {weatherMod !== 0 && (
+                              <span className={weatherMod > 0 ? 'text-green-400 text-xs' : 'text-red-400 text-xs'}>
+                                ({weatherMod > 0 ? '+' : ''}{Math.round(weatherMod * 100)}% weather)
+                              </span>
+                            )}
+                            {seasonMod !== 0 && (
+                              <span className={seasonMod > 0 ? 'text-green-400 text-xs' : 'text-red-400 text-xs'}>
+                                ({seasonMod > 0 ? '+' : ''}{Math.round(seasonMod * 100)}% season)
+                              </span>
+                            )}
+                            {eventMod !== 0 && (
+                              <span className="text-yellow-400 text-xs">
+                                (+{Math.round(eventMod * 100)}% event)
+                              </span>
+                            )}
+                          </div>
                           {isCompleted && <div className="text-sm text-green-500">✅ Completed</div>}
                         </div>
                         <div className="text-right">
-                          <div className="text-sm">Difficulty: {challenge.difficulty}/3</div>
+                          <div className="text-sm">Difficulty: {'⭐'.repeat(challenge.difficulty)}</div>
                           <div className="text-sm">Reward: {challenge.reward}x</div>
+                          <div className="text-xs opacity-50">Max bet: ${dynamicMaxWager}</div>
                         </div>
                       </div>
-                      
+
                       {!isCompleted && (
                         <>
                           <div className="flex items-center space-x-2 mb-2">
@@ -4081,20 +4688,31 @@ function AustraliaGame() {
                               type="range"
                               min="50"
                               max={maxWager}
-                              value={uiState.wagerAmount}
+                              value={Math.min(uiState.wagerAmount, maxWager)}
                               onChange={(e) => updateUiState({ wagerAmount: parseInt(e.target.value) })}
                               className="flex-1"
                             />
-                            <span className="text-sm font-bold">${uiState.wagerAmount}</span>
+                            <span className="text-sm font-bold w-16 text-right">${Math.min(uiState.wagerAmount, maxWager)}</span>
                           </div>
-                          
-                          <button
-                            onClick={() => takeChallenge(challenge, uiState.wagerAmount)}
-                            disabled={player.money < uiState.wagerAmount || !isPlayerTurn}
-                            className={`${themeStyles.button} text-white px-4 py-2 rounded-lg w-full disabled:opacity-50`}
-                          >
-                            Take Challenge (Wager ${uiState.wagerAmount})
-                          </button>
+
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => takeChallenge(challenge, Math.min(uiState.wagerAmount, maxWager))}
+                              disabled={player.money < 50 || !isPlayerTurn}
+                              className={`${themeStyles.button} text-white px-4 py-2 rounded-lg flex-1 disabled:opacity-50`}
+                            >
+                              Take Challenge (${Math.min(uiState.wagerAmount, maxWager)})
+                            </button>
+                            {maxWager >= 200 && (
+                              <button
+                                onClick={() => takeChallenge(challenge, maxWager)}
+                                disabled={player.money < maxWager || !isPlayerTurn}
+                                className={`bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm disabled:opacity-50`}
+                              >
+                                Max
+                              </button>
+                            )}
+                          </div>
                         </>
                       )}
                     </div>
@@ -4108,7 +4726,7 @@ function AustraliaGame() {
         {/* Market Modal */}
         {uiState.showMarket && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-96 overflow-y-auto`}>
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full max-h-[80vh] flex flex-col`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">💰 Resource Market</h3>
                 <button
@@ -4118,7 +4736,7 @@ function AustraliaGame() {
                   ✕
                 </button>
               </div>
-              
+
               {/* Market Trend Display */}
               <div className={`${themeStyles.border} border rounded-lg p-3 mb-4`}>
                 <div className="flex items-center justify-between">
@@ -4135,6 +4753,10 @@ function AustraliaGame() {
                      '➡️ Stable'}
                   </span>
                 </div>
+                {/* Season effect on prices */}
+                <div className="text-xs opacity-75 mt-1">
+                  Season: {gameState.season} - {SEASON_EFFECTS[gameState.season]?.description || ''}
+                </div>
                 {/* Market Insight - Price Predictions */}
                 {activeSpecialAbility === 'Market Insight' && (
                   <div className="mt-3 pt-3 border-t border-blue-500 border-opacity-30">
@@ -4145,47 +4767,150 @@ function AustraliaGame() {
                       {gameState.marketTrend === 'volatile' && <div className="text-yellow-400">⚡ Prices may swing +/- 30%</div>}
                       {gameState.marketTrend === 'stable' && <div className="text-blue-400">➡ Prices will remain relatively stable (+/- 5%)</div>}
                     </div>
+                    {/* Price History */}
+                    {gameState.priceHistory.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-blue-500 border-opacity-20">
+                        <div className="text-blue-400 font-bold mb-1">Price History (Last 5 days):</div>
+                        <div className="flex space-x-2 overflow-x-auto text-xs">
+                          {gameState.priceHistory.slice(-5).map((history, idx) => (
+                            <div key={idx} className="bg-blue-500 bg-opacity-10 rounded p-1 min-w-max">
+                              D{history.day}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              
+
+              {/* Inventory Sorting & Filtering Controls */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                <select
+                  value={uiState.inventorySort}
+                  onChange={(e) => updateUiState({ inventorySort: e.target.value as any })}
+                  className={`${themeStyles.border} border rounded px-2 py-1 text-sm bg-transparent`}
+                >
+                  <option value="default">Sort: Default</option>
+                  <option value="value">Sort: Value ↓</option>
+                  <option value="quantity">Sort: Quantity ↓</option>
+                  <option value="category">Sort: Category</option>
+                </select>
+                <select
+                  value={uiState.inventoryFilter}
+                  onChange={(e) => updateUiState({ inventoryFilter: e.target.value as any })}
+                  className={`${themeStyles.border} border rounded px-2 py-1 text-sm bg-transparent`}
+                >
+                  <option value="all">Filter: All</option>
+                  <option value="luxury">Luxury</option>
+                  <option value="food">Food</option>
+                  <option value="industrial">Industrial</option>
+                  <option value="agricultural">Agricultural</option>
+                  <option value="energy">Energy</option>
+                  <option value="financial">Financial</option>
+                </select>
+                {player.inventory.length > 0 && (
+                  <div className="text-sm opacity-75 ml-auto">
+                    {player.inventory.length}/{MAX_INVENTORY} items
+                  </div>
+                )}
+              </div>
+
               {player.inventory.length === 0 ? (
                 <div className="text-center py-8 opacity-60">
                   No resources to sell. Collect some resources first!
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {Array.from(new Set(player.inventory)).map(resource => {
-                    const count = player.inventory.filter(item => item === resource).length;
-                    const price = gameState.resourcePrices[resource] || 100;
-                    
-                    return (
-                      <div key={resource} className={`${themeStyles.border} border rounded-lg p-4`}>
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="font-bold">{resource}</div>
-                            <div className="text-sm opacity-75">Owned: {count}</div>
-                            <div className="text-xs opacity-75 mt-1">
-                              Category: {RESOURCE_CATEGORIES[resource] || 'unknown'}
+                <div className="space-y-3 overflow-y-auto flex-1">
+                  {(() => {
+                    // Get unique resources with counts
+                    let resourceData = Array.from(new Set(player.inventory)).map(resource => ({
+                      resource,
+                      count: player.inventory.filter(item => item === resource).length,
+                      price: gameState.resourcePrices[resource] || 100,
+                      category: RESOURCE_CATEGORIES[resource] || 'unknown'
+                    }));
+
+                    // Apply filter
+                    if (uiState.inventoryFilter !== 'all') {
+                      resourceData = resourceData.filter(r => r.category === uiState.inventoryFilter);
+                    }
+
+                    // Apply sort
+                    switch (uiState.inventorySort) {
+                      case 'value':
+                        resourceData.sort((a, b) => (b.price * b.count) - (a.price * a.count));
+                        break;
+                      case 'quantity':
+                        resourceData.sort((a, b) => b.count - a.count);
+                        break;
+                      case 'category':
+                        resourceData.sort((a, b) => a.category.localeCompare(b.category));
+                        break;
+                    }
+
+                    if (resourceData.length === 0) {
+                      return (
+                        <div className="text-center py-4 opacity-60">
+                          No resources match this filter.
+                        </div>
+                      );
+                    }
+
+                    return resourceData.map(({ resource, count, price, category }) => {
+                      const regionalBonus = calculateRegionalBonus(resource, player.currentRegion);
+                      const supplyMod = calculateSupplyDemandModifier(resource);
+
+                      return (
+                        <div key={resource} className={`${themeStyles.border} border rounded-lg p-4`}>
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="font-bold">{resource}</div>
+                              <div className="text-sm opacity-75">Owned: {count}</div>
+                              <div className="text-xs opacity-75 mt-1 flex items-center space-x-2">
+                                <span className="bg-gray-600 bg-opacity-50 px-1 rounded">{category}</span>
+                                {regionalBonus > 1 && (
+                                  <span className="text-green-400">+{Math.round((regionalBonus - 1) * 100)}% regional</span>
+                                )}
+                                {supplyMod < 1 && (
+                                  <span className="text-red-400">-{Math.round((1 - supplyMod) * 100)}% supply</span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-bold text-green-500">${price} each</div>
-                            <div className="text-xs opacity-75 mb-2">
-                              Total: ${price * count}
+                            <div className="text-right">
+                              <div className="font-bold text-green-500">${price} each</div>
+                              <div className="text-xs opacity-75 mb-2">
+                                Total: ${price * count}
+                              </div>
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => sellResource(resource, price)}
+                                  disabled={!isPlayerTurn}
+                                  className={`${themeStyles.accent} text-white px-3 py-1 rounded text-sm disabled:opacity-50`}
+                                >
+                                  Sell 1
+                                </button>
+                                {count > 1 && (
+                                  <button
+                                    onClick={() => {
+                                      // Sell all of this resource type
+                                      for (let i = 0; i < count; i++) {
+                                        sellResource(resource, price);
+                                      }
+                                    }}
+                                    disabled={!isPlayerTurn}
+                                    className={`bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm disabled:opacity-50`}
+                                  >
+                                    All
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <button
-                              onClick={() => sellResource(resource, price)}
-                              disabled={!isPlayerTurn}
-                              className={`${themeStyles.accent} text-white px-4 py-1 rounded text-sm disabled:opacity-50`}
-                            >
-                              Sell One
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
