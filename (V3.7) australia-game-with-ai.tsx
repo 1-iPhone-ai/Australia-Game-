@@ -471,6 +471,62 @@ interface AIAction {
   data?: any;
 }
 
+// =========================================
+// UNDO/REDO & ACTIVITY LOG TYPES
+// =========================================
+
+type ActionType = 'travel' | 'challenge' | 'trade' | 'special_ability' | 'double_or_nothing' | 'end_turn' | 'day_advance';
+
+interface ActionHistoryEntry {
+  id: string;
+  actionType: ActionType;
+  description: string;
+  timestamp: number;
+  day: number;
+  turn: 'player' | 'ai';
+  // State snapshots before the action (for undo)
+  playerStateBefore: PlayerStateSnapshot;
+  gameStateBefore: GameStateSnapshot;
+  aiPlayerBefore?: PlayerStateSnapshot;
+  // Additional data about the action
+  actionData?: {
+    region?: string;
+    cost?: number;
+    reward?: number;
+    resource?: string;
+    challenge?: string;
+    wager?: number;
+    success?: boolean;
+  };
+}
+
+interface ActivityLogEntry {
+  id: string;
+  actionType: ActionType;
+  description: string;
+  timestamp: number;
+  day: number;
+  turn: 'player' | 'ai';
+  actor: string; // Player name or "AI"
+  details: string;
+  moneyChange?: number;
+  result?: 'success' | 'failure' | 'neutral';
+}
+
+interface UndoRedoState {
+  history: ActionHistoryEntry[];
+  redoStack: ActionHistoryEntry[];
+  undosUsedThisTurn: number;
+  maxUndosPerTurn: number;
+}
+
+const DEFAULT_UNDO_REDO_STATE: UndoRedoState = {
+  history: [],
+  redoStack: [],
+  undosUsedThisTurn: 0,
+  maxUndosPerTurn: 2
+};
+
 const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   actionLimitsEnabled: true,
   maxActionsPerTurn: 3,
@@ -849,6 +905,14 @@ function AustraliaGame() {
     data: null
   });
 
+  // =========================================
+  // UNDO/REDO & ACTIVITY LOG STATE
+  // =========================================
+  const [undoRedoState, setUndoRedoState] = useState<UndoRedoState>({ ...DEFAULT_UNDO_REDO_STATE });
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
+  const [showActivityLog, setShowActivityLog] = useState(false);
+  const [activityLogFilter, setActivityLogFilter] = useState<ActionType | 'all'>('all');
+
   // Refs
   const notificationEndRef = useRef<HTMLDivElement>(null);
   const aiTurnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -898,6 +962,205 @@ function AustraliaGame() {
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
   }, []);
+
+  // =========================================
+  // UNDO/REDO & ACTIVITY LOG SYSTEM
+  // =========================================
+
+  // Save current state before an action for potential undo
+  const saveStateSnapshot = useCallback((
+    actionType: ActionType,
+    description: string,
+    actionData?: ActionHistoryEntry['actionData']
+  ): ActionHistoryEntry => {
+    const entry: ActionHistoryEntry = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      actionType,
+      description,
+      timestamp: Date.now(),
+      day: gameState.day,
+      turn: gameState.currentTurn as 'player' | 'ai',
+      playerStateBefore: JSON.parse(JSON.stringify(player)),
+      gameStateBefore: JSON.parse(JSON.stringify(gameState)),
+      aiPlayerBefore: JSON.parse(JSON.stringify(aiPlayer)),
+      actionData
+    };
+    return entry;
+  }, [player, gameState, aiPlayer]);
+
+  // Add to action history (for undo capability)
+  const addToHistory = useCallback((entry: ActionHistoryEntry) => {
+    setUndoRedoState(prev => ({
+      ...prev,
+      history: [...prev.history, entry].slice(-20), // Keep last 20 actions
+      redoStack: [] // Clear redo stack when new action is taken
+    }));
+  }, []);
+
+  // Add entry to activity log (for viewing/export)
+  const addToActivityLog = useCallback((
+    actionType: ActionType,
+    description: string,
+    details: string,
+    actor: string,
+    moneyChange?: number,
+    result?: 'success' | 'failure' | 'neutral'
+  ) => {
+    const entry: ActivityLogEntry = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      actionType,
+      description,
+      timestamp: Date.now(),
+      day: gameState.day,
+      turn: gameState.currentTurn as 'player' | 'ai',
+      actor,
+      details,
+      moneyChange,
+      result
+    };
+    setActivityLog(prev => [...prev, entry]);
+  }, [gameState.day, gameState.currentTurn]);
+
+  // Check if undo is available
+  const canUndo = useMemo(() => {
+    const playerHistory = undoRedoState.history.filter(h => h.turn === 'player');
+    return (
+      playerHistory.length > 0 &&
+      undoRedoState.undosUsedThisTurn < undoRedoState.maxUndosPerTurn &&
+      gameState.currentTurn === 'player'
+    );
+  }, [undoRedoState, gameState.currentTurn]);
+
+  // Check if redo is available
+  const canRedo = useMemo(() => {
+    return undoRedoState.redoStack.length > 0 && gameState.currentTurn === 'player';
+  }, [undoRedoState.redoStack, gameState.currentTurn]);
+
+  // Perform undo
+  const performUndo = useCallback(() => {
+    if (!canUndo) {
+      addNotification('Cannot undo right now', 'warning');
+      return;
+    }
+
+    const lastPlayerAction = [...undoRedoState.history]
+      .reverse()
+      .find(h => h.turn === 'player');
+
+    if (!lastPlayerAction) {
+      addNotification('No actions to undo', 'warning');
+      return;
+    }
+
+    // Restore states
+    dispatchPlayer({ type: 'LOAD_STATE', payload: lastPlayerAction.playerStateBefore });
+    dispatchGameState({ type: 'LOAD_STATE', payload: lastPlayerAction.gameStateBefore });
+    if (lastPlayerAction.aiPlayerBefore) {
+      setAiPlayer(lastPlayerAction.aiPlayerBefore);
+    }
+
+    // Move to redo stack and remove from history
+    setUndoRedoState(prev => ({
+      ...prev,
+      history: prev.history.filter(h => h.id !== lastPlayerAction.id),
+      redoStack: [...prev.redoStack, lastPlayerAction],
+      undosUsedThisTurn: prev.undosUsedThisTurn + 1
+    }));
+
+    // Add to activity log
+    addToActivityLog(
+      lastPlayerAction.actionType,
+      `Undid: ${lastPlayerAction.description}`,
+      `Reverted ${lastPlayerAction.actionType} action`,
+      player.name,
+      undefined,
+      'neutral'
+    );
+
+    addNotification(`Undid: ${lastPlayerAction.description} (${undoRedoState.maxUndosPerTurn - undoRedoState.undosUsedThisTurn - 1} undos left)`, 'info');
+  }, [canUndo, undoRedoState, addNotification, addToActivityLog, player.name]);
+
+  // Perform redo
+  const performRedo = useCallback(() => {
+    if (!canRedo) {
+      addNotification('Nothing to redo', 'warning');
+      return;
+    }
+
+    const lastRedo = undoRedoState.redoStack[undoRedoState.redoStack.length - 1];
+    if (!lastRedo) return;
+
+    // We need to re-execute the action, but for simplicity we'll just notify
+    // In a full implementation, you'd store the action and re-execute it
+    addNotification('Redo: Please repeat the action manually', 'info');
+
+    setUndoRedoState(prev => ({
+      ...prev,
+      redoStack: prev.redoStack.slice(0, -1)
+    }));
+  }, [canRedo, undoRedoState.redoStack, addNotification]);
+
+  // Reset undo count at start of turn
+  const resetUndoCount = useCallback(() => {
+    setUndoRedoState(prev => ({
+      ...prev,
+      undosUsedThisTurn: 0
+    }));
+  }, []);
+
+  // Export activity log as text
+  const exportActivityLog = useCallback(() => {
+    const filteredLog = activityLogFilter === 'all'
+      ? activityLog
+      : activityLog.filter(l => l.actionType === activityLogFilter);
+
+    let text = `=== Australia Adventure Game Log ===\n`;
+    text += `Exported: ${new Date().toLocaleString()}\n`;
+    text += `Player: ${player.name}\n`;
+    text += `Total Actions: ${filteredLog.length}\n`;
+    text += `Filter: ${activityLogFilter === 'all' ? 'All Actions' : activityLogFilter}\n`;
+    text += `${'='.repeat(40)}\n\n`;
+
+    let currentDay = 0;
+    filteredLog.forEach(entry => {
+      if (entry.day !== currentDay) {
+        currentDay = entry.day;
+        text += `\n--- Day ${currentDay} ---\n`;
+      }
+      const time = new Date(entry.timestamp).toLocaleTimeString();
+      const result = entry.result ? ` [${entry.result.toUpperCase()}]` : '';
+      const money = entry.moneyChange ? ` ($${entry.moneyChange > 0 ? '+' : ''}${entry.moneyChange})` : '';
+      text += `[${time}] ${entry.actor}: ${entry.description}${result}${money}\n`;
+      text += `  -> ${entry.details}\n`;
+    });
+
+    text += `\n${'='.repeat(40)}\n`;
+    text += `End of Log\n`;
+
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `game_log_${player.name}_day${gameState.day}_${Date.now()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    addNotification('Activity log exported!', 'success');
+  }, [activityLog, activityLogFilter, player.name, gameState.day, addNotification]);
+
+  // Get filtered activity log entries
+  const filteredActivityLog = useMemo(() => {
+    if (activityLogFilter === 'all') return activityLog;
+    return activityLog.filter(l => l.actionType === activityLogFilter);
+  }, [activityLog, activityLogFilter]);
+
+  // Get last undoable action description
+  const lastUndoableAction = useMemo(() => {
+    const playerHistory = undoRedoState.history.filter(h => h.turn === 'player');
+    return playerHistory[playerHistory.length - 1] || null;
+  }, [undoRedoState.history]);
 
   // =========================================
   // SAVE / LOAD SYSTEM
@@ -2204,26 +2467,46 @@ function AustraliaGame() {
 
   const travelToRegion = useCallback((region) => {
     const cost = calculateTravelCost(player.currentRegion, region);
-    
+
     const confirmTravel = () => {
       if (player.money >= cost) {
+        // Save state snapshot before action (for undo)
+        const snapshot = saveStateSnapshot(
+          'travel',
+          `Travel to ${REGIONS[region].name}`,
+          { region, cost }
+        );
+        addToHistory(snapshot);
+
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
         dispatchPlayer({ type: 'SET_REGION', payload: region });
         updateUiState({ showTravelModal: false });
         addNotification(`Traveled to ${REGIONS[region].name} for $${cost}`, 'travel');
-        
+
         // Collect resources (if inventory not full)
         const regionResources = REGIONAL_RESOURCES[region] || [];
+        let collectedResource = null;
         if (regionResources.length > 0) {
-          const collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
+          collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
 
           if (player.inventory.length < MAX_INVENTORY) {
             dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
             addNotification(`Found ${collectedResource}!`, 'resource');
           } else {
             addNotification(`Inventory full (${MAX_INVENTORY}/${MAX_INVENTORY})! Couldn't collect ${collectedResource}`, 'warning');
+            collectedResource = null;
           }
         }
+
+        // Add to activity log
+        addToActivityLog(
+          'travel',
+          `Traveled to ${REGIONS[region].name}`,
+          `From ${REGIONS[player.currentRegion].name} to ${REGIONS[region].name}${collectedResource ? `. Found ${collectedResource}` : ''}`,
+          player.name,
+          -cost,
+          'neutral'
+        );
 
         incrementAction();
       }
@@ -2237,7 +2520,7 @@ function AustraliaGame() {
       confirmTravel,
       { region, cost }
     );
-  }, [player, calculateTravelCost, addNotification, showConfirmation, incrementAction]);
+  }, [player, calculateTravelCost, addNotification, showConfirmation, incrementAction, saveStateSnapshot, addToHistory, addToActivityLog]);
 
   // Calculate dynamic max wager based on difficulty and level
   const calculateMaxWager = useCallback((challenge) => {
@@ -2287,6 +2570,14 @@ function AustraliaGame() {
         addNotification('Not enough money!', 'error');
         return;
       }
+
+      // Save state snapshot before action (for undo)
+      const snapshot = saveStateSnapshot(
+        'challenge',
+        `${challenge.name} (wager $${wager})`,
+        { challenge: challenge.name, wager }
+      );
+      addToHistory(snapshot);
 
       const success = Math.random() < successChance;
 
@@ -2347,6 +2638,16 @@ function AustraliaGame() {
         updatePersonalRecords('consecutiveWins', newStreak);
         updatePersonalRecords('earned', reward);
 
+        // Add to activity log
+        addToActivityLog(
+          'challenge',
+          `Completed: ${challenge.name}`,
+          `Wagered $${wager}, won $${reward} (${Math.round(successChance * 100)}% success rate)`,
+          player.name,
+          reward,
+          'success'
+        );
+
         // Enable double or nothing for this reward
         if (reward >= 100) {
           dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: true, reward: reward } });
@@ -2374,6 +2675,16 @@ function AustraliaGame() {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
         dispatchPlayer({ type: 'RESET_STREAK' });
         addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
+
+        // Add to activity log
+        addToActivityLog(
+          'challenge',
+          `Failed: ${challenge.name}`,
+          `Wagered $${wager}, lost (${Math.round(successChance * 100)}% success rate)`,
+          player.name,
+          -wager,
+          'failure'
+        );
 
         // Disable double or nothing on failure
         dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
@@ -2414,7 +2725,7 @@ function AustraliaGame() {
     } else {
       confirmChallenge();
     }
-  }, [player, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction]);
+  }, [player, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction, saveStateSnapshot, addToHistory, addToActivityLog]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -2451,6 +2762,14 @@ function AustraliaGame() {
     const confirmSell = () => {
       const index = player.inventory.indexOf(resource);
       if (index > -1) {
+        // Save state snapshot before action (for undo)
+        const snapshot = saveStateSnapshot(
+          'trade',
+          `Sell ${resource}`,
+          { resource, cost: price }
+        );
+        addToHistory(snapshot);
+
         let finalPrice = price;
 
         // Apply regional demand bonus
@@ -2494,6 +2813,17 @@ function AustraliaGame() {
         if (supplyDemandMod < 1) bonusMessages.push(`${Math.round((1 - supplyDemandMod) * 100)}% oversupply`);
 
         addNotification(`Sold ${resource} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`, 'money');
+
+        // Add to activity log
+        addToActivityLog(
+          'trade',
+          `Sold ${resource}`,
+          `Sold in ${REGIONS[player.currentRegion].name} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`,
+          player.name,
+          finalPrice,
+          'success'
+        );
+
         updatePersonalRecords('resource', { resource, price: finalPrice });
         updatePersonalRecords('earned', finalPrice);
         updatePersonalRecords('money', player.money + finalPrice);
@@ -2513,7 +2843,7 @@ function AustraliaGame() {
     } else {
       confirmSell();
     }
-  }, [player, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier]);
+  }, [player, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier, saveStateSnapshot, addToHistory, addToActivityLog]);
 
   const retryFailedChallenge = useCallback(() => {
     if (!failedChallengeData) return;
@@ -2693,12 +3023,13 @@ function AustraliaGame() {
     }
   }, [gameState, gameSettings, player, aiPlayer, personalRecords, addNotification]);
 
-  // When turn switches to player, reset their actions
+  // When turn switches to player, reset their actions and undo count
   useEffect(() => {
     if (gameState.currentTurn === 'player') {
       dispatchPlayer({ type: 'RESET_ACTIONS' });
+      resetUndoCount();
     }
-  }, [gameState.currentTurn]);
+  }, [gameState.currentTurn, resetUndoCount]);
 
   // Lock body scroll when modals are open
   useEffect(() => {
@@ -4571,6 +4902,47 @@ function AustraliaGame() {
             </button>
           )}
 
+          {/* Undo/Redo Controls */}
+          {isPlayerTurn && (
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={performUndo}
+                disabled={!canUndo}
+                className={`${canUndo ? themeStyles.buttonSecondary : themeStyles.buttonDisabled} px-3 py-2 rounded-lg flex items-center space-x-1 text-sm transition-all`}
+                title={lastUndoableAction ? `Undo: ${lastUndoableAction.description}` : 'No actions to undo'}
+              >
+                <span>↶</span>
+                <span>Undo</span>
+                {canUndo && (
+                  <span className="text-xs opacity-70">({undoRedoState.maxUndosPerTurn - undoRedoState.undosUsedThisTurn})</span>
+                )}
+              </button>
+              <button
+                onClick={performRedo}
+                disabled={!canRedo}
+                className={`${canRedo ? themeStyles.buttonSecondary : themeStyles.buttonDisabled} px-3 py-2 rounded-lg flex items-center space-x-1 text-sm transition-all`}
+                title="Redo"
+              >
+                <span>↷</span>
+              </button>
+            </div>
+          )}
+
+          {/* Activity Log Button */}
+          <button
+            onClick={() => setShowActivityLog(true)}
+            className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg flex items-center space-x-1 text-sm`}
+            title="View detailed game log"
+          >
+            <span>📋</span>
+            <span>Game Log</span>
+            {activityLog.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-full">
+                {activityLog.length}
+              </span>
+            )}
+          </button>
+
           {/* Streak Indicator */}
           {player.consecutiveWins >= 3 && (
             <div className="flex items-center px-3 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg text-white text-sm">
@@ -4863,7 +5235,8 @@ function AustraliaGame() {
         {renderEndGameModesModal()}
         {renderConfirmationDialog()}
         {renderNotificationHistory()}
-        
+        {renderActivityLogModal()}
+
         {/* Travel Modal */}
         {uiState.showTravelModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -5508,6 +5881,202 @@ function AustraliaGame() {
           {/* Fixed Footer */}
           <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showNotifications: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Activity Log Modal (Enhanced Game History)
+  const renderActivityLogModal = () => {
+    if (!showActivityLog) return null;
+
+    const ACTION_TYPE_CONFIG = {
+      travel: { icon: '✈️', color: '#3b82f6', label: 'Travel' },
+      challenge: { icon: '🎯', color: '#f59e0b', label: 'Challenge' },
+      trade: { icon: '💰', color: '#10b981', label: 'Trade' },
+      special_ability: { icon: '⚡', color: '#8b5cf6', label: 'Special Ability' },
+      double_or_nothing: { icon: '🎲', color: '#ec4899', label: 'Double or Nothing' },
+      end_turn: { icon: '⏭️', color: '#6b7280', label: 'End Turn' },
+      day_advance: { icon: '🌅', color: '#f97316', label: 'New Day' }
+    };
+
+    // Group entries by day
+    const entriesByDay: Record<number, ActivityLogEntry[]> = {};
+    filteredActivityLog.forEach(entry => {
+      if (!entriesByDay[entry.day]) entriesByDay[entry.day] = [];
+      entriesByDay[entry.day].push(entry);
+    });
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => setShowActivityLog(false)}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center space-x-3">
+                <h3 className="text-2xl font-bold">📋 Game Activity Log</h3>
+                <span className={`text-sm px-2 py-1 rounded ${themeStyles.backgroundTertiary}`}>
+                  {filteredActivityLog.length} entries
+                </span>
+              </div>
+              <button
+                onClick={() => setShowActivityLog(false)}
+                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                onClick={() => setActivityLogFilter('all')}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
+                  activityLogFilter === 'all'
+                    ? themeStyles.button
+                    : themeStyles.buttonSecondary
+                }`}
+              >
+                All ({activityLog.length})
+              </button>
+              {(Object.keys(ACTION_TYPE_CONFIG) as ActionType[]).map(type => {
+                const count = activityLog.filter(e => e.actionType === type).length;
+                if (count === 0) return null;
+                const config = ACTION_TYPE_CONFIG[type];
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setActivityLogFilter(type)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium flex items-center space-x-1 transition-all ${
+                      activityLogFilter === type
+                        ? themeStyles.button
+                        : themeStyles.buttonSecondary
+                    }`}
+                  >
+                    <span>{config.icon}</span>
+                    <span>{config.label}</span>
+                    <span className="opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Export Button */}
+            {activityLog.length > 0 && (
+              <button
+                onClick={exportActivityLog}
+                className={`${themeStyles.success} text-white px-4 py-2 rounded text-sm flex items-center space-x-2 w-full justify-center`}
+              >
+                <span>📥</span>
+                <span>Export Log as Text File</span>
+              </button>
+            )}
+          </div>
+
+          {/* Scrollable Log Content */}
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 320px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            {filteredActivityLog.length === 0 ? (
+              <div className="text-center py-12 opacity-60">
+                <div className="text-4xl mb-3">📋</div>
+                <div>No activity recorded yet</div>
+                <div className="text-sm mt-2">Your actions will appear here as you play</div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(entriesByDay).sort(([a], [b]) => Number(b) - Number(a)).map(([day, entries]) => (
+                  <div key={day} className="space-y-2">
+                    <div className={`sticky top-0 ${themeStyles.card} py-2 z-10 flex items-center space-x-2`}>
+                      <span className="text-lg font-bold">Day {day}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${themeStyles.backgroundTertiary}`}>
+                        {entries.length} actions
+                      </span>
+                    </div>
+                    <div className="space-y-2 pl-4 border-l-2 border-gray-600">
+                      {entries.map(entry => {
+                        const config = ACTION_TYPE_CONFIG[entry.actionType];
+                        return (
+                          <div
+                            key={entry.id}
+                            className={`${themeStyles.backgroundTertiary} rounded-lg p-3 transition-all hover:scale-[1.01]`}
+                          >
+                            <div className="flex items-start space-x-3">
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                                style={{ backgroundColor: config.color + '33' }}
+                              >
+                                {config.icon}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-medium">{entry.actor}</span>
+                                    <span
+                                      className="text-xs px-1.5 py-0.5 rounded"
+                                      style={{ backgroundColor: config.color + '33', color: config.color }}
+                                    >
+                                      {config.label}
+                                    </span>
+                                    {entry.result && (
+                                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                        entry.result === 'success' ? 'bg-green-500/20 text-green-400' :
+                                        entry.result === 'failure' ? 'bg-red-500/20 text-red-400' :
+                                        'bg-gray-500/20 text-gray-400'
+                                      }`}>
+                                        {entry.result}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs opacity-50">
+                                    {new Date(entry.timestamp).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                <div className="font-medium">{entry.description}</div>
+                                <div className="text-sm opacity-70 mt-1">{entry.details}</div>
+                                {entry.moneyChange !== undefined && entry.moneyChange !== 0 && (
+                                  <div className={`text-sm font-medium mt-1 ${entry.moneyChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {entry.moneyChange > 0 ? '+' : ''}${entry.moneyChange}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Fixed Footer */}
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowActivityLog(false)}
+                className={`${themeStyles.button} text-white px-6 py-3 rounded-lg flex-1 font-bold`}
+              >
+                Close
+              </button>
+              {activityLog.length > 0 && (
+                <button
+                  onClick={() => {
+                    setActivityLog([]);
+                    addNotification('Activity log cleared', 'info');
+                  }}
+                  className={`${themeStyles.error} text-white px-6 py-3 rounded-lg font-bold`}
+                >
+                  Clear Log
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
