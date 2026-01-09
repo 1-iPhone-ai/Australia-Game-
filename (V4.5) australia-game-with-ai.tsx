@@ -1946,6 +1946,206 @@ function AustraliaGame() {
   };
 
   // =========================================
+  // CRAFTING & LOAN SYSTEM HANDLERS
+  // =========================================
+
+  const canTakeLoan = useCallback((loanOption: typeof LOAN_OPTIONS[0]) => {
+    // Check active loans of this type
+    const activeLoansOfType = player.loans.filter(loan => loan.loanType === loanOption.id).length;
+    if (activeLoansOfType >= loanOption.maxActive) {
+      return { canTake: false, reason: `Maximum ${loanOption.maxActive} ${loanOption.name}s active` };
+    }
+
+    // Check level requirement for Business/Investor loans
+    if (loanOption.id === 'business' && player.level < 3) {
+      return { canTake: false, reason: 'Requires Level 3+' };
+    }
+    if (loanOption.id === 'investor') {
+      if (player.level < 5) {
+        return { canTake: false, reason: 'Requires Level 5+' };
+      }
+      const netWorth = computeNetWorth(player);
+      if (netWorth < 5000) {
+        return { canTake: false, reason: 'Requires Net Worth $5000+' };
+      }
+    }
+
+    return { canTake: true, reason: '' };
+  }, [player, computeNetWorth]);
+
+  const handleTakeLoan = useCallback((loanOption: typeof LOAN_OPTIONS[0]) => {
+    const check = canTakeLoan(loanOption);
+    if (!check.canTake) {
+      addNotification(check.reason, 'error');
+      return;
+    }
+
+    // Calculate effective interest rate with credit score
+    let effectiveRate = loanOption.dailyInterest;
+    if (player.creditScore >= 750) {
+      effectiveRate = Math.max(0.03, loanOption.dailyInterest - 0.03);
+    } else if (player.creditScore >= 650) {
+      effectiveRate = Math.max(0.03, loanOption.dailyInterest - 0.01);
+    } else if (player.creditScore < 550) {
+      effectiveRate = loanOption.dailyInterest + 0.02;
+    }
+
+    // Create new loan
+    const newLoan = {
+      id: `loan-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+      loanType: loanOption.id,
+      amount: loanOption.amount,
+      accrued: 0,
+      interestRate: effectiveRate,
+      turnTaken: gameState.currentTurn
+    };
+
+    dispatchPlayer({
+      type: 'MERGE_STATE',
+      payload: {
+        money: addMoney(player.money, loanOption.amount),
+        loans: [...player.loans, newLoan],
+        totalLoansTaken: (player.totalLoansTaken || 0) + 1
+      }
+    });
+
+    addNotification(
+      `Borrowed $${loanOption.amount} at ${(effectiveRate * 100).toFixed(1)}%/day. Be sure to repay!`,
+      'info'
+    );
+  }, [player, canTakeLoan, addNotification, gameState.currentTurn]);
+
+  const handleRepayLoan = useCallback((loanId: string, payFull: boolean) => {
+    const loan = player.loans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    const totalOwed = loan.amount + loan.accrued;
+    const paymentAmount = payFull ? Math.min(totalOwed, player.money) : Math.min(player.money, totalOwed);
+
+    if (paymentAmount <= 0) {
+      addNotification('Not enough money to make payment', 'error');
+      return;
+    }
+
+    let remainingDebt = totalOwed - paymentAmount;
+    let newLoans = player.loans;
+    let creditScoreChange = 0;
+
+    if (remainingDebt <= 0) {
+      // Loan fully paid off
+      newLoans = player.loans.filter(l => l.id !== loanId);
+      creditScoreChange = 5; // +5 for paying off loan
+
+      // Check if paid early (less than half interest accrued)
+      if (loan.accrued < loan.amount * 0.5) {
+        creditScoreChange += 10; // +10 bonus for early payment
+      }
+
+      addNotification(
+        `Loan paid off! Credit score +${creditScoreChange}`,
+        'success'
+      );
+    } else {
+      // Partial payment - reduce accrued interest first, then principal
+      const newAccrued = Math.max(0, loan.accrued - paymentAmount);
+      const principalPaid = paymentAmount - (loan.accrued - newAccrued);
+      const newPrincipal = loan.amount - principalPaid;
+
+      newLoans = player.loans.map(l =>
+        l.id === loanId
+          ? { ...l, amount: newPrincipal, accrued: newAccrued }
+          : l
+      );
+
+      addNotification(`Paid $${paymentAmount} toward loan. Remaining: $${Math.floor(remainingDebt)}`, 'info');
+    }
+
+    dispatchPlayer({
+      type: 'MERGE_STATE',
+      payload: {
+        money: deductMoney(player.money, paymentAmount),
+        loans: newLoans,
+        creditScore: Math.min(850, player.creditScore + creditScoreChange),
+        loansPaidEarly: loan.accrued < loan.amount * 0.5 ? player.loansPaidEarly + 1 : player.loansPaidEarly
+      }
+    });
+  }, [player, addNotification]);
+
+  const handleCraft = useCallback((recipe: typeof CRAFTING_RECIPES[0]) => {
+    // Validate can craft
+    if (!canCraft(recipe, player.inventory)) {
+      addNotification('Missing required resources', 'error');
+      return;
+    }
+
+    // Check action limits
+    if (gameSettings.actionLimitsEnabled &&
+        player.actionsUsedThisTurn + recipe.craftTime > gameSettings.playerActionsPerDay) {
+      addNotification('Not enough actions remaining', 'error');
+      return;
+    }
+
+    // Check inventory space
+    if (player.inventory.length >= MAX_INVENTORY) {
+      addNotification('Inventory full', 'error');
+      return;
+    }
+
+    // Calculate success chance (95% base, 98% for Scientist)
+    const successChance = player.character?.name === 'Scientist' ? 0.98 : 0.95;
+    const success = Math.random() < successChance;
+
+    if (success) {
+      // Remove input resources from inventory
+      const newInventory = [...player.inventory];
+      Object.entries(recipe.inputs).forEach(([resource, qty]) => {
+        for (let i = 0; i < (qty as number); i++) {
+          const idx = newInventory.indexOf(resource);
+          if (idx > -1) newInventory.splice(idx, 1);
+        }
+      });
+
+      // Add crafted item
+      newInventory.push(recipe.output);
+
+      const craftValue = calculateCraftValue(recipe, player.character, player.masteryUnlocks);
+
+      dispatchPlayer({
+        type: 'MERGE_STATE',
+        payload: {
+          inventory: newInventory,
+          craftedItems: [...(player.craftedItems || []), recipe.output],
+          actionsUsedThisTurn: player.actionsUsedThisTurn + recipe.craftTime
+        }
+      });
+
+      addNotification(
+        `Crafted ${recipe.emoji} ${recipe.name} worth $${craftValue}!`,
+        'success'
+      );
+    } else {
+      // Crafting failed - consume resources anyway
+      const newInventory = [...player.inventory];
+      Object.entries(recipe.inputs).forEach(([resource, qty]) => {
+        for (let i = 0; i < (qty as number); i++) {
+          const idx = newInventory.indexOf(resource);
+          if (idx > -1) newInventory.splice(idx, 1);
+        }
+      });
+
+      dispatchPlayer({
+        type: 'MERGE_STATE',
+        payload: {
+          inventory: newInventory,
+          actionsUsedThisTurn: player.actionsUsedThisTurn + recipe.craftTime
+        }
+      });
+
+      addNotification('Crafting failed! Resources lost.', 'error');
+    }
+  }, [player, addNotification, gameSettings.actionLimitsEnabled, gameSettings.playerActionsPerDay]);
+
+  // =========================================
   // AI DECISION MAKING ENGINE
   // =========================================
 
@@ -5187,6 +5387,30 @@ function AustraliaGame() {
                       {gameSettings.sabotageEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Crafting System</div>
+                      <div className="text-sm opacity-75">Combine resources into valuable items</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, craftingEnabled: !prev.craftingEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.craftingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.craftingEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Loan System</div>
+                      <div className="text-sm opacity-75">Borrow money with interest and credit scores</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, loansEnabled: !prev.loansEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.loansEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.loansEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className={`${themeStyles.border} border rounded-lg p-4`}>
@@ -6681,6 +6905,26 @@ function AustraliaGame() {
               <span>Investments</span>
             </button>
           )}
+          {gameSettings.craftingEnabled && (
+            <button
+              onClick={() => updateUiState({ showWorkshop: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>🛠️</span>
+              <span>Workshop</span>
+            </button>
+          )}
+          {gameSettings.loansEnabled && (
+            <button
+              onClick={() => updateUiState({ showBank: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>💰</span>
+              <span>Bank</span>
+            </button>
+          )}
           {gameSettings.sabotageEnabled && gameState.selectedMode === 'ai' && (
             <button
               onClick={() => updateUiState({ showSabotage: true })}
@@ -7574,6 +7818,100 @@ function AustraliaGame() {
                 >
                   Close Investments
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Workshop Modal - Crafting System */}
+        {uiState.showWorkshop && gameSettings.craftingEnabled && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => updateUiState({ showWorkshop: false })}
+          >
+            <div
+              className={`${themeStyles.card} border rounded-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold">🛠️ Workshop - Crafting</h3>
+                  <button onClick={() => updateUiState({ showWorkshop: false })} className="px-3 py-1 rounded">X</button>
+                </div>
+                <div className="space-y-3">
+                  {CRAFTING_RECIPES.map(recipe => {
+                    const craftable = canCraft(recipe, player.inventory);
+                    const hasActions = !gameSettings.actionLimitsEnabled || player.actionsUsedThisTurn + recipe.craftTime <= gameSettings.playerActionsPerDay;
+                    const canCraftThis = craftable && hasActions && isPlayerTurn;
+                    return (
+                      <div key={recipe.id} className="border rounded p-3">
+                        <div className="font-bold">{recipe.emoji} {recipe.name}</div>
+                        <div className="text-sm opacity-75">{recipe.description}</div>
+                        <div className="text-sm mt-2">Value: ${calculateCraftValue(recipe, player.character, player.masteryUnlocks)}</div>
+                        <button
+                          onClick={() => handleCraft(recipe)}
+                          disabled={!canCraftThis}
+                          className="mt-2 px-4 py-2 rounded w-full disabled:opacity-50"
+                        >
+                          {craftable ? 'Craft' : 'Missing Resources'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bank Modal - Loan System */}
+        {uiState.showBank && gameSettings.loansEnabled && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => updateUiState({ showBank: false })}
+          >
+            <div
+              className={`${themeStyles.card} border rounded-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold">🏦 Bank</h3>
+                  <button onClick={() => updateUiState({ showBank: false })} className="px-3 py-1 rounded">X</button>
+                </div>
+                <div className="mb-4 p-3 border rounded">
+                  <div className="font-bold">Credit Score: {player.creditScore}</div>
+                </div>
+                {player.loans.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-bold mb-2">Active Loans:</h4>
+                    {player.loans.map(loan => (
+                      <div key={loan.id} className="border rounded p-3 mb-2">
+                        <div>Amount: ${loan.amount + loan.accrued}</div>
+                        <button onClick={() => handleRepayLoan(loan.id, true)} className="mt-2 px-3 py-1 rounded">Repay</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <h4 className="font-bold">Available Loans:</h4>
+                  {LOAN_OPTIONS.map(loanOption => {
+                    const check = canTakeLoan(loanOption);
+                    return (
+                      <div key={loanOption.id} className="border rounded p-3">
+                        <div className="font-bold">{loanOption.emoji} {loanOption.name}</div>
+                        <div className="text-sm">${loanOption.amount} at {(loanOption.dailyInterest*100).toFixed(1)}%/day</div>
+                        <button
+                          onClick={() => handleTakeLoan(loanOption)}
+                          disabled={!check.canTake || !isPlayerTurn}
+                          className="mt-2 px-4 py-2 rounded w-full disabled:opacity-50"
+                        >
+                          {check.canTake ? 'Borrow' : check.reason}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
