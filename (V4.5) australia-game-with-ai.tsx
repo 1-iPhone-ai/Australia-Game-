@@ -518,6 +518,36 @@ const calculateCraftValue = (recipe: typeof CRAFTING_RECIPES[0], character: any,
   return value;
 };
 
+// Validate loan eligibility for AI (standalone version that doesn't depend on player state)
+const canTakeLoanForAI = (
+  loanOption: typeof LOAN_OPTIONS[0],
+  aiLoans: Array<{ loanType: string; amount: number; accrued: number; interestRate: number }>,
+  aiCreditScore: number,
+  aiLevel: number,
+  aiNetWorth: number
+) => {
+  // Check active loans of this type
+  const activeLoansOfType = aiLoans.filter(loan => loan.loanType === loanOption.id).length;
+  if (activeLoansOfType >= loanOption.maxActive) {
+    return { canTake: false, reason: `Maximum ${loanOption.maxActive} ${loanOption.name}s active` };
+  }
+
+  // Check level requirement for Business/Investor loans
+  if (loanOption.id === 'business' && aiLevel < 3) {
+    return { canTake: false, reason: 'Requires Level 3+' };
+  }
+  if (loanOption.id === 'investor') {
+    if (aiLevel < 5) {
+      return { canTake: false, reason: 'Requires Level 5+' };
+    }
+    if (aiNetWorth < 5000) {
+      return { canTake: false, reason: 'Requires Net Worth $5000+' };
+    }
+  }
+
+  return { canTake: true, reason: '' };
+};
+
 const isTravelBlocked = (debuffs: Array<{ type: string; remainingDays: number }> | undefined) => {
   return hasActiveDebuff(debuffs, 'customs_hold') || hasActiveDebuff(debuffs, 'border_lockdown');
 };
@@ -1304,6 +1334,8 @@ function AustraliaGame() {
     showMarket: false,
     showShop: false,
     showInvestments: false,
+    showWorkshop: false,
+    showBank: false,
     showSabotage: false,
     showStats: false,
     showMap: true,
@@ -2490,8 +2522,20 @@ function AustraliaGame() {
       return { loanOption, score: -Infinity };
     }
 
-    // Check if AI can take this loan using the canTakeLoan helper
-    const check = canTakeLoan(loanOption, aiState.loans, aiState.creditScore);
+    // Calculate AI net worth for loan eligibility check
+    const inventoryValue = aiState.inventory.reduce((sum: number, item: string) => {
+      return sum + (gameState.resourcePrices[item] || 50);
+    }, 0);
+    const aiNetWorth = aiState.money + inventoryValue;
+
+    // Check if AI can take this loan using the standalone helper
+    const check = canTakeLoanForAI(
+      loanOption,
+      aiState.loans || [],
+      aiState.creditScore || 700,
+      aiState.level || 1,
+      aiNetWorth
+    );
     if (!check.canTake) {
       return { loanOption, score: -Infinity };
     }
@@ -2559,7 +2603,7 @@ function AustraliaGame() {
     }
 
     return { loanOption, score, effectiveRate };
-  }, [gameSettings.loansEnabled]);
+  }, [gameSettings.loansEnabled, gameState.resourcePrices, gameState.aiMood]);
 
   // Evaluate crafting opportunities
   const evaluateCrafting = useCallback((recipe, aiState) => {
@@ -2835,10 +2879,14 @@ function AustraliaGame() {
     evaluateInvestment,
     evaluateEquipmentPurchase,
     evaluateSabotage,
+    evaluateCrafting,
+    evaluateLoan,
     gameSettings.aiSpecialAbilitiesEnabled,
     gameSettings.investmentsEnabled,
     gameSettings.equipmentShopEnabled,
     gameSettings.sabotageEnabled,
+    gameSettings.craftingEnabled,
+    gameSettings.loansEnabled,
     gameState.selectedMode
   ]);
 
@@ -3019,7 +3067,17 @@ function AustraliaGame() {
             return false;
           }
           // Validate AI can take this loan
-          const loanCheck = canTakeLoan(loanOption, currentAi.loans, currentAi.creditScore);
+          const aiInventoryValue = currentAi.inventory.reduce((sum: number, item: string) => {
+            return sum + (gameState.resourcePrices[item] || 50);
+          }, 0);
+          const aiNetWorth = currentAi.money + aiInventoryValue;
+          const loanCheck = canTakeLoanForAI(
+            loanOption,
+            currentAi.loans || [],
+            currentAi.creditScore || 700,
+            currentAi.level || 1,
+            aiNetWorth
+          );
           if (!loanCheck.canTake) {
             addNotification(`🤖 ${currentAi.name} cannot take ${loanOption.name}: ${loanCheck.reason}`, 'ai', false);
             return false;
@@ -4836,9 +4894,21 @@ function AustraliaGame() {
 
     // Emergency loan system - AI takes smallest available loan when desperate
     if (gameSettings.loansEnabled && projectedAi.money < BANKRUPTCY_THRESHOLD) {
+      // Calculate AI net worth for loan eligibility
+      const emergencyInventoryValue = projectedAi.inventory.reduce((sum: number, item: string) => {
+        return sum + (gameState.resourcePrices[item] || 50);
+      }, 0);
+      const emergencyNetWorth = projectedAi.money + emergencyInventoryValue;
+
       // Find smallest loan tier the AI can take
       const availableLoan = LOAN_OPTIONS.find(opt => {
-        const check = canTakeLoan(opt, projectedAi.loans, projectedAi.creditScore);
+        const check = canTakeLoanForAI(
+          opt,
+          projectedAi.loans || [],
+          projectedAi.creditScore || 700,
+          projectedAi.level || 1,
+          emergencyNetWorth
+        );
         return check.canTake;
       });
 
