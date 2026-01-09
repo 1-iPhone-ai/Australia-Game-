@@ -816,7 +816,7 @@ interface ConfirmationDialog {
 }
 
 interface AIAction {
-  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage';
+  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage' | 'craft';
   description: string;
   data?: any;
 }
@@ -2810,7 +2810,7 @@ function AustraliaGame() {
           }
           break;
 
-        case 'craft':
+        case 'craft': {
           const recipeId = actionData.recipeId;
           const craftRecipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
           if (!craftRecipe) {
@@ -2829,6 +2829,7 @@ function AustraliaGame() {
             return false;
           }
           break;
+        }
       }
     } catch (error) {
       console.error('Action validation error:', error);
@@ -3142,7 +3143,7 @@ function AustraliaGame() {
         // This just marks that the ability was used and decrements the counter
         break;
 
-      case 'craft':
+      case 'craft': {
         const recipeId = actionData.recipeId;
         const craftRecipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
         if (!craftRecipe) break;
@@ -3159,16 +3160,16 @@ function AustraliaGame() {
         }
 
         // Calculate crafting success (base 90% success rate)
-        let successChance = 0.90;
+        let craftSuccessChance = 0.90;
 
         // Apply character crafting bonus
         const craftingBonus = currentAi.character.craftingBonus;
         if (craftingBonus?.effect?.successBonus) {
-          successChance += craftingBonus.effect.successBonus;
+          craftSuccessChance += craftingBonus.effect.successBonus;
         }
 
         // Roll for success
-        const craftSuccess = aiRandom() < successChance;
+        const craftSuccess = aiRandom() < craftSuccessChance;
 
         if (craftSuccess) {
           // Add crafted item to inventory
@@ -3205,6 +3206,7 @@ function AustraliaGame() {
           inventory: newInventory
         }));
         break;
+      }
 
       case 'think':
         addNotification(
