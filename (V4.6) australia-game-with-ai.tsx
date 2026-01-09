@@ -173,6 +173,87 @@ const REGIONAL_INVESTMENTS = {
   ACT: { name: "Research Lab", cost: 3000, dailyIncome: 160 }
 };
 
+// Crafting system recipes
+const CRAFTING_RECIPES = [
+  // Luxury Items (High Value)
+  {
+    id: "opal_jewelry",
+    name: "Opal Jewelry",
+    inputs: { "Opals": 2, "Gold": 1 },
+    output: "Opal Jewelry",
+    baseValue: 800,
+    craftTime: 1,
+    category: "luxury",
+    description: "Stunning handcrafted Australian jewelry"
+  },
+  {
+    id: "croc_bag",
+    name: "Designer Crocodile Bag",
+    inputs: { "Crocodile Leather": 2, "Aboriginal Art": 1 },
+    output: "Designer Bag",
+    baseValue: 950,
+    craftTime: 1,
+    category: "luxury",
+    description: "Luxury designer bag with indigenous artwork"
+  },
+
+  // Food/Tourism Items (Medium Value)
+  {
+    id: "gourmet_box",
+    name: "Gourmet Gift Box",
+    inputs: { "Wine": 2, "Seafood": 1, "Dairy": 1 },
+    output: "Gourmet Box",
+    baseValue: 600,
+    craftTime: 1,
+    category: "food",
+    description: "Premium Australian food collection"
+  },
+  {
+    id: "tourist_package",
+    name: "Tourist Experience Package",
+    inputs: { "Coral": 1, "Tropical Fruit": 2 },
+    output: "Tourist Package",
+    baseValue: 450,
+    craftTime: 1,
+    category: "tourism",
+    description: "Curated tourist experience bundle"
+  },
+
+  // Industrial Items (Processing)
+  {
+    id: "steel_ingots",
+    name: "Steel Ingots",
+    inputs: { "Iron Ore": 3, "Coal": 2 },
+    output: "Steel",
+    baseValue: 700,
+    craftTime: 1,
+    category: "industrial",
+    description: "High-quality processed steel"
+  },
+  {
+    id: "furniture",
+    name: "Premium Furniture",
+    inputs: { "Timber": 3, "Wool": 1 },
+    output: "Furniture Set",
+    baseValue: 550,
+    craftTime: 1,
+    category: "goods",
+    description: "Handcrafted Australian furniture"
+  },
+
+  // Energy Products
+  {
+    id: "energy_cell",
+    name: "Hydroelectric Battery",
+    inputs: { "Uranium": 1, "Hydropower": 2, "Natural Gas": 1 },
+    output: "Energy Cell",
+    baseValue: 1100,
+    craftTime: 2,
+    category: "energy",
+    description: "Advanced energy storage system"
+  }
+];
+
 const EQUIPMENT_SHOP_REGIONS = ["NSW", "VIC"];
 
 const SHOP_ITEMS = [
@@ -477,6 +558,10 @@ const CHARACTERS = [
       usesLeft: 1
     },
     aiStrategy: "challenge-focused",
+    craftingBonus: {
+      description: "Crafts tourism items instantly (no action cost)",
+      effect: { categorySpeedBonus: { tourism: 1.0 } }
+    },
     masteryTree: {
       "Lucky Streak": { unlockLevel: 3, effect: "Consecutive challenge wins grant +10% bonus each" },
       "Globe Trotter": { unlockLevel: 5, effect: "Travel costs reduced by additional 15%" },
@@ -497,6 +582,10 @@ const CHARACTERS = [
       usesLeft: 1
     },
     aiStrategy: "money-focused",
+    craftingBonus: {
+      description: "Crafted items sell for +20% more",
+      effect: { sellBonus: 0.20 }
+    },
     masteryTree: {
       "Investment Genius": { unlockLevel: 3, effect: "Resources sold for 15% more" },
       "Negotiator": { unlockLevel: 5, effect: "All costs reduced by 20%" },
@@ -517,6 +606,10 @@ const CHARACTERS = [
       usesLeft: 2
     },
     aiStrategy: "exploration-focused",
+    craftingBonus: {
+      description: "Chance to get bonus materials when crafting",
+      effect: { bonusMaterialChance: 0.25 }
+    },
     masteryTree: {
       "Treasure Hunter": { unlockLevel: 3, effect: "Find rare resources 25% more often" },
       "Fast Travel": { unlockLevel: 5, effect: "Can travel to any region for flat $300" },
@@ -537,6 +630,10 @@ const CHARACTERS = [
       usesLeft: 1
     },
     aiStrategy: "balanced",
+    craftingBonus: {
+      description: "Higher success rate and quality when crafting",
+      effect: { successBonus: 0.15, qualityBonus: 0.10 }
+    },
     masteryTree: {
       "Quick Study": { unlockLevel: 3, effect: "Gain 50% more XP from all sources" },
       "Efficiency Expert": { unlockLevel: 5, effect: "Actions have a 30% chance to not consume time" },
@@ -610,6 +707,7 @@ const KEYBOARD_SHORTCUTS = {
   ' ': { action: 'endTurn', label: 'End Turn', description: 'End your turn' },
   'c': { action: 'openChallenges', label: 'Challenges', description: 'Open challenges modal' },
   'r': { action: 'openResources', label: 'Resources', description: 'Open resource market' },
+  'w': { action: 'openWorkshop', label: 'Workshop', description: 'Open crafting workshop' },
   'm': { action: 'openMap', label: 'Map', description: 'Toggle map view' },
   't': { action: 'openTravel', label: 'Travel', description: 'Open travel modal' },
   'n': { action: 'openNotifications', label: 'Notifications', description: 'Open notification history' },
@@ -1119,6 +1217,7 @@ function AustraliaGame() {
     showSabotage: false,
     showStats: false,
     showMap: true,
+    showWorkshop: false,
     selectedCharacter: 0,
     playerName: "",
     wagerAmount: 100,
@@ -1874,6 +1973,12 @@ function AustraliaGame() {
       multiplier *= 1.1;
     }
 
+    // Check if this is a crafted item (Businessman gets +20% bonus on crafted items)
+    const isCraftedItem = CRAFTING_RECIPES.some(recipe => recipe.output === resource);
+    if (isCraftedItem && aiState.character.craftingBonus?.effect?.sellBonus) {
+      multiplier *= (1 + aiState.character.craftingBonus.effect.sellBonus);
+    }
+
     if (aiState.masteryUnlocks.includes("Investment Genius")) {
       multiplier *= 1.15;
     }
@@ -2161,6 +2266,65 @@ function AustraliaGame() {
     return { resource, score, price };
   }, [calculateAiSalePrice]);
 
+  // AI Strategy: Evaluate crafting recipes
+  const evaluateCrafting = useCallback((recipe, aiState, resourcePrices) => {
+    // Check if AI has required materials
+    let canCraft = true;
+    for (const [resource, requiredCount] of Object.entries(recipe.inputs)) {
+      const availableCount = aiState.inventory.filter(item => item === resource).length;
+      if (availableCount < (requiredCount as number)) {
+        canCraft = false;
+        break;
+      }
+    }
+
+    if (!canCraft) {
+      return { recipeId: recipe.id, score: -Infinity };
+    }
+
+    // Calculate material cost
+    let materialCost = 0;
+    for (const [resource, count] of Object.entries(recipe.inputs)) {
+      const price = resourcePrices[resource] || 100;
+      materialCost += price * (count as number);
+    }
+
+    // Estimated crafted item value (1.5-2x materials)
+    const craftedValue = recipe.baseValue;
+    const profit = craftedValue - materialCost;
+
+    // Base score on profitability
+    let score = profit;
+
+    // Businessman gets +20% sell bonus on crafted items
+    if (aiState.character.craftingBonus?.effect?.sellBonus) {
+      score *= (1 + aiState.character.craftingBonus.effect.sellBonus);
+    }
+
+    // Prioritize crafting when inventory is getting full (convert materials to valuable items)
+    const inventoryFullness = aiState.inventory.length / MAX_INVENTORY;
+    if (inventoryFullness > 0.7) {
+      score *= 1.8; // Crafting consolidates inventory
+    }
+
+    // Higher value items are better
+    if (recipe.baseValue > 800) {
+      score *= 1.3; // Luxury items
+    }
+
+    // Tourist bonus: tourism items are instant (no action cost)
+    if (recipe.category === 'tourism' && aiState.character.craftingBonus?.effect?.categorySpeedBonus?.tourism === 1.0) {
+      score *= 1.5; // Free action is very valuable
+    }
+
+    // Penalize if low on money (might need cash more than items)
+    if (aiState.money < 500) {
+      score *= 0.5;
+    }
+
+    return { recipeId: recipe.id, score, recipe };
+  }, []);
+
   // AI Strategy: Evaluate special ability usage
   const evaluateSpecialAbility = useCallback((aiState, gameState) => {
     if (!gameSettings.aiSpecialAbilitiesEnabled) return -Infinity;
@@ -2442,6 +2606,23 @@ function AustraliaGame() {
         }
       });
 
+      // Evaluate crafting recipes
+      CRAFTING_RECIPES.forEach(recipe => {
+        try {
+          const evaluation = evaluateCrafting(recipe, aiState, gameState.resourcePrices);
+          if (evaluation.score > 0) {
+            decisions.push({
+              type: 'craft',
+              description: `Craft ${recipe.name}`,
+              data: { recipeId: recipe.id, recipe: recipe },
+              score: evaluation.score * profile.decisionQuality
+            });
+          }
+        } catch (error) {
+          console.error('Error evaluating crafting recipe:', recipe, error);
+        }
+      });
+
       // If we have good options, choose the best one
       if (decisions.length > 0) {
         decisions.sort((a, b) => b.score - a.score);
@@ -2474,6 +2655,7 @@ function AustraliaGame() {
     evaluateChallenge,
     evaluateTravel,
     evaluateResourceSale,
+    evaluateCrafting,
     evaluateSpecialAbility,
     evaluateInvestment,
     evaluateEquipmentPurchase,
@@ -2624,6 +2806,26 @@ function AustraliaGame() {
           // Validate AI has special ability uses left
           if (currentAi.specialAbilityUses <= 0) {
             addNotification(`🤖 ${currentAi.name} has no special ability uses left`, 'ai', false);
+            return false;
+          }
+          break;
+
+        case 'craft':
+          const recipeId = actionData.recipeId;
+          const craftRecipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
+          if (!craftRecipe) {
+            console.error('Invalid craft recipe:', recipeId);
+            return false;
+          }
+          // Check if AI has materials
+          for (const [resource, requiredCount] of Object.entries(craftRecipe.inputs)) {
+            const availableCount = currentAi.inventory.filter(item => item === resource).length;
+            if (availableCount < (requiredCount as number)) {
+              return false;
+            }
+          }
+          // Check inventory space
+          if (currentAi.inventory.length >= MAX_INVENTORY) {
             return false;
           }
           break;
@@ -2940,6 +3142,70 @@ function AustraliaGame() {
         // This just marks that the ability was used and decrements the counter
         break;
 
+      case 'craft':
+        const recipeId = actionData.recipeId;
+        const craftRecipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
+        if (!craftRecipe) break;
+
+        // Remove materials from inventory
+        let newInventory = [...currentAi.inventory];
+        for (const [resource, requiredCount] of Object.entries(craftRecipe.inputs)) {
+          for (let i = 0; i < (requiredCount as number); i++) {
+            const index = newInventory.findIndex(item => item === resource);
+            if (index !== -1) {
+              newInventory.splice(index, 1);
+            }
+          }
+        }
+
+        // Calculate crafting success (base 90% success rate)
+        let successChance = 0.90;
+
+        // Apply character crafting bonus
+        const craftingBonus = currentAi.character.craftingBonus;
+        if (craftingBonus?.effect?.successBonus) {
+          successChance += craftingBonus.effect.successBonus;
+        }
+
+        // Roll for success
+        const craftSuccess = aiRandom() < successChance;
+
+        if (craftSuccess) {
+          // Add crafted item to inventory
+          newInventory.push(craftRecipe.output);
+
+          // Explorer bonus: chance to get materials back
+          if (craftingBonus?.effect?.bonusMaterialChance && aiRandom() < craftingBonus.effect.bonusMaterialChance) {
+            const materials = Object.keys(craftRecipe.inputs);
+            const bonusMaterial = materials[Math.floor(aiRandom() * materials.length)];
+            newInventory.push(bonusMaterial);
+            addNotification(
+              `🤖 ${currentAi.name} crafted ${craftRecipe.output}! (Got ${bonusMaterial} back)`,
+              'ai',
+              false
+            );
+          } else {
+            addNotification(
+              `🤖 ${currentAi.name} crafted ${craftRecipe.output}!`,
+              'ai',
+              false
+            );
+          }
+        } else {
+          addNotification(
+            `🤖 ${currentAi.name}'s crafting failed! Materials were lost.`,
+            'ai',
+            false
+          );
+        }
+
+        // Update AI inventory
+        updateAiPlayerState(prev => ({
+          ...prev,
+          inventory: newInventory
+        }));
+        break;
+
       case 'think':
         addNotification(
           `🤖 ${currentAi.name} is thinking...`,
@@ -3124,6 +3390,11 @@ function AustraliaGame() {
             updateUiState({ showMarket: !uiState.showMarket });
           }
           break;
+        case 'openWorkshop':
+          if (gameState.currentTurn === 'player') {
+            updateUiState({ showWorkshop: !uiState.showWorkshop });
+          }
+          break;
         case 'openMap':
           updateUiState({ showMap: !uiState.showMap });
           break;
@@ -3145,6 +3416,7 @@ function AustraliaGame() {
           updateUiState({
             showChallenges: false,
             showMarket: false,
+            showWorkshop: false,
             showTravelModal: false,
             showShop: false,
             showInvestments: false,
@@ -3820,6 +4092,12 @@ function AustraliaGame() {
           finalPrice = Math.floor(finalPrice * 1.1);
         }
 
+        // Check if this is a crafted item (Businessman gets +20% bonus on crafted items)
+        const isCraftedItem = CRAFTING_RECIPES.some(recipe => recipe.output === resource);
+        if (isCraftedItem && player.character.craftingBonus?.effect?.sellBonus) {
+          finalPrice = Math.floor(finalPrice * (1 + player.character.craftingBonus.effect.sellBonus));
+        }
+
         if (player.masteryUnlocks.includes("Investment Genius")) {
           finalPrice = Math.floor(finalPrice * 1.15);
         }
@@ -3911,6 +4189,93 @@ function AustraliaGame() {
     addNotification(`Purchased ${item.name} for $${item.cost}.`, 'success', true);
     incrementAction();
   }, [gameSettings.equipmentShopEnabled, gameState.currentTurn, player.currentRegion, player.equipment, player.money, addNotification, incrementAction]);
+
+  // Crafting System Functions
+  const canCraftRecipe = useCallback((recipe: any, inventory: string[]) => {
+    for (const [resource, requiredCount] of Object.entries(recipe.inputs)) {
+      const availableCount = inventory.filter(item => item === resource).length;
+      if (availableCount < (requiredCount as number)) {
+        return false;
+      }
+    }
+    return true;
+  }, []);
+
+  const craftItem = useCallback((recipeId: string) => {
+    if (gameState.currentTurn !== 'player') return;
+
+    const recipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
+    if (!recipe) return;
+
+    // Check if player has required materials
+    if (!canCraftRecipe(recipe, player.inventory)) {
+      addNotification('Not enough materials to craft this item.', 'error');
+      return;
+    }
+
+    // Check inventory space
+    if (player.inventory.length >= MAX_INVENTORY) {
+      addNotification('Inventory is full! Sell some items first.', 'warning');
+      return;
+    }
+
+    // Remove materials from inventory
+    let newInventory = [...player.inventory];
+    for (const [resource, requiredCount] of Object.entries(recipe.inputs)) {
+      for (let i = 0; i < (requiredCount as number); i++) {
+        const index = newInventory.findIndex(item => item === resource);
+        if (index !== -1) {
+          newInventory.splice(index, 1);
+        }
+      }
+    }
+
+    // Calculate crafting success (base 90% success rate)
+    let successChance = 0.90;
+
+    // Apply character crafting bonus
+    const craftingBonus = player.character.craftingBonus;
+    if (craftingBonus?.effect?.successBonus) {
+      successChance += craftingBonus.effect.successBonus;
+    }
+
+    // Roll for success
+    const success = Math.random() < successChance;
+
+    if (success) {
+      // Add crafted item to inventory
+      newInventory.push(recipe.output);
+
+      // Explorer bonus: chance to get materials back
+      if (craftingBonus?.effect?.bonusMaterialChance && Math.random() < craftingBonus.effect.bonusMaterialChance) {
+        // Return one random material
+        const materials = Object.keys(recipe.inputs);
+        const bonusMaterial = materials[Math.floor(Math.random() * materials.length)];
+        newInventory.push(bonusMaterial);
+        addNotification(`Crafted ${recipe.output}! Explorer bonus: got ${bonusMaterial} back.`, 'success', true);
+      } else {
+        addNotification(`Successfully crafted ${recipe.output}!`, 'success', true);
+      }
+    } else {
+      addNotification(`Crafting failed! Materials were lost.`, 'error', true);
+    }
+
+    // Update inventory
+    dispatchPlayer({ type: 'SET_INVENTORY', payload: newInventory });
+
+    // Tourist speed bonus - no action cost for tourism items
+    const isTourismItem = recipe.category === 'tourism';
+    const hasTourismBonus = craftingBonus?.effect?.categorySpeedBonus?.tourism === 1.0;
+
+    if (!(isTourismItem && hasTourismBonus)) {
+      // Normal crafting consumes actions based on craftTime
+      for (let i = 0; i < recipe.craftTime; i++) {
+        incrementAction();
+      }
+    } else {
+      addNotification(`Tourist bonus: No action cost for tourism crafting!`, 'info');
+    }
+  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction]);
 
   const useSabotage = useCallback((sabotageId: string) => {
     if (!gameSettings.sabotageEnabled || gameState.selectedMode !== 'ai' || gameState.currentTurn !== 'player') return;
@@ -6513,6 +6878,17 @@ function AustraliaGame() {
             <span>Market ({player.inventory.length}/{MAX_INVENTORY})</span>
             <kbd className={actionButtonKbdClass}>R</kbd>
           </button>
+
+          <button
+            onClick={() => updateUiState({ showWorkshop: true })}
+            disabled={!isPlayerTurn}
+            className={actionButtonClass}
+          >
+            <span>🔨</span>
+            <span>Workshop</span>
+            <kbd className={actionButtonKbdClass}>W</kbd>
+          </button>
+
           {gameSettings.equipmentShopEnabled && (
             <button
               onClick={() => updateUiState({ showShop: true })}
@@ -7361,6 +7737,133 @@ function AustraliaGame() {
                   className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
                 >
                   Close Shop
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Workshop Modal (Crafting System) */}
+        {uiState.showWorkshop && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+            onClick={() => updateUiState({ showWorkshop: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full flex flex-col overflow-hidden`}
+              style={{ height: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <div>
+                  <h3 className="text-xl font-bold">🔨 Crafting Workshop</h3>
+                  {player.character.craftingBonus && (
+                    <div className="text-xs text-green-400 mt-1">
+                      {player.character.name} Bonus: {player.character.craftingBonus.description}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => updateUiState({ showWorkshop: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                  aria-label="Close"
+                  title="Close"
+                >
+                  X
+                </button>
+              </div>
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className={`${themeStyles.border} border rounded-lg p-3 mb-4 text-sm`}>
+                  <div className="font-bold mb-2">How Crafting Works:</div>
+                  <ul className="space-y-1 text-xs opacity-90">
+                    <li>• Combine raw materials to create valuable items</li>
+                    <li>• Crafted items are worth 1.5-2x their materials</li>
+                    <li>• 90% base success rate (10% chance to lose materials)</li>
+                    <li>• Each craft consumes actions equal to craft time</li>
+                    <li>• Character bonuses affect crafting outcomes</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-4">
+                  {CRAFTING_RECIPES.map(recipe => {
+                    const canCraft = canCraftRecipe(recipe, player.inventory);
+                    const materialsList = Object.entries(recipe.inputs).map(([resource, count]) => {
+                      const available = player.inventory.filter(item => item === resource).length;
+                      const hasEnough = available >= (count as number);
+                      return (
+                        <div key={resource} className={`text-xs ${hasEnough ? 'text-green-400' : 'text-red-400'}`}>
+                          {resource}: {available}/{count}
+                        </div>
+                      );
+                    });
+
+                    const categoryColor = {
+                      luxury: 'from-purple-600 to-pink-600',
+                      food: 'from-green-600 to-emerald-600',
+                      tourism: 'from-blue-600 to-cyan-600',
+                      industrial: 'from-gray-600 to-slate-600',
+                      goods: 'from-yellow-600 to-orange-600',
+                      energy: 'from-red-600 to-orange-600'
+                    }[recipe.category] || 'from-gray-600 to-gray-700';
+
+                    const isTourismWithBonus =
+                      recipe.category === 'tourism' &&
+                      player.character.craftingBonus?.effect?.categorySpeedBonus?.tourism === 1.0;
+
+                    return (
+                      <div key={recipe.id} className={`${themeStyles.border} border rounded-lg p-4`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="font-bold text-lg">{recipe.name}</div>
+                              <div className={`text-xs px-2 py-1 rounded bg-gradient-to-r ${categoryColor} text-white`}>
+                                {recipe.category}
+                              </div>
+                            </div>
+                            <div className="text-sm opacity-75 mb-3">{recipe.description}</div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <div className="text-xs font-bold mb-1">Required Materials:</div>
+                                {materialsList}
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold mb-1">Output:</div>
+                                <div className="text-sm text-green-400">{recipe.output}</div>
+                                <div className="text-xs opacity-75">Value: ~${recipe.baseValue}</div>
+                                <div className="text-xs opacity-75">
+                                  Actions: {isTourismWithBonus ? '0 (Tourist bonus!)' : recipe.craftTime}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <button
+                              onClick={() => craftItem(recipe.id)}
+                              disabled={!isPlayerTurn || !canCraft || player.inventory.length >= MAX_INVENTORY}
+                              className={`${themeStyles.button} text-white px-4 py-2 rounded font-bold disabled:opacity-50 whitespace-nowrap`}
+                            >
+                              {canCraft ? 'Craft' : 'Missing Materials'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {player.inventory.length === 0 && (
+                  <div className="text-center py-8 opacity-60">
+                    No materials available. Collect resources first!
+                  </div>
+                )}
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <button
+                  onClick={() => updateUiState({ showWorkshop: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close Workshop
                 </button>
               </div>
             </div>
