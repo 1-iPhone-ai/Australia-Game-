@@ -297,6 +297,114 @@ const AI_SAFETY_BUFFER = 600;
 const SABOTAGE_RUMORS_MULTIPLIER = 0.8;
 const SABOTAGE_MARKET_PANIC_MULTIPLIER = 0.65;
 const SABOTAGE_CHALLENGE_PENALTY = 0.12;
+
+// Crafting System - Combine resources into valuable items
+const CRAFTING_RECIPES = [
+  {
+    id: 'opal_jewelry',
+    name: 'Opal Jewelry',
+    emoji: '💍',
+    description: 'Craft precious jewelry from opals',
+    inputs: { 'Opal': 3 },
+    output: 'Opal Jewelry',
+    baseValue: 450,
+    craftTime: 1
+  },
+  {
+    id: 'wool_clothing',
+    name: 'Wool Clothing',
+    emoji: '🧥',
+    description: 'Create quality clothing from wool',
+    inputs: { 'Wool': 4 },
+    output: 'Wool Garments',
+    baseValue: 350,
+    craftTime: 1
+  },
+  {
+    id: 'wine_gift_set',
+    name: 'Wine Gift Set',
+    emoji: '🎁',
+    description: 'Package wine into premium gift sets',
+    inputs: { 'Wine': 2 },
+    output: 'Wine Gift Set',
+    baseValue: 250,
+    craftTime: 1
+  },
+  {
+    id: 'seafood_platter',
+    name: 'Seafood Platter',
+    emoji: '🍤',
+    description: 'Prepare gourmet seafood dishes',
+    inputs: { 'Seafood': 3 },
+    output: 'Seafood Platter',
+    baseValue: 320,
+    craftTime: 1
+  },
+  {
+    id: 'tech_package',
+    name: 'Tech Package',
+    emoji: '📦',
+    description: 'Bundle electronics into complete packages',
+    inputs: { 'Electronics': 2, 'Iron Ore': 1 },
+    output: 'Tech Package',
+    baseValue: 550,
+    craftTime: 2
+  },
+  {
+    id: 'luxury_combo',
+    name: 'Luxury Combo',
+    emoji: '✨',
+    description: 'Ultimate luxury package combining wine and jewelry',
+    inputs: { 'Wine': 1, 'Opal': 2 },
+    output: 'Luxury Package',
+    baseValue: 600,
+    craftTime: 2
+  }
+];
+
+// Loan System - Tiered borrowing with credit scoring
+const LOAN_OPTIONS = [
+  {
+    id: 'micro',
+    name: 'Micro Loan',
+    emoji: '💵',
+    description: 'Small emergency loan for beginners',
+    amount: 300,
+    dailyInterest: 0.08,
+    maxActive: 3,
+    requirement: 'None'
+  },
+  {
+    id: 'personal',
+    name: 'Personal Loan',
+    emoji: '💰',
+    description: 'Standard personal loan',
+    amount: 800,
+    dailyInterest: 0.06,
+    maxActive: 2,
+    requirement: 'None'
+  },
+  {
+    id: 'business',
+    name: 'Business Loan',
+    emoji: '💼',
+    description: 'Larger business loan for experienced players',
+    amount: 2000,
+    dailyInterest: 0.05,
+    maxActive: 2,
+    requirement: 'Level 3+'
+  },
+  {
+    id: 'investor',
+    name: 'Investor Loan',
+    emoji: '🏦',
+    description: 'Premium loan for high net worth players',
+    amount: 5000,
+    dailyInterest: 0.04,
+    maxActive: 1,
+    requirement: 'Level 5+ & $5000 Net Worth'
+  }
+];
 const SABOTAGE_ICON = "!";
 
 const getDebuffDisplayName = (type: string) => {
@@ -360,6 +468,32 @@ const tickDebuffs = (debuffs: Debuff[] = []) => {
   return debuffs
     .map(debuff => ({ ...debuff, remainingDays: debuff.remainingDays - 1 }))
     .filter(debuff => debuff.remainingDays > 0);
+};
+
+// Crafting helper functions
+const canCraft = (recipe: typeof CRAFTING_RECIPES[0], inventory: string[]) => {
+  return Object.entries(recipe.inputs).every(([resource, required]) => {
+    const owned = inventory.filter(item => item === resource).length;
+    return owned >= (required as number);
+  });
+};
+
+const calculateCraftValue = (recipe: typeof CRAFTING_RECIPES[0], character: any, masteryUnlocks: string[]) => {
+  let value = recipe.baseValue;
+
+  // Character bonuses
+  if (character?.name === 'Businessman') {
+    value *= 1.2; // +20% value
+  } else if (character?.name === 'Scientist') {
+    value *= 1.15; // +15% value
+  }
+
+  // Mastery bonuses
+  if (masteryUnlocks?.includes('crafting_master')) {
+    value *= 1.25;
+  }
+
+  return Math.floor(value);
 };
 
 const upsertDebuff = (debuffs: Debuff[] = [], type: string, duration: number) => {
@@ -664,6 +798,8 @@ type GameSettingsState = {
   investmentsEnabled: boolean;
   equipmentShopEnabled: boolean;
   sabotageEnabled: boolean;
+  craftingEnabled: boolean;
+  loansEnabled: boolean;
   // AI options (disabled by default)
   aiUsesMarketModifiers: boolean;
   aiSpecialAbilitiesEnabled: boolean;
@@ -740,6 +876,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   investmentsEnabled: false,
   equipmentShopEnabled: false,
   sabotageEnabled: false,
+  craftingEnabled: false,
+  loansEnabled: false,
   // AI options (disabled by default)
   aiUsesMarketModifiers: false,
   aiSpecialAbilitiesEnabled: false,
@@ -785,7 +923,11 @@ const initialPlayerState = {
   actionsUsedThisTurn: 0,
   overridesUsedToday: 0,
   overrideFatigue: 0,
-  loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+  loans: [] as Array<{ id: string; loanType: string; amount: number; accrued: number; interestRate: number; turnTaken: number }>,
+  creditScore: 700,
+  loansPaidEarly: 0,
+  totalLoansTaken: 0,
+  craftedItems: [] as string[],
   completedThisSeason: [] as string[],
   challengeMastery: {} as Record<string, number>,
   stipendCooldown: 0,
@@ -1089,7 +1231,11 @@ function AustraliaGame() {
     actionsUsedThisTurn: 0,
     overridesUsedToday: 0,
     overrideFatigue: 0,
-    loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+    loans: [] as Array<{ id: string; loanType: string; amount: number; accrued: number; interestRate: number; turnTaken: number }>,
+    creditScore: 700,
+    loansPaidEarly: 0,
+    totalLoansTaken: 0,
+    craftedItems: [] as string[],
     completedThisSeason: [] as string[],
     challengeMastery: {} as Record<string, number>,
     stipendCooldown: 0,
@@ -1116,6 +1262,8 @@ function AustraliaGame() {
     showMarket: false,
     showShop: false,
     showInvestments: false,
+    showWorkshop: false,
+    showBank: false,
     showSabotage: false,
     showStats: false,
     showMap: true,
