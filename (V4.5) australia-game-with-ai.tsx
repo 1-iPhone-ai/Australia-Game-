@@ -7766,6 +7766,316 @@ function AustraliaGame() {
           </div>
         )}
 
+        {/* Workshop Modal - Crafting System */}
+        {uiState.showWorkshop && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+            onClick={() => updateUiState({ showWorkshop: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full flex flex-col overflow-hidden`}
+              style={{ height: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <h3 className="text-xl font-bold">🛠️ Workshop - Crafting System</h3>
+                <button
+                  onClick={() => updateUiState({ showWorkshop: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                  aria-label="Close"
+                  title="Close"
+                >
+                  X
+                </button>
+              </div>
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+                {/* Crafting Info */}
+                <div className={`${themeStyles.border} border rounded-lg p-4 mb-4 text-sm`}>
+                  <div className="font-bold mb-2">✨ Combine resources into valuable items!</div>
+                  <div className="opacity-75 space-y-1">
+                    <div>• Crafted items are worth 1.5-2x their raw materials</div>
+                    <div>• Success rate: 95% (98% for Scientist)</div>
+                    <div>• Businessman: +20% value | Scientist: +15% value</div>
+                    <div>• Actions used: {player.actionsUsedThisTurn}/{gameSettings.playerActionsPerDay}</div>
+                  </div>
+                </div>
+
+                {/* Craftable Recipes */}
+                <div className="space-y-4">
+                  {CRAFTING_RECIPES.map(recipe => {
+                    const craftable = canCraft(recipe, player.inventory);
+                    const hasActions = !gameSettings.actionLimitsEnabled || player.actionsUsedThisTurn + recipe.craftTime <= gameSettings.playerActionsPerDay;
+                    const hasSpace = player.inventory.length < MAX_INVENTORY;
+                    const canCraftThis = craftable && hasActions && hasSpace && isPlayerTurn;
+                    const craftValue = calculateCraftValue(recipe, player.character, player.masteryUnlocks);
+
+                    // Count how many of each input player has
+                    const inputCounts = Object.entries(recipe.inputs).map(([resource, required]) => {
+                      const owned = player.inventory.filter(item => item === resource).length;
+                      return { resource, required: required as number, owned };
+                    });
+
+                    return (
+                      <div key={recipe.id} className={`${themeStyles.border} border rounded-lg p-4 ${craftable ? 'border-green-500 border-opacity-30' : ''}`}>
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <div className="font-bold text-lg">{recipe.emoji} {recipe.name}</div>
+                            <div className="text-xs opacity-75 mt-1">{recipe.description}</div>
+                            <div className="text-sm mt-2">
+                              <span className="font-bold text-green-400">Value: ${craftValue}</span>
+                              <span className="opacity-75 ml-3">⏱️ {recipe.craftTime} action{recipe.craftTime > 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Required Resources */}
+                        <div className="mb-3">
+                          <div className="text-xs font-bold opacity-75 mb-2">Required Resources:</div>
+                          <div className="flex flex-wrap gap-2">
+                            {inputCounts.map(({ resource, required, owned }) => {
+                              const hasEnough = owned >= required;
+                              return (
+                                <div key={resource} className={`text-xs px-2 py-1 rounded ${
+                                  hasEnough ? 'bg-green-500 bg-opacity-20 text-green-400' : 'bg-red-500 bg-opacity-20 text-red-400'
+                                }`}>
+                                  {resource} ({owned}/{required})
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Craft Button */}
+                        <button
+                          onClick={() => handleCraft(recipe)}
+                          disabled={!canCraftThis}
+                          className={`${themeStyles.button} text-white px-4 py-2 rounded-lg w-full font-bold text-sm disabled:opacity-50`}
+                          title={
+                            !craftable ? 'Missing required resources' :
+                            !hasActions ? 'Not enough actions remaining' :
+                            !hasSpace ? 'Inventory full' :
+                            !isPlayerTurn ? 'Not your turn' :
+                            'Craft this item'
+                          }
+                        >
+                          {craftable ? '✨ Craft' : '❌ Missing Resources'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Crafted Items Summary */}
+                {player.craftedItems && player.craftedItems.length > 0 && (
+                  <div className={`${themeStyles.border} border rounded-lg p-4 mt-4`}>
+                    <div className="font-bold mb-2">📦 Items You've Crafted ({player.craftedItems.length} total):</div>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from(new Set(player.craftedItems)).map(item => {
+                        const count = player.craftedItems.filter(i => i === item).length;
+                        const recipe = CRAFTING_RECIPES.find(r => r.output === item);
+                        return (
+                          <div key={item} className={`text-xs px-2 py-1 rounded bg-blue-500 bg-opacity-20`}>
+                            {recipe?.emoji} {item} x{count}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <button
+                  onClick={() => updateUiState({ showWorkshop: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close Workshop
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bank Modal - Loan Management */}
+        {uiState.showBank && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+            onClick={() => updateUiState({ showBank: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full flex flex-col overflow-hidden`}
+              style={{ height: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <h3 className="text-xl font-bold">🏦 Bank of Australia</h3>
+                <button
+                  onClick={() => updateUiState({ showBank: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                  aria-label="Close"
+                  title="Close"
+                >
+                  X
+                </button>
+              </div>
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+                {/* Credit Score Display */}
+                <div className={`${themeStyles.border} border rounded-lg p-4 mb-4`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-bold">Credit Score:</span>
+                    <span className={`text-2xl font-bold ${
+                      player.creditScore >= 750 ? 'text-green-400' :
+                      player.creditScore >= 650 ? 'text-blue-400' :
+                      player.creditScore >= 550 ? 'text-yellow-400' :
+                      'text-red-400'
+                    }`}>
+                      {player.creditScore}
+                    </span>
+                  </div>
+                  <div className="text-xs opacity-75">
+                    {player.creditScore >= 750 ? '⭐ Excellent - 3% interest discount' :
+                     player.creditScore >= 650 ? '✓ Good - 1% interest discount' :
+                     player.creditScore >= 550 ? '→ Fair - Standard rates' :
+                     '⚠️ Poor - 2% interest penalty'}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-opacity-30 text-xs space-y-1 opacity-75">
+                    <div>• Loans paid early: {player.loansPaidEarly || 0}</div>
+                    <div>• Total loans taken: {player.totalLoansTaken || 0}</div>
+                  </div>
+                </div>
+
+                {/* Debt Summary */}
+                {player.loans && player.loans.length > 0 && (
+                  <div className={`${themeStyles.border} border border-red-500 border-opacity-30 rounded-lg p-4 mb-4`}>
+                    <div className="font-bold mb-2 text-red-400">💳 Active Loans ({player.loans.length})</div>
+                    <div className="space-y-2">
+                      {player.loans.map((loan) => {
+                        const loanOption = LOAN_OPTIONS.find(opt => opt.id === loan.loanType) || LOAN_OPTIONS[1];
+                        const totalOwed = loan.amount + loan.accrued;
+                        const dailyInterest = Math.floor(loan.amount * loan.interestRate);
+
+                        return (
+                          <div key={loan.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <div className="font-bold text-sm">{loanOption.emoji} {loanOption.name}</div>
+                                <div className="text-xs opacity-75 mt-1">
+                                  Rate: {(loan.interestRate * 100).toFixed(1)}%/day ({dailyInterest}/day)
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-bold text-red-400">${Math.floor(totalOwed)}</div>
+                                <div className="text-xs opacity-75">Principal: ${loan.amount}</div>
+                                <div className="text-xs opacity-75">Interest: ${loan.accrued}</div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleRepayLoan(loan.id, false)}
+                                disabled={player.money < 1}
+                                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-xs flex-1 disabled:opacity-50`}
+                                title={`Pay what you can (max $${Math.min(player.money, totalOwed)})`}
+                              >
+                                Pay Partial
+                              </button>
+                              <button
+                                onClick={() => handleRepayLoan(loan.id, true)}
+                                disabled={player.money < totalOwed}
+                                className={`${themeStyles.button} text-white px-3 py-1 rounded text-xs flex-1 disabled:opacity-50`}
+                                title={`Pay off full amount ($${Math.floor(totalOwed)})`}
+                              >
+                                Pay Off ${Math.floor(totalOwed)}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-opacity-30 text-sm">
+                      <div className="flex justify-between font-bold">
+                        <span>Total Debt:</span>
+                        <span className="text-red-400">${Math.floor(player.loans.reduce((sum, l) => sum + l.amount + l.accrued, 0))}</span>
+                      </div>
+                      <div className="flex justify-between text-xs opacity-75 mt-1">
+                        <span>Daily Interest:</span>
+                        <span>${player.loans.reduce((sum, l) => sum + Math.floor(l.amount * l.interestRate), 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Available Loans */}
+                <div className="space-y-3">
+                  <div className="font-bold mb-3">💰 Available Loans:</div>
+                  {LOAN_OPTIONS.map(loanOption => {
+                    const check = canTakeLoan(loanOption);
+                    const activeCount = player.loans.filter(l => l.loanType === loanOption.id).length;
+
+                    // Calculate effective rate with credit score
+                    let effectiveRate = loanOption.dailyInterest;
+                    if (player.creditScore >= 750) effectiveRate -= 0.03;
+                    else if (player.creditScore >= 650) effectiveRate -= 0.01;
+                    else if (player.creditScore < 550) effectiveRate += 0.02;
+                    effectiveRate = Math.max(0.03, effectiveRate);
+
+                    return (
+                      <div key={loanOption.id} className={`${themeStyles.border} border rounded-lg p-4 ${check.canTake ? 'border-green-500 border-opacity-30' : 'border-red-500 border-opacity-30'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="font-bold">{loanOption.emoji} {loanOption.name}</div>
+                            <div className="text-xs opacity-75 mt-1">{loanOption.description}</div>
+                            <div className="text-xs opacity-75 mt-1">
+                              Active: {activeCount}/{loanOption.maxActive}
+                              {loanOption.requirement !== "None" && <span className="ml-2">• {loanOption.requirement}</span>}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-green-400 text-xl">${loanOption.amount}</div>
+                            <div className="text-xs opacity-75">
+                              {(effectiveRate * 100).toFixed(1)}%/day
+                              {effectiveRate !== loanOption.dailyInterest && (
+                                <span className="ml-1">
+                                  ({effectiveRate < loanOption.dailyInterest ? '↓' : '↑'} credit)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleTakeLoan(loanOption)}
+                          disabled={!check.canTake || !isPlayerTurn}
+                          className={`${themeStyles.button} text-white px-4 py-2 rounded-lg w-full font-bold text-sm disabled:opacity-50`}
+                          title={check.canTake ? `Take ${loanOption.name}` : check.reason}
+                        >
+                          {check.canTake ? `Borrow $${loanOption.amount}` : `🔒 ${check.reason}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Loan Tips */}
+                <div className={`${themeStyles.border} border rounded-lg p-4 mt-4 text-xs opacity-75`}>
+                  <div className="font-bold mb-2">💡 Banking Tips:</div>
+                  <div className="space-y-1">
+                    <div>• Pay loans early to boost your credit score</div>
+                    <div>• Higher credit score = lower interest rates</div>
+                    <div>• Interest compounds daily, so repay quickly</div>
+                    <div>• Each loan tier has a maximum number of active loans</div>
+                  </div>
+                </div>
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <button
+                  onClick={() => updateUiState({ showBank: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close Bank
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Investments Modal */}
         {uiState.showInvestments && (
           <div
