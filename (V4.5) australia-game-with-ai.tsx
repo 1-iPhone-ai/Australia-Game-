@@ -293,6 +293,142 @@ const SABOTAGE_ACTIONS = [
   }
 ];
 
+// Crafting Recipes - Combine resources into high-value items
+const CRAFTING_RECIPES = [
+  {
+    id: "opal_jewelry",
+    name: "Opal Jewelry",
+    inputs: { "Gold": 1, "Opals": 2 },
+    output: "Opal Jewelry",
+    baseValue: 800,
+    craftTime: 1,
+    category: "luxury",
+    description: "Stunning handcrafted Australian jewelry",
+    emoji: "💎"
+  },
+  {
+    id: "croc_bag",
+    name: "Designer Crocodile Bag",
+    inputs: { "Crocodile Leather": 2, "Aboriginal Art": 1 },
+    output: "Designer Bag",
+    baseValue: 950,
+    craftTime: 1,
+    category: "luxury",
+    description: "Exclusive designer bag made from Australian materials",
+    emoji: "👜"
+  },
+  {
+    id: "gourmet_box",
+    name: "Gourmet Gift Box",
+    inputs: { "Wine": 2, "Seafood": 1, "Dairy": 1 },
+    output: "Gourmet Box",
+    baseValue: 600,
+    craftTime: 1,
+    category: "food",
+    description: "Premium Australian food and wine collection",
+    emoji: "🎁"
+  },
+  {
+    id: "tourist_package",
+    name: "Tourist Experience Package",
+    inputs: { "Coral": 1, "Tropical Fruit": 2 },
+    output: "Tourist Package",
+    baseValue: 450,
+    craftTime: 1,
+    category: "tourism",
+    description: "Complete Queensland experience bundle",
+    emoji: "🏖️"
+  },
+  {
+    id: "steel_ingots",
+    name: "Steel Ingots",
+    inputs: { "Iron Ore": 3, "Coal": 2 },
+    output: "Steel",
+    baseValue: 700,
+    craftTime: 1,
+    category: "industrial",
+    description: "High-grade processed steel",
+    emoji: "🔩"
+  },
+  {
+    id: "furniture",
+    name: "Premium Furniture",
+    inputs: { "Timber": 3, "Wool": 1 },
+    output: "Furniture Set",
+    baseValue: 550,
+    craftTime: 1,
+    category: "goods",
+    description: "Handcrafted Australian furniture",
+    emoji: "🪑"
+  },
+  {
+    id: "energy_cell",
+    name: "Hydroelectric Battery",
+    inputs: { "Uranium": 1, "Hydropower": 2, "Natural Gas": 1 },
+    output: "Energy Cell",
+    baseValue: 1100,
+    craftTime: 2,
+    category: "energy",
+    description: "Advanced renewable energy storage",
+    emoji: "🔋"
+  },
+  {
+    id: "wool_textiles",
+    name: "Wool Textiles",
+    inputs: { "Wool": 3, "Dairy": 1 },
+    output: "Wool Textiles",
+    baseValue: 420,
+    craftTime: 1,
+    category: "goods",
+    description: "Premium Australian wool products",
+    emoji: "🧶"
+  }
+];
+
+// Loan System Options - Multiple tiers with different rates
+const LOAN_OPTIONS = [
+  {
+    id: "micro",
+    name: "Micro Loan",
+    amount: 200,
+    dailyInterest: 0.05,
+    maxActive: 5,
+    requirement: "None",
+    description: "Small emergency loan with standard rates",
+    emoji: "💵"
+  },
+  {
+    id: "standard",
+    name: "Standard Loan",
+    amount: 500,
+    dailyInterest: 0.08,
+    maxActive: 3,
+    requirement: "None",
+    description: "Medium loan for expansion",
+    emoji: "💰"
+  },
+  {
+    id: "business",
+    name: "Business Loan",
+    amount: 1500,
+    dailyInterest: 0.12,
+    maxActive: 2,
+    requirement: "Level 3+",
+    description: "Large loan for serious investments",
+    emoji: "🏢"
+  },
+  {
+    id: "investor",
+    name: "Investor Backing",
+    amount: 3000,
+    dailyInterest: 0.15,
+    maxActive: 1,
+    requirement: "Level 5+ and Net Worth $5000+",
+    description: "Massive loan for experienced players",
+    emoji: "🎩"
+  }
+];
+
 const AI_SAFETY_BUFFER = 600;
 const SABOTAGE_RUMORS_MULTIPLIER = 0.8;
 const SABOTAGE_MARKET_PANIC_MULTIPLIER = 0.65;
@@ -336,6 +472,50 @@ const getEquipmentEffects = (equipment: string[] = []) => {
 const hasActiveDebuff = (debuffs: Array<{ type: string; remainingDays: number }> | undefined, type: string) => {
   if (!Array.isArray(debuffs)) return false;
   return debuffs.some(debuff => debuff.type === type && debuff.remainingDays > 0);
+};
+
+// Crafting helper functions
+const canCraft = (recipe: typeof CRAFTING_RECIPES[0], inventory: string[]) => {
+  return Object.entries(recipe.inputs).every(([resource, required]) => {
+    const count = inventory.filter(item => item === resource).length;
+    return count >= required;
+  });
+};
+
+const getCraftableRecipes = (inventory: string[]) => {
+  return CRAFTING_RECIPES.filter(recipe => canCraft(recipe, inventory));
+};
+
+const removeRecipeInputs = (inventory: string[], recipe: typeof CRAFTING_RECIPES[0]) => {
+  const newInventory = [...inventory];
+  Object.entries(recipe.inputs).forEach(([resource, required]) => {
+    for (let i = 0; i < required; i++) {
+      const index = newInventory.indexOf(resource);
+      if (index > -1) {
+        newInventory.splice(index, 1);
+      }
+    }
+  });
+  return newInventory;
+};
+
+const calculateCraftValue = (recipe: typeof CRAFTING_RECIPES[0], character: any, masteryUnlocks: string[]) => {
+  let value = recipe.baseValue;
+
+  // Character bonuses
+  if (character.name === "Businessman") {
+    value = Math.floor(value * 1.2); // Crafted items sell for 20% more
+  }
+  if (character.name === "Scientist") {
+    value = Math.floor(value * 1.15); // Better crafting quality
+  }
+
+  // Mastery bonuses
+  if (masteryUnlocks.includes("Craftmaster")) {
+    value = Math.floor(value * 1.25);
+  }
+
+  return value;
 };
 
 const isTravelBlocked = (debuffs: Array<{ type: string; remainingDays: number }> | undefined) => {
@@ -627,7 +807,7 @@ const OVERRIDE_FATIGUE_DECAY = 0.5;
 const BANKRUPTCY_THRESHOLD = 50;
 const BANKRUPTCY_STREAK_DAYS = 3;
 const LOAN_AMOUNT = 500;
-const LOAN_INTEREST_RATE = 0.25;
+const LOAN_INTEREST_RATE = 0.25; // Legacy - now using LOAN_OPTIONS with variable rates
 const MAX_ACTIVE_LOANS = 3;
 const AI_STIPEND_AMOUNT = 200;
 const AI_STIPEND_COOLDOWN = 2;
@@ -785,13 +965,17 @@ const initialPlayerState = {
   actionsUsedThisTurn: 0,
   overridesUsedToday: 0,
   overrideFatigue: 0,
-  loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+  loans: [] as Array<{ id: string; amount: number; accrued: number; loanType: string; interestRate: number }>,
   completedThisSeason: [] as string[],
   challengeMastery: {} as Record<string, number>,
   stipendCooldown: 0,
   investments: [] as string[],
   equipment: [] as string[],
-  debuffs: [] as Debuff[]
+  debuffs: [] as Debuff[],
+  creditScore: 650,
+  craftedItems: [] as string[],
+  loansPaidEarly: 0,
+  totalLoansTaken: 0
 };
 
 type PlayerStateSnapshot = typeof initialPlayerState;
@@ -1089,13 +1273,17 @@ function AustraliaGame() {
     actionsUsedThisTurn: 0,
     overridesUsedToday: 0,
     overrideFatigue: 0,
-    loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+    loans: [] as Array<{ id: string; amount: number; accrued: number; loanType: string; interestRate: number }>,
     completedThisSeason: [] as string[],
     challengeMastery: {} as Record<string, number>,
     stipendCooldown: 0,
     investments: [] as string[],
     equipment: [] as string[],
-    debuffs: [] as Debuff[]
+    debuffs: [] as Debuff[],
+    creditScore: 650,
+    craftedItems: [] as string[],
+    loansPaidEarly: 0,
+    totalLoansTaken: 0
   });
 
   // AI action queue for visual feedback
@@ -1134,6 +1322,8 @@ function AustraliaGame() {
     showAiStats: false,
     showDayTransition: false,
     showSaveLoadModal: false,
+    showWorkshop: false,
+    showBank: false,
     // New inventory management options
     inventorySort: 'default' as 'default' | 'value' | 'quantity' | 'category',
     inventoryFilter: 'all' as 'all' | 'luxury' | 'food' | 'industrial' | 'agricultural' | 'energy' | 'financial' | 'service',
@@ -3437,13 +3627,16 @@ function AustraliaGame() {
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
   }, [player.masteryUnlocks, addNotification]);
 
+  // Updated loan tick to use variable interest rates per loan
   const applyLoanTick = useCallback((state: any) => {
     if (!state.loans || state.loans.length === 0) {
       return { money: state.money, loans: [] as typeof state.loans };
     }
     let money = state.money;
     const updatedLoans = state.loans.map((loan: any) => {
-      const interest = Math.floor(loan.amount * LOAN_INTEREST_RATE);
+      // Use loan's individual interest rate, fallback to legacy rate if not set
+      const rate = loan.interestRate ?? LOAN_INTEREST_RATE;
+      const interest = Math.floor(loan.amount * rate);
       const payment = Math.min(interest, money);
       money -= payment;
       return {
@@ -3944,6 +4137,212 @@ function AustraliaGame() {
     setActiveSpecialAbility('Tourist Luck');
     takeChallenge(failedChallengeData.challenge, failedChallengeData.wager);
   }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
+
+  // =========================================
+  // CRAFTING SYSTEM HANDLERS
+  // =========================================
+
+  const handleCraft = useCallback((recipe: typeof CRAFTING_RECIPES[0]) => {
+    // Validate can craft
+    if (!canCraft(recipe, player.inventory)) {
+      addNotification('Missing required resources!', 'error');
+      return;
+    }
+
+    // Check action limit
+    if (gameSettings.actionLimitsEnabled && player.actionsUsedThisTurn >= gameSettings.playerActionsPerDay) {
+      addNotification('No actions remaining this turn!', 'warning');
+      return;
+    }
+
+    // Check inventory space
+    if (player.inventory.length >= MAX_INVENTORY) {
+      addNotification('Inventory full! Sell items first.', 'warning');
+      return;
+    }
+
+    // Remove inputs from inventory
+    const newInventory = removeRecipeInputs(player.inventory, recipe);
+
+    // Add crafted item to inventory
+    newInventory.push(recipe.output);
+
+    // Calculate success chance (Scientist gets bonus)
+    let successChance = 0.95;
+    if (player.character.name === "Scientist") {
+      successChance = 0.98;
+    }
+
+    const success = Math.random() < successChance;
+
+    if (success) {
+      dispatchPlayer({
+        type: 'MERGE_STATE',
+        payload: {
+          inventory: newInventory,
+          actionsUsedThisTurn: player.actionsUsedThisTurn + recipe.craftTime,
+          craftedItems: [...player.craftedItems, recipe.output]
+        }
+      });
+
+      const craftValue = calculateCraftValue(recipe, player.character, player.masteryUnlocks);
+      addNotification(`✨ Crafted ${recipe.emoji} ${recipe.output}! (Value: $${craftValue})`, 'success', true);
+    } else {
+      // Failed craft - lose materials
+      dispatchPlayer({
+        type: 'SET_INVENTORY',
+        payload: newInventory
+      });
+      addNotification(`❌ Crafting failed! Lost materials.`, 'error', true);
+    }
+
+  }, [player, gameSettings, addNotification]);
+
+  // =========================================
+  // LOAN SYSTEM HANDLERS
+  // =========================================
+
+  const canTakeLoan = useCallback((loanOption: typeof LOAN_OPTIONS[0]) => {
+    // Check active loans of this type
+    const activeLoansOfType = player.loans.filter(loan => loan.loanType === loanOption.id).length;
+    if (activeLoansOfType >= loanOption.maxActive) {
+      return { canTake: false, reason: `Maximum ${loanOption.maxActive} ${loanOption.name}s active` };
+    }
+
+    // Check level requirement for Business/Investor loans
+    if (loanOption.id === 'business' && player.level < 3) {
+      return { canTake: false, reason: 'Requires Level 3+' };
+    }
+    if (loanOption.id === 'investor') {
+      if (player.level < 5) {
+        return { canTake: false, reason: 'Requires Level 5+' };
+      }
+      const netWorth = computeNetWorth(player);
+      if (netWorth < 5000) {
+        return { canTake: false, reason: 'Requires Net Worth $5000+' };
+      }
+    }
+
+    return { canTake: true, reason: '' };
+  }, [player, computeNetWorth]);
+
+  const handleTakeLoan = useCallback((loanOption: typeof LOAN_OPTIONS[0]) => {
+    const check = canTakeLoan(loanOption);
+    if (!check.canTake) {
+      addNotification(check.reason, 'error');
+      return;
+    }
+
+    // Apply credit score modifier to interest rate
+    let interestRate = loanOption.dailyInterest;
+    if (player.creditScore >= 750) {
+      interestRate -= 0.03; // Excellent: -3%
+    } else if (player.creditScore >= 650) {
+      interestRate -= 0.01; // Good: -1%
+    } else if (player.creditScore < 550) {
+      interestRate += 0.02; // Poor: +2%
+    }
+    interestRate = Math.max(0.03, interestRate); // Minimum 3%
+
+    const newLoan = {
+      id: Date.now().toString(),
+      amount: loanOption.amount,
+      accrued: 0,
+      loanType: loanOption.id,
+      interestRate: interestRate
+    };
+
+    dispatchPlayer({
+      type: 'MERGE_STATE',
+      payload: {
+        money: validateMoney(player.money + loanOption.amount),
+        loans: [...player.loans, newLoan],
+        totalLoansTaken: player.totalLoansTaken + 1,
+        creditScore: Math.max(300, player.creditScore - 5) // Taking loan slightly reduces score
+      }
+    });
+
+    addNotification(`💰 Received ${loanOption.emoji} ${loanOption.name}: $${loanOption.amount} @ ${(interestRate * 100).toFixed(1)}% daily`, 'money', true);
+  }, [player, canTakeLoan, addNotification, validateMoney]);
+
+  const handleRepayLoan = useCallback((loanId: string, fullAmount?: boolean) => {
+    const loan = player.loans.find(l => l.id === loanId);
+    if (!loan) {
+      addNotification('Loan not found!', 'error');
+      return;
+    }
+
+    const totalOwed = loan.amount + loan.accrued;
+    const paymentAmount = fullAmount ? totalOwed : Math.min(player.money, totalOwed);
+
+    if (player.money < paymentAmount) {
+      addNotification('Insufficient funds to repay!', 'error');
+      return;
+    }
+
+    const remainingDebt = totalOwed - paymentAmount;
+    const paidInFull = remainingDebt <= 0;
+
+    // Calculate credit score change
+    let creditScoreChange = 0;
+    if (paidInFull) {
+      // Paid off early (before accumulating too much interest)
+      if (loan.accrued < loan.amount * 0.5) {
+        creditScoreChange = 10; // Early payoff bonus
+      } else {
+        creditScoreChange = 5; // Regular payoff
+      }
+    }
+
+    if (paidInFull) {
+      // Remove loan entirely
+      const updatedLoans = player.loans.filter(l => l.id !== loanId);
+      dispatchPlayer({
+        type: 'MERGE_STATE',
+        payload: {
+          money: validateMoney(player.money - paymentAmount),
+          loans: updatedLoans,
+          creditScore: Math.min(850, player.creditScore + creditScoreChange),
+          loansPaidEarly: loan.accrued < loan.amount * 0.5 ? player.loansPaidEarly + 1 : player.loansPaidEarly
+        }
+      });
+      addNotification(`✅ Loan paid off! +${creditScoreChange} credit score`, 'success', true);
+    } else {
+      // Partial payment - reduce debt
+      const updatedLoans = player.loans.map(l =>
+        l.id === loanId ? { ...l, amount: remainingDebt, accrued: 0 } : l
+      );
+      dispatchPlayer({
+        type: 'MERGE_STATE',
+        payload: {
+          money: validateMoney(player.money - paymentAmount),
+          loans: updatedLoans
+        }
+      });
+      addNotification(`Paid $${paymentAmount} toward loan. Remaining: $${Math.floor(remainingDebt)}`, 'info');
+    }
+  }, [player, addNotification, validateMoney]);
+
+  const calculateCreditScore = useCallback((state: PlayerStateSnapshot) => {
+    let score = 650; // Base score
+
+    // Positive factors
+    score += state.loansPaidEarly * 15; // +15 per early payoff
+    score += Math.min(100, state.level * 10); // +10 per level (max +100)
+    if (state.loans.length === 0 && state.totalLoansTaken > 0) {
+      score += 50; // Debt-free bonus
+    }
+
+    // Negative factors
+    const totalDebt = state.loans.reduce((sum, loan) => sum + loan.amount + loan.accrued, 0);
+    if (totalDebt > 2000) score -= 50;
+    else if (totalDebt > 1000) score -= 25;
+
+    if (state.loans.length > 3) score -= 30; // Too many active loans
+
+    // Cap between 300-850
+    return Math.max(300, Math.min(850, score));
+  }, []);
 
   const handleEndTurn = useCallback(() => {
     if (gameState.currentTurn !== 'player') return;
