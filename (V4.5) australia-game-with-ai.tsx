@@ -1334,6 +1334,8 @@ function AustraliaGame() {
     showMarket: false,
     showShop: false,
     showInvestments: false,
+    showWorkshop: false,
+    showBank: false,
     showSabotage: false,
     showStats: false,
     showMap: true,
@@ -2877,10 +2879,14 @@ function AustraliaGame() {
     evaluateInvestment,
     evaluateEquipmentPurchase,
     evaluateSabotage,
+    evaluateCrafting,
+    evaluateLoan,
     gameSettings.aiSpecialAbilitiesEnabled,
     gameSettings.investmentsEnabled,
     gameSettings.equipmentShopEnabled,
     gameSettings.sabotageEnabled,
+    gameSettings.craftingEnabled,
+    gameSettings.loansEnabled,
     gameState.selectedMode
   ]);
 
