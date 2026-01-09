@@ -1687,20 +1687,52 @@ function AustraliaGame() {
   }, [validateMoney]);
 
   // =========================================
+  // AI STATE MANAGEMENT HELPERS
+  // =========================================
+
+  // CRITICAL FIX: Atomic AI state update that syncs ref immediately
+  // This prevents race conditions and stale closure issues
+  const updateAiPlayerState = useCallback((updater: (prev: PlayerStateSnapshot) => PlayerStateSnapshot) => {
+    setAiPlayer(prev => {
+      const newState = updater(prev);
+      // Immediately sync ref to prevent stale reads
+      aiPlayerRef.current = newState;
+      return newState;
+    });
+  }, []);
+
+  // =========================================
   // AI RNG HELPERS
   // =========================================
 
+  // CRITICAL FIX: RNG with BigInt to prevent overflow and state validation
   const aiRandom = useCallback(() => {
     if (!gameSettings.aiDeterministic) {
       return Math.random();
     }
+
     let state = aiRngStateRef.current;
-    if (!state || state <= 0) {
+
+    // Validate RNG state - recover from corruption
+    if (!state || !isFinite(state) || state <= 0 || state >= AI_RNG_MODULUS) {
+      console.warn('Invalid RNG state detected, reinitializing:', state);
       state = normalizeAiSeed(gameSettings.aiDeterministicSeed);
     }
-    state = (state * AI_RNG_MULTIPLIER) % AI_RNG_MODULUS;
-    aiRngStateRef.current = state;
-    return state / AI_RNG_MODULUS;
+
+    // Use BigInt to prevent integer overflow for large multiplications
+    const nextState = Number(
+      (BigInt(state) * BigInt(AI_RNG_MULTIPLIER)) % BigInt(AI_RNG_MODULUS)
+    );
+
+    // Validate output before storing
+    if (!isFinite(nextState) || nextState <= 0 || nextState >= AI_RNG_MODULUS) {
+      console.error('RNG produced invalid state:', nextState, 'falling back to system RNG');
+      aiRngStateRef.current = normalizeAiSeed(Date.now());
+      return Math.random();
+    }
+
+    aiRngStateRef.current = nextState;
+    return nextState / AI_RNG_MODULUS;
   }, [gameSettings.aiDeterministic, gameSettings.aiDeterministicSeed]);
 
   // =========================================
@@ -1793,57 +1825,88 @@ function AustraliaGame() {
     return 1 - reduction;
   }, [gameState.supplyDemand]);
 
+  // CRITICAL FIX: Price calculation with bounds checking and validation
   const calculateAiSalePrice = useCallback((resource, aiState, resourcePrices) => {
-    let price = resourcePrices[resource] || 100;
+    // Validate base price
+    let price = resourcePrices[resource];
+    if (typeof price !== 'number' || price < 0 || !isFinite(price)) {
+      console.warn(`Invalid base price for ${resource}: ${price}, using default 100`);
+      price = 100;
+    }
+
+    // Accumulate all multipliers before applying (more accurate than sequential Math.floor)
+    let multiplier = 1.0;
 
     if (gameSettings.aiUsesMarketModifiers) {
       const regionalBonus = calculateAiRegionalBonus(resource, aiState.currentRegion);
-      price = Math.floor(price * regionalBonus);
+      if (isFinite(regionalBonus) && regionalBonus > 0) {
+        multiplier *= regionalBonus;
+      }
 
       const supplyDemandMod = calculateAiSupplyDemandModifier(resource);
-      price = Math.floor(price * supplyDemandMod);
+      if (isFinite(supplyDemandMod) && supplyDemandMod > 0) {
+        multiplier *= supplyDemandMod;
+      }
 
       gameState.activeEvents.forEach(event => {
-        if (event.effect?.resourcePrice?.[resource]) {
-          price = Math.floor(price * event.effect.resourcePrice[resource]);
+        const eventPriceMod = event.effect?.resourcePrice?.[resource];
+        if (eventPriceMod && isFinite(eventPriceMod) && eventPriceMod > 0) {
+          multiplier *= eventPriceMod;
         }
       });
 
       const resourceCategory = RESOURCE_CATEGORIES[resource];
       const seasonMod = SEASON_EFFECTS[gameState.season]?.resourcePriceModifier?.[resourceCategory];
-      if (seasonMod) {
-        price = Math.floor(price * seasonMod);
+      if (seasonMod && isFinite(seasonMod) && seasonMod > 0) {
+        multiplier *= seasonMod;
       }
     }
 
     const { isUnderdog, leader } = getUnderdogBonus('ai');
     if (isUnderdog) {
-      price = Math.floor(price * 1.15);
+      multiplier *= 1.15;
     }
     if (leader === 'ai' && getWealthState().ratio < 0.5) {
-      price = Math.floor(price * 0.95);
+      multiplier *= 0.95;
     }
 
     if (aiState.character.name === "Businessman") {
-      price = Math.floor(price * 1.1);
+      multiplier *= 1.1;
     }
 
     if (aiState.masteryUnlocks.includes("Investment Genius")) {
-      price = Math.floor(price * 1.15);
+      multiplier *= 1.15;
     }
 
     if (gameSettings.aiSpecialAbilitiesEnabled && aiActiveSpecialAbilityRef.current === 'Market Insight') {
-      price = Math.floor(price * AI_SPECIAL_ABILITY_EFFECTS.marketInsightMultiplier);
+      const abilityMult = AI_SPECIAL_ABILITY_EFFECTS.marketInsightMultiplier;
+      if (abilityMult && isFinite(abilityMult) && abilityMult > 0) {
+        multiplier *= abilityMult;
+      }
     }
 
     if (gameSettings.sabotageEnabled) {
       const sabotageMultiplier = getSabotageSellMultiplier(aiState.debuffs);
-      if (sabotageMultiplier < 1) {
-        price = Math.floor(price * sabotageMultiplier);
+      if (sabotageMultiplier && isFinite(sabotageMultiplier) && sabotageMultiplier > 0) {
+        multiplier *= sabotageMultiplier;
       }
     }
 
-    return price;
+    // Apply accumulated multiplier once
+    let finalPrice = Math.floor(price * multiplier);
+
+    // Enforce bounds to prevent extreme values
+    const MIN_PRICE = 10;
+    const MAX_PRICE = 10000;
+    finalPrice = Math.max(MIN_PRICE, Math.min(MAX_PRICE, finalPrice));
+
+    // Final validation
+    if (!isFinite(finalPrice) || finalPrice <= 0) {
+      console.error(`Price calculation failed for ${resource}, using minimum: ${finalPrice}`);
+      return MIN_PRICE;
+    }
+
+    return finalPrice;
   }, [gameSettings.aiUsesMarketModifiers, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, calculateAiRegionalBonus, calculateAiSupplyDemandModifier, getUnderdogBonus, getWealthState]);
 
   const calculateAiSuccessChance = useCallback((challenge, aiState) => {
@@ -2422,13 +2485,17 @@ function AustraliaGame() {
     gameState.selectedMode
   ]);
 
-  // Execute AI action with validation
-  const executeAiAction = useCallback((action: AIAction) => {
+  // CRITICAL FIX: Execute AI action with async/await for state consistency
+  // Returns Promise<boolean> indicating success/failure
+  const executeAiAction = useCallback(async (action: AIAction): Promise<boolean> => {
     setCurrentAiAction(action);
 
     // Get fresh AI state from ref to avoid stale closure
     const currentAi = aiPlayerRef.current;
-    if (!action || !action.type) return;
+    if (!action || !action.type) {
+      console.error('Invalid action provided to executeAiAction');
+      return false;
+    }
     const actionData = action.data || {};
 
     // Validate action before execution
@@ -2439,16 +2506,16 @@ function AustraliaGame() {
           const wager = actionData.wager;
           if (!challenge || typeof challenge.name !== 'string' || typeof challenge.reward !== 'number' || typeof challenge.difficulty !== 'number') {
             console.error('Invalid challenge action payload:', actionData);
-            return;
+            return false;
           }
           if (typeof wager !== 'number') {
             console.error('Invalid challenge wager:', actionData);
-            return;
+            return false;
           }
           // Validate AI has money for wager
           if (typeof wager === 'number' && currentAi.money < wager) {
             addNotification(`🤖 ${currentAi.name} can't afford challenge (needs $${wager})`, 'ai', false);
-            return;
+            return false;
           }
           break;
 
@@ -2457,21 +2524,21 @@ function AustraliaGame() {
           const cost = actionData.cost;
           if (typeof region !== 'string' || !REGIONS[region]) {
             console.error('Invalid region:', region);
-            return;
+            return false;
           }
           if (typeof cost !== 'number') {
             console.error('Invalid travel cost:', actionData);
-            return;
+            return false;
           }
           // Validate AI has money for travel
           if (typeof cost === 'number' && currentAi.money < cost) {
             addNotification(`🤖 ${currentAi.name} can't afford travel (needs $${cost})`, 'ai', false);
-            return;
+            return false;
           }
           // Validate region exists
           if (region && !REGIONS[region]) {
             console.error('Invalid region:', region);
-            return;
+            return false;
           }
           break;
 
@@ -2479,91 +2546,91 @@ function AustraliaGame() {
           const resource = actionData.resource;
           if (typeof resource !== 'string') {
             console.error('Invalid resource in sell action:', actionData);
-            return;
+            return false;
           }
           // Validate AI has resource in inventory
           if (resource && !currentAi.inventory.includes(resource)) {
             addNotification(`🤖 ${currentAi.name} doesn't have ${resource} to sell`, 'ai', false);
-            return;
+            return false;
           }
           break;
 
         case 'invest':
-          if (!gameSettings.investmentsEnabled) return;
+          if (!gameSettings.investmentsEnabled) return false;
           const investRegion = actionData.region;
           const investment = typeof investRegion === 'string' ? REGIONAL_INVESTMENTS[investRegion] : null;
           if (!investment) {
             console.error('Invalid investment action payload:', actionData);
-            return;
+            return false;
           }
           if ((currentAi.investments || []).includes(investRegion)) {
-            return;
+            return false;
           }
           if (currentAi.money < investment.cost) {
             addNotification(`🤖 ${currentAi.name} can't afford ${investment.name}`, 'ai', false);
-            return;
+            return false;
           }
           break;
 
         case 'buy_equipment':
-          if (!gameSettings.equipmentShopEnabled) return;
+          if (!gameSettings.equipmentShopEnabled) return false;
           const itemId = actionData.itemId;
           const item = SHOP_ITEMS.find(candidate => candidate.id === itemId);
           if (!item) {
             console.error('Invalid equipment action payload:', actionData);
-            return;
+            return false;
           }
           if (!EQUIPMENT_SHOP_REGIONS.includes(currentAi.currentRegion)) {
-            return;
+            return false;
           }
           if ((currentAi.equipment || []).includes(item.id)) {
-            return;
+            return false;
           }
           if (currentAi.money < item.cost) {
             addNotification(`🤖 ${currentAi.name} can't afford ${item.name}`, 'ai', false);
-            return;
+            return false;
           }
           break;
 
         case 'sabotage':
-          if (!gameSettings.sabotageEnabled || gameState.selectedMode !== 'ai') return;
+          if (!gameSettings.sabotageEnabled || gameState.selectedMode !== 'ai') return false;
           const sabotageId = actionData.sabotageId;
           const sabotage = SABOTAGE_ACTIONS.find(candidate => candidate.id === sabotageId);
           if (!sabotage) {
             console.error('Invalid sabotage action payload:', actionData);
-            return;
+            return false;
           }
           if (currentAi.money < sabotage.cost) {
             addNotification(`🤖 ${currentAi.name} can't afford sabotage`, 'ai', false);
-            return;
+            return false;
           }
           if (hasActiveDebuff(player.debuffs, sabotageId)) {
-            return;
+            return false;
           }
           break;
 
         case 'special_ability':
           const ability = actionData.ability;
           if (!gameSettings.aiSpecialAbilitiesEnabled) {
-            return;
+            return false;
           }
           if (!ability || typeof ability.name !== 'string') {
             console.error('Invalid special ability action payload:', actionData);
-            return;
+            return false;
           }
           if (aiActiveSpecialAbilityRef.current) {
-            return;
+            return false;
           }
           // Validate AI has special ability uses left
           if (currentAi.specialAbilityUses <= 0) {
             addNotification(`🤖 ${currentAi.name} has no special ability uses left`, 'ai', false);
-            return;
+            return false;
           }
           break;
       }
     } catch (error) {
       console.error('Action validation error:', error);
-      return;
+      return false;
     }
 
     // Execute validated action
@@ -2655,7 +2722,7 @@ function AustraliaGame() {
             };
           }
 
-          setAiPlayer(prev => ({
+          updateAiPlayerState(prev => ({
             ...prev,
             money: addMoney(prev.money, reward),
             challengesCompleted: [...prev.challengesCompleted, challenge.name],
@@ -2692,7 +2759,7 @@ function AustraliaGame() {
           const newLevel = didLevelUp ? currentAi.level + 1 : currentAi.level;
           Object.entries(currentAi.character.masteryTree || {}).forEach(([name, mastery]) => {
             if (newLevel >= (mastery as any).unlockLevel && !currentAi.masteryUnlocks.includes(name)) {
-              setAiPlayer(prev => ({
+              updateAiPlayerState(prev => ({
                 ...prev,
                 masteryUnlocks: [...prev.masteryUnlocks, name]
               }));
@@ -2704,7 +2771,7 @@ function AustraliaGame() {
             }
           });
         } else {
-          setAiPlayer(prev => ({
+          updateAiPlayerState(prev => ({
             ...prev,
             money: deductMoney(prev.money, wager),
             consecutiveWins: 0
@@ -2729,7 +2796,7 @@ function AustraliaGame() {
           addNotification(`🤖 ${currentAi.name} couldn't travel due to sabotage`, 'ai', false);
           break;
         }
-        setAiPlayer(prev => ({
+        updateAiPlayerState(prev => ({
           ...prev,
           currentRegion: region,
           money: deductMoney(prev.money, cost),
@@ -2753,7 +2820,7 @@ function AustraliaGame() {
 
           // Check inventory capacity
           if (currentAi.inventory.length < MAX_INVENTORY) {
-            setAiPlayer(prev => ({
+            updateAiPlayerState(prev => ({
               ...prev,
               inventory: [...prev.inventory, collectedResource]
             }));
@@ -2784,7 +2851,7 @@ function AustraliaGame() {
         const index = currentAi.inventory.indexOf(resource);
         if (index > -1) {
           const finalPrice = calculateAiSalePrice(resource, currentAi, gameState.resourcePrices);
-          setAiPlayer(prev => {
+          updateAiPlayerState(prev => {
             const newInventory = [...prev.inventory];
             newInventory.splice(index, 1);
             return {
@@ -2812,7 +2879,7 @@ function AustraliaGame() {
         const investRegion = actionData.region;
         const investment = REGIONAL_INVESTMENTS[investRegion];
         if (!investment) break;
-        setAiPlayer(prev => ({
+        updateAiPlayerState(prev => ({
           ...prev,
           money: deductMoney(prev.money, investment.cost),
           investments: [...(prev.investments || []), investRegion]
@@ -2828,7 +2895,7 @@ function AustraliaGame() {
         const itemId = actionData.itemId;
         const item = SHOP_ITEMS.find(candidate => candidate.id === itemId);
         if (!item) break;
-        setAiPlayer(prev => ({
+        updateAiPlayerState(prev => ({
           ...prev,
           money: deductMoney(prev.money, item.cost),
           equipment: [...(prev.equipment || []), item.id]
@@ -2840,7 +2907,7 @@ function AustraliaGame() {
         const sabotageId = actionData.sabotageId;
         const sabotage = SABOTAGE_ACTIONS.find(candidate => candidate.id === sabotageId);
         if (!sabotage) break;
-        setAiPlayer(prev => ({
+        updateAiPlayerState(prev => ({
           ...prev,
           money: deductMoney(prev.money, sabotage.cost)
         }));
@@ -2854,10 +2921,10 @@ function AustraliaGame() {
 
       case 'special_ability':
         const ability = actionData.ability;
-        if (!gameSettings.aiSpecialAbilitiesEnabled) return;
+        if (!gameSettings.aiSpecialAbilitiesEnabled) return true; // Changed from return to return true
 
         // Use the special ability
-        setAiPlayer(prev => ({
+        updateAiPlayerState(prev => ({
           ...prev,
           specialAbilityUses: Math.max(0, prev.specialAbilityUses - 1)
         }));
@@ -2882,11 +2949,17 @@ function AustraliaGame() {
         break;
     }
 
-    setAiPlayer(prev => ({
+    // Update action counter with atomic state update
+    updateAiPlayerState(prev => ({
       ...prev,
       actionsUsedThisTurn: (prev.actionsUsedThisTurn || 0) + 1
     }));
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
+
+    // Wait for React state to settle before returning
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    return true; // Action completed successfully
   }, [
     addNotification,
     addMoney,
@@ -2894,6 +2967,7 @@ function AustraliaGame() {
     calculateAiSalePrice,
     calculateAiSuccessChance,
     deductMoney,
+    updateAiPlayerState,
     gameSettings.aiAffectsEconomy,
     gameSettings.aiSpecialAbilitiesEnabled,
     gameSettings.equipmentShopEnabled,
@@ -2938,8 +3012,14 @@ function AustraliaGame() {
         break;
       }
 
-      // Execute action
-      executeAiAction(decision as AIAction);
+      // CRITICAL FIX: Await action completion before proceeding
+      const actionSuccess = await executeAiAction(decision as AIAction);
+
+      if (!actionSuccess) {
+        console.warn('AI action failed, continuing to next action');
+        // Don't count failed actions toward budget
+        continue;
+      }
 
       // Small delay between actions for visibility
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -2953,7 +3033,8 @@ function AustraliaGame() {
         const overrideCost = calculateOverrideCost('ai');
         const currentAi = aiPlayerRef.current;
         if (gameSettings.allowActionOverride && currentAi.money >= overrideCost && aiRandom() < 0.6) {
-          setAiPlayer(prev => ({
+          // Use atomic state update for override
+          updateAiPlayerState(prev => ({
             ...prev,
             money: deductMoney(prev.money, overrideCost),
             overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
@@ -2980,7 +3061,7 @@ function AustraliaGame() {
     setCurrentAiAction(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, calculateOverrideCost, deductMoney]);
+  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, calculateOverrideCost, deductMoney, updateAiPlayerState]);
 
   // Auto-trigger AI turn
   useEffect(() => {
