@@ -2484,6 +2484,143 @@ function AustraliaGame() {
     return { action, score };
   }, [gameSettings.sabotageEnabled, gameState.selectedMode, gameState.aiMood, getUnderdogBonus]);
 
+  // Evaluate loan opportunities
+  const evaluateLoan = useCallback((loanOption, aiState) => {
+    if (!gameSettings.loansEnabled) {
+      return { loanOption, score: -Infinity };
+    }
+
+    // Check if AI can take this loan using the canTakeLoan helper
+    const check = canTakeLoan(loanOption, aiState.loans, aiState.creditScore);
+    if (!check.canTake) {
+      return { loanOption, score: -Infinity };
+    }
+
+    // Calculate effective interest rate with credit score
+    let effectiveRate = loanOption.dailyInterest;
+    if (aiState.creditScore >= 750) effectiveRate -= 0.03;
+    else if (aiState.creditScore >= 650) effectiveRate -= 0.01;
+    else if (aiState.creditScore < 550) effectiveRate += 0.02;
+    effectiveRate = Math.max(0.03, effectiveRate);
+
+    // Calculate total debt and daily interest burden
+    const currentDebt = aiState.loans.reduce((sum, l) => sum + l.amount + l.accrued, 0);
+    const dailyInterestBurden = aiState.loans.reduce((sum, l) => sum + Math.floor(l.amount * l.interestRate), 0);
+
+    // Don't take loans if already heavily in debt (unless emergency)
+    const debtRatio = currentDebt / Math.max(aiState.money, 1);
+    if (debtRatio > 2 && aiState.money > BANKRUPTCY_THRESHOLD) {
+      return { loanOption, score: -Infinity };
+    }
+
+    // Don't take loans if daily interest is already high
+    if (dailyInterestBurden > 150 && aiState.money > BANKRUPTCY_THRESHOLD) {
+      return { loanOption, score: -Infinity };
+    }
+
+    // Calculate score based on need and opportunity
+    let score = 0;
+
+    // Emergency situation - need money badly
+    if (aiState.money < BANKRUPTCY_THRESHOLD) {
+      score = 300; // High priority
+    } else if (aiState.money < 500) {
+      score = 150; // Medium priority
+    } else if (aiState.money < 1000) {
+      score = 50; // Low priority
+    } else {
+      // Has money - only take loans for strategic reasons
+      score = -50; // Generally avoid unless strategic
+    }
+
+    // Adjust based on loan amount and rate
+    score -= effectiveRate * 1000; // Penalize high interest rates
+    score += loanOption.amount * 0.05; // Bonus for larger loans (more capital to work with)
+
+    // Character bonuses
+    if (aiState.character?.name === 'Businessman') {
+      score += 20; // Businessman is better at leveraging debt
+    }
+
+    // AI mood adjustments
+    if (gameState.aiMood === 'aggressive') {
+      score += 30; // More willing to take risks with debt
+    } else if (gameState.aiMood === 'desperate') {
+      score += 50; // Very willing to take loans when desperate
+    } else if (gameState.aiMood === 'cautious') {
+      score -= 30; // Less willing to take debt
+    }
+
+    // Credit score considerations
+    if (aiState.creditScore >= 750) {
+      score += 15; // Good rates make loans more attractive
+    } else if (aiState.creditScore < 550) {
+      score -= 20; // Bad rates make loans less attractive
+    }
+
+    return { loanOption, score, effectiveRate };
+  }, [gameSettings.loansEnabled]);
+
+  // Evaluate crafting opportunities
+  const evaluateCrafting = useCallback((recipe, aiState) => {
+    if (!gameSettings.craftingEnabled) {
+      return { recipe, score: -Infinity };
+    }
+
+    // Check if AI can craft this recipe
+    if (!canCraft(recipe, aiState.inventory)) {
+      return { recipe, score: -Infinity };
+    }
+
+    // Check action limits
+    if (gameSettings.actionLimitsEnabled &&
+        aiState.actionsUsedThisTurn + recipe.craftTime > gameSettings.aiActionsPerDay) {
+      return { recipe, score: -Infinity };
+    }
+
+    // Check inventory space
+    if (aiState.inventory.length >= MAX_INVENTORY) {
+      return { recipe, score: -Infinity };
+    }
+
+    // Calculate profit potential
+    const craftValue = calculateCraftValue(recipe, aiState.character, aiState.masteryUnlocks);
+    const inputCost = Object.entries(recipe.inputs).reduce((sum, [resource, qty]) => {
+      const price = gameState.resourcePrices[resource] || 50;
+      return sum + (price * (qty as number));
+    }, 0);
+    const profit = craftValue - inputCost;
+
+    // Don't craft if unprofitable
+    if (profit <= 0) {
+      return { recipe, score: -Infinity };
+    }
+
+    // Calculate score based on profit margin and value
+    let score = profit * 0.5; // Base score from profit
+    score += craftValue * 0.2; // Bonus for high-value items
+
+    // Character bonuses
+    if (aiState.character?.name === 'Businessman') {
+      score += 25; // Businessman is better at crafting for profit
+    } else if (aiState.character?.name === 'Scientist') {
+      score += 20; // Scientist has better success rate
+    }
+
+    // Prefer crafting when inventory is getting full of raw materials
+    const inventoryRatio = aiState.inventory.length / MAX_INVENTORY;
+    if (inventoryRatio > 0.7) {
+      score += 30; // Higher priority to consolidate inventory
+    }
+
+    // AI mood adjustments
+    if (gameState.aiMood === 'confident' || gameState.aiMood === 'aggressive') {
+      score += 15; // More likely to craft when confident
+    }
+
+    return { recipe, score, profit, craftValue };
+  }, [gameSettings.craftingEnabled, gameSettings.actionLimitsEnabled, gameSettings.aiActionsPerDay]);
+
   // Main AI decision engine
   const makeAiDecision = useCallback((aiState, gameState, playerState) => {
     try {
@@ -2567,6 +2704,36 @@ function AustraliaGame() {
               type: 'sabotage',
               description: `Sabotage: ${action.name}`,
               data: { sabotageId: action.id },
+              score: evaluation.score * profile.decisionQuality
+            });
+          }
+        });
+      }
+
+      // Evaluate crafting recipes
+      if (gameSettings.craftingEnabled) {
+        CRAFTING_RECIPES.forEach(recipe => {
+          const evaluation = evaluateCrafting(recipe, aiState);
+          if (evaluation.score > 0) {
+            decisions.push({
+              type: 'craft',
+              description: `Craft ${recipe.name}`,
+              data: { recipeId: recipe.id, craftValue: evaluation.craftValue },
+              score: evaluation.score * profile.decisionQuality
+            });
+          }
+        });
+      }
+
+      // Evaluate loan options
+      if (gameSettings.loansEnabled) {
+        LOAN_OPTIONS.forEach(loanOption => {
+          const evaluation = evaluateLoan(loanOption, aiState);
+          if (evaluation.score > 0) {
+            decisions.push({
+              type: 'take_loan',
+              description: `Take ${loanOption.name} ($${loanOption.amount})`,
+              data: { loanOptionId: loanOption.id, effectiveRate: evaluation.effectiveRate },
               score: evaluation.score * profile.decisionQuality
             });
           }
@@ -2814,6 +2981,47 @@ function AustraliaGame() {
           // Validate AI has special ability uses left
           if (currentAi.specialAbilityUses <= 0) {
             addNotification(`🤖 ${currentAi.name} has no special ability uses left`, 'ai', false);
+            return false;
+          }
+          break;
+
+        case 'craft':
+          if (!gameSettings.craftingEnabled) return false;
+          const recipeId = actionData.recipeId;
+          const recipe = CRAFTING_RECIPES.find(r => r.id === recipeId);
+          if (!recipe) {
+            console.error('Invalid craft action payload:', actionData);
+            return false;
+          }
+          // Validate AI can craft this recipe
+          if (!canCraft(recipe, currentAi.inventory)) {
+            addNotification(`🤖 ${currentAi.name} missing resources for ${recipe.name}`, 'ai', false);
+            return false;
+          }
+          // Validate action limits
+          if (gameSettings.actionLimitsEnabled &&
+              currentAi.actionsUsedThisTurn + recipe.craftTime > gameSettings.aiActionsPerDay) {
+            return false;
+          }
+          // Validate inventory space
+          if (currentAi.inventory.length >= MAX_INVENTORY) {
+            addNotification(`🤖 ${currentAi.name}'s inventory is full`, 'ai', false);
+            return false;
+          }
+          break;
+
+        case 'take_loan':
+          if (!gameSettings.loansEnabled) return false;
+          const loanOptionId = actionData.loanOptionId;
+          const loanOption = LOAN_OPTIONS.find(opt => opt.id === loanOptionId);
+          if (!loanOption) {
+            console.error('Invalid loan action payload:', actionData);
+            return false;
+          }
+          // Validate AI can take this loan
+          const loanCheck = canTakeLoan(loanOption, currentAi.loans, currentAi.creditScore);
+          if (!loanCheck.canTake) {
+            addNotification(`🤖 ${currentAi.name} cannot take ${loanOption.name}: ${loanCheck.reason}`, 'ai', false);
             return false;
           }
           break;
@@ -3128,6 +3336,102 @@ function AustraliaGame() {
 
         // Note: The actual effect of special abilities is applied during challenge/sell/travel
         // This just marks that the ability was used and decrements the counter
+        break;
+
+      case 'craft':
+        const craftRecipeId = actionData.recipeId;
+        const craftRecipe = CRAFTING_RECIPES.find(r => r.id === craftRecipeId);
+        if (!craftRecipe) break;
+
+        // Calculate success chance (95% base, 98% for Scientist)
+        const craftSuccessChance = currentAi.character?.name === 'Scientist' ? 0.98 : 0.95;
+        const craftSuccess = aiRandom() < craftSuccessChance;
+
+        if (craftSuccess) {
+          // Remove input resources from inventory
+          const newInventory = [...currentAi.inventory];
+          Object.entries(craftRecipe.inputs).forEach(([resource, qty]) => {
+            for (let i = 0; i < (qty as number); i++) {
+              const idx = newInventory.indexOf(resource);
+              if (idx > -1) newInventory.splice(idx, 1);
+            }
+          });
+
+          // Add crafted item
+          newInventory.push(craftRecipe.output);
+
+          // Update AI state
+          updateAiPlayerState(prev => ({
+            ...prev,
+            inventory: newInventory,
+            craftedItems: [...(prev.craftedItems || []), craftRecipe.output],
+            actionsUsedThisTurn: (prev.actionsUsedThisTurn || 0) + (craftRecipe.craftTime - 1) // -1 because action counter is incremented below
+          }));
+
+          const craftValue = actionData.craftValue || calculateCraftValue(craftRecipe, currentAi.character, currentAi.masteryUnlocks);
+          addNotification(
+            `🤖 ${currentAi.name} crafted ${craftRecipe.emoji} ${craftRecipe.name} (${craftRecipe.output}) worth $${craftValue}!`,
+            'ai',
+            false
+          );
+        } else {
+          // Crafting failed - consume resources anyway
+          const newInventory = [...currentAi.inventory];
+          Object.entries(craftRecipe.inputs).forEach(([resource, qty]) => {
+            for (let i = 0; i < (qty as number); i++) {
+              const idx = newInventory.indexOf(resource);
+              if (idx > -1) newInventory.splice(idx, 1);
+            }
+          });
+
+          updateAiPlayerState(prev => ({
+            ...prev,
+            inventory: newInventory,
+            actionsUsedThisTurn: (prev.actionsUsedThisTurn || 0) + (craftRecipe.craftTime - 1)
+          }));
+
+          addNotification(
+            `🤖 ${currentAi.name} failed to craft ${craftRecipe.name} - resources lost!`,
+            'ai',
+            false
+          );
+        }
+        break;
+
+      case 'take_loan':
+        const takeLoanOptionId = actionData.loanOptionId;
+        const takeLoanOption = LOAN_OPTIONS.find(opt => opt.id === takeLoanOptionId);
+        if (!takeLoanOption) break;
+
+        // Calculate effective interest rate with credit score
+        let effectiveInterestRate = actionData.effectiveRate || takeLoanOption.dailyInterest;
+        if (currentAi.creditScore >= 750) effectiveInterestRate = Math.max(0.03, takeLoanOption.dailyInterest - 0.03);
+        else if (currentAi.creditScore >= 650) effectiveInterestRate = Math.max(0.03, takeLoanOption.dailyInterest - 0.01);
+        else if (currentAi.creditScore < 550) effectiveInterestRate = takeLoanOption.dailyInterest + 0.02;
+
+        // Create new loan
+        const newLoan = {
+          id: `ai-loan-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          loanType: takeLoanOption.id,
+          amount: takeLoanOption.amount,
+          accrued: 0,
+          interestRate: effectiveInterestRate,
+          turnTaken: gameState.currentTurn
+        };
+
+        // Update AI state
+        updateAiPlayerState(prev => ({
+          ...prev,
+          money: addMoney(prev.money, takeLoanOption.amount),
+          loans: [...(prev.loans || []), newLoan],
+          totalLoansTaken: (prev.totalLoansTaken || 0) + 1
+        }));
+
+        addNotification(
+          `🤖 ${currentAi.name} took out ${takeLoanOption.emoji} ${takeLoanOption.name} for $${takeLoanOption.amount} at ${(effectiveInterestRate * 100).toFixed(1)}%/day!`,
+          'ai',
+          false
+        );
         break;
 
       case 'think':
@@ -4530,10 +4834,41 @@ function AustraliaGame() {
       }
     }
 
-    if (projectedAi.money < BANKRUPTCY_THRESHOLD && projectedAi.loans.length < MAX_ACTIVE_LOANS) {
-      projectedAi.loans = [...projectedAi.loans, { id: Date.now().toString(), amount: LOAN_AMOUNT, accrued: 0 }];
-      projectedAi.money += LOAN_AMOUNT;
-      addNotification(`🤖 ${projectedAi.name} grabbed an emergency $${LOAN_AMOUNT} loan.`, 'ai', true);
+    // Emergency loan system - AI takes smallest available loan when desperate
+    if (gameSettings.loansEnabled && projectedAi.money < BANKRUPTCY_THRESHOLD) {
+      // Find smallest loan tier the AI can take
+      const availableLoan = LOAN_OPTIONS.find(opt => {
+        const check = canTakeLoan(opt, projectedAi.loans, projectedAi.creditScore);
+        return check.canTake;
+      });
+
+      if (availableLoan) {
+        // Calculate effective interest rate
+        let effectiveRate = availableLoan.dailyInterest;
+        if (projectedAi.creditScore >= 750) effectiveRate = Math.max(0.03, availableLoan.dailyInterest - 0.03);
+        else if (projectedAi.creditScore >= 650) effectiveRate = Math.max(0.03, availableLoan.dailyInterest - 0.01);
+        else if (projectedAi.creditScore < 550) effectiveRate = availableLoan.dailyInterest + 0.02;
+
+        const emergencyLoan = {
+          id: `ai-emergency-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          loanType: availableLoan.id,
+          amount: availableLoan.amount,
+          accrued: 0,
+          interestRate: effectiveRate,
+          turnTaken: gameState.currentTurn
+        };
+
+        projectedAi.loans = [...(projectedAi.loans || []), emergencyLoan];
+        projectedAi.money += availableLoan.amount;
+        projectedAi.totalLoansTaken = (projectedAi.totalLoansTaken || 0) + 1;
+        addNotification(
+          `🤖 ${projectedAi.name} took emergency ${availableLoan.emoji} ${availableLoan.name} for $${availableLoan.amount}!`,
+          'ai',
+          true
+        );
+      } else {
+        addNotification(`🤖 ${projectedAi.name} is broke and can't get more loans!`, 'ai', true);
+      }
     }
 
     // Asset liquidation safety net
@@ -6930,6 +7265,26 @@ function AustraliaGame() {
             >
               <span>🏦</span>
               <span>Investments</span>
+            </button>
+          )}
+          {gameSettings.craftingEnabled && (
+            <button
+              onClick={() => updateUiState({ showWorkshop: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>🛠️</span>
+              <span>Workshop</span>
+            </button>
+          )}
+          {gameSettings.loansEnabled && (
+            <button
+              onClick={() => updateUiState({ showBank: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>💰</span>
+              <span>Bank</span>
             </button>
           )}
           {gameSettings.sabotageEnabled && gameState.selectedMode === 'ai' && (
