@@ -4021,10 +4021,47 @@ function AustraliaGame() {
       aiTurnTimeoutRef.current = null;
     }
     closeConfirmation();
-    dispatchPlayer({ type: 'LOAD_STATE', payload: data.player });
-    dispatchGameState({ type: 'LOAD_STATE', payload: data.gameState });
-    setAiPlayer(data.aiPlayer);
-    setGameSettings(data.gameSettings);
+
+    // Merge player state with defaults for backward compatibility
+    const loadedPlayer = {
+      ...data.player,
+      advancedLoans: data.player.advancedLoans || [],
+      creditScore: data.player.creditScore ?? 50,
+      loanHistory: data.player.loanHistory || { totalTaken: 0, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 },
+      daysSinceLastBankruptcy: data.player.daysSinceLastBankruptcy ?? 0
+    };
+
+    // Merge AI player state with defaults for backward compatibility
+    const loadedAiPlayer = {
+      ...data.aiPlayer,
+      advancedLoans: data.aiPlayer.advancedLoans || [],
+      creditScore: data.aiPlayer.creditScore ?? 50,
+      loanHistory: data.aiPlayer.loanHistory || { totalTaken: 0, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 },
+      daysSinceLastBankruptcy: data.aiPlayer.daysSinceLastBankruptcy ?? 0
+    };
+
+    // Merge game state with defaults for backward compatibility
+    const loadedGameState = {
+      ...data.gameState,
+      adaptiveAiPhase: data.gameState.adaptiveAiPhase || 'normal',
+      adaptiveAiDaysTriggered: data.gameState.adaptiveAiDaysTriggered ?? 0,
+      playerDominanceDays: data.gameState.playerDominanceDays ?? 0,
+      aiPatternData: data.gameState.aiPatternData || {
+        favoriteResources: {},
+        preferredChallengeTypes: {},
+        recentTravel: [],
+        craftingFrequency: 0,
+        averageChallengeWager: 0,
+        riskProfile: 'moderate'
+      },
+      aiStrategyFocus: data.gameState.aiStrategyFocus || 'balanced'
+    };
+
+    dispatchPlayer({ type: 'LOAD_STATE', payload: loadedPlayer });
+    dispatchGameState({ type: 'LOAD_STATE', payload: loadedGameState });
+    setAiPlayer(loadedAiPlayer);
+    // Merge with defaults to ensure backward compatibility with old saves
+    setGameSettings({ ...DEFAULT_GAME_SETTINGS, ...data.gameSettings });
     setNotifications(data.notifications || []);
     setPersonalRecords(data.personalRecords || { ...DEFAULT_PERSONAL_RECORDS });
     setDontAskAgain(data.dontAskAgain || { ...DEFAULT_DONT_ASK });
@@ -6262,8 +6299,8 @@ function AustraliaGame() {
                         <input type="range" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(e) => setGameSettings(prev => ({ ...prev, maxSimultaneousLoans: parseInt(e.target.value) }))} className="w-full" />
                       </div>
                       <div>
-                        <label className="block font-semibold mb-2">Interest Rate: {(gameSettings.interestAccrualRate * 100).toFixed(0)}%</label>
-                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate} onChange={(e) => setGameSettings(prev => ({ ...prev, interestAccrualRate: parseFloat(e.target.value) }))} className="w-full" />
+                        <label className="block font-semibold mb-2">Interest Rate: {((gameSettings.interestAccrualRate || 1.0) * 100).toFixed(0)}%</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate || 1.0} onChange={(e) => setGameSettings(prev => ({ ...prev, interestAccrualRate: parseFloat(e.target.value) }))} className="w-full" />
                       </div>
                     </>
                   )}
@@ -6330,8 +6367,8 @@ function AustraliaGame() {
                         <div className="text-xs opacity-75 mt-1">Days AI must be behind before escalating</div>
                       </div>
                       <div>
-                        <label className="block font-semibold mb-2">Aggression Multiplier: {gameSettings.adaptiveAiAggressionMultiplier.toFixed(1)}x</label>
-                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.adaptiveAiAggressionMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                        <label className="block font-semibold mb-2">Aggression Multiplier: {(gameSettings.adaptiveAiAggressionMultiplier || 1.0).toFixed(1)}x</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.adaptiveAiAggressionMultiplier || 1.0} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                       </div>
                     </>
                   )}
