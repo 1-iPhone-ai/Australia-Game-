@@ -4959,12 +4959,14 @@ function AustraliaGame() {
       return;
     }
 
+    // Get crafting bonus once for use throughout function
+    const craftingBonus = player.character.craftingBonus;
+
     // Check inventory space - calculate net change after crafting
     const itemsConsumed = Object.values(recipe.inputs).reduce((sum, count) => sum + (count as number), 0);
     let itemsCreated = 1; // base crafted item
 
     // Account for potential bonus material (Explorer or other character bonuses)
-    const craftingBonus = player.character.craftingBonus;
     if (craftingBonus?.effect?.bonusMaterialChance) {
       itemsCreated += 1; // Conservative: assume bonus material might be returned
     }
@@ -4991,7 +4993,6 @@ function AustraliaGame() {
     let successChance = 0.90;
 
     // Apply character crafting bonus
-    const craftingBonus = player.character.craftingBonus;
     if (craftingBonus?.effect?.successBonus) {
       successChance += craftingBonus.effect.successBonus;
     }
