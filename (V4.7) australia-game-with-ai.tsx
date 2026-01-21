@@ -4376,20 +4376,35 @@ function AustraliaGame() {
     };
 
     // Update player state
+    const updatedLoanHistory = {
+      ...player.loanHistory,
+      totalTaken: (player.loanHistory?.totalTaken || 0) + tier.amount
+    };
+
+    // Create temporary player state for credit score calculation
+    const tempPlayer = {
+      ...player,
+      advancedLoans: [...currentLoans, newLoan],
+      loanHistory: updatedLoanHistory
+    };
+
+    // Recalculate credit score after taking loan
+    const newCreditScore = gameSettings.creditScoreEnabled
+      ? calculateCreditScore(tempPlayer, gameState)
+      : player.creditScore || 50;
+
     const updatedPlayer = {
       ...player,
       money: player.money + tier.amount,
       advancedLoans: [...currentLoans, newLoan],
-      loanHistory: {
-        ...player.loanHistory,
-        totalTaken: (player.loanHistory?.totalTaken || 0) + tier.amount
-      }
+      loanHistory: updatedLoanHistory,
+      creditScore: newCreditScore
     };
 
     dispatchPlayer({ type: 'MERGE_STATE', payload: updatedPlayer });
     addNotification(`Received ${tier.name}: +$${tier.amount} (${Math.floor(actualInterestRate * 100)}% interest, ${tier.term} days)`, 'money', true);
     updateUiState({ showAdvancedLoans: false });
-  }, [player, gameState.day, gameSettings, addNotification, dispatchPlayer]);
+  }, [player, gameState.day, gameState, gameSettings, addNotification, dispatchPlayer, updateUiState]);
 
   const repayAdvancedLoan = useCallback((loanId: string, isEarlyRepayment: boolean = false) => {
     if (!gameSettings.advancedLoansEnabled) return;
@@ -4413,15 +4428,30 @@ function AustraliaGame() {
 
     // Update player state
     const updatedLoans = advancedLoans.filter(l => l.id !== loanId);
+    const updatedLoanHistory = {
+      ...player.loanHistory,
+      totalRepaid: (player.loanHistory?.totalRepaid || 0) + totalOwed,
+      earlyRepaymentCount: (player.loanHistory?.earlyRepaymentCount || 0) + (isEarlyRepayment ? 1 : 0)
+    };
+
+    // Create temporary player state for credit score calculation
+    const tempPlayer = {
+      ...player,
+      advancedLoans: updatedLoans,
+      loanHistory: updatedLoanHistory
+    };
+
+    // Recalculate credit score after repayment
+    const newCreditScore = gameSettings.creditScoreEnabled
+      ? calculateCreditScore(tempPlayer, gameState)
+      : player.creditScore || 50;
+
     const updatedPlayer = {
       ...player,
       money: player.money - totalOwed,
       advancedLoans: updatedLoans,
-      loanHistory: {
-        ...player.loanHistory,
-        totalRepaid: (player.loanHistory?.totalRepaid || 0) + totalOwed,
-        earlyRepaymentCount: (player.loanHistory?.earlyRepaymentCount || 0) + (isEarlyRepayment ? 1 : 0)
-      }
+      loanHistory: updatedLoanHistory,
+      creditScore: newCreditScore
     };
 
     dispatchPlayer({ type: 'MERGE_STATE', payload: updatedPlayer });
@@ -4430,7 +4460,7 @@ function AustraliaGame() {
       ? `Early repayment: Paid $${Math.floor(totalOwed)} (50% interest discount!)`
       : `Repaid loan: $${Math.floor(totalOwed)}`;
     addNotification(message, 'success', true);
-  }, [player, gameSettings, addNotification, dispatchPlayer]);
+  }, [player, gameState, gameSettings, addNotification, dispatchPlayer]);
 
   const liquidateInventoryForCash = useCallback((state: any) => {
     if (!state.inventory || state.inventory.length === 0) {
@@ -5401,7 +5431,11 @@ function AustraliaGame() {
         actionsUsedThisTurn: projectedPlayer.actionsUsedThisTurn,
         overridesUsedToday: projectedPlayer.overridesUsedToday,
         overrideFatigue: projectedPlayer.overrideFatigue,
-        completedThisSeason: projectedPlayer.completedThisSeason
+        completedThisSeason: projectedPlayer.completedThisSeason,
+        advancedLoans: projectedPlayer.advancedLoans,
+        creditScore: projectedPlayer.creditScore,
+        loanHistory: projectedPlayer.loanHistory,
+        daysSinceLastBankruptcy: projectedPlayer.daysSinceLastBankruptcy
       }
     });
     dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
