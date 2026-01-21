@@ -3393,9 +3393,20 @@ function AustraliaGame() {
               return false;
             }
           }
-          // Check inventory space
-          if (currentAi.inventory.length >= MAX_INVENTORY) {
-            return false;
+          // Check inventory space - calculate net change after crafting
+          const itemsConsumed = Object.values(craftRecipe.inputs).reduce((sum, count) => sum + (count as number), 0);
+          let itemsCreated = 1; // base crafted item
+
+          // Account for potential bonus material (character bonuses)
+          const aiCraftingBonus = currentAi.character.craftingBonus;
+          if (aiCraftingBonus?.effect?.bonusMaterialChance) {
+            itemsCreated += 1; // Conservative: assume bonus material might be returned
+          }
+
+          const netInventoryChange = itemsCreated - itemsConsumed;
+
+          if (currentAi.inventory.length + netInventoryChange > MAX_INVENTORY) {
+            return false; // Not enough space for crafting result
           }
           break;
         }
@@ -4948,9 +4959,20 @@ function AustraliaGame() {
       return;
     }
 
-    // Check inventory space
-    if (player.inventory.length >= MAX_INVENTORY) {
-      addNotification('Inventory is full! Sell some items first.', 'warning');
+    // Check inventory space - calculate net change after crafting
+    const itemsConsumed = Object.values(recipe.inputs).reduce((sum, count) => sum + (count as number), 0);
+    let itemsCreated = 1; // base crafted item
+
+    // Account for potential bonus material (Explorer or other character bonuses)
+    const craftingBonus = player.character.craftingBonus;
+    if (craftingBonus?.effect?.bonusMaterialChance) {
+      itemsCreated += 1; // Conservative: assume bonus material might be returned
+    }
+
+    const netInventoryChange = itemsCreated - itemsConsumed;
+
+    if (player.inventory.length + netInventoryChange > MAX_INVENTORY) {
+      addNotification('Not enough inventory space for crafting result!', 'warning');
       return;
     }
 
