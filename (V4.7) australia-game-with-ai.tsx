@@ -454,6 +454,283 @@ const upsertDebuff = (debuffs: Debuff[] = [], type: string, duration: number) =>
   return [...normalized, { type, remainingDays: duration }];
 };
 
+// =========================================
+// ADVANCED LOAN SYSTEM HELPER FUNCTIONS
+// =========================================
+
+const calculateCreditScore = (player: any, gameState: any): number => {
+  let score = 50; // Base score
+
+  const loanHistory = player.loanHistory || { totalTaken: 0, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 };
+  const advancedLoans = player.advancedLoans || [];
+
+  // Repayment history (±30 points)
+  if (loanHistory.totalTaken > 0) {
+    const repaymentRate = loanHistory.totalRepaid / loanHistory.totalTaken;
+    score += Math.floor(repaymentRate * 30) - 15;
+  }
+
+  // Early repayments (+10 max)
+  score += Math.min(10, loanHistory.earlyRepaymentCount * 2);
+
+  // Defaults (-20 per default)
+  score -= loanHistory.defaultCount * 20;
+
+  // Net worth (±20 points)
+  const netWorth = player.money + (player.inventory?.length || 0) * 50;
+  if (netWorth > 5000) score += 20;
+  else if (netWorth > 3000) score += 10;
+  else if (netWorth > 1000) score += 0;
+  else if (netWorth > 500) score -= 10;
+  else score -= 20;
+
+  // Active loans penalty (-5 per loan)
+  score -= advancedLoans.length * 5;
+
+  // Days without bankruptcy (+1 per 3 days, max +10)
+  const daysSinceBankruptcy = player.daysSinceLastBankruptcy || 0;
+  score += Math.min(10, Math.floor(daysSinceBankruptcy / 3));
+
+  // Challenge completion rate (+10 max)
+  const totalChallenges = Object.values(REGIONS).reduce((sum: number, region: any) => sum + region.challenges.length, 0);
+  const completedChallenges = player.challengesCompleted?.length || 0;
+  if (completedChallenges > 0) {
+    const completionRate = completedChallenges / totalChallenges;
+    score += Math.floor(completionRate * 10);
+  }
+
+  // Clamp to 0-100
+  return Math.max(0, Math.min(100, score));
+};
+
+const getCreditScoreRange = (score: number) => {
+  return CREDIT_SCORE_RANGES.find(range => score >= range.min && score <= range.max) || CREDIT_SCORE_RANGES[4];
+};
+
+const calculateLoanInterest = (loan: AdvancedLoan, creditScoreMultiplier: number, accrualRate: number): number => {
+  const dailyRate = loan.actualInterestRate / loan.term;
+  return loan.amount * dailyRate * accrualRate;
+};
+
+const getEarlyRepaymentDiscount = (): number => {
+  return 0.5; // 50% discount on interest for early repayment
+};
+
+const checkLoanEvent = (player: any, settings: GameSettingsState): typeof LOAN_EVENTS[0] | null => {
+  if (!settings.loanEventsEnabled) return null;
+
+  for (const event of LOAN_EVENTS) {
+    if (event.triggerCondition(player)) {
+      // Random chance to trigger (30% when conditions met)
+      if (Math.random() < 0.3) {
+        return event;
+      }
+    }
+  }
+  return null;
+};
+
+// =========================================
+// ADAPTIVE AI HELPER FUNCTIONS
+// =========================================
+
+const calculateNetWorth = (player: any): number => {
+  const money = player.money || 0;
+  const inventoryValue = (player.inventory?.length || 0) * 50; // Rough estimate
+  const investmentValue = (player.investments?.length || 0) * 2000; // Rough estimate
+  const equipmentValue = (player.equipment?.length || 0) * 1500; // Rough estimate
+  return money + inventoryValue + investmentValue + equipmentValue;
+};
+
+const detectAdaptiveAiPhase = (
+  playerNetWorth: number,
+  aiNetWorth: number,
+  playerLevel: number,
+  aiLevel: number,
+  playerChallenges: number,
+  aiChallenges: number,
+  settings: GameSettingsState
+): 'normal' | 'phase1_aggressive' | 'phase2_desperate' | 'phase3_allIn' => {
+  if (!settings.adaptiveAiEnabled) return 'normal';
+
+  // Avoid division by zero
+  if (playerNetWorth === 0) playerNetWorth = 1;
+
+  const netWorthRatio = aiNetWorth / playerNetWorth;
+  const levelDiff = playerLevel - aiLevel;
+  const challengeDiff = playerChallenges - aiChallenges;
+
+  // Check Phase 3 (All-In) - most desperate
+  const phase3Thresholds = ADAPTIVE_AI_THRESHOLDS.phase3_allIn;
+  if (
+    netWorthRatio < phase3Thresholds.netWorthRatio ||
+    levelDiff >= phase3Thresholds.levelDifference ||
+    challengeDiff >= phase3Thresholds.challengeDifference
+  ) {
+    return 'phase3_allIn';
+  }
+
+  // Check Phase 2 (Desperate)
+  const phase2Thresholds = ADAPTIVE_AI_THRESHOLDS.phase2_desperate;
+  if (
+    netWorthRatio < phase2Thresholds.netWorthRatio ||
+    levelDiff >= phase2Thresholds.levelDifference ||
+    challengeDiff >= phase2Thresholds.challengeDifference
+  ) {
+    return 'phase2_desperate';
+  }
+
+  // Check Phase 1 (Aggressive)
+  const phase1Thresholds = ADAPTIVE_AI_THRESHOLDS.phase1_aggressive;
+  if (
+    netWorthRatio < phase1Thresholds.netWorthRatio ||
+    levelDiff >= phase1Thresholds.levelDifference ||
+    challengeDiff >= phase1Thresholds.challengeDifference
+  ) {
+    return 'phase1_aggressive';
+  }
+
+  return 'normal';
+};
+
+const updatePlayerPattern = (pattern: PlayerPattern, action: string, data: any): PlayerPattern => {
+  const newPattern = { ...pattern };
+
+  switch (action) {
+    case 'sell':
+      const resource = data.resource;
+      newPattern.favoriteResources = {
+        ...newPattern.favoriteResources,
+        [resource]: (newPattern.favoriteResources[resource] || 0) + 1
+      };
+      break;
+
+    case 'challenge':
+      const challengeType = data.type;
+      newPattern.preferredChallengeTypes = {
+        ...newPattern.preferredChallengeTypes,
+        [challengeType]: (newPattern.preferredChallengeTypes[challengeType] || 0) + 1
+      };
+
+      // Update average wager
+      const currentAvg = newPattern.averageChallengeWager;
+      const totalChallenges = Object.values(newPattern.preferredChallengeTypes).reduce((a: number, b: number) => a + b, 0);
+      newPattern.averageChallengeWager = ((currentAvg * (totalChallenges - 1)) + data.wager) / totalChallenges;
+      break;
+
+    case 'travel':
+      newPattern.recentTravel = [data.region, ...newPattern.recentTravel].slice(0, 10);
+      break;
+
+    case 'craft':
+      newPattern.craftingFrequency += 1;
+      break;
+  }
+
+  // Update risk profile based on average wager and challenge frequency
+  if (newPattern.averageChallengeWager > 300) {
+    newPattern.riskProfile = 'aggressive';
+  } else if (newPattern.averageChallengeWager > 150) {
+    newPattern.riskProfile = 'moderate';
+  } else {
+    newPattern.riskProfile = 'conservative';
+  }
+
+  return newPattern;
+};
+
+const getAdaptiveAiPhaseEmoji = (phase: string): string => {
+  switch (phase) {
+    case 'phase1_aggressive': return '😤';
+    case 'phase2_desperate': return '😰';
+    case 'phase3_allIn': return '🔥';
+    default: return '🤖';
+  }
+};
+
+const getAdaptiveAiPhaseName = (phase: string): string => {
+  switch (phase) {
+    case 'phase1_aggressive': return 'Aggressive';
+    case 'phase2_desperate': return 'Desperate';
+    case 'phase3_allIn': return 'All-In';
+    default: return 'Normal';
+  }
+};
+
+const processAdvancedLoans = (
+  player: any,
+  gameSettings: GameSettingsState,
+  currentDay: number
+): { updatedPlayer: any; notifications: Array<{ message: string; type: string }> } => {
+  if (!gameSettings.advancedLoansEnabled) {
+    return { updatedPlayer: player, notifications: [] };
+  }
+
+  const notifications: Array<{ message: string; type: string }> = [];
+  let updatedPlayer = { ...player };
+  let advancedLoans = [...(player.advancedLoans || [])];
+  let loanHistory = { ...(player.loanHistory || { totalTaken: 0, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 }) };
+
+  const creditScore = gameSettings.creditScoreEnabled ? calculateCreditScore(player, { day: currentDay }) : 50;
+  const creditRange = getCreditScoreRange(creditScore);
+
+  // Process each loan
+  const loansToRemove: string[] = [];
+
+  advancedLoans = advancedLoans.map(loan => {
+    const updatedLoan = { ...loan };
+
+    // Decrease days remaining
+    updatedLoan.daysRemaining -= 1;
+
+    // Accrue interest
+    const interestAmount = calculateLoanInterest(
+      updatedLoan,
+      gameSettings.creditScoreEnabled ? creditRange.multiplier : 1.0,
+      gameSettings.interestAccrualRate
+    );
+    updatedLoan.accrued += interestAmount;
+
+    // Check for default (term expired)
+    if (updatedLoan.daysRemaining <= 0) {
+      const totalOwed = updatedLoan.amount + updatedLoan.accrued;
+      const penalty = totalOwed * (gameSettings.defaultPenaltyMultiplier - 1.0);
+
+      updatedPlayer.money -= (totalOwed + penalty);
+      loanHistory.defaultCount += 1;
+
+      notifications.push({
+        message: `Loan defaulted! Paid $${Math.floor(totalOwed + penalty)} (includes ${Math.floor(penalty)} penalty)`,
+        type: 'error'
+      });
+
+      loansToRemove.push(loan.id);
+
+      // Update bankruptcy tracking
+      if (updatedPlayer.money < BANKRUPTCY_THRESHOLD) {
+        updatedPlayer.daysSinceLastBankruptcy = 0;
+      }
+    }
+
+    return updatedLoan;
+  });
+
+  // Remove defaulted loans
+  advancedLoans = advancedLoans.filter(loan => !loansToRemove.includes(loan.id));
+
+  // Update player state
+  updatedPlayer.advancedLoans = advancedLoans;
+  updatedPlayer.loanHistory = loanHistory;
+  updatedPlayer.creditScore = creditScore;
+
+  // Increment days since last bankruptcy
+  if (updatedPlayer.money >= BANKRUPTCY_THRESHOLD) {
+    updatedPlayer.daysSinceLastBankruptcy = (updatedPlayer.daysSinceLastBankruptcy || 0) + 1;
+  }
+
+  return { updatedPlayer, notifications };
+};
+
 // Weather effects on gameplay
 const WEATHER_EFFECTS = {
   "Sunny": {
@@ -745,6 +1022,194 @@ const normalizeAiSeed = (seed: number) => {
   return normalized > 0 ? normalized : 1;
 };
 
+// =========================================
+// ADVANCED LOAN SYSTEM CONSTANTS
+// =========================================
+
+// Four-tiered loan structure
+const LOAN_TIERS = [
+  {
+    id: "quick_cash",
+    name: "Quick Cash",
+    amount: 300,
+    baseInterestRate: 0.30,
+    term: 3,
+    levelRequired: 1,
+    description: "Fast cash for immediate needs"
+  },
+  {
+    id: "standard",
+    name: "Standard Loan",
+    amount: 500,
+    baseInterestRate: 0.25,
+    term: 5,
+    levelRequired: 1,
+    description: "Balanced loan option"
+  },
+  {
+    id: "business",
+    name: "Business Loan",
+    amount: 1000,
+    baseInterestRate: 0.20,
+    term: 7,
+    levelRequired: 5,
+    description: "Larger loan for business expansion"
+  },
+  {
+    id: "investment",
+    name: "Investment Loan",
+    amount: 2000,
+    baseInterestRate: 0.15,
+    term: 10,
+    levelRequired: 10,
+    description: "Premium loan with best rates"
+  }
+];
+
+// Credit score ranges and their multipliers
+const CREDIT_SCORE_RANGES = [
+  { min: 80, max: 100, label: "Excellent", multiplier: 0.8, color: "#10b981" },
+  { min: 60, max: 79, label: "Good", multiplier: 0.9, color: "#3b82f6" },
+  { min: 40, max: 59, label: "Fair", multiplier: 1.0, color: "#f59e0b" },
+  { min: 20, max: 39, label: "Poor", multiplier: 1.2, color: "#ef4444" },
+  { min: 0, max: 19, label: "Bad", multiplier: 1.5, color: "#991b1b" }
+];
+
+// Special loan events (random triggers)
+const LOAN_EVENTS = [
+  {
+    id: "loan_shark",
+    name: "Loan Shark",
+    amount: 800,
+    interestRate: 0.50,
+    term: 3,
+    triggerCondition: (player: any) => player.money < 300,
+    description: "Desperate times call for desperate measures"
+  },
+  {
+    id: "government_relief",
+    name: "Government Relief",
+    amount: 600,
+    interestRate: 0,
+    term: 5,
+    triggerCondition: (player: any) => (player.loans?.length || 0) >= 2,
+    description: "Government aid for those in financial distress"
+  },
+  {
+    id: "investor_backing",
+    name: "Investor Backing",
+    amount: 1500,
+    interestRate: 0.10,
+    term: 7,
+    bonusResources: 3,
+    triggerCondition: (player: any) => {
+      const netWorth = player.money + (player.inventory?.length || 0) * 50;
+      return netWorth > 3000;
+    },
+    description: "Investor impressed by your success"
+  }
+];
+
+// =========================================
+// ADAPTIVE AI CONSTANTS
+// =========================================
+
+// Adaptive AI phase thresholds
+const ADAPTIVE_AI_THRESHOLDS = {
+  phase1_aggressive: {
+    netWorthRatio: 0.50, // AI net worth < 50% of player
+    levelDifference: 3,
+    challengeDifference: 5
+  },
+  phase2_desperate: {
+    netWorthRatio: 0.33, // AI net worth < 33% of player
+    levelDifference: 5,
+    challengeDifference: 10
+  },
+  phase3_allIn: {
+    netWorthRatio: 0.25, // AI net worth < 25% of player
+    levelDifference: 7,
+    challengeDifference: 15
+  }
+};
+
+// Adaptive AI phase modifiers
+const ADAPTIVE_AI_MODIFIERS = {
+  normal: {
+    riskTolerance: 1.0,
+    challengeWagerMultiplier: 1.0,
+    travelAggression: 1.0,
+    sabotageChance: 0,
+    specialAbilityPriority: 1.0,
+    craftingFocus: 1.0
+  },
+  phase1_aggressive: {
+    riskTolerance: 1.4,
+    challengeWagerMultiplier: 1.5,
+    travelAggression: 1.3,
+    sabotageChance: 0.4,
+    specialAbilityPriority: 1.2,
+    craftingFocus: 1.1
+  },
+  phase2_desperate: {
+    riskTolerance: 1.8,
+    challengeWagerMultiplier: 2.0,
+    travelAggression: 1.5,
+    sabotageChance: 0.6,
+    specialAbilityPriority: 1.5,
+    craftingFocus: 2.0,
+    investmentBlocking: true
+  },
+  phase3_allIn: {
+    riskTolerance: 2.5,
+    challengeWagerMultiplier: 2.5,
+    travelAggression: 2.0,
+    sabotageChance: 0.8,
+    specialAbilityPriority: 2.0,
+    craftingFocus: 2.5,
+    highRiskLoans: true,
+    mirrorPlayerStrategy: true,
+    blockPlayerRegions: true
+  }
+};
+
+// =========================================
+// TYPE DEFINITIONS FOR NEW FEATURES
+// =========================================
+
+// Extended loan type
+interface AdvancedLoan {
+  id: string;
+  tierId: string;
+  amount: number;
+  baseInterestRate: number;
+  actualInterestRate: number;
+  accrued: number;
+  term: number;
+  daysRemaining: number;
+  issuedDay: number;
+  isEvent: boolean;
+  eventId?: string;
+}
+
+// Loan history tracking
+interface LoanHistory {
+  totalTaken: number;
+  totalRepaid: number;
+  defaultCount: number;
+  earlyRepaymentCount: number;
+}
+
+// Player behavior pattern tracking
+interface PlayerPattern {
+  favoriteResources: Record<string, number>; // resource -> sell count
+  preferredChallengeTypes: Record<string, number>; // type -> completion count
+  recentTravel: string[]; // last 10 regions visited
+  craftingFrequency: number;
+  averageChallengeWager: number;
+  riskProfile: 'conservative' | 'moderate' | 'aggressive';
+}
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -768,6 +1233,27 @@ type GameSettingsState = {
   aiAffectsEconomy: boolean;
   aiDeterministic: boolean;
   aiDeterministicSeed: number;
+  // Advanced Loan System (disabled by default)
+  advancedLoansEnabled: boolean;
+  creditScoreEnabled: boolean;
+  loanEventsEnabled: boolean;
+  earlyRepaymentEnabled: boolean;
+  loanRefinancingEnabled: boolean;
+  defaultPenaltyMultiplier: number; // 0.5 - 2.0
+  interestAccrualRate: number; // 0.5 - 2.0
+  maxSimultaneousLoans: number; // 1-5
+  loanTierUnlockSpeedMultiplier: number; // 0.5 - 3.0
+  // Adaptive AI System (disabled by default)
+  adaptiveAiEnabled: boolean;
+  adaptiveAiNetWorthThreshold: number; // 1.5 - 5.0 (player/AI ratio)
+  adaptiveAiLevelDifference: number; // 3-10 levels
+  adaptiveAiChallengeDifference: number; // 5-20 challenges
+  adaptiveAiConsecutiveDays: number; // 1-7 days required
+  adaptiveAiMaxDifficulty: 'medium' | 'hard' | 'expert';
+  adaptiveAiAggressionMultiplier: number; // 0.5 - 2.0
+  adaptiveAiPatternLearning: boolean;
+  adaptiveAiRubberBanding: boolean;
+  adaptiveAiTauntsEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -843,7 +1329,28 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiSpecialAbilitiesEnabled: false,
   aiAffectsEconomy: false,
   aiDeterministic: false,
-  aiDeterministicSeed: 1337
+  aiDeterministicSeed: 1337,
+  // Advanced Loan System (disabled by default)
+  advancedLoansEnabled: false,
+  creditScoreEnabled: false,
+  loanEventsEnabled: false,
+  earlyRepaymentEnabled: false,
+  loanRefinancingEnabled: false,
+  defaultPenaltyMultiplier: 1.0,
+  interestAccrualRate: 1.0,
+  maxSimultaneousLoans: 3,
+  loanTierUnlockSpeedMultiplier: 1.0,
+  // Adaptive AI System (disabled by default)
+  adaptiveAiEnabled: false,
+  adaptiveAiNetWorthThreshold: 2.5,
+  adaptiveAiLevelDifference: 5,
+  adaptiveAiChallengeDifference: 10,
+  adaptiveAiConsecutiveDays: 3,
+  adaptiveAiMaxDifficulty: 'expert',
+  adaptiveAiAggressionMultiplier: 1.0,
+  adaptiveAiPatternLearning: false,
+  adaptiveAiRubberBanding: false,
+  adaptiveAiTauntsEnabled: false
 };
 
 const DEFAULT_DONT_ASK: DontAskAgainPrefs = {
@@ -884,6 +1391,15 @@ const initialPlayerState = {
   overridesUsedToday: 0,
   overrideFatigue: 0,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+  advancedLoans: [] as AdvancedLoan[],
+  creditScore: 50,
+  loanHistory: {
+    totalTaken: 0,
+    totalRepaid: 0,
+    defaultCount: 0,
+    earlyRepaymentCount: 0
+  } as LoanHistory,
+  daysSinceLastBankruptcy: 0,
   completedThisSeason: [] as string[],
   challengeMastery: {} as Record<string, number>,
   stipendCooldown: 0,
@@ -1038,7 +1554,20 @@ const initialGameState = {
   doubleOrNothingAvailable: false,
   lastChallengeReward: 0,
   bankruptcyTracker: { player: 0, ai: 0 },
-  dominanceTracker: { player: 0, ai: 0 }
+  dominanceTracker: { player: 0, ai: 0 },
+  // Adaptive AI tracking
+  adaptiveAiPhase: 'normal' as 'normal' | 'phase1_aggressive' | 'phase2_desperate' | 'phase3_allIn',
+  adaptiveAiDaysTriggered: 0,
+  playerDominanceDays: 0,
+  aiPatternData: {
+    favoriteResources: {},
+    preferredChallengeTypes: {},
+    recentTravel: [],
+    craftingFrequency: 0,
+    averageChallengeWager: 0,
+    riskProfile: 'moderate'
+  } as PlayerPattern,
+  aiStrategyFocus: 'balanced' as 'challenges' | 'trading' | 'travel' | 'balanced'
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -1114,6 +1643,17 @@ function gameStateReducer(state, action) {
       return { ...state, bankruptcyTracker: { ...state.bankruptcyTracker, ...action.payload } };
     case 'SET_DOMINANCE_TRACKER':
       return { ...state, dominanceTracker: { ...state.dominanceTracker, ...action.payload } };
+    // Adaptive AI actions
+    case 'SET_ADAPTIVE_AI_PHASE':
+      return { ...state, adaptiveAiPhase: action.payload };
+    case 'SET_ADAPTIVE_AI_DAYS_TRIGGERED':
+      return { ...state, adaptiveAiDaysTriggered: action.payload };
+    case 'SET_PLAYER_DOMINANCE_DAYS':
+      return { ...state, playerDominanceDays: action.payload };
+    case 'UPDATE_AI_PATTERN_DATA':
+      return { ...state, aiPatternData: action.payload };
+    case 'SET_AI_STRATEGY_FOCUS':
+      return { ...state, aiStrategyFocus: action.payload };
     case 'RESET_GAME':
       return {
         ...initialGameState,
@@ -1188,6 +1728,15 @@ function AustraliaGame() {
     overridesUsedToday: 0,
     overrideFatigue: 0,
     loans: [] as Array<{ id: string; amount: number; accrued: number }>,
+    advancedLoans: [] as AdvancedLoan[],
+    creditScore: 50,
+    loanHistory: {
+      totalTaken: 0,
+      totalRepaid: 0,
+      defaultCount: 0,
+      earlyRepaymentCount: 0
+    } as LoanHistory,
+    daysSinceLastBankruptcy: 0,
     completedThisSeason: [] as string[],
     challengeMastery: {} as Record<string, number>,
     stipendCooldown: 0,
@@ -1236,7 +1785,9 @@ function AustraliaGame() {
     // New inventory management options
     inventorySort: 'default' as 'default' | 'value' | 'quantity' | 'category',
     inventoryFilter: 'all' as 'all' | 'luxury' | 'food' | 'industrial' | 'agricultural' | 'energy' | 'financial' | 'service',
-    showDoubleOrNothing: false
+    showDoubleOrNothing: false,
+    // Advanced Loan System UI
+    showAdvancedLoans: false
   });
 
   // Special ability state tracking
@@ -2464,6 +3015,17 @@ function AustraliaGame() {
       const difficulty = gameState.aiDifficulty;
       const profile = AI_DIFFICULTY_PROFILES[difficulty];
 
+      // Get adaptive AI modifiers
+      const adaptivePhase = gameSettings.adaptiveAiEnabled ? gameState.adaptiveAiPhase : 'normal';
+      const adaptiveModifiers = ADAPTIVE_AI_MODIFIERS[adaptivePhase] || ADAPTIVE_AI_MODIFIERS.normal;
+      const aggressionMultiplier = gameSettings.adaptiveAiAggressionMultiplier || 1.0;
+
+      // Apply adaptive modifiers to profile
+      const adjustedProfile = {
+        ...profile,
+        riskTolerance: profile.riskTolerance * adaptiveModifiers.riskTolerance * aggressionMultiplier
+      };
+
       // Validate AI state
       if (!aiState || !aiState.currentRegion || !REGIONS[aiState.currentRegion]) {
         console.error('Invalid AI state or region:', aiState);
@@ -2486,7 +3048,7 @@ function AustraliaGame() {
 
       const decisions: Array<{ type: string; description: string; data: any; score: number }> = [];
 
-      // Evaluate special ability usage
+      // Evaluate special ability usage (with adaptive AI priority boost)
       if (gameSettings.aiSpecialAbilitiesEnabled &&
           !aiActiveSpecialAbilityRef.current &&
           aiState.specialAbilityUses > 0 &&
@@ -2497,7 +3059,7 @@ function AustraliaGame() {
             type: 'special_ability',
             description: `Use ${aiState.character.specialAbility.name}`,
             data: { ability: aiState.character.specialAbility },
-            score: abilityScore * profile.decisionQuality
+            score: abilityScore * profile.decisionQuality * adaptiveModifiers.specialAbilityPriority
           });
         }
       }
@@ -2532,8 +3094,9 @@ function AustraliaGame() {
         });
       }
 
-      // Evaluate sabotage actions
+      // Evaluate sabotage actions (with adaptive AI sabotage chance boost)
       if (gameSettings.sabotageEnabled && gameState.selectedMode === 'ai') {
+        const sabotageBoost = 1 + adaptiveModifiers.sabotageChance;
         SABOTAGE_ACTIONS.forEach(action => {
           const evaluation = evaluateSabotage(action, aiState, playerState);
           if (evaluation.score > 0) {
@@ -2541,7 +3104,7 @@ function AustraliaGame() {
               type: 'sabotage',
               description: `Sabotage: ${action.name}`,
               data: { sabotageId: action.id },
-              score: evaluation.score * profile.decisionQuality
+              score: evaluation.score * profile.decisionQuality * sabotageBoost
             });
           }
         });
@@ -2556,11 +3119,17 @@ function AustraliaGame() {
       availableChallenges.forEach(challenge => {
         try {
           const evaluation = evaluateChallenge(challenge, aiState, difficulty);
-          if (evaluation.score > 0 && aiState.money >= evaluation.wager) {
+          // Apply adaptive AI challenge wager multiplier
+          const adaptiveWager = Math.floor(evaluation.wager * adaptiveModifiers.challengeWagerMultiplier);
+          if (evaluation.score > 0 && aiState.money >= adaptiveWager) {
             decisions.push({
               type: 'challenge',
               description: `Attempt ${challenge.name}`,
-              data: { challenge, wager: evaluation.wager, successChance: evaluation.successChance },
+              data: {
+                challenge,
+                wager: adaptiveWager,
+                successChance: evaluation.successChance
+              },
               score: evaluation.score * profile.decisionQuality
             });
           }
@@ -2569,7 +3138,7 @@ function AustraliaGame() {
         }
       });
 
-      // Evaluate travel options
+      // Evaluate travel options (with adaptive AI travel aggression)
       Object.keys(REGIONS).forEach(region => {
         if (region !== aiState.currentRegion) {
           try {
@@ -2579,7 +3148,7 @@ function AustraliaGame() {
                 type: 'travel',
                 description: `Travel to ${REGIONS[region].name}`,
                 data: { region, cost: evaluation.cost },
-                score: evaluation.score * profile.decisionQuality
+                score: evaluation.score * profile.decisionQuality * adaptiveModifiers.travelAggression
               });
             }
           } catch (error) {
@@ -2606,7 +3175,7 @@ function AustraliaGame() {
         }
       });
 
-      // Evaluate crafting recipes
+      // Evaluate crafting recipes (with adaptive AI crafting focus)
       CRAFTING_RECIPES.forEach(recipe => {
         try {
           const evaluation = evaluateCrafting(recipe, aiState, gameState.resourcePrices);
@@ -2615,7 +3184,7 @@ function AustraliaGame() {
               type: 'craft',
               description: `Craft ${recipe.name}`,
               data: { recipeId: recipe.id, recipe: recipe },
-              score: evaluation.score * profile.decisionQuality
+              score: evaluation.score * profile.decisionQuality * adaptiveModifiers.craftingFocus
             });
           }
         } catch (error) {
@@ -3729,6 +4298,103 @@ function AustraliaGame() {
     return { money, loans: updatedLoans };
   }, []);
 
+  // Advanced Loan System handlers
+  const takeAdvancedLoan = useCallback((tierId: string, isEvent: boolean = false, eventId?: string) => {
+    if (!gameSettings.advancedLoansEnabled) return;
+
+    const tier = LOAN_TIERS.find(t => t.id === tierId);
+    if (!tier) return;
+
+    // Check level requirement
+    if (player.level < tier.levelRequired) {
+      addNotification(`Requires level ${tier.levelRequired} for ${tier.name}`, 'warning', true);
+      return;
+    }
+
+    // Check max loans
+    const currentLoans = player.advancedLoans || [];
+    if (currentLoans.length >= gameSettings.maxSimultaneousLoans) {
+      addNotification(`Maximum ${gameSettings.maxSimultaneousLoans} loans allowed`, 'warning', true);
+      return;
+    }
+
+    // Calculate actual interest rate based on credit score
+    const creditScore = gameSettings.creditScoreEnabled ? (player.creditScore || 50) : 50;
+    const creditRange = getCreditScoreRange(creditScore);
+    const actualInterestRate = tier.baseInterestRate * creditRange.multiplier * gameSettings.loanTierUnlockSpeedMultiplier;
+
+    // Create the loan
+    const newLoan: AdvancedLoan = {
+      id: Date.now().toString() + Math.random(),
+      tierId: tier.id,
+      amount: tier.amount,
+      baseInterestRate: tier.baseInterestRate,
+      actualInterestRate,
+      accrued: 0,
+      term: tier.term,
+      daysRemaining: tier.term,
+      issuedDay: gameState.day,
+      isEvent,
+      eventId
+    };
+
+    // Update player state
+    const updatedPlayer = {
+      ...player,
+      money: player.money + tier.amount,
+      advancedLoans: [...currentLoans, newLoan],
+      loanHistory: {
+        ...player.loanHistory,
+        totalTaken: (player.loanHistory?.totalTaken || 0) + tier.amount
+      }
+    };
+
+    dispatchPlayer({ type: 'MERGE_STATE', payload: updatedPlayer });
+    addNotification(`Received ${tier.name}: +$${tier.amount} (${Math.floor(actualInterestRate * 100)}% interest, ${tier.term} days)`, 'money', true);
+    updateUiState({ showAdvancedLoans: false });
+  }, [player, gameState.day, gameSettings, addNotification, dispatchPlayer]);
+
+  const repayAdvancedLoan = useCallback((loanId: string, isEarlyRepayment: boolean = false) => {
+    if (!gameSettings.advancedLoansEnabled) return;
+
+    const advancedLoans = player.advancedLoans || [];
+    const loan = advancedLoans.find(l => l.id === loanId);
+    if (!loan) return;
+
+    // Calculate total owed
+    let interestOwed = loan.accrued;
+    if (isEarlyRepayment && gameSettings.earlyRepaymentEnabled) {
+      interestOwed *= getEarlyRepaymentDiscount(); // 50% discount
+    }
+
+    const totalOwed = loan.amount + interestOwed;
+
+    if (player.money < totalOwed) {
+      addNotification(`Need $${Math.floor(totalOwed)} to repay this loan`, 'warning', true);
+      return;
+    }
+
+    // Update player state
+    const updatedLoans = advancedLoans.filter(l => l.id !== loanId);
+    const updatedPlayer = {
+      ...player,
+      money: player.money - totalOwed,
+      advancedLoans: updatedLoans,
+      loanHistory: {
+        ...player.loanHistory,
+        totalRepaid: (player.loanHistory?.totalRepaid || 0) + totalOwed,
+        earlyRepaymentCount: (player.loanHistory?.earlyRepaymentCount || 0) + (isEarlyRepayment ? 1 : 0)
+      }
+    };
+
+    dispatchPlayer({ type: 'MERGE_STATE', payload: updatedPlayer });
+
+    const message = isEarlyRepayment
+      ? `Early repayment: Paid $${Math.floor(totalOwed)} (50% interest discount!)`
+      : `Repaid loan: $${Math.floor(totalOwed)}`;
+    addNotification(message, 'success', true);
+  }, [player, gameSettings, addNotification, dispatchPlayer]);
+
   const liquidateInventoryForCash = useCallback((state: any) => {
     if (!state.inventory || state.inventory.length === 0) {
       return { cash: 0, remaining: state.inventory };
@@ -4471,7 +5137,7 @@ function AustraliaGame() {
     }
     dispatchGameState({ type: 'UPDATE_ACTIVE_EVENTS', payload: updatedEvents });
 
-    // Apply loan interest ticks
+    // Apply loan interest ticks (simple loans)
     const playerLoanTick = applyLoanTick(projectedPlayer);
     projectedPlayer.money = playerLoanTick.money;
     projectedPlayer.loans = playerLoanTick.loans;
@@ -4479,6 +5145,21 @@ function AustraliaGame() {
     const aiLoanTick = applyLoanTick(projectedAi);
     projectedAi.money = aiLoanTick.money;
     projectedAi.loans = aiLoanTick.loans;
+
+    // Process advanced loans if enabled
+    if (gameSettings.advancedLoansEnabled) {
+      const playerAdvancedLoanResult = processAdvancedLoans(projectedPlayer, gameSettings, newDay);
+      projectedPlayer = playerAdvancedLoanResult.updatedPlayer;
+      playerAdvancedLoanResult.notifications.forEach(notif => {
+        addNotification(notif.message, notif.type as any, true);
+      });
+
+      const aiAdvancedLoanResult = processAdvancedLoans(projectedAi, gameSettings, newDay);
+      projectedAi = aiAdvancedLoanResult.updatedPlayer;
+      aiAdvancedLoanResult.notifications.forEach(notif => {
+        addNotification(`🤖 ${notif.message}`, 'ai', false);
+      });
+    }
 
     if (gameSettings.investmentsEnabled) {
       const playerInvestmentIncome = (projectedPlayer.investments || []).reduce((sum, regionCode) => {
@@ -4605,6 +5286,53 @@ function AustraliaGame() {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification('Mercy rule: AI dominated for 5 days straight.', 'ai', true);
       return;
+    }
+
+    // Detect Adaptive AI phase if enabled
+    if (gameSettings.adaptiveAiEnabled && gameState.selectedMode === 'ai') {
+      const playerNetWorth = calculateNetWorth(projectedPlayer);
+      const aiNetWorth = calculateNetWorth(projectedAi);
+      const playerChallenges = projectedPlayer.challengesCompleted?.length || 0;
+      const aiChallenges = projectedAi.challengesCompleted?.length || 0;
+
+      const detectedPhase = detectAdaptiveAiPhase(
+        playerNetWorth,
+        aiNetWorth,
+        projectedPlayer.level,
+        projectedAi.level,
+        playerChallenges,
+        aiChallenges,
+        gameSettings
+      );
+
+      // Track consecutive days in trigger state
+      if (detectedPhase !== 'normal') {
+        const newDaysTriggered = gameState.adaptiveAiDaysTriggered + 1;
+        dispatchGameState({ type: 'SET_ADAPTIVE_AI_DAYS_TRIGGERED', payload: newDaysTriggered });
+
+        // Only escalate if consecutive days threshold is met
+        if (newDaysTriggered >= gameSettings.adaptiveAiConsecutiveDays) {
+          if (gameState.adaptiveAiPhase !== detectedPhase) {
+            dispatchGameState({ type: 'SET_ADAPTIVE_AI_PHASE', payload: detectedPhase });
+            const phaseEmoji = getAdaptiveAiPhaseEmoji(detectedPhase);
+            const phaseName = getAdaptiveAiPhaseName(detectedPhase);
+            addNotification(`${phaseEmoji} AI entered ${phaseName} mode!`, 'warning', true);
+          }
+        }
+      } else {
+        dispatchGameState({ type: 'SET_ADAPTIVE_AI_DAYS_TRIGGERED', payload: 0 });
+        if (gameState.adaptiveAiPhase !== 'normal') {
+          dispatchGameState({ type: 'SET_ADAPTIVE_AI_PHASE', payload: 'normal' });
+          addNotification('🤖 AI returned to Normal mode', 'info', false);
+        }
+      }
+
+      // Track player dominance days for rubber-banding
+      if (playerNetWorth > aiNetWorth * 1.5) {
+        dispatchGameState({ type: 'SET_PLAYER_DOMINANCE_DAYS', payload: gameState.playerDominanceDays + 1 });
+      } else {
+        dispatchGameState({ type: 'SET_PLAYER_DOMINANCE_DAYS', payload: 0 });
+      }
     }
 
     // Calculate AI mood based on performance difference
@@ -5474,6 +6202,141 @@ function AustraliaGame() {
                   </div>
                 </div>
               </div>
+
+              {/* Advanced Loan System Settings */}
+              <div className={`${themeStyles.border} border rounded-lg p-4 bg-blue-900 bg-opacity-10`}>
+                <h4 className="text-lg font-bold mb-4">🏦 Advanced Loan System (NEW)</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Enable Advanced Loans</div>
+                      <div className="text-sm opacity-75">Four-tiered loan system with credit scores</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, advancedLoansEnabled: !prev.advancedLoansEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.advancedLoansEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.advancedLoansEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.advancedLoansEnabled && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">Credit Score System</div>
+                          <div className="text-sm opacity-75">Track creditworthiness and adjust rates</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, creditScoreEnabled: !prev.creditScoreEnabled }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.creditScoreEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.creditScoreEnabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">Loan Events</div>
+                          <div className="text-sm opacity-75">Random special loan opportunities</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, loanEventsEnabled: !prev.loanEventsEnabled }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.loanEventsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.loanEventsEnabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">Early Repayment</div>
+                          <div className="text-sm opacity-75">Pay off loans early for 50% interest discount</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, earlyRepaymentEnabled: !prev.earlyRepaymentEnabled }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.earlyRepaymentEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.earlyRepaymentEnabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-2">Max Simultaneous Loans: {gameSettings.maxSimultaneousLoans}</label>
+                        <input type="range" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(e) => setGameSettings(prev => ({ ...prev, maxSimultaneousLoans: parseInt(e.target.value) }))} className="w-full" />
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-2">Interest Rate: {(gameSettings.interestAccrualRate * 100).toFixed(0)}%</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate} onChange={(e) => setGameSettings(prev => ({ ...prev, interestAccrualRate: parseFloat(e.target.value) }))} className="w-full" />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Adaptive AI Settings */}
+              <div className={`${themeStyles.border} border rounded-lg p-4 bg-red-900 bg-opacity-10`}>
+                <h4 className="text-lg font-bold mb-4">🤖 Adaptive AI "Comeback Mode" (NEW)</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Enable Adaptive AI</div>
+                      <div className="text-sm opacity-75">AI gets more aggressive when falling behind</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiEnabled: !prev.adaptiveAiEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.adaptiveAiEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.adaptiveAiEnabled && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">Pattern Learning</div>
+                          <div className="text-sm opacity-75">AI learns and adapts to your playstyle</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiPatternLearning: !prev.adaptiveAiPatternLearning }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiPatternLearning ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.adaptiveAiPatternLearning ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">Rubber-Banding</div>
+                          <div className="text-sm opacity-75">AI gets stat boosts when far behind</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiRubberBanding: !prev.adaptiveAiRubberBanding }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiRubberBanding ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.adaptiveAiRubberBanding ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">AI Taunts</div>
+                          <div className="text-sm opacity-75">Show AI messages when in comeback mode</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiTauntsEnabled: !prev.adaptiveAiTauntsEnabled }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiTauntsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        >
+                          {gameSettings.adaptiveAiTauntsEnabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-2">Consecutive Days Required: {gameSettings.adaptiveAiConsecutiveDays}</label>
+                        <input type="range" min="1" max="7" value={gameSettings.adaptiveAiConsecutiveDays} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiConsecutiveDays: parseInt(e.target.value) }))} className="w-full" />
+                        <div className="text-xs opacity-75 mt-1">Days AI must be behind before escalating</div>
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-2">Aggression Multiplier: {gameSettings.adaptiveAiAggressionMultiplier.toFixed(1)}x</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.adaptiveAiAggressionMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -5846,6 +6709,17 @@ function AustraliaGame() {
           </div>
           
           <div className="space-y-4">
+            {gameSettings.adaptiveAiEnabled && gameState.adaptiveAiPhase !== 'normal' && (
+              <div className={`${themeStyles.border} border rounded-lg p-3 bg-red-900 bg-opacity-20`}>
+                <div className="flex items-center space-x-2">
+                  <span className="text-2xl">{getAdaptiveAiPhaseEmoji(gameState.adaptiveAiPhase)}</span>
+                  <div>
+                    <div className="font-bold text-red-400">Adaptive AI Mode: {getAdaptiveAiPhaseName(gameState.adaptiveAiPhase)}</div>
+                    <div className="text-xs opacity-75">AI is fighting back harder!</div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="flex items-center space-x-3 mb-3">
                 <span className="text-4xl">{aiPlayer.character.avatar}</span>
@@ -6919,6 +7793,17 @@ function AustraliaGame() {
             >
               <span>{SABOTAGE_ICON}</span>
               <span>Sabotage</span>
+            </button>
+          )}
+
+          {gameSettings.advancedLoansEnabled && (
+            <button
+              onClick={() => updateUiState({ showAdvancedLoans: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>🏦</span>
+              <span>Loans</span>
             </button>
           )}
 
@@ -7997,6 +8882,131 @@ function AustraliaGame() {
                   className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
                 >
                   Close Sabotage
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advanced Loans Modal */}
+        {uiState.showAdvancedLoans && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+            onClick={() => updateUiState({ showAdvancedLoans: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full flex flex-col overflow-hidden`}
+              style={{ height: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <div>
+                  <h3 className="text-xl font-bold">🏦 Advanced Loans</h3>
+                  {gameSettings.creditScoreEnabled && (
+                    <div className="text-sm mt-1">
+                      Credit Score: <span style={{ color: getCreditScoreRange(player.creditScore || 50).color }} className="font-bold">{player.creditScore || 50}</span> ({getCreditScoreRange(player.creditScore || 50).label})
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => updateUiState({ showAdvancedLoans: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                  aria-label="Close"
+                  title="Close"
+                >
+                  X
+                </button>
+              </div>
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+                {/* Active Loans Section */}
+                {(player.advancedLoans || []).length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="font-bold text-lg mb-3">Active Loans</h4>
+                    <div className="space-y-2">
+                      {(player.advancedLoans || []).map((loan: any) => {
+                        const tier = LOAN_TIERS.find(t => t.id === loan.tierId);
+                        const totalOwed = loan.amount + loan.accrued;
+                        const earlyOwed = gameSettings.earlyRepaymentEnabled ? loan.amount + (loan.accrued * 0.5) : totalOwed;
+                        return (
+                          <div key={loan.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <div className="font-bold">{tier?.name || 'Loan'}</div>
+                                <div className="text-sm opacity-75">Principal: ${loan.amount} | Interest: ${Math.floor(loan.accrued)}</div>
+                                <div className="text-xs opacity-75">{loan.daysRemaining} days remaining</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-bold text-red-400">${Math.floor(totalOwed)}</div>
+                                <div className="space-x-2 mt-2">
+                                  <button
+                                    onClick={() => repayAdvancedLoan(loan.id, false)}
+                                    disabled={player.money < totalOwed}
+                                    className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs disabled:opacity-50`}
+                                  >
+                                    Repay
+                                  </button>
+                                  {gameSettings.earlyRepaymentEnabled && loan.daysRemaining > 0 && (
+                                    <button
+                                      onClick={() => repayAdvancedLoan(loan.id, true)}
+                                      disabled={player.money < earlyOwed}
+                                      className={`${themeStyles.accent} text-white px-2 py-1 rounded text-xs disabled:opacity-50`}
+                                      title={`Early: $${Math.floor(earlyOwed)} (50% off interest)`}
+                                    >
+                                      Early ${Math.floor(earlyOwed)}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Available Loans Section */}
+                <h4 className="font-bold text-lg mb-3">Available Loans</h4>
+                <div className="space-y-3">
+                  {LOAN_TIERS.map(tier => {
+                    const creditRange = getCreditScoreRange(player.creditScore || 50);
+                    const actualRate = tier.baseInterestRate * creditRange.multiplier;
+                    const meetsLevel = player.level >= tier.levelRequired;
+                    const underLimit = (player.advancedLoans || []).length < gameSettings.maxSimultaneousLoans;
+                    return (
+                      <div key={tier.id} className={`${themeStyles.border} border rounded-lg p-4`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-bold">{tier.name}</div>
+                            <div className="text-sm opacity-75">{tier.description}</div>
+                            <div className="text-xs opacity-75 mt-1">
+                              Amount: ${tier.amount} | Interest: {Math.floor(actualRate * 100)}% | Term: {tier.term} days
+                            </div>
+                            {!meetsLevel && <div className="text-xs text-yellow-400 mt-1">Requires Level {tier.levelRequired}</div>}
+                            {!underLimit && <div className="text-xs text-red-400 mt-1">Max loans reached</div>}
+                          </div>
+                          <div className="text-right ml-4">
+                            <div className="font-bold text-green-500">+${tier.amount}</div>
+                            <button
+                              onClick={() => takeAdvancedLoan(tier.id)}
+                              disabled={!meetsLevel || !underLimit}
+                              className={`${themeStyles.button} text-white px-3 py-1 rounded mt-2 text-sm disabled:opacity-50`}
+                            >
+                              Take Loan
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <button
+                  onClick={() => updateUiState({ showAdvancedLoans: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close
                 </button>
               </div>
             </div>
