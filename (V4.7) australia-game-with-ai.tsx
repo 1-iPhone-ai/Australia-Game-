@@ -2985,9 +2985,12 @@ function AustraliaGame() {
     // Deduct costs
     if (proposal.termDetails.cashAmount) {
       if (playerId === 'player') {
-        playerDispatch({ type: 'UPDATE_MONEY', payload: -proposal.termDetails.cashAmount });
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -proposal.termDetails.cashAmount });
       } else {
-        aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: -proposal.termDetails.cashAmount });
+        updateAiPlayerState(prev => ({
+          ...prev,
+          money: deductMoney(prev.money, proposal.termDetails.cashAmount || 0)
+        }));
       }
     }
 
@@ -2995,13 +2998,15 @@ function AustraliaGame() {
       Object.entries(proposal.termDetails.resources).forEach(([resource, count]) => {
         for (let i = 0; i < (count as number); i++) {
           if (playerId === 'player') {
-            playerDispatch({ type: 'SELL_RESOURCE', payload: { resource: resource, price: 0 } });
+            dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource: resource, price: 0 } });
           } else {
             // Remove from AI inventory
-            const aiInv = [...aiPlayer.inventory];
-            const idx = aiInv.indexOf(resource);
-            if (idx > -1) aiInv.splice(idx, 1);
-            aiPlayerDispatch({ type: 'SET_INVENTORY', payload: aiInv });
+            updateAiPlayerState(prev => {
+              const aiInv = [...prev.inventory];
+              const idx = aiInv.indexOf(resource);
+              if (idx > -1) aiInv.splice(idx, 1);
+              return { ...prev, inventory: aiInv };
+            });
           }
         }
       });
@@ -3021,7 +3026,7 @@ function AustraliaGame() {
     });
 
     addNotification('task_completion', `${playerId === 'player' ? 'You' : 'AI'} completed proposal and gained control of ${proposal.region}!`);
-  }, [gameState.regionDeposits, player, aiPlayer, playerDispatch, aiPlayerDispatch, dispatchGameState]);
+  }, [gameState.regionDeposits, player, aiPlayer, dispatchPlayer, updateAiPlayerState, deductMoney, dispatchGameState]);
 
   // Helper: Get summary of proposal requirements
   const getProposalRequirementsSummary = useCallback((proposal: Proposal): string => {
@@ -3066,7 +3071,10 @@ function AustraliaGame() {
             }
           });
 
-          aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: -shouldDeposit });
+          updateAiPlayerState(prev => ({
+            ...prev,
+            money: deductMoney(prev.money, shouldDeposit)
+          }));
 
           logs.push({
             id: `log_${Date.now()}_${Math.random()}`,
@@ -3091,7 +3099,10 @@ function AustraliaGame() {
               const returnAmount = Math.floor(cashOutAmount * 0.5);
 
               dispatchGameState({ type: 'CASH_OUT_REGION', payload: { regionId: region, playerId: 'ai' } });
-              aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: returnAmount });
+              updateAiPlayerState(prev => ({
+                ...prev,
+                money: prev.money + returnAmount
+              }));
 
               logs.push({
                 id: `log_${Date.now()}_${Math.random()}`,
@@ -3112,7 +3123,7 @@ function AustraliaGame() {
     logs.forEach(log => {
       dispatchGameState({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
     });
-  }, [gameSettings, gameState.regionDeposits, gameState.proposals, aiPlayer.money, dispatch, aiPlayerDispatch]);
+  }, [gameSettings, gameState.regionDeposits, gameState.proposals, aiPlayer.money, dispatchGameState, updateAiPlayerState, deductMoney, selectAiStrategicRegions, evaluateAiDepositDecision, evaluateAiCashOutDecision, getRegionController]);
 
   // Helper: Select strategic regions for AI
   const selectAiStrategicRegions = useCallback((): string[] => {
