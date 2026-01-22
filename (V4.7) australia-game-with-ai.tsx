@@ -2711,7 +2711,7 @@ function AustraliaGame() {
         const shouldAccept = evaluateAiProposalAcceptance(proposal);
         const newStatus = shouldAccept ? 'accepted' : 'declined';
 
-        dispatch({
+        dispatchGameState({
           type: 'UPDATE_PROPOSAL',
           payload: {
             id: proposal.id,
@@ -2739,7 +2739,7 @@ function AustraliaGame() {
         if (targetRegion) {
           const newProposal = generateAiProposal(targetRegion);
           if (newProposal) {
-            dispatch({ type: 'ADD_PROPOSAL', payload: newProposal });
+            dispatchGameState({ type: 'ADD_PROPOSAL', payload: newProposal });
             logs.push({
               id: `log_${Date.now()}_${Math.random()}`,
               phase: 'negotiation',
@@ -2762,9 +2762,9 @@ function AustraliaGame() {
 
     // Add logs to state
     logs.forEach(log => {
-      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+      dispatchGameState({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
     });
-  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatch]);
+  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatchGameState]);
 
   // Helper: Evaluate if AI should accept a proposal
   const evaluateAiProposalAcceptance = useCallback((proposal: Proposal): boolean => {
@@ -2918,7 +2918,7 @@ function AustraliaGame() {
         // Execute the proposal completion
         completeProposal(proposal, playerId);
 
-        dispatch({
+        dispatchGameState({
           type: 'UPDATE_PROPOSAL',
           payload: {
             id: proposal.id,
@@ -2950,9 +2950,9 @@ function AustraliaGame() {
 
     // Add logs to state
     logs.forEach(log => {
-      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+      dispatchGameState({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
     });
-  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatch]);
+  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatchGameState]);
 
   // Helper: Check if proposal requirements are met
   const checkProposalRequirements = useCallback((proposal: Proposal, playerId: 'player' | 'ai'): boolean => {
@@ -3011,7 +3011,7 @@ function AustraliaGame() {
     const currentDeposits = gameState.regionDeposits[proposal.region];
     const requiredDeposit = Math.max(currentDeposits.player, currentDeposits.ai) + 1;
 
-    dispatch({
+    dispatchGameState({
       type: 'DEPOSIT_REGION',
       payload: {
         regionId: proposal.region,
@@ -3021,7 +3021,7 @@ function AustraliaGame() {
     });
 
     addNotification('task_completion', `${playerId === 'player' ? 'You' : 'AI'} completed proposal and gained control of ${proposal.region}!`);
-  }, [gameState.regionDeposits, player, aiPlayer, playerDispatch, aiPlayerDispatch, dispatch]);
+  }, [gameState.regionDeposits, player, aiPlayer, playerDispatch, aiPlayerDispatch, dispatchGameState]);
 
   // Helper: Get summary of proposal requirements
   const getProposalRequirementsSummary = useCallback((proposal: Proposal): string => {
@@ -3047,7 +3047,7 @@ function AustraliaGame() {
       const completedProposals = gameState.proposals.filter(p => p.status === 'completed');
       completedProposals.forEach(p => {
         if (Date.now() - (p.completedAt || 0) > 5000) { // Remove after 5 seconds
-          dispatch({ type: 'REMOVE_PROPOSAL', payload: p.id });
+          dispatchGameState({ type: 'REMOVE_PROPOSAL', payload: p.id });
         }
       });
     } else if (gameSettings.regionControlEnabled && playerId === 'ai') {
@@ -3057,7 +3057,7 @@ function AustraliaGame() {
       strategicRegions.forEach(region => {
         const shouldDeposit = evaluateAiDepositDecision(region);
         if (shouldDeposit > 0 && aiPlayer.money > AI_SAFETY_BUFFER + shouldDeposit) {
-          dispatch({
+          dispatchGameState({
             type: 'DEPOSIT_REGION',
             payload: {
               regionId: region,
@@ -3090,7 +3090,7 @@ function AustraliaGame() {
               const cashOutAmount = gameState.regionDeposits[region].ai;
               const returnAmount = Math.floor(cashOutAmount * 0.5);
 
-              dispatch({ type: 'CASH_OUT_REGION', payload: { regionId: region, playerId: 'ai' } });
+              dispatchGameState({ type: 'CASH_OUT_REGION', payload: { regionId: region, playerId: 'ai' } });
               aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: returnAmount });
 
               logs.push({
@@ -3110,7 +3110,7 @@ function AustraliaGame() {
 
     // Add logs to state
     logs.forEach(log => {
-      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+      dispatchGameState({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
     });
   }, [gameSettings, gameState.regionDeposits, gameState.proposals, aiPlayer.money, dispatch, aiPlayerDispatch]);
 
@@ -3181,24 +3181,24 @@ function AustraliaGame() {
       executeRegionControlManagement(playerId);
     } else {
       // Execute with visual feedback
-      dispatch({ type: 'SET_TURN_TRANSITION', payload: { isActive: true, currentPhase: 'negotiation', phaseProgress: 0 } });
+      dispatchGameState({ type: 'SET_TURN_TRANSITION', payload: { isActive: true, currentPhase: 'negotiation', phaseProgress: 0 } });
 
       setTimeout(() => {
         executeNegotiationEvaluationPhase(playerId);
-        dispatch({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'tasks', phaseProgress: 33 } });
+        dispatchGameState({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'tasks', phaseProgress: 33 } });
 
         setTimeout(() => {
           executeTaskCompletionPhase(playerId);
-          dispatch({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'region_management', phaseProgress: 66 } });
+          dispatchGameState({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'region_management', phaseProgress: 66 } });
 
           setTimeout(() => {
             executeRegionControlManagement(playerId);
-            dispatch({ type: 'SET_TURN_TRANSITION', payload: { isActive: false, currentPhase: null, phaseProgress: 100 } });
+            dispatchGameState({ type: 'SET_TURN_TRANSITION', payload: { isActive: false, currentPhase: null, phaseProgress: 100 } });
           }, 300);
         }, 300);
       }, 300);
     }
-  }, [gameSettings, executeNegotiationEvaluationPhase, executeTaskCompletionPhase, executeRegionControlManagement, dispatch]);
+  }, [gameSettings, executeNegotiationEvaluationPhase, executeTaskCompletionPhase, executeRegionControlManagement, dispatchGameState]);
 
   // =========================================
   // AI DECISION MAKING ENGINE
@@ -5872,7 +5872,7 @@ function AustraliaGame() {
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -amount });
 
     // Add deposit to region
-    dispatch({
+    dispatchGameState({
       type: 'DEPOSIT_REGION',
       payload: {
         regionId: regionId,
@@ -5889,7 +5889,7 @@ function AustraliaGame() {
     }
 
     incrementAction();
-  }, [gameSettings.regionControlEnabled, gameSettings.negotiationModeEnabled, gameState.currentTurn, player.money, addNotification, incrementAction, getRegionController, dispatch]);
+  }, [gameSettings.regionControlEnabled, gameSettings.negotiationModeEnabled, gameState.currentTurn, player.money, addNotification, incrementAction, getRegionController, dispatchGameState]);
 
   // V5.0: Cash out from a region
   const cashOutFromRegion = useCallback((regionId: string) => {
@@ -5910,7 +5910,7 @@ function AustraliaGame() {
     const returnAmount = Math.floor(depositedAmount * 0.5); // 50% return
 
     // Cash out
-    dispatch({
+    dispatchGameState({
       type: 'CASH_OUT_REGION',
       payload: {
         regionId: regionId,
@@ -5923,7 +5923,7 @@ function AustraliaGame() {
 
     addNotification(`Cashed out from ${REGIONS[regionId].name} for $${returnAmount} (50% of $${depositedAmount})`, 'info', true);
     incrementAction();
-  }, [gameSettings.regionControlEnabled, gameSettings.allowRegionCashOut, gameState.currentTurn, gameState.regionDeposits, addNotification, incrementAction, getRegionController, dispatch]);
+  }, [gameSettings.regionControlEnabled, gameSettings.allowRegionCashOut, gameState.currentTurn, gameState.regionDeposits, addNotification, incrementAction, getRegionController, dispatchGameState]);
 
   const buyInvestment = useCallback((regionCode: string) => {
     if (!gameSettings.investmentsEnabled || gameState.currentTurn !== 'player') return;
