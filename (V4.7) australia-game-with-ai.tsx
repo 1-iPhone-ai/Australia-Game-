@@ -455,6 +455,78 @@ const upsertDebuff = (debuffs: Debuff[] = [], type: string, duration: number) =>
 };
 
 // =========================================
+// V5.0 RESOURCE MARKET SYSTEM CONSTANTS
+// =========================================
+
+// Resource market pricing based on category
+const RESOURCE_MARKET_PRICES: Record<string, number> = {
+  // Luxury resources ($150)
+  "Coral": 150,
+  "Opals": 150,
+  "Wine": 150,
+  "Gold": 150,
+  "Crocodile Leather": 150,
+  "Aboriginal Art": 150,
+  // Industrial/Energy resources ($120)
+  "Iron Ore": 120,
+  "Coal": 120,
+  "Uranium": 120,
+  "Timber": 120,
+  "Hydropower": 120,
+  "Natural Gas": 120,
+  // Food/Agricultural resources ($100)
+  "Tropical Fruit": 100,
+  "Sugar Cane": 100,
+  "Dairy": 100,
+  "Wool": 100,
+  "Wheat": 100,
+  "Seafood": 100,
+  // Service/Financial resources ($130)
+  "Government Grants": 130,
+  "Research Funds": 130,
+  "Education": 130
+};
+
+// Helper function to get resource market price
+const getResourceMarketPrice = (resource: string): number => {
+  return RESOURCE_MARKET_PRICES[resource] || 100;
+};
+
+// Default notification settings
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  size: 'medium',
+  customSize: 100,
+  position: 'top-right',
+  animation: 'slide',
+  autoDismiss: {
+    'ai_action': 5,
+    'resource': 3,
+    'region_control': 5,
+    'proposal': 0,
+    'task_completion': 5,
+    'challenge': 3,
+    'level_up': 0,
+    'system': 5
+  },
+  soundEnabled: false,
+  typeFilters: {
+    'ai_action': true,
+    'resource': true,
+    'region_control': true,
+    'proposal': true,
+    'task_completion': true,
+    'challenge': true,
+    'level_up': true,
+    'system': true
+  },
+  opacity: 95,
+  maxVisible: 5,
+  stackOrder: 'newest-first',
+  keyboardShortcut: 'Control+Shift+C',
+  confirmClearThreshold: 5
+};
+
+// =========================================
 // ADVANCED LOAN SYSTEM HELPER FUNCTIONS
 // =========================================
 
@@ -993,7 +1065,7 @@ const KEYBOARD_SHORTCUTS = {
   'Escape': { action: 'closeModal', label: 'Close', description: 'Close any open modal' },
 };
 
-const GAME_VERSION = "4.0.0";
+const GAME_VERSION = "5.0.0"; // V5.0: Resource Market, Region Control, Negotiation, Enhanced UI
 const MINIMUM_WAGER = 50; // Minimum wager required for challenges
 const MAX_INVENTORY = 50; // Maximum inventory capacity for players and AI
 const OVERRIDE_DAILY_CAP = 3;
@@ -1254,6 +1326,13 @@ type GameSettingsState = {
   adaptiveAiPatternLearning: boolean;
   adaptiveAiRubberBanding: boolean;
   adaptiveAiTauntsEnabled: boolean;
+  // V5.0 New Features (disabled by default)
+  resourceMarketEnabled: boolean;
+  regionControlEnabled: boolean;
+  allowRegionCashOut: boolean; // Requires regionControlEnabled
+  negotiationModeEnabled: boolean; // Replaces bidding when enabled
+  winCondition: 'most_money' | 'most_regions'; // Tiebreaker: most money
+  skipTurnTransitionAnimations: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -1302,9 +1381,80 @@ interface ConfirmationDialog {
 }
 
 interface AIAction {
-  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage' | 'craft';
+  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage' | 'craft' | 'buy_market_resource' | 'deposit_region' | 'cash_out_region' | 'propose_negotiation';
   description: string;
   data?: any;
+}
+
+// =========================================
+// V5.0 NEW INTERFACES - ENHANCED FEATURES
+// =========================================
+
+// Proposal system for negotiation mode
+interface Proposal {
+  id: string;
+  from: 'player' | 'ai';
+  to: 'player' | 'ai';
+  region: string;
+  status: 'pending' | 'accepted' | 'declined' | 'completed' | 'cancelled';
+  termType: 'cash' | 'resources' | 'quest' | 'hybrid' | 'custom';
+  termDetails: {
+    cashAmount?: number;
+    resources?: Record<string, number>;
+    challengeName?: string;
+    customText?: string;
+  };
+  timestamp: number;
+  acceptedAt?: number;
+  completedAt?: number;
+  completionProgress?: {
+    cashPaid?: boolean;
+    resourcesDelivered?: boolean;
+    challengeCompleted?: boolean;
+  };
+}
+
+// Region control deposits tracking
+interface RegionDeposits {
+  [regionId: string]: {
+    player: number;
+    ai: number;
+  };
+}
+
+// Notification customization settings
+interface NotificationSettings {
+  size: 'small' | 'medium' | 'large' | 'custom';
+  customSize?: number; // 80-150
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'top-center' | 'bottom-center';
+  animation: 'slide' | 'fade' | 'none';
+  autoDismiss: Record<string, number>; // notification type -> seconds (0 = never)
+  soundEnabled: boolean;
+  typeFilters: Record<string, boolean>; // notification type -> enabled
+  opacity: number; // 70-100
+  maxVisible: number; // 3, 5, 10, or 999 (unlimited)
+  stackOrder: 'newest-first' | 'oldest-first';
+  keyboardShortcut: string;
+  confirmClearThreshold: number; // Confirm if clearing N+ notifications
+}
+
+// Turn transition phase tracking
+interface TurnTransitionState {
+  isActive: boolean;
+  currentPhase: 'negotiation' | 'tasks' | 'region_management' | null;
+  phaseProgress: number; // 0-100
+  logs: TurnTransitionLog[];
+}
+
+// Turn transition logs for educational transparency
+interface TurnTransitionLog {
+  id: string;
+  phase: 'negotiation' | 'tasks' | 'region_management';
+  playerId: 'player' | 'ai';
+  action: string;
+  reasoning: string;
+  timestamp: number;
+  details?: any;
 }
 
 const DEFAULT_GAME_SETTINGS: GameSettingsState = {
@@ -1350,7 +1500,14 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   adaptiveAiAggressionMultiplier: 1.0,
   adaptiveAiPatternLearning: false,
   adaptiveAiRubberBanding: false,
-  adaptiveAiTauntsEnabled: false
+  adaptiveAiTauntsEnabled: false,
+  // V5.0 New Features (disabled by default)
+  resourceMarketEnabled: true, // Enable by default for convenience
+  regionControlEnabled: false,
+  allowRegionCashOut: false,
+  negotiationModeEnabled: false,
+  winCondition: 'most_money',
+  skipTurnTransitionAnimations: false
 };
 
 const DEFAULT_DONT_ASK: DontAskAgainPrefs = {
@@ -1567,7 +1724,26 @@ const initialGameState = {
     averageChallengeWager: 0,
     riskProfile: 'moderate'
   } as PlayerPattern,
-  aiStrategyFocus: 'balanced' as 'challenges' | 'trading' | 'travel' | 'balanced'
+  aiStrategyFocus: 'balanced' as 'challenges' | 'trading' | 'travel' | 'balanced',
+  // V5.0 New State Fields
+  regionDeposits: {
+    QLD: { player: 0, ai: 0 },
+    NSW: { player: 0, ai: 0 },
+    VIC: { player: 0, ai: 0 },
+    TAS: { player: 0, ai: 0 },
+    SA: { player: 0, ai: 0 },
+    WA: { player: 0, ai: 0 },
+    NT: { player: 0, ai: 0 },
+    ACT: { player: 0, ai: 0 }
+  } as RegionDeposits,
+  proposals: [] as Proposal[],
+  turnTransition: {
+    isActive: false,
+    currentPhase: null,
+    phaseProgress: 0,
+    logs: []
+  } as TurnTransitionState,
+  notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS }
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -1660,6 +1836,73 @@ function gameStateReducer(state, action) {
         gameMode: state.gameMode,
         selectedMode: state.selectedMode,
         aiDifficulty: state.aiDifficulty
+      };
+    // V5.0 New Actions
+    case 'DEPOSIT_REGION':
+      const { regionId: depositRegionId, playerId: depositPlayerId, amount: depositAmount } = action.payload;
+      return {
+        ...state,
+        regionDeposits: {
+          ...state.regionDeposits,
+          [depositRegionId]: {
+            ...state.regionDeposits[depositRegionId],
+            [depositPlayerId]: (state.regionDeposits[depositRegionId]?.[depositPlayerId] || 0) + depositAmount
+          }
+        }
+      };
+    case 'CASH_OUT_REGION':
+      const { regionId: cashOutRegionId, playerId: cashOutPlayerId } = action.payload;
+      const cashOutAmount = state.regionDeposits[cashOutRegionId]?.[cashOutPlayerId] || 0;
+      return {
+        ...state,
+        regionDeposits: {
+          ...state.regionDeposits,
+          [cashOutRegionId]: {
+            ...state.regionDeposits[cashOutRegionId],
+            [cashOutPlayerId]: 0
+          }
+        }
+      };
+    case 'ADD_PROPOSAL':
+      return {
+        ...state,
+        proposals: [...state.proposals, action.payload]
+      };
+    case 'UPDATE_PROPOSAL':
+      return {
+        ...state,
+        proposals: state.proposals.map(p => p.id === action.payload.id ? { ...p, ...action.payload.updates } : p)
+      };
+    case 'REMOVE_PROPOSAL':
+      return {
+        ...state,
+        proposals: state.proposals.filter(p => p.id !== action.payload)
+      };
+    case 'SET_TURN_TRANSITION':
+      return {
+        ...state,
+        turnTransition: { ...state.turnTransition, ...action.payload }
+      };
+    case 'ADD_TURN_TRANSITION_LOG':
+      return {
+        ...state,
+        turnTransition: {
+          ...state.turnTransition,
+          logs: [...state.turnTransition.logs, action.payload].slice(-100) // Keep last 100 logs
+        }
+      };
+    case 'CLEAR_TURN_TRANSITION_LOGS':
+      return {
+        ...state,
+        turnTransition: {
+          ...state.turnTransition,
+          logs: []
+        }
+      };
+    case 'UPDATE_NOTIFICATION_SETTINGS':
+      return {
+        ...state,
+        notificationSettings: { ...state.notificationSettings, ...action.payload }
       };
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
@@ -2448,6 +2691,516 @@ function AustraliaGame() {
   };
 
   // =========================================
+  // V5.0 TURN TRANSITION SUBSYSTEMS
+  // =========================================
+
+  // SUBSYSTEM A: Negotiation Evaluation System
+  const executeNegotiationEvaluationPhase = useCallback((playerId: 'player' | 'ai') => {
+    if (!gameSettings.negotiationModeEnabled) return;
+
+    const logs: TurnTransitionLog[] = [];
+
+    // Get all pending proposals for this player
+    const pendingProposals = gameState.proposals.filter(
+      p => p.to === playerId && p.status === 'pending'
+    );
+
+    if (playerId === 'ai') {
+      // AI evaluates incoming proposals
+      pendingProposals.forEach(proposal => {
+        const shouldAccept = evaluateAiProposalAcceptance(proposal);
+        const newStatus = shouldAccept ? 'accepted' : 'declined';
+
+        dispatch({
+          type: 'UPDATE_PROPOSAL',
+          payload: {
+            id: proposal.id,
+            updates: {
+              status: newStatus,
+              acceptedAt: shouldAccept ? Date.now() : undefined
+            }
+          }
+        });
+
+        logs.push({
+          id: `log_${Date.now()}_${Math.random()}`,
+          phase: 'negotiation',
+          playerId: 'ai',
+          action: `${shouldAccept ? 'Accepted' : 'Declined'} proposal for ${proposal.region}`,
+          reasoning: getAiProposalReasoning(proposal, shouldAccept),
+          timestamp: Date.now(),
+          details: proposal
+        });
+      });
+
+      // AI generates new proposals
+      if (Math.random() < 0.3) { // 30% chance to make a proposal
+        const targetRegion = selectAiTargetRegion();
+        if (targetRegion) {
+          const newProposal = generateAiProposal(targetRegion);
+          if (newProposal) {
+            dispatch({ type: 'ADD_PROPOSAL', payload: newProposal });
+            logs.push({
+              id: `log_${Date.now()}_${Math.random()}`,
+              phase: 'negotiation',
+              playerId: 'ai',
+              action: `Proposed terms for ${targetRegion}`,
+              reasoning: `Strategic acquisition of ${targetRegion} to advance win condition`,
+              timestamp: Date.now(),
+              details: newProposal
+            });
+          }
+        }
+      }
+    } else {
+      // Player: auto-evaluate if settings enabled
+      // For now, just log pending proposals
+      if (pendingProposals.length > 0) {
+        addNotification('proposal', `You have ${pendingProposals.length} pending proposal(s) to review`, true);
+      }
+    }
+
+    // Add logs to state
+    logs.forEach(log => {
+      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+    });
+  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatch]);
+
+  // Helper: Evaluate if AI should accept a proposal
+  const evaluateAiProposalAcceptance = useCallback((proposal: Proposal): boolean => {
+    const currentController = getRegionController(proposal.region);
+    const regionValue = calculateRegionStrategicValue(proposal.region);
+
+    // Calculate cost of proposal
+    let proposalCost = 0;
+    if (proposal.termDetails.cashAmount) {
+      proposalCost += proposal.termDetails.cashAmount;
+    }
+    if (proposal.termDetails.resources) {
+      Object.entries(proposal.termDetails.resources).forEach(([res, count]) => {
+        proposalCost += getResourceMarketPrice(res) * (count as number) * 0.7; // 70% of market value
+      });
+    }
+
+    // Accept if:
+    // 1. Region is valuable and we don't control it
+    // 2. Cost is reasonable relative to AI's money
+    // 3. Aligns with win condition
+    const worthAccepting = currentController !== 'ai' && regionValue > proposalCost * 1.5;
+    const canAfford = aiPlayer.money - proposalCost > AI_SAFETY_BUFFER;
+    const alignsWithWinCondition = gameSettings.winCondition === 'most_regions' ||
+                                   (gameSettings.winCondition === 'most_money' && worthAccepting);
+
+    return worthAccepting && canAfford && alignsWithWinCondition;
+  }, [gameSettings.winCondition, aiPlayer.money]);
+
+  // Helper: Get reasoning for AI proposal decision
+  const getAiProposalReasoning = useCallback((proposal: Proposal, accepted: boolean): string => {
+    const currentController = getRegionController(proposal.region);
+    const regionValue = calculateRegionStrategicValue(proposal.region);
+
+    if (accepted) {
+      return `Accepted: ${proposal.region} provides strategic value (${regionValue.toFixed(0)}). ` +
+             `Currently controlled by ${currentController || 'nobody'}. Aligns with ${gameSettings.winCondition} strategy.`;
+    } else {
+      return `Declined: Terms too costly or region not strategic priority for current ${gameSettings.winCondition} goal.`;
+    }
+  }, [gameSettings.winCondition]);
+
+  // Helper: Select target region for AI proposal
+  const selectAiTargetRegion = useCallback((): string | null => {
+    const uncontrolledRegions = Object.keys(REGIONS).filter(region => {
+      const controller = getRegionController(region);
+      return controller !== 'ai';
+    });
+
+    if (uncontrolledRegions.length === 0) return null;
+
+    // Pick highest value uncontrolled region
+    const sorted = uncontrolledRegions.sort((a, b) =>
+      calculateRegionStrategicValue(b) - calculateRegionStrategicValue(a)
+    );
+
+    return sorted[0];
+  }, []);
+
+  // Helper: Generate AI proposal for a region
+  const generateAiProposal = useCallback((region: string): Proposal | null => {
+    const regionValue = calculateRegionStrategicValue(region);
+    const currentController = getRegionController(region);
+
+    // Determine proposal type based on AI's resources and money
+    const hasResources = aiPlayer.inventory.length > 3;
+    const hasExcessMoney = aiPlayer.money > AI_SAFETY_BUFFER * 3;
+
+    let termType: Proposal['termType'];
+    let termDetails: Proposal['termDetails'];
+
+    if (hasExcessMoney && Math.random() < 0.6) {
+      termType = 'cash';
+      termDetails = {
+        cashAmount: Math.floor(regionValue * 0.8) // Offer 80% of strategic value
+      };
+    } else if (hasResources && Math.random() < 0.4) {
+      termType = 'resources';
+      const resourcesAvailable = [...new Set(aiPlayer.inventory)];
+      const offerResource = resourcesAvailable[0];
+      termDetails = {
+        resources: {
+          [offerResource]: Math.min(2, aiPlayer.inventory.filter(r => r === offerResource).length)
+        }
+      };
+    } else {
+      // Custom proposal
+      termType = 'custom';
+      termDetails = {
+        customText: `Let's negotiate terms for ${region}`
+      };
+    }
+
+    const proposal: Proposal = {
+      id: `proposal_${Date.now()}_${Math.random()}`,
+      from: 'ai',
+      to: 'player',
+      region: region,
+      status: 'pending',
+      termType: termType,
+      termDetails: termDetails,
+      timestamp: Date.now()
+    };
+
+    return proposal;
+  }, [aiPlayer.inventory, aiPlayer.money]);
+
+  // Helper: Calculate strategic value of a region
+  const calculateRegionStrategicValue = useCallback((region: string): number => {
+    let value = 300; // Base value
+
+    // Value based on resources
+    const resources = REGIONAL_RESOURCES[region] || [];
+    resources.forEach(res => {
+      value += getResourceMarketPrice(res) * 0.5;
+    });
+
+    // Value based on win condition
+    if (gameSettings.winCondition === 'most_regions') {
+      value += 200; // Regions more valuable in region control mode
+    }
+
+    return value;
+  }, [gameSettings.winCondition]);
+
+  // Helper: Get current controller of a region
+  const getRegionController = useCallback((region: string): 'player' | 'ai' | null => {
+    const deposits = gameState.regionDeposits[region];
+    if (!deposits) return null;
+
+    if (deposits.player > deposits.ai && deposits.player > 0) return 'player';
+    if (deposits.ai > deposits.player && deposits.ai > 0) return 'ai';
+    return null;
+  }, [gameState.regionDeposits]);
+
+  // SUBSYSTEM B: Task Completion System
+  const executeTaskCompletionPhase = useCallback((playerId: 'player' | 'ai') => {
+    if (!gameSettings.negotiationModeEnabled) return;
+
+    const logs: TurnTransitionLog[] = [];
+
+    // Get all accepted proposals where this player is the one who needs to fulfill
+    const activeProposals = gameState.proposals.filter(
+      p => p.from === playerId && p.status === 'accepted'
+    );
+
+    activeProposals.forEach(proposal => {
+      const canComplete = checkProposalRequirements(proposal, playerId);
+
+      if (canComplete) {
+        // Execute the proposal completion
+        completeProposal(proposal, playerId);
+
+        dispatch({
+          type: 'UPDATE_PROPOSAL',
+          payload: {
+            id: proposal.id,
+            updates: { status: 'completed', completedAt: Date.now() }
+          }
+        });
+
+        logs.push({
+          id: `log_${Date.now()}_${Math.random()}`,
+          phase: 'tasks',
+          playerId: playerId,
+          action: `Completed proposal for ${proposal.region}`,
+          reasoning: `All requirements met: ${getProposalRequirementsSummary(proposal)}`,
+          timestamp: Date.now(),
+          details: proposal
+        });
+      } else {
+        logs.push({
+          id: `log_${Date.now()}_${Math.random()}`,
+          phase: 'tasks',
+          playerId: playerId,
+          action: `Proposal for ${proposal.region} still pending`,
+          reasoning: `Requirements not yet met: ${getProposalRequirementsSummary(proposal)}`,
+          timestamp: Date.now(),
+          details: proposal
+        });
+      }
+    });
+
+    // Add logs to state
+    logs.forEach(log => {
+      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+    });
+  }, [gameSettings.negotiationModeEnabled, gameState.proposals, dispatch]);
+
+  // Helper: Check if proposal requirements are met
+  const checkProposalRequirements = useCallback((proposal: Proposal, playerId: 'player' | 'ai'): boolean => {
+    const currentPlayer = playerId === 'player' ? player : aiPlayer;
+
+    // Check cash requirement
+    if (proposal.termDetails.cashAmount) {
+      if (currentPlayer.money < proposal.termDetails.cashAmount) return false;
+    }
+
+    // Check resource requirements
+    if (proposal.termDetails.resources) {
+      for (const [resource, count] of Object.entries(proposal.termDetails.resources)) {
+        const available = currentPlayer.inventory.filter(r => r === resource).length;
+        if (available < (count as number)) return false;
+      }
+    }
+
+    // Check challenge requirement
+    if (proposal.termDetails.challengeName) {
+      const completed = currentPlayer.challengesCompleted.includes(proposal.termDetails.challengeName);
+      if (!completed) return false;
+    }
+
+    return true;
+  }, [player, aiPlayer]);
+
+  // Helper: Complete a proposal and transfer region
+  const completeProposal = useCallback((proposal: Proposal, playerId: 'player' | 'ai') => {
+    // Deduct costs
+    if (proposal.termDetails.cashAmount) {
+      if (playerId === 'player') {
+        playerDispatch({ type: 'UPDATE_MONEY', payload: -proposal.termDetails.cashAmount });
+      } else {
+        aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: -proposal.termDetails.cashAmount });
+      }
+    }
+
+    if (proposal.termDetails.resources) {
+      Object.entries(proposal.termDetails.resources).forEach(([resource, count]) => {
+        for (let i = 0; i < (count as number); i++) {
+          if (playerId === 'player') {
+            playerDispatch({ type: 'SELL_RESOURCE', payload: { resource: resource, price: 0 } });
+          } else {
+            // Remove from AI inventory
+            const aiInv = [...aiPlayer.inventory];
+            const idx = aiInv.indexOf(resource);
+            if (idx > -1) aiInv.splice(idx, 1);
+            aiPlayerDispatch({ type: 'SET_INVENTORY', payload: aiInv });
+          }
+        }
+      });
+    }
+
+    // Transfer region control
+    const currentDeposits = gameState.regionDeposits[proposal.region];
+    const requiredDeposit = Math.max(currentDeposits.player, currentDeposits.ai) + 1;
+
+    dispatch({
+      type: 'DEPOSIT_REGION',
+      payload: {
+        regionId: proposal.region,
+        playerId: playerId,
+        amount: requiredDeposit
+      }
+    });
+
+    addNotification('task_completion', `${playerId === 'player' ? 'You' : 'AI'} completed proposal and gained control of ${proposal.region}!`);
+  }, [gameState.regionDeposits, player, aiPlayer, playerDispatch, aiPlayerDispatch, dispatch]);
+
+  // Helper: Get summary of proposal requirements
+  const getProposalRequirementsSummary = useCallback((proposal: Proposal): string => {
+    const parts: string[] = [];
+    if (proposal.termDetails.cashAmount) parts.push(`$${proposal.termDetails.cashAmount}`);
+    if (proposal.termDetails.resources) {
+      const resStr = Object.entries(proposal.termDetails.resources)
+        .map(([r, c]) => `${c}x ${r}`)
+        .join(', ');
+      parts.push(resStr);
+    }
+    if (proposal.termDetails.challengeName) parts.push(`Complete "${proposal.termDetails.challengeName}"`);
+    if (proposal.termDetails.customText) parts.push(proposal.termDetails.customText);
+    return parts.join(', ');
+  }, []);
+
+  // SUBSYSTEM C: Region Control Management
+  const executeRegionControlManagement = useCallback((playerId: 'player' | 'ai') => {
+    const logs: TurnTransitionLog[] = [];
+
+    if (gameSettings.negotiationModeEnabled) {
+      // In negotiation mode, just clean up completed proposals
+      const completedProposals = gameState.proposals.filter(p => p.status === 'completed');
+      completedProposals.forEach(p => {
+        if (Date.now() - (p.completedAt || 0) > 5000) { // Remove after 5 seconds
+          dispatch({ type: 'REMOVE_PROPOSAL', payload: p.id });
+        }
+      });
+    } else if (gameSettings.regionControlEnabled && playerId === 'ai') {
+      // AI evaluates deposit opportunities in bidding mode
+      const strategicRegions = selectAiStrategicRegions();
+
+      strategicRegions.forEach(region => {
+        const shouldDeposit = evaluateAiDepositDecision(region);
+        if (shouldDeposit > 0 && aiPlayer.money > AI_SAFETY_BUFFER + shouldDeposit) {
+          dispatch({
+            type: 'DEPOSIT_REGION',
+            payload: {
+              regionId: region,
+              playerId: 'ai',
+              amount: shouldDeposit
+            }
+          });
+
+          aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: -shouldDeposit });
+
+          logs.push({
+            id: `log_${Date.now()}_${Math.random()}`,
+            phase: 'region_management',
+            playerId: 'ai',
+            action: `Deposited $${shouldDeposit} to ${region}`,
+            reasoning: `Strategic investment to ${getRegionController(region) === 'ai' ? 'defend' : 'capture'} region`,
+            timestamp: Date.now(),
+            details: { region, amount: shouldDeposit }
+          });
+        }
+      });
+
+      // Evaluate cash-out opportunities
+      if (gameSettings.allowRegionCashOut) {
+        Object.keys(REGIONS).forEach(region => {
+          const controller = getRegionController(region);
+          if (controller === 'ai') {
+            const shouldCashOut = evaluateAiCashOutDecision(region);
+            if (shouldCashOut) {
+              const cashOutAmount = gameState.regionDeposits[region].ai;
+              const returnAmount = Math.floor(cashOutAmount * 0.5);
+
+              dispatch({ type: 'CASH_OUT_REGION', payload: { regionId: region, playerId: 'ai' } });
+              aiPlayerDispatch({ type: 'UPDATE_MONEY', payload: returnAmount });
+
+              logs.push({
+                id: `log_${Date.now()}_${Math.random()}`,
+                phase: 'region_management',
+                playerId: 'ai',
+                action: `Cashed out from ${region} for $${returnAmount}`,
+                reasoning: `Region no longer strategic, liquidated position for capital`,
+                timestamp: Date.now(),
+                details: { region, amount: returnAmount }
+              });
+            }
+          }
+        });
+      }
+    }
+
+    // Add logs to state
+    logs.forEach(log => {
+      dispatch({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
+    });
+  }, [gameSettings, gameState.regionDeposits, gameState.proposals, aiPlayer.money, dispatch, aiPlayerDispatch]);
+
+  // Helper: Select strategic regions for AI
+  const selectAiStrategicRegions = useCallback((): string[] => {
+    return Object.keys(REGIONS)
+      .sort((a, b) => calculateRegionStrategicValue(b) - calculateRegionStrategicValue(a))
+      .slice(0, 3); // Top 3 strategic regions
+  }, []);
+
+  // Helper: Evaluate how much AI should deposit to a region
+  const evaluateAiDepositDecision = useCallback((region: string): number => {
+    const deposits = gameState.regionDeposits[region];
+    const controller = getRegionController(region);
+    const regionValue = calculateRegionStrategicValue(region);
+
+    // If we control it, maybe add a defensive deposit
+    if (controller === 'ai') {
+      const playerDeposit = deposits.player;
+      const gap = deposits.ai - playerDeposit;
+      if (gap < 50 && Math.random() < 0.3) { // 30% chance to defend
+        return 25; // Add defensive buffer
+      }
+      return 0;
+    }
+
+    // If player controls it or nobody does
+    if (gameSettings.winCondition === 'most_regions') {
+      // More aggressive in region control mode
+      const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
+      if (requiredDeposit < regionValue * 0.5) { // Worth it if less than 50% of value
+        return requiredDeposit;
+      }
+    } else {
+      // Conservative in money mode
+      if (Math.random() < 0.2) { // 20% chance
+        const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
+        if (requiredDeposit < 100) { // Only if cheap
+          return requiredDeposit;
+        }
+      }
+    }
+
+    return 0;
+  }, [gameSettings.winCondition, gameState.regionDeposits]);
+
+  // Helper: Evaluate if AI should cash out from a region
+  const evaluateAiCashOutDecision = useCallback((region: string): boolean => {
+    // Cash out if:
+    // 1. In money mode and need quick cash
+    // 2. Region is low value
+    // 3. AI is behind in money
+
+    const regionValue = calculateRegionStrategicValue(region);
+    const lowValue = regionValue < 400;
+    const needsMoney = aiPlayer.money < AI_SAFETY_BUFFER * 2;
+    const moneyMode = gameSettings.winCondition === 'most_money';
+
+    return lowValue && needsMoney && moneyMode && Math.random() < 0.15; // 15% chance
+  }, [aiPlayer.money, gameSettings.winCondition]);
+
+  // Main function to execute all turn transition subsystems
+  const executeTurnTransitionPhase = useCallback((playerId: 'player' | 'ai') => {
+    if (gameSettings.skipTurnTransitionAnimations) {
+      // Execute all at once
+      executeNegotiationEvaluationPhase(playerId);
+      executeTaskCompletionPhase(playerId);
+      executeRegionControlManagement(playerId);
+    } else {
+      // Execute with visual feedback
+      dispatch({ type: 'SET_TURN_TRANSITION', payload: { isActive: true, currentPhase: 'negotiation', phaseProgress: 0 } });
+
+      setTimeout(() => {
+        executeNegotiationEvaluationPhase(playerId);
+        dispatch({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'tasks', phaseProgress: 33 } });
+
+        setTimeout(() => {
+          executeTaskCompletionPhase(playerId);
+          dispatch({ type: 'SET_TURN_TRANSITION', payload: { currentPhase: 'region_management', phaseProgress: 66 } });
+
+          setTimeout(() => {
+            executeRegionControlManagement(playerId);
+            dispatch({ type: 'SET_TURN_TRANSITION', payload: { isActive: false, currentPhase: null, phaseProgress: 100 } });
+          }, 300);
+        }, 300);
+      }, 300);
+    }
+  }, [gameSettings, executeNegotiationEvaluationPhase, executeTaskCompletionPhase, executeRegionControlManagement, dispatch]);
+
+  // =========================================
   // AI DECISION MAKING ENGINE
   // =========================================
 
@@ -3192,6 +3945,74 @@ function AustraliaGame() {
         }
       });
 
+      // V5.0: Evaluate resource market purchases
+      if (gameSettings.resourceMarketEnabled) {
+        // Check if AI needs resources for crafting
+        CRAFTING_RECIPES.forEach(recipe => {
+          const hasAllInputs = Object.entries(recipe.inputs).every(([resource, count]) => {
+            const available = aiState.inventory.filter(r => r === resource).length;
+            return available >= (count as number);
+          });
+
+          if (!hasAllInputs) {
+            // AI is missing resources for this recipe
+            Object.entries(recipe.inputs).forEach(([resource, count]) => {
+              const available = aiState.inventory.filter(r => r === resource).length;
+              const needed = (count as number) - available;
+              if (needed > 0) {
+                const marketPrice = getResourceMarketPrice(resource);
+                const totalCost = marketPrice * needed;
+                if (aiState.money > AI_SAFETY_BUFFER + totalCost) {
+                  const recipeValue = recipe.baseValue || 500;
+                  const profitPotential = recipeValue - totalCost;
+                  if (profitPotential > 0) {
+                    decisions.push({
+                      type: 'buy_market_resource',
+                      description: `Buy ${needed}x ${resource} from market for crafting`,
+                      data: { resource, quantity: needed, price: marketPrice },
+                      score: (profitPotential / totalCost) * 100 * profile.decisionQuality
+                    });
+                  }
+                }
+              }
+            });
+          }
+        });
+      }
+
+      // V5.0: Evaluate region deposits (only in bidding mode, not negotiation mode)
+      if (gameSettings.regionControlEnabled && !gameSettings.negotiationModeEnabled) {
+        const strategicRegions = Object.keys(REGIONS)
+          .filter(region => {
+            const regionValue = calculateRegionStrategicValue(region);
+            return regionValue > 300; // Only consider valuable regions
+          })
+          .slice(0, 3); // Top 3 regions
+
+        strategicRegions.forEach(region => {
+          const deposits = gameState.regionDeposits[region];
+          const currentController = getRegionController(region);
+          const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
+
+          if (currentController !== 'ai' && aiState.money > AI_SAFETY_BUFFER + requiredDeposit) {
+            const regionValue = calculateRegionStrategicValue(region);
+            const worthiness = regionValue / requiredDeposit;
+
+            // More aggressive in region control mode
+            const modeMultiplier = gameSettings.winCondition === 'most_regions' ? 2.0 : 0.5;
+
+            if (worthiness > 2.0) { // Only if region value is 2x+ the deposit cost
+              decisions.push({
+                type: 'deposit_region',
+                description: `Deposit $${requiredDeposit} to control ${REGIONS[region].name}`,
+                data: { region, amount: requiredDeposit },
+                score: worthiness * 50 * modeMultiplier * profile.decisionQuality
+              });
+            }
+          }
+        });
+      }
+
       // If we have good options, choose the best one
       if (decisions.length > 0) {
         decisions.sort((a, b) => b.score - a.score);
@@ -3378,6 +4199,31 @@ function AustraliaGame() {
             return false;
           }
           break;
+
+        case 'buy_market_resource': {
+          // V5.0: Validate market purchase
+          const resource = actionData.resource;
+          const quantity = actionData.quantity || 1;
+          const price = actionData.price || getResourceMarketPrice(resource);
+          const totalCost = price * quantity;
+
+          if (currentAi.money < totalCost) {
+            return false; // Can't afford
+          }
+          if (currentAi.inventory.length + quantity > MAX_INVENTORY) {
+            return false; // Not enough inventory space
+          }
+          break;
+        }
+
+        case 'deposit_region': {
+          // V5.0: Validate region deposit
+          const depositAmount = actionData.amount;
+          if (currentAi.money < depositAmount) {
+            return false; // Can't afford
+          }
+          break;
+        }
 
         case 'craft': {
           const recipeId = actionData.recipeId;
@@ -3788,6 +4634,70 @@ function AustraliaGame() {
         break;
       }
 
+      case 'buy_market_resource': {
+        // V5.0: Buy resources from the market
+        const resource = actionData.resource;
+        const quantity = actionData.quantity || 1;
+        const price = actionData.price || getResourceMarketPrice(resource);
+        const totalCost = price * quantity;
+
+        if (currentAi.money >= totalCost) {
+          // Check inventory space
+          if (currentAi.inventory.length + quantity <= MAX_INVENTORY) {
+            // Deduct money
+            updateAiPlayerState(prev => ({
+              ...prev,
+              money: deductMoney(prev.money, totalCost),
+              inventory: [...prev.inventory, ...Array(quantity).fill(resource)]
+            }));
+
+            addNotification(
+              `🤖 ${currentAi.name} bought ${quantity}x ${resource} from market for $${totalCost}`,
+              'ai',
+              false
+            );
+          } else {
+            addNotification(
+              `🤖 ${currentAi.name} couldn't buy ${resource} - inventory full`,
+              'ai',
+              false
+            );
+          }
+        }
+        break;
+      }
+
+      case 'deposit_region': {
+        // V5.0: Deposit money to control a region
+        const region = actionData.region;
+        const depositAmount = actionData.amount;
+
+        if (currentAi.money >= depositAmount) {
+          // Deduct money from AI
+          updateAiPlayerState(prev => ({
+            ...prev,
+            money: deductMoney(prev.money, depositAmount)
+          }));
+
+          // Add deposit to region
+          dispatchGameState({
+            type: 'DEPOSIT_REGION',
+            payload: {
+              regionId: region,
+              playerId: 'ai',
+              amount: depositAmount
+            }
+          });
+
+          addNotification(
+            `🤖 ${currentAi.name} deposited $${depositAmount} to control ${REGIONS[region].name}`,
+            'ai',
+            false
+          );
+        }
+        break;
+      }
+
       case 'think':
         addNotification(
           `🤖 ${currentAi.name} is thinking...`,
@@ -3899,6 +4809,9 @@ function AustraliaGame() {
 
     addNotification(`🤖 ${aiPlayerRef.current.name} ended their turn`, 'ai', true);
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+
+    // V5.0: Execute turn transition phase for AI
+    executeTurnTransitionPhase('ai');
 
     // In AI mode, advance the day after AI completes their turn
     // This happens BEFORE switching back to player
@@ -4065,7 +4978,26 @@ function AustraliaGame() {
         averageChallengeWager: 0,
         riskProfile: 'moderate'
       },
-      aiStrategyFocus: data.gameState.aiStrategyFocus || 'balanced'
+      aiStrategyFocus: data.gameState.aiStrategyFocus || 'balanced',
+      // V5.0 backward compatibility
+      regionDeposits: data.gameState.regionDeposits || {
+        QLD: { player: 0, ai: 0 },
+        NSW: { player: 0, ai: 0 },
+        VIC: { player: 0, ai: 0 },
+        TAS: { player: 0, ai: 0 },
+        SA: { player: 0, ai: 0 },
+        WA: { player: 0, ai: 0 },
+        NT: { player: 0, ai: 0 },
+        ACT: { player: 0, ai: 0 }
+      },
+      proposals: data.gameState.proposals || [],
+      turnTransition: data.gameState.turnTransition || {
+        isActive: false,
+        currentPhase: null,
+        phaseProgress: 0,
+        logs: []
+      },
+      notificationSettings: data.gameState.notificationSettings || { ...DEFAULT_NOTIFICATION_SETTINGS }
     };
 
     dispatchPlayer({ type: 'LOAD_STATE', payload: loadedPlayer });
@@ -4894,6 +5826,105 @@ function AustraliaGame() {
     }
   }, [player, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier, getUnderdogBonus, getWealthState]);
 
+  // V5.0: Buy resource from market
+  const buyResourceFromMarket = useCallback((resource: string, quantity: number = 1) => {
+    if (!gameSettings.resourceMarketEnabled || gameState.currentTurn !== 'player') return;
+
+    const pricePerUnit = getResourceMarketPrice(resource);
+    const totalCost = pricePerUnit * quantity;
+
+    if (player.money < totalCost) {
+      addNotification(`Not enough money. Need $${totalCost}`, 'error');
+      return;
+    }
+
+    if (player.inventory.length + quantity > MAX_INVENTORY) {
+      addNotification(`Not enough inventory space. Need ${quantity} slots.`, 'error');
+      return;
+    }
+
+    // Deduct money
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -totalCost });
+
+    // Add resources to inventory
+    const newResources = Array(quantity).fill(resource);
+    dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: newResources } });
+
+    addNotification(`Bought ${quantity}x ${resource} for $${totalCost}`, 'success', true);
+    incrementAction();
+  }, [gameSettings.resourceMarketEnabled, gameState.currentTurn, player.money, player.inventory.length, addNotification, incrementAction]);
+
+  // V5.0: Deposit money to control a region
+  const depositToRegion = useCallback((regionId: string, amount: number) => {
+    if (!gameSettings.regionControlEnabled || gameState.currentTurn !== 'player') return;
+
+    if (player.money < amount) {
+      addNotification(`Not enough money. Need $${amount}`, 'error');
+      return;
+    }
+
+    if (gameSettings.negotiationModeEnabled) {
+      addNotification(`Cannot deposit in Negotiation Mode. Use proposals instead.`, 'warning');
+      return;
+    }
+
+    // Deduct money
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -amount });
+
+    // Add deposit to region
+    dispatch({
+      type: 'DEPOSIT_REGION',
+      payload: {
+        regionId: regionId,
+        playerId: 'player',
+        amount: amount
+      }
+    });
+
+    const controller = getRegionController(regionId);
+    if (controller === 'player') {
+      addNotification(`Deposited $${amount} to ${REGIONS[regionId].name}. You now control this region!`, 'success', true);
+    } else {
+      addNotification(`Deposited $${amount} to ${REGIONS[regionId].name}. Defending your position.`, 'info', true);
+    }
+
+    incrementAction();
+  }, [gameSettings.regionControlEnabled, gameSettings.negotiationModeEnabled, gameState.currentTurn, player.money, addNotification, incrementAction, getRegionController, dispatch]);
+
+  // V5.0: Cash out from a region
+  const cashOutFromRegion = useCallback((regionId: string) => {
+    if (!gameSettings.regionControlEnabled || !gameSettings.allowRegionCashOut || gameState.currentTurn !== 'player') return;
+
+    const controller = getRegionController(regionId);
+    if (controller !== 'player') {
+      addNotification(`You don't control ${REGIONS[regionId].name}`, 'error');
+      return;
+    }
+
+    const depositedAmount = gameState.regionDeposits[regionId]?.player || 0;
+    if (depositedAmount === 0) {
+      addNotification(`No deposits to cash out from ${REGIONS[regionId].name}`, 'warning');
+      return;
+    }
+
+    const returnAmount = Math.floor(depositedAmount * 0.5); // 50% return
+
+    // Cash out
+    dispatch({
+      type: 'CASH_OUT_REGION',
+      payload: {
+        regionId: regionId,
+        playerId: 'player'
+      }
+    });
+
+    // Return money
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: returnAmount });
+
+    addNotification(`Cashed out from ${REGIONS[regionId].name} for $${returnAmount} (50% of $${depositedAmount})`, 'info', true);
+    incrementAction();
+  }, [gameSettings.regionControlEnabled, gameSettings.allowRegionCashOut, gameState.currentTurn, gameState.regionDeposits, addNotification, incrementAction, getRegionController, dispatch]);
+
   const buyInvestment = useCallback((regionCode: string) => {
     if (!gameSettings.investmentsEnabled || gameState.currentTurn !== 'player') return;
     const investment = REGIONAL_INVESTMENTS[regionCode];
@@ -5108,9 +6139,12 @@ function AustraliaGame() {
         newPrices[resource] = Math.max(50, Math.min(250, Math.floor(newPrice))); // Cap at 50-250
       });
       dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: newPrices });
-      
+
+      // V5.0: Execute turn transition phase for player
+      executeTurnTransitionPhase('player');
+
       addNotification('Your turn ended', 'info');
-      
+
       if (gameState.selectedMode === 'ai') {
         // Switch to AI turn
         dispatchGameState({ type: 'SET_TURN', payload: 'ai' });
@@ -5118,7 +6152,7 @@ function AustraliaGame() {
         // Single player mode - advance day
         advanceDay();
       }
-      
+
       updatePersonalRecords('money', player.money);
     };
 
