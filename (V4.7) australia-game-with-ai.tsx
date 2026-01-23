@@ -2030,7 +2030,14 @@ function AustraliaGame() {
     inventoryFilter: 'all' as 'all' | 'luxury' | 'food' | 'industrial' | 'agricultural' | 'energy' | 'financial' | 'service',
     showDoubleOrNothing: false,
     // Advanced Loan System UI
-    showAdvancedLoans: false
+    showAdvancedLoans: false,
+    // V5.0 UI State
+    showResourceMarket: false,
+    showRegionControl: false,
+    showProposals: false,
+    showNotificationSettings: false,
+    selectedRegionForProposal: null as string | null,
+    showTurnTransitionLogs: false
   });
 
   // Special ability state tracking
@@ -7476,6 +7483,122 @@ function AustraliaGame() {
                   )}
                 </div>
               </div>
+
+              {/* V5.0 Features */}
+              <div className={`${themeStyles.border} border rounded-lg p-4 bg-purple-900 bg-opacity-10`}>
+                <h4 className="text-lg font-bold mb-4">🚀 V5.0 Features (EXPERIMENTAL)</h4>
+                <div className="space-y-4">
+                  {/* Resource Market */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Resource Market</div>
+                      <div className="text-sm opacity-75">Buy resources from any region at fixed prices</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, resourceMarketEnabled: !prev.resourceMarketEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.resourceMarketEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.resourceMarketEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Region Control System */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Region Control System</div>
+                      <div className="text-sm opacity-75">Deposit money to control regions competitively</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, regionControlEnabled: !prev.regionControlEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.regionControlEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.regionControlEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Allow Region Cash Out (dependent on Region Control) */}
+                  {gameSettings.regionControlEnabled && (
+                    <div className="flex items-center justify-between ml-6">
+                      <div>
+                        <div className="font-semibold">Allow Cash Out</div>
+                        <div className="text-sm opacity-75">Retrieve 50% of deposits from regions</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, allowRegionCashOut: !prev.allowRegionCashOut }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.allowRegionCashOut ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.allowRegionCashOut ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Negotiation Mode */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Negotiation Mode</div>
+                      <div className="text-sm opacity-75">Proposal-based diplomacy with AI</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, negotiationModeEnabled: !prev.negotiationModeEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.negotiationModeEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.negotiationModeEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Win Condition */}
+                  <div>
+                    <div className="font-semibold mb-2">Win Condition</div>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="winCondition"
+                          checked={gameSettings.winCondition === 'most_money'}
+                          onChange={() => setGameSettings(prev => ({ ...prev, winCondition: 'most_money' }))}
+                          className="form-radio"
+                        />
+                        <div>
+                          <div className="font-semibold">💰 Most Money</div>
+                          <div className="text-sm opacity-75">Win by accumulating the most wealth</div>
+                        </div>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="winCondition"
+                          checked={gameSettings.winCondition === 'most_regions'}
+                          onChange={() => setGameSettings(prev => ({ ...prev, winCondition: 'most_regions' }))}
+                          className="form-radio"
+                        />
+                        <div>
+                          <div className="font-semibold">🏆 Most Controlled Regions</div>
+                          <div className="text-sm opacity-75">Win by controlling the most regions (requires Region Control)</div>
+                        </div>
+                      </label>
+                    </div>
+                    {gameSettings.winCondition === 'most_regions' && !gameSettings.regionControlEnabled && (
+                      <div className="mt-2 text-sm text-yellow-400 bg-yellow-900 bg-opacity-20 p-2 rounded">
+                        ⚠️ Enable "Region Control System" above to use this win condition
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Skip Turn Transition Animations */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Skip Turn Transition Animations</div>
+                      <div className="text-sm opacity-75">Instant turn transitions (still shows logs)</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, skipTurnTransitionAnimations: !prev.skipTurnTransitionAnimations }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.skipTurnTransitionAnimations ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.skipTurnTransitionAnimations ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -8946,6 +9069,51 @@ function AustraliaGame() {
             </button>
           )}
 
+          {/* V5.0: Resource Market Button */}
+          {gameSettings.resourceMarketEnabled && (
+            <button
+              onClick={() => updateUiState({ showResourceMarket: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>🏪</span>
+              <span>Resource Market</span>
+            </button>
+          )}
+
+          {/* V5.0: Proposals Button (Negotiation Mode) */}
+          {gameSettings.negotiationModeEnabled && (
+            <button
+              onClick={() => updateUiState({ showProposals: true })}
+              disabled={!isPlayerTurn}
+              className={actionButtonClass}
+            >
+              <span>🤝</span>
+              <span>Proposals</span>
+              {gameState.proposals.filter(p => p.to === 'player' && p.status === 'pending').length > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 ml-1">
+                  {gameState.proposals.filter(p => p.to === 'player' && p.status === 'pending').length}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* V5.0: Turn Transition Logs Button */}
+          {(gameSettings.regionControlEnabled || gameSettings.negotiationModeEnabled) && (
+            <button
+              onClick={() => updateUiState({ showTurnTransitionLogs: true })}
+              className={actionButtonClass}
+            >
+              <span>📊</span>
+              <span>AI Logs</span>
+              {gameState.turnTransition.logs.length > 0 && (
+                <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-0.5 ml-1">
+                  {gameState.turnTransition.logs.length}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Special Ability Button */}
           {player.character.specialAbility && (
             <button
@@ -9116,10 +9284,21 @@ function AustraliaGame() {
                   const isAiHere = gameState.selectedMode === 'ai' && aiPlayer.currentRegion === code;
                   const isPlayerVisited = player.visitedRegions.includes(code);
                   const isAdjacent = adjacentRegions.includes(code);
-                  
+
                   const hasEvent = gameState.activeEvents.some(e => e.region === code);
                   const travelCost = !isPlayerHere ? calculateTravelCost(player.currentRegion, code) : 0;
                   const canAfford = player.money >= travelCost;
+
+                  // V5.0: Region control visualization
+                  const regionController = gameSettings.regionControlEnabled ? getRegionController(code) : null;
+                  const playerDeposit = gameState.regionDeposits[code]?.player || 0;
+                  const aiDeposit = gameState.regionDeposits[code]?.ai || 0;
+                  const totalDeposits = playerDeposit + aiDeposit;
+
+                  // Determine border color based on control
+                  let borderColorClass = 'border-gray-600';
+                  if (regionController === 'player') borderColorClass = 'border-blue-400 ring-2 ring-blue-400';
+                  else if (regionController === 'ai') borderColorClass = 'border-red-400 ring-2 ring-red-400';
 
                   return (
                     <div
@@ -9148,10 +9327,20 @@ function AustraliaGame() {
                             : isPlayerVisited
                             ? 'border-blue-500 bg-blue-500 text-white'
                             : 'border-gray-600 bg-gray-700 text-gray-400'
-                        } ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''}`}
+                        } ${gameSettings.regionControlEnabled && regionController ? borderColorClass : ''} ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''}`}
                       >
                         {code}
                       </div>
+                      {/* V5.0: Region control indicator */}
+                      {gameSettings.regionControlEnabled && totalDeposits > 0 && !isPlayerHere && !isAiHere && (
+                        <div className={`absolute -bottom-1 -right-1 text-xs font-bold px-1 py-0.5 rounded ${
+                          regionController === 'player' ? 'bg-blue-500 text-white' :
+                          regionController === 'ai' ? 'bg-red-500 text-white' :
+                          'bg-gray-600 text-white'
+                        }`}>
+                          ${totalDeposits}
+                        </div>
+                      )}
                       {isPlayerHere && (
                         <div className="absolute top-full mt-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-green-500 text-white px-2 py-1 rounded font-bold">
                           You
@@ -9186,6 +9375,28 @@ function AustraliaGame() {
                                 ⚡ {gameState.activeEvents.find(e => e.region === code)?.name}
                               </div>
                             )}
+                            {/* V5.0: Region control info */}
+                            {gameSettings.regionControlEnabled && (
+                              <div className="mt-1 pt-1 border-t border-gray-600">
+                                {regionController ? (
+                                  <div className={regionController === 'player' ? 'text-blue-400' : 'text-red-400'}>
+                                    Controlled by: {regionController === 'player' ? 'You' : 'AI'}
+                                  </div>
+                                ) : (
+                                  <div className="opacity-75">Uncontrolled</div>
+                                )}
+                                {totalDeposits > 0 && (
+                                  <div className="opacity-75">
+                                    You: ${playerDeposit} | AI: ${aiDeposit}
+                                  </div>
+                                )}
+                                {!gameSettings.negotiationModeEnabled && (
+                                  <div className="text-yellow-400 mt-1">
+                                    Deposit ${Math.max(playerDeposit, aiDeposit) + 1}+ to control
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -9217,7 +9428,42 @@ function AustraliaGame() {
                   <div className="w-4 h-4 bg-gray-700 rounded-full border-2 border-yellow-400"></div>
                   <span>Event</span>
                 </div>
+                {/* V5.0: Region Control Legend */}
+                {gameSettings.regionControlEnabled && (
+                  <>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 bg-gray-700 rounded-full border-2 border-blue-400 ring-1 ring-blue-400"></div>
+                      <span>You Control</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 bg-gray-700 rounded-full border-2 border-red-400 ring-1 ring-red-400"></div>
+                      <span>AI Controls</span>
+                    </div>
+                  </>
+                )}
               </div>
+
+              {/* V5.0: Region Control Stats */}
+              {gameSettings.regionControlEnabled && (
+                <div className="mt-4 p-3 bg-black bg-opacity-30 rounded-lg">
+                  <div className="text-sm font-bold mb-2">Region Control Status:</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-blue-400">You:</span> {Object.keys(REGIONS).filter(r => getRegionController(r) === 'player').length}/8 regions
+                      (${Object.values(gameState.regionDeposits).reduce((sum, d) => sum + (d.player || 0), 0)} invested)
+                    </div>
+                    <div>
+                      <span className="text-red-400">AI:</span> {Object.keys(REGIONS).filter(r => getRegionController(r) === 'ai').length}/8 regions
+                      (${Object.values(gameState.regionDeposits).reduce((sum, d) => sum + (d.ai || 0), 0)} invested)
+                    </div>
+                  </div>
+                  {gameSettings.winCondition === 'most_regions' && (
+                    <div className="text-xs text-yellow-400 mt-2">
+                      🏆 Win Condition: Control the most regions!
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           
@@ -9279,7 +9525,8 @@ function AustraliaGame() {
         {renderEndGameModesModal()}
         {renderConfirmationDialog()}
         {renderNotificationHistory()}
-        
+        {renderNotificationSettings()}
+
         {/* Travel Modal */}
         {uiState.showTravelModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -10151,6 +10398,323 @@ function AustraliaGame() {
             </div>
           </div>
         )}
+
+        {/* V5.0: Resource Market Modal */}
+        {uiState.showResourceMarket && gameSettings.resourceMarketEnabled && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => updateUiState({ showResourceMarket: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <h3 className="text-xl font-bold">🏪 Resource Market</h3>
+                <button
+                  onClick={() => updateUiState({ showResourceMarket: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={`p-6 max-h-[70vh] overflow-y-auto ${themeStyles.scrollbar}`}>
+                <p className="mb-4 opacity-75">Buy resources directly from the market. Available from anywhere!</p>
+
+                {/* Group resources by category */}
+                {['Luxury', 'Industrial/Energy', 'Food/Agricultural', 'Service/Financial'].map(category => {
+                  let resources: string[] = [];
+                  let price = 0;
+
+                  if (category === 'Luxury') {
+                    resources = ['Coral', 'Opals', 'Wine', 'Gold', 'Crocodile Leather', 'Aboriginal Art'];
+                    price = 150;
+                  } else if (category === 'Industrial/Energy') {
+                    resources = ['Iron Ore', 'Coal', 'Uranium', 'Timber', 'Hydropower', 'Natural Gas'];
+                    price = 120;
+                  } else if (category === 'Food/Agricultural') {
+                    resources = ['Tropical Fruit', 'Sugar Cane', 'Dairy', 'Wool', 'Wheat', 'Seafood'];
+                    price = 100;
+                  } else {
+                    resources = ['Government Grants', 'Research Funds', 'Education'];
+                    price = 130;
+                  }
+
+                  return (
+                    <div key={category} className="mb-6">
+                      <h4 className="font-bold text-lg mb-3">{category} (${price} each)</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {resources.map(resource => {
+                          const marketPrice = getResourceMarketPrice(resource);
+                          const inInventory = player.inventory.filter(r => r === resource).length;
+                          const canAfford = player.money >= marketPrice;
+                          const hasSpace = player.inventory.length < MAX_INVENTORY;
+
+                          return (
+                            <div key={resource} className={`${themeStyles.border} border rounded-lg p-3`}>
+                              <div className="font-bold text-sm mb-1">{resource}</div>
+                              <div className="text-xs opacity-75 mb-2">
+                                Owned: {inInventory} | Price: ${marketPrice}
+                              </div>
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => {
+                                    buyResourceFromMarket(resource, 1);
+                                  }}
+                                  disabled={!canAfford || !hasSpace || !isPlayerTurn}
+                                  className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs flex-1 disabled:opacity-50`}
+                                  title={!canAfford ? 'Not enough money' : !hasSpace ? 'Inventory full' : !isPlayerTurn ? 'Not your turn' : `Buy 1x ${resource}`}
+                                >
+                                  Buy 1
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const qty = Math.min(3, Math.floor(player.money / marketPrice), MAX_INVENTORY - player.inventory.length);
+                                    if (qty > 0) buyResourceFromMarket(resource, qty);
+                                  }}
+                                  disabled={!canAfford || !hasSpace || !isPlayerTurn || player.money < marketPrice * 3}
+                                  className={`${themeStyles.accent} text-white px-2 py-1 rounded text-xs disabled:opacity-50`}
+                                  title={`Buy up to 3x ${resource}`}
+                                >
+                                  x3
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <div className="text-sm opacity-75 mb-3">
+                  💰 Your Money: ${player.money} | 🎒 Inventory: {player.inventory.length}/{MAX_INVENTORY}
+                </div>
+                <button
+                  onClick={() => updateUiState({ showResourceMarket: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close Market
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* V5.0: Proposals Modal */}
+        {uiState.showProposals && gameSettings.negotiationModeEnabled && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => updateUiState({ showProposals: false, selectedRegionForProposal: null })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <h3 className="text-xl font-bold">🤝 Proposals & Negotiations</h3>
+                <button
+                  onClick={() => updateUiState({ showProposals: false, selectedRegionForProposal: null })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={`flex-1 overflow-y-auto p-6 ${themeStyles.scrollbar}`}>
+                {/* Pending Proposals (for player to respond) */}
+                <div className="mb-6">
+                  <h4 className="font-bold text-lg mb-3">📬 Pending Proposals (Respond)</h4>
+                  {gameState.proposals.filter(p => p.to === 'player' && p.status === 'pending').length === 0 ? (
+                    <p className="opacity-75 text-sm">No pending proposals</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {gameState.proposals.filter(p => p.to === 'player' && p.status === 'pending').map(proposal => (
+                        <div key={proposal.id} className={`${themeStyles.border} border rounded-lg p-4`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="font-bold">🤖 AI proposes: Control of {REGIONS[proposal.region]?.name}</div>
+                              <div className="text-sm opacity-75">
+                                Terms: {getProposalRequirementsSummary(proposal)}
+                              </div>
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => {
+                                  dispatchGameState({ type: 'UPDATE_PROPOSAL', payload: { id: proposal.id, updates: { status: 'accepted', acceptedAt: Date.now() } } });
+                                  addNotification(`Accepted AI's proposal for ${REGIONS[proposal.region]?.name}`, 'success', true);
+                                }}
+                                className={`${themeStyles.success} text-white px-3 py-1 rounded text-sm`}
+                              >
+                                ✓ Accept
+                              </button>
+                              <button
+                                onClick={() => {
+                                  dispatchGameState({ type: 'UPDATE_PROPOSAL', payload: { id: proposal.id, updates: { status: 'declined' } } });
+                                  addNotification(`Declined proposal for ${REGIONS[proposal.region]?.name}`, 'info');
+                                }}
+                                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm`}
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Proposals (accepted, awaiting completion) */}
+                <div className="mb-6">
+                  <h4 className="font-bold text-lg mb-3">⏳ Active Proposals (In Progress)</h4>
+                  {gameState.proposals.filter(p => p.status === 'accepted').length === 0 ? (
+                    <p className="opacity-75 text-sm">No active proposals</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {gameState.proposals.filter(p => p.status === 'accepted').map(proposal => {
+                                                const canComplete = checkProposalRequirements(proposal, proposal.from);
+                        return (
+                          <div key={proposal.id} className={`${themeStyles.border} border rounded-lg p-4`}>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <div className="font-bold">
+                                  {proposal.from === 'player' ? '🧑' : '🤖'} {proposal.from === 'player' ? 'You' : 'AI'} → {REGIONS[proposal.region]?.name}
+                                </div>
+                                <div className="text-sm opacity-75">
+                                  Requirements: {getProposalRequirementsSummary(proposal)}
+                                </div>
+                                {!canComplete && (
+                                  <div className="text-xs text-yellow-400 mt-1">
+                                    ⚠️ Not yet fulfilled (will auto-complete when requirements are met)
+                                  </div>
+                                )}
+                                {canComplete && (
+                                  <div className="text-xs text-green-400 mt-1">
+                                    ✓ Ready to complete (will complete next turn transition)
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  dispatchGameState({ type: 'UPDATE_PROPOSAL', payload: { id: proposal.id, updates: { status: 'cancelled' } } });
+                                  addNotification(`Cancelled proposal for ${REGIONS[proposal.region]?.name}`, 'info');
+                                }}
+                                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm`}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Completed/Declined History */}
+                <div>
+                  <h4 className="font-bold text-lg mb-3">📋 Recent History</h4>
+                  {gameState.proposals.filter(p => p.status === 'completed' || p.status === 'declined').length === 0 ? (
+                    <p className="opacity-75 text-sm">No history yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {gameState.proposals.filter(p => p.status === 'completed' || p.status === 'declined').slice(-5).reverse().map(proposal => (
+                        <div key={proposal.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                          <div className="flex justify-between">
+                            <span>
+                              {proposal.from === 'player' ? '🧑' : '🤖'} → {REGIONS[proposal.region]?.name}
+                            </span>
+                            <span className={proposal.status === 'completed' ? 'text-green-400' : 'text-red-400'}>
+                              {proposal.status === 'completed' ? '✓ Completed' : '✕ Declined'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+                <p className="text-xs opacity-75 mb-3">
+                  💡 Tip: Proposals auto-complete during turn transitions when requirements are met
+                </p>
+                <button
+                  onClick={() => updateUiState({ showProposals: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* V5.0: Turn Transition Logs Modal */}
+        {uiState.showTurnTransitionLogs && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => updateUiState({ showTurnTransitionLogs: false })}
+          >
+            <div
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+                <h3 className="text-xl font-bold">📊 Turn Transition Logs</h3>
+                <button
+                  onClick={() => updateUiState({ showTurnTransitionLogs: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={`flex-1 overflow-y-auto p-6 ${themeStyles.scrollbar}`}>
+                {gameState.turnTransition.logs.length === 0 ? (
+                  <p className="opacity-75 text-center">No logs yet. Logs are created during turn transitions.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {gameState.turnTransition.logs.slice().reverse().map(log => (
+                      <div key={log.id} className={`${themeStyles.border} border rounded-lg p-4`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-bold">
+                            {log.playerId === 'player' ? '🧑' : '🤖'} {log.phase === 'negotiation' ? '🤝' : log.phase === 'tasks' ? '✓' : '🏛️'} {log.action}
+                          </div>
+                          <span className="text-xs opacity-75">
+                            {new Date(log.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="text-sm opacity-75">{log.reasoning}</div>
+                        {log.details && (
+                          <details className="text-xs opacity-50 mt-2">
+                            <summary className="cursor-pointer">View details</summary>
+                            <pre className="mt-2 p-2 bg-black bg-opacity-30 rounded overflow-x-auto">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border} flex space-x-3`}>
+                <button
+                  onClick={() => dispatchGameState({ type: 'CLEAR_TURN_TRANSITION_LOGS' })}
+                  className={`${themeStyles.buttonSecondary} px-6 py-3 rounded-lg flex-1`}
+                >
+                  Clear Logs
+                </button>
+                <button
+                  onClick={() => updateUiState({ showTurnTransitionLogs: false })}
+                  className={`${themeStyles.button} text-white px-6 py-3 rounded-lg flex-1 font-bold`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -10295,12 +10859,21 @@ function AustraliaGame() {
           <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-2xl font-bold">📜 Notification History</h3>
-              <button
-                onClick={() => updateUiState({ showNotifications: false })}
-                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
-              >
-                ✕
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => updateUiState({ showNotificationSettings: true, showNotifications: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                  title="Notification Settings"
+                >
+                  ⚙️
+                </button>
+                <button
+                  onClick={() => updateUiState({ showNotifications: false })}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Filters */}
@@ -10391,6 +10964,316 @@ function AustraliaGame() {
           {/* Fixed Footer */}
           <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
             <button onClick={() => updateUiState({ showNotifications: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Notification Settings Modal
+  const renderNotificationSettings = () => {
+    if (!uiState.showNotificationSettings) return null;
+
+    const updateNotificationSetting = (key: string, value: any) => {
+      dispatchGameState({
+        type: 'UPDATE_NOTIFICATION_SETTINGS',
+        payload: { [key]: value }
+      });
+    };
+
+    const notificationTypes = [
+      { key: 'ai_action', label: 'AI Actions', icon: '🤖' },
+      { key: 'resource', label: 'Resources', icon: '💎' },
+      { key: 'region_control', label: 'Region Control', icon: '🏛️' },
+      { key: 'proposal', label: 'Proposals', icon: '🤝' },
+      { key: 'task_completion', label: 'Tasks', icon: '✅' },
+      { key: 'challenge', label: 'Challenges', icon: '⚔️' },
+      { key: 'level_up', label: 'Level Up', icon: '⭐' },
+      { key: 'system', label: 'System', icon: '⚙️' }
+    ];
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
+        onClick={() => updateUiState({ showNotificationSettings: false })}
+      >
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full h-[90vh] flex flex-col`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fixed Header */}
+          <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-bold">⚙️ Notification Settings</h3>
+              <button
+                onClick={() => updateUiState({ showNotificationSettings: false })}
+                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Content */}
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-6">
+
+              {/* Display Settings */}
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">🎨 Display Settings</h4>
+                <div className="space-y-4">
+
+                  {/* Size */}
+                  <div>
+                    <label className="block font-semibold mb-2">Size</label>
+                    <div className="flex space-x-2">
+                      {['small', 'medium', 'large', 'custom'].map(size => (
+                        <button
+                          key={size}
+                          onClick={() => updateNotificationSetting('size', size)}
+                          className={`px-4 py-2 rounded font-semibold ${
+                            gameState.notificationSettings.size === size
+                              ? themeStyles.success
+                              : themeStyles.buttonSecondary
+                          } text-white`}
+                        >
+                          {size.charAt(0).toUpperCase() + size.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                    {gameState.notificationSettings.size === 'custom' && (
+                      <div className="mt-3">
+                        <label className="block text-sm mb-2">Custom Size: {gameState.notificationSettings.customSize}%</label>
+                        <input
+                          type="range"
+                          min="50"
+                          max="200"
+                          value={gameState.notificationSettings.customSize}
+                          onChange={(e) => updateNotificationSetting('customSize', parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Position */}
+                  <div>
+                    <label className="block font-semibold mb-2">Position</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        ['top-left', '↖️ Top Left'],
+                        ['top-center', '⬆️ Top Center'],
+                        ['top-right', '↗️ Top Right'],
+                        ['bottom-left', '↙️ Bottom Left'],
+                        ['bottom-center', '⬇️ Bottom Center'],
+                        ['bottom-right', '↘️ Bottom Right']
+                      ].map(([pos, label]) => (
+                        <button
+                          key={pos}
+                          onClick={() => updateNotificationSetting('position', pos)}
+                          className={`px-3 py-2 rounded text-sm ${
+                            gameState.notificationSettings.position === pos
+                              ? themeStyles.success
+                              : themeStyles.buttonSecondary
+                          } text-white`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Animation */}
+                  <div>
+                    <label className="block font-semibold mb-2">Animation</label>
+                    <div className="flex space-x-2">
+                      {['slide', 'fade', 'none'].map(anim => (
+                        <button
+                          key={anim}
+                          onClick={() => updateNotificationSetting('animation', anim)}
+                          className={`px-4 py-2 rounded font-semibold ${
+                            gameState.notificationSettings.animation === anim
+                              ? themeStyles.success
+                              : themeStyles.buttonSecondary
+                          } text-white`}
+                        >
+                          {anim.charAt(0).toUpperCase() + anim.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Opacity */}
+                  <div>
+                    <label className="block font-semibold mb-2">Opacity: {gameState.notificationSettings.opacity}%</label>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      value={gameState.notificationSettings.opacity}
+                      onChange={(e) => updateNotificationSetting('opacity', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Max Visible */}
+                  <div>
+                    <label className="block font-semibold mb-2">Max Visible Notifications: {gameState.notificationSettings.maxVisible}</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={gameState.notificationSettings.maxVisible}
+                      onChange={(e) => updateNotificationSetting('maxVisible', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Stack Order */}
+                  <div>
+                    <label className="block font-semibold mb-2">Stack Order</label>
+                    <div className="flex space-x-2">
+                      {[
+                        ['newest-first', 'Newest First'],
+                        ['oldest-first', 'Oldest First']
+                      ].map(([order, label]) => (
+                        <button
+                          key={order}
+                          onClick={() => updateNotificationSetting('stackOrder', order)}
+                          className={`px-4 py-2 rounded font-semibold ${
+                            gameState.notificationSettings.stackOrder === order
+                              ? themeStyles.success
+                              : themeStyles.buttonSecondary
+                          } text-white`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sound */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Sound Effects</div>
+                      <div className="text-sm opacity-75">Play sound when notification appears</div>
+                    </div>
+                    <button
+                      onClick={() => updateNotificationSetting('soundEnabled', !gameState.notificationSettings.soundEnabled)}
+                      className={`px-4 py-2 rounded font-semibold ${
+                        gameState.notificationSettings.soundEnabled
+                          ? themeStyles.success
+                          : themeStyles.buttonSecondary
+                      } text-white`}
+                    >
+                      {gameState.notificationSettings.soundEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Type Filters & Auto-Dismiss */}
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">🔔 Notification Types</h4>
+                <div className="text-sm opacity-75 mb-4">
+                  Configure which notification types to show and their auto-dismiss timers (0 = never auto-dismiss)
+                </div>
+                <div className="space-y-3">
+                  {notificationTypes.map(({ key, label, icon }) => (
+                    <div key={key} className={`flex items-center justify-between p-3 rounded ${themeStyles.border} border`}>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xl">{icon}</span>
+                        <div>
+                          <div className="font-semibold">{label}</div>
+                          <div className="text-xs opacity-75">
+                            Auto-dismiss: {gameState.notificationSettings.autoDismiss[key]}s
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          value={gameState.notificationSettings.autoDismiss[key]}
+                          onChange={(e) => updateNotificationSetting('autoDismiss', {
+                            ...gameState.notificationSettings.autoDismiss,
+                            [key]: parseInt(e.target.value)
+                          })}
+                          className="w-24"
+                        />
+                        <button
+                          onClick={() => updateNotificationSetting('typeFilters', {
+                            ...gameState.notificationSettings.typeFilters,
+                            [key]: !gameState.notificationSettings.typeFilters[key]
+                          })}
+                          className={`px-3 py-1 rounded text-sm font-semibold ${
+                            gameState.notificationSettings.typeFilters[key]
+                              ? themeStyles.success
+                              : themeStyles.buttonSecondary
+                          } text-white`}
+                        >
+                          {gameState.notificationSettings.typeFilters[key] ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Keyboard Shortcuts */}
+              <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                <h4 className="text-lg font-bold mb-4">⌨️ Keyboard Shortcuts</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">Clear All Notifications</div>
+                      <div className="text-sm opacity-75">Press {gameState.notificationSettings.keyboardShortcut} to clear all</div>
+                    </div>
+                    <div className={`px-3 py-2 rounded ${themeStyles.buttonSecondary} font-mono text-sm`}>
+                      {gameState.notificationSettings.keyboardShortcut}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-2">Confirm Clear Threshold: {gameState.notificationSettings.confirmClearThreshold}</label>
+                    <div className="text-sm opacity-75 mb-2">Show confirmation dialog when clearing more than this many notifications</div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="20"
+                      value={gameState.notificationSettings.confirmClearThreshold}
+                      onChange={(e) => updateNotificationSetting('confirmClearThreshold', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Reset to Defaults */}
+              <div className={`${themeStyles.border} border rounded-lg p-4 bg-red-900 bg-opacity-10`}>
+                <h4 className="text-lg font-bold mb-2">🔄 Reset Settings</h4>
+                <p className="text-sm opacity-75 mb-3">Restore all notification settings to their default values</p>
+                <button
+                  onClick={() => {
+                    if (confirm('Reset all notification settings to defaults?')) {
+                      dispatchGameState({
+                        type: 'UPDATE_NOTIFICATION_SETTINGS',
+                        payload: { ...DEFAULT_NOTIFICATION_SETTINGS }
+                      });
+                    }
+                  }}
+                  className={`${themeStyles.error} text-white px-4 py-2 rounded w-full font-semibold`}
+                >
+                  Reset to Defaults
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Fixed Footer */}
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+            <button onClick={() => updateUiState({ showNotificationSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
       </div>
