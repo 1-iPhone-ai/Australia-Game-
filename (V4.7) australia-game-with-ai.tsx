@@ -3050,6 +3050,64 @@ function AustraliaGame() {
     return parts.join(', ');
   }, []);
 
+  // Helper: Select strategic regions for AI
+  const selectAiStrategicRegions = useCallback((): string[] => {
+    return Object.keys(REGIONS)
+      .sort((a, b) => calculateRegionStrategicValue(b) - calculateRegionStrategicValue(a))
+      .slice(0, 3); // Top 3 strategic regions
+  }, []);
+
+  // Helper: Evaluate how much AI should deposit to a region
+  const evaluateAiDepositDecision = useCallback((region: string): number => {
+    const deposits = gameState.regionDeposits[region];
+    const controller = getRegionController(region);
+    const regionValue = calculateRegionStrategicValue(region);
+
+    // If we control it, maybe add a defensive deposit
+    if (controller === 'ai') {
+      const playerDeposit = deposits.player;
+      const gap = deposits.ai - playerDeposit;
+      if (gap < 50 && Math.random() < 0.3) { // 30% chance to defend
+        return 25; // Add defensive buffer
+      }
+      return 0;
+    }
+
+    // If player controls it or nobody does
+    if (gameSettings.winCondition === 'most_regions') {
+      // More aggressive in region control mode
+      const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
+      if (requiredDeposit < regionValue * 0.5) { // Worth it if less than 50% of value
+        return requiredDeposit;
+      }
+    } else {
+      // Conservative in money mode
+      if (Math.random() < 0.2) { // 20% chance
+        const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
+        if (requiredDeposit < 100) { // Only if cheap
+          return requiredDeposit;
+        }
+      }
+    }
+
+    return 0;
+  }, [gameSettings.winCondition, gameState.regionDeposits]);
+
+  // Helper: Evaluate if AI should cash out from a region
+  const evaluateAiCashOutDecision = useCallback((region: string): boolean => {
+    // Cash out if:
+    // 1. In money mode and need quick cash
+    // 2. Region is low value
+    // 3. AI is behind in money
+
+    const regionValue = calculateRegionStrategicValue(region);
+    const lowValue = regionValue < 400;
+    const needsMoney = aiPlayer.money < AI_SAFETY_BUFFER * 2;
+    const moneyMode = gameSettings.winCondition === 'most_money';
+
+    return lowValue && needsMoney && moneyMode && Math.random() < 0.15; // 15% chance
+  }, [aiPlayer.money, gameSettings.winCondition]);
+
   // SUBSYSTEM C: Region Control Management
   const executeRegionControlManagement = useCallback((playerId: 'player' | 'ai') => {
     const logs: TurnTransitionLog[] = [];
@@ -3131,64 +3189,6 @@ function AustraliaGame() {
       dispatchGameState({ type: 'ADD_TURN_TRANSITION_LOG', payload: log });
     });
   }, [gameSettings, gameState.regionDeposits, gameState.proposals, aiPlayer.money, dispatchGameState, updateAiPlayerState, deductMoney, selectAiStrategicRegions, evaluateAiDepositDecision, evaluateAiCashOutDecision, getRegionController]);
-
-  // Helper: Select strategic regions for AI
-  const selectAiStrategicRegions = useCallback((): string[] => {
-    return Object.keys(REGIONS)
-      .sort((a, b) => calculateRegionStrategicValue(b) - calculateRegionStrategicValue(a))
-      .slice(0, 3); // Top 3 strategic regions
-  }, []);
-
-  // Helper: Evaluate how much AI should deposit to a region
-  const evaluateAiDepositDecision = useCallback((region: string): number => {
-    const deposits = gameState.regionDeposits[region];
-    const controller = getRegionController(region);
-    const regionValue = calculateRegionStrategicValue(region);
-
-    // If we control it, maybe add a defensive deposit
-    if (controller === 'ai') {
-      const playerDeposit = deposits.player;
-      const gap = deposits.ai - playerDeposit;
-      if (gap < 50 && Math.random() < 0.3) { // 30% chance to defend
-        return 25; // Add defensive buffer
-      }
-      return 0;
-    }
-
-    // If player controls it or nobody does
-    if (gameSettings.winCondition === 'most_regions') {
-      // More aggressive in region control mode
-      const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
-      if (requiredDeposit < regionValue * 0.5) { // Worth it if less than 50% of value
-        return requiredDeposit;
-      }
-    } else {
-      // Conservative in money mode
-      if (Math.random() < 0.2) { // 20% chance
-        const requiredDeposit = Math.max(deposits.player, deposits.ai) + 1;
-        if (requiredDeposit < 100) { // Only if cheap
-          return requiredDeposit;
-        }
-      }
-    }
-
-    return 0;
-  }, [gameSettings.winCondition, gameState.regionDeposits]);
-
-  // Helper: Evaluate if AI should cash out from a region
-  const evaluateAiCashOutDecision = useCallback((region: string): boolean => {
-    // Cash out if:
-    // 1. In money mode and need quick cash
-    // 2. Region is low value
-    // 3. AI is behind in money
-
-    const regionValue = calculateRegionStrategicValue(region);
-    const lowValue = regionValue < 400;
-    const needsMoney = aiPlayer.money < AI_SAFETY_BUFFER * 2;
-    const moneyMode = gameSettings.winCondition === 'most_money';
-
-    return lowValue && needsMoney && moneyMode && Math.random() < 0.15; // 15% chance
-  }, [aiPlayer.money, gameSettings.winCondition]);
 
   // Main function to execute all turn transition subsystems
   const executeTurnTransitionPhase = useCallback((playerId: 'player' | 'ai') => {
