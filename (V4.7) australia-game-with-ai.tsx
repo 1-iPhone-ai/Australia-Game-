@@ -2778,27 +2778,33 @@ function AustraliaGame() {
     const currentController = getRegionController(proposal.region);
     const regionValue = calculateRegionStrategicValue(proposal.region);
 
-    // Calculate cost of proposal
-    let proposalCost = 0;
+    // Calculate value of what the proposer is offering
+    let proposalOffer = 0;
     if (proposal.termDetails.cashAmount) {
-      proposalCost += proposal.termDetails.cashAmount;
+      proposalOffer += proposal.termDetails.cashAmount;
     }
     if (proposal.termDetails.resources) {
       Object.entries(proposal.termDetails.resources).forEach(([res, count]) => {
-        proposalCost += getResourceMarketPrice(res) * (count as number) * 0.7; // 70% of market value
+        proposalOffer += getResourceMarketPrice(res) * (count as number) * 0.7; // 70% of market value
       });
     }
 
-    // Accept if:
-    // 1. Region is valuable and we don't control it
-    // 2. Cost is reasonable relative to AI's money
-    // 3. Aligns with win condition
-    const worthAccepting = currentController !== 'ai' && regionValue > proposalCost * 1.5;
-    const canAfford = aiPlayer.money - proposalCost > AI_SAFETY_BUFFER;
-    const alignsWithWinCondition = gameSettings.winCondition === 'most_regions' ||
-                                   (gameSettings.winCondition === 'most_money' && worthAccepting);
+    // For player proposals (player wants to acquire region):
+    // Accept if player is offering a fair price (at least 70% of strategic value)
+    // AND either AI doesn't control it OR player is overpaying significantly
+    if (proposal.from === 'player') {
+      const isFairOffer = proposalOffer >= regionValue * 0.7;
+      const aiDoesntControl = currentController !== 'ai';
+      const playerOverpaying = proposalOffer >= regionValue * 1.2;
 
-    return worthAccepting && canAfford && alignsWithWinCondition;
+      // Accept if it's a fair offer and AI doesn't control the region, OR if player is overpaying
+      return (isFairOffer && aiDoesntControl) || playerOverpaying;
+    }
+
+    // For AI proposals (AI wants to acquire region):
+    // This is the AI evaluating its own proposal, which doesn't make sense
+    // This should not happen in normal flow
+    return false;
   }, [gameSettings.winCondition, aiPlayer.money]);
 
   // Helper: Get reasoning for AI proposal decision
@@ -9098,6 +9104,80 @@ function AustraliaGame() {
             </button>
           )}
 
+          {/* V5.0: Claim Button (Negotiation Mode - Direct Region Control) */}
+          {gameSettings.regionControlEnabled && gameSettings.negotiationModeEnabled && (
+            <button
+              onClick={() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const aiDeposit = currentDeposits?.ai || 0;
+                const playerDeposit = currentDeposits?.player || 0;
+                const requiredToControl = Math.max(aiDeposit, playerDeposit) + 1;
+
+                const amountStr = window.prompt(`Claim direct control of ${currentRegion} (bypasses negotiation).\n\nCurrent deposits:\nYou: $${playerDeposit}\nAI: $${aiDeposit}\n\nEnter amount to deposit (min $${requiredToControl} to gain control):`, requiredToControl.toString());
+                if (amountStr && amountStr.trim() !== '') {
+                  const amount = parseInt(amountStr);
+                  if (!isNaN(amount) && amount > 0) {
+                    if (player.money >= amount) {
+                      depositToRegion(currentRegion, amount);
+                      addNotification(`Claimed ${currentRegion} with direct deposit of $${amount}`, 'success', true);
+                    } else {
+                      addNotification('Not enough money!', 'system');
+                    }
+                  } else {
+                    addNotification('Invalid amount entered!', 'system');
+                  }
+                }
+              }}
+              disabled={!isPlayerTurn || player.money < 1}
+              className={actionButtonClass}
+              title={`Directly claim ${player.currentRegion} with a deposit (bypasses negotiation)`}
+            >
+              <span>🏛️</span>
+              <span>Claim</span>
+              {(() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const playerDeposit = currentDeposits?.player || 0;
+                if (playerDeposit > 0) {
+                  return (
+                    <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-0.5 ml-1">
+                      ${playerDeposit}
+                    </span>
+                  );
+                }
+                return null;
+              })()}
+            </button>
+          )}
+
+          {/* V5.0: Cash Out Button (Negotiation Mode) */}
+          {gameSettings.regionControlEnabled && gameSettings.allowRegionCashOut && gameSettings.negotiationModeEnabled && (() => {
+            const currentRegion = player.currentRegion;
+            const currentDeposits = gameState.regionDeposits[currentRegion];
+            const playerDeposit = currentDeposits?.player || 0;
+            return playerDeposit > 0;
+          })() && (
+            <button
+              onClick={() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const playerDeposit = currentDeposits?.player || 0;
+                const returnAmount = Math.floor(playerDeposit * 0.5);
+
+                if (window.confirm(`Cash out from ${currentRegion}?\n\nYour deposit: $${playerDeposit}\nYou'll receive: $${returnAmount} (50%)\n\nYou will lose control of this region.`)) {
+                  cashOutFromRegion(currentRegion);
+                }
+              }}
+              disabled={!isPlayerTurn}
+              className={`${themeStyles.warning} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50`}
+              title="Retrieve 50% of your deposit"
+            >
+              <span>💰</span>
+              <span>Cash Out (50%)</span>
+            </button>
+          )}
+
           {/* V5.0: Turn Transition Logs Button */}
           {(gameSettings.regionControlEnabled || gameSettings.negotiationModeEnabled) && (
             <button
@@ -10595,6 +10675,123 @@ function AustraliaGame() {
                 </button>
               </div>
               <div className={`flex-1 overflow-y-auto p-6 ${themeStyles.scrollbar}`}>
+                {/* Create New Proposal Section */}
+                <div className="mb-6">
+                  <h4 className="font-bold text-lg mb-3">✍️ Create New Proposal</h4>
+                  <div className={`${themeStyles.border} border rounded-lg p-4`}>
+                    <p className="text-sm opacity-75 mb-3">
+                      Propose a deal to the AI to acquire control of a region. The AI will evaluate your offer based on strategic value.
+                    </p>
+
+                    {/* Region Selection */}
+                    <div className="mb-3">
+                      <label className="block text-sm font-bold mb-2">Select Region to Negotiate For:</label>
+                      <select
+                        value={uiState.selectedRegionForProposal || ''}
+                        onChange={(e) => updateUiState({ selectedRegionForProposal: e.target.value || null })}
+                        className={`w-full px-3 py-2 rounded ${themeStyles.border} border ${themeStyles.card}`}
+                      >
+                        <option value="">-- Select a region --</option>
+                        {Object.entries(REGIONS).map(([id, region]) => {
+                          const deposits = gameState.regionDeposits[id];
+                          const aiDeposit = deposits?.ai || 0;
+                          const playerDeposit = deposits?.player || 0;
+                          const controller = aiDeposit > playerDeposit ? 'AI' : playerDeposit > aiDeposit ? 'Player' : 'Contested';
+
+                          // Only show regions not already controlled by player
+                          if (controller === 'Player') return null;
+
+                          return (
+                            <option key={id} value={id}>
+                              {region.name} ({controller}) - AI: ${aiDeposit}, You: ${playerDeposit}
+                            </option>
+                          );
+                        }).filter(Boolean)}
+                      </select>
+                    </div>
+
+                    {/* Offer Amount */}
+                    {uiState.selectedRegionForProposal && (
+                      <div className="mb-3">
+                        <label className="block text-sm font-bold mb-2">Your Offer (Cash):</label>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-2xl">$</span>
+                          <input
+                            type="number"
+                            id="proposalAmount"
+                            min="100"
+                            max={player.money}
+                            step="100"
+                            defaultValue={(() => {
+                              const regionValue = calculateRegionStrategicValue(uiState.selectedRegionForProposal);
+                              const suggestedOffer = Math.floor(regionValue * 0.8);
+                              return Math.min(suggestedOffer, player.money);
+                            })()}
+                            className={`flex-1 px-3 py-2 rounded ${themeStyles.border} border ${themeStyles.card}`}
+                            placeholder="Enter amount"
+                          />
+                        </div>
+                        <p className="text-xs opacity-75 mt-1">
+                          Available: ${player.money} | Suggested: ${Math.floor(calculateRegionStrategicValue(uiState.selectedRegionForProposal) * 0.8)}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Submit Button */}
+                    {uiState.selectedRegionForProposal && (
+                      <button
+                        onClick={() => {
+                          const amountInput = document.getElementById('proposalAmount') as HTMLInputElement;
+                          const amount = parseInt(amountInput?.value || '0');
+
+                          if (!amount || amount < 100) {
+                            addNotification('Offer must be at least $100', 'system');
+                            return;
+                          }
+
+                          if (amount > player.money) {
+                            addNotification('Not enough money!', 'system');
+                            return;
+                          }
+
+                          const regionId = uiState.selectedRegionForProposal!;
+                          const regionName = REGIONS[regionId]?.name;
+
+                          // Create proposal
+                          const newProposal: Proposal = {
+                            id: `proposal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            from: 'player',
+                            to: 'ai',
+                            region: regionId,
+                            status: 'pending',
+                            termType: 'cash',
+                            termDetails: {
+                              cashAmount: amount
+                            },
+                            timestamp: Date.now()
+                          };
+
+                          dispatchGameState({ type: 'ADD_PROPOSAL', payload: newProposal });
+                          addNotification(`Sent proposal to AI: ${regionName} for $${amount}`, 'success', true);
+                          updateUiState({ selectedRegionForProposal: null });
+
+                          // Reset input
+                          if (amountInput) amountInput.value = '';
+                        }}
+                        className={`${themeStyles.success} text-white px-4 py-2 rounded w-full font-bold`}
+                      >
+                        📤 Send Proposal to AI
+                      </button>
+                    )}
+
+                    {!uiState.selectedRegionForProposal && (
+                      <p className="text-xs opacity-50 text-center mt-2">
+                        Select a region to begin negotiations
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 {/* Pending Proposals (for player to respond) */}
                 <div className="mb-6">
                   <h4 className="font-bold text-lg mb-3">📬 Pending Proposals (Respond)</h4>
