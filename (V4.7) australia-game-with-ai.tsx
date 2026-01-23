@@ -9114,6 +9114,77 @@ function AustraliaGame() {
             </button>
           )}
 
+          {/* V5.0: Region Control - Deposit Button */}
+          {gameSettings.regionControlEnabled && !gameSettings.negotiationModeEnabled && (
+            <button
+              onClick={() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const aiDeposit = currentDeposits?.ai || 0;
+                const playerDeposit = currentDeposits?.player || 0;
+                const requiredToControl = Math.max(aiDeposit, playerDeposit) + 1;
+
+                const amountStr = prompt(`Deposit money to control ${currentRegion}.\n\nCurrent deposits:\nYou: $${playerDeposit}\nAI: $${aiDeposit}\n\nEnter amount to deposit (min $${requiredToControl} to gain control):`, requiredToControl.toString());
+                if (amountStr) {
+                  const amount = parseInt(amountStr);
+                  if (!isNaN(amount) && amount > 0 && player.money >= amount) {
+                    depositToRegion(currentRegion, amount);
+                    addNotification('region_control', `Deposited $${amount} to ${currentRegion}!`);
+                  } else if (player.money < amount) {
+                    addNotification('system', 'Not enough money!');
+                  }
+                }
+              }}
+              disabled={!isPlayerTurn || player.money < 1}
+              className={actionButtonClass}
+              title={`Deposit money to control ${player.currentRegion}`}
+            >
+              <span>🏛️</span>
+              <span>Deposit</span>
+              {(() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const playerDeposit = currentDeposits?.player || 0;
+                if (playerDeposit > 0) {
+                  return (
+                    <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-0.5 ml-1">
+                      ${playerDeposit}
+                    </span>
+                  );
+                }
+                return null;
+              })()}
+            </button>
+          )}
+
+          {/* V5.0: Region Control - Cash Out Button */}
+          {gameSettings.regionControlEnabled && gameSettings.allowRegionCashOut && !gameSettings.negotiationModeEnabled && (() => {
+            const currentRegion = player.currentRegion;
+            const currentDeposits = gameState.regionDeposits[currentRegion];
+            const playerDeposit = currentDeposits?.player || 0;
+            return playerDeposit > 0;
+          })() && (
+            <button
+              onClick={() => {
+                const currentRegion = player.currentRegion;
+                const currentDeposits = gameState.regionDeposits[currentRegion];
+                const playerDeposit = currentDeposits?.player || 0;
+                const returnAmount = Math.floor(playerDeposit * 0.5);
+
+                if (confirm(`Cash out from ${currentRegion}?\n\nYour deposit: $${playerDeposit}\nYou'll receive: $${returnAmount} (50%)\n\nYou will lose control of this region.`)) {
+                  cashOutFromRegion(currentRegion);
+                  addNotification('region_control', `Cashed out $${returnAmount} from ${currentRegion}!`);
+                }
+              }}
+              disabled={!isPlayerTurn}
+              className={`${themeStyles.warning} text-white rounded-lg flex items-center ${actionButtonSize} ${actionButtonGap} disabled:opacity-50`}
+              title="Retrieve 50% of your deposit"
+            >
+              <span>💰</span>
+              <span>Cash Out (50%)</span>
+            </button>
+          )}
+
           {/* Special Ability Button */}
           {player.character.specialAbility && (
             <button
@@ -10402,14 +10473,14 @@ function AustraliaGame() {
         {/* V5.0: Resource Market Modal */}
         {uiState.showResourceMarket && gameSettings.resourceMarketEnabled && (
           <div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
             onClick={() => updateUiState({ showResourceMarket: false })}
           >
             <div
-              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full`}
+              className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+              <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border} flex-shrink-0`}>
                 <h3 className="text-xl font-bold">🏪 Resource Market</h3>
                 <button
                   onClick={() => updateUiState({ showResourceMarket: false })}
@@ -10418,7 +10489,7 @@ function AustraliaGame() {
                   ✕
                 </button>
               </div>
-              <div className={`p-6 max-h-[70vh] overflow-y-auto ${themeStyles.scrollbar}`}>
+              <div className={`flex-1 overflow-y-auto p-6 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 200px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <p className="mb-4 opacity-75">Buy resources directly from the market. Available from anywhere!</p>
 
                 {/* Group resources by category */}
@@ -10487,7 +10558,7 @@ function AustraliaGame() {
                   );
                 })}
               </div>
-              <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+              <div className={`p-6 pt-4 border-t ${themeStyles.border} flex-shrink-0`}>
                 <div className="text-sm opacity-75 mb-3">
                   💰 Your Money: ${player.money} | 🎒 Inventory: {player.inventory.length}/{MAX_INVENTORY}
                 </div>
