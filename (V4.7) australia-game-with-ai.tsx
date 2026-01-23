@@ -5907,7 +5907,7 @@ function AustraliaGame() {
     }
 
     incrementAction();
-  }, [gameSettings.regionControlEnabled, gameSettings.negotiationModeEnabled, gameState.currentTurn, player.money, addNotification, incrementAction, getRegionController, dispatchGameState]);
+  }, [gameSettings.regionControlEnabled, gameSettings.negotiationModeEnabled, gameState.currentTurn, player.money, addNotification, incrementAction, getRegionController, dispatchGameState, dispatchPlayer]);
 
   // V5.0: Cash out from a region
   const cashOutFromRegion = useCallback((regionId: string) => {
@@ -5941,7 +5941,7 @@ function AustraliaGame() {
 
     addNotification(`Cashed out from ${REGIONS[regionId].name} for $${returnAmount} (50% of $${depositedAmount})`, 'info', true);
     incrementAction();
-  }, [gameSettings.regionControlEnabled, gameSettings.allowRegionCashOut, gameState.currentTurn, gameState.regionDeposits, addNotification, incrementAction, getRegionController, dispatchGameState]);
+  }, [gameSettings.regionControlEnabled, gameSettings.allowRegionCashOut, gameState.currentTurn, gameState.regionDeposits, addNotification, incrementAction, getRegionController, dispatchGameState, dispatchPlayer]);
 
   const buyInvestment = useCallback((regionCode: string) => {
     if (!gameSettings.investmentsEnabled || gameState.currentTurn !== 'player') return;
@@ -9124,14 +9124,17 @@ function AustraliaGame() {
                 const playerDeposit = currentDeposits?.player || 0;
                 const requiredToControl = Math.max(aiDeposit, playerDeposit) + 1;
 
-                const amountStr = prompt(`Deposit money to control ${currentRegion}.\n\nCurrent deposits:\nYou: $${playerDeposit}\nAI: $${aiDeposit}\n\nEnter amount to deposit (min $${requiredToControl} to gain control):`, requiredToControl.toString());
-                if (amountStr) {
+                const amountStr = window.prompt(`Deposit money to control ${currentRegion}.\n\nCurrent deposits:\nYou: $${playerDeposit}\nAI: $${aiDeposit}\n\nEnter amount to deposit (min $${requiredToControl} to gain control):`, requiredToControl.toString());
+                if (amountStr && amountStr.trim() !== '') {
                   const amount = parseInt(amountStr);
-                  if (!isNaN(amount) && amount > 0 && player.money >= amount) {
-                    depositToRegion(currentRegion, amount);
-                    addNotification('region_control', `Deposited $${amount} to ${currentRegion}!`);
-                  } else if (player.money < amount) {
-                    addNotification('system', 'Not enough money!');
+                  if (!isNaN(amount) && amount > 0) {
+                    if (player.money >= amount) {
+                      depositToRegion(currentRegion, amount);
+                    } else {
+                      addNotification('Not enough money!', 'system');
+                    }
+                  } else {
+                    addNotification('Invalid amount entered!', 'system');
                   }
                 }
               }}
@@ -9171,9 +9174,8 @@ function AustraliaGame() {
                 const playerDeposit = currentDeposits?.player || 0;
                 const returnAmount = Math.floor(playerDeposit * 0.5);
 
-                if (confirm(`Cash out from ${currentRegion}?\n\nYour deposit: $${playerDeposit}\nYou'll receive: $${returnAmount} (50%)\n\nYou will lose control of this region.`)) {
+                if (window.confirm(`Cash out from ${currentRegion}?\n\nYour deposit: $${playerDeposit}\nYou'll receive: $${returnAmount} (50%)\n\nYou will lose control of this region.`)) {
                   cashOutFromRegion(currentRegion);
-                  addNotification('region_control', `Cashed out $${returnAmount} from ${currentRegion}!`);
                 }
               }}
               disabled={!isPlayerTurn}
