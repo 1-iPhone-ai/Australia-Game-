@@ -6992,6 +6992,73 @@ function AustraliaGame() {
       });
     }
 
+    // Region Control - Deposit
+    if (gameSettings.regionControlEnabled && !gameSettings.negotiationModeEnabled && player.money >= 1) {
+      const currentRegion = player.currentRegion;
+      const currentDeposits = gameState.regionDeposits[currentRegion];
+      const playerDeposit = currentDeposits?.player || 0;
+
+      actions.push({
+        label: playerDeposit > 0 ? `Deposit ($${playerDeposit})` : 'Deposit',
+        icon: '🏛️',
+        action: () => {
+          const currentRegion = player.currentRegion;
+          const currentDeposits = gameState.regionDeposits[currentRegion];
+          const aiDeposit = currentDeposits?.ai || 0;
+          const playerDeposit = currentDeposits?.player || 0;
+          const requiredToControl = Math.max(aiDeposit, playerDeposit) + 1;
+
+          const amountStr = window.prompt(
+            `Deposit money to control ${currentRegion}.\n\nCurrent deposits:\nYou: $${playerDeposit}\nAI: $${aiDeposit}\n\nEnter amount to deposit (min $${requiredToControl} to gain control):`,
+            requiredToControl.toString()
+          );
+
+          if (amountStr && amountStr.trim() !== '') {
+            const amount = parseInt(amountStr);
+            if (!isNaN(amount) && amount > 0) {
+              if (player.money >= amount) {
+                depositToRegion(currentRegion, amount);
+              } else {
+                addNotification('Not enough money!', 'system');
+              }
+            } else {
+              addNotification('Invalid amount entered!', 'system');
+            }
+          }
+        },
+        hotkey: 'D',
+        disabled: false
+      });
+    }
+
+    // Region Control - Cash Out
+    if (gameSettings.regionControlEnabled && gameSettings.allowRegionCashOut && !gameSettings.negotiationModeEnabled) {
+      const currentRegion = player.currentRegion;
+      const currentDeposits = gameState.regionDeposits[currentRegion];
+      const playerDeposit = currentDeposits?.player || 0;
+
+      if (playerDeposit > 0) {
+        actions.push({
+          label: `Cash Out ($${Math.floor(playerDeposit * 0.5)})`,
+          icon: '💰',
+          action: () => {
+            const currentRegion = player.currentRegion;
+            const currentDeposits = gameState.regionDeposits[currentRegion];
+            const playerDeposit = currentDeposits?.player || 0;
+            const returnAmount = Math.floor(playerDeposit * 0.5);
+
+            if (window.confirm(
+              `Cash out from ${currentRegion}?\n\nYour deposit: $${playerDeposit}\nYou'll receive: $${returnAmount} (50%)\n\nYou will lose control of this region.`
+            )) {
+              cashOutFromRegion(currentRegion);
+            }
+          },
+          hotkey: null,
+          disabled: false
+        });
+      }
+    }
+
     // Available challenges
     const currentChallenges = REGIONS[player.currentRegion]?.challenges || [];
     const availableChallenges = currentChallenges.filter(
@@ -7095,7 +7162,7 @@ function AustraliaGame() {
     }
     
     return actions;
-  }, [player, gameState.day, gameState.currentTurn, gameState.allChallengesCompleted, gameState.selectedMode, gameSettings, calculateOverrideCost]);
+  }, [player, gameState.day, gameState.currentTurn, gameState.allChallengesCompleted, gameState.selectedMode, gameState.regionDeposits, gameSettings, calculateOverrideCost, depositToRegion, cashOutFromRegion, addNotification]);
 
   // =========================================
   // RENDER FUNCTIONS - SETTINGS & END-GAME
