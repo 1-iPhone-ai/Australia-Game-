@@ -10998,11 +10998,11 @@ function AustraliaGame() {
         onClick={() => updateUiState({ showNotificationSettings: false })}
       >
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full h-[90vh] flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className={`p-6 pb-4 border-b ${themeStyles.border}`}>
+          <div className={`p-6 pb-4 border-b ${themeStyles.border} flex-shrink-0`}>
             <div className="flex justify-between items-center">
               <h3 className="text-2xl font-bold">⚙️ Notification Settings</h3>
               <button
@@ -11015,7 +11015,7 @@ function AustraliaGame() {
           </div>
 
           {/* Scrollable Content */}
-          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-auto p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div className="space-y-6">
 
               {/* Display Settings */}
@@ -11272,7 +11272,7 @@ function AustraliaGame() {
           </div>
 
           {/* Fixed Footer */}
-          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+          <div className={`p-6 pt-4 border-t ${themeStyles.border} flex-shrink-0`}>
             <button onClick={() => updateUiState({ showNotificationSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
