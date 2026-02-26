@@ -1829,7 +1829,9 @@ function AustraliaGame() {
 
   // Refs
   const notificationEndRef = useRef<HTMLDivElement>(null);
+  const notificationTimeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set()); // tracks auto-dismiss timers for cleanup
   const aiTurnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const aiTurnRunningRef = useRef<boolean>(false); // re-entry guard for performAiTurn
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const aiPlayerRef = useRef(aiPlayer);
 
@@ -1867,14 +1869,25 @@ function AustraliaGame() {
     };
     
     setNotifications(prev => [...prev, notification]);
-    
-    // Auto-remove non-persistent notifications after 5 seconds
+
+    // Auto-remove non-persistent notifications after 5 seconds.
+    // Track the timer ID so it can be cancelled if the component unmounts.
     if (!persistent) {
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
+        notificationTimeoutsRef.current.delete(timerId);
         setNotifications(prev => prev.filter(n => n.id !== notification.id));
       }, 5000);
+      notificationTimeoutsRef.current.add(timerId);
     }
   }, [gameState.day]);
+
+  // Cleanup all pending notification timers when the component unmounts
+  useEffect(() => {
+    return () => {
+      notificationTimeoutsRef.current.forEach(id => clearTimeout(id));
+      notificationTimeoutsRef.current.clear();
+    };
+  }, []);
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications(prev =>
@@ -2110,15 +2123,17 @@ function AustraliaGame() {
 
     const sanitizedGameSettings: GameSettingsState = {
       actionLimitsEnabled: Boolean(settingsData.actionLimitsEnabled),
-      maxActionsPerTurn: typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
-      aiMaxActionsPerTurn: typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn,
+      maxActionsPerTurn: typeof settingsData.maxActionsPerTurn === 'number' ? Math.max(1, settingsData.maxActionsPerTurn) : DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
+      aiMaxActionsPerTurn: typeof settingsData.aiMaxActionsPerTurn === 'number' ? Math.max(1, settingsData.aiMaxActionsPerTurn) : DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn,
       allowActionOverride: Boolean(settingsData.allowActionOverride),
-      overrideCost: typeof settingsData.overrideCost === 'number' ? settingsData.overrideCost : DEFAULT_GAME_SETTINGS.overrideCost,
+      overrideCost: typeof settingsData.overrideCost === 'number' ? Math.max(0, settingsData.overrideCost) : DEFAULT_GAME_SETTINGS.overrideCost,
       // New settings with backwards compatibility
-      totalDays: typeof settingsData.totalDays === 'number' ? settingsData.totalDays : DEFAULT_GAME_SETTINGS.totalDays,
-      playerActionsPerDay: typeof settingsData.playerActionsPerDay === 'number' ? settingsData.playerActionsPerDay : (typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.playerActionsPerDay),
-      aiActionsPerDay: typeof settingsData.aiActionsPerDay === 'number' ? settingsData.aiActionsPerDay : (typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiActionsPerDay),
+      totalDays: typeof settingsData.totalDays === 'number' ? Math.max(1, settingsData.totalDays) : DEFAULT_GAME_SETTINGS.totalDays,
+      playerActionsPerDay: typeof settingsData.playerActionsPerDay === 'number' ? Math.max(1, settingsData.playerActionsPerDay) : (typeof settingsData.maxActionsPerTurn === 'number' ? Math.max(1, settingsData.maxActionsPerTurn) : DEFAULT_GAME_SETTINGS.playerActionsPerDay),
+      aiActionsPerDay: typeof settingsData.aiActionsPerDay === 'number' ? Math.max(1, settingsData.aiActionsPerDay) : (typeof settingsData.aiMaxActionsPerTurn === 'number' ? Math.max(1, settingsData.aiMaxActionsPerTurn) : DEFAULT_GAME_SETTINGS.aiActionsPerDay),
       showDayTransition: typeof settingsData.showDayTransition === 'boolean' ? settingsData.showDayTransition : DEFAULT_GAME_SETTINGS.showDayTransition,
+      dynamicWagerEnabled: Boolean(settingsData.dynamicWagerEnabled),
+      doubleOrNothingEnabled: Boolean(settingsData.doubleOrNothingEnabled),
       investmentsEnabled: Boolean(settingsData.investmentsEnabled),
       equipmentShopEnabled: Boolean(settingsData.equipmentShopEnabled),
       sabotageEnabled: Boolean(settingsData.sabotageEnabled),
@@ -2130,7 +2145,28 @@ function AustraliaGame() {
         typeof settingsData.aiDeterministicSeed === 'number'
           ? settingsData.aiDeterministicSeed
           : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
-      )
+      ),
+      // Advanced Loan System — restored from save
+      advancedLoansEnabled: Boolean(settingsData.advancedLoansEnabled),
+      creditScoreEnabled: Boolean(settingsData.creditScoreEnabled),
+      loanEventsEnabled: Boolean(settingsData.loanEventsEnabled),
+      earlyRepaymentEnabled: Boolean(settingsData.earlyRepaymentEnabled),
+      loanRefinancingEnabled: Boolean(settingsData.loanRefinancingEnabled),
+      defaultPenaltyMultiplier: typeof settingsData.defaultPenaltyMultiplier === 'number' ? Math.min(2.0, Math.max(0.5, settingsData.defaultPenaltyMultiplier)) : DEFAULT_GAME_SETTINGS.defaultPenaltyMultiplier,
+      interestAccrualRate: typeof settingsData.interestAccrualRate === 'number' ? Math.min(2.0, Math.max(0.5, settingsData.interestAccrualRate)) : DEFAULT_GAME_SETTINGS.interestAccrualRate,
+      maxSimultaneousLoans: typeof settingsData.maxSimultaneousLoans === 'number' ? Math.min(5, Math.max(1, settingsData.maxSimultaneousLoans)) : DEFAULT_GAME_SETTINGS.maxSimultaneousLoans,
+      loanTierUnlockSpeedMultiplier: typeof settingsData.loanTierUnlockSpeedMultiplier === 'number' ? Math.min(3.0, Math.max(0.5, settingsData.loanTierUnlockSpeedMultiplier)) : DEFAULT_GAME_SETTINGS.loanTierUnlockSpeedMultiplier,
+      // Adaptive AI System — restored from save
+      adaptiveAiEnabled: Boolean(settingsData.adaptiveAiEnabled),
+      adaptiveAiNetWorthThreshold: typeof settingsData.adaptiveAiNetWorthThreshold === 'number' ? Math.min(5.0, Math.max(1.5, settingsData.adaptiveAiNetWorthThreshold)) : DEFAULT_GAME_SETTINGS.adaptiveAiNetWorthThreshold,
+      adaptiveAiLevelDifference: typeof settingsData.adaptiveAiLevelDifference === 'number' ? Math.min(10, Math.max(3, settingsData.adaptiveAiLevelDifference)) : DEFAULT_GAME_SETTINGS.adaptiveAiLevelDifference,
+      adaptiveAiChallengeDifference: typeof settingsData.adaptiveAiChallengeDifference === 'number' ? Math.min(20, Math.max(5, settingsData.adaptiveAiChallengeDifference)) : DEFAULT_GAME_SETTINGS.adaptiveAiChallengeDifference,
+      adaptiveAiConsecutiveDays: typeof settingsData.adaptiveAiConsecutiveDays === 'number' ? Math.min(7, Math.max(1, settingsData.adaptiveAiConsecutiveDays)) : DEFAULT_GAME_SETTINGS.adaptiveAiConsecutiveDays,
+      adaptiveAiMaxDifficulty: ['medium', 'hard', 'expert'].includes(settingsData.adaptiveAiMaxDifficulty) ? settingsData.adaptiveAiMaxDifficulty : DEFAULT_GAME_SETTINGS.adaptiveAiMaxDifficulty,
+      adaptiveAiAggressionMultiplier: typeof settingsData.adaptiveAiAggressionMultiplier === 'number' ? Math.min(2.0, Math.max(0.5, settingsData.adaptiveAiAggressionMultiplier)) : DEFAULT_GAME_SETTINGS.adaptiveAiAggressionMultiplier,
+      adaptiveAiPatternLearning: Boolean(settingsData.adaptiveAiPatternLearning),
+      adaptiveAiRubberBanding: Boolean(settingsData.adaptiveAiRubberBanding),
+      adaptiveAiTauntsEnabled: Boolean(settingsData.adaptiveAiTauntsEnabled)
     };
 
     const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -3020,10 +3056,14 @@ function AustraliaGame() {
       const adaptiveModifiers = ADAPTIVE_AI_MODIFIERS[adaptivePhase] || ADAPTIVE_AI_MODIFIERS.normal;
       const aggressionMultiplier = gameSettings.adaptiveAiAggressionMultiplier || 1.0;
 
-      // Apply adaptive modifiers to profile
+      // Apply mood-based risk modifier so AI_MOOD_STATES.riskModifier actually influences decisions
+      const currentMood = gameState.aiMood as keyof typeof AI_MOOD_STATES;
+      const moodRiskModifier = AI_MOOD_STATES[currentMood]?.riskModifier ?? 1.0;
+
+      // Apply adaptive modifiers to profile, incorporating mood risk
       const adjustedProfile = {
         ...profile,
-        riskTolerance: profile.riskTolerance * adaptiveModifiers.riskTolerance * aggressionMultiplier
+        riskTolerance: profile.riskTolerance * adaptiveModifiers.riskTolerance * aggressionMultiplier * moodRiskModifier
       };
 
       // Validate AI state
@@ -3830,83 +3870,107 @@ function AustraliaGame() {
 
   // AI Turn Management
   const performAiTurn = useCallback(async () => {
+    // Re-entry guard: use a ref so the check is never stale across async boundaries
+    if (aiTurnRunningRef.current) return;
     if (gameState.currentTurn !== 'ai' || gameState.isAiThinking) return;
 
+    aiTurnRunningRef.current = true;
     dispatchGameState({ type: 'SET_AI_THINKING', payload: true });
     dispatchGameState({ type: 'RESET_ACTIONS' });
 
-    const profile = AI_DIFFICULTY_PROFILES[gameState.aiDifficulty];
-    let actionBudget = gameSettings.aiActionsPerDay;
-    let actionsTaken = 0;
+    try {
+      const profile = AI_DIFFICULTY_PROFILES[gameState.aiDifficulty];
+      let actionBudget = gameSettings.aiActionsPerDay;
+      let actionsTaken = 0;
+      // Consecutive-failure guard: if the AI fails this many actions in a row
+      // without a successful one, break to prevent an infinite loop.
+      const MAX_CONSECUTIVE_FAILURES = 5;
+      let consecutiveFailures = 0;
 
-    addNotification(`🤖 ${aiPlayerRef.current.name}'s turn begins`, 'ai', true);
+      addNotification(`🤖 ${aiPlayerRef.current.name}'s turn begins`, 'ai', true);
 
-    // AI takes multiple actions per turn
-    while (actionsTaken < actionBudget) {
-      // Thinking delay
-      const thinkingTime = profile.thinkingTimeMin +
-        aiRandom() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
+      // AI takes multiple actions per turn
+      while (actionsTaken < actionBudget) {
+        // Thinking delay
+        const thinkingTime = profile.thinkingTimeMin +
+          aiRandom() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
 
-      await new Promise(resolve => setTimeout(resolve, thinkingTime));
+        await new Promise(resolve => setTimeout(resolve, thinkingTime));
 
-      // Use ref to get latest AI state (fixes stale closure issue)
-      const currentAiState = aiPlayerRef.current;
+        // Use ref to get latest AI state (fixes stale closure issue)
+        const currentAiState = aiPlayerRef.current;
 
-      // Make decision with fresh state
-      const decision = makeAiDecision(currentAiState, gameState, player);
+        // Make decision with fresh state
+        const decision = makeAiDecision(currentAiState, gameState, player);
 
-      if (decision.type === 'end_turn') {
-        addNotification(`🤖 ${currentAiState.name} has no more actions to take`, 'ai', false);
-        break;
-      }
+        if (decision.type === 'end_turn') {
+          addNotification(`🤖 ${currentAiState.name} has no more actions to take`, 'ai', false);
+          break;
+        }
 
-      // CRITICAL FIX: Await action completion before proceeding
-      const actionSuccess = await executeAiAction(decision as AIAction);
+        // CRITICAL FIX: Await action completion before proceeding
+        const actionSuccess = await executeAiAction(decision as AIAction);
 
-      if (!actionSuccess) {
-        console.warn('AI action failed, continuing to next action');
-        // Don't count failed actions toward budget
-        continue;
-      }
+        if (!actionSuccess) {
+          consecutiveFailures += 1;
+          console.warn(`AI action failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}), continuing to next action`);
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            console.error('AI exceeded consecutive failure limit — forcing end_turn to prevent infinite loop');
+            addNotification(`🤖 ${aiPlayerRef.current.name} couldn't find a valid action`, 'ai', false);
+            break;
+          }
+          // Don't count failed actions toward budget
+          continue;
+        }
 
-      // Small delay between actions for visibility
-      await new Promise(resolve => setTimeout(resolve, 800));
+        // Reset failure counter on a successful action
+        consecutiveFailures = 0;
 
-      actionsTaken += 1;
+        // Small delay between actions for visibility
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-      // Consider action override if AI is behind
-      const aiOverrideRemaining = OVERRIDE_DAILY_CAP - (aiPlayerRef.current.overridesUsedToday || 0);
-      const aiUnderdog = getUnderdogBonus('ai').isUnderdog;
-      if (actionsTaken >= actionBudget && aiOverrideRemaining > 0 && aiUnderdog) {
-        const overrideCost = calculateOverrideCost('ai');
-        const currentAi = aiPlayerRef.current;
-        if (gameSettings.allowActionOverride && currentAi.money >= overrideCost && aiRandom() < 0.6) {
-          // Use atomic state update for override
-          updateAiPlayerState(prev => ({
-            ...prev,
-            money: deductMoney(prev.money, overrideCost),
-            overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
-            overrideFatigue: (prev.overrideFatigue || 0) + getOverrideFatigueIncrement(prev.overridesUsedToday || 0)
-          }));
-          actionBudget += gameSettings.aiActionsPerDay;
-          addNotification(`🤖 ${currentAi.name} paid $${overrideCost} for extra actions`, 'ai', true);
+        actionsTaken += 1;
+
+        // Consider action override if AI is behind
+        const aiOverrideRemaining = OVERRIDE_DAILY_CAP - (aiPlayerRef.current.overridesUsedToday || 0);
+        const aiUnderdog = getUnderdogBonus('ai').isUnderdog;
+        if (actionsTaken >= actionBudget && aiOverrideRemaining > 0 && aiUnderdog) {
+          const overrideCost = calculateOverrideCost('ai');
+          const currentAi = aiPlayerRef.current;
+          if (gameSettings.allowActionOverride && currentAi.money >= overrideCost && aiRandom() < 0.6) {
+            // Use atomic state update for override
+            updateAiPlayerState(prev => ({
+              ...prev,
+              money: deductMoney(prev.money, overrideCost),
+              overridesUsedToday: (prev.overridesUsedToday || 0) + 1,
+              overrideFatigue: (prev.overrideFatigue || 0) + getOverrideFatigueIncrement(prev.overridesUsedToday || 0)
+            }));
+            actionBudget += gameSettings.aiActionsPerDay;
+            addNotification(`🤖 ${currentAi.name} paid $${overrideCost} for extra actions`, 'ai', true);
+          }
         }
       }
+
+      // End AI turn
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      addNotification(`🤖 ${aiPlayerRef.current.name} ended their turn`, 'ai', true);
+
+      // In AI mode, advance the day after AI completes their turn
+      // This happens BEFORE switching back to player
+      advanceDay();
+
+      // Now switch to player turn for the new day
+      dispatchGameState({ type: 'SET_TURN', payload: 'player' });
+      setCurrentAiAction(null);
+    } catch (err) {
+      console.error('Unhandled error in performAiTurn:', err);
+      addNotification(`🤖 AI turn encountered an error and was ended`, 'error', false);
+    } finally {
+      // Always release the thinking flag and re-entry guard so the game never soft-locks
+      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+      aiTurnRunningRef.current = false;
     }
-
-    // End AI turn
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    addNotification(`🤖 ${aiPlayerRef.current.name} ended their turn`, 'ai', true);
-    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
-
-    // In AI mode, advance the day after AI completes their turn
-    // This happens BEFORE switching back to player
-    advanceDay();
-
-    // Now switch to player turn for the new day
-    dispatchGameState({ type: 'SET_TURN', payload: 'player' });
-    setCurrentAiAction(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, calculateOverrideCost, deductMoney, updateAiPlayerState]);
@@ -3926,6 +3990,7 @@ function AustraliaGame() {
     return () => {
       if (aiTurnTimeoutRef.current) {
         clearTimeout(aiTurnTimeoutRef.current);
+        aiTurnTimeoutRef.current = null;
       }
     };
   }, [gameState.currentTurn, gameState.gameMode, gameState.selectedMode, gameState.isAiThinking, performAiTurn]);
@@ -4579,6 +4644,10 @@ function AustraliaGame() {
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords]);
 
   const takeChallenge = useCallback((challenge, wager) => {
+    // Guard against NaN/invalid wager values (e.g., from programmatic calls or browser edge cases)
+    const safeWager = typeof wager === 'number' && !isNaN(wager) && wager >= MINIMUM_WAGER ? Math.floor(wager) : MINIMUM_WAGER;
+    wager = safeWager;
+
     let successChance = calculateSuccessChance(challenge);
 
     // Calculate Odds: Guarantee success on challenges under difficulty 2
@@ -5438,8 +5507,8 @@ function AustraliaGame() {
     }
     dispatchGameState({ type: 'SET_AI_MOOD', payload: newMood });
 
-    // AI taunt based on mood
-    if (gameState.selectedMode === 'ai') {
+    // AI taunt based on mood — only fires when the setting is enabled
+    if (gameState.selectedMode === 'ai' && gameSettings.adaptiveAiTauntsEnabled) {
       const moodState = AI_MOOD_STATES[newMood];
       if (aiRandom() < moodState.tauntChance) {
         const taunt = moodState.messages[Math.floor(aiRandom() * moodState.messages.length)];
@@ -8397,7 +8466,7 @@ function AustraliaGame() {
                               min="50"
                               max={maxWager}
                               value={Math.min(uiState.wagerAmount, maxWager)}
-                              onChange={(e) => updateUiState({ wagerAmount: parseInt(e.target.value) })}
+                              onChange={(e) => { const v = parseInt(e.target.value, 10); updateUiState({ wagerAmount: isNaN(v) ? 50 : v }); }}
                               className="flex-1"
                             />
                             <span className="text-sm font-bold w-16 text-right">${Math.min(uiState.wagerAmount, maxWager)}</span>
