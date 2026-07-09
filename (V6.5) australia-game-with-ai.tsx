@@ -21430,35 +21430,27 @@ function AustraliaGame() {
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-            {/* Desktop sidebar */}
-            <div className={`hidden md:flex md:flex-col md:w-48 md:border-r ${themeStyles.border} p-3 gap-1 overflow-y-auto`}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+            {/* Tab strip: wraps to multiple lines instead of relying on responsive show/hide */}
+            <div
+              className={`p-3 border-b ${themeStyles.border}`}
+              style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', flexShrink: 0 }}
+            >
               {SETTINGS_HUB_TAB_ORDER.map(tab => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => updateUiState({ settingsActiveTab: tab, settingsSearchQuery: '' })}
-                  className={`w-full text-left px-3 py-2 rounded text-sm ${uiState.settingsActiveTab === tab && !uiState.settingsSearchQuery ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  className={`px-3 py-2 rounded text-sm ${uiState.settingsActiveTab === tab && !uiState.settingsSearchQuery ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  style={{ flex: '0 0 auto' }}
                 >
                   {SETTINGS_HUB_TAB_LABELS[tab]}
                 </button>
               ))}
             </div>
-            {/* Mobile tab dropdown */}
-            <div className="md:hidden p-3 pb-0">
-              <select
-                value={uiState.settingsActiveTab}
-                onChange={(e) => updateUiState({ settingsActiveTab: e.target.value as SettingsHubTabId, settingsSearchQuery: '' })}
-                className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`}
-              >
-                {SETTINGS_HUB_TAB_ORDER.map(tab => (
-                  <option key={tab} value={tab}>{SETTINGS_HUB_TAB_LABELS[tab]}</option>
-                ))}
-              </select>
-            </div>
 
           {/* Scrollable Content */}
-          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 240px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`p-6 pt-4 ${themeStyles.scrollbar}`} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {settingsSearchMatchedIds !== null && settingsSearchMatchedIds.size === 0 && (
               <div className="text-sm opacity-75 mb-4">No settings match "{uiState.settingsSearchQuery}".</div>
             )}
