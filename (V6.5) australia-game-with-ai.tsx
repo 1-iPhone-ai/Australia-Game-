@@ -2194,6 +2194,36 @@ interface NotificationSettings {
   shadow: 'none' | 'subtle' | 'prominent';
 }
 
+type SettingsHubTabId =
+  | 'quickSetup' | 'gameplay' | 'ai' | 'teamModeAi' | 'aiStrategyLab'
+  | 'economy' | 'advancedSystems' | 'interface' | 'saveReset';
+
+const SETTINGS_HUB_TAB_ORDER: SettingsHubTabId[] = [
+  'quickSetup', 'gameplay', 'ai', 'teamModeAi', 'aiStrategyLab',
+  'economy', 'advancedSystems', 'interface', 'saveReset'
+];
+
+const SETTINGS_HUB_TAB_LABELS: Record<SettingsHubTabId, string> = {
+  quickSetup: 'Quick Setup',
+  gameplay: 'Gameplay',
+  ai: 'AI',
+  teamModeAi: 'Team Mode AI',
+  aiStrategyLab: 'AI Strategy Lab',
+  economy: 'Economy',
+  advancedSystems: 'Advanced Systems',
+  interface: 'Interface',
+  saveReset: 'Save / Reset'
+};
+
+type SettingsHubChip =
+  | 'Off by default' | 'On by default' | 'Advanced' | 'Experimental'
+  | 'Team Mode only' | 'AI only' | 'Affects economy' | 'Affects difficulty'
+  | 'UX only' | 'Safe' | 'Extreme';
+
+type SettingsHubTag =
+  | 'AI' | 'Team Mode' | 'Economy' | 'Advanced' | 'Experimental'
+  | 'UX' | 'Loans' | 'Sabotage' | 'Notifications';
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -3282,6 +3312,128 @@ const createDefaultGameSettings = (): GameSettingsState => ({
   notificationSettings: createDefaultNotificationSettings(),
   aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
 });
+
+interface SettingsHubFieldMeta {
+  key: string;
+  tab: SettingsHubTabId;
+  label: string;
+  description: string;
+  warning?: string;
+  tags: SettingsHubTag[];
+  advancedOnly?: boolean;
+  chips?: SettingsHubChip[];
+}
+
+// Hand-authored metadata only for headline/required-copy fields (requirements 3 & 9).
+// Everything else is covered by SETTINGS_HUB_SECTION_INDEX search coverage + auto chips.
+const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
+  aiStrategyLabExtremeModeEnabled: {
+    key: 'aiStrategyLabExtremeModeEnabled', tab: 'aiStrategyLab', label: 'Extreme Mode',
+    description: 'Allows AI Strategy Lab sliders to move far outside normal balance ranges.',
+    warning: 'Extreme values can make AI opponents unbeatable or trivially easy — test before using in a real match.',
+    tags: ['AI', 'Advanced', 'Experimental'], advancedOnly: true, chips: ['Extreme', 'Experimental']
+  },
+  aiStrategyLabSafeRangesEnabled: {
+    key: 'aiStrategyLabSafeRangesEnabled', tab: 'aiStrategyLab', label: 'Safe Ranges',
+    description: 'Keeps AI tuning inside balanced limits tested for fair gameplay.',
+    tags: ['AI'], chips: ['Safe']
+  },
+  teamBrainV63Enabled: {
+    key: 'teamBrainV63Enabled', tab: 'teamModeAi', label: 'Team Brain',
+    description: 'Improves Team Mode coordination, support behavior, comeback logic, and opponent pressure.',
+    warning: 'Has no effect outside Team Mode.',
+    tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
+  },
+  decisionTransparencyEnabled: {
+    key: 'decisionTransparencyEnabled', tab: 'advancedSystems', label: 'Decision Transparency',
+    description: 'Shows why AI made decisions, including scoring and setting contributions.',
+    tags: ['UX', 'Advanced'], advancedOnly: false, chips: ['UX only', 'Advanced']
+  },
+  advancedLoansEnabled: {
+    key: 'advancedLoansEnabled', tab: 'economy', label: 'Advanced Loans',
+    description: 'Four-tiered loan system with credit scores, refinancing, and loan events.',
+    tags: ['Economy', 'Loans']
+  },
+  adaptiveAiEnabled: {
+    key: 'adaptiveAiEnabled', tab: 'ai', label: 'Adaptive AI ("Comeback Mode")',
+    description: 'AI gets more aggressive when it is falling behind.',
+    tags: ['AI', 'Advanced']
+  },
+  totalDays: { key: 'totalDays', tab: 'quickSetup', label: 'Game Length', description: 'Total number of days in the match.', tags: ['Economy'] },
+  winCondition: { key: 'winCondition', tab: 'quickSetup', label: 'Win Condition', description: 'The metric used to decide the winner.', tags: ['Economy'] },
+  actionLimitsEnabled: { key: 'actionLimitsEnabled', tab: 'quickSetup', label: 'Action Limits', description: 'Restrict how many actions each side can take per turn.', tags: ['Advanced'] },
+  uxAssistPackEnabled: { key: 'uxAssistPackEnabled', tab: 'quickSetup', label: 'UX Assist Pack', description: 'Master switch for optional usability helpers.', tags: ['UX'] },
+  teamModeAiSystemProfile: { key: 'teamModeAiSystemProfile', tab: 'quickSetup', label: 'Team Mode AI Profile', description: 'Overall AI behavior profile used in Team Mode.', tags: ['Team Mode', 'AI'] },
+  teamBrainModeV63: { key: 'teamBrainModeV63', tab: 'quickSetup', label: 'Team Brain Mode', description: 'Preset that tunes Team Brain coordination style.', tags: ['Team Mode', 'AI'] }
+};
+
+function getAutoChipsForField(key: string, meta?: SettingsHubFieldMeta): SettingsHubChip[] {
+  const chips: SettingsHubChip[] = [...(meta?.chips || [])];
+  const def = (DEFAULT_GAME_SETTINGS as Record<string, unknown>)[key];
+  if (typeof def === 'boolean') {
+    chips.push(def ? 'On by default' : 'Off by default');
+  }
+  if (meta?.advancedOnly) chips.push('Advanced');
+  return Array.from(new Set(chips));
+}
+
+interface SettingsHubSectionMeta {
+  id: string;
+  tab: SettingsHubTabId;
+  title: string;
+  tags: SettingsHubTag[];
+  fieldKeys: (keyof GameSettingsState)[];
+}
+
+// One entry per SettingsSection used below — gives every settings field search
+// coverage via its section's title/tags without needing per-field metadata.
+const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
+  { id: 'quickSetup.presets', tab: 'quickSetup', title: 'Settings Presets', tags: ['UX'], fieldKeys: [] },
+  { id: 'quickSetup.core', tab: 'quickSetup', title: 'Quick Setup', tags: ['UX'], fieldKeys: ['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63'] },
+  { id: 'interface.changelog', tab: 'interface', title: "What's New", tags: ['UX'], fieldKeys: [] },
+  { id: 'interface.uxAssist', tab: 'interface', title: 'UX Assist Features', tags: ['UX'], fieldKeys: ['uxAssistPackEnabled', 'simplifiedActionBarEnabled', 'disabledActionFeedbackEnabled', 'interactiveMapEnabled', 'winConditionCoachEnabled', 'settingsPresetsEnabled', 'groupedInventoryCardsEnabled', 'teamModeAiSystemsEnabled', 'teamModeAiSystemProfile'] },
+  { id: 'gameplay.core', tab: 'gameplay', title: 'Core Gameplay', tags: [], fieldKeys: ['totalDays', 'playerActionsPerDay', 'aiActionsPerDay', 'showDayTransition'] },
+  { id: 'economy.winCondition', tab: 'economy', title: 'Win Condition & Cash-Out', tags: ['Economy'], fieldKeys: ['winCondition', 'winConditionTieBreakers', 'allowCashOut', 'negotiationMode'] },
+  { id: 'economy.negotiationOptions', tab: 'economy', title: 'Negotiation Options', tags: ['Economy', 'Advanced'], fieldKeys: ['negotiationOptions' as keyof GameSettingsState] },
+  { id: 'gameplay.actionLimits', tab: 'gameplay', title: 'Action Limits', tags: [], fieldKeys: ['actionLimitsEnabled', 'maxActionsPerTurn', 'aiMaxActionsPerTurn'] },
+  { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
+  { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled'] },
+  { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority'] },
+  { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth'] },
+  { id: 'aiStrategyLab.main', tab: 'aiStrategyLab', title: 'Strategy Lab Presets', tags: ['AI', 'Advanced'], fieldKeys: ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset'] },
+  { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
+  { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
+  { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
+  { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
+  { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
+  { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
+  { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
+  { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
+];
+
+interface SettingsHubSearchEntry {
+  id: string;
+  tab: SettingsHubTabId;
+  label: string;
+  keywords: string;
+}
+
+const SETTINGS_HUB_SEARCH_INDEX: SettingsHubSearchEntry[] = (() => {
+  const entries: SettingsHubSearchEntry[] = [];
+  Object.values(SETTINGS_HUB_FIELD_META).forEach(meta => {
+    entries.push({
+      id: meta.key, tab: meta.tab, label: meta.label,
+      keywords: `${meta.label} ${meta.description} ${meta.tags.join(' ')}`.toLowerCase()
+    });
+  });
+  SETTINGS_HUB_SECTION_INDEX.forEach(section => {
+    entries.push({
+      id: section.id, tab: section.tab, label: section.title,
+      keywords: `${section.title} ${section.tags.join(' ')}`.toLowerCase()
+    });
+  });
+  return entries;
+})();
 
 type SettingsPresetId =
   | 'classic'
@@ -6480,13 +6632,14 @@ function AustraliaGame() {
 
   // Game Settings State
   const [gameSettings, setGameSettings] = useState<GameSettingsState>(() => createDefaultGameSettings());
-  const [settingsAdvancedSections, setSettingsAdvancedSections] = useState({
-    aiStrategyLab: false,
-    teamBrain: false
-  });
 
   // UI state
   const [uiState, setUiState] = useState({
+    settingsActiveTab: 'quickSetup' as SettingsHubTabId,
+    settingsViewMode: 'basic' as 'basic' | 'advanced',
+    settingsSearchQuery: '',
+    settingsChangedOnly: false,
+    settingsCollapsedSections: {} as Record<string, boolean>,
     showTravelModal: false,
     showChallenges: false,
     showMarket: false,
@@ -20882,6 +21035,77 @@ function AustraliaGame() {
     );
   }, [decisionTransparencyGroupView, filteredTransparencyAiCards, gameSettings.decisionTransparencyViewMode, gameState.selectedMode, getTransparencyModeLabel, renderDecisionTransparencyActorCard, themeStyles, transparencyActorOptions]);
 
+  // Settings Hub: shared collapse/search/filter behavior for every settings section
+  const toggleSettingsSection = useCallback((id: string) => {
+    setUiState(prev => ({
+      ...prev,
+      settingsCollapsedSections: { ...prev.settingsCollapsedSections, [id]: !prev.settingsCollapsedSections[id] }
+    }));
+  }, []);
+
+  const settingsSearchMatchedIds = useMemo(() => {
+    const q = uiState.settingsSearchQuery.trim().toLowerCase();
+    if (!q) return null;
+    return new Set(SETTINGS_HUB_SEARCH_INDEX.filter(e => e.keywords.includes(q)).map(e => e.id));
+  }, [uiState.settingsSearchQuery]);
+
+  const settingsChangedFieldKeys = useMemo(() => {
+    return (Object.keys(DEFAULT_GAME_SETTINGS) as (keyof GameSettingsState)[])
+      .filter(k => JSON.stringify(gameSettings[k]) !== JSON.stringify(DEFAULT_GAME_SETTINGS[k]));
+  }, [gameSettings]);
+
+  const SettingsSection: React.FC<{
+    id: string;
+    tab: SettingsHubTabId;
+    title: string;
+    chips?: SettingsHubChip[];
+    description?: string;
+    warning?: string;
+    onReset?: () => void;
+    resetLabel?: string;
+    fieldKeys?: (keyof GameSettingsState)[];
+    className?: string;
+    children: React.ReactNode;
+  }> = ({ id, tab, title, chips = [], description, warning, onReset, resetLabel, fieldKeys = [], className, children }) => {
+    const searching = settingsSearchMatchedIds !== null;
+    const tabActive = uiState.settingsActiveTab === tab;
+    if (!searching && !tabActive) return null;
+    if (searching && !settingsSearchMatchedIds!.has(id)) return null;
+    const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => settingsChangedFieldKeys.includes(k));
+    if (uiState.settingsChangedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
+    const collapsed = uiState.settingsCollapsedSections[id] ?? false;
+    return (
+      <div className={`${themeStyles.border} border rounded-lg p-4 ${className || ''}`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap cursor-pointer" onClick={() => toggleSettingsSection(id)}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 className="text-lg font-bold">{title}</h4>
+            {searching && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeStyles.buttonSecondary}`}>{SETTINGS_HUB_TAB_LABELS[tab]}</span>
+            )}
+            {chips.map(chip => (
+              <span key={chip} className={`text-[10px] px-2 py-0.5 rounded-full ${themeStyles.buttonSecondary}`}>{chip}</span>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {onReset && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onReset(); }}
+                className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}
+              >
+                {resetLabel || 'Reset section'}
+              </button>
+            )}
+            <span className="text-sm opacity-70">{collapsed ? '▸' : '▾'}</span>
+          </div>
+        </div>
+        {description && <div className="text-xs opacity-75 mt-1">{description}</div>}
+        {warning && <div className="text-xs mt-1 text-amber-500">⚠️ {warning}</div>}
+        {!collapsed && <div className="mt-3 space-y-4">{children}</div>}
+      </div>
+    );
+  };
+
   // Settings Modal
   const renderSettingsModal = () => {
     if (!uiState.showSettings) return null;
@@ -20971,18 +21195,205 @@ function AustraliaGame() {
       };
     };
 
+    const resetGameplaySettings = () => setGameSettings(prev => ({
+      ...prev,
+      actionLimitsEnabled: DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
+      maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
+      aiMaxActionsPerTurn: DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn,
+      allowActionOverride: DEFAULT_GAME_SETTINGS.allowActionOverride,
+      overrideCost: DEFAULT_GAME_SETTINGS.overrideCost,
+      totalDays: DEFAULT_GAME_SETTINGS.totalDays,
+      playerActionsPerDay: DEFAULT_GAME_SETTINGS.playerActionsPerDay,
+      aiActionsPerDay: DEFAULT_GAME_SETTINGS.aiActionsPerDay,
+      showDayTransition: DEFAULT_GAME_SETTINGS.showDayTransition,
+      dynamicWagerEnabled: DEFAULT_GAME_SETTINGS.dynamicWagerEnabled,
+      doubleOrNothingEnabled: DEFAULT_GAME_SETTINGS.doubleOrNothingEnabled,
+      investmentsEnabled: DEFAULT_GAME_SETTINGS.investmentsEnabled,
+      equipmentShopEnabled: DEFAULT_GAME_SETTINGS.equipmentShopEnabled,
+      sabotageEnabled: DEFAULT_GAME_SETTINGS.sabotageEnabled,
+      aiSabotagePriority: DEFAULT_GAME_SETTINGS.aiSabotagePriority,
+      aiInvestmentPriority: DEFAULT_GAME_SETTINGS.aiInvestmentPriority,
+      aiEquipmentPurchasePriority: DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority
+    }));
+
+    const resetAiSettings = () => setGameSettings(prev => ({
+      ...prev,
+      aiUsesMarketModifiers: DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
+      aiSpecialAbilitiesEnabled: DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
+      aiAffectsEconomy: DEFAULT_GAME_SETTINGS.aiAffectsEconomy,
+      aiWinConditionSpendingEnabled: DEFAULT_GAME_SETTINGS.aiWinConditionSpendingEnabled,
+      aiRegionsMajorityRushEnabled: DEFAULT_GAME_SETTINGS.aiRegionsMajorityRushEnabled,
+      teammatePerformanceSyncEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSyncEnabled,
+      directiveStrength: DEFAULT_GAME_SETTINGS.directiveStrength,
+      aiDeterministic: DEFAULT_GAME_SETTINGS.aiDeterministic,
+      aiDeterministicSeed: DEFAULT_GAME_SETTINGS.aiDeterministicSeed,
+      aiEngineVersion: DEFAULT_GAME_SETTINGS.aiEngineVersion,
+      aiFairnessLevel: DEFAULT_GAME_SETTINGS.aiFairnessLevel,
+      aiPersonalityVariance: DEFAULT_GAME_SETTINGS.aiPersonalityVariance,
+      aiPlanningDepth: DEFAULT_GAME_SETTINGS.aiPlanningDepth,
+      aiGrandTourPriority: DEFAULT_GAME_SETTINGS.aiGrandTourPriority,
+      aiMarketModifierAwareness: DEFAULT_GAME_SETTINGS.aiMarketModifierAwareness,
+      aiSpecialAbilityPriority: DEFAULT_GAME_SETTINGS.aiSpecialAbilityPriority,
+      aiEconomyInteractionWeight: DEFAULT_GAME_SETTINGS.aiEconomyInteractionWeight,
+      aiWinConditionSpendingStrength: DEFAULT_GAME_SETTINGS.aiWinConditionSpendingStrength,
+      aiRegionRushIntensity: DEFAULT_GAME_SETTINGS.aiRegionRushIntensity,
+      aiNegotiationParticipationWeight: DEFAULT_GAME_SETTINGS.aiNegotiationParticipationWeight,
+      aiNegotiationValuationWeight: DEFAULT_GAME_SETTINGS.aiNegotiationValuationWeight,
+      teammatePerformanceSyncStrength: DEFAULT_GAME_SETTINGS.teammatePerformanceSyncStrength,
+      adaptiveAiEnabled: DEFAULT_GAME_SETTINGS.adaptiveAiEnabled,
+      adaptiveAiNetWorthThreshold: DEFAULT_GAME_SETTINGS.adaptiveAiNetWorthThreshold,
+      adaptiveAiLevelDifference: DEFAULT_GAME_SETTINGS.adaptiveAiLevelDifference,
+      adaptiveAiChallengeDifference: DEFAULT_GAME_SETTINGS.adaptiveAiChallengeDifference,
+      adaptiveAiConsecutiveDays: DEFAULT_GAME_SETTINGS.adaptiveAiConsecutiveDays,
+      adaptiveAiMaxDifficulty: DEFAULT_GAME_SETTINGS.adaptiveAiMaxDifficulty,
+      adaptiveAiAggressionMultiplier: DEFAULT_GAME_SETTINGS.adaptiveAiAggressionMultiplier,
+      adaptiveAiPatternLearning: DEFAULT_GAME_SETTINGS.adaptiveAiPatternLearning,
+      adaptiveAiRubberBanding: DEFAULT_GAME_SETTINGS.adaptiveAiRubberBanding,
+      adaptiveAiTauntsEnabled: DEFAULT_GAME_SETTINGS.adaptiveAiTauntsEnabled,
+      adaptiveAiAffectedModes: [...DEFAULT_GAME_SETTINGS.adaptiveAiAffectedModes],
+      adaptiveAiTeamComebackStrength: DEFAULT_GAME_SETTINGS.adaptiveAiTeamComebackStrength,
+      adaptiveAiTriggerSensitivity: DEFAULT_GAME_SETTINGS.adaptiveAiTriggerSensitivity,
+      adaptiveAiSupportFocus: DEFAULT_GAME_SETTINGS.adaptiveAiSupportFocus,
+      adaptiveAiRiskBias: DEFAULT_GAME_SETTINGS.adaptiveAiRiskBias,
+      adaptiveAiEconomyRecoveryBias: DEFAULT_GAME_SETTINGS.adaptiveAiEconomyRecoveryBias,
+      adaptiveAiDisruptionBias: DEFAULT_GAME_SETTINGS.adaptiveAiDisruptionBias,
+      adaptiveAiPatternMemoryStrength: DEFAULT_GAME_SETTINGS.adaptiveAiPatternMemoryStrength,
+      adaptiveAiRubberBandingStrength: DEFAULT_GAME_SETTINGS.adaptiveAiRubberBandingStrength,
+      adaptiveAiShowDecisionTransparency: DEFAULT_GAME_SETTINGS.adaptiveAiShowDecisionTransparency,
+      adaptiveAiShowActiveModifiers: DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers
+    }));
+
+    const resetTeamModeSettings = () => setGameSettings(prev => ({
+      ...prev,
+      teamModeAiSystemsEnabled: DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
+      teamModeAiSystemProfile: DEFAULT_GAME_SETTINGS.teamModeAiSystemProfile,
+      teamBrainV63Enabled: DEFAULT_GAME_SETTINGS.teamBrainV63Enabled,
+      teamBrainModeV63: DEFAULT_GAME_SETTINGS.teamBrainModeV63,
+      teamBrainStrategyModesEnabled: DEFAULT_GAME_SETTINGS.teamBrainStrategyModesEnabled,
+      teamBrainPersonalitiesEnabled: DEFAULT_GAME_SETTINGS.teamBrainPersonalitiesEnabled,
+      teamBrainTeammateSupportEnabled: DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportEnabled,
+      teamBrainOpponentPressureEnabled: DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureEnabled,
+      teamBrainComebackLogicEnabled: DEFAULT_GAME_SETTINGS.teamBrainComebackLogicEnabled,
+      teamBrainRecoveryLogicEnabled: DEFAULT_GAME_SETTINGS.teamBrainRecoveryLogicEnabled,
+      teamBrainTravelDisciplineEnabled: DEFAULT_GAME_SETTINGS.teamBrainTravelDisciplineEnabled,
+      teamBrainResourceLogicEnabled: DEFAULT_GAME_SETTINGS.teamBrainResourceLogicEnabled,
+      teamBrainExplanationEnabled: DEFAULT_GAME_SETTINGS.teamBrainExplanationEnabled,
+      teamBrainTeammateSupportBias: DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportBias,
+      teamBrainOpponentPressureBias: DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureBias,
+      teamBrainTravelDiscipline: DEFAULT_GAME_SETTINGS.teamBrainTravelDiscipline,
+      teamBrainRiskScaling: DEFAULT_GAME_SETTINGS.teamBrainRiskScaling
+    }));
+
+    const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
+      ...prev,
+      aiStrategyLabEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
+      aiStrategyLabScope: DEFAULT_GAME_SETTINGS.aiStrategyLabScope,
+      aiStrategyLabPreset: DEFAULT_GAME_SETTINGS.aiStrategyLabPreset,
+      aiStrategyLabSafeRangesEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabSafeRangesEnabled,
+      aiStrategyLabExtremeModeEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabExtremeModeEnabled,
+      aiStrategyLabSeparateProfilesEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabSeparateProfilesEnabled,
+      aiStrategyLabScorePreviewEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabScorePreviewEnabled,
+      aiStrategyLabWarningsEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabWarningsEnabled,
+      aiStrategyLabDesignerNotesEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabDesignerNotesEnabled,
+      playerTeammateAiPreset: DEFAULT_GAME_SETTINGS.playerTeammateAiPreset,
+      opponentAiPreset: DEFAULT_GAME_SETTINGS.opponentAiPreset,
+      aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
+    }));
+
+    const resetEconomySettings = () => setGameSettings(prev => ({
+      ...prev,
+      winCondition: DEFAULT_GAME_SETTINGS.winCondition,
+      winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
+      allowCashOut: DEFAULT_GAME_SETTINGS.allowCashOut,
+      negotiationMode: DEFAULT_GAME_SETTINGS.negotiationMode,
+      negotiationOptions: createDefaultNegotiationOptions(),
+      advancedLoansEnabled: DEFAULT_GAME_SETTINGS.advancedLoansEnabled,
+      advancedLoansAccessMode: DEFAULT_GAME_SETTINGS.advancedLoansAccessMode,
+      creditScoreEnabled: DEFAULT_GAME_SETTINGS.creditScoreEnabled,
+      loanEventsEnabled: DEFAULT_GAME_SETTINGS.loanEventsEnabled,
+      earlyRepaymentEnabled: DEFAULT_GAME_SETTINGS.earlyRepaymentEnabled,
+      loanRefinancingEnabled: DEFAULT_GAME_SETTINGS.loanRefinancingEnabled,
+      defaultPenaltyMultiplier: DEFAULT_GAME_SETTINGS.defaultPenaltyMultiplier,
+      interestAccrualRate: DEFAULT_GAME_SETTINGS.interestAccrualRate,
+      maxSimultaneousLoans: DEFAULT_GAME_SETTINGS.maxSimultaneousLoans,
+      loanTierUnlockSpeedMultiplier: DEFAULT_GAME_SETTINGS.loanTierUnlockSpeedMultiplier,
+      aiLoanRiskWeight: DEFAULT_GAME_SETTINGS.aiLoanRiskWeight,
+      aiLoanRepaymentPriority: DEFAULT_GAME_SETTINGS.aiLoanRepaymentPriority,
+      aiLoanRefinancingWeight: DEFAULT_GAME_SETTINGS.aiLoanRefinancingWeight,
+      aiLoanEmergencyOnly: DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly
+    }));
+
+    const resetInterfaceSettings = () => setGameSettings(prev => ({
+      ...prev,
+      uxAssistPackEnabled: DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
+      simplifiedActionBarEnabled: DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
+      disabledActionFeedbackEnabled: DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
+      interactiveMapEnabled: DEFAULT_GAME_SETTINGS.interactiveMapEnabled,
+      winConditionCoachEnabled: DEFAULT_GAME_SETTINGS.winConditionCoachEnabled,
+      settingsPresetsEnabled: DEFAULT_GAME_SETTINGS.settingsPresetsEnabled,
+      groupedInventoryCardsEnabled: DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
+      notificationSettings: createDefaultNotificationSettings(),
+      notificationClearShortcut: DEFAULT_GAME_SETTINGS.notificationClearShortcut
+    }));
+
+    const resetAdvancedSystemsSettings = () => setGameSettings(prev => ({
+      ...prev,
+      settingPriorityMode: DEFAULT_GAME_SETTINGS.settingPriorityMode,
+      maxConcurrentHighInfluenceSettings: DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings,
+      conflictResolutionStrength: DEFAULT_GAME_SETTINGS.conflictResolutionStrength,
+      deprioritizeLowImpactSettings: DEFAULT_GAME_SETTINGS.deprioritizeLowImpactSettings,
+      priorityTransparencyEnabled: DEFAULT_GAME_SETTINGS.priorityTransparencyEnabled,
+      manualPriorityWeights: { ...DEFAULT_GAME_SETTINGS.manualPriorityWeights },
+      decisionTransparencyEnabled: DEFAULT_GAME_SETTINGS.decisionTransparencyEnabled,
+      decisionTransparencyVisibilityScope: DEFAULT_GAME_SETTINGS.decisionTransparencyVisibilityScope,
+      decisionTransparencyViewMode: DEFAULT_GAME_SETTINGS.decisionTransparencyViewMode,
+      decisionTransparencyRealtimeBreakdown: DEFAULT_GAME_SETTINGS.decisionTransparencyRealtimeBreakdown,
+      decisionTransparencyTimeline: DEFAULT_GAME_SETTINGS.decisionTransparencyTimeline,
+      decisionTransparencySettingContributions: DEFAULT_GAME_SETTINGS.decisionTransparencySettingContributions,
+      decisionTransparencyReasonExplanations: DEFAULT_GAME_SETTINGS.decisionTransparencyReasonExplanations,
+      decisionTransparencyAlternativeActions: DEFAULT_GAME_SETTINGS.decisionTransparencyAlternativeActions,
+      decisionTransparencyPriorityFlow: DEFAULT_GAME_SETTINGS.decisionTransparencyPriorityFlow,
+      decisionTransparencyMaxHistoryRetained: DEFAULT_GAME_SETTINGS.decisionTransparencyMaxHistoryRetained,
+      decisionTransparencyDetailLevel: DEFAULT_GAME_SETTINGS.decisionTransparencyDetailLevel,
+      decisionTransparencyExplanationDepth: DEFAULT_GAME_SETTINGS.decisionTransparencyExplanationDepth,
+      decisionTransparencyTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyTimelineLength,
+      decisionTransparencySamplingDensity: DEFAULT_GAME_SETTINGS.decisionTransparencySamplingDensity,
+      decisionTransparencyPanelDensity: DEFAULT_GAME_SETTINGS.decisionTransparencyPanelDensity,
+      decisionTransparencyMultiAiOverviewEnabled: DEFAULT_GAME_SETTINGS.decisionTransparencyMultiAiOverviewEnabled,
+      decisionTransparencyShowPerAiMiniCards: DEFAULT_GAME_SETTINGS.decisionTransparencyShowPerAiMiniCards,
+      decisionTransparencyShowAdaptiveActorBreakdown: DEFAULT_GAME_SETTINGS.decisionTransparencyShowAdaptiveActorBreakdown,
+      decisionTransparencyShowTeamAdaptiveSource: DEFAULT_GAME_SETTINGS.decisionTransparencyShowTeamAdaptiveSource,
+      decisionTransparencyShowActorAppliedEffects: DEFAULT_GAME_SETTINGS.decisionTransparencyShowActorAppliedEffects,
+      decisionTransparencyDefaultGroupView: DEFAULT_GAME_SETTINGS.decisionTransparencyDefaultGroupView,
+      decisionTransparencyShowOnlyActiveAis: DEFAULT_GAME_SETTINGS.decisionTransparencyShowOnlyActiveAis,
+      decisionTransparencyShowUnaffectedAis: DEFAULT_GAME_SETTINGS.decisionTransparencyShowUnaffectedAis,
+      decisionTransparencyMaxVisibleAiCards: DEFAULT_GAME_SETTINGS.decisionTransparencyMaxVisibleAiCards,
+      decisionTransparencyPerAiTimelineDensity: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity,
+      decisionTransparencyPerAiTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength
+    }));
+
+    const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
+      gameplay: { label: 'Reset Gameplay Settings', fn: resetGameplaySettings },
+      ai: { label: 'Reset AI Settings', fn: resetAiSettings },
+      teamMode: { label: 'Reset Team Mode Settings', fn: resetTeamModeSettings },
+      aiStrategyLab: { label: 'Reset Strategy Lab Settings', fn: resetAiStrategyLabSettings },
+      economy: { label: 'Reset Economy Settings', fn: resetEconomySettings },
+      interfaceSettings: { label: 'Reset Interface Settings', fn: resetInterfaceSettings },
+      advancedSystems: { label: 'Reset Advanced Settings', fn: resetAdvancedSystemsSettings }
+    };
+
     return (
       <div
         className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-hidden"
         onClick={() => updateUiState({ showSettings: false })}
       >
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-2xl w-full h-[90vh] flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-5xl w-full h-[90vh] flex flex-col`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
           <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
-            <h3 className="text-2xl font-bold">⚙️ Game Settings</h3>
+            <h3 className="text-2xl font-bold">⚙️ Settings Hub</h3>
             <button
               onClick={() => updateUiState({ showSettings: false })}
               className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -20991,19 +21402,164 @@ function AustraliaGame() {
             </button>
           </div>
 
+          {/* Search / Basic-Advanced / Changed-only controls */}
+          <div className={`px-6 pt-4 pb-3 border-b ${themeStyles.border} flex flex-col sm:flex-row sm:items-center gap-2`}>
+            <input
+              type="text"
+              value={uiState.settingsSearchQuery}
+              onChange={(e) => updateUiState({ settingsSearchQuery: e.target.value })}
+              placeholder="Search settings (label, description, tags like AI, Loans, Sabotage...)"
+              className={`${themeStyles.select} rounded px-3 py-2 flex-1 text-sm`}
+            />
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => updateUiState({ settingsViewMode: uiState.settingsViewMode === 'basic' ? 'advanced' : 'basic' })}
+                className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-xs font-semibold`}
+              >
+                {uiState.settingsViewMode === 'advanced' ? 'Advanced View' : 'Basic View'}
+              </button>
+              <label className="flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={uiState.settingsChangedOnly}
+                  onChange={(e) => updateUiState({ settingsChangedOnly: e.target.checked })}
+                />
+                <span>Changed only</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+            {/* Desktop sidebar */}
+            <div className={`hidden md:flex md:flex-col md:w-48 md:border-r ${themeStyles.border} p-3 gap-1 overflow-y-auto`}>
+              {SETTINGS_HUB_TAB_ORDER.map(tab => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => updateUiState({ settingsActiveTab: tab, settingsSearchQuery: '' })}
+                  className={`w-full text-left px-3 py-2 rounded text-sm ${uiState.settingsActiveTab === tab && !uiState.settingsSearchQuery ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                >
+                  {SETTINGS_HUB_TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
+            {/* Mobile tab dropdown */}
+            <div className="md:hidden p-3 pb-0">
+              <select
+                value={uiState.settingsActiveTab}
+                onChange={(e) => updateUiState({ settingsActiveTab: e.target.value as SettingsHubTabId, settingsSearchQuery: '' })}
+                className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`}
+              >
+                {SETTINGS_HUB_TAB_ORDER.map(tab => (
+                  <option key={tab} value={tab}>{SETTINGS_HUB_TAB_LABELS[tab]}</option>
+                ))}
+              </select>
+            </div>
+
           {/* Scrollable Content */}
-          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 180px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+          <div className={`flex-1 overflow-y-scroll p-6 pt-4 ${themeStyles.scrollbar}`} style={{ maxHeight: 'calc(90vh - 240px)', overflowY: 'scroll', WebkitOverflowScrolling: 'touch' }}>
+            {settingsSearchMatchedIds !== null && settingsSearchMatchedIds.size === 0 && (
+              <div className="text-sm opacity-75 mb-4">No settings match "{uiState.settingsSearchQuery}".</div>
+            )}
             <div className="space-y-6">
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-3">V6.2.0 - UX Assist + Team Intelligence</h4>
+              <SettingsSection id="quickSetup.core" tab="quickSetup" title="Quick Setup" chips={getAutoChipsForField('uxAssistPackEnabled', SETTINGS_HUB_FIELD_META.uxAssistPackEnabled)} description="The essentials — fine-tune everything else from the other tabs." fieldKeys={['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63']}>
+                <div>
+                  <label className="block font-semibold mb-1">Difficulty: {AI_DIFFICULTY_PROFILES[gameState.aiDifficulty]?.name || gameState.aiDifficulty}</label>
+                  <select
+                    value={gameState.aiDifficulty}
+                    onChange={(e) => dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: e.target.value })}
+                    className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                  >
+                    {Object.keys(AI_DIFFICULTY_PROFILES).map(key => (
+                      <option key={key} value={key}>{AI_DIFFICULTY_PROFILES[key as keyof typeof AI_DIFFICULTY_PROFILES].name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Game Length: {gameSettings.totalDays} days</label>
+                  <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Win Condition</label>
+                  <select
+                    value={gameSettings.winCondition}
+                    onChange={(e) => setGameSettings(prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+                    className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                  >
+                    <option value="money">Most Money</option>
+                    <option value="netWorth">Highest Net Worth</option>
+                    <option value="regions">Most Controlled Regions</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">Action Limits</div>
+                  <button
+                    onClick={() => setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }))}
+                    className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                  >
+                    {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">UX Assist Pack</div>
+                  <button
+                    onClick={() => setGameSettings(prev => ({ ...prev, uxAssistPackEnabled: !prev.uxAssistPackEnabled }))}
+                    className={`px-4 py-2 rounded font-semibold ${gameSettings.uxAssistPackEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                  >
+                    {gameSettings.uxAssistPackEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Team Mode AI Profile</label>
+                  <select
+                    value={gameSettings.teamModeAiSystemProfile}
+                    onChange={(e) => setGameSettings(prev => ({ ...prev, teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(e.target.value) }))}
+                    className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                  >
+                    {TEAM_MODE_AI_SYSTEM_PROFILE_OPTIONS.map(profile => (
+                      <option key={profile} value={profile}>{TEAM_MODE_AI_PROFILE_LABELS[profile]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Team Brain Mode</label>
+                  <select
+                    value={gameSettings.teamBrainModeV63}
+                    onChange={(e) => applyTeamBrainModeToSettings(normalizeTeamBrainModeV63(e.target.value))}
+                    className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                  >
+                    {TEAM_BRAIN_MODE_OPTIONS_V63.map(mode => (
+                      <option key={mode} value={mode}>{TEAM_BRAIN_MODE_LABELS_V63[mode]}</option>
+                    ))}
+                  </select>
+                </div>
+              </SettingsSection>
+              {gameSettings.uxAssistPackEnabled && gameSettings.settingsPresetsEnabled && (
+                <SettingsSection id="quickSetup.presets" tab="quickSetup" title="Settings Presets" onReset={() => applySettingsPreset('classic')} resetLabel="Reset to Classic">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {(Object.entries(SETTINGS_PRESETS) as Array<[SettingsPresetId, SettingsPresetConfig]>).map(([presetId, preset]) => (
+                      <button
+                        key={presetId}
+                        onClick={() => applySettingsPreset(presetId)}
+                        className={`${themeStyles.border} border rounded-lg p-3 text-left hover:scale-[1.01] transition ${themeStyles.buttonSecondary}`}
+                      >
+                        <div className="font-bold">{preset.label}</div>
+                        <div className="text-xs opacity-75 mt-1">{preset.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </SettingsSection>
+              )}
+
+              <SettingsSection id="interface.changelog" tab="interface" title="What's New" chips={['UX only']}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
                   {V620_CHANGELOG.slice(1).map(item => (
                     <div key={item}>- {item}</div>
                   ))}
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">UX Assist Features</h4>
+              </SettingsSection>
+              <SettingsSection id="interface.uxAssist" tab="interface" title="UX Assist Features" onReset={settingsResetHandlers.interfaceSettings.fn} resetLabel={settingsResetHandlers.interfaceSettings.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.uxAssist')!.fieldKeys}>
                 <div className="space-y-3">
                   {([
                     { key: 'uxAssistPackEnabled', label: 'UX Assist Pack', description: 'Master switch for optional usability helpers.' },
@@ -21052,35 +21608,9 @@ function AustraliaGame() {
                     <div className="text-xs opacity-75 mt-1">Profile logic only runs in Team Mode when Team Mode AI Systems is ON.</div>
                   </div>
                 </div>
-              </div>
-              {gameSettings.uxAssistPackEnabled && gameSettings.settingsPresetsEnabled && (
-                <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                  <div className="flex items-center justify-between gap-3 mb-4">
-                    <h4 className="text-lg font-bold">Settings Presets</h4>
-                    <button
-                      onClick={() => applySettingsPreset('classic')}
-                      className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm`}
-                    >
-                      Reset to Classic
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {(Object.entries(SETTINGS_PRESETS) as Array<[SettingsPresetId, SettingsPresetConfig]>).map(([presetId, preset]) => (
-                      <button
-                        key={presetId}
-                        onClick={() => applySettingsPreset(presetId)}
-                        className={`${themeStyles.border} border rounded-lg p-3 text-left hover:scale-[1.01] transition ${themeStyles.buttonSecondary}`}
-                      >
-                        <div className="font-bold">{preset.label}</div>
-                        <div className="text-xs opacity-75 mt-1">{preset.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-	              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-	                <h4 className="text-lg font-bold mb-4">🎮 Game Rules</h4>
-	                <div className="space-y-4">
+              </SettingsSection>
+              <SettingsSection id="gameplay.core" tab="gameplay" title="🎮 Core Gameplay" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.core')!.fieldKeys}>
+                <div className="space-y-4">
                   <div>
                     <label className="block font-semibold mb-2">Total Days: {gameSettings.totalDays}</label>
                     <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
@@ -21108,9 +21638,8 @@ function AustraliaGame() {
 	                    </button>
 	                  </div>
 	                </div>
-	              </div>
-	              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-	                <h4 className="text-lg font-bold mb-4">🏁 Win Condition</h4>
+              </SettingsSection>
+              <SettingsSection id="economy.winCondition" tab="economy" title="🏁 Win Condition & Cash-Out" chips={['Affects economy']} onReset={settingsResetHandlers.economy.fn} resetLabel={settingsResetHandlers.economy.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'economy.winCondition')!.fieldKeys}>
 	                <div className="space-y-4">
 	                  <div>
 	                    <label className="block font-semibold mb-2">Victory Goal</label>
@@ -21284,9 +21813,8 @@ function AustraliaGame() {
                       </div>
                     )}
 	                </div>
-	              </div>
-	              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-	                <h4 className="text-lg font-bold mb-4">⏱️ Action Limits</h4>
+              </SettingsSection>
+              <SettingsSection id="gameplay.actionLimits" tab="gameplay" title="⏱️ Action Limits" onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.actionLimits')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -21313,9 +21841,8 @@ function AustraliaGame() {
                     <div className="text-xs opacity-75 mt-1">Use "AI Actions Per Day" above to adjust</div>
                   </div>
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">💸 Action Override</h4>
+              </SettingsSection>
+              <SettingsSection id="gameplay.actionOverride" tab="gameplay" title="💸 Action Override" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.actionOverride')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -21337,9 +21864,8 @@ function AustraliaGame() {
                     </div>
                   </div>
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">🎰 Challenge Options</h4>
+              </SettingsSection>
+              <SettingsSection id="gameplay.challengeRules" tab="gameplay" title="🎰 Challenge Rules" chips={['Advanced']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.challengeRules')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -21366,9 +21892,8 @@ function AustraliaGame() {
                     </button>
                   </div>
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">Gameplay Expansions</h4>
+              </SettingsSection>
+              <SettingsSection id="gameplay.expansions" tab="gameplay" title="Gameplay Expansions" chips={['Sabotage']} onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.expansions')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -21407,9 +21932,8 @@ function AustraliaGame() {
                     </button>
                   </div>
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">AI Settings</h4>
+              </SettingsSection>
+              <SettingsSection id="ai.settings" tab="ai" title="AI Difficulty" onReset={settingsResetHandlers.ai.fn} resetLabel={settingsResetHandlers.ai.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.settings')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -21556,10 +22080,9 @@ function AustraliaGame() {
                     <div className="text-xs opacity-75 mt-1">Used when deterministic AI is enabled</div>
                   </div>
                 </div>
-              </div>
+              </SettingsSection>
 
-              <div className={`${themeStyles.border} border rounded-lg p-4 bg-purple-900 bg-opacity-10`}>
-                <h4 className="text-lg font-bold mb-4">AI Strategy Lab</h4>
+              <SettingsSection id="aiStrategyLab.main" tab="aiStrategyLab" title="AI Strategy Lab" className="bg-purple-900 bg-opacity-10" onReset={resetAiStrategyLabSettings} resetLabel="Reset Strategy Lab Settings" fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'aiStrategyLab.main')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -21604,15 +22127,14 @@ function AustraliaGame() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setSettingsAdvancedSections(prev => ({ ...prev, aiStrategyLab: !prev.aiStrategyLab }))}
-                    className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm`}
-                  >
-                    {settingsAdvancedSections.aiStrategyLab ? 'Hide Advanced Options' : 'Show Advanced Options'}
-                  </button>
+                  {!gameSettings.aiStrategyLabEnabled && (
+                    <div className="text-xs opacity-75">Turn AI Strategy Lab ON above, then switch to Advanced view to tune sliders and safe ranges.</div>
+                  )}
+                  {gameSettings.aiStrategyLabEnabled && uiState.settingsViewMode !== 'advanced' && (
+                    <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune sliders, safe ranges, and Extreme Mode.</div>
+                  )}
 
-                  {settingsAdvancedSections.aiStrategyLab && (
+                  {gameSettings.aiStrategyLabEnabled && uiState.settingsViewMode === 'advanced' && (
                     <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                     {([
@@ -21764,10 +22286,9 @@ function AustraliaGame() {
                     </>
                   )}
                 </div>
-              </div>
+              </SettingsSection>
 
-              <div className={`${themeStyles.border} border rounded-lg p-4 bg-sky-900 bg-opacity-10`}>
-                <h4 className="text-lg font-bold mb-4">Team Brain V6.3</h4>
+              <SettingsSection id="teamModeAi.teamBrain" tab="teamModeAi" title="Team Brain" className="bg-sky-900 bg-opacity-10" chips={getAutoChipsForField('teamBrainV63Enabled', SETTINGS_HUB_FIELD_META.teamBrainV63Enabled)} description={SETTINGS_HUB_FIELD_META.teamBrainV63Enabled.description} warning={SETTINGS_HUB_FIELD_META.teamBrainV63Enabled.warning} onReset={settingsResetHandlers.teamMode.fn} resetLabel={settingsResetHandlers.teamMode.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.teamBrain')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -21801,15 +22322,14 @@ function AustraliaGame() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setSettingsAdvancedSections(prev => ({ ...prev, teamBrain: !prev.teamBrain }))}
-                    className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm`}
-                  >
-                    {settingsAdvancedSections.teamBrain ? 'Hide Advanced Options' : 'Show Advanced Options'}
-                  </button>
+                  {!gameSettings.teamBrainV63Enabled && (
+                    <div className="text-xs opacity-75">Turn Team Brain ON above to unlock coordination logic and sliders.</div>
+                  )}
+                  {gameSettings.teamBrainV63Enabled && uiState.settingsViewMode !== 'advanced' && (
+                    <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune support/pressure/travel/risk sliders.</div>
+                  )}
 
-                  {settingsAdvancedSections.teamBrain && (
+                  {gameSettings.teamBrainV63Enabled && uiState.settingsViewMode === 'advanced' && (
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                         {([
@@ -21870,10 +22390,9 @@ function AustraliaGame() {
                     </>
                   )}
                 </div>
-              </div>
+              </SettingsSection>
 
-              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-                <h4 className="text-lg font-bold mb-4">🧠 AI Systems Overview</h4>
+              <SettingsSection id="teamModeAi.overview" tab="teamModeAi" title="🧠 AI Systems Overview">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {[
                     'ai_market_modifiers',
@@ -21888,11 +22407,9 @@ function AustraliaGame() {
                     'notifications'
                   ].map(renderSettingMetadataCard)}
                 </div>
-              </div>
+              </SettingsSection>
 
-              {/* Advanced Loan System Settings */}
-              <div className={`${themeStyles.border} border rounded-lg p-4 bg-blue-900 bg-opacity-10`}>
-                <h4 className="text-lg font-bold mb-4">🏦 Advanced Loan System (NEW)</h4>
+              <SettingsSection id="economy.loans" tab="economy" title="🏦 Advanced Loans" className="bg-blue-900 bg-opacity-10" chips={getAutoChipsForField('advancedLoansEnabled', SETTINGS_HUB_FIELD_META.advancedLoansEnabled)} description={SETTINGS_HUB_FIELD_META.advancedLoansEnabled.description} onReset={settingsResetHandlers.economy.fn} resetLabel={settingsResetHandlers.economy.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'economy.loans')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -22005,11 +22522,10 @@ function AustraliaGame() {
                     </>
                   )}
                 </div>
-              </div>
+              </SettingsSection>
 
               {/* Adaptive AI Settings */}
-	              <div className={`${themeStyles.border} border rounded-lg p-4 bg-red-900 bg-opacity-10`}>
-	                <h4 className="text-lg font-bold mb-4">🤖 Adaptive AI "Comeback Mode" (NEW)</h4>
+              <SettingsSection id="ai.adaptive" tab="ai" title="🤖 Adaptive AI (Comeback Mode)" className="bg-red-900 bg-opacity-10" chips={getAutoChipsForField('adaptiveAiEnabled', SETTINGS_HUB_FIELD_META.adaptiveAiEnabled)} description={SETTINGS_HUB_FIELD_META.adaptiveAiEnabled.description} onReset={settingsResetHandlers.ai.fn} resetLabel={settingsResetHandlers.ai.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'ai.adaptive')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -22164,9 +22680,8 @@ function AustraliaGame() {
                     </>
 	                  )}
 	                </div>
-	              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4 bg-cyan-900 bg-opacity-10`}>
-                <h4 className="text-lg font-bold mb-4">🎛️ Priority Resolution</h4>
+              </SettingsSection>
+              <SettingsSection id="advancedSystems.priority" tab="advancedSystems" title="🎛️ Priority Resolution" className="bg-cyan-900 bg-opacity-10" onReset={settingsResetHandlers.advancedSystems.fn} resetLabel={settingsResetHandlers.advancedSystems.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'advancedSystems.priority')!.fieldKeys}>
                 <div className="space-y-4">
                   <div>
                     <div className="font-semibold mb-1">Setting Priority Mode</div>
@@ -22248,9 +22763,8 @@ function AustraliaGame() {
                   )}
                   {renderSettingMetadataCard('priority_system')}
                 </div>
-              </div>
-              <div className={`${themeStyles.border} border rounded-lg p-4 bg-indigo-900 bg-opacity-10`}>
-                <h4 className="text-lg font-bold mb-4">🔍 Decision Transparency</h4>
+              </SettingsSection>
+              <SettingsSection id="advancedSystems.decisionTransparency" tab="advancedSystems" title="🔍 Decision Transparency" className="bg-indigo-900 bg-opacity-10" chips={getAutoChipsForField('decisionTransparencyEnabled', SETTINGS_HUB_FIELD_META.decisionTransparencyEnabled)} description={SETTINGS_HUB_FIELD_META.decisionTransparencyEnabled.description} onReset={settingsResetHandlers.advancedSystems.fn} resetLabel={settingsResetHandlers.advancedSystems.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'advancedSystems.decisionTransparency')!.fieldKeys}>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -22264,6 +22778,11 @@ function AustraliaGame() {
                       {gameSettings.decisionTransparencyEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
+                  {!gameSettings.decisionTransparencyEnabled && (
+                    <div className="text-xs opacity-75">Turn Decision Transparency ON above to reveal timeline, detail-level, and visibility settings.</div>
+                  )}
+                  {gameSettings.decisionTransparencyEnabled && (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <div className="font-semibold mb-1">Visibility Scope</div>
@@ -22386,10 +22905,11 @@ function AustraliaGame() {
                     </div>
                   </div>
                   {renderSettingMetadataCard('decision_transparency')}
+                  </>
+                  )}
                 </div>
-              </div>
-	              <div className={`${themeStyles.border} border rounded-lg p-4`}>
-	                <h4 className="text-lg font-bold mb-4">🔔 Notification Settings</h4>
+              </SettingsSection>
+              <SettingsSection id="interface.notifications" tab="interface" title="🔔 Notification Settings" chips={['Notifications']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.notifications')!.fieldKeys}>
 	                <div className="space-y-5">
 	                  <div>
 	                    <div className="font-semibold mb-2">Size</div>
@@ -22756,10 +23276,48 @@ function AustraliaGame() {
 	                    </div>
 	                  </div>
 	                  {renderSettingMetadataCard('notifications')}
-	                </div>
-	              </div>
-	            </div>
-	          </div>
+                </div>
+              </SettingsSection>
+
+              {uiState.settingsActiveTab === 'saveReset' && settingsSearchMatchedIds === null && (
+                <div className={`${themeStyles.border} border rounded-lg p-4 space-y-3`}>
+                  <h4 className="text-lg font-bold">Reset by Section</h4>
+                  <div className="text-xs opacity-75">Undo just one part of your settings without resetting everything.</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {Object.entries(settingsResetHandlers).map(([key, handler]) => (
+                      <button
+                        key={key}
+                        onClick={handler.fn}
+                        className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm text-left`}
+                      >
+                        {handler.label}
+                      </button>
+                    ))}
+                  </div>
+                  {gameSettings.uxAssistPackEnabled && gameSettings.settingsPresetsEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => updateUiState({ settingsActiveTab: 'quickSetup' })}
+                      className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm`}
+                    >
+                      Jump to Quick Setup: Settings Presets
+                    </button>
+                  )}
+                  <div className="pt-2 border-t border-current border-opacity-10">
+                    <div className="font-semibold text-sm mb-2">Changed from Default</div>
+                    {settingsChangedFieldKeys.length === 0 ? (
+                      <div className="text-xs opacity-75">Everything is at its default value.</div>
+                    ) : (
+                      <div className="text-xs opacity-75 grid grid-cols-1 md:grid-cols-2 gap-1">
+                        {settingsChangedFieldKeys.map(k => <div key={String(k)}>{String(k)}</div>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          </div>
 
           {/* Fixed Footer */}
           <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
