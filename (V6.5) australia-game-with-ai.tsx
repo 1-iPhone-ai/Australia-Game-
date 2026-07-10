@@ -1706,6 +1706,78 @@ interface TeamReservation {
   reason: string;
 }
 
+// V6.7 Phase 3a: Authoritative action accounting. Every bonus action grant (Phase 2a override,
+// 2b bank draw, 2c lending credit, and later Phase 3 Emergency/Initiative grants) mints one of
+// these, tagged with its source, so it can be revalidated immediately before execution rather
+// than trusted purely at grant time. The base per-turn action budget itself is NOT tokenized —
+// only bonus grants are (see mintActionToken) — a full retrofit of the base budget is deferred
+// to Phase 3d's Decision Transparency integration pass.
+type ActionTokenSource = 'normal' | 'shared_bank' | 'lent' | 'override' | 'initiative' | 'emergency';
+type ActionTokenStatus = 'granted' | 'consumed' | 'invalidated';
+interface ActionToken {
+  id: string;
+  teamId: string;
+  actorId: string;
+  source: ActionTokenSource;
+  grantedTurn: number;
+  status: ActionTokenStatus;
+  consumedTurn?: number;
+  consumedActionType?: AIAction['type'];
+  planId?: string;
+  invalidatedReason?: string;
+}
+
+// V6.7 Phase 3a: Persistent multi-actor Team Plans. Unlike TeamGoal/chooseTeamObjective (a pure,
+// stateless function re-deriving one ephemeral goal every call), a TeamPlan is a persisted,
+// multi-step structure that survives across turns/actors on TeamState. Generation wraps
+// chooseTeamObjective's existing output rather than replacing it — chooseTeamObjective itself is
+// left untouched.
+type TeamPlanType =
+  | 'resource_chain' | 'crafting_chain' | 'region_control_push' | 'challenge_push'
+  | 'economic_recovery' | 'teammate_support' | 'sabotage_followup' | 'investment_setup'
+  | 'endgame_conversion' | 'block_opponent_win';
+type TeamPlanStatus = 'proposed' | 'active' | 'blocked' | 'completed' | 'abandoned';
+// Closed list — no catch-all "other" reason, so a detection gap surfaces as a missing case
+// rather than silent overuse of a generic reason (the spec's own over-interruption safeguard).
+type TeamPlanInterruptionReason =
+  | 'action_illegal' | 'resource_unavailable' | 'opponent_immediate_win_threat'
+  | 'actor_financial_danger' | 'expected_value_collapsed'
+  | 'completion_impossible' | 'stronger_opportunity';
+
+interface TeamPlanStep {
+  id: string;
+  order: number;
+  assignedActorId: string;
+  actionType: AIAction['type'];
+  dependsOnStepIds: string[];
+  requiredCash: number;
+  requiredResources: Record<string, number>;
+  targetKind?: TeamReservationTargetKind;
+  targetId?: string;
+  status: 'pending' | 'in_progress' | 'done' | 'skipped' | 'failed';
+  fallbackActionType?: AIAction['type'];
+  overridePermitted: boolean;
+  actionTokenSource: ActionTokenSource;
+}
+
+interface TeamPlan {
+  id: string;
+  type: TeamPlanType;
+  teamId: string;
+  objective: string;
+  priority: number;
+  status: TeamPlanStatus;
+  createdDay: number;
+  expiresDay: number;
+  assignedActorIds: string[];
+  steps: TeamPlanStep[];
+  reservedCash: number;
+  reservedResources: Record<string, number>;
+  expectedValue: number;
+  interruptionThreshold: number;
+  failureReason?: TeamPlanInterruptionReason;
+}
+
 interface TeamSupportLedger {
   cashByActor: Record<string, number>;
   resourcesByActor: Record<string, number>;
@@ -2184,6 +2256,9 @@ interface TeamState {
   supportLedger: TeamSupportLedger;
   adaptiveState: TeamAdaptiveState;
   teamActionBank: TeamActionBankState;
+  actionTokens: ActionToken[];
+  activeTeamPlan: TeamPlan | null;
+  teamPlanHistory: TeamPlan[];
   color: string;
 }
 
@@ -2268,6 +2343,12 @@ type FriendlyAiOverridePolicy = 'never' | 'emergency_only' | 'ask_first' | 'stra
 
 // V6.7 Phase 2b: Shared Team Action Bank (inert unless teamCompetitiveAiEnabled && teamActionBankEnabled)
 type TeamActionBankDistributionMode = 'equal' | 'role_based' | 'objective_based' | 'dynamic';
+
+// V6.7 Phase 3a: Reservation hard-blocking strictness (inert unless teamCompetitiveAiEnabled).
+// 'low' reproduces today's informational-score-bias-only behavior exactly (zero change from
+// pre-3a). 'balanced' (default) only hard-blocks a strictly-higher-priority teammate conflict.
+// 'strict' hard-blocks any active conflict.
+type TeamAiReservationStrictness = 'low' | 'balanced' | 'strict';
 
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
@@ -2471,6 +2552,18 @@ type GameSettingsState = {
   teamAiActionLendingMinimumValueGain: number;
   teamAiActionLendingRequiresCommittedPlan: boolean;
   teamAiActionLendingTransparencyEnabled: boolean;
+  // V6.7 Phase 3a: Team Plans (inert unless teamCompetitiveAiEnabled && teamAiPlanCommitmentEnabled)
+  teamAiPlanCommitmentEnabled: boolean;
+  teamAiPlanCommitmentStrength: number;
+  teamAiPlanMaximumDurationDays: number;
+  teamAiPlanReevaluationFrequency: number;
+  teamAiPlanInterruptionSensitivity: number;
+  teamAiPlanTransparencyEnabled: boolean;
+  // V6.7 Phase 3a: Reservations upgrade (strictness applies whenever teamCompetitiveAiEnabled;
+  // 'low' preserves pre-3a informational-bias-only behavior)
+  teamAiReservationStrictness: TeamAiReservationStrictness;
+  friendlyAiRespectPlayerReservations: boolean;
+  friendlyAiMayRequestReservedResource: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3405,6 +3498,15 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiActionLendingMinimumValueGain: 25,
   teamAiActionLendingRequiresCommittedPlan: true,
   teamAiActionLendingTransparencyEnabled: true,
+  teamAiPlanCommitmentEnabled: false,
+  teamAiPlanCommitmentStrength: 60,
+  teamAiPlanMaximumDurationDays: 5,
+  teamAiPlanReevaluationFrequency: 1,
+  teamAiPlanInterruptionSensitivity: 50,
+  teamAiPlanTransparencyEnabled: true,
+  teamAiReservationStrictness: 'balanced',
+  friendlyAiRespectPlayerReservations: true,
+  friendlyAiMayRequestReservedResource: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3452,7 +3554,7 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, and Action Lending are wired — see the Coming in future updates note).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, Action Lending, Team Plans, and Reservations are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
@@ -3533,6 +3635,8 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionOverrides', tab: 'teamModeAi', title: 'AI Action Overrides', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionOverridesEnabled', 'teamAiOverridePolicy', 'friendlyAiOverridePolicy', 'teamAiOverrideMaxPerActorPerDay', 'teamAiOverrideMaxPerTeamPerDay', 'teamAiOverrideBaseCostMultiplier', 'teamAiOverrideMinimumDecisionScore', 'teamAiOverrideMinimumCashReserve', 'teamAiOverrideEscalatingCostEnabled', 'teamAiOverrideFatigueEnabled', 'teamAiOverrideTransparencyEnabled'] },
   { id: 'teamModeAi.sharedActionBank', tab: 'teamModeAi', title: 'Shared Action Bank', tags: ['Team Mode', 'AI'], fieldKeys: ['teamActionBankEnabled', 'teamActionBankBonusActionsPerDay', 'teamActionBankDistributionMode', 'teamActionBankReserveActions', 'teamActionBankMaxDrawsPerActorPerDay', 'teamActionBankTransparencyEnabled'] },
   { id: 'teamModeAi.actionLending', tab: 'teamModeAi', title: 'Action Lending', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionLendingEnabled', 'teamAiMaxLentActionsPerActorPerDay', 'teamAiMaxReceivedActionsPerActorPerDay', 'teamAiActionLendingMinimumValueGain', 'teamAiActionLendingRequiresCommittedPlan', 'teamAiActionLendingTransparencyEnabled'] },
+  { id: 'teamModeAi.teamPlans', tab: 'teamModeAi', title: 'Team Plans', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiPlanCommitmentEnabled', 'teamAiPlanCommitmentStrength', 'teamAiPlanMaximumDurationDays', 'teamAiPlanReevaluationFrequency', 'teamAiPlanInterruptionSensitivity', 'teamAiPlanTransparencyEnabled'] },
+  { id: 'teamModeAi.reservations', tab: 'teamModeAi', title: 'Reservations', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -4020,6 +4124,229 @@ function chooseTeamObjective(team: TeamState, opponentTeam: TeamState | null, co
   };
 }
 
+// V6.7 Phase 3a: reverse of mapGoalKindToPlanType, used to mirror an active TeamPlan's objective
+// back into team.teamGoals so 2a/2b/2c's existing activeGoal reads (TEAM_ACTION_BANK_GOAL_ACTION_MATCH,
+// teamAiActionLendingRequiresCommittedPlan) start reflecting real plan state with zero changes to
+// their own code.
+const TEAM_PLAN_TYPE_TO_GOAL_KIND: Record<TeamPlanType, TeamGoal['kind']> = {
+  resource_chain: 'crafting',
+  crafting_chain: 'crafting',
+  region_control_push: 'control',
+  challenge_push: 'netWorth',
+  economic_recovery: 'recovery',
+  teammate_support: 'support',
+  sabotage_followup: 'sabotage',
+  investment_setup: 'netWorth',
+  endgame_conversion: 'money',
+  block_opponent_win: 'sabotage'
+};
+
+// V6.7 Phase 3a: maps a TeamGoal's kind to a persisted TeamPlanType. chooseTeamObjective itself
+// stays untouched — this wraps its output into the plan system rather than replacing it. Returns
+// null when the goal doesn't warrant a committed multi-step plan (e.g. a simple cash lead with no
+// opponent threat is fine as ordinary per-turn decisions, exactly like pre-3a behavior).
+function mapGoalKindToPlanType(goal: TeamGoal, context: TeamAiContext): TeamPlanType | null {
+  switch (goal.kind) {
+    case 'money':
+      return (context.opponentLead || 0) > 0 ? 'economic_recovery' : null;
+    case 'netWorth':
+      return context.craftingOpportunity ? 'crafting_chain' : 'investment_setup';
+    case 'regions':
+    case 'control':
+      return 'region_control_push';
+    case 'support':
+      return 'teammate_support';
+    case 'crafting':
+      return 'crafting_chain';
+    case 'sabotage':
+      return 'sabotage_followup';
+    case 'recovery':
+      return 'economic_recovery';
+    default:
+      return null;
+  }
+}
+
+// V6.7 Phase 3a: builds a TeamPlan's steps for a given plan type. Templates match the 3 worked
+// examples from the spec (crafting-chain, region-control-push, sabotage-followup); other plan
+// types get a single-step degenerate plan following the same structure so downstream code (step
+// lookup, dependency checks, token minting) has no special-case branches. Only AI actors are ever
+// assigned a step — a human player is never forced into a scripted plan step.
+function buildTeamPlanSteps(
+  planType: TeamPlanType,
+  goal: TeamGoal,
+  aiActorIds: string[],
+  context: TeamAiContext
+): TeamPlanStep[] {
+  if (aiActorIds.length === 0) return [];
+  const actorAt = (index: number) => aiActorIds[index % aiActorIds.length];
+  const makeStep = (overrides: Partial<TeamPlanStep> & Pick<TeamPlanStep, 'id' | 'order' | 'assignedActorId' | 'actionType'>): TeamPlanStep => ({
+    dependsOnStepIds: [],
+    requiredCash: 0,
+    requiredResources: {},
+    status: 'pending',
+    overridePermitted: false,
+    actionTokenSource: 'normal',
+    ...overrides
+  });
+
+  switch (planType) {
+    case 'crafting_chain':
+    case 'resource_chain': {
+      const gather = makeStep({ id: 'step-gather', order: 0, assignedActorId: actorAt(0), actionType: 'buy_market', targetKind: 'resource', targetId: goal.targetResource });
+      const craft = makeStep({ id: 'step-craft', order: 1, assignedActorId: actorAt(1), actionType: 'craft', dependsOnStepIds: [gather.id] });
+      const steps = [gather, craft];
+      if (context.winCondition !== 'netWorth') {
+        steps.push(makeStep({ id: 'step-sell', order: 2, assignedActorId: actorAt(1), actionType: 'sell', dependsOnStepIds: [craft.id] }));
+      }
+      return steps;
+    }
+    case 'region_control_push': {
+      const travel = makeStep({ id: 'step-travel', order: 0, assignedActorId: actorAt(0), actionType: 'travel', targetKind: 'region', targetId: goal.targetRegion });
+      const deposit = makeStep({ id: 'step-deposit', order: 1, assignedActorId: actorAt(0), actionType: 'region_deposit', targetKind: 'region', targetId: goal.targetRegion, dependsOnStepIds: [travel.id] });
+      const steps = [travel, deposit];
+      if (aiActorIds.length >= 2) {
+        steps.push(makeStep({ id: 'step-reinforce', order: 2, assignedActorId: actorAt(1), actionType: 'region_deposit', targetKind: 'region', targetId: goal.targetRegion, dependsOnStepIds: [deposit.id] }));
+      }
+      return steps;
+    }
+    case 'sabotage_followup': {
+      const sabotage = makeStep({ id: 'step-sabotage', order: 0, assignedActorId: actorAt(0), actionType: 'sabotage' });
+      const followUp = makeStep({ id: 'step-followup', order: 1, assignedActorId: actorAt(1), actionType: 'challenge', dependsOnStepIds: [sabotage.id] });
+      return [sabotage, followUp];
+    }
+    case 'teammate_support':
+      return [makeStep({ id: 'step-support', order: 0, assignedActorId: actorAt(0), actionType: 'give_cash' })];
+    case 'economic_recovery':
+      return [makeStep({ id: 'step-recover', order: 0, assignedActorId: actorAt(0), actionType: 'sell' })];
+    case 'investment_setup':
+      return [makeStep({ id: 'step-invest', order: 0, assignedActorId: actorAt(0), actionType: 'invest' })];
+    case 'endgame_conversion':
+      return [makeStep({ id: 'step-convert', order: 0, assignedActorId: actorAt(0), actionType: 'sell' })];
+    case 'block_opponent_win':
+      return [makeStep({ id: 'step-block', order: 0, assignedActorId: actorAt(0), actionType: 'sabotage' })];
+    case 'challenge_push':
+      return [makeStep({ id: 'step-challenge', order: 0, assignedActorId: actorAt(0), actionType: 'challenge' })];
+    default:
+      return [];
+  }
+}
+
+// V6.7 Phase 3a: generates a persisted TeamPlan, or null if none is warranted this pass. Pure
+// function (like chooseTeamObjective) — commitmentRoll is a caller-supplied aiRandom() draw
+// (Section 32 determinism: the only RNG source touched anywhere in plan generation), gating
+// generation itself so it's probabilistic rather than unconditional.
+function generateTeamPlan(
+  team: TeamState,
+  opponentTeam: TeamState | null,
+  context: TeamAiContext,
+  commitmentRoll: number
+): TeamPlan | null {
+  const strength = Math.max(0, Math.min(100, context.settings.teamAiPlanCommitmentStrength));
+  if (commitmentRoll > strength / 100) return null;
+
+  const goal = chooseTeamObjective(team, opponentTeam, context);
+  const planType = mapGoalKindToPlanType(goal, context);
+  if (!planType) return null;
+
+  const aiActorIds = (context.teamActors || []).filter(actor => actor.kind === 'ai').map(actor => actor.id);
+  if (aiActorIds.length === 0) return null;
+
+  const steps = buildTeamPlanSteps(planType, goal, aiActorIds, context);
+  if (steps.length === 0) return null;
+
+  const day = context.day || 0;
+  const reservedResources = steps.reduce<Record<string, number>>((acc, step) => {
+    for (const [resource, qty] of Object.entries(step.requiredResources)) {
+      acc[resource] = (acc[resource] || 0) + qty;
+    }
+    return acc;
+  }, {});
+  const reservedCash = steps.reduce((sum, step) => sum + step.requiredCash, 0);
+  // Heuristic expected value: proportional to the objective's priority and step count, scaled
+  // down when the team is already behind (a behind team's plans should be evaluated more
+  // cautiously against alternatives) — this reuses only signals chooseTeamObjective/context
+  // already expose, not a from-scratch scoring model.
+  const expectedValue = goal.priority * 100 * steps.length * ((context.opponentLead || 0) > 0 ? 0.85 : 1);
+  const sensitivity = Math.max(0, Math.min(100, context.settings.teamAiPlanInterruptionSensitivity));
+  const interruptionThreshold = Math.max(0, expectedValue * (1 - sensitivity / 100));
+  const expiresDay = day + Math.min(context.settings.teamAiPlanMaximumDurationDays, steps.length * 2);
+
+  return {
+    id: `team_plan_${team.id}_${day}_${Math.random().toString(36).slice(2, 8)}`,
+    type: planType,
+    teamId: team.id,
+    objective: goal.description,
+    priority: goal.priority,
+    status: 'active',
+    createdDay: day,
+    expiresDay,
+    assignedActorIds: Array.from(new Set(steps.map(step => step.assignedActorId))),
+    steps,
+    reservedCash,
+    reservedResources,
+    expectedValue,
+    interruptionThreshold
+  };
+}
+
+// V6.7 Phase 3a: checks an active plan's continuation status. Priority order — first match wins,
+// never combines reasons (the spec's closed 7-value TeamPlanInterruptionReason union and its
+// "minor score differences should not constantly replace active plans" safeguard both depend on
+// this). liquidityDangerActorIds and candidatePlan are precomputed by the caller (analyzeTeamLiquidity
+// and a speculative generateTeamPlan call are both hooks, so this function stays pure/testable).
+function evaluateTeamPlanContinuation(
+  plan: TeamPlan,
+  team: TeamState,
+  context: TeamAiContext,
+  liquidityDangerActorIds: string[],
+  candidatePlan: TeamPlan | null
+): { action: 'continue' | 'complete' | 'interrupt' | 'reevaluate'; reason?: TeamPlanInterruptionReason } {
+  const day = context.day || 0;
+
+  if (plan.steps.every(step => step.status === 'done' || step.status === 'skipped')) {
+    return { action: 'complete' };
+  }
+
+  // Stalled-plan heuristic for "expected value collapsed": no progress made past the halfway
+  // point of the plan's allotted duration is treated as the value no longer being realizable.
+  const stepsDone = plan.steps.filter(step => step.status === 'done').length;
+  const halfLifeDay = plan.createdDay + Math.max(1, Math.round((plan.expiresDay - plan.createdDay) / 2));
+  if (stepsDone === 0 && day > halfLifeDay) {
+    return { action: 'interrupt', reason: 'expected_value_collapsed' };
+  }
+
+  const opponentLead = context.opponentLead || 0;
+  const nearEndgame = context.totalDays > 0 && day >= context.totalDays * 0.8;
+  if (nearEndgame && opponentLead > (context.teamScore?.total || 0) * 0.5 && opponentLead > 0) {
+    return { action: 'interrupt', reason: 'opponent_immediate_win_threat' };
+  }
+
+  if (plan.assignedActorIds.some(actorId => liquidityDangerActorIds.includes(actorId))) {
+    return { action: 'interrupt', reason: 'actor_financial_danger' };
+  }
+
+  if (plan.assignedActorIds.some(actorId => !team.actorIds.includes(actorId))) {
+    return { action: 'interrupt', reason: 'completion_impossible' };
+  }
+
+  if (day > plan.expiresDay) {
+    return { action: 'interrupt', reason: 'completion_impossible' };
+  }
+
+  const sensitivity = Math.max(0, Math.min(100, context.settings.teamAiPlanInterruptionSensitivity));
+  if (candidatePlan && candidatePlan.expectedValue >= plan.expectedValue * (1 + (sensitivity / 100) * 0.5)) {
+    return { action: 'interrupt', reason: 'stronger_opportunity' };
+  }
+
+  const reevaluationFrequency = Math.max(1, context.settings.teamAiPlanReevaluationFrequency);
+  if (day % reevaluationFrequency === 0) {
+    return { action: 'reevaluate' };
+  }
+
+  return { action: 'continue' };
+}
+
 const DEFAULT_PERSONAL_RECORDS: PersonalRecord = {
   highestChallenge: 0,
   mostExpensiveResourceSold: { resource: '', price: 0 },
@@ -4158,6 +4485,9 @@ const TEAM_SUPPORT_REMOTE_MIN = 150;
 const TEAM_SUPPORT_REMOTE_MAX = 700;
 const TEAM_SUPPORT_REPEAT_COOLDOWN = 3;
 const TEAM_SUPPORT_RETURN_COOLDOWN = 5;
+// V6.7 Phase 3a: settled (consumed/invalidated) ActionTokens older than this many turns are
+// pruned during the daily team-rebuild pass, independent of the flat 60-entry cap.
+const ACTION_TOKEN_PRUNE_TURN_WINDOW = 40;
 const TEAM_SUPPORT_MIN_IMPROVEMENT = 120;
 const TEAM_SUPPORT_BALANCING_TURNS = 2;
 const TEAM_SYNC_EFFECTIVE_MAX = 0.22;
@@ -5877,6 +6207,125 @@ const sanitizeTeamActionBank = (value: unknown): TeamActionBankState => {
   return { balance, drawsUsedTodayByActor, lastDrawDay };
 };
 
+const ACTION_TOKEN_SOURCES: ActionTokenSource[] = ['normal', 'shared_bank', 'lent', 'override', 'initiative', 'emergency'];
+const ACTION_TOKEN_STATUSES: ActionTokenStatus[] = ['granted', 'consumed', 'invalidated'];
+
+// V6.7 Phase 3a: never trust a persisted enum blindly (same convention as activeReservations/
+// messageLog sanitization) — a malformed token is dropped entirely rather than coerced.
+const sanitizeActionToken = (value: unknown): ActionToken | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<ActionToken>;
+  if (typeof source.id !== 'string' || typeof source.teamId !== 'string' || typeof source.actorId !== 'string') return null;
+  if (!ACTION_TOKEN_SOURCES.includes(source.source as ActionTokenSource)) return null;
+  if (!ACTION_TOKEN_STATUSES.includes(source.status as ActionTokenStatus)) return null;
+  if (typeof source.grantedTurn !== 'number' || !isFinite(source.grantedTurn)) return null;
+  return {
+    id: source.id,
+    teamId: source.teamId,
+    actorId: source.actorId,
+    source: source.source as ActionTokenSource,
+    grantedTurn: Math.max(0, Math.floor(source.grantedTurn)),
+    status: source.status as ActionTokenStatus,
+    consumedTurn: typeof source.consumedTurn === 'number' && isFinite(source.consumedTurn) ? Math.max(0, Math.floor(source.consumedTurn)) : undefined,
+    consumedActionType: typeof source.consumedActionType === 'string' ? source.consumedActionType as AIAction['type'] : undefined,
+    planId: typeof source.planId === 'string' ? source.planId : undefined,
+    invalidatedReason: typeof source.invalidatedReason === 'string' ? source.invalidatedReason : undefined
+  };
+};
+
+const sanitizeActionTokens = (value: unknown): ActionToken[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(entry => sanitizeActionToken(entry))
+    .filter((token): token is ActionToken => Boolean(token))
+    .slice(-60);
+};
+
+const TEAM_PLAN_TYPES: TeamPlanType[] = [
+  'resource_chain', 'crafting_chain', 'region_control_push', 'challenge_push',
+  'economic_recovery', 'teammate_support', 'sabotage_followup', 'investment_setup',
+  'endgame_conversion', 'block_opponent_win'
+];
+const TEAM_PLAN_STATUSES: TeamPlanStatus[] = ['proposed', 'active', 'blocked', 'completed', 'abandoned'];
+const TEAM_PLAN_INTERRUPTION_REASONS: TeamPlanInterruptionReason[] = [
+  'action_illegal', 'resource_unavailable', 'opponent_immediate_win_threat',
+  'actor_financial_danger', 'expected_value_collapsed', 'completion_impossible', 'stronger_opportunity'
+];
+const TEAM_PLAN_STEP_STATUSES: TeamPlanStep['status'][] = ['pending', 'in_progress', 'done', 'skipped', 'failed'];
+const TEAM_RESERVATION_TARGET_KINDS: TeamReservationTargetKind[] = ['region', 'resource', 'recipe', 'challenge'];
+
+const sanitizeTeamPlanStep = (value: unknown): TeamPlanStep | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamPlanStep>;
+  if (typeof source.id !== 'string' || typeof source.assignedActorId !== 'string' || typeof source.actionType !== 'string') return null;
+  if (!TEAM_PLAN_STEP_STATUSES.includes(source.status as TeamPlanStep['status'])) return null;
+  const requiredResources = (source.requiredResources && typeof source.requiredResources === 'object')
+    ? Object.entries(source.requiredResources).reduce<Record<string, number>>((acc, [resource, qty]) => {
+        if (typeof qty === 'number' && isFinite(qty)) acc[resource] = Math.max(0, Math.floor(qty));
+        return acc;
+      }, {})
+    : {};
+  return {
+    id: source.id,
+    order: typeof source.order === 'number' && isFinite(source.order) ? source.order : 0,
+    assignedActorId: source.assignedActorId,
+    actionType: source.actionType as AIAction['type'],
+    dependsOnStepIds: Array.isArray(source.dependsOnStepIds) ? source.dependsOnStepIds.filter(id => typeof id === 'string') : [],
+    requiredCash: typeof source.requiredCash === 'number' && isFinite(source.requiredCash) ? Math.max(0, Math.floor(source.requiredCash)) : 0,
+    requiredResources,
+    targetKind: TEAM_RESERVATION_TARGET_KINDS.includes(source.targetKind as TeamReservationTargetKind) ? source.targetKind as TeamReservationTargetKind : undefined,
+    targetId: typeof source.targetId === 'string' ? source.targetId : undefined,
+    status: source.status as TeamPlanStep['status'],
+    fallbackActionType: typeof source.fallbackActionType === 'string' ? source.fallbackActionType as AIAction['type'] : undefined,
+    overridePermitted: Boolean(source.overridePermitted),
+    actionTokenSource: ACTION_TOKEN_SOURCES.includes(source.actionTokenSource as ActionTokenSource) ? source.actionTokenSource as ActionTokenSource : 'normal'
+  };
+};
+
+// V6.7 Phase 3a: returns null on any malformed shape rather than resuming a plan in an unknown
+// state — matching the file's general "never trust persisted enums blindly" convention.
+const sanitizeTeamPlan = (value: unknown): TeamPlan | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamPlan>;
+  if (typeof source.id !== 'string' || typeof source.teamId !== 'string') return null;
+  if (!TEAM_PLAN_TYPES.includes(source.type as TeamPlanType)) return null;
+  if (!TEAM_PLAN_STATUSES.includes(source.status as TeamPlanStatus)) return null;
+  const steps = Array.isArray(source.steps)
+    ? source.steps.map(step => sanitizeTeamPlanStep(step)).filter((step): step is TeamPlanStep => Boolean(step))
+    : [];
+  const reservedResources = (source.reservedResources && typeof source.reservedResources === 'object')
+    ? Object.entries(source.reservedResources).reduce<Record<string, number>>((acc, [resource, qty]) => {
+        if (typeof qty === 'number' && isFinite(qty)) acc[resource] = Math.max(0, Math.floor(qty));
+        return acc;
+      }, {})
+    : {};
+  return {
+    id: source.id,
+    type: source.type as TeamPlanType,
+    teamId: source.teamId,
+    objective: typeof source.objective === 'string' ? source.objective : '',
+    priority: typeof source.priority === 'number' && isFinite(source.priority) ? source.priority : 1,
+    status: source.status as TeamPlanStatus,
+    createdDay: typeof source.createdDay === 'number' && isFinite(source.createdDay) ? Math.max(0, Math.floor(source.createdDay)) : 0,
+    expiresDay: typeof source.expiresDay === 'number' && isFinite(source.expiresDay) ? Math.max(0, Math.floor(source.expiresDay)) : 0,
+    assignedActorIds: Array.isArray(source.assignedActorIds) ? source.assignedActorIds.filter(id => typeof id === 'string') : [],
+    steps,
+    reservedCash: typeof source.reservedCash === 'number' && isFinite(source.reservedCash) ? Math.max(0, Math.floor(source.reservedCash)) : 0,
+    reservedResources,
+    expectedValue: typeof source.expectedValue === 'number' && isFinite(source.expectedValue) ? source.expectedValue : 0,
+    interruptionThreshold: typeof source.interruptionThreshold === 'number' && isFinite(source.interruptionThreshold) ? source.interruptionThreshold : 0,
+    failureReason: TEAM_PLAN_INTERRUPTION_REASONS.includes(source.failureReason as TeamPlanInterruptionReason) ? source.failureReason as TeamPlanInterruptionReason : undefined
+  };
+};
+
+const sanitizeTeamPlanHistory = (value: unknown): TeamPlan[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(entry => sanitizeTeamPlan(entry))
+    .filter((plan): plan is TeamPlan => Boolean(plan))
+    .slice(-10);
+};
+
 const normalizePriorityMode = (value: unknown): PriorityMode => {
   return value === 'adaptive' || value === 'manual' ? value : 'balanced';
 };
@@ -6319,6 +6768,9 @@ const createDefaultTeamState = (
   supportLedger: createDefaultTeamSupportLedger(),
   adaptiveState: createDefaultTeamAdaptiveState(),
   teamActionBank: createDefaultTeamActionBankState(),
+  actionTokens: [],
+  activeTeamPlan: null,
+  teamPlanHistory: [],
   color
 });
 
@@ -7744,7 +8196,10 @@ function AustraliaGame() {
             }, {}),
             supportLedger: sanitizeTeamSupportLedger(teamData?.supportLedger),
             adaptiveState: sanitizeTeamAdaptiveState(teamData?.adaptiveState),
-            teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank)
+            teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank),
+            actionTokens: sanitizeActionTokens(teamData?.actionTokens),
+            activeTeamPlan: sanitizeTeamPlan(teamData?.activeTeamPlan),
+            teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory)
           };
           return acc;
         }, {})
@@ -7989,6 +8444,25 @@ function AustraliaGame() {
         teamAiActionLendingTransparencyEnabled: typeof settingsData.teamAiActionLendingTransparencyEnabled === 'boolean'
           ? settingsData.teamAiActionLendingTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
+        teamAiPlanCommitmentEnabled: typeof settingsData.teamAiPlanCommitmentEnabled === 'boolean'
+          ? settingsData.teamAiPlanCommitmentEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentEnabled,
+        teamAiPlanCommitmentStrength: clampSettingNumber(settingsData.teamAiPlanCommitmentStrength, DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentStrength, 0, 100),
+        teamAiPlanMaximumDurationDays: clampSettingNumber(settingsData.teamAiPlanMaximumDurationDays, DEFAULT_GAME_SETTINGS.teamAiPlanMaximumDurationDays, 1, 14),
+        teamAiPlanReevaluationFrequency: clampSettingNumber(settingsData.teamAiPlanReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiPlanReevaluationFrequency, 1, 5),
+        teamAiPlanInterruptionSensitivity: clampSettingNumber(settingsData.teamAiPlanInterruptionSensitivity, DEFAULT_GAME_SETTINGS.teamAiPlanInterruptionSensitivity, 0, 100),
+        teamAiPlanTransparencyEnabled: typeof settingsData.teamAiPlanTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiPlanTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
+        teamAiReservationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.teamAiReservationStrictness)
+          ? settingsData.teamAiReservationStrictness
+          : DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
+        friendlyAiRespectPlayerReservations: typeof settingsData.friendlyAiRespectPlayerReservations === 'boolean'
+          ? settingsData.friendlyAiRespectPlayerReservations
+          : DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
+        friendlyAiMayRequestReservedResource: typeof settingsData.friendlyAiMayRequestReservedResource === 'boolean'
+          ? settingsData.friendlyAiMayRequestReservedResource
+          : DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -16150,6 +16624,113 @@ function AustraliaGame() {
     updateTeamState
   ]);
 
+  // V6.7 Phase 3a: Authoritative action accounting. mintActionToken tags a bonus grant (from
+  // Phase 2a override, 2b bank draw, 2c lending credit, or a future Phase 3 Emergency/Initiative
+  // grant) so it can be revalidated immediately before execution. The base per-turn budget is
+  // deliberately NOT tokenized in 3a — only bonus grants are (see plan Governing Decision #2).
+  const mintActionToken = useCallback((teamId: string, actorId: string, source: ActionTokenSource, planId?: string): string => {
+    const tokenId = `team_token_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      actionTokens: [
+        ...(prev.actionTokens || []),
+        {
+          id: tokenId,
+          teamId,
+          actorId,
+          source,
+          grantedTurn: gameState.turnCounter,
+          status: 'granted' as ActionTokenStatus,
+          planId
+        }
+      ].slice(-60)
+    }));
+    return tokenId;
+  }, [gameState.turnCounter, updateTeamState]);
+
+  // V6.7 Phase 3a: revalidation-before-execution, called immediately before executeTeamAiAction
+  // for any token-sourced decision — never inside executeTeamAiAction itself, keeping its 15
+  // existing per-type branches completely untouched. Normal-budget (untokenized) decisions never
+  // call this at all, so behavior when the token system isn't invoked is unchanged.
+  const redeemActionToken = useCallback((
+    teamId: string,
+    actorId: string,
+    decision: AIAction,
+    tokenId: string,
+    reservationHardBlockCheck?: (targetKind: TeamReservationTargetKind, targetId: string, actorId: string) => boolean
+  ): boolean => {
+    if (gameState.gameMode !== 'game') return false;
+
+    const team = teamsByIdRef.current[teamId];
+    const token = (team?.actionTokens || []).find(t => t.id === tokenId);
+    if (!token || token.status !== 'granted' || token.actorId !== actorId) return false;
+
+    const actor = getActorState(actorId);
+    if (!actor) return false;
+
+    const invalidate = (reason: string) => {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        actionTokens: (prev.actionTokens || []).map(t =>
+          t.id === tokenId ? { ...t, status: 'invalidated' as ActionTokenStatus, invalidatedReason: reason } : t
+        )
+      }));
+      return false;
+    };
+
+    // Cash: re-check against the actor's CURRENT money, not the value captured when the
+    // decision was originally scored (it may be stale by the time this executes).
+    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount;
+    if (typeof cashCost === 'number' && cashCost > 0 && actor.money < cashCost) {
+      return invalidate('insufficient_cash_at_execution');
+    }
+
+    // Resources: for sell/craft/give_resource, re-check the actor's current inventory.
+    const requiredResource = decision.data?.resource;
+    if (typeof requiredResource === 'string' && (decision.type === 'sell' || decision.type === 'craft' || decision.type === 'give_resource')) {
+      const requiredQty = typeof decision.data?.quantity === 'number' ? decision.data.quantity : 1;
+      const owned = (actor.inventory || []).filter(item => item === requiredResource).length;
+      if (owned < requiredQty) return invalidate('resource_unavailable_at_execution');
+    }
+
+    // Reservation conflict: only checked if a hard-block predicate was supplied by the caller
+    // (getRankedTeamAiDecisions defines isReservationHardBlocked; passed through explicitly to
+    // avoid a circular useCallback dependency between the two).
+    const targetKind = decision.data?.teamModeMeta?.reservationTargetKind as TeamReservationTargetKind | undefined;
+    const targetId = decision.data?.teamModeMeta?.reservationTargetId as string | undefined;
+    if (reservationHardBlockCheck && targetKind && targetId && reservationHardBlockCheck(targetKind, targetId, actorId)) {
+      return invalidate('reservation_conflict');
+    }
+
+    // Plan validity: if this decision executes a specific plan step, re-check the plan is still
+    // active and the step's dependencies are still all done (the plan may have been interrupted
+    // or the step's prerequisites invalidated between scoring and execution).
+    const planStepId = decision.data?.planStepId as string | undefined;
+    if (planStepId) {
+      const plan = team?.activeTeamPlan;
+      if (!plan || plan.status !== 'active') return invalidate('plan_no_longer_active');
+      const step = plan.steps.find(s => s.id === planStepId);
+      if (!step) return invalidate('plan_step_missing');
+      const dependenciesDone = step.dependsOnStepIds.every(depId => plan.steps.find(s => s.id === depId)?.status === 'done');
+      if (!dependenciesDone) return invalidate('plan_step_dependencies_incomplete');
+    }
+
+    // Daily limits: re-check the source-specific cap wasn't exhausted by another decision this
+    // same turn (defensive — the turn loop is sequential/synchronous per actor today, so this
+    // race isn't currently reachable, but Section 30 calls for it explicitly).
+    if (token.source === 'override' && (actor.overridesUsedToday || 0) >= OVERRIDE_DAILY_CAP) {
+      return invalidate('daily_override_cap_reached_at_execution');
+    }
+
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      actionTokens: (prev.actionTokens || []).map(t =>
+        t.id === tokenId ? { ...t, status: 'consumed' as ActionTokenStatus, consumedTurn: gameState.turnCounter, consumedActionType: decision.type } : t
+      )
+    }));
+    return true;
+  }, [gameState.gameMode, gameState.turnCounter, getActorState, updateTeamState]);
+
   const issueTeamDirective = useCallback((directive: {
     fromActorId: string;
     toActorId?: string;
@@ -17147,6 +17728,117 @@ function AustraliaGame() {
     }
   }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
 
+  // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
+  // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
+  // the literal first statement, satisfying the spec's "skip everything together when Competitive
+  // AI is off" requirement at the mutation source. Called once per team per day from advanceDay's
+  // team-rebuild reduce. Returns null (no changes) when either master toggle is off, so a team's
+  // activeTeamPlan/teamPlanHistory/teamGoals simply carry through unchanged — zero behavior change
+  // when off.
+  const runCompetitiveTeamPlanningPass = useCallback((
+    teamId: string,
+    teamAiContext: TeamAiContext
+  ): { activeTeamPlan: TeamPlan | null; teamPlanHistory: TeamPlan[]; teamGoals: TeamGoal[] } | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiPlanCommitmentEnabled) return null;
+
+    const team = teamsByIdRef.current[teamId];
+    if (!team) return null;
+    const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    const opponentTeam = teamsByIdRef.current[opponentTeamId] || null;
+
+    const liquidityAnalysis = analyzeTeamLiquidity(teamId);
+    const liquidityDangerActorIds = Object.entries(liquidityAnalysis?.byActorId || {})
+      .filter(([, info]: [string, any]) => info?.isRecoveryEligible)
+      .map(([actorId]) => actorId);
+
+    let nextActiveTeamPlan: TeamPlan | null = team.activeTeamPlan;
+    let archivedPlan: TeamPlan | null = null;
+
+    if (nextActiveTeamPlan) {
+      const candidateRoll = aiRandom();
+      const candidatePlan = generateTeamPlan(team, opponentTeam, teamAiContext, candidateRoll);
+      const continuation = evaluateTeamPlanContinuation(nextActiveTeamPlan, team, teamAiContext, liquidityDangerActorIds, candidatePlan);
+      if (continuation.action === 'complete') {
+        archivedPlan = { ...nextActiveTeamPlan, status: 'completed' };
+        nextActiveTeamPlan = null;
+      } else if (continuation.action === 'interrupt') {
+        archivedPlan = { ...nextActiveTeamPlan, status: 'abandoned', failureReason: continuation.reason };
+        nextActiveTeamPlan = null;
+        // Reservations created for this plan's steps are left to the existing expiry sweep
+        // (reserveTeamTarget/pruneExpiredTeamState) rather than force-released here — an
+        // interrupted plan's target may still be worth holding (e.g. a contested region), and
+        // Section 26's blanket release is explicitly scoped to the mid-game DISABLE case below,
+        // not to ordinary in-game plan interruption.
+      }
+      // 'reevaluate'/'continue': plan carries through unchanged in 3a (round-robin assignment
+      // doesn't change once actors are fixed, so no reassignment logic is needed yet).
+    } else {
+      const roll = aiRandom();
+      const generated = generateTeamPlan(team, opponentTeam, teamAiContext, roll);
+      if (generated) {
+        generated.steps.forEach(step => {
+          if (step.targetKind && step.targetId) {
+            reserveTeamTarget({
+              teamId,
+              actorId: step.assignedActorId,
+              targetKind: step.targetKind,
+              targetId: step.targetId,
+              priority: generated.priority,
+              reason: `Team Plan: ${generated.objective}`
+            });
+          }
+        });
+      }
+      nextActiveTeamPlan = generated;
+    }
+
+    const teamGoals = nextActiveTeamPlan
+      ? [{
+          id: `plan-goal-${nextActiveTeamPlan.id}`,
+          kind: TEAM_PLAN_TYPE_TO_GOAL_KIND[nextActiveTeamPlan.type],
+          description: nextActiveTeamPlan.objective,
+          priority: nextActiveTeamPlan.priority,
+          status: 'active' as const,
+          reason: `Active Team Plan: ${nextActiveTeamPlan.objective}`
+        }]
+      : (team.teamGoals || []).filter(goal => !goal.id.startsWith('plan-goal-'));
+
+    return {
+      activeTeamPlan: nextActiveTeamPlan,
+      teamPlanHistory: archivedPlan ? [...(team.teamPlanHistory || []), archivedPlan].slice(-10) : (team.teamPlanHistory || []),
+      teamGoals
+    };
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, analyzeTeamLiquidity, aiRandom, reserveTeamTarget]);
+
+  // V6.7 Phase 3a (Section 26 "Safe mid-game setting changes"): releases reservations, invalidates
+  // unconsumed tokens, and abandons any active plan the instant Competitive AI is disabled mid-game
+  // — immediately, not waiting for the next day boundary, since a mid-game toggle can happen at any
+  // moment. Explicitly does NOT roll back any already-applied game effects (cash transferred, items
+  // crafted, regions deposited) — those are ordinary game state and are never undone.
+  const prevTeamCompetitiveAiEnabledRef = useRef<boolean>(gameSettings.teamCompetitiveAiEnabled);
+  useEffect(() => {
+    const wasEnabled = prevTeamCompetitiveAiEnabledRef.current;
+    const isEnabled = gameSettings.teamCompetitiveAiEnabled;
+    prevTeamCompetitiveAiEnabledRef.current = isEnabled;
+    if (!wasEnabled || isEnabled) return; // only fires on the true -> false edge
+
+    [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        activeReservations: (prev.activeReservations || []).map(reservation =>
+          reservation.status === 'active' ? { ...reservation, status: 'released' as TeamReservationStatus } : reservation
+        ),
+        actionTokens: (prev.actionTokens || []).map(token =>
+          token.status === 'granted' ? { ...token, status: 'invalidated' as ActionTokenStatus, invalidatedReason: 'competitive_ai_disabled' } : token
+        ),
+        activeTeamPlan: null,
+        teamPlanHistory: prev.activeTeamPlan
+          ? [...(prev.teamPlanHistory || []), { ...prev.activeTeamPlan, status: 'abandoned' as TeamPlanStatus }].slice(-10)
+          : (prev.teamPlanHistory || [])
+      }));
+    });
+  }, [gameSettings.teamCompetitiveAiEnabled, updateTeamState]);
+
   const advanceDay = useCallback(() => {
     const prevDay = gameState.day;
     const currentPlayer = player;
@@ -17552,7 +18244,44 @@ function AustraliaGame() {
                 drawsUsedTodayByActor: {},
                 lastDrawDay: newDay
               }
-            : sanitizeTeamActionBank(teamState.teamActionBank)
+            : sanitizeTeamActionBank(teamState.teamActionBank),
+          // V6.7 Phase 3a: prune old consumed/invalidated tokens (granted tokens are always kept
+          // regardless of age — only settled ones age out), independent of the 60-entry cap.
+          actionTokens: (teamState.actionTokens || []).filter(token =>
+            token.status === 'granted' || (projectedTurnCounter - token.grantedTurn) < ACTION_TOKEN_PRUNE_TURN_WINDOW
+          ).slice(-60),
+          // V6.7 Phase 3a: single daily planning pass, gated by runCompetitiveTeamPlanningPass's
+          // own early-return guard — with either master toggle off, planningResult is null and
+          // activeTeamPlan/teamPlanHistory/teamGoals all pass through completely unchanged.
+          ...(() => {
+            const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+            const metricValues = projectedTeamMetricValues[gameSettings.winCondition];
+            const teamMetricValue = teamId === TEAM_PLAYER_ID ? metricValues.player : metricValues.ai;
+            const opponentMetricValue = teamId === TEAM_PLAYER_ID ? metricValues.ai : metricValues.player;
+            const planningContext: TeamAiContext = {
+              profile: normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile),
+              winCondition: gameSettings.winCondition,
+              selectedMode: gameState.selectedMode,
+              settings: gameSettings,
+              day: newDay,
+              totalDays: gameSettings.totalDays,
+              teamActors,
+              opponentActors: (teamsByIdRef.current[opponentTeamId]?.actorIds || [])
+                .map(actorId => projectedActors[actorId]).filter(Boolean),
+              teamScore: scoreBreakdown,
+              opponentLead: Math.max(0, opponentMetricValue - teamMetricValue),
+              controlledRegions: scoreBreakdown.controlledRegions,
+              currentTurn: projectedTurnCounter
+            };
+            const planningResult = runCompetitiveTeamPlanningPass(teamId, planningContext);
+            return planningResult
+              ? {
+                  activeTeamPlan: planningResult.activeTeamPlan,
+                  teamPlanHistory: planningResult.teamPlanHistory,
+                  teamGoals: planningResult.teamGoals
+                }
+              : {};
+          })()
         };
         return acc;
       }, {});
@@ -17968,7 +18697,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, applyLoanTick, buildLiveTeamAdaptiveState, compareCompetitiveMetricValues, computeNetWorth, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, applyLoanTick, buildLiveTeamAdaptiveState, compareCompetitiveMetricValues, computeNetWorth, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -18546,6 +19275,51 @@ function AustraliaGame() {
       moneyFocusDirective
     };
   }, [getActorActiveTeamMessages]);
+
+  // V6.7 Phase 3a: reservation hard-blocking, opt-in via teamAiReservationStrictness (default
+  // 'balanced' — turning on Competitive AI alone does not change pre-3a behavior). A standalone
+  // component-level closure (not nested inside getRankedTeamAiDecisions) so it can be shared
+  // between the ranking-time filter below and redeemActionToken's execution-time revalidation —
+  // single source of truth for both call sites.
+  // 'low': always false (reproduces today's informational-score-bias-only behavior exactly).
+  // 'balanced': only hard-blocks a conflicting reservation with strictly higher priority than the
+  // reservation system's own default priority baseline (3 — the same fallback used throughout
+  // this file wherever a decision's own plan priority isn't available, e.g. reserveTeamTarget's
+  // callers' `Math.max(2, decision.plan?.priority || 3)`).
+  // 'strict': hard-blocks any active conflict.
+  const isReservationHardBlocked = useCallback((
+    targetKind: TeamReservationTargetKind,
+    targetId: string,
+    actorId: string
+  ): boolean => {
+    // Reservations themselves exist independent of Competitive AI (classic Team Mode already uses
+    // them), so hard-blocking must stay off whenever the Competitive AI master toggle is off —
+    // otherwise this would change classic Team Mode behavior, not just Competitive AI behavior.
+    if (!gameSettings.teamCompetitiveAiEnabled) return false;
+    const strictness = gameSettings.teamAiReservationStrictness;
+    if (strictness === 'low') return false;
+
+    const actor = getActorState(actorId);
+    if (!actor) return false;
+    const team = teamsByIdRef.current[actor.teamId];
+    const conflicting = (team?.activeReservations || []).find(reservation =>
+      reservation.status === 'active' &&
+      reservation.targetKind === targetKind &&
+      reservation.targetId === targetId &&
+      reservation.actorId !== actorId
+    );
+    if (!conflicting) return false;
+
+    const conflictOwner = getActorState(conflicting.actorId);
+    if (conflictOwner?.kind === 'human') {
+      if (!gameSettings.friendlyAiRespectPlayerReservations) return false;
+      if (gameSettings.friendlyAiMayRequestReservedResource) return false; // soft bias only, same as pre-3a
+      return true;
+    }
+
+    if (strictness === 'strict') return true;
+    return conflicting.priority > 3;
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiReservationStrictness, gameSettings.friendlyAiRespectPlayerReservations, gameSettings.friendlyAiMayRequestReservedResource, getActorState]);
 
   const getRankedTeamAiDecisions = useCallback((actorId: string): ScoredTeamAiDecision[] => {
     const actor = getActorState(actorId);
@@ -19715,11 +20489,37 @@ function AustraliaGame() {
       mode: (gameState.selectedMode || 'team_human_ai_vs_ai_ai') as GameModeSelection,
       candidates: rankedInputDecisions
     });
-    return rankedCandidates.map(candidate => ({
+    // V6.7 Phase 3a: reservation hard-blocking. This is a FILTER on top of (not a replacement
+    // for) the existing hasReservationConflict score-bias/soft-skip logic already applied above —
+    // at teamAiReservationStrictness: 'low' this filter is a no-op, exactly preserving pre-3a
+    // behavior. Only region/challenge/resource-targeted decision types carry a reservable target;
+    // everything else passes through untouched.
+    const reservationFiltered = (!gameSettings.teamCompetitiveAiEnabled || gameSettings.teamAiReservationStrictness === 'low')
+      ? rankedCandidates
+      : rankedCandidates.filter(candidate => {
+          let targetKind: TeamReservationTargetKind | null = null;
+          let targetId: string | null = null;
+          if ((candidate.type === 'region_deposit' || candidate.type === 'travel' || candidate.type === 'cashout_region') && candidate.data?.region) {
+            targetKind = 'region';
+            targetId = candidate.data.region;
+          } else if (candidate.type === 'challenge' && candidate.data?.challenge?.name) {
+            targetKind = 'challenge';
+            targetId = candidate.data.challenge.name;
+          } else if (candidate.type === 'buy_market') {
+            const topPurchase = Array.isArray(candidate.data?.purchases) ? candidate.data.purchases[0] : null;
+            if (topPurchase?.resource) {
+              targetKind = 'resource';
+              targetId = topPurchase.resource;
+            }
+          }
+          if (!targetKind || !targetId) return true;
+          return !isReservationHardBlocked(targetKind, targetId, actorId);
+        });
+    return reservationFiltered.map(candidate => ({
       ...(candidate as ScoredTeamAiDecision),
       score: candidate.traceMeta?.adjustedScore || candidate.score
     }));
-  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeNetWorth, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, isTeamMode, teamScoreSummary]);
+  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeNetWorth, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, isReservationHardBlocked, isTeamMode, teamScoreSummary]);
 
   const shouldTeamActorUseOverride = useCallback((actorId: string, nextDecision: ScoredTeamAiDecision | null) => {
     const actor = getActorState(actorId);
@@ -20193,6 +20993,43 @@ function AustraliaGame() {
     gameState.gameMode, gameState.turnCounter, getActorState, getRankedTeamAiDecisions
   ]);
 
+  // V6.7 Phase 3a: "does the active plan have a step for me" check, tried before falling back to
+  // makeTeamAiDecision's normal top pick. Deliberately does NOT hand-build a decision object —
+  // instead it looks for a genuinely scored decision (from the same getRankedTeamAiDecisions
+  // pipeline every other path already trusts) whose type/target matches the plan step, so the
+  // returned decision always has a fully-correct data shape for executeTeamAiAction. If no
+  // matching decision exists this turn, the step simply stays 'pending' for a future turn — no
+  // special-cased execution path, matching the precedent set by 2b's bank draws and 2c's lending.
+  const findExecutableTeamPlanStepDecision = useCallback((actorId: string): { decision: ScoredTeamAiDecision; stepId: string; planId: string } | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiPlanCommitmentEnabled) return null;
+    const actor = getActorState(actorId);
+    if (!actor) return null;
+    const team = teamsByIdRef.current[actor.teamId];
+    const plan = team?.activeTeamPlan;
+    if (!plan || plan.status !== 'active') return null;
+
+    const step = plan.steps.find(candidateStep =>
+      candidateStep.assignedActorId === actorId &&
+      candidateStep.status === 'pending' &&
+      candidateStep.dependsOnStepIds.every(depId => plan.steps.find(dep => dep.id === depId)?.status === 'done')
+    );
+    if (!step) return null;
+
+    const candidates = getRankedTeamAiDecisions(actorId);
+    const match = candidates.find(candidate => {
+      if (candidate.type !== step.actionType) return false;
+      if (step.targetKind === 'region' && step.targetId) return candidate.data?.region === step.targetId;
+      if (step.targetKind === 'resource' && step.targetId) {
+        const topPurchase = Array.isArray(candidate.data?.purchases) ? candidate.data.purchases[0] : null;
+        return topPurchase?.resource === step.targetId || candidate.data?.resource === step.targetId;
+      }
+      return true;
+    });
+    if (!match) return null;
+
+    return { decision: match, stepId: step.id, planId: plan.id };
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, getActorState, getRankedTeamAiDecisions]);
+
   const makeTeamAiDecision = useCallback((actorId: string): AIAction => {
     const actor = getActorState(actorId);
     if (!actor) {
@@ -20310,6 +21147,12 @@ function AustraliaGame() {
     delete hasLentThisTurnRef.current[actor.id];
     let actionBudget = getActorActionBudget(actor.id);
     let actionsTaken = 0;
+    // V6.7 Phase 3a: queue of minted ActionTokens for bonus grants (bank/override/lent) made this
+    // turn, consumed one-per-bonus-execution at the executeTeamAiAction call site below. The
+    // actor's own normal per-turn budget is never tokenized (see mintActionToken's doc comment);
+    // if the queue underruns for any reason, revalidation is skipped rather than blocking
+    // execution, so this is purely additive accounting, never a new failure mode.
+    const pendingTokenQueue: string[] = [];
 
     // V6.7 Phase 2c: redeem any lent-action credits from teammates before this turn's budget is
     // spent. Unconditional — all the eligibility gating already happened when the credit was
@@ -20321,6 +21164,9 @@ function AustraliaGame() {
       if (totalCredits > 0) {
         actionBudget += totalCredits;
         updateActorState(actor.id, prev => ({ ...prev, pendingLentActionCredits: {} }));
+        for (let i = 0; i < totalCredits; i += 1) {
+          pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'lent'));
+        }
         if (gameSettings.teamAiActionLendingTransparencyEnabled) {
           addNotification(`🤖 ${getActorDisplayName(actor.id)} redeemed ${totalCredits} lent action${totalCredits > 1 ? 's' : ''} from a teammate.`, 'ai', true);
         }
@@ -20330,7 +21176,12 @@ function AustraliaGame() {
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
 
     while (actionsTaken < actionBudget) {
-      const decision = makeTeamAiDecision(actor.id);
+      // V6.7 Phase 3a: "does the active plan have a step for me" check, tried before falling to
+      // the normal top-pick decision. Consumes ordinary per-turn budget (no bonus, no token
+      // minting) — it only steers WHICH decision executes this turn, matching the plan's
+      // deliberate choice that plan-step-sourced grants stay 'normal' (untokenized) in 3a.
+      const planStepMatch = findExecutableTeamPlanStepDecision(actor.id);
+      const decision = planStepMatch ? planStepMatch.decision : makeTeamAiDecision(actor.id);
       if (decision.type === 'end_turn') {
         // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
         // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
@@ -20413,10 +21264,33 @@ function AustraliaGame() {
           priority: Math.max(2, decision.plan?.priority || 3)
         });
       }
-      const success = await executeTeamAiAction(actor.id, decision);
+      // V6.7 Phase 3a: revalidate-before-execution for any decision beyond the actor's own normal
+      // per-turn budget (i.e. bonus-sourced from bank/override/lending) — never inside
+      // executeTeamAiAction itself, keeping its existing per-type branches untouched.
+      const baseActionBudget = getActorActionBudget(actor.id);
+      const isBonusConsumption = actionsTaken >= baseActionBudget;
+      const pendingTokenId = isBonusConsumption ? pendingTokenQueue.shift() : undefined;
+      const revalidated = pendingTokenId
+        ? redeemActionToken(actor.teamId, actor.id, decision, pendingTokenId, isReservationHardBlocked)
+        : true;
+      const success = revalidated ? await executeTeamAiAction(actor.id, decision) : false;
       if (!success) {
         lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
         break;
+      }
+      if (planStepMatch && decision === planStepMatch.decision) {
+        updateTeamState(actor.teamId, prev => {
+          if (!prev.activeTeamPlan || prev.activeTeamPlan.id !== planStepMatch.planId) return prev;
+          return {
+            ...prev,
+            activeTeamPlan: {
+              ...prev.activeTeamPlan,
+              steps: prev.activeTeamPlan.steps.map(step =>
+                step.id === planStepMatch.stepId ? { ...step, status: 'done' as const } : step
+              )
+            }
+          };
+        });
       }
       refreshTeamLiquidityLedger(actor.teamId);
       actionsTaken += 1;
@@ -20444,6 +21318,7 @@ function AustraliaGame() {
             };
           });
           actionBudget += 1;
+          pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'shared_bank'));
           if (gameSettings.teamActionBankTransparencyEnabled) {
             addNotification(`🤖 ${getActorDisplayName(actor.id)} drew a shared action from the team bank to ${bankDecision.reasonLabel}.`, 'ai', true);
           }
@@ -20472,6 +21347,7 @@ function AustraliaGame() {
                 finishTeamAiTurn(pendingActorId);
                 return;
               }
+              mintActionToken(actor.teamId, pendingActorId, 'override');
               executeTeamAiAction(pendingActorId, pendingDecision as unknown as AIAction).then(() => finishTeamAiTurn(pendingActorId));
             },
             {
@@ -20490,11 +21366,12 @@ function AustraliaGame() {
           break;
         }
         actionBudget += getActorActionBudget(actor.id);
+        pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'override'));
       }
     }
 
     finishTeamAiTurn(actor.id);
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -22264,7 +23141,16 @@ function AustraliaGame() {
       teamAiMaxReceivedActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay,
       teamAiActionLendingMinimumValueGain: DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain,
       teamAiActionLendingRequiresCommittedPlan: DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
-      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled
+      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
+      teamAiPlanCommitmentEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentEnabled,
+      teamAiPlanCommitmentStrength: DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentStrength,
+      teamAiPlanMaximumDurationDays: DEFAULT_GAME_SETTINGS.teamAiPlanMaximumDurationDays,
+      teamAiPlanReevaluationFrequency: DEFAULT_GAME_SETTINGS.teamAiPlanReevaluationFrequency,
+      teamAiPlanInterruptionSensitivity: DEFAULT_GAME_SETTINGS.teamAiPlanInterruptionSensitivity,
+      teamAiPlanTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
+      teamAiReservationStrictness: DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
+      friendlyAiRespectPlayerReservations: DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
+      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -22295,7 +23181,16 @@ function AustraliaGame() {
       teamAiMaxReceivedActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay,
       teamAiActionLendingMinimumValueGain: DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain,
       teamAiActionLendingRequiresCommittedPlan: DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
-      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled
+      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
+      teamAiPlanCommitmentEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentEnabled,
+      teamAiPlanCommitmentStrength: DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentStrength,
+      teamAiPlanMaximumDurationDays: DEFAULT_GAME_SETTINGS.teamAiPlanMaximumDurationDays,
+      teamAiPlanReevaluationFrequency: DEFAULT_GAME_SETTINGS.teamAiPlanReevaluationFrequency,
+      teamAiPlanInterruptionSensitivity: DEFAULT_GAME_SETTINGS.teamAiPlanInterruptionSensitivity,
+      teamAiPlanTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
+      teamAiReservationStrictness: DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
+      friendlyAiRespectPlayerReservations: DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
+      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -23536,7 +24431,7 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
                   </div>
                 </div>
               </SettingsSection>
@@ -23780,6 +24675,121 @@ function AustraliaGame() {
                           </label>
                         </div>
                       </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.teamPlans"
+                tab="teamModeAi"
+                title="Team Plans"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.teamPlans')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Team Plans has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Team Plans</div>
+                        <div className="text-sm opacity-75">Lets a team commit to a persistent, multi-step plan across several turns instead of only reacting one action at a time.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiPlanCommitmentEnabled: !prev.teamAiPlanCommitmentEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiPlanCommitmentEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiPlanCommitmentEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiPlanCommitmentEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Commitment Strength: {gameSettings.teamAiPlanCommitmentStrength}</label>
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanCommitmentStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanCommitmentStrength: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Maximum Duration (days): {gameSettings.teamAiPlanMaximumDurationDays}</label>
+                            <input type="range" min="1" max="14" value={gameSettings.teamAiPlanMaximumDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanMaximumDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Reevaluation Frequency (days): {gameSettings.teamAiPlanReevaluationFrequency}</label>
+                            <input type="range" min="1" max="5" value={gameSettings.teamAiPlanReevaluationFrequency} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Interruption Sensitivity: {gameSettings.teamAiPlanInterruptionSensitivity}</label>
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanInterruptionSensitivity} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanInterruptionSensitivity: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(gameSettings.teamAiPlanTransparencyEnabled)}
+                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanTransparencyEnabled: e.target.checked }))}
+                            />
+                            <span>{gameSettings.teamAiPlanTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
+                          </label>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.reservations"
+                tab="teamModeAi"
+                title="Reservations"
+                chips={['Team Mode only', 'AI only']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.reservations')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Reservation strictness has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block font-semibold mb-2">Reservation Strictness</label>
+                      <div className="flex gap-2">
+                        {(['low', 'balanced', 'strict'] as TeamAiReservationStrictness[]).map(level => (
+                          <button
+                            key={level}
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiReservationStrictness: level }))}
+                            className={`px-3 py-2 rounded font-semibold capitalize flex-1 ${gameSettings.teamAiReservationStrictness === level ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          >
+                            {level}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="text-sm opacity-75 mt-2">Low reproduces classic behavior (a soft preference only). Balanced blocks a lower-priority teammate from taking a target a higher-priority teammate already reserved. Strict blocks any active conflict outright.</div>
+                    </div>
+
+                    {uiState.settingsViewMode === 'advanced' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.friendlyAiRespectPlayerReservations)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiRespectPlayerReservations: e.target.checked }))}
+                          />
+                          <span>{gameSettings.friendlyAiRespectPlayerReservations ? '☑' : '☐'} Friendly AI Respects Your Reservations</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.friendlyAiMayRequestReservedResource)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiMayRequestReservedResource: e.target.checked }))}
+                          />
+                          <span>{gameSettings.friendlyAiMayRequestReservedResource ? '☑' : '☐'} Friendly AI May Request Instead of Block</span>
+                        </label>
+                      </div>
                     )}
                   </div>
                 )}
