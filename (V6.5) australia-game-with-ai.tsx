@@ -21388,11 +21388,12 @@ function AustraliaGame() {
         onClick={() => updateUiState({ showSettings: false })}
       >
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-5xl w-full h-[90vh] flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-5xl w-full`}
+          style={{ height: '90vh', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
-          <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`}>
+          <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border}`} style={{ flexShrink: 0 }}>
             <h3 className="text-2xl font-bold">⚙️ Settings Hub</h3>
             <button
               onClick={() => updateUiState({ showSettings: false })}
@@ -21403,7 +21404,7 @@ function AustraliaGame() {
           </div>
 
           {/* Search / Basic-Advanced / Changed-only controls */}
-          <div className={`px-6 pt-4 pb-3 border-b ${themeStyles.border} flex flex-col sm:flex-row sm:items-center gap-2`}>
+          <div className={`px-6 pt-4 pb-3 border-b ${themeStyles.border} flex flex-col sm:flex-row sm:items-center gap-2`} style={{ flexShrink: 0 }}>
             <input
               type="text"
               value={uiState.settingsSearchQuery}
@@ -23312,7 +23313,7 @@ function AustraliaGame() {
           </div>
 
           {/* Fixed Footer */}
-          <div className={`p-6 pt-4 border-t ${themeStyles.border}`}>
+          <div className={`p-6 pt-4 border-t ${themeStyles.border}`} style={{ flexShrink: 0 }}>
             <button onClick={() => updateUiState({ showSettings: false })} className={`${themeStyles.button} text-white px-6 py-3 rounded-lg w-full font-bold`}>Close</button>
           </div>
         </div>
