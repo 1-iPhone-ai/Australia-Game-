@@ -21707,7 +21707,10 @@ function AustraliaGame() {
                         ? 'Negotiation mode ON: turn transition subsystems process proposals after each end turn. Existing deposits are preserved but new deposits are blocked.'
                         : 'Negotiation mode OFF: standard deposit and bidding control works exactly as V5.0.'}
                     </div>
-                    {gameSettings.negotiationMode && (
+                    {gameSettings.negotiationMode && uiState.settingsViewMode !== 'advanced' && (
+                      <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune negotiation auto-accept, counter-offers, and confirmation options.</div>
+                    )}
+                    {gameSettings.negotiationMode && uiState.settingsViewMode === 'advanced' && (
                       <div className="space-y-3 pt-1">
                         <div>
                           <label className="block font-semibold mb-1">Auto-accept cash proposals under ${gameSettings.negotiationOptions.autoAcceptCashUnder}</label>
@@ -22476,6 +22479,11 @@ function AustraliaGame() {
                           {gameSettings.earlyRepaymentEnabled ? 'ON' : 'OFF'}
                         </button>
                       </div>
+                      {uiState.settingsViewMode !== 'advanced' && (
+                        <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune loan limits, interest rate, and AI loan weights.</div>
+                      )}
+                      {uiState.settingsViewMode === 'advanced' && (
+                      <>
                       <div>
                         <label className="block font-semibold mb-2">Max Simultaneous Loans: {gameSettings.maxSimultaneousLoans}</label>
                         <input type="range" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(e) => setGameSettings(prev => ({ ...prev, maxSimultaneousLoans: parseInt(e.target.value) }))} className="w-full" />
@@ -22511,6 +22519,8 @@ function AustraliaGame() {
                           </button>
                         </div>
                       </div>
+                      </>
+                      )}
                       {renderSettingMetadataCard('advanced_loans')}
                     </>
                   )}
@@ -22570,6 +22580,11 @@ function AustraliaGame() {
                           {gameSettings.adaptiveAiTauntsEnabled ? 'ON' : 'OFF'}
                         </button>
                       </div>
+                      {uiState.settingsViewMode !== 'advanced' && (
+                        <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune comeback thresholds and bias sliders.</div>
+                      )}
+                      {uiState.settingsViewMode === 'advanced' && (
+                      <>
                       <div>
                         <label className="block font-semibold mb-2">Consecutive Days Required: {gameSettings.adaptiveAiConsecutiveDays}</label>
                         <input type="range" min="1" max="7" value={gameSettings.adaptiveAiConsecutiveDays} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiConsecutiveDays: parseInt(e.target.value) }))} className="w-full" />
@@ -22643,6 +22658,8 @@ function AustraliaGame() {
                           <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiRubberBandingStrength || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiRubberBandingStrength: parseFloat(e.target.value) }))} className="w-full" disabled={!gameSettings.adaptiveAiRubberBanding} />
                         </div>
                       </div>
+                      </>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="flex items-center justify-between">
                           <div>
@@ -22730,7 +22747,10 @@ function AustraliaGame() {
                       </button>
                     </div>
                   </div>
-                  {gameSettings.settingPriorityMode === 'manual' && (
+                  {gameSettings.settingPriorityMode === 'manual' && uiState.settingsViewMode !== 'advanced' && (
+                    <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to edit manual priority weights.</div>
+                  )}
+                  {gameSettings.settingPriorityMode === 'manual' && uiState.settingsViewMode === 'advanced' && (
                     <div className={`${themeStyles.border} border rounded-lg p-3 space-y-3`}>
                       <div className="font-semibold">Manual Major-System Weights</div>
                       {Object.entries(PRIORITY_DOMAIN_LABELS).map(([domain, label]) => (
@@ -22827,6 +22847,11 @@ function AustraliaGame() {
                       </label>
                     ))}
                   </div>
+                  {uiState.settingsViewMode !== 'advanced' && (
+                    <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune timeline length, detail level, and per-AI display density.</div>
+                  )}
+                  {uiState.settingsViewMode === 'advanced' && (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-semibold mb-2">Max History Retained: {gameSettings.decisionTransparencyMaxHistoryRetained}</label>
@@ -22897,6 +22922,8 @@ function AustraliaGame() {
                       <input type="range" min="4" max="30" value={gameSettings.decisionTransparencyPerAiTimelineLength} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyPerAiTimelineLength: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                   </div>
+                  </>
+                  )}
                   {renderSettingMetadataCard('decision_transparency')}
                   </>
                   )}
