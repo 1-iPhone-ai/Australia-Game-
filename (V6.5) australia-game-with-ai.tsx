@@ -21413,13 +21413,24 @@ function AustraliaGame() {
               className={`${themeStyles.select} rounded px-3 py-2 flex-1 text-sm`}
             />
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => updateUiState({ settingsViewMode: uiState.settingsViewMode === 'basic' ? 'advanced' : 'basic' })}
-                className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-xs font-semibold`}
-              >
-                {uiState.settingsViewMode === 'advanced' ? 'Advanced View' : 'Basic View'}
-              </button>
+              <div className={`flex ${themeStyles.border} border rounded overflow-hidden`}>
+                <button
+                  type="button"
+                  onClick={() => updateUiState({ settingsViewMode: 'basic' })}
+                  className={`px-3 py-2 text-xs font-semibold ${uiState.settingsViewMode === 'basic' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  aria-pressed={uiState.settingsViewMode === 'basic'}
+                >
+                  Basic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateUiState({ settingsViewMode: 'advanced' })}
+                  className={`px-3 py-2 text-xs font-semibold ${uiState.settingsViewMode === 'advanced' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  aria-pressed={uiState.settingsViewMode === 'advanced'}
+                >
+                  Advanced
+                </button>
+              </div>
               <label className="flex items-center gap-1 text-xs">
                 <input
                   type="checkbox"
