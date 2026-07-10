@@ -1716,6 +1716,17 @@ interface TeamSupportLedger {
   lastSupportReasonByActor: Record<string, string>;
 }
 
+// V6.7 Phase 2b: Shared Team Action Bank runtime state. A shared, mutable, depletable pool
+// of bonus actions repopulated once per day (see advanceDay's team-rebuild block). Lives on
+// TeamState (runtime, not settings) since it must reflect depletion across multiple actors'
+// turns within the same day — unlike Phase 2a's override caps, there's no pre-existing
+// per-actor field this could be derived from at check-time.
+interface TeamActionBankState {
+  balance: number;
+  drawsUsedTodayByActor: Record<string, number>;
+  lastDrawDay: number;
+}
+
 type TeamLiquidityState = 'BROKE' | 'UNDERFUNDED' | 'HEALTHY' | 'RICH' | 'CARRYING';
 type AiRoleMode = 'normal' | 'money_focus' | 'support_focus' | 'control_focus' | 'recovery';
 type AiRoleModeSource = 'none' | 'directive' | 'team_balance' | 'win_condition' | 'recovery' | 'adaptive';
@@ -2167,6 +2178,7 @@ interface TeamState {
   recentPerformanceByActor: Record<string, TeammatePerformanceSample[]>;
   supportLedger: TeamSupportLedger;
   adaptiveState: TeamAdaptiveState;
+  teamActionBank: TeamActionBankState;
   color: string;
 }
 
@@ -2248,6 +2260,9 @@ type EnemyTeamAiPreset = 'classic' | 'competitive' | 'ruthless' | 'simulation' |
 // AND teamAiActionOverridesEnabled are true)
 type TeamAiOverridePolicy = 'disabled' | 'emergency_only' | 'strategic' | 'aggressive';
 type FriendlyAiOverridePolicy = 'never' | 'emergency_only' | 'ask_first' | 'strategic_autonomy' | 'full_autonomy';
+
+// V6.7 Phase 2b: Shared Team Action Bank (inert unless teamCompetitiveAiEnabled && teamActionBankEnabled)
+type TeamActionBankDistributionMode = 'equal' | 'role_based' | 'objective_based' | 'dynamic';
 
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
@@ -2437,6 +2452,13 @@ type GameSettingsState = {
   teamAiOverrideEscalatingCostEnabled: boolean;
   teamAiOverrideFatigueEnabled: boolean;
   teamAiOverrideTransparencyEnabled: boolean;
+  // V6.7 Phase 2b: Shared Team Action Bank (inert unless teamCompetitiveAiEnabled && teamActionBankEnabled)
+  teamActionBankEnabled: boolean;
+  teamActionBankBonusActionsPerDay: number;
+  teamActionBankDistributionMode: TeamActionBankDistributionMode;
+  teamActionBankReserveActions: number;
+  teamActionBankMaxDrawsPerActorPerDay: number;
+  teamActionBankTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3359,6 +3381,12 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiOverrideEscalatingCostEnabled: true,
   teamAiOverrideFatigueEnabled: true,
   teamAiOverrideTransparencyEnabled: true,
+  teamActionBankEnabled: false,
+  teamActionBankBonusActionsPerDay: 2,
+  teamActionBankDistributionMode: 'role_based',
+  teamActionBankReserveActions: 1,
+  teamActionBankMaxDrawsPerActorPerDay: 1,
+  teamActionBankTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3406,7 +3434,7 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently only AI Action Overrides are wired — see the Coming in future updates note).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides and the Shared Action Bank are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
@@ -3479,6 +3507,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
   { id: 'teamModeAi.competitiveAi', tab: 'teamModeAi', title: 'Competitive AI', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCompetitiveAiEnabled', 'teamModeAiDifficultyPreset', 'friendlyTeamAiPreset', 'enemyTeamAiPreset'] },
   { id: 'teamModeAi.actionOverrides', tab: 'teamModeAi', title: 'AI Action Overrides', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionOverridesEnabled', 'teamAiOverridePolicy', 'friendlyAiOverridePolicy', 'teamAiOverrideMaxPerActorPerDay', 'teamAiOverrideMaxPerTeamPerDay', 'teamAiOverrideBaseCostMultiplier', 'teamAiOverrideMinimumDecisionScore', 'teamAiOverrideMinimumCashReserve', 'teamAiOverrideEscalatingCostEnabled', 'teamAiOverrideFatigueEnabled', 'teamAiOverrideTransparencyEnabled'] },
+  { id: 'teamModeAi.sharedActionBank', tab: 'teamModeAi', title: 'Shared Action Bank', tags: ['Team Mode', 'AI'], fieldKeys: ['teamActionBankEnabled', 'teamActionBankBonusActionsPerDay', 'teamActionBankDistributionMode', 'teamActionBankReserveActions', 'teamActionBankMaxDrawsPerActorPerDay', 'teamActionBankTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -4226,6 +4255,12 @@ const createDefaultTeamAdaptiveState = (): TeamAdaptiveState => ({
   activeModifiers: []
 });
 
+const createDefaultTeamActionBankState = (): TeamActionBankState => ({
+  balance: 0,
+  drawsUsedTodayByActor: {},
+  lastDrawDay: 0
+});
+
 const createDefaultDecisionMetricsSnapshot = (): DecisionMetricsSnapshot => ({
   aggression: 0,
   economyFocus: 0,
@@ -4649,6 +4684,18 @@ const normalizeFriendlyAiOverridePolicy = (
 ): FriendlyAiOverridePolicy => {
   return FRIENDLY_AI_OVERRIDE_POLICY_OPTIONS.includes(value as FriendlyAiOverridePolicy)
     ? value as FriendlyAiOverridePolicy
+    : fallback;
+};
+
+// V6.7 Phase 2b: Shared Team Action Bank normalize helper
+const TEAM_ACTION_BANK_DISTRIBUTION_MODE_OPTIONS: TeamActionBankDistributionMode[] = ['equal', 'role_based', 'objective_based', 'dynamic'];
+
+const normalizeTeamActionBankDistributionMode = (
+  value: unknown,
+  fallback: TeamActionBankDistributionMode = 'role_based'
+): TeamActionBankDistributionMode => {
+  return TEAM_ACTION_BANK_DISTRIBUTION_MODE_OPTIONS.includes(value as TeamActionBankDistributionMode)
+    ? value as TeamActionBankDistributionMode
     : fallback;
 };
 
@@ -5781,6 +5828,26 @@ const sanitizeTeamSupportLedger = (value: unknown): TeamSupportLedger => {
   };
 };
 
+// V6.7 Phase 2b: Shared Team Action Bank sanitizer, mirroring sanitizeTeamSupportLedger's shape
+const sanitizeTeamActionBank = (value: unknown): TeamActionBankState => {
+  const defaults = createDefaultTeamActionBankState();
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<TeamActionBankState>;
+  const balance = typeof source.balance === 'number' && isFinite(source.balance)
+    ? Math.max(0, Math.floor(source.balance))
+    : defaults.balance;
+  const drawsUsedTodayByActor = (source.drawsUsedTodayByActor && typeof source.drawsUsedTodayByActor === 'object')
+    ? Object.entries(source.drawsUsedTodayByActor).reduce<Record<string, number>>((acc, [actorId, count]) => {
+        if (typeof count === 'number' && isFinite(count)) acc[actorId] = Math.max(0, Math.floor(count));
+        return acc;
+      }, {})
+    : defaults.drawsUsedTodayByActor;
+  const lastDrawDay = typeof source.lastDrawDay === 'number' && isFinite(source.lastDrawDay)
+    ? Math.max(0, Math.floor(source.lastDrawDay))
+    : defaults.lastDrawDay;
+  return { balance, drawsUsedTodayByActor, lastDrawDay };
+};
+
 const normalizePriorityMode = (value: unknown): PriorityMode => {
   return value === 'adaptive' || value === 'manual' ? value : 'balanced';
 };
@@ -6222,6 +6289,7 @@ const createDefaultTeamState = (
   recentPerformanceByActor: createDefaultRecentPerformanceByActor(actorIds),
   supportLedger: createDefaultTeamSupportLedger(),
   adaptiveState: createDefaultTeamAdaptiveState(),
+  teamActionBank: createDefaultTeamActionBankState(),
   color
 });
 
@@ -7633,7 +7701,8 @@ function AustraliaGame() {
               return historyByActor;
             }, {}),
             supportLedger: sanitizeTeamSupportLedger(teamData?.supportLedger),
-            adaptiveState: sanitizeTeamAdaptiveState(teamData?.adaptiveState)
+            adaptiveState: sanitizeTeamAdaptiveState(teamData?.adaptiveState),
+            teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank)
           };
           return acc;
         }, {})
@@ -7856,6 +7925,16 @@ function AustraliaGame() {
         teamAiOverrideTransparencyEnabled: typeof settingsData.teamAiOverrideTransparencyEnabled === 'boolean'
           ? settingsData.teamAiOverrideTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
+        teamActionBankEnabled: typeof settingsData.teamActionBankEnabled === 'boolean'
+          ? settingsData.teamActionBankEnabled
+          : DEFAULT_GAME_SETTINGS.teamActionBankEnabled,
+        teamActionBankBonusActionsPerDay: clampSettingNumber(settingsData.teamActionBankBonusActionsPerDay, DEFAULT_GAME_SETTINGS.teamActionBankBonusActionsPerDay, 0, 10),
+        teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(settingsData.teamActionBankDistributionMode, DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode),
+        teamActionBankReserveActions: clampSettingNumber(settingsData.teamActionBankReserveActions, DEFAULT_GAME_SETTINGS.teamActionBankReserveActions, 0, 5),
+        teamActionBankMaxDrawsPerActorPerDay: clampSettingNumber(settingsData.teamActionBankMaxDrawsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay, 1, 5),
+        teamActionBankTransparencyEnabled: typeof settingsData.teamActionBankTransparencyEnabled === 'boolean'
+          ? settingsData.teamActionBankTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -17319,7 +17398,17 @@ function AustraliaGame() {
             return contribs;
           }, {}),
           scoreBreakdown,
-          adaptiveState: buildLiveTeamAdaptiveState(teamId, projectedActors, sanitizeRegionDeposits(gameState.regionDeposits))
+          adaptiveState: buildLiveTeamAdaptiveState(teamId, projectedActors, sanitizeRegionDeposits(gameState.regionDeposits)),
+          // V6.7 Phase 2b: repopulate the shared action bank once per day when enabled; when
+          // disabled, just carry the sanitized prior state through inertly (never populate),
+          // so toggling it on mid-game starts fresh next day rather than using a stale balance.
+          teamActionBank: gameSettings.teamActionBankEnabled
+            ? {
+                balance: Math.max(0, gameSettings.teamActionBankBonusActionsPerDay),
+                drawsUsedTodayByActor: {},
+                lastDrawDay: newDay
+              }
+            : sanitizeTeamActionBank(teamState.teamActionBank)
         };
         return acc;
       }, {});
@@ -19663,6 +19752,101 @@ function AustraliaGame() {
     }
   };
 
+  // V6.7 Phase 2b: role/objective -> decision-type maps for Shared Action Bank distribution.
+  // No new role/objective system — reuses the existing TeamAiRole (actor.teamAiRole) and
+  // TeamGoal.kind vocabulary already produced by assignTeamAiRole/chooseTeamObjective.
+  const TEAM_ACTION_BANK_ROLE_ACTION_MATCH: Record<TeamAiRole, string[]> = {
+    earner: ['sell', 'challenge'],
+    explorer: ['travel'],
+    crafter: ['craft', 'buy_market'],
+    support: ['give_cash', 'give_resource'],
+    controller: ['region_deposit', 'cashout_region'],
+    saboteur: ['sabotage'],
+    recovery: ['sell', 'cashout_region', 'challenge']
+  };
+  const TEAM_ACTION_BANK_GOAL_ACTION_MATCH: Record<TeamGoal['kind'], string[]> = {
+    money: ['sell', 'buy_market', 'cashout_region'],
+    netWorth: ['challenge', 'craft', 'region_deposit'],
+    regions: ['region_deposit', 'cashout_region'],
+    support: ['give_cash', 'give_resource'],
+    crafting: ['craft', 'buy_market'],
+    control: ['region_deposit', 'cashout_region'],
+    sabotage: ['sabotage'],
+    recovery: ['sell', 'cashout_region']
+  };
+
+  // V6.7 Phase 2b: Shared Team Action Bank — the distribution/eligibility checker.
+  // Fully inert unless BOTH gameSettings.teamCompetitiveAiEnabled AND
+  // gameSettings.teamActionBankEnabled are true. Checked BEFORE
+  // evaluateTeamAiOverrideEligibility in performTeamAiTurn — drawing a free shared action
+  // must always be tried before spending money on a paid override.
+  const evaluateTeamActionBankDraw = useCallback((
+    actorId: string,
+    nextDecision: ScoredTeamAiDecision | null
+  ): { eligible: boolean; reasonLabel: string } => {
+    const ineligible = (reasonLabel: string) => ({ eligible: false, reasonLabel });
+
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamActionBankEnabled) {
+      return ineligible('Shared Action Bank is off.');
+    }
+    if (gameState.gameMode !== 'game') return ineligible('Game has ended.');
+
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai' || !nextDecision || nextDecision.type === 'end_turn') {
+      return ineligible('No valid decision to draw a bank action for.');
+    }
+
+    const team = teamsByIdRef.current[actor.teamId];
+    const bank = sanitizeTeamActionBank(team?.teamActionBank);
+    if (bank.balance <= 0) return ineligible('Bank is empty.');
+
+    const drawsUsed = bank.drawsUsedTodayByActor[actorId] || 0;
+    if (drawsUsed >= gameSettings.teamActionBankMaxDrawsPerActorPerDay) {
+      return ineligible('Daily bank draw limit reached for this actor.');
+    }
+
+    const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId);
+    const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
+    const crisisLike = Boolean(actorLiquidity?.isRecoveryEligible);
+    const isHighPriorityDraw = crisisLike || nextDecision.score >= (gameSettings.teamAiOverrideMinimumDecisionScore + 40);
+    if (bank.balance <= gameSettings.teamActionBankReserveActions && !isHighPriorityDraw) {
+      return ineligible('Drawing would breach the bank reserve.');
+    }
+
+    const role = normalizeTeamAiRole(actor.teamAiRole);
+    const roleMatch = (TEAM_ACTION_BANK_ROLE_ACTION_MATCH[role] || []).includes(nextDecision.type);
+    const activeGoal = (team?.teamGoals || [])
+      .filter(goal => goal.status === 'active')
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
+    const objectiveMatch = activeGoal
+      ? (TEAM_ACTION_BANK_GOAL_ACTION_MATCH[activeGoal.kind] || []).includes(nextDecision.type)
+      : true; // no active goal yet (no Team Plans until a later phase) — don't permanently disable this mode
+
+    let distributionEligible: boolean;
+    switch (gameSettings.teamActionBankDistributionMode) {
+      case 'equal':
+        distributionEligible = true;
+        break;
+      case 'role_based':
+        distributionEligible = roleMatch;
+        break;
+      case 'objective_based':
+        distributionEligible = objectiveMatch;
+        break;
+      case 'dynamic':
+      default:
+        distributionEligible = roleMatch || objectiveMatch || crisisLike || nextDecision.score >= gameSettings.teamAiOverrideMinimumDecisionScore;
+        break;
+    }
+    if (!distributionEligible) return ineligible("Not this actor's turn to draw per the distribution mode.");
+
+    return { eligible: true, reasonLabel: deriveOverrideReasonLabel(nextDecision) };
+  }, [
+    gameSettings.teamCompetitiveAiEnabled, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankMaxDrawsPerActorPerDay,
+    gameSettings.teamActionBankReserveActions, gameSettings.teamActionBankDistributionMode, gameSettings.teamAiOverrideMinimumDecisionScore,
+    gameState.gameMode, getActorState, analyzeTeamLiquidity
+  ]);
+
   // V6.7 Phase 2a: AI Action Overrides — the 12-safeguard eligibility checker.
   // Fully inert unless BOTH gameSettings.teamCompetitiveAiEnabled AND
   // gameSettings.teamAiActionOverridesEnabled are true. Calls shouldTeamActorUseOverride
@@ -19967,6 +20151,32 @@ function AustraliaGame() {
       if (!refreshedActor) break;
       if ((refreshedActor.actionsUsedThisTurn || 0) >= actionBudget) {
         const nextDecision = getRankedTeamAiDecisions(actor.id)[0] || null;
+
+        // V6.7 Phase 2b: try a free shared-bank action before ever considering a paid override.
+        const bankActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamActionBankEnabled;
+        const bankDecision = bankActive ? evaluateTeamActionBankDraw(actor.id, nextDecision) : { eligible: false, reasonLabel: '' };
+        if (bankDecision.eligible) {
+          updateTeamState(actor.teamId, prev => {
+            const bank = sanitizeTeamActionBank(prev.teamActionBank);
+            return {
+              ...prev,
+              teamActionBank: {
+                ...bank,
+                balance: Math.max(0, bank.balance - 1),
+                drawsUsedTodayByActor: {
+                  ...bank.drawsUsedTodayByActor,
+                  [actor.id]: (bank.drawsUsedTodayByActor[actor.id] || 0) + 1
+                }
+              }
+            };
+          });
+          actionBudget += 1;
+          if (gameSettings.teamActionBankTransparencyEnabled) {
+            addNotification(`🤖 ${getActorDisplayName(actor.id)} drew a shared action from the team bank to ${bankDecision.reasonLabel}.`, 'ai', true);
+          }
+          continue;
+        }
+
         const competitiveOverridesActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiActionOverridesEnabled;
         const overrideDecision = competitiveOverridesActive
           ? evaluateTeamAiOverrideEligibility(actor.id, nextDecision)
@@ -20011,7 +20221,7 @@ function AustraliaGame() {
     }
 
     finishTeamAiTurn(actor.id);
-  }, [addNotification, applyActorActionOverride, evaluateTeamAiOverrideEligibility, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -21769,7 +21979,13 @@ function AustraliaGame() {
       teamAiOverrideMinimumCashReserve: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve,
       teamAiOverrideEscalatingCostEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
       teamAiOverrideFatigueEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
-      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled
+      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
+      teamActionBankEnabled: DEFAULT_GAME_SETTINGS.teamActionBankEnabled,
+      teamActionBankBonusActionsPerDay: DEFAULT_GAME_SETTINGS.teamActionBankBonusActionsPerDay,
+      teamActionBankDistributionMode: DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode,
+      teamActionBankReserveActions: DEFAULT_GAME_SETTINGS.teamActionBankReserveActions,
+      teamActionBankMaxDrawsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay,
+      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -21788,7 +22004,13 @@ function AustraliaGame() {
       teamAiOverrideMinimumCashReserve: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve,
       teamAiOverrideEscalatingCostEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
       teamAiOverrideFatigueEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
-      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled
+      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
+      teamActionBankEnabled: DEFAULT_GAME_SETTINGS.teamActionBankEnabled,
+      teamActionBankBonusActionsPerDay: DEFAULT_GAME_SETTINGS.teamActionBankBonusActionsPerDay,
+      teamActionBankDistributionMode: DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode,
+      teamActionBankReserveActions: DEFAULT_GAME_SETTINGS.teamActionBankReserveActions,
+      teamActionBankMaxDrawsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay,
+      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -23029,7 +23251,7 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
                   </div>
                 </div>
               </SettingsSection>
@@ -23128,6 +23350,81 @@ function AustraliaGame() {
                                   <span>{Boolean(gameSettings[toggle.key]) ? '☑' : '☐'} {toggle.label}</span>
                                 </label>
                               ))}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.sharedActionBank"
+                tab="teamModeAi"
+                title="Shared Action Bank"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.sharedActionBank')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Shared Action Bank has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Shared Action Bank</div>
+                        <div className="text-sm opacity-75">Lets teammates pool a few bonus actions each day so whoever needs one most can draw it, free of charge.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamActionBankEnabled: !prev.teamActionBankEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamActionBankEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamActionBankEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamActionBankEnabled && (
+                      <>
+                        <div>
+                          <label className="block font-semibold mb-2">Distribution Mode</label>
+                          <select
+                            value={gameSettings.teamActionBankDistributionMode}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(e.target.value) }))}
+                            className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                          >
+                            {TEAM_ACTION_BANK_DISTRIBUTION_MODE_OPTIONS.map(mode => (
+                              <option key={mode} value={mode}>{mode.replace(/_/g, ' ')}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-semibold mb-2">Bonus Actions Per Day: {gameSettings.teamActionBankBonusActionsPerDay}</label>
+                                <input type="range" min="0" max="10" value={gameSettings.teamActionBankBonusActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankBonusActionsPerDay: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Reserve (kept unless urgent): {gameSettings.teamActionBankReserveActions}</label>
+                                <input type="range" min="0" max="5" value={gameSettings.teamActionBankReserveActions} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankReserveActions: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Max Draws Per Actor Per Day: {gameSettings.teamActionBankMaxDrawsPerActorPerDay}</label>
+                                <input type="range" min="1" max="5" value={gameSettings.teamActionBankMaxDrawsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankMaxDrawsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamActionBankTransparencyEnabled)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankTransparencyEnabled: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamActionBankTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
+                              </label>
                             </div>
                           </>
                         )}
