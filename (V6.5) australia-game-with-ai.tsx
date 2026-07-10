@@ -2243,6 +2243,15 @@ interface TeamScoreBreakdown {
   total: number;
 }
 
+// V6.7 Phase 3b: Threat Targeting runtime state. Team-level (not per-actor) since one enemy team
+// picks one target that all its actors' decisions can reference — analogous to activeTeamPlan.
+interface TeamThreatTargetState {
+  targetActorId: string;
+  selectedTurn: number;
+  score: number;
+  reasonSummary: string;
+}
+
 interface TeamState {
   id: string;
   name: string;
@@ -2259,6 +2268,7 @@ interface TeamState {
   actionTokens: ActionToken[];
   activeTeamPlan: TeamPlan | null;
   teamPlanHistory: TeamPlan[];
+  activeThreatTarget: TeamThreatTargetState | null;
   color: string;
 }
 
@@ -2564,6 +2574,18 @@ type GameSettingsState = {
   teamAiReservationStrictness: TeamAiReservationStrictness;
   friendlyAiRespectPlayerReservations: boolean;
   friendlyAiMayRequestReservedResource: boolean;
+  // V6.7 Phase 3b: Threat Targeting (inert unless teamCompetitiveAiEnabled && teamAiThreatTargetingEnabled)
+  teamAiThreatTargetingEnabled: boolean;
+  teamAiThreatTargetingStrength: number;
+  teamAiThreatReevaluationFrequency: number;
+  teamAiThreatFocusDuration: number;
+  teamAiMayTargetFriendlyAiTeammate: boolean;
+  // V6.7 Phase 3b: Endgame Acceleration (inert unless teamCompetitiveAiEnabled && teamAiEndgameAccelerationEnabled)
+  teamAiEndgameAccelerationEnabled: boolean;
+  teamAiEndgameStartPercent: number;
+  teamAiEndgameAggressionMultiplier: number;
+  teamAiEndgameOverrideBias: number;
+  teamAiEndgameCashConversionStrength: number;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3507,6 +3529,16 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiReservationStrictness: 'balanced',
   friendlyAiRespectPlayerReservations: true,
   friendlyAiMayRequestReservedResource: true,
+  teamAiThreatTargetingEnabled: false,
+  teamAiThreatTargetingStrength: 60,
+  teamAiThreatReevaluationFrequency: 3,
+  teamAiThreatFocusDuration: 2,
+  teamAiMayTargetFriendlyAiTeammate: false,
+  teamAiEndgameAccelerationEnabled: false,
+  teamAiEndgameStartPercent: 0.8,
+  teamAiEndgameAggressionMultiplier: 1.5,
+  teamAiEndgameOverrideBias: 0.15,
+  teamAiEndgameCashConversionStrength: 50,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3554,7 +3586,7 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, Action Lending, Team Plans, and Reservations are wired — see the Coming in future updates note).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, and Endgame Acceleration are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
@@ -3637,6 +3669,8 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionLending', tab: 'teamModeAi', title: 'Action Lending', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionLendingEnabled', 'teamAiMaxLentActionsPerActorPerDay', 'teamAiMaxReceivedActionsPerActorPerDay', 'teamAiActionLendingMinimumValueGain', 'teamAiActionLendingRequiresCommittedPlan', 'teamAiActionLendingTransparencyEnabled'] },
   { id: 'teamModeAi.teamPlans', tab: 'teamModeAi', title: 'Team Plans', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiPlanCommitmentEnabled', 'teamAiPlanCommitmentStrength', 'teamAiPlanMaximumDurationDays', 'teamAiPlanReevaluationFrequency', 'teamAiPlanInterruptionSensitivity', 'teamAiPlanTransparencyEnabled'] },
   { id: 'teamModeAi.reservations', tab: 'teamModeAi', title: 'Reservations', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource'] },
+  { id: 'teamModeAi.threatTargeting', tab: 'teamModeAi', title: 'Threat Targeting', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiThreatTargetingEnabled', 'teamAiThreatTargetingStrength', 'teamAiThreatReevaluationFrequency', 'teamAiThreatFocusDuration', 'teamAiMayTargetFriendlyAiTeammate'] },
+  { id: 'teamModeAi.endgameAcceleration', tab: 'teamModeAi', title: 'Endgame Acceleration', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEndgameAccelerationEnabled', 'teamAiEndgameStartPercent', 'teamAiEndgameAggressionMultiplier', 'teamAiEndgameOverrideBias', 'teamAiEndgameCashConversionStrength'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -6326,6 +6360,19 @@ const sanitizeTeamPlanHistory = (value: unknown): TeamPlan[] => {
     .slice(-10);
 };
 
+// V6.7 Phase 3b: mirrors sanitizeTeamPlan's null-on-malformed-shape convention.
+const sanitizeTeamThreatTarget = (value: unknown): TeamThreatTargetState | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamThreatTargetState>;
+  if (typeof source.targetActorId !== 'string') return null;
+  return {
+    targetActorId: source.targetActorId,
+    selectedTurn: typeof source.selectedTurn === 'number' && isFinite(source.selectedTurn) ? Math.max(0, Math.floor(source.selectedTurn)) : 0,
+    score: typeof source.score === 'number' && isFinite(source.score) ? source.score : 0,
+    reasonSummary: typeof source.reasonSummary === 'string' ? source.reasonSummary : ''
+  };
+};
+
 const normalizePriorityMode = (value: unknown): PriorityMode => {
   return value === 'adaptive' || value === 'manual' ? value : 'balanced';
 };
@@ -6771,6 +6818,7 @@ const createDefaultTeamState = (
   actionTokens: [],
   activeTeamPlan: null,
   teamPlanHistory: [],
+  activeThreatTarget: null,
   color
 });
 
@@ -8199,7 +8247,8 @@ function AustraliaGame() {
             teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank),
             actionTokens: sanitizeActionTokens(teamData?.actionTokens),
             activeTeamPlan: sanitizeTeamPlan(teamData?.activeTeamPlan),
-            teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory)
+            teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory),
+            activeThreatTarget: sanitizeTeamThreatTarget(teamData?.activeThreatTarget)
           };
           return acc;
         }, {})
@@ -8463,6 +8512,22 @@ function AustraliaGame() {
         friendlyAiMayRequestReservedResource: typeof settingsData.friendlyAiMayRequestReservedResource === 'boolean'
           ? settingsData.friendlyAiMayRequestReservedResource
           : DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
+        teamAiThreatTargetingEnabled: typeof settingsData.teamAiThreatTargetingEnabled === 'boolean'
+          ? settingsData.teamAiThreatTargetingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingEnabled,
+        teamAiThreatTargetingStrength: clampSettingNumber(settingsData.teamAiThreatTargetingStrength, DEFAULT_GAME_SETTINGS.teamAiThreatTargetingStrength, 0, 100),
+        teamAiThreatReevaluationFrequency: clampSettingNumber(settingsData.teamAiThreatReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiThreatReevaluationFrequency, 1, 10),
+        teamAiThreatFocusDuration: clampSettingNumber(settingsData.teamAiThreatFocusDuration, DEFAULT_GAME_SETTINGS.teamAiThreatFocusDuration, 1, 10),
+        teamAiMayTargetFriendlyAiTeammate: typeof settingsData.teamAiMayTargetFriendlyAiTeammate === 'boolean'
+          ? settingsData.teamAiMayTargetFriendlyAiTeammate
+          : DEFAULT_GAME_SETTINGS.teamAiMayTargetFriendlyAiTeammate,
+        teamAiEndgameAccelerationEnabled: typeof settingsData.teamAiEndgameAccelerationEnabled === 'boolean'
+          ? settingsData.teamAiEndgameAccelerationEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationEnabled,
+        teamAiEndgameStartPercent: clampSettingNumber(settingsData.teamAiEndgameStartPercent, DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent, 0.5, 0.95),
+        teamAiEndgameAggressionMultiplier: clampSettingNumber(settingsData.teamAiEndgameAggressionMultiplier, DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier, 1.0, 3.0),
+        teamAiEndgameOverrideBias: clampSettingNumber(settingsData.teamAiEndgameOverrideBias, DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias, 0, 0.5),
+        teamAiEndgameCashConversionStrength: clampSettingNumber(settingsData.teamAiEndgameCashConversionStrength, DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength, 0, 100),
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -19321,6 +19386,117 @@ function AustraliaGame() {
     return conflicting.priority > 3;
   }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiReservationStrictness, gameSettings.friendlyAiRespectPlayerReservations, gameSettings.friendlyAiMayRequestReservedResource, getActorState]);
 
+  // V6.7 Phase 3b: generalizes the existing sabotage-target `pressure` formula (still used verbatim
+  // as the toggle-off fallback below) into a full threat score matching the spec's factor list.
+  // Only reads public ActorState fields and already-computed team-level summaries — never
+  // inspects hidden plan step details (only plan *existence*) or anything not already visible via
+  // normal gameplay, satisfying "the AI must use only legally visible information."
+  const computeThreatScore = useCallback((targetActor: ActorState): { score: number; breakdown: Record<string, number> } => {
+    const targetTeamId = targetActor.teamId;
+    const targetLiquidityAnalysis = analyzeTeamLiquidity(targetTeamId);
+    const targetLiquidity = targetLiquidityAnalysis.byActorId[targetActor.id];
+    const targetTeam = teamsByIdRef.current[targetTeamId];
+    const teamActorList = (targetTeam?.actorIds || [])
+      .map(id => getActorState(id))
+      .filter((teamActor): teamActor is ActorState => Boolean(teamActor));
+    const teamNetWorthTotal = teamActorList.reduce((sum, teamActor) => sum + computeNetWorth(teamActor), 0);
+    const netWorthShare = teamNetWorthTotal > 0 ? (computeNetWorth(targetActor) / teamNetWorthTotal) : 0;
+    const regionInfo = getRegionControlInfo(targetActor.currentRegion, sanitizeRegionDeposits(gameState.regionDeposits));
+    const regionInfluence = regionInfo.controllerId === targetTeamId ? 30 : 0;
+
+    const breakdown: Record<string, number> = {
+      moneyShare: (targetLiquidity?.moneyShare || 0) * 100,
+      netWorthShare: netWorthShare * 120,
+      regionInfluence,
+      leaderBonus: targetActor.role === 'leader' ? 25 : 0,
+      completedChallenges: Math.min(40, (targetActor.completedThisSeason || []).length * 4),
+      inventoryValue: calculateInventoryMarketValue(targetActor.inventory || [], gameState.resourcePrices) * 0.02,
+      craftingPotential: CRAFTING_RECIPES.filter(recipe =>
+        Object.entries(recipe.inputs).every(([resource, count]) =>
+          (targetActor.inventory || []).filter(item => item === resource).length >= Number(count)
+        )
+      ).length * 15,
+      equipmentValue: (targetActor.equipment || []).length * 8,
+      investmentsValue: (targetActor.investments || []).length * 10,
+      momentum: computeRecentActorPerformance(targetTeam?.recentPerformanceByActor?.[targetActor.id] || []) * 30,
+      winProximity: Math.min(50, Math.max(0, netWorthShare * 50)),
+      // Plan-readiness: existence-only check (an active plan exists), never reads step details.
+      planReadiness: targetTeam?.activeTeamPlan?.status === 'active' ? 20 : 0,
+      supportCapacity: targetLiquidity?.isSupportPriority ? 15 : 0
+    };
+
+    const rawScore = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
+    const score = rawScore * (gameSettings.teamAiThreatTargetingStrength / 100);
+    return { score, breakdown };
+  }, [analyzeTeamLiquidity, getActorState, computeNetWorth, getRegionControlInfo, gameState.regionDeposits, gameState.resourcePrices, gameSettings.teamAiThreatTargetingStrength]);
+
+  // V6.7 Phase 3b: a clean, team-level percent-of-match-elapsed gate. Deliberately independent of
+  // WinConditionSummary/getWinConditionProgressSummary — that struct is UI-only, day-count-
+  // threshold-based, and conflates score-gap urgency with time urgency; this is a simple new gate.
+  const computeEndgameAccelerationState = useCallback((): { active: boolean; percentElapsed: number } => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiEndgameAccelerationEnabled) {
+      return { active: false, percentElapsed: 0 };
+    }
+    const percentElapsed = gameSettings.totalDays > 0 ? (gameState.day / gameSettings.totalDays) : 0;
+    return { active: percentElapsed >= gameSettings.teamAiEndgameStartPercent, percentElapsed };
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent, gameState.day]);
+
+  // V6.7 Phase 3b: picks (and persists) which opposing actor is currently the acting actor's
+  // team's threat-targeting focus. Master-toggle guarded; writes to TeamState.activeThreatTarget
+  // only happen when the toggle is on, so save-diffs stay clean for players who never enable this.
+  const selectThreatTarget = useCallback((actorId: string): TeamThreatTargetState | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiThreatTargetingEnabled) return null;
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai') return null;
+
+    const opponentTeamId = actor.teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    let candidates = getTeamActors(opponentTeamId);
+
+    // D1: when the acting actor is enemy-side, its candidate pool is TEAM_PLAYER_ID, which may
+    // contain both the human player and friendly AI teammates — filter the latter out unless
+    // explicitly allowed. No-op when the acting actor is friendly-side (its pool is 100% enemy AI).
+    if (actor.teamId === TEAM_OPPONENT_ID && !gameSettings.teamAiMayTargetFriendlyAiTeammate) {
+      const humanOnly = candidates.filter(candidate => candidate.kind !== 'ai');
+      // If filtering would empty the pool (e.g. an all-AI lineup with no human present), fall back
+      // to the unfiltered list so threat targeting still has a target to work with.
+      candidates = humanOnly.length > 0 ? humanOnly : candidates;
+    }
+    if (candidates.length === 0) return null;
+
+    const team = teamsByIdRef.current[actor.teamId];
+    const existing = team?.activeThreatTarget || null;
+    const endgameActive = computeEndgameAccelerationState().active;
+
+    // D4: endgame bypasses the normal focus/reevaluation gating entirely — re-pick every turn.
+    const dueForReevaluation = !existing
+      || endgameActive
+      || (gameState.turnCounter - existing.selectedTurn) >= Math.max(gameSettings.teamAiThreatReevaluationFrequency, gameSettings.teamAiThreatFocusDuration);
+
+    if (existing && !dueForReevaluation) {
+      const stillValid = candidates.some(candidate => candidate.id === existing.targetActorId);
+      if (stillValid) return existing;
+    }
+
+    const ranked = candidates
+      .map(target => ({ target, ...computeThreatScore(target) }))
+      .sort((left, right) => right.score - left.score);
+    const top = ranked[0];
+    if (!top) return null;
+
+    const selected: TeamThreatTargetState = {
+      targetActorId: top.target.id,
+      selectedTurn: gameState.turnCounter,
+      score: top.score,
+      reasonSummary: `Highest threat score (${Math.round(top.score)}) among ${candidates.length} candidate(s).`
+    };
+    updateTeamState(actor.teamId, prev => ({ ...prev, activeThreatTarget: selected }));
+    return selected;
+  }, [
+    gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamAiMayTargetFriendlyAiTeammate,
+    gameSettings.teamAiThreatReevaluationFrequency, gameSettings.teamAiThreatFocusDuration,
+    gameState.turnCounter, getActorState, getTeamActors, computeThreatScore, computeEndgameAccelerationState, updateTeamState
+  ]);
+
   const getRankedTeamAiDecisions = useCallback((actorId: string): ScoredTeamAiDecision[] => {
     const actor = getActorState(actorId);
     if (!actor) return [];
@@ -19356,6 +19532,13 @@ function AustraliaGame() {
     const teamSummary = teamScoreSummary[actor.teamId] || createDefaultTeamScoreBreakdown();
     const opponentSummary = teamScoreSummary[opponentTeamId] || createDefaultTeamScoreBreakdown();
     const currentDeposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    // V6.7 Phase 3b: computed once per call and reused by both the sabotage-target block and the
+    // Tier 2 / endgame additive-bonus pass below, so selectThreatTarget's persisting side effect
+    // only fires once per decision-ranking call, not twice.
+    const endgameAccelerationState = computeEndgameAccelerationState();
+    const threatTargetingActiveForActor = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiThreatTargetingEnabled;
+    const threatTargetPickForActor = threatTargetingActiveForActor ? selectThreatTarget(actorId) : null;
+    const threatTargetActorForActor = threatTargetPickForActor ? getActorState(threatTargetPickForActor.targetActorId) : null;
     const teamModeAiSystemsActiveForDecision = isTeamModeSelection(gameState.selectedMode) && gameSettings.teamModeAiSystemsEnabled;
     const teamAiProfile = teamModeAiSystemsActiveForDecision
       ? normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile)
@@ -20188,21 +20371,27 @@ function AustraliaGame() {
     }
 
     if (gameSettings.sabotageEnabled && isCompetitiveModeSelection(gameState.selectedMode) && opponentActors.length > 0) {
-      const sabotageTarget = opponentActors
-        .map(target => {
-          const targetLiquidity = opponentLiquidityAnalysis.byActorId[target.id];
-          const regionInfo = getRegionControlInfo(target.currentRegion, currentDeposits);
-          const regionInfluence = regionInfo.controllerId === target.teamId ? 30 : 0;
-          const netWorthShare = opponentSummary.netWorth > 0
-            ? ((targetLiquidity?.netWorth || computeNetWorth(target)) / opponentSummary.netWorth)
-            : 0;
-          const pressure = Math.round(((targetLiquidity?.moneyShare || 0) * 100) + (netWorthShare * 120) + regionInfluence + (target.role === 'leader' ? 25 : 0));
-          return {
-            target,
-            pressure
-          };
-        })
-        .sort((left, right) => right.pressure - left.pressure)[0] || null;
+      // V6.7 Phase 3b: Threat Targeting generalizes this block's target selection. When the
+      // toggle is off, the exact original pre-3b `pressure` formula runs unchanged below — this
+      // is the toggle-off fallback, kept byte-for-byte so nothing downstream (which still reads
+      // `sabotageTarget.pressure`/`.target`) needs to change.
+      const sabotageTarget = threatTargetActorForActor
+        ? { target: threatTargetActorForActor, pressure: computeThreatScore(threatTargetActorForActor).score }
+        : opponentActors
+            .map(target => {
+              const targetLiquidity = opponentLiquidityAnalysis.byActorId[target.id];
+              const regionInfo = getRegionControlInfo(target.currentRegion, currentDeposits);
+              const regionInfluence = regionInfo.controllerId === target.teamId ? 30 : 0;
+              const netWorthShare = opponentSummary.netWorth > 0
+                ? ((targetLiquidity?.netWorth || computeNetWorth(target)) / opponentSummary.netWorth)
+                : 0;
+              const pressure = Math.round(((targetLiquidity?.moneyShare || 0) * 100) + (netWorthShare * 120) + regionInfluence + (target.role === 'leader' ? 25 : 0));
+              return {
+                target,
+                pressure
+              };
+            })
+            .sort((left, right) => right.pressure - left.pressure)[0] || null;
       if (sabotageTarget) {
         SABOTAGE_ACTIONS.forEach(action => {
           if (actor.money - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
@@ -20515,11 +20704,55 @@ function AustraliaGame() {
           if (!targetKind || !targetId) return true;
           return !isReservationHardBlocked(targetKind, targetId, actorId);
         });
-    return reservationFiltered.map(candidate => ({
-      ...(candidate as ScoredTeamAiDecision),
-      score: candidate.traceMeta?.adjustedScore || candidate.score
-    }));
-  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeNetWorth, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, isReservationHardBlocked, isTeamMode, teamScoreSummary]);
+    // V6.7 Phase 3b: Tier 2 threat-awareness bonuses (region pressure / resource denial toward the
+    // threat target) and per-win-condition Endgame Acceleration bonuses — both purely additive
+    // score deltas, applied after the existing adjustedScore-fallback resolution so they're never
+    // silently clobbered by it; no new decision-construction blocks, no edits to existing
+    // per-decision-type scoring.
+    return reservationFiltered.map(candidate => {
+      const baseScore = candidate.traceMeta?.adjustedScore || candidate.score;
+      let bonus = 0;
+      if (threatTargetActorForActor) {
+        if (
+          (candidate.type === 'region_deposit' || candidate.type === 'cashout_region') &&
+          candidate.data?.region === threatTargetActorForActor.currentRegion
+        ) {
+          bonus += 20 * (gameSettings.teamAiThreatTargetingStrength / 100);
+        }
+        if (candidate.type === 'buy_market') {
+          const topPurchase = Array.isArray(candidate.data?.purchases) ? candidate.data.purchases[0] : null;
+          const targetNeedsResource = topPurchase?.resource && CRAFTING_RECIPES.some(recipe =>
+            Object.prototype.hasOwnProperty.call(recipe.inputs, topPurchase.resource) &&
+            (threatTargetActorForActor.inventory || []).filter(item => item === topPurchase.resource).length < Number(recipe.inputs[topPurchase.resource])
+          );
+          if (targetNeedsResource) bonus += 15 * (gameSettings.teamAiThreatTargetingStrength / 100);
+        }
+      }
+      if (endgameAccelerationState.active) {
+        const aggression = gameSettings.teamAiEndgameAggressionMultiplier;
+        const cashStrength = gameSettings.teamAiEndgameCashConversionStrength;
+        switch (gameSettings.winCondition) {
+          case 'money':
+            if (candidate.type === 'sell' || candidate.type === 'cashout_region') bonus += cashStrength * aggression * 0.5;
+            if (candidate.type === 'invest' || candidate.type === 'buy_equipment') bonus -= cashStrength * 0.3;
+            break;
+          case 'netWorth':
+            if (candidate.type === 'craft') bonus += cashStrength * aggression * 0.3;
+            break;
+          case 'regions':
+            if (candidate.type === 'region_deposit' || candidate.type === 'travel' || candidate.type === 'sabotage') bonus += aggression * 20;
+            break;
+        }
+        if (gameState.selectedMode === 'grand_tour' && (candidate.type === 'challenge' || candidate.type === 'travel')) {
+          bonus += aggression * 15;
+        }
+      }
+      return {
+        ...(candidate as ScoredTeamAiDecision),
+        score: baseScore + bonus
+      };
+    });
+  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
 
   const shouldTeamActorUseOverride = useCallback((actorId: string, nextDecision: ScoredTeamAiDecision | null) => {
     const actor = getActorState(actorId);
@@ -20876,8 +21109,15 @@ function AustraliaGame() {
       return ineligible('Would breach minimum cash reserve.');
     }
 
-    // #8: score floor, additive on top of shouldTeamActorUseOverride's own thresholds
-    if (nextDecision.score < gameSettings.teamAiOverrideMinimumDecisionScore) {
+    // #8: score floor, additive on top of shouldTeamActorUseOverride's own thresholds.
+    // V6.7 Phase 3b: teamAiEndgameOverrideBias lowers this threshold during the endgame window —
+    // a locally-computed adjusted value, never mutating gameSettings itself. Identical to the
+    // unmodified setting whenever Endgame Acceleration is off (fractional reduction of 0 no-ops).
+    const endgameOverrideState = computeEndgameAccelerationState();
+    const effectiveMinimumDecisionScore = endgameOverrideState.active
+      ? gameSettings.teamAiOverrideMinimumDecisionScore * (1 - gameSettings.teamAiEndgameOverrideBias)
+      : gameSettings.teamAiOverrideMinimumDecisionScore;
+    if (nextDecision.score < effectiveMinimumDecisionScore) {
       return ineligible('Decision score below Competitive AI threshold.');
     }
 
@@ -20904,8 +21144,8 @@ function AustraliaGame() {
     gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.allowActionOverride,
     gameSettings.enemyTeamAiPreset, gameSettings.teamAiOverrideMaxPerActorPerDay, gameSettings.teamAiOverrideMaxPerTeamPerDay,
     gameSettings.teamAiOverridePolicy, gameSettings.friendlyAiOverridePolicy, gameSettings.teamAiOverrideBaseCostMultiplier,
-    gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameState.gameMode,
-    getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity
+    gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameSettings.teamAiEndgameOverrideBias,
+    gameState.gameMode, getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity, computeEndgameAccelerationState
   ]);
 
   // V6.7 Phase 2c: Action Lending — the eligibility checker for a donor actor to credit a
@@ -21007,6 +21247,10 @@ function AustraliaGame() {
     const team = teamsByIdRef.current[actor.teamId];
     const plan = team?.activeTeamPlan;
     if (!plan || plan.status !== 'active') return null;
+    // V6.7 Phase 3b: "avoid plans that can't finish in time" — during the endgame window, skip a
+    // plan whose expiry already falls beyond the game's total length (it structurally cannot
+    // complete before the match ends). Additive guard only; no existing branches touched.
+    if (computeEndgameAccelerationState().active && plan.expiresDay > gameSettings.totalDays) return null;
 
     const step = plan.steps.find(candidateStep =>
       candidateStep.assignedActorId === actorId &&
@@ -21028,7 +21272,7 @@ function AustraliaGame() {
     if (!match) return null;
 
     return { decision: match, stepId: step.id, planId: plan.id };
-  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, getActorState, getRankedTeamAiDecisions]);
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, gameSettings.totalDays, getActorState, getRankedTeamAiDecisions, computeEndgameAccelerationState]);
 
   const makeTeamAiDecision = useCallback((actorId: string): AIAction => {
     const actor = getActorState(actorId);
@@ -23150,7 +23394,17 @@ function AustraliaGame() {
       teamAiPlanTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
       teamAiReservationStrictness: DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
       friendlyAiRespectPlayerReservations: DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
-      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource
+      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
+      teamAiThreatTargetingEnabled: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingEnabled,
+      teamAiThreatTargetingStrength: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingStrength,
+      teamAiThreatReevaluationFrequency: DEFAULT_GAME_SETTINGS.teamAiThreatReevaluationFrequency,
+      teamAiThreatFocusDuration: DEFAULT_GAME_SETTINGS.teamAiThreatFocusDuration,
+      teamAiMayTargetFriendlyAiTeammate: DEFAULT_GAME_SETTINGS.teamAiMayTargetFriendlyAiTeammate,
+      teamAiEndgameAccelerationEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationEnabled,
+      teamAiEndgameStartPercent: DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent,
+      teamAiEndgameAggressionMultiplier: DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier,
+      teamAiEndgameOverrideBias: DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias,
+      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -23190,7 +23444,17 @@ function AustraliaGame() {
       teamAiPlanTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
       teamAiReservationStrictness: DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
       friendlyAiRespectPlayerReservations: DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
-      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource
+      friendlyAiMayRequestReservedResource: DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
+      teamAiThreatTargetingEnabled: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingEnabled,
+      teamAiThreatTargetingStrength: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingStrength,
+      teamAiThreatReevaluationFrequency: DEFAULT_GAME_SETTINGS.teamAiThreatReevaluationFrequency,
+      teamAiThreatFocusDuration: DEFAULT_GAME_SETTINGS.teamAiThreatFocusDuration,
+      teamAiMayTargetFriendlyAiTeammate: DEFAULT_GAME_SETTINGS.teamAiMayTargetFriendlyAiTeammate,
+      teamAiEndgameAccelerationEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationEnabled,
+      teamAiEndgameStartPercent: DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent,
+      teamAiEndgameAggressionMultiplier: DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier,
+      teamAiEndgameOverrideBias: DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias,
+      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -24431,7 +24695,7 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
                   </div>
                 </div>
               </SettingsSection>
@@ -24789,6 +25053,122 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.friendlyAiMayRequestReservedResource ? '☑' : '☐'} Friendly AI May Request Instead of Block</span>
                         </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.threatTargeting"
+                tab="teamModeAi"
+                title="Threat Targeting"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.threatTargeting')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Threat Targeting has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Threat Targeting</div>
+                        <div className="text-sm opacity-75">Lets enemy AI focus sabotage and pressure on the most strategically dangerous opposing actor, instead of always the human player.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingEnabled: !prev.teamAiThreatTargetingEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiThreatTargetingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiThreatTargetingEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiThreatTargetingEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Strength: {gameSettings.teamAiThreatTargetingStrength}</label>
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiThreatTargetingStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingStrength: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Reevaluation Frequency (turns): {gameSettings.teamAiThreatReevaluationFrequency}</label>
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatReevaluationFrequency} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Focus Duration (turns): {gameSettings.teamAiThreatFocusDuration}</label>
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatFocusDuration} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatFocusDuration: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiMayTargetFriendlyAiTeammate)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMayTargetFriendlyAiTeammate: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiMayTargetFriendlyAiTeammate ? '☑' : '☐'} Enemy AI May Target Your Friendly AI Teammate</span>
+                        </label>
+                        <div className="text-xs opacity-60">When off, enemy AI threat-targeting only ever considers you, not your AI-controlled teammates.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.endgameAcceleration"
+                tab="teamModeAi"
+                title="Endgame Acceleration"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.endgameAcceleration')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Endgame Acceleration has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Endgame Acceleration</div>
+                        <div className="text-sm opacity-75">Shifts Competitive AI decision-making toward decisively pursuing the active win condition in the final stretch of the match.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiEndgameAccelerationEnabled: !prev.teamAiEndgameAccelerationEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEndgameAccelerationEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiEndgameAccelerationEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiEndgameAccelerationEnabled && (
+                      <div>
+                        <label className="block font-semibold mb-2">Start Percent: {Math.round(gameSettings.teamAiEndgameStartPercent * 100)}%</label>
+                        <input
+                          type="range" min="50" max="95"
+                          value={Math.round(gameSettings.teamAiEndgameStartPercent * 100)}
+                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameStartPercent: parseInt(e.target.value) / 100 }))}
+                          className="w-full"
+                        />
+                        <div className="text-sm opacity-75 mt-1">Endgame mode begins once this percentage of the match's total days has elapsed.</div>
+                      </div>
+                    )}
+
+                    {gameSettings.teamAiEndgameAccelerationEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold mb-2">Aggression Multiplier: {gameSettings.teamAiEndgameAggressionMultiplier.toFixed(1)}x</label>
+                          <input type="range" min="1" max="3" step="0.1" value={gameSettings.teamAiEndgameAggressionMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                        </div>
+                        <div>
+                          <label className="block font-semibold mb-2">Override Bias: {Math.round(gameSettings.teamAiEndgameOverrideBias * 100)}%</label>
+                          <input type="range" min="0" max="50" value={Math.round(gameSettings.teamAiEndgameOverrideBias * 100)} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
+                        </div>
+                        <div>
+                          <label className="block font-semibold mb-2">Cash Conversion Strength: {gameSettings.teamAiEndgameCashConversionStrength}</label>
+                          <input type="range" min="0" max="100" value={gameSettings.teamAiEndgameCashConversionStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameCashConversionStrength: parseInt(e.target.value) }))} className="w-full" />
+                        </div>
                       </div>
                     )}
                   </div>
