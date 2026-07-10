@@ -1656,6 +1656,8 @@ interface ActorContributionStats {
   supportReceived: number;
   cashTransferred: number;
   resourcesTransferred: number;
+  actionsLent: number;
+  actionsReceived: number;
 }
 
 type TeammatePerformanceActionType = 'challenge' | 'craft' | 'economy' | 'support' | 'control';
@@ -1714,6 +1716,9 @@ interface TeamSupportLedger {
   lastResourceTransferTurnByPair: Record<string, number>;
   lastRemoteAidTurnByPair: Record<string, number>;
   lastSupportReasonByActor: Record<string, string>;
+  // V6.7 Phase 2c: Action Lending pairwise cooldown, reusing the same
+  // TEAM_SUPPORT_REPEAT_COOLDOWN/TEAM_SUPPORT_RETURN_COOLDOWN cadence as cash/resource transfers.
+  lastActionLendTurnByPair: Record<string, number>;
 }
 
 // V6.7 Phase 2b: Shared Team Action Bank runtime state. A shared, mutable, depletable pool
@@ -2459,6 +2464,13 @@ type GameSettingsState = {
   teamActionBankReserveActions: number;
   teamActionBankMaxDrawsPerActorPerDay: number;
   teamActionBankTransparencyEnabled: boolean;
+  // V6.7 Phase 2c: Action Lending (inert unless teamCompetitiveAiEnabled && teamAiActionLendingEnabled)
+  teamAiActionLendingEnabled: boolean;
+  teamAiMaxLentActionsPerActorPerDay: number;
+  teamAiMaxReceivedActionsPerActorPerDay: number;
+  teamAiActionLendingMinimumValueGain: number;
+  teamAiActionLendingRequiresCommittedPlan: boolean;
+  teamAiActionLendingTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3387,6 +3399,12 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamActionBankReserveActions: 1,
   teamActionBankMaxDrawsPerActorPerDay: 1,
   teamActionBankTransparencyEnabled: true,
+  teamAiActionLendingEnabled: false,
+  teamAiMaxLentActionsPerActorPerDay: 1,
+  teamAiMaxReceivedActionsPerActorPerDay: 1,
+  teamAiActionLendingMinimumValueGain: 25,
+  teamAiActionLendingRequiresCommittedPlan: true,
+  teamAiActionLendingTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3434,13 +3452,19 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides and the Shared Action Bank are wired — see the Coming in future updates note).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, and Action Lending are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
   teamAiActionOverridesEnabled: {
     key: 'teamAiActionOverridesEnabled', tab: 'teamModeAi', label: 'AI Action Overrides',
     description: 'Lets Competitive AI actors buy extra actions the same way human players and Classic AI already can, under new eligibility safeguards.',
+    warning: 'Has no effect unless Competitive AI is also enabled.',
+    tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
+  },
+  teamAiActionLendingEnabled: {
+    key: 'teamAiActionLendingEnabled', tab: 'teamModeAi', label: 'Action Lending',
+    description: 'Lets a Competitive AI actor hand one of their own unused actions to a teammate who has a clearly better use for it.',
     warning: 'Has no effect unless Competitive AI is also enabled.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
@@ -3508,6 +3532,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.competitiveAi', tab: 'teamModeAi', title: 'Competitive AI', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCompetitiveAiEnabled', 'teamModeAiDifficultyPreset', 'friendlyTeamAiPreset', 'enemyTeamAiPreset'] },
   { id: 'teamModeAi.actionOverrides', tab: 'teamModeAi', title: 'AI Action Overrides', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionOverridesEnabled', 'teamAiOverridePolicy', 'friendlyAiOverridePolicy', 'teamAiOverrideMaxPerActorPerDay', 'teamAiOverrideMaxPerTeamPerDay', 'teamAiOverrideBaseCostMultiplier', 'teamAiOverrideMinimumDecisionScore', 'teamAiOverrideMinimumCashReserve', 'teamAiOverrideEscalatingCostEnabled', 'teamAiOverrideFatigueEnabled', 'teamAiOverrideTransparencyEnabled'] },
   { id: 'teamModeAi.sharedActionBank', tab: 'teamModeAi', title: 'Shared Action Bank', tags: ['Team Mode', 'AI'], fieldKeys: ['teamActionBankEnabled', 'teamActionBankBonusActionsPerDay', 'teamActionBankDistributionMode', 'teamActionBankReserveActions', 'teamActionBankMaxDrawsPerActorPerDay', 'teamActionBankTransparencyEnabled'] },
+  { id: 'teamModeAi.actionLending', tab: 'teamModeAi', title: 'Action Lending', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionLendingEnabled', 'teamAiMaxLentActionsPerActorPerDay', 'teamAiMaxReceivedActionsPerActorPerDay', 'teamAiActionLendingMinimumValueGain', 'teamAiActionLendingRequiresCommittedPlan', 'teamAiActionLendingTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -4219,7 +4244,9 @@ const createDefaultContributionStats = (): ActorContributionStats => ({
   supportGiven: 0,
   supportReceived: 0,
   cashTransferred: 0,
-  resourcesTransferred: 0
+  resourcesTransferred: 0,
+  actionsLent: 0,
+  actionsReceived: 0
 });
 
 const createDefaultTeamScoreBreakdown = (): TeamScoreBreakdown => ({
@@ -4242,7 +4269,8 @@ const createDefaultTeamSupportLedger = (): TeamSupportLedger => ({
   lastCashTransferTurnByPair: {},
   lastResourceTransferTurnByPair: {},
   lastRemoteAidTurnByPair: {},
-  lastSupportReasonByActor: {}
+  lastSupportReasonByActor: {},
+  lastActionLendTurnByPair: {}
 });
 
 const createDefaultTeamAdaptiveState = (): TeamAdaptiveState => ({
@@ -5824,7 +5852,8 @@ const sanitizeTeamSupportLedger = (value: unknown): TeamSupportLedger => {
     lastCashTransferTurnByPair: sanitizeNumericRecord(source.lastCashTransferTurnByPair),
     lastResourceTransferTurnByPair: sanitizeNumericRecord(source.lastResourceTransferTurnByPair),
     lastRemoteAidTurnByPair: sanitizeNumericRecord(source.lastRemoteAidTurnByPair),
-    lastSupportReasonByActor: sanitizeStringRecord(source.lastSupportReasonByActor)
+    lastSupportReasonByActor: sanitizeStringRecord(source.lastSupportReasonByActor),
+    lastActionLendTurnByPair: sanitizeNumericRecord(source.lastActionLendTurnByPair)
   };
 };
 
@@ -6326,6 +6355,9 @@ const initialPlayerState = {
   actionsUsedThisTurn: 0,
   overridesUsedToday: 0,
   overrideFatigue: 0,
+  lentActionsUsedToday: 0,
+  receivedActionsUsedToday: 0,
+  pendingLentActionCredits: {} as Record<string, number>,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -7492,6 +7524,16 @@ function AustraliaGame() {
         actionsUsedThisTurn: typeof data?.actionsUsedThisTurn === 'number' ? data.actionsUsedThisTurn : 0,
         overridesUsedToday: typeof data?.overridesUsedToday === 'number' ? data.overridesUsedToday : 0,
         overrideFatigue: typeof data?.overrideFatigue === 'number' ? data.overrideFatigue : 0,
+        lentActionsUsedToday: typeof data?.lentActionsUsedToday === 'number' ? data.lentActionsUsedToday : 0,
+        receivedActionsUsedToday: typeof data?.receivedActionsUsedToday === 'number' ? data.receivedActionsUsedToday : 0,
+        pendingLentActionCredits: (data?.pendingLentActionCredits && typeof data.pendingLentActionCredits === 'object')
+          ? Object.entries(data.pendingLentActionCredits as Record<string, unknown>).reduce<Record<string, number>>((acc, [key, amount]) => {
+              if (typeof amount === 'number' && isFinite(amount)) {
+                acc[key] = Math.max(0, Math.floor(amount));
+              }
+              return acc;
+            }, {})
+          : {},
         loans,
         completedThisSeason,
         challengeMastery,
@@ -7935,6 +7977,18 @@ function AustraliaGame() {
         teamActionBankTransparencyEnabled: typeof settingsData.teamActionBankTransparencyEnabled === 'boolean'
           ? settingsData.teamActionBankTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
+        teamAiActionLendingEnabled: typeof settingsData.teamAiActionLendingEnabled === 'boolean'
+          ? settingsData.teamAiActionLendingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingEnabled,
+        teamAiMaxLentActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxLentActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxLentActionsPerActorPerDay, 1, 3),
+        teamAiMaxReceivedActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxReceivedActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay, 1, 3),
+        teamAiActionLendingMinimumValueGain: clampSettingNumber(settingsData.teamAiActionLendingMinimumValueGain, DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain, 0, 200),
+        teamAiActionLendingRequiresCommittedPlan: typeof settingsData.teamAiActionLendingRequiresCommittedPlan === 'boolean'
+          ? settingsData.teamAiActionLendingRequiresCommittedPlan
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
+        teamAiActionLendingTransparencyEnabled: typeof settingsData.teamAiActionLendingTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiActionLendingTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -16011,6 +16065,91 @@ function AustraliaGame() {
     return true;
   }, [addNotification, appendTeammatePerformanceSample, gameState.turnCounter, getActorDisplayName, getActorState, incrementAction, updateActorContribution, updateActorState, updateTeamState]);
 
+  // V6.7 Phase 2c: Action Lending. A directed, pairwise credit — one AI actor hands a specific
+  // unused action to a specific teammate. Unlike transferCash/transferResource this doesn't move
+  // an immediate resource; it records a credit on the recipient's ActorState, redeemed the instant
+  // their next performTeamAiTurn begins (see the redemption logic there). Reuses the same
+  // TeamSupportLedger cooldown infrastructure (TEAM_SUPPORT_REPEAT_COOLDOWN/TEAM_SUPPORT_RETURN_COOLDOWN)
+  // as cash/resource support rather than inventing a parallel cooldown system.
+  const lendAction = useCallback((fromActorId: string, toActorId: string, options?: {
+    reasonLabel?: string;
+  }) => {
+    const fromActor = getActorState(fromActorId);
+    const toActor = getActorState(toActorId);
+    if (!fromActor || !toActor) return false;
+    if (fromActor.teamId !== toActor.teamId) return false;
+    if (fromActor.currentRegion !== toActor.currentRegion) return false;
+
+    const pairKey = buildSupportPairKey(fromActorId, toActorId);
+    const reversePairKey = buildSupportPairKey(toActorId, fromActorId);
+    const supportLedger = sanitizeTeamSupportLedger(teamsByIdRef.current[fromActor.teamId]?.supportLedger);
+    const sameDirectionTurn = supportLedger.lastActionLendTurnByPair[pairKey] || 0;
+    const reverseDirectionTurn = supportLedger.lastActionLendTurnByPair[reversePairKey] || 0;
+    if (sameDirectionTurn > 0 && (gameState.turnCounter - sameDirectionTurn) < TEAM_SUPPORT_REPEAT_COOLDOWN) {
+      return false;
+    }
+    if (reverseDirectionTurn > 0 && (gameState.turnCounter - reverseDirectionTurn) < TEAM_SUPPORT_RETURN_COOLDOWN) {
+      return false;
+    }
+
+    if ((fromActor.lentActionsUsedToday || 0) >= gameSettings.teamAiMaxLentActionsPerActorPerDay) return false;
+    if ((toActor.receivedActionsUsedToday || 0) >= gameSettings.teamAiMaxReceivedActionsPerActorPerDay) return false;
+
+    updateActorState(fromActorId, prev => ({
+      ...prev,
+      lentActionsUsedToday: (prev.lentActionsUsedToday || 0) + 1
+    }));
+    updateActorState(toActorId, prev => ({
+      ...prev,
+      receivedActionsUsedToday: (prev.receivedActionsUsedToday || 0) + 1,
+      pendingLentActionCredits: {
+        ...(prev.pendingLentActionCredits || {}),
+        [fromActorId]: ((prev.pendingLentActionCredits || {})[fromActorId] || 0) + 1
+      }
+    }));
+    updateActorContribution(fromActorId, {
+      actionsLent: (fromActor.contributionStats?.actionsLent || 0) + 1
+    });
+    updateActorContribution(toActorId, {
+      actionsReceived: (toActor.contributionStats?.actionsReceived || 0) + 1
+    });
+    updateTeamState(fromActor.teamId, prev => ({
+      ...prev,
+      supportLedger: {
+        ...sanitizeTeamSupportLedger(prev.supportLedger),
+        lastActionLendTurnByPair: {
+          ...(prev.supportLedger?.lastActionLendTurnByPair || {}),
+          [buildSupportPairKey(fromActorId, toActorId)]: gameState.turnCounter
+        }
+      }
+    }));
+    appendTeammatePerformanceSample(fromActor.teamId, fromActorId, {
+      turn: gameState.turnCounter,
+      actionType: 'support',
+      impact: 0.3
+    });
+    if (gameSettings.teamAiActionLendingTransparencyEnabled) {
+      addNotification(
+        `🤖 ${getActorDisplayName(fromActorId)} lent one action to ${getActorDisplayName(toActorId)} — ${options?.reasonLabel || 'a clearly stronger move was available'}.`,
+        'ai',
+        true
+      );
+    }
+    return true;
+  }, [
+    addNotification,
+    appendTeammatePerformanceSample,
+    gameSettings.teamAiMaxLentActionsPerActorPerDay,
+    gameSettings.teamAiMaxReceivedActionsPerActorPerDay,
+    gameSettings.teamAiActionLendingTransparencyEnabled,
+    gameState.turnCounter,
+    getActorDisplayName,
+    getActorState,
+    updateActorContribution,
+    updateActorState,
+    updateTeamState
+  ]);
+
   const issueTeamDirective = useCallback((directive: {
     fromActorId: string;
     toActorId?: string;
@@ -17106,6 +17245,11 @@ function AustraliaGame() {
         projected.actionsUsedThisTurn = 0;
         projected.overridesUsedToday = 0;
         projected.overrideFatigue = Math.max(0, (projected.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
+        projected.lentActionsUsedToday = 0;
+        projected.receivedActionsUsedToday = 0;
+        // V6.7 Phase 2c: pendingLentActionCredits is intentionally NOT cleared here — an actor
+        // lent an action late on the previous day but who hasn't taken their turn yet would
+        // otherwise lose it. It is cleared at the point of redemption in performTeamAiTurn instead.
         projected.specialAbilityUses = projected.character?.specialAbility?.usesLeft ?? projected.specialAbilityUses;
         projected.activeSpecialAbility = null;
         projected.debuffs = tickDebuffs(projected.debuffs || []);
@@ -17489,9 +17633,13 @@ function AustraliaGame() {
     projectedPlayer.actionsUsedThisTurn = 0;
     projectedPlayer.overridesUsedToday = 0;
     projectedPlayer.overrideFatigue = Math.max(0, (projectedPlayer.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
+    projectedPlayer.lentActionsUsedToday = 0;
+    projectedPlayer.receivedActionsUsedToday = 0;
     projectedAi.actionsUsedThisTurn = 0;
     projectedAi.overridesUsedToday = 0;
     projectedAi.overrideFatigue = Math.max(0, (projectedAi.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
+    projectedAi.lentActionsUsedToday = 0;
+    projectedAi.receivedActionsUsedToday = 0;
     projectedAi.specialAbilityUses = projectedAi.character?.specialAbility?.usesLeft ?? projectedAi.specialAbilityUses;
     setAiActiveSpecialAbility(null);
     projectedAi.debuffs = tickDebuffs(projectedAi.debuffs || []);
@@ -17772,6 +17920,8 @@ function AustraliaGame() {
         actionsUsedThisTurn: projectedPlayer.actionsUsedThisTurn,
         overridesUsedToday: projectedPlayer.overridesUsedToday,
         overrideFatigue: projectedPlayer.overrideFatigue,
+        lentActionsUsedToday: projectedPlayer.lentActionsUsedToday,
+        receivedActionsUsedToday: projectedPlayer.receivedActionsUsedToday,
         completedThisSeason: projectedPlayer.completedThisSeason,
         advancedLoans: projectedPlayer.advancedLoans,
         creditScore: projectedPlayer.creditScore,
@@ -19729,6 +19879,11 @@ function AustraliaGame() {
   // confirmation dialog. Turn-scoped only (cleared in finishTeamAiTurn), never persisted.
   const approveSimilarThisTurnRef = useRef<Record<string, boolean>>({});
 
+  // V6.7 Phase 2c: guards lending to at most one credit-grant per lender turn, regardless of
+  // the daily cap value — the daily cap governs how many separate turns an actor can lend from,
+  // not how many teammates they can help in one turn. Cleared alongside the refs above.
+  const hasLentThisTurnRef = useRef<Record<string, boolean>>({});
+
   const buildOverrideDecisionSignature = (decision: ScoredTeamAiDecision | null): string => {
     if (!decision) return '';
     return `${decision.type}:${decision.data?.region || ''}:${decision.data?.resource || ''}:${decision.data?.targetActorId || ''}`;
@@ -19953,6 +20108,91 @@ function AustraliaGame() {
     getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity
   ]);
 
+  // V6.7 Phase 2c: Action Lending — the eligibility checker for a donor actor to credit a
+  // specific teammate with one bonus action. Fully inert unless BOTH
+  // gameSettings.teamCompetitiveAiEnabled AND gameSettings.teamAiActionLendingEnabled are true.
+  // Unlike evaluateTeamActionBankDraw/evaluateTeamAiOverrideEligibility (both triggered when an
+  // actor WANTS more budget), this is triggered when an actor has budget left but genuinely has
+  // nothing good to do with it (see the end_turn branch in performTeamAiTurn) — the two kinds of
+  // check are structurally exclusive within a single loop iteration, so no runtime priority
+  // ordering between lending and bank/override is needed here.
+  // Deliberately does NOT call analyzeTeamLiquidity — none of the lending conditions are
+  // liquidity-related (unlike 2a/2b's crisis checks); ScoredTeamAiDecision.score comparisons are
+  // the right signal for "does a teammate have a clearly better use for this action."
+  const evaluateTeamActionLendEligibility = useCallback((
+    actorId: string
+  ): { eligible: boolean; toActorId: string | null; reasonLabel: string } => {
+    const ineligible = (reasonLabel: string) => ({ eligible: false, toActorId: null as string | null, reasonLabel });
+
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiActionLendingEnabled) {
+      return ineligible('Action Lending is off.');
+    }
+    if (gameState.gameMode !== 'game') return ineligible('Game has ended.');
+
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai') return ineligible('Not an AI actor.');
+
+    if ((actor.lentActionsUsedToday || 0) >= gameSettings.teamAiMaxLentActionsPerActorPerDay) {
+      return ineligible('Daily lend limit reached for this actor.');
+    }
+
+    const team = teamsByIdRef.current[actor.teamId];
+    const teammateIds = (team?.actorIds || []).filter(id => id !== actorId);
+    if (teammateIds.length === 0) return ineligible('No teammates to lend to.');
+
+    const lenderDecisions = getRankedTeamAiDecisions(actorId);
+    const lenderBestScore = lenderDecisions[0]?.score ?? 0;
+
+    const activeGoal = (team?.teamGoals || [])
+      .filter(goal => goal.status === 'active')
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
+
+    const supportLedger = sanitizeTeamSupportLedger(team?.supportLedger);
+    let bestCandidate: { toActorId: string; score: number; reasonLabel: string } | null = null;
+
+    for (const teammateId of teammateIds) {
+      const teammate = getActorState(teammateId);
+      if (!teammate || teammate.kind !== 'ai') continue; // no scored decision to lend against for a human teammate
+      if ((teammate.receivedActionsUsedToday || 0) >= gameSettings.teamAiMaxReceivedActionsPerActorPerDay) continue;
+
+      const pairKey = buildSupportPairKey(actorId, teammateId);
+      const reversePairKey = buildSupportPairKey(teammateId, actorId);
+      const sameDirectionTurn = supportLedger.lastActionLendTurnByPair[pairKey] || 0;
+      const reverseDirectionTurn = supportLedger.lastActionLendTurnByPair[reversePairKey] || 0;
+      if (sameDirectionTurn > 0 && (gameState.turnCounter - sameDirectionTurn) < TEAM_SUPPORT_REPEAT_COOLDOWN) continue;
+      if (reverseDirectionTurn > 0 && (gameState.turnCounter - reverseDirectionTurn) < TEAM_SUPPORT_RETURN_COOLDOWN) continue;
+
+      const teammateDecisions = getRankedTeamAiDecisions(teammateId);
+      const teammateBest = teammateDecisions[0] || null;
+      if (!teammateBest || teammateBest.type === 'end_turn') continue;
+
+      const objectiveMatch = activeGoal
+        ? (TEAM_ACTION_BANK_GOAL_ACTION_MATCH[activeGoal.kind] || []).includes(teammateBest.type)
+        : true; // no active goal yet (no Team Plans until Phase 3) — don't permanently disable this
+      if (gameSettings.teamAiActionLendingRequiresCommittedPlan && !objectiveMatch) continue;
+
+      const valueGain = teammateBest.score - lenderBestScore;
+      if (valueGain < gameSettings.teamAiActionLendingMinimumValueGain) continue;
+
+      if (!bestCandidate || valueGain > (bestCandidate.score - lenderBestScore)) {
+        bestCandidate = {
+          toActorId: teammateId,
+          score: teammateBest.score,
+          reasonLabel: `completing ${teammateBest.description} produced greater team value than the lender's alternatives`
+        };
+      }
+    }
+
+    if (!bestCandidate) return ineligible('No teammate has a clearly stronger move.');
+
+    return { eligible: true, toActorId: bestCandidate.toActorId, reasonLabel: bestCandidate.reasonLabel };
+  }, [
+    gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiActionLendingEnabled,
+    gameSettings.teamAiMaxLentActionsPerActorPerDay, gameSettings.teamAiMaxReceivedActionsPerActorPerDay,
+    gameSettings.teamAiActionLendingRequiresCommittedPlan, gameSettings.teamAiActionLendingMinimumValueGain,
+    gameState.gameMode, gameState.turnCounter, getActorState, getRankedTeamAiDecisions
+  ]);
+
   const makeTeamAiDecision = useCallback((actorId: string): AIAction => {
     const actor = getActorState(actorId);
     if (!actor) {
@@ -20045,6 +20285,7 @@ function AustraliaGame() {
   const finishTeamAiTurn = useCallback((actorId: string) => {
     delete lastFailedOverrideActionRef.current[actorId];
     delete approveSimilarThisTurnRef.current[actorId];
+    delete hasLentThisTurnRef.current[actorId];
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
     updateActorState(actorId, prev => ({
       ...prev,
@@ -20066,13 +20307,45 @@ function AustraliaGame() {
     refreshTeamLiquidityLedger(actor.teamId);
     delete lastFailedOverrideActionRef.current[actor.id];
     delete approveSimilarThisTurnRef.current[actor.id];
+    delete hasLentThisTurnRef.current[actor.id];
     let actionBudget = getActorActionBudget(actor.id);
     let actionsTaken = 0;
+
+    // V6.7 Phase 2c: redeem any lent-action credits from teammates before this turn's budget is
+    // spent. Unconditional — all the eligibility gating already happened when the credit was
+    // created (see evaluateTeamActionLendEligibility/lendAction), so redemption itself has no
+    // further gate. Credits are cleared the instant they're redeemed.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiActionLendingEnabled) {
+      const credits = actor.pendingLentActionCredits || {};
+      const totalCredits = Object.values(credits).reduce((sum, n) => sum + (n || 0), 0);
+      if (totalCredits > 0) {
+        actionBudget += totalCredits;
+        updateActorState(actor.id, prev => ({ ...prev, pendingLentActionCredits: {} }));
+        if (gameSettings.teamAiActionLendingTransparencyEnabled) {
+          addNotification(`🤖 ${getActorDisplayName(actor.id)} redeemed ${totalCredits} lent action${totalCredits > 1 ? 's' : ''} from a teammate.`, 'ai', true);
+        }
+      }
+    }
+
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
 
     while (actionsTaken < actionBudget) {
       const decision = makeTeamAiDecision(actor.id);
-      if (decision.type === 'end_turn') break;
+      if (decision.type === 'end_turn') {
+        // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
+        // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
+        // override branch below (that one only runs once a *good* decision exists but the budget
+        // is exhausted) — so lending never competes with those for the same instant.
+        const lendActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiActionLendingEnabled;
+        const lendEligibility = (lendActive && !hasLentThisTurnRef.current[actor.id])
+          ? evaluateTeamActionLendEligibility(actor.id)
+          : { eligible: false, toActorId: null as string | null, reasonLabel: '' };
+        if (lendEligibility.eligible && lendEligibility.toActorId) {
+          hasLentThisTurnRef.current[actor.id] = true;
+          lendAction(actor.id, lendEligibility.toActorId, { reasonLabel: lendEligibility.reasonLabel });
+        }
+        break;
+      }
       const disagreementProfile = normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile);
       const disagreementEnabled = gameState.selectedMode === 'team_ai_vs_ai' &&
         gameSettings.teamModeAiSystemsEnabled &&
@@ -20221,7 +20494,7 @@ function AustraliaGame() {
     }
 
     finishTeamAiTurn(actor.id);
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -21985,7 +22258,13 @@ function AustraliaGame() {
       teamActionBankDistributionMode: DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode,
       teamActionBankReserveActions: DEFAULT_GAME_SETTINGS.teamActionBankReserveActions,
       teamActionBankMaxDrawsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay,
-      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled
+      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
+      teamAiActionLendingEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingEnabled,
+      teamAiMaxLentActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxLentActionsPerActorPerDay,
+      teamAiMaxReceivedActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay,
+      teamAiActionLendingMinimumValueGain: DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain,
+      teamAiActionLendingRequiresCommittedPlan: DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
+      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -22010,7 +22289,13 @@ function AustraliaGame() {
       teamActionBankDistributionMode: DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode,
       teamActionBankReserveActions: DEFAULT_GAME_SETTINGS.teamActionBankReserveActions,
       teamActionBankMaxDrawsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay,
-      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled
+      teamActionBankTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
+      teamAiActionLendingEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingEnabled,
+      teamAiMaxLentActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxLentActionsPerActorPerDay,
+      teamAiMaxReceivedActionsPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay,
+      teamAiActionLendingMinimumValueGain: DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain,
+      teamAiActionLendingRequiresCommittedPlan: DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
+      teamAiActionLendingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -23251,7 +23536,7 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
                   </div>
                 </div>
               </SettingsSection>
@@ -23428,6 +23713,72 @@ function AustraliaGame() {
                             </div>
                           </>
                         )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.actionLending"
+                tab="teamModeAi"
+                title="Action Lending"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.actionLending')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Action Lending has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Action Lending</div>
+                        <div className="text-sm opacity-75">Lets a teammate hand an unused action to another teammate who has a clearly better use for it.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionLendingEnabled: !prev.teamAiActionLendingEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionLendingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiActionLendingEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiActionLendingEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Max Lent Per Actor Per Day: {gameSettings.teamAiMaxLentActionsPerActorPerDay}</label>
+                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxLentActionsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMaxLentActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Max Received Per Actor Per Day: {gameSettings.teamAiMaxReceivedActionsPerActorPerDay}</label>
+                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxReceivedActionsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMaxReceivedActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Minimum Value Gain: {gameSettings.teamAiActionLendingMinimumValueGain}</label>
+                            <input type="range" min="0" max="200" step="5" value={gameSettings.teamAiActionLendingMinimumValueGain} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingMinimumValueGain: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(gameSettings.teamAiActionLendingRequiresCommittedPlan)}
+                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingRequiresCommittedPlan: e.target.checked }))}
+                            />
+                            <span>{gameSettings.teamAiActionLendingRequiresCommittedPlan ? '☑' : '☐'} Requires Team Objective Match</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(gameSettings.teamAiActionLendingTransparencyEnabled)}
+                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingTransparencyEnabled: e.target.checked }))}
+                            />
+                            <span>{gameSettings.teamAiActionLendingTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
+                          </label>
+                        </div>
                       </>
                     )}
                   </div>
