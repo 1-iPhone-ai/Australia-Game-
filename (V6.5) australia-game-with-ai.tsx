@@ -1031,7 +1031,7 @@ const KEYBOARD_SHORTCUTS = {
   'escape': { action: 'closeModal', label: 'Close', description: 'Close any open modal' },
 };
 
-const GAME_VERSION = "6.2.0";
+const GAME_VERSION = "6.7.0";
 const V620_CHANGELOG = [
   "V6.2.0 - UX Assist + Team Intelligence",
   "Optional simplified action bar",
@@ -1042,11 +1042,19 @@ const V620_CHANGELOG = [
   "Grouped inventory cards",
   "Team Mode AI system profiles"
 ];
+const V67_CHANGELOG = [
+  "V6.7.0 - Competitive AI Settings + Theme in Settings",
+  "Team Mode Competitive AI master toggle (settings only — no AI behavior change yet)",
+  "Team Mode difficulty presets: Classic V6.6, Supportive, Competitive, Ruthless, Simulation, Extreme",
+  "Friendly teammate AI and enemy team AI presets",
+  "Theme (Dark/Light/System) moved from the start screen into Settings → Interface",
+  "New System theme option that follows your OS/browser preference live"
+];
 
 const ACTION_GROUPS = {
   primary: ["challenges", "travel", "market", "endTurn"],
   secondary: ["workshop", "resourceMarket", "progress"],
-  advanced: ["loans", "sabotage", "negotiations", "investments", "settings", "help", "history", "shop"]
+  advanced: ["loans", "sabotage", "negotiations", "investments", "settings", "teamAiSettings", "help", "history", "shop"]
 } as const;
 
 const TEAM_MODE_AI_SYSTEM_PROFILE_OPTIONS: TeamModeAiSystemProfile[] = [
@@ -2224,6 +2232,18 @@ type SettingsHubTag =
   | 'AI' | 'Team Mode' | 'Economy' | 'Advanced' | 'Experimental'
   | 'UX' | 'Loans' | 'Sabotage' | 'Notifications';
 
+// V6.7: theme now supports following the OS/browser preference live
+type GameTheme = 'dark' | 'light' | 'system';
+
+// V6.7 Phase 1: Team Mode Competitive AI settings scaffold.
+// These fields are stored inert while teamCompetitiveAiEnabled is false — no AI decision logic
+// reads them yet. Real behavior wiring lands in a later phase.
+type TeamModeAiDifficultyPreset =
+  | 'classic_v66' | 'supportive' | 'competitive' | 'ruthless' | 'simulation' | 'extreme';
+
+type FriendlyTeamAiPreset = 'classic' | 'supportive' | 'balanced' | 'strategic' | 'independent';
+type EnemyTeamAiPreset = 'classic' | 'competitive' | 'ruthless' | 'simulation' | 'extreme';
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -2395,6 +2415,11 @@ type GameSettingsState = {
   teamBrainOpponentPressureBias: number;
   teamBrainTravelDiscipline: number;
   teamBrainRiskScaling: number;
+  // V6.7 Phase 1: Competitive AI scaffold (inert until teamCompetitiveAiEnabled is true)
+  teamCompetitiveAiEnabled: boolean;
+  teamModeAiDifficultyPreset: TeamModeAiDifficultyPreset;
+  friendlyTeamAiPreset: FriendlyTeamAiPreset;
+  enemyTeamAiPreset: EnemyTeamAiPreset;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3299,6 +3324,10 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamBrainOpponentPressureBias: 1.0,
   teamBrainTravelDiscipline: 1.0,
   teamBrainRiskScaling: 1.0,
+  teamCompetitiveAiEnabled: false,
+  teamModeAiDifficultyPreset: 'classic_v66',
+  friendlyTeamAiPreset: 'supportive',
+  enemyTeamAiPreset: 'competitive',
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3344,6 +3373,12 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
+  teamCompetitiveAiEnabled: {
+    key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
+    description: 'Master switch for Team Mode Competitive AI systems (currently settings-only — see the note in this section).',
+    warning: 'Has no effect outside Team Mode.',
+    tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
+  },
   decisionTransparencyEnabled: {
     key: 'decisionTransparencyEnabled', tab: 'advancedSystems', label: 'Decision Transparency',
     description: 'Shows why AI made decisions, including scoring and setting contributions.',
@@ -3383,11 +3418,13 @@ interface SettingsHubSectionMeta {
   title: string;
   tags: SettingsHubTag[];
   fieldKeys: (keyof GameSettingsState)[];
+  keywords?: string; // free-text search terms not expressible via the closed SettingsHubTag union
 }
 
 // One entry per SettingsSection used below — gives every settings field search
 // coverage via its section's title/tags without needing per-field metadata.
 const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
+  { id: 'interface.appearance', tab: 'interface', title: 'Appearance', tags: ['UX'], fieldKeys: [], keywords: 'theme dark mode light mode system theme appearance interface color display mode' },
   { id: 'quickSetup.presets', tab: 'quickSetup', title: 'Settings Presets', tags: ['UX'], fieldKeys: [] },
   { id: 'quickSetup.core', tab: 'quickSetup', title: 'Quick Setup', tags: ['UX'], fieldKeys: ['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63'] },
   { id: 'interface.changelog', tab: 'interface', title: "What's New", tags: ['UX'], fieldKeys: [] },
@@ -3403,6 +3440,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'aiStrategyLab.main', tab: 'aiStrategyLab', title: 'Strategy Lab Presets', tags: ['AI', 'Advanced'], fieldKeys: ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset'] },
   { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
+  { id: 'teamModeAi.competitiveAi', tab: 'teamModeAi', title: 'Competitive AI', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCompetitiveAiEnabled', 'teamModeAiDifficultyPreset', 'friendlyTeamAiPreset', 'enemyTeamAiPreset'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -3429,7 +3467,7 @@ const SETTINGS_HUB_SEARCH_INDEX: SettingsHubSearchEntry[] = (() => {
   SETTINGS_HUB_SECTION_INDEX.forEach(section => {
     entries.push({
       id: section.id, tab: section.tab, label: section.title,
-      keywords: `${section.title} ${section.tags.join(' ')}`.toLowerCase()
+      keywords: `${section.title} ${section.tags.join(' ')} ${section.keywords || ''}`.toLowerCase()
     });
   });
   return entries;
@@ -4508,6 +4546,103 @@ const normalizeTeamBrainModeV63 = (value: unknown): TeamBrainModeV63 => {
   return TEAM_BRAIN_MODE_OPTIONS_V63.includes(value as TeamBrainModeV63)
     ? value as TeamBrainModeV63
     : 'classic';
+};
+
+// V6.7: resolves 'system' theme against the live OS/browser preference; pure, no closures
+const resolveIsDarkTheme = (theme: GameTheme, systemPrefersDark: boolean): boolean => {
+  if (theme === 'system') return systemPrefersDark;
+  return theme === 'dark';
+};
+
+// V6.7 Phase 1: Competitive AI preset scaffold (inert — see GameSettingsState comment above)
+const TEAM_MODE_AI_DIFFICULTY_PRESET_OPTIONS: TeamModeAiDifficultyPreset[] = [
+  'classic_v66', 'supportive', 'competitive', 'ruthless', 'simulation', 'extreme'
+];
+const FRIENDLY_TEAM_AI_PRESET_OPTIONS: FriendlyTeamAiPreset[] = [
+  'classic', 'supportive', 'balanced', 'strategic', 'independent'
+];
+const ENEMY_TEAM_AI_PRESET_OPTIONS: EnemyTeamAiPreset[] = [
+  'classic', 'competitive', 'ruthless', 'simulation', 'extreme'
+];
+
+const normalizeTeamModeAiDifficultyPreset = (
+  value: unknown,
+  fallback: TeamModeAiDifficultyPreset = 'classic_v66'
+): TeamModeAiDifficultyPreset => {
+  return TEAM_MODE_AI_DIFFICULTY_PRESET_OPTIONS.includes(value as TeamModeAiDifficultyPreset)
+    ? value as TeamModeAiDifficultyPreset
+    : fallback;
+};
+
+const normalizeFriendlyTeamAiPreset = (
+  value: unknown,
+  fallback: FriendlyTeamAiPreset = 'supportive'
+): FriendlyTeamAiPreset => {
+  return FRIENDLY_TEAM_AI_PRESET_OPTIONS.includes(value as FriendlyTeamAiPreset)
+    ? value as FriendlyTeamAiPreset
+    : fallback;
+};
+
+const normalizeEnemyTeamAiPreset = (
+  value: unknown,
+  fallback: EnemyTeamAiPreset = 'competitive'
+): EnemyTeamAiPreset => {
+  return ENEMY_TEAM_AI_PRESET_OPTIONS.includes(value as EnemyTeamAiPreset)
+    ? value as EnemyTeamAiPreset
+    : fallback;
+};
+
+interface TeamModeAiDifficultyPresetConfig {
+  enabled: boolean;
+  friendly: FriendlyTeamAiPreset;
+  enemy: EnemyTeamAiPreset;
+  label: string;
+  description: string;
+}
+
+const TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG: Record<TeamModeAiDifficultyPreset, TeamModeAiDifficultyPresetConfig> = {
+  classic_v66: {
+    enabled: false, friendly: 'supportive', enemy: 'competitive',
+    label: 'Classic V6.6',
+    description: 'Original Team Mode AI behavior. Competitive AI systems are off.'
+  },
+  supportive: {
+    enabled: true, friendly: 'supportive', enemy: 'classic',
+    label: 'Supportive',
+    description: 'Highly reliable, directive-focused friendly AI. Enemy AI stays close to Classic behavior.'
+  },
+  competitive: {
+    enabled: true, friendly: 'balanced', enemy: 'competitive',
+    label: 'Competitive',
+    description: 'Balanced friendly AI paired with a moderately coordinated enemy team.'
+  },
+  ruthless: {
+    enabled: true, friendly: 'strategic', enemy: 'ruthless',
+    label: 'Ruthless',
+    description: 'Strategic friendly AI facing an aggressive, tightly coordinated enemy team.'
+  },
+  simulation: {
+    enabled: true, friendly: 'independent', enemy: 'simulation',
+    label: 'Simulation',
+    description: 'Every team plays under the same rules with no hidden advantages, for balance testing.'
+  },
+  extreme: {
+    enabled: true, friendly: 'independent', enemy: 'extreme',
+    label: 'Extreme',
+    description: 'Intentionally unfair. Enemy AI gets stronger advantages than any other preset provides.'
+  }
+};
+
+const applyTeamModeAiDifficultyPresetV67 = (
+  preset: TeamModeAiDifficultyPreset
+): Pick<GameSettingsState, 'teamModeAiDifficultyPreset' | 'teamCompetitiveAiEnabled' | 'friendlyTeamAiPreset' | 'enemyTeamAiPreset'> => {
+  const config = TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG[preset] || TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG.classic_v66;
+  return {
+    teamModeAiDifficultyPreset: preset,
+    teamCompetitiveAiEnabled: config.enabled,
+    friendlyTeamAiPreset: config.friendly,
+    enemyTeamAiPreset: config.enemy
+  };
 };
 
 const normalizeTeamAiRole = (value: unknown): TeamAiRole => {
@@ -6578,7 +6713,7 @@ interface SaveGameData {
   personalRecords: PersonalRecord;
   dontAskAgain: DontAskAgainPrefs;
   uiPreferences: {
-    theme: string;
+    theme: GameTheme;
   };
   aiRuntime: {
     queue: AIAction[];
@@ -6655,7 +6790,7 @@ function AustraliaGame() {
     pendingMode: null as 'ai' | 'grand_tour' | 'team_human_ai_vs_ai_ai' | 'team_ai_vs_ai' | null,
     wagerAmount: 100,
     showCampaignSelect: false,
-    theme: "dark",
+    theme: "dark" as GameTheme,
     showNotifications: false,
     showProgress: false,
     showHelp: false,
@@ -7604,6 +7739,12 @@ function AustraliaGame() {
         teamBrainOpponentPressureBias: clampSettingNumber(settingsData.teamBrainOpponentPressureBias, DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureBias, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
         teamBrainTravelDiscipline: clampSettingNumber(settingsData.teamBrainTravelDiscipline, DEFAULT_GAME_SETTINGS.teamBrainTravelDiscipline, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
         teamBrainRiskScaling: clampSettingNumber(settingsData.teamBrainRiskScaling, DEFAULT_GAME_SETTINGS.teamBrainRiskScaling, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
+        teamCompetitiveAiEnabled: typeof settingsData.teamCompetitiveAiEnabled === 'boolean'
+          ? settingsData.teamCompetitiveAiEnabled
+          : DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
+        teamModeAiDifficultyPreset: normalizeTeamModeAiDifficultyPreset(settingsData.teamModeAiDifficultyPreset, DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset),
+        friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(settingsData.friendlyTeamAiPreset, DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset),
+        enemyTeamAiPreset: normalizeEnemyTeamAiPreset(settingsData.enemyTeamAiPreset, DEFAULT_GAME_SETTINGS.enemyTeamAiPreset),
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -7683,8 +7824,10 @@ function AustraliaGame() {
           )
     };
 
-    const uiPreferences = {
-      theme: raw.uiPreferences?.theme === 'light' ? 'light' : 'dark'
+    const uiPreferences: { theme: GameTheme } = {
+      theme: raw.uiPreferences?.theme === 'light' ? 'light'
+        : raw.uiPreferences?.theme === 'system' ? 'system'
+        : 'dark'
     };
 
     return {
@@ -19586,8 +19729,34 @@ function AustraliaGame() {
   // THEME SYSTEM - Comprehensive Light/Dark Mode
   // =========================================
 
+  // V6.7: tracks the live OS/browser color-scheme preference for the "System" theme option.
+  // No-ops safely if matchMedia is unavailable (e.g. some sandboxed preview environments).
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : true
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', handleSystemThemeChange);
+    } else if (typeof (mql as any).addListener === 'function') {
+      (mql as any).addListener(handleSystemThemeChange);
+    }
+    return () => {
+      if (typeof mql.removeEventListener === 'function') {
+        mql.removeEventListener('change', handleSystemThemeChange);
+      } else if (typeof (mql as any).removeListener === 'function') {
+        (mql as any).removeListener(handleSystemThemeChange);
+      }
+    };
+  }, []);
+
   const themeStyles = useMemo(() => {
-    const isDark = uiState.theme === "dark";
+    const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
     return {
       // === BACKGROUNDS ===
       background: isDark ? "bg-gray-900" : "bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50",
@@ -19785,7 +19954,7 @@ function AustraliaGame() {
         ? "bg-gray-700 border-gray-600 text-gray-300 shadow-sm"
         : "bg-gray-100 border-gray-300 text-gray-600 shadow-sm",
     };
-  }, [uiState.theme]);
+  }, [uiState.theme, systemPrefersDark]);
 
   const selectedDecisionTrace = latestDecisionTraceByActor[selectedDecisionActorId]?.currentTrace
     || latestDecisionTraceByActor[selectedDecisionActorId]?.lastTrace
@@ -21281,7 +21450,19 @@ function AustraliaGame() {
       teamBrainTeammateSupportBias: DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportBias,
       teamBrainOpponentPressureBias: DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureBias,
       teamBrainTravelDiscipline: DEFAULT_GAME_SETTINGS.teamBrainTravelDiscipline,
-      teamBrainRiskScaling: DEFAULT_GAME_SETTINGS.teamBrainRiskScaling
+      teamBrainRiskScaling: DEFAULT_GAME_SETTINGS.teamBrainRiskScaling,
+      teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
+      teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
+      friendlyTeamAiPreset: DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset,
+      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset
+    }));
+
+    const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
+      ...prev,
+      teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
+      teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
+      friendlyTeamAiPreset: DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset,
+      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -21556,11 +21737,37 @@ function AustraliaGame() {
                 </SettingsSection>
               )}
 
+              <SettingsSection id="interface.appearance" tab="interface" title="Appearance" chips={['UX only']}>
+                <div className="space-y-3">
+                  <div className="text-sm opacity-75">Choose how the game interface appears. Your selection is saved for this session.</div>
+                  <div className={`flex ${themeStyles.border} border rounded overflow-hidden w-fit`}>
+                    {(['dark', 'light', 'system'] as GameTheme[]).map(themeOption => (
+                      <button
+                        key={themeOption}
+                        type="button"
+                        onClick={() => updateUiState({ theme: themeOption })}
+                        className={`px-4 py-2 text-sm font-semibold capitalize ${uiState.theme === themeOption ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                        aria-pressed={uiState.theme === themeOption}
+                      >
+                        {themeOption}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interface" title="What's New" chips={['UX only']}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
-                  {V620_CHANGELOG.slice(1).map(item => (
+                  {V67_CHANGELOG.slice(1).map(item => (
                     <div key={item}>- {item}</div>
                   ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.2.0</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V620_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.uxAssist" tab="interface" title="UX Assist Features" onReset={settingsResetHandlers.interfaceSettings.fn} resetLabel={settingsResetHandlers.interfaceSettings.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'interface.uxAssist')!.fieldKeys}>
@@ -22396,6 +22603,108 @@ function AustraliaGame() {
                       </div>
                     </>
                   )}
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.competitiveAi"
+                tab="teamModeAi"
+                title="Competitive AI"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.competitiveAi')!.fieldKeys}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Enable Competitive AI</div>
+                      <div className="text-sm opacity-75">Coordinated, harder Team Mode AI opponents and teammates.</div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCompetitiveAiEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    >
+                      {gameSettings.teamCompetitiveAiEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  <div className={`${themeStyles.border} border rounded-lg p-3 text-xs opacity-90`}>
+                    This update adds the Competitive AI settings only. Selecting a preset or turning Competitive AI on stores your preference but does not change AI behavior yet — Team Mode plays exactly like Classic V6.6 either way. Full behavior changes roll out in upcoming updates.
+                  </div>
+
+                  {!gameSettings.teamCompetitiveAiEnabled && (
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                      Competitive AI is off. Team Mode is using Classic V6.6 behavior.
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-semibold mb-2">Team Mode Difficulty</label>
+                    <select
+                      value={gameSettings.teamModeAiDifficultyPreset}
+                      onChange={(e) => setGameSettings(prev => ({
+                        ...prev,
+                        ...applyTeamModeAiDifficultyPresetV67(normalizeTeamModeAiDifficultyPreset(e.target.value))
+                      }))}
+                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                    >
+                      {TEAM_MODE_AI_DIFFICULTY_PRESET_OPTIONS.map(preset => (
+                        <option key={preset} value={preset}>{TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG[preset].label}</option>
+                      ))}
+                    </select>
+                    <div className="text-xs opacity-75 mt-1">
+                      {TEAM_MODE_AI_DIFFICULTY_PRESET_CONFIG[gameSettings.teamModeAiDifficultyPreset].description}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={restoreClassicV66CompetitiveAi}
+                    className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-sm`}
+                  >
+                    Restore Classic V6.6
+                  </button>
+
+                  {uiState.settingsViewMode === 'advanced' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold mb-2">Friendly Teammate AI</label>
+                        <select
+                          value={gameSettings.friendlyTeamAiPreset}
+                          onChange={(e) => setGameSettings(prev => ({
+                            ...prev,
+                            friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(e.target.value)
+                          }))}
+                          className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                        >
+                          {FRIENDLY_TEAM_AI_PRESET_OPTIONS.map(preset => (
+                            <option key={preset} value={preset}>{preset.charAt(0).toUpperCase() + preset.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-2">Enemy Team AI</label>
+                        <select
+                          value={gameSettings.enemyTeamAiPreset}
+                          onChange={(e) => setGameSettings(prev => ({
+                            ...prev,
+                            enemyTeamAiPreset: normalizeEnemyTeamAiPreset(e.target.value)
+                          }))}
+                          className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                        >
+                          {ENEMY_TEAM_AI_PRESET_OPTIONS.map(preset => (
+                            <option key={preset} value={preset}>{preset.charAt(0).toUpperCase() + preset.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-xs opacity-75">
+                    <div className="font-semibold mb-1">Coming in future updates</div>
+                    <div>Actions &amp; Overrides, Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                  </div>
                 </div>
               </SettingsSection>
 
@@ -24651,7 +24960,7 @@ function AustraliaGame() {
 
   // Menu Screen with AI Mode Option
   const renderMenu = () => {
-    const isDark = uiState.theme === "dark";
+    const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
 
     return (
       <div className={`min-h-screen ${themeStyles.menuBackground} ${themeStyles.text} flex items-center justify-center p-6 relative overflow-hidden`}>
@@ -24791,21 +25100,6 @@ function AustraliaGame() {
             </button>
           </div>
 
-          {/* Theme Toggle & Settings */}
-          <div className="mt-6 pt-4 border-t border-opacity-20 flex items-center justify-center gap-3">
-            <button
-              onClick={() => updateUiState({ theme: uiState.theme === "dark" ? "light" : "dark" })}
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 flex items-center gap-2 ${
-                isDark
-                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-              }`}
-            >
-              {uiState.theme === "dark" ? "☀️" : "🌙"}
-              <span className="text-sm">{uiState.theme === "dark" ? "Light" : "Dark"} Mode</span>
-            </button>
-          </div>
-
           {/* Footer */}
           <div className={`mt-4 text-xs ${themeStyles.textDisabled}`}>
             Press <kbd className={`px-1.5 py-0.5 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`}>?</kbd> for keyboard shortcuts
@@ -24818,7 +25112,7 @@ function AustraliaGame() {
   // Campaign/AI Difficulty Selection
   const renderCampaignSelect = () => {
     if (!uiState.showCampaignSelect) return null;
-    const isDark = uiState.theme === "dark";
+    const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
     const pendingMode = uiState.pendingMode || 'ai';
     const campaignTitle = pendingMode === 'team_human_ai_vs_ai_ai'
       ? 'Select Team AI Difficulty'
@@ -25195,6 +25489,13 @@ function AustraliaGame() {
         icon: '⚙️',
         label: '',
         onClick: () => updateUiState({ showSettings: true }),
+        className: `${themeStyles.buttonSecondary} px-4 py-2 rounded-lg`
+      },
+      teamAiSettings: {
+        id: 'teamAiSettings',
+        icon: '🧠',
+        label: '',
+        onClick: () => updateUiState({ showSettings: true, settingsActiveTab: 'teamModeAi' }),
         className: `${themeStyles.buttonSecondary} px-4 py-2 rounded-lg`
       },
       endTurn: {
