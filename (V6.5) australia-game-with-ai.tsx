@@ -2244,6 +2244,11 @@ type TeamModeAiDifficultyPreset =
 type FriendlyTeamAiPreset = 'classic' | 'supportive' | 'balanced' | 'strategic' | 'independent';
 type EnemyTeamAiPreset = 'classic' | 'competitive' | 'ruthless' | 'simulation' | 'extreme';
 
+// V6.7 Phase 2a: AI Action Overrides (inert unless BOTH teamCompetitiveAiEnabled
+// AND teamAiActionOverridesEnabled are true)
+type TeamAiOverridePolicy = 'disabled' | 'emergency_only' | 'strategic' | 'aggressive';
+type FriendlyAiOverridePolicy = 'never' | 'emergency_only' | 'ask_first' | 'strategic_autonomy' | 'full_autonomy';
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -2420,6 +2425,18 @@ type GameSettingsState = {
   teamModeAiDifficultyPreset: TeamModeAiDifficultyPreset;
   friendlyTeamAiPreset: FriendlyTeamAiPreset;
   enemyTeamAiPreset: EnemyTeamAiPreset;
+  // V6.7 Phase 2a: AI Action Overrides (inert unless teamCompetitiveAiEnabled && teamAiActionOverridesEnabled)
+  teamAiActionOverridesEnabled: boolean;
+  teamAiOverridePolicy: TeamAiOverridePolicy;
+  friendlyAiOverridePolicy: FriendlyAiOverridePolicy;
+  teamAiOverrideMaxPerActorPerDay: number;
+  teamAiOverrideMaxPerTeamPerDay: number;
+  teamAiOverrideBaseCostMultiplier: number;
+  teamAiOverrideMinimumDecisionScore: number;
+  teamAiOverrideMinimumCashReserve: number;
+  teamAiOverrideEscalatingCostEnabled: boolean;
+  teamAiOverrideFatigueEnabled: boolean;
+  teamAiOverrideTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -2462,7 +2479,7 @@ interface PersonalRecord {
 
 interface ConfirmationDialog {
   isOpen: boolean;
-  type: 'travel' | 'sell' | 'challenge' | 'endDay' | 'settingsPreset' | 'sellAllInventory' | null;
+  type: 'travel' | 'sell' | 'challenge' | 'endDay' | 'settingsPreset' | 'sellAllInventory' | 'teamAiOverrideRequest' | null;
   title: string;
   message: string;
   confirmText: string;
@@ -2598,6 +2615,9 @@ type V63AiOverlayContext = {
   teamBrainContext?: TeamBrainContextV63 | null;
   strategyLabTeamContext?: AiStrategyLabTeamOverlayContext | null;
   opponentContext?: AiStrategyLabOpponentOverlayContext | null;
+  // V6.7 Phase 2a: transparency-only Competitive AI override eligibility, keyed by decision type.
+  // Never influences scoring (delta is always 0) — see applyCompetitiveAiOverrideOverlayV67.
+  overrideOverlayContext?: { byDecisionType: Record<string, { eligible: boolean; reasonLabel: string; cost: number }> } | null;
 };
 
 type ScoredTeamAiDecision = AIAction & { score: number; plan: ActorAiPlan };
@@ -3328,6 +3348,17 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamModeAiDifficultyPreset: 'classic_v66',
   friendlyTeamAiPreset: 'supportive',
   enemyTeamAiPreset: 'competitive',
+  teamAiActionOverridesEnabled: false,
+  teamAiOverridePolicy: 'strategic',
+  friendlyAiOverridePolicy: 'ask_first',
+  teamAiOverrideMaxPerActorPerDay: 1,
+  teamAiOverrideMaxPerTeamPerDay: 2,
+  teamAiOverrideBaseCostMultiplier: 1.0,
+  teamAiOverrideMinimumDecisionScore: 140,
+  teamAiOverrideMinimumCashReserve: 600,
+  teamAiOverrideEscalatingCostEnabled: true,
+  teamAiOverrideFatigueEnabled: true,
+  teamAiOverrideTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3375,8 +3406,14 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently settings-only — see the note in this section).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently only AI Action Overrides are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
+    tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
+  },
+  teamAiActionOverridesEnabled: {
+    key: 'teamAiActionOverridesEnabled', tab: 'teamModeAi', label: 'AI Action Overrides',
+    description: 'Lets Competitive AI actors buy extra actions the same way human players and Classic AI already can, under new eligibility safeguards.',
+    warning: 'Has no effect unless Competitive AI is also enabled.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
   decisionTransparencyEnabled: {
@@ -3441,6 +3478,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
   { id: 'teamModeAi.competitiveAi', tab: 'teamModeAi', title: 'Competitive AI', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCompetitiveAiEnabled', 'teamModeAiDifficultyPreset', 'friendlyTeamAiPreset', 'enemyTeamAiPreset'] },
+  { id: 'teamModeAi.actionOverrides', tab: 'teamModeAi', title: 'AI Action Overrides', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionOverridesEnabled', 'teamAiOverridePolicy', 'friendlyAiOverridePolicy', 'teamAiOverrideMaxPerActorPerDay', 'teamAiOverrideMaxPerTeamPerDay', 'teamAiOverrideBaseCostMultiplier', 'teamAiOverrideMinimumDecisionScore', 'teamAiOverrideMinimumCashReserve', 'teamAiOverrideEscalatingCostEnabled', 'teamAiOverrideFatigueEnabled', 'teamAiOverrideTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -4592,6 +4630,28 @@ const normalizeEnemyTeamAiPreset = (
     : fallback;
 };
 
+// V6.7 Phase 2a: AI Action Overrides normalize helpers
+const TEAM_AI_OVERRIDE_POLICY_OPTIONS: TeamAiOverridePolicy[] = ['disabled', 'emergency_only', 'strategic', 'aggressive'];
+const FRIENDLY_AI_OVERRIDE_POLICY_OPTIONS: FriendlyAiOverridePolicy[] = ['never', 'emergency_only', 'ask_first', 'strategic_autonomy', 'full_autonomy'];
+
+const normalizeTeamAiOverridePolicy = (
+  value: unknown,
+  fallback: TeamAiOverridePolicy = 'strategic'
+): TeamAiOverridePolicy => {
+  return TEAM_AI_OVERRIDE_POLICY_OPTIONS.includes(value as TeamAiOverridePolicy)
+    ? value as TeamAiOverridePolicy
+    : fallback;
+};
+
+const normalizeFriendlyAiOverridePolicy = (
+  value: unknown,
+  fallback: FriendlyAiOverridePolicy = 'ask_first'
+): FriendlyAiOverridePolicy => {
+  return FRIENDLY_AI_OVERRIDE_POLICY_OPTIONS.includes(value as FriendlyAiOverridePolicy)
+    ? value as FriendlyAiOverridePolicy
+    : fallback;
+};
+
 interface TeamModeAiDifficultyPresetConfig {
   enabled: boolean;
   friendly: FriendlyTeamAiPreset;
@@ -5559,6 +5619,28 @@ const applyAiStrategyLabOverlayV63 = <T extends AIAction & { score: number }>(
   }, reasons, true);
 };
 
+// V6.7 Phase 2a: transparency-only overlay stage for Competitive AI Action Overrides.
+// Deliberately zero score delta — this stage exists to surface override eligibility in
+// Decision Transparency, not to change ranking (that would be a much larger behavior
+// change than the spec asks for). Uses its own distinct stage id, never reused elsewhere.
+const applyCompetitiveAiOverrideOverlayV67 = <T extends AIAction & { score: number }>(
+  decision: T,
+  settings: GameSettingsState,
+  overrideOverlayContext: V63AiOverlayContext['overrideOverlayContext']
+): T => {
+  const info = overrideOverlayContext?.byDecisionType?.[decision.type];
+  if (!info) return decision;
+  return appendDecisionScoreStageV63(decision, {
+    id: 'competitive_ai_override_v67',
+    label: 'Competitive AI: Action Override',
+    score: decision.score,
+    delta: 0,
+    reason: info.eligible
+      ? `Override eligible (${info.reasonLabel}, cost $${info.cost}).`
+      : `Override not eligible (${info.reasonLabel}).`
+  }, [], settings.teamAiOverrideTransparencyEnabled);
+};
+
 const applyV63AiOverlays = <T extends AIAction & { score: number }>(
   originalDecisions: T[],
   context: V63AiOverlayContext
@@ -5594,6 +5676,16 @@ const applyV63AiOverlays = <T extends AIAction & { score: number }>(
         context.teamBrainContext as TeamBrainContextV63,
         context.settings
       ) as unknown as T
+    );
+  }
+
+  if (
+    context.settings.teamCompetitiveAiEnabled &&
+    context.settings.teamAiActionOverridesEnabled &&
+    context.overrideOverlayContext
+  ) {
+    decisions = decisions.map(decision =>
+      applyCompetitiveAiOverrideOverlayV67(decision, context.settings, context.overrideOverlayContext)
     );
   }
 
@@ -7745,6 +7837,25 @@ function AustraliaGame() {
         teamModeAiDifficultyPreset: normalizeTeamModeAiDifficultyPreset(settingsData.teamModeAiDifficultyPreset, DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset),
         friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(settingsData.friendlyTeamAiPreset, DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset),
         enemyTeamAiPreset: normalizeEnemyTeamAiPreset(settingsData.enemyTeamAiPreset, DEFAULT_GAME_SETTINGS.enemyTeamAiPreset),
+        teamAiActionOverridesEnabled: typeof settingsData.teamAiActionOverridesEnabled === 'boolean'
+          ? settingsData.teamAiActionOverridesEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionOverridesEnabled,
+        teamAiOverridePolicy: normalizeTeamAiOverridePolicy(settingsData.teamAiOverridePolicy, DEFAULT_GAME_SETTINGS.teamAiOverridePolicy),
+        friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(settingsData.friendlyAiOverridePolicy, DEFAULT_GAME_SETTINGS.friendlyAiOverridePolicy),
+        teamAiOverrideMaxPerActorPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerActorPerDay, 1, OVERRIDE_DAILY_CAP),
+        teamAiOverrideMaxPerTeamPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerTeamPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerTeamPerDay, 1, OVERRIDE_DAILY_CAP * 2),
+        teamAiOverrideBaseCostMultiplier: clampSettingNumber(settingsData.teamAiOverrideBaseCostMultiplier, DEFAULT_GAME_SETTINGS.teamAiOverrideBaseCostMultiplier, 0.5, 3.0),
+        teamAiOverrideMinimumDecisionScore: clampSettingNumber(settingsData.teamAiOverrideMinimumDecisionScore, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumDecisionScore, 0, 400),
+        teamAiOverrideMinimumCashReserve: clampSettingNumber(settingsData.teamAiOverrideMinimumCashReserve, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve, 0, 5000),
+        teamAiOverrideEscalatingCostEnabled: typeof settingsData.teamAiOverrideEscalatingCostEnabled === 'boolean'
+          ? settingsData.teamAiOverrideEscalatingCostEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
+        teamAiOverrideFatigueEnabled: typeof settingsData.teamAiOverrideFatigueEnabled === 'boolean'
+          ? settingsData.teamAiOverrideFatigueEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
+        teamAiOverrideTransparencyEnabled: typeof settingsData.teamAiOverrideTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiOverrideTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -19330,6 +19441,14 @@ function AustraliaGame() {
           winCondition: gameSettings.winCondition
         })
       : null;
+    // V6.7 Phase 2a: overrideOverlayContext is intentionally left null here. The real,
+    // safeguard-checked override eligibility is computed by evaluateTeamAiOverrideEligibility
+    // (defined later in this component, after this ranking pipeline) at the actual moment an
+    // override is considered in performTeamAiTurn — computing it here too would require calling
+    // that function before its own declaration in this same component body. The overlay/stage
+    // plumbing above is ready for a future phase to populate once that ordering is addressed;
+    // in the meantime the override flow itself (safeguards, ask_first dialog, cost, and the
+    // reason shown to the player) is fully functional without it.
     const teamBrainDecisions = applyV63AiOverlays(tracedDecisions, {
       selectedMode: selectedTeamMode,
       actor,
@@ -19337,7 +19456,8 @@ function AustraliaGame() {
       relationshipLabel: actorRelationshipLabel,
       strategyLabTeamContext,
       opponentContext: strategyLabOpponentContext,
-      teamBrainContext
+      teamBrainContext,
+      overrideOverlayContext: null
     });
     const aiStrategyLabScorePreview = strategyLabActive
       ? getAiStrategyLabScorePreviewV63(tracedDecisions, strategyLabDecisions, gameSettings)
@@ -19511,6 +19631,144 @@ function AustraliaGame() {
     return false;
   }, [analyzeTeamLiquidity, calculateActorOverrideCost, computeNetWorth, gameSettings.allowActionOverride, gameSettings.winCondition, getActorActiveTeamMessages, getActorOverridesRemaining, getActorState, getTeamDifficultyBehavior, getTeammateForSync]);
 
+  // V6.7 Phase 2a: tracks, per actor, the signature of an action that just failed execution
+  // this turn — cleared at the top of each actor's turn. In-memory only (not persisted),
+  // used solely to satisfy safeguard #11 ("not repeating a failed action").
+  const lastFailedOverrideActionRef = useRef<Record<string, string>>({});
+
+  // V6.7 Phase 2a: per-actor "Approve Similar Actions This Turn" flag from the ask_first
+  // confirmation dialog. Turn-scoped only (cleared in finishTeamAiTurn), never persisted.
+  const approveSimilarThisTurnRef = useRef<Record<string, boolean>>({});
+
+  const buildOverrideDecisionSignature = (decision: ScoredTeamAiDecision | null): string => {
+    if (!decision) return '';
+    return `${decision.type}:${decision.data?.region || ''}:${decision.data?.resource || ''}:${decision.data?.targetActorId || ''}`;
+  };
+
+  // Informational-only label for Decision Transparency / the ask_first confirmation dialog.
+  // Never used to gate eligibility — the 12 safeguards in evaluateTeamAiOverrideEligibility do that.
+  const deriveOverrideReasonLabel = (decision: ScoredTeamAiDecision | null): string => {
+    if (!decision) return 'no valid action';
+    switch (decision.type) {
+      case 'challenge': return 'completing a high-value challenge';
+      case 'craft': return 'finishing a crafting recipe';
+      case 'region_deposit':
+      case 'cashout_region': return 'securing a contested region';
+      case 'give_cash':
+      case 'give_resource': return 'delivering promised teammate support';
+      case 'sabotage': return 'executing a high-value sabotage opportunity';
+      default: return 'escaping financial danger';
+      // Note: "completing a committed plan" and "completing an immediate endgame move" are not
+      // modeled here — Team Plans and Endgame Acceleration are not built until a later phase.
+    }
+  };
+
+  // V6.7 Phase 2a: AI Action Overrides — the 12-safeguard eligibility checker.
+  // Fully inert unless BOTH gameSettings.teamCompetitiveAiEnabled AND
+  // gameSettings.teamAiActionOverridesEnabled are true. Calls shouldTeamActorUseOverride
+  // (unchanged) as the baseline "classic" signal so this stays grounded in already-proven
+  // logic rather than duplicating it.
+  const evaluateTeamAiOverrideEligibility = useCallback((
+    actorId: string,
+    nextDecision: ScoredTeamAiDecision | null
+  ): { eligible: boolean; reasonLabel: string; cost: number; policy: TeamAiOverridePolicy | FriendlyAiOverridePolicy | null } => {
+    const ineligible = (reasonLabel: string) => ({ eligible: false, reasonLabel, cost: 0, policy: null as TeamAiOverridePolicy | FriendlyAiOverridePolicy | null });
+
+    // #1, #2: master toggles
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiActionOverridesEnabled) {
+      return ineligible('Competitive AI Action Overrides are off.');
+    }
+    // #12: game must not have ended
+    if (gameState.gameMode !== 'game') return ineligible('Game has ended.');
+
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai' || !nextDecision || nextDecision.type === 'end_turn') {
+      return ineligible('No valid decision to override for.');
+    }
+    if (!gameSettings.allowActionOverride) return ineligible('Action overrides are disabled.');
+
+    // #11: not repeating a failed action this turn
+    const decisionSignature = buildOverrideDecisionSignature(nextDecision);
+    if (decisionSignature && lastFailedOverrideActionRef.current[actorId] === decisionSignature) {
+      return ineligible('Already failed this exact action this turn.');
+    }
+
+    const isEnemy = actor.teamId === TEAM_OPPONENT_ID;
+    const isFriendlyTeammate = actor.teamId === TEAM_PLAYER_ID && actor.kind === 'ai';
+    if (!isEnemy && !isFriendlyTeammate) return ineligible('Actor is not a Team Mode AI actor.');
+    const isEnemyExtreme = isEnemy && gameSettings.enemyTeamAiPreset === 'extreme';
+
+    // #4: tightened per-actor daily cap — the primary recursion-loop guard. Extreme enemy
+    // preset is the one explicit, spec-sanctioned exception, bypassing back up to the
+    // pre-existing global OVERRIDE_DAILY_CAP.
+    const perActorCap = isEnemyExtreme
+      ? OVERRIDE_DAILY_CAP
+      : Math.min(OVERRIDE_DAILY_CAP, gameSettings.teamAiOverrideMaxPerActorPerDay);
+    if ((actor.overridesUsedToday || 0) >= perActorCap) {
+      return ineligible('Daily override limit reached for this actor.');
+    }
+
+    // #5: team daily cap, computed by summing existing per-actor state (no new persisted counter)
+    const team = teamsByIdRef.current[actor.teamId];
+    const teamOverridesUsedToday = (team?.actorIds || [])
+      .map(id => getActorState(id))
+      .filter((teamActor): teamActor is ActorState => Boolean(teamActor))
+      .reduce((sum, teamActor) => sum + (teamActor.overridesUsedToday || 0), 0);
+    if (teamOverridesUsedToday >= gameSettings.teamAiOverrideMaxPerTeamPerDay) {
+      return ineligible('Daily override limit reached for the team.');
+    }
+
+    // Policy dispatch — enemy vs. friendly are mutually exclusive branches.
+    // Enemy AI never triggers ask_first; only the friendly branch below can.
+    let policy: TeamAiOverridePolicy | FriendlyAiOverridePolicy;
+    if (isEnemy) {
+      policy = gameSettings.teamAiOverridePolicy;
+      if (policy === 'disabled') return ineligible('Enemy override policy is disabled.');
+    } else {
+      policy = gameSettings.friendlyAiOverridePolicy;
+      if (policy === 'never') return ineligible('Friendly override policy is Never.');
+    }
+
+    // #6, #7: cost + minimum cash reserve (stricter than the existing AI_SAFETY_BUFFER floor)
+    const baseCost = calculateActorOverrideCost(actorId);
+    const cost = Math.floor(baseCost * (gameSettings.teamAiOverrideBaseCostMultiplier || 1.0));
+    if (actor.money < cost) return ineligible('Cannot afford override cost.');
+    if ((actor.money - cost) < gameSettings.teamAiOverrideMinimumCashReserve) {
+      return ineligible('Would breach minimum cash reserve.');
+    }
+
+    // #8: score floor, additive on top of shouldTeamActorUseOverride's own thresholds
+    if (nextDecision.score < gameSettings.teamAiOverrideMinimumDecisionScore) {
+      return ineligible('Decision score below Competitive AI threshold.');
+    }
+
+    // #9: "contributes to a valid plan/urgent objective" — softened until Team Plans (Phase 3)
+    // exist, by reusing shouldTeamActorUseOverride's own existing objective/crisis signals.
+    const classicEligible = shouldTeamActorUseOverride(actorId, nextDecision);
+    const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId);
+    const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
+    const crisisLike = Boolean(actorLiquidity?.isRecoveryEligible) || classicEligible;
+
+    if (policy === 'emergency_only' && !crisisLike) {
+      return ineligible('Not an emergency; policy requires emergency_only.');
+    }
+    if ((policy === 'strategic' || policy === 'strategic_autonomy') && !classicEligible) {
+      return ineligible('Does not meet strategic override thresholds.');
+    }
+    if (policy === 'aggressive' && !classicEligible && nextDecision.score < gameSettings.teamAiOverrideMinimumDecisionScore + 20) {
+      return ineligible('Does not meet aggressive override thresholds.');
+    }
+    // full_autonomy: no additional threshold beyond the safeguards already passed above.
+
+    return { eligible: true, reasonLabel: deriveOverrideReasonLabel(nextDecision), cost, policy };
+  }, [
+    gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.allowActionOverride,
+    gameSettings.enemyTeamAiPreset, gameSettings.teamAiOverrideMaxPerActorPerDay, gameSettings.teamAiOverrideMaxPerTeamPerDay,
+    gameSettings.teamAiOverridePolicy, gameSettings.friendlyAiOverridePolicy, gameSettings.teamAiOverrideBaseCostMultiplier,
+    gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameState.gameMode,
+    getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity
+  ]);
+
   const makeTeamAiDecision = useCallback((actorId: string): AIAction => {
     const actor = getActorState(actorId);
     if (!actor) {
@@ -19598,6 +19856,23 @@ function AustraliaGame() {
     }
   }, [advanceDay, gameState.currentActorId, gameState.roundNumber, gameState.turnCounter, gameState.turnOrder, getActorState, pruneExpiredTeamState]);
 
+  // V6.7 Phase 2a: extracted so the friendly ask_first confirmation flow can end an actor's
+  // turn from its onConfirm/onDeny callbacks, not just from the normal end of the while loop.
+  const finishTeamAiTurn = useCallback((actorId: string) => {
+    delete lastFailedOverrideActionRef.current[actorId];
+    delete approveSimilarThisTurnRef.current[actorId];
+    addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
+    updateActorState(actorId, prev => ({
+      ...prev,
+      activeSpecialAbility: null
+    }));
+    if (actorId === 'ai') {
+      handleTurnTransition('ai');
+    }
+    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    advanceToNextActorTurn();
+  }, [addNotification, advanceToNextActorTurn, getActorDisplayName, handleTurnTransition, updateActorState]);
+
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
     const actor = getActorState(gameState.currentActorId || '');
@@ -19605,6 +19880,8 @@ function AustraliaGame() {
 
     dispatchGameState({ type: 'SET_AI_THINKING', payload: true });
     refreshTeamLiquidityLedger(actor.teamId);
+    delete lastFailedOverrideActionRef.current[actor.id];
+    delete approveSimilarThisTurnRef.current[actor.id];
     let actionBudget = getActorActionBudget(actor.id);
     let actionsTaken = 0;
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
@@ -19680,15 +19957,51 @@ function AustraliaGame() {
         });
       }
       const success = await executeTeamAiAction(actor.id, decision);
-      if (!success) break;
+      if (!success) {
+        lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
+        break;
+      }
       refreshTeamLiquidityLedger(actor.teamId);
       actionsTaken += 1;
       const refreshedActor = getActorState(actor.id);
       if (!refreshedActor) break;
       if ((refreshedActor.actionsUsedThisTurn || 0) >= actionBudget) {
         const nextDecision = getRankedTeamAiDecisions(actor.id)[0] || null;
-        if (!shouldTeamActorUseOverride(actor.id, nextDecision)) {
+        const competitiveOverridesActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiActionOverridesEnabled;
+        const overrideDecision = competitiveOverridesActive
+          ? evaluateTeamAiOverrideEligibility(actor.id, nextDecision)
+          : { eligible: shouldTeamActorUseOverride(actor.id, nextDecision), reasonLabel: '', cost: 0, policy: null as TeamAiOverridePolicy | FriendlyAiOverridePolicy | null };
+        if (!overrideDecision.eligible) {
           break;
+        }
+        if (competitiveOverridesActive && overrideDecision.policy === 'ask_first' && !approveSimilarThisTurnRef.current[actor.id]) {
+          const pendingActorId = actor.id;
+          const pendingDecision = nextDecision as ScoredTeamAiDecision;
+          const pendingCost = overrideDecision.cost;
+          const pendingActorState = getActorState(pendingActorId);
+          showConfirmation(
+            'teamAiOverrideRequest',
+            'Teammate wants an extra action',
+            `Your teammate wants to spend $${pendingCost} for an extra action to ${pendingDecision?.description || 'take another action'}.`,
+            'Approve',
+            () => {
+              if (!applyActorActionOverride(pendingActorId)) {
+                finishTeamAiTurn(pendingActorId);
+                return;
+              }
+              executeTeamAiAction(pendingActorId, pendingDecision as unknown as AIAction).then(() => finishTeamAiTurn(pendingActorId));
+            },
+            {
+              actorId: pendingActorId,
+              decision: pendingDecision,
+              cost: pendingCost,
+              reasonLabel: overrideDecision.reasonLabel,
+              remainingCash: (pendingActorState?.money || 0) - pendingCost,
+              onDeny: () => finishTeamAiTurn(pendingActorId),
+              onApproveSimilar: () => { approveSimilarThisTurnRef.current[pendingActorId] = true; }
+            }
+          );
+          return;
         }
         if (!applyActorActionOverride(actor.id)) {
           break;
@@ -19697,17 +20010,8 @@ function AustraliaGame() {
       }
     }
 
-    addNotification(`🤖 ${getActorDisplayName(actor.id)} ended their turn`, 'ai', false);
-    updateActorState(actor.id, prev => ({
-      ...prev,
-      activeSpecialAbility: null
-    }));
-    if (actor.id === 'ai') {
-      handleTurnTransition('ai');
-    }
-    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
-    advanceToNextActorTurn();
-  }, [addNotification, advanceToNextActorTurn, applyActorActionOverride, executeTeamAiAction, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, handleTurnTransition, isTeamMode, makeTeamAiDecision, postTeamMessage, refreshTeamLiquidityLedger, reserveTeamTarget, shouldTeamActorUseOverride, updateActorState]);
+    finishTeamAiTurn(actor.id);
+  }, [addNotification, applyActorActionOverride, evaluateTeamAiOverrideEligibility, executeTeamAiAction, finishTeamAiTurn, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -21454,7 +21758,18 @@ function AustraliaGame() {
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
       friendlyTeamAiPreset: DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset,
-      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset
+      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset,
+      teamAiActionOverridesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionOverridesEnabled,
+      teamAiOverridePolicy: DEFAULT_GAME_SETTINGS.teamAiOverridePolicy,
+      friendlyAiOverridePolicy: DEFAULT_GAME_SETTINGS.friendlyAiOverridePolicy,
+      teamAiOverrideMaxPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerActorPerDay,
+      teamAiOverrideMaxPerTeamPerDay: DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerTeamPerDay,
+      teamAiOverrideBaseCostMultiplier: DEFAULT_GAME_SETTINGS.teamAiOverrideBaseCostMultiplier,
+      teamAiOverrideMinimumDecisionScore: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumDecisionScore,
+      teamAiOverrideMinimumCashReserve: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve,
+      teamAiOverrideEscalatingCostEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
+      teamAiOverrideFatigueEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
+      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -21462,7 +21777,18 @@ function AustraliaGame() {
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
       friendlyTeamAiPreset: DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset,
-      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset
+      enemyTeamAiPreset: DEFAULT_GAME_SETTINGS.enemyTeamAiPreset,
+      teamAiActionOverridesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionOverridesEnabled,
+      teamAiOverridePolicy: DEFAULT_GAME_SETTINGS.teamAiOverridePolicy,
+      friendlyAiOverridePolicy: DEFAULT_GAME_SETTINGS.friendlyAiOverridePolicy,
+      teamAiOverrideMaxPerActorPerDay: DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerActorPerDay,
+      teamAiOverrideMaxPerTeamPerDay: DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerTeamPerDay,
+      teamAiOverrideBaseCostMultiplier: DEFAULT_GAME_SETTINGS.teamAiOverrideBaseCostMultiplier,
+      teamAiOverrideMinimumDecisionScore: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumDecisionScore,
+      teamAiOverrideMinimumCashReserve: DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve,
+      teamAiOverrideEscalatingCostEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
+      teamAiOverrideFatigueEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
+      teamAiOverrideTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -22703,9 +23029,112 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Actions &amp; Overrides, Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Behavior, Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
                   </div>
                 </div>
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.actionOverrides"
+                tab="teamModeAi"
+                title="AI Action Overrides"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.actionOverrides')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Action Overrides has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Action Overrides</div>
+                        <div className="text-sm opacity-75">Lets Competitive AI actors buy extra actions, the same way human players already can.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionOverridesEnabled: !prev.teamAiActionOverridesEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionOverridesEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiActionOverridesEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiActionOverridesEnabled && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Enemy Team Override Policy</label>
+                            <select
+                              value={gameSettings.teamAiOverridePolicy}
+                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverridePolicy: normalizeTeamAiOverridePolicy(e.target.value) }))}
+                              className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                            >
+                              {TEAM_AI_OVERRIDE_POLICY_OPTIONS.map(policy => (
+                                <option key={policy} value={policy}>{policy.replace(/_/g, ' ')}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Friendly Teammate Override Policy</label>
+                            <select
+                              value={gameSettings.friendlyAiOverridePolicy}
+                              onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(e.target.value) }))}
+                              className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                            >
+                              {FRIENDLY_AI_OVERRIDE_POLICY_OPTIONS.map(policy => (
+                                <option key={policy} value={policy}>{policy.replace(/_/g, ' ')}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-semibold mb-2">Max Overrides Per Actor Per Day: {gameSettings.teamAiOverrideMaxPerActorPerDay}</label>
+                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP} value={gameSettings.teamAiOverrideMaxPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMaxPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Max Overrides Per Team Per Day: {gameSettings.teamAiOverrideMaxPerTeamPerDay}</label>
+                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP * 2} value={gameSettings.teamAiOverrideMaxPerTeamPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMaxPerTeamPerDay: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Cost Multiplier: {gameSettings.teamAiOverrideBaseCostMultiplier.toFixed(1)}x</label>
+                                <input type="range" min="0.5" max="3.0" step="0.1" value={gameSettings.teamAiOverrideBaseCostMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideBaseCostMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Decision Score: {gameSettings.teamAiOverrideMinimumDecisionScore}</label>
+                                <input type="range" min="0" max="400" step="10" value={gameSettings.teamAiOverrideMinimumDecisionScore} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMinimumDecisionScore: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Cash Reserve: ${gameSettings.teamAiOverrideMinimumCashReserve}</label>
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiOverrideMinimumCashReserve} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMinimumCashReserve: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                              {([
+                                { key: 'teamAiOverrideEscalatingCostEnabled', label: 'Escalating Cost' },
+                                { key: 'teamAiOverrideFatigueEnabled', label: 'Override Fatigue' },
+                                { key: 'teamAiOverrideTransparencyEnabled', label: 'Show in Transparency' }
+                              ] as Array<{ key: keyof GameSettingsState; label: string }>).map(toggle => (
+                                <label key={String(toggle.key)} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(gameSettings[toggle.key])}
+                                    onChange={(e) => setGameSettings(prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
+                                  />
+                                  <span>{Boolean(gameSettings[toggle.key]) ? '☑' : '☐'} {toggle.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </SettingsSection>
 
               <SettingsSection id="teamModeAi.overview" tab="teamModeAi" title="🧠 AI Systems Overview">
@@ -28192,7 +28621,28 @@ function AustraliaGame() {
               </div>
             </div>
           )}
-          
+
+          {confirmationDialog.data && confirmationDialog.type === 'teamAiOverrideRequest' && (
+            <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+              <div className="flex justify-between">
+                <span>Proposed action:</span>
+                <span className="font-bold">{confirmationDialog.data.decision?.description || 'Extra action'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Cost:</span>
+                <span className="font-bold text-red-500">${confirmationDialog.data.cost}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Remaining cash after:</span>
+                <span className="font-bold">${confirmationDialog.data.remainingCash}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Reason:</span>
+                <span className="font-bold text-right">{confirmationDialog.data.reasonLabel}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex space-x-3">
             <button
               onClick={handleConfirm}
@@ -28201,13 +28651,32 @@ function AustraliaGame() {
               {confirmationDialog.confirmText}
             </button>
             <button
-              onClick={closeConfirmation}
+              onClick={() => {
+                if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') {
+                  confirmationDialog.data.onDeny();
+                }
+                closeConfirmation();
+              }}
               className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}
             >
-              Cancel
+              {confirmationDialog.type === 'teamAiOverrideRequest' ? 'Deny' : 'Cancel'}
             </button>
           </div>
-          
+
+          {confirmationDialog.type === 'teamAiOverrideRequest' && (
+            <button
+              onClick={() => {
+                if (typeof confirmationDialog.data?.onApproveSimilar === 'function') {
+                  confirmationDialog.data.onApproveSimilar();
+                }
+                handleConfirm();
+              }}
+              className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg w-full mt-3 text-sm`}
+            >
+              Approve Similar Actions This Turn
+            </button>
+          )}
+
           {/* Don't ask again option */}
           {(confirmationDialog.type === 'travel' || confirmationDialog.type === 'sell' || confirmationDialog.type === 'challenge' || confirmationDialog.type === 'endDay') && (
             <label className="flex items-center space-x-2 mt-4 text-sm cursor-pointer">
