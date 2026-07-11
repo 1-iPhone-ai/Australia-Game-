@@ -2739,6 +2739,15 @@ type GameSettingsState = {
   teamComboBonusesEnabled: boolean;
   teamComboBonusStrength: number;
   teamComboWindowActions: number;
+  // V6.7 Phase 3d: Decision Transparency integration — one "Show in Transparency" toggle per
+  // subsystem that didn't already have one. Purely gates trace annotation text; never changes
+  // score/behavior (see appendDecisionScoreStageV63's zero-delta usage throughout).
+  teamAiReservationTransparencyEnabled: boolean;
+  teamAiThreatTargetingTransparencyEnabled: boolean;
+  teamAiEndgameAccelerationTransparencyEnabled: boolean;
+  teamAiEmergencyActionsTransparencyEnabled: boolean;
+  teamInitiativeTransparencyEnabled: boolean;
+  teamComboBonusesTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -2920,6 +2929,12 @@ type V63AiOverlayContext = {
   // V6.7 Phase 2a: transparency-only Competitive AI override eligibility, keyed by decision type.
   // Never influences scoring (delta is always 0) — see applyCompetitiveAiOverrideOverlayV67.
   overrideOverlayContext?: { byDecisionType: Record<string, { eligible: boolean; reasonLabel: string; cost: number }> } | null;
+  // V6.7 Phase 3d: sibling transparency-only overlay contexts for Shared Action Bank and
+  // Emergency Actions — same shape and same zero-score-delta guarantee as overrideOverlayContext
+  // above. (Action Lending is deliberately excluded — see the lendEligibilityRef removal note near
+  // its declaration site for why previewing it here would risk recursive ranking passes.)
+  bankDrawOverlayContext?: { byDecisionType: Record<string, { eligible: boolean; reasonLabel: string }> } | null;
+  emergencyOverlayContext?: { byDecisionType: Record<string, { eligible: boolean; reasonLabel: string }> } | null;
 };
 
 type ScoredTeamAiDecision = AIAction & { score: number; plan: ActorAiPlan };
@@ -3706,6 +3721,12 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamComboBonusesEnabled: false,
   teamComboBonusStrength: 20,
   teamComboWindowActions: 3,
+  teamAiReservationTransparencyEnabled: true,
+  teamAiThreatTargetingTransparencyEnabled: true,
+  teamAiEndgameAccelerationTransparencyEnabled: true,
+  teamAiEmergencyActionsTransparencyEnabled: true,
+  teamInitiativeTransparencyEnabled: true,
+  teamComboBonusesTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3835,12 +3856,12 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.sharedActionBank', tab: 'teamModeAi', title: 'Shared Action Bank', tags: ['Team Mode', 'AI'], fieldKeys: ['teamActionBankEnabled', 'teamActionBankBonusActionsPerDay', 'teamActionBankDistributionMode', 'teamActionBankReserveActions', 'teamActionBankMaxDrawsPerActorPerDay', 'teamActionBankTransparencyEnabled'] },
   { id: 'teamModeAi.actionLending', tab: 'teamModeAi', title: 'Action Lending', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionLendingEnabled', 'teamAiMaxLentActionsPerActorPerDay', 'teamAiMaxReceivedActionsPerActorPerDay', 'teamAiActionLendingMinimumValueGain', 'teamAiActionLendingRequiresCommittedPlan', 'teamAiActionLendingTransparencyEnabled'] },
   { id: 'teamModeAi.teamPlans', tab: 'teamModeAi', title: 'Team Plans', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiPlanCommitmentEnabled', 'teamAiPlanCommitmentStrength', 'teamAiPlanMaximumDurationDays', 'teamAiPlanReevaluationFrequency', 'teamAiPlanInterruptionSensitivity', 'teamAiPlanTransparencyEnabled'] },
-  { id: 'teamModeAi.reservations', tab: 'teamModeAi', title: 'Reservations', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource'] },
-  { id: 'teamModeAi.threatTargeting', tab: 'teamModeAi', title: 'Threat Targeting', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiThreatTargetingEnabled', 'teamAiThreatTargetingStrength', 'teamAiThreatReevaluationFrequency', 'teamAiThreatFocusDuration', 'teamAiMayTargetFriendlyAiTeammate'] },
-  { id: 'teamModeAi.endgameAcceleration', tab: 'teamModeAi', title: 'Endgame Acceleration', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEndgameAccelerationEnabled', 'teamAiEndgameStartPercent', 'teamAiEndgameAggressionMultiplier', 'teamAiEndgameOverrideBias', 'teamAiEndgameCashConversionStrength'] },
-  { id: 'teamModeAi.emergencyActions', tab: 'teamModeAi', title: 'Emergency Actions', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEmergencyActionsEnabled', 'teamAiEmergencyActionCooldownDays', 'teamAiEmergencyActionsPerGame', 'teamAiEmergencyActionStrength', 'teamAiEmergencyActionsForFriendlyTeam', 'teamAiEmergencyActionsForEnemyTeam'] },
-  { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer'] },
-  { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions'] },
+  { id: 'teamModeAi.reservations', tab: 'teamModeAi', title: 'Reservations', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource', 'teamAiReservationTransparencyEnabled'] },
+  { id: 'teamModeAi.threatTargeting', tab: 'teamModeAi', title: 'Threat Targeting', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiThreatTargetingEnabled', 'teamAiThreatTargetingStrength', 'teamAiThreatReevaluationFrequency', 'teamAiThreatFocusDuration', 'teamAiMayTargetFriendlyAiTeammate', 'teamAiThreatTargetingTransparencyEnabled'] },
+  { id: 'teamModeAi.endgameAcceleration', tab: 'teamModeAi', title: 'Endgame Acceleration', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEndgameAccelerationEnabled', 'teamAiEndgameStartPercent', 'teamAiEndgameAggressionMultiplier', 'teamAiEndgameOverrideBias', 'teamAiEndgameCashConversionStrength', 'teamAiEndgameAccelerationTransparencyEnabled'] },
+  { id: 'teamModeAi.emergencyActions', tab: 'teamModeAi', title: 'Emergency Actions', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEmergencyActionsEnabled', 'teamAiEmergencyActionCooldownDays', 'teamAiEmergencyActionsPerGame', 'teamAiEmergencyActionStrength', 'teamAiEmergencyActionsForFriendlyTeam', 'teamAiEmergencyActionsForEnemyTeam', 'teamAiEmergencyActionsTransparencyEnabled'] },
+  { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'] },
+  { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -6251,6 +6272,46 @@ const applyCompetitiveAiOverrideOverlayV67 = <T extends AIAction & { score: numb
   }, [], settings.teamAiOverrideTransparencyEnabled);
 };
 
+// V6.7 Phase 3d: transparency-only overlay stage for the Shared Action Bank, mirroring
+// applyCompetitiveAiOverrideOverlayV67 exactly (zero score delta).
+const applyTeamActionBankOverlayV67 = <T extends AIAction & { score: number }>(
+  decision: T,
+  settings: GameSettingsState,
+  bankDrawOverlayContext: V63AiOverlayContext['bankDrawOverlayContext']
+): T => {
+  const info = bankDrawOverlayContext?.byDecisionType?.[decision.type];
+  if (!info) return decision;
+  return appendDecisionScoreStageV63(decision, {
+    id: 'team_action_bank_v67',
+    label: 'Shared Action Bank',
+    score: decision.score,
+    delta: 0,
+    reason: info.eligible
+      ? `Could draw a free action from the Shared Team Bank (${info.reasonLabel}).`
+      : `Shared Team Bank draw not available (${info.reasonLabel}).`
+  }, [], settings.teamActionBankTransparencyEnabled);
+};
+
+// V6.7 Phase 3d: transparency-only overlay stage for Emergency Actions, mirroring
+// applyCompetitiveAiOverrideOverlayV67 exactly (zero score delta).
+const applyTeamEmergencyActionOverlayV67 = <T extends AIAction & { score: number }>(
+  decision: T,
+  settings: GameSettingsState,
+  emergencyOverlayContext: V63AiOverlayContext['emergencyOverlayContext']
+): T => {
+  const info = emergencyOverlayContext?.byDecisionType?.[decision.type];
+  if (!info) return decision;
+  return appendDecisionScoreStageV63(decision, {
+    id: 'team_emergency_action_v67',
+    label: 'Emergency Actions',
+    score: decision.score,
+    delta: 0,
+    reason: info.eligible
+      ? `An Emergency Action is available this turn (${info.reasonLabel}).`
+      : `No Emergency Action available (${info.reasonLabel}).`
+  }, [], settings.teamAiEmergencyActionsTransparencyEnabled);
+};
+
 const applyV63AiOverlays = <T extends AIAction & { score: number }>(
   originalDecisions: T[],
   context: V63AiOverlayContext
@@ -6296,6 +6357,26 @@ const applyV63AiOverlays = <T extends AIAction & { score: number }>(
   ) {
     decisions = decisions.map(decision =>
       applyCompetitiveAiOverrideOverlayV67(decision, context.settings, context.overrideOverlayContext)
+    );
+  }
+
+  if (
+    context.settings.teamCompetitiveAiEnabled &&
+    context.settings.teamActionBankEnabled &&
+    context.bankDrawOverlayContext
+  ) {
+    decisions = decisions.map(decision =>
+      applyTeamActionBankOverlayV67(decision, context.settings, context.bankDrawOverlayContext)
+    );
+  }
+
+  if (
+    context.settings.teamCompetitiveAiEnabled &&
+    context.settings.teamAiEmergencyActionsEnabled &&
+    context.emergencyOverlayContext
+  ) {
+    decisions = decisions.map(decision =>
+      applyTeamEmergencyActionOverlayV67(decision, context.settings, context.emergencyOverlayContext)
     );
   }
 
@@ -7809,6 +7890,19 @@ function AustraliaGame() {
   const aiPlayerRef = useRef(aiPlayer);
   const additionalActorsRef = useRef<Record<string, ActorState>>(additionalActors);
   const teamsByIdRef = useRef<Record<string, TeamState>>(teamsById);
+  // V6.7 Phase 3d: ref-indirection for Decision Transparency. evaluateTeamAiOverrideEligibility /
+  // evaluateTeamActionBankDraw / evaluateTeamActionLendEligibility are all pure "would this fire
+  // and why" queries declared later in this component than getRankedTeamAiDecisions, so they can't
+  // be called there directly without a TDZ error. Each ref is assigned a plain synchronous line
+  // right after the real function's own declaration — safe because that assignment always
+  // completes during the same render, before any event/effect can invoke getRankedTeamAiDecisions.
+  // Note: Action Lending's eligibility checker (evaluateTeamActionLendEligibility) is deliberately
+  // NOT previewed here — it internally calls getRankedTeamAiDecisions for the teammate it might
+  // lend to, so calling it FROM WITHIN getRankedTeamAiDecisions would risk cascading/recursive
+  // ranking passes. Its existing toast-only transparency (teamAiActionLendingTransparencyEnabled)
+  // is left as the sole visibility mechanism for lending.
+  const overrideEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string; cost: number; policy: TeamAiOverridePolicy | FriendlyAiOverridePolicy | null }) | null>(null);
+  const bankDrawEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
   const regionDepositsRef = useRef<RegionDeposits>(sanitizeRegionDeposits(initialGameState.regionDeposits));
   const regionControlHistoryRef = useRef<RegionControlStats['controlHistory']>(initialGameState.regionControlStats.controlHistory || []);
   const proposalsRef = useRef<Proposal[]>(initialGameState.proposals || []);
@@ -8818,6 +8912,24 @@ function AustraliaGame() {
           : DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
         teamComboBonusStrength: clampSettingNumber(settingsData.teamComboBonusStrength, DEFAULT_GAME_SETTINGS.teamComboBonusStrength, 0, 100),
         teamComboWindowActions: clampSettingNumber(settingsData.teamComboWindowActions, DEFAULT_GAME_SETTINGS.teamComboWindowActions, 2, 6),
+        teamAiReservationTransparencyEnabled: typeof settingsData.teamAiReservationTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiReservationTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiReservationTransparencyEnabled,
+        teamAiThreatTargetingTransparencyEnabled: typeof settingsData.teamAiThreatTargetingTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiThreatTargetingTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingTransparencyEnabled,
+        teamAiEndgameAccelerationTransparencyEnabled: typeof settingsData.teamAiEndgameAccelerationTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiEndgameAccelerationTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
+        teamAiEmergencyActionsTransparencyEnabled: typeof settingsData.teamAiEmergencyActionsTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiEmergencyActionsTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
+        teamInitiativeTransparencyEnabled: typeof settingsData.teamInitiativeTransparencyEnabled === 'boolean'
+          ? settingsData.teamInitiativeTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
+        teamComboBonusesTransparencyEnabled: typeof settingsData.teamComboBonusesTransparencyEnabled === 'boolean'
+          ? settingsData.teamComboBonusesTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -14965,6 +15077,22 @@ function AustraliaGame() {
 
   const latestDecisionTraceByActor = gameState.decisionState?.lastByActor || {};
 
+  // V6.7 Phase 3d: Team Initiative gains and Combo Bonus matches fire during/after execution in
+  // performTeamAiTurn, not at ranking time, so they have no natural ranking-time overlay stage to
+  // hook into. Instead this re-dispatches the actor's own already-recorded current trace (if any)
+  // via the existing RECORD_DECISION_TRACE action, with a note prepended — no new reducer action
+  // needed, and the existing historyCap slice already prevents this from growing history unbounded.
+  const appendTeamAiTraceNote = useCallback((actorId: string, note: string) => {
+    const currentTrace = latestDecisionTraceByActor[actorId]?.currentTrace;
+    if (!currentTrace) return;
+    recordDecisionTrace({
+      ...currentTrace,
+      reasons: [note, ...(currentTrace.reasons || [])].slice(0, 10),
+      sequence: (currentTrace.sequence || 0) + 1,
+      timestamp: Date.now()
+    });
+  }, [latestDecisionTraceByActor, recordDecisionTrace]);
+
   const normalizeFactorWeights = useCallback((weights: Partial<Record<PriorityDomain, number>>) => {
     const total = Math.max(0.0001, Object.values(weights).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0));
     return Object.entries(weights).reduce<Record<string, number>>((acc, [domain, value]) => {
@@ -16455,9 +16583,13 @@ function AustraliaGame() {
   // separate "complementary actions" heuristic exists anywhere else. Declared here (before
   // depositInRegion/transferCash/transferResource/runCompetitiveTeamPlanningPass) specifically so
   // those earning triggers can call it without a forward-reference/TDZ problem.
-  const gainTeamInitiative = useCallback((teamId: string, rawAmount: number, reason: string): void => {
+  // V6.7 Phase 3d: optional actorId param (default undefined, no behavior change for existing
+  // callers) — when provided, attributes a Decision Transparency note to that actor's trace via
+  // appendTeamAiTraceNote, gated by teamInitiativeTransparencyEnabled.
+  const gainTeamInitiative = useCallback((teamId: string, rawAmount: number, reason: string, actorId?: string): void => {
     if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return;
     if (rawAmount <= 0) return;
+    let appliedAmountForTrace = 0;
     updateTeamState(teamId, prev => {
       const current = sanitizeTeamInitiativeState(prev.teamInitiative);
       const alreadyGainedToday = current.lastGainDay === gameState.day ? current.gainedToday : 0;
@@ -16465,6 +16597,7 @@ function AustraliaGame() {
       const requestedAmount = rawAmount * gameSettings.teamInitiativeGainMultiplier;
       const appliedAmount = Math.max(0, Math.min(requestedAmount, dailyCap - alreadyGainedToday));
       if (appliedAmount <= 0) return prev;
+      appliedAmountForTrace = appliedAmount;
       return {
         ...prev,
         teamInitiative: {
@@ -16474,7 +16607,10 @@ function AustraliaGame() {
         }
       };
     });
-  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, gameSettings.teamInitiativeMaximum, gameSettings.teamInitiativeGainMultiplier, gameState.day, updateTeamState]);
+    if (actorId && appliedAmountForTrace > 0 && gameSettings.teamInitiativeTransparencyEnabled) {
+      appendTeamAiTraceNote(actorId, `Gained ${Math.round(appliedAmountForTrace)} Team Initiative: ${reason.replace(/_/g, ' ')}.`);
+    }
+  }, [appendTeamAiTraceNote, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, gameSettings.teamInitiativeMaximum, gameSettings.teamInitiativeGainMultiplier, gameSettings.teamInitiativeTransparencyEnabled, gameState.day, updateTeamState]);
 
   const depositInRegion = useCallback((
     regionCode: string,
@@ -16555,7 +16691,7 @@ function AustraliaGame() {
         impact: 0.4
       });
       // V6.7 Phase 3c Team Initiative trigger #5: gaining control of a region earns initiative.
-      gainTeamInitiative(actorState.teamId, 8, 'region_control_gained');
+      gainTeamInitiative(actorState.teamId, 8, 'region_control_gained', actorId);
     } else if (meaningfulDefensiveDeposit) {
       appendTeammatePerformanceSample(actorState.teamId, actorId, {
         turn: gameState.turnCounter,
@@ -16565,7 +16701,7 @@ function AustraliaGame() {
       // V6.7 Phase 3c Team Initiative trigger #5: a meaningful defensive deposit (holding a
       // contested region) earns initiative too.
       if (isDefending) {
-        gainTeamInitiative(actorState.teamId, 4, 'region_defended');
+        gainTeamInitiative(actorState.teamId, 4, 'region_defended', actorId);
       }
     }
 
@@ -16820,13 +16956,13 @@ function AustraliaGame() {
       )
     }));
     if (hadOpenCashRequest) {
-      gainTeamInitiative(fromActor.teamId, 4, 'support_request_resolved');
+      gainTeamInitiative(fromActor.teamId, 4, 'support_request_resolved', fromActorId);
     }
     // V6.7 Phase 3c: Team Initiative earning trigger #3 — useful transfers. Only isAiSupport-
     // flagged transfers reach here having already cleared the "useful" bar (the
     // TEAM_SUPPORT_MIN_IMPROVEMENT check above), so passing that gate is what "useful" means here.
     if (options?.isAiSupport) {
-      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer');
+      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer', fromActorId);
     }
     appendTeammatePerformanceSample(fromActor.teamId, fromActorId, {
       turn: gameState.turnCounter,
@@ -16938,7 +17074,7 @@ function AustraliaGame() {
     });
     // V6.7 Phase 3c Team Initiative trigger #3: a useful (AI-support-flagged) resource transfer.
     if (options?.isAiSupport) {
-      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer');
+      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer', fromActorId);
     }
     if (fromActor.kind === 'human') {
       incrementAction();
@@ -18169,8 +18305,9 @@ function AustraliaGame() {
       if (continuation.action === 'complete') {
         archivedPlan = { ...nextActiveTeamPlan, status: 'completed' };
         nextActiveTeamPlan = null;
-        // V6.7 Phase 3c: Team Initiative earning trigger #1 — completed plans.
-        gainTeamInitiative(teamId, 15, 'plan_completed');
+        // V6.7 Phase 3c: Team Initiative earning trigger #1 — completed plans. Attributed to the
+        // plan's first assigned actor (a team plan spans multiple actors, not one decision-maker).
+        gainTeamInitiative(teamId, 15, 'plan_completed', archivedPlan.assignedActorIds?.[0]);
       } else if (continuation.action === 'interrupt') {
         archivedPlan = { ...nextActiveTeamPlan, status: 'abandoned', failureReason: continuation.reason };
         nextActiveTeamPlan = null;
@@ -19426,7 +19563,7 @@ function AustraliaGame() {
       addNotification(`${getActorDisplayName(actorId)} crafted ${recipe.output}.`, actor.kind === 'human' ? 'success' : 'ai', false, actor.kind === 'human' ? 'crafting' : 'ai_trade');
       // V6.7 Phase 3c Team Initiative trigger #4: high-value crafting chains earn initiative.
       if (recipe.baseValue >= 750) {
-        gainTeamInitiative(actor.teamId, 5, 'high_value_craft');
+        gainTeamInitiative(actor.teamId, 5, 'high_value_craft', actorId);
       }
     }
     return craftedSuccessfully;
@@ -21232,14 +21369,28 @@ function AustraliaGame() {
           winCondition: gameSettings.winCondition
         })
       : null;
-    // V6.7 Phase 2a: overrideOverlayContext is intentionally left null here. The real,
-    // safeguard-checked override eligibility is computed by evaluateTeamAiOverrideEligibility
-    // (defined later in this component, after this ranking pipeline) at the actual moment an
-    // override is considered in performTeamAiTurn — computing it here too would require calling
-    // that function before its own declaration in this same component body. The overlay/stage
-    // plumbing above is ready for a future phase to populate once that ordering is addressed;
-    // in the meantime the override flow itself (safeguards, ask_first dialog, cost, and the
-    // reason shown to the player) is fully functional without it.
+    // V6.7 Phase 3d: ref-indirection resolves the Phase 2a TDZ problem noted below — these three
+    // eligibility checkers are declared later in this component, so they're invoked here via refs
+    // that get assigned a plain synchronous line right after each real function's own declaration
+    // (see overrideEligibilityRef/bankDrawEligibilityRef's declaration comment). Each is a one-shot
+    // preview against the current top-scoring candidate, keyed by that candidate's decision type —
+    // exactly the shape applyCompetitiveAiOverrideOverlayV67/applyTeamActionBankOverlayV67/
+    // applyTeamEmergencyActionOverlayV67 already expect. All zero score delta — transparency only.
+    const topCandidateForOverlay = tracedDecisions.length
+      ? tracedDecisions.reduce((best, candidate) => (candidate.score > best.score ? candidate : best))
+      : null;
+    const overrideOverlayContext = (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiActionOverridesEnabled && topCandidateForOverlay && overrideEligibilityRef.current)
+      ? { byDecisionType: { [topCandidateForOverlay.type]: overrideEligibilityRef.current(actorId, topCandidateForOverlay as ScoredTeamAiDecision) } }
+      : null;
+    const bankDrawOverlayContext = (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamActionBankEnabled && topCandidateForOverlay && bankDrawEligibilityRef.current)
+      ? { byDecisionType: { [topCandidateForOverlay.type]: bankDrawEligibilityRef.current(actorId, topCandidateForOverlay as ScoredTeamAiDecision) } }
+      : null;
+    const emergencyOverlayContext = (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiEmergencyActionsEnabled && topCandidateForOverlay)
+      ? (() => {
+          const trigger = evaluateTeamEmergencyActionTrigger(actorId);
+          return { byDecisionType: { [topCandidateForOverlay.type]: trigger ? { eligible: true, reasonLabel: trigger.action.name } : { eligible: false, reasonLabel: 'No emergency currently declared or eligible action found.' } } };
+        })()
+      : null;
     const teamBrainDecisions = applyV63AiOverlays(tracedDecisions, {
       selectedMode: selectedTeamMode,
       actor,
@@ -21248,7 +21399,9 @@ function AustraliaGame() {
       strategyLabTeamContext,
       opponentContext: strategyLabOpponentContext,
       teamBrainContext,
-      overrideOverlayContext: null
+      overrideOverlayContext,
+      bankDrawOverlayContext,
+      emergencyOverlayContext
     });
     const aiStrategyLabScorePreview = strategyLabActive
       ? getAiStrategyLabScorePreviewV63(tracedDecisions, strategyLabDecisions, gameSettings)
@@ -21272,7 +21425,8 @@ function AustraliaGame() {
     // at teamAiReservationStrictness: 'low' this filter is a no-op, exactly preserving pre-3a
     // behavior. Only region/challenge/resource-targeted decision types carry a reservable target;
     // everything else passes through untouched.
-    const reservationFiltered = (!gameSettings.teamCompetitiveAiEnabled || gameSettings.teamAiReservationStrictness === 'low')
+    const reservationFilterActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiReservationStrictness !== 'low';
+    const reservationFiltered = !reservationFilterActive
       ? rankedCandidates
       : rankedCandidates.filter(candidate => {
           let targetKind: TeamReservationTargetKind | null = null;
@@ -21293,6 +21447,18 @@ function AustraliaGame() {
           if (!targetKind || !targetId) return true;
           return !isReservationHardBlocked(targetKind, targetId, actorId);
         });
+    // V6.7 Phase 3d: Reservations transparency — a single shared zero-delta stage recording how
+    // many candidates this pass removed, attached to every survivor. Purely informational; the
+    // filter above (unchanged) is what actually removes candidates.
+    const reservationBlockedCount = reservationFilterActive ? rankedCandidates.length - reservationFiltered.length : 0;
+    // V6.7 Phase 3d: Team Plans transparency — identify this actor's next pending/in-progress step
+    // on the active Team Plan (if any), with no ref/ordering dependency since it only reads
+    // already-available team state.
+    const activePlanForActor = teamsByIdRef.current[actor.teamId]?.activeTeamPlan || null;
+    const myActivePlanStepIndex = activePlanForActor
+      ? activePlanForActor.steps.findIndex(step => step.assignedActorId === actorId && (step.status === 'pending' || step.status === 'in_progress'))
+      : -1;
+    const myActivePlanStep = myActivePlanStepIndex >= 0 ? activePlanForActor!.steps[myActivePlanStepIndex] : null;
     // V6.7 Phase 3b: Tier 2 threat-awareness bonuses (region pressure / resource denial toward the
     // threat target) and per-win-condition Endgame Acceleration bonuses — both purely additive
     // score deltas, applied after the existing adjustedScore-fallback resolution so they're never
@@ -21301,12 +21467,34 @@ function AustraliaGame() {
     return reservationFiltered.map(candidate => {
       const baseScore = candidate.traceMeta?.adjustedScore || candidate.score;
       let bonus = 0;
+      let annotated = candidate as ScoredTeamAiDecision;
+      if (reservationBlockedCount > 0 && gameSettings.teamAiReservationTransparencyEnabled) {
+        annotated = appendDecisionScoreStageV63(annotated, {
+          id: 'team_reservations_v67',
+          label: 'Reservations',
+          score: baseScore,
+          delta: 0,
+          reason: `${reservationBlockedCount} candidate action${reservationBlockedCount === 1 ? ' was' : 's were'} blocked by an active teammate reservation.`
+        }, [], true);
+      }
+      if (myActivePlanStep && myActivePlanStep.actionType === candidate.type) {
+        annotated = appendDecisionScoreStageV63(annotated, {
+          id: 'team_plan_v67',
+          label: 'Team Plan',
+          score: baseScore,
+          delta: 0,
+          reason: `Following Team Plan step ${myActivePlanStepIndex + 1}/${activePlanForActor!.steps.length}: ${activePlanForActor!.objective}.`
+        }, [], gameSettings.teamAiPlanTransparencyEnabled);
+      }
       if (threatTargetActorForActor) {
+        let threatBonus = 0;
+        let threatReason = '';
         if (
           (candidate.type === 'region_deposit' || candidate.type === 'cashout_region') &&
           candidate.data?.region === threatTargetActorForActor.currentRegion
         ) {
-          bonus += 20 * (gameSettings.teamAiThreatTargetingStrength / 100);
+          threatBonus += 20 * (gameSettings.teamAiThreatTargetingStrength / 100);
+          threatReason = `Applying pressure in ${getActorDisplayName(threatTargetActorForActor.id)}'s current region.`;
         }
         if (candidate.type === 'buy_market') {
           const topPurchase = Array.isArray(candidate.data?.purchases) ? candidate.data.purchases[0] : null;
@@ -21314,30 +21502,68 @@ function AustraliaGame() {
             Object.prototype.hasOwnProperty.call(recipe.inputs, topPurchase.resource) &&
             (threatTargetActorForActor.inventory || []).filter(item => item === topPurchase.resource).length < Number(recipe.inputs[topPurchase.resource])
           );
-          if (targetNeedsResource) bonus += 15 * (gameSettings.teamAiThreatTargetingStrength / 100);
+          if (targetNeedsResource) {
+            threatBonus += 15 * (gameSettings.teamAiThreatTargetingStrength / 100);
+            threatReason = `Denying a resource ${getActorDisplayName(threatTargetActorForActor.id)} needs.`;
+          }
+        }
+        if (threatBonus !== 0) {
+          bonus += threatBonus;
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'threat_targeting_v67',
+            label: 'Threat Targeting',
+            score: baseScore + bonus,
+            delta: threatBonus,
+            reason: threatReason
+          }, [threatReason], gameSettings.teamAiThreatTargetingTransparencyEnabled);
         }
       }
       if (endgameAccelerationState.active) {
         const aggression = gameSettings.teamAiEndgameAggressionMultiplier;
         const cashStrength = gameSettings.teamAiEndgameCashConversionStrength;
+        let endgameBonus = 0;
+        let endgameReason = '';
         switch (gameSettings.winCondition) {
           case 'money':
-            if (candidate.type === 'sell' || candidate.type === 'cashout_region') bonus += cashStrength * aggression * 0.5;
-            if (candidate.type === 'invest' || candidate.type === 'buy_equipment') bonus -= cashStrength * 0.3;
+            if (candidate.type === 'sell' || candidate.type === 'cashout_region') {
+              endgameBonus += cashStrength * aggression * 0.5;
+              endgameReason = 'Endgame Acceleration: converting to cash for the money win condition.';
+            }
+            if (candidate.type === 'invest' || candidate.type === 'buy_equipment') {
+              endgameBonus -= cashStrength * 0.3;
+              endgameReason = 'Endgame Acceleration: deprioritizing illiquid spending this late.';
+            }
             break;
           case 'netWorth':
-            if (candidate.type === 'craft') bonus += cashStrength * aggression * 0.3;
+            if (candidate.type === 'craft') {
+              endgameBonus += cashStrength * aggression * 0.3;
+              endgameReason = 'Endgame Acceleration: crafting for net worth.';
+            }
             break;
           case 'regions':
-            if (candidate.type === 'region_deposit' || candidate.type === 'travel' || candidate.type === 'sabotage') bonus += aggression * 20;
+            if (candidate.type === 'region_deposit' || candidate.type === 'travel' || candidate.type === 'sabotage') {
+              endgameBonus += aggression * 20;
+              endgameReason = 'Endgame Acceleration: pushing for region control.';
+            }
             break;
         }
         if (gameState.selectedMode === 'grand_tour' && (candidate.type === 'challenge' || candidate.type === 'travel')) {
-          bonus += aggression * 15;
+          endgameBonus += aggression * 15;
+          endgameReason = 'Endgame Acceleration: Grand Tour finale push.';
+        }
+        if (endgameBonus !== 0) {
+          bonus += endgameBonus;
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'endgame_acceleration_v67',
+            label: 'Endgame Acceleration',
+            score: baseScore + bonus,
+            delta: endgameBonus,
+            reason: endgameReason
+          }, [endgameReason], gameSettings.teamAiEndgameAccelerationTransparencyEnabled);
         }
       }
       return {
-        ...(candidate as ScoredTeamAiDecision),
+        ...annotated,
         score: baseScore + bonus
       };
     });
@@ -21628,6 +21854,8 @@ function AustraliaGame() {
     gameSettings.teamActionBankReserveActions, gameSettings.teamActionBankDistributionMode, gameSettings.teamAiOverrideMinimumDecisionScore,
     gameState.gameMode, getActorState, analyzeTeamLiquidity
   ]);
+  // V6.7 Phase 3d: ref-indirection assignment — see bankDrawEligibilityRef's declaration comment.
+  bankDrawEligibilityRef.current = evaluateTeamActionBankDraw;
 
   // V6.7 Phase 2a: AI Action Overrides — the 12-safeguard eligibility checker.
   // Fully inert unless BOTH gameSettings.teamCompetitiveAiEnabled AND
@@ -21745,6 +21973,8 @@ function AustraliaGame() {
     gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameSettings.teamAiEndgameOverrideBias,
     gameState.gameMode, getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity, computeEndgameAccelerationState
   ]);
+  // V6.7 Phase 3d: ref-indirection assignment — see overrideEligibilityRef's declaration comment.
+  overrideEligibilityRef.current = evaluateTeamAiOverrideEligibility;
 
   // V6.7 Phase 2c: Action Lending — the eligibility checker for a donor actor to credit a
   // specific teammate with one bonus action. Fully inert unless BOTH
@@ -21993,7 +22223,7 @@ function AustraliaGame() {
     if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return;
     const expectedTypes = TEAM_AI_ROLE_EXPECTED_ACTION_TYPES[normalizeTeamAiRole(actor.teamAiRole)] || [];
     if (expectedTypes.includes(decisionType)) {
-      gainTeamInitiative(actor.teamId, 3, 'role_fulfilled');
+      gainTeamInitiative(actor.teamId, 3, 'role_fulfilled', actor.id);
     }
   }, [gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled]);
 
@@ -22138,8 +22368,12 @@ function AustraliaGame() {
     });
     addNotification(`🤖 ${getActorDisplayName(secondEntry.actorId)}'s teamwork paid off with a complementary combo!`, 'ai', false, 'system');
     // GD6: the ONLY call site producing 'complementary_combo' Team Initiative gains.
-    gainTeamInitiative(teamId, 10, 'complementary_combo');
-  }, [addNotification, gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamComboBonusesEnabled, gameSettings.teamComboBonusStrength, gameSettings.teamComboWindowActions, getActorDisplayName, getActorState, updateActorContribution, updateTeamState]);
+    gainTeamInitiative(teamId, 10, 'complementary_combo', secondEntry.actorId);
+    // V6.7 Phase 3d: Combo Bonus Decision Transparency note, attributed to the completing actor.
+    if (gameSettings.teamComboBonusesTransparencyEnabled) {
+      appendTeamAiTraceNote(secondEntry.actorId, `Complementary combo bonus with ${getActorDisplayName(firstEntry.actorId)} (+${bonusValue} score).`);
+    }
+  }, [addNotification, appendTeamAiTraceNote, gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamComboBonusesEnabled, gameSettings.teamComboBonusesTransparencyEnabled, gameSettings.teamComboBonusStrength, gameSettings.teamComboWindowActions, getActorDisplayName, getActorState, updateActorContribution, updateTeamState]);
 
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
@@ -22352,7 +22586,7 @@ function AustraliaGame() {
         // V6.7 Phase 3c Team Initiative trigger #2: a plan-step-sourced (i.e. coordinated)
         // challenge decision that just executed successfully earns initiative.
         if (decision.type === 'challenge') {
-          gainTeamInitiative(actor.teamId, 6, 'coordinated_challenge');
+          gainTeamInitiative(actor.teamId, 6, 'coordinated_challenge', actor.id);
         }
       }
       refreshTeamLiquidityLedger(actor.teamId);
@@ -24237,7 +24471,13 @@ function AustraliaGame() {
       teamInitiativeVisibleToPlayer: DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
       teamComboBonusesEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
       teamComboBonusStrength: DEFAULT_GAME_SETTINGS.teamComboBonusStrength,
-      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions
+      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions,
+      teamAiReservationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiReservationTransparencyEnabled,
+      teamAiThreatTargetingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingTransparencyEnabled,
+      teamAiEndgameAccelerationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
+      teamAiEmergencyActionsTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
+      teamInitiativeTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
+      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -24301,7 +24541,13 @@ function AustraliaGame() {
       teamInitiativeVisibleToPlayer: DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
       teamComboBonusesEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
       teamComboBonusStrength: DEFAULT_GAME_SETTINGS.teamComboBonusStrength,
-      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions
+      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions,
+      teamAiReservationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiReservationTransparencyEnabled,
+      teamAiThreatTargetingTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiThreatTargetingTransparencyEnabled,
+      teamAiEndgameAccelerationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
+      teamAiEmergencyActionsTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
+      teamInitiativeTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
+      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -25900,6 +26146,14 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.friendlyAiMayRequestReservedResource ? '☑' : '☐'} Friendly AI May Request Instead of Block</span>
                         </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiReservationTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiReservationTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiReservationTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
+                        </label>
                       </div>
                     )}
                   </div>
@@ -25955,6 +26209,14 @@ function AustraliaGame() {
                             onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMayTargetFriendlyAiTeammate: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiMayTargetFriendlyAiTeammate ? '☑' : '☐'} Enemy AI May Target Your Friendly AI Teammate</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiThreatTargetingTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiThreatTargetingTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                         </label>
                         <div className="text-xs opacity-60">When off, enemy AI threat-targeting only ever considers you, not your AI-controlled teammates.</div>
                       </>
@@ -26017,6 +26279,16 @@ function AustraliaGame() {
                           <input type="range" min="0" max="100" value={gameSettings.teamAiEndgameCashConversionStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameCashConversionStrength: parseInt(e.target.value) }))} className="w-full" />
                         </div>
                       </div>
+                    )}
+                    {gameSettings.teamAiEndgameAccelerationEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <label className="flex items-center gap-2 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(gameSettings.teamAiEndgameAccelerationTransparencyEnabled)}
+                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameAccelerationTransparencyEnabled: e.target.checked }))}
+                        />
+                        <span>{gameSettings.teamAiEndgameAccelerationTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
+                      </label>
                     )}
                   </div>
                 )}
@@ -26082,6 +26354,14 @@ function AustraliaGame() {
                               />
                               <span>{gameSettings.teamAiEmergencyActionsForEnemyTeam ? '☑' : '☐'} Enemy AI Team May Declare Emergencies</span>
                             </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teamAiEmergencyActionsTransparencyEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsTransparencyEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teamAiEmergencyActionsTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency (in addition to the always-on notification)</span>
+                            </label>
                           </>
                         )}
                         <div className="text-xs opacity-60">Emergency Actions always notify you when they fire, and are limited by a per-game use cap and cooldown per action so they can never become hidden rubber-banding.</div>
@@ -26145,6 +26425,14 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.teamInitiativeVisibleToPlayer ? '☑' : '☐'} Show Team Initiative Meter in HUD</span>
                         </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamInitiativeTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamInitiativeTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency</span>
+                        </label>
                         <div className="text-xs opacity-60">Gains are capped per day at 25% of the maximum, so a single day's play can never fill more than a quarter of the meter.</div>
                       </>
                     )}
@@ -26189,6 +26477,16 @@ function AustraliaGame() {
                           <input type="range" min="2" max="6" value={gameSettings.teamComboWindowActions} onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboWindowActions: parseInt(e.target.value) }))} className="w-full" />
                         </div>
                       </div>
+                    )}
+                    {gameSettings.teamComboBonusesEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <label className="flex items-center gap-2 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(gameSettings.teamComboBonusesTransparencyEnabled)}
+                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboBonusesTransparencyEnabled: e.target.checked }))}
+                        />
+                        <span>{gameSettings.teamComboBonusesTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency</span>
+                      </label>
                     )}
                     <div className="text-xs opacity-60">Capped at 3 combos per team per day, and each action can only ever be part of one combo, to prevent farming.</div>
                   </div>
