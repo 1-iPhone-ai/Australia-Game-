@@ -2939,6 +2939,14 @@ type GameSettingsState = {
   guaranteedRecoveryProtocolEnabled: boolean;
   guaranteedRecoveryMinimumChallengeProbability: number;
   teammatePerformanceSync2TransparencyEnabled: boolean;
+  // V6.8 Phase E: Parallel Planning + Full-Roster Parallel AI Action Resolution — shared-snapshot
+  // batch planning of each AI actor's FIRST decision of the round, with team/match-wide
+  // coordination, followed by fully sequential, live-revalidated execution exactly as today
+  // (JavaScript has no true concurrency; "parallel" is scoped to batch planning only).
+  parallelAiPlanningEnabled: boolean;
+  parallelAiPlanningCoordinationStrictness: TeamAiReservationStrictness;
+  parallelAiPlanningSabotageCoordinationEnabled: boolean;
+  parallelAiPlanningTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3129,6 +3137,22 @@ type V63AiOverlayContext = {
 };
 
 type ScoredTeamAiDecision = AIAction & { score: number; plan: ActorAiPlan };
+
+// V6.8 Phase E: Parallel Planning — a frozen, per-round snapshot of actor/team state used only
+// for shared-snapshot candidate generation (never mutated); the actual execution pipeline always
+// reads live state exactly as today.
+interface RoundPlanningSnapshot {
+  actors: Record<string, ActorState>;
+  teams: Record<string, TeamState>;
+}
+interface RoundPlannedDecision {
+  actorId: string;
+  teamId: string;
+  decision: ScoredTeamAiDecision;
+  round: number;
+  coordinationNote?: string;
+}
+type TeamRoundPlan = Record<string, RoundPlannedDecision>;
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
   'ai_travel', 'ai_sabotage', 'ai_trade', 'ai_challenge',
@@ -3943,6 +3967,10 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   guaranteedRecoveryProtocolEnabled: false,
   guaranteedRecoveryMinimumChallengeProbability: 0.55,
   teammatePerformanceSync2TransparencyEnabled: true,
+  parallelAiPlanningEnabled: false,
+  parallelAiPlanningCoordinationStrictness: 'balanced',
+  parallelAiPlanningSabotageCoordinationEnabled: true,
+  parallelAiPlanningTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -4081,6 +4109,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
   { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
+  { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -9333,6 +9362,18 @@ function AustraliaGame() {
         teammatePerformanceSync2TransparencyEnabled: typeof settingsData.teammatePerformanceSync2TransparencyEnabled === 'boolean'
           ? settingsData.teammatePerformanceSync2TransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
+        parallelAiPlanningEnabled: typeof settingsData.parallelAiPlanningEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
+        parallelAiPlanningCoordinationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.parallelAiPlanningCoordinationStrictness)
+          ? settingsData.parallelAiPlanningCoordinationStrictness
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
+        parallelAiPlanningSabotageCoordinationEnabled: typeof settingsData.parallelAiPlanningSabotageCoordinationEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningSabotageCoordinationEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
+        parallelAiPlanningTransparencyEnabled: typeof settingsData.parallelAiPlanningTransparencyEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -19603,6 +19644,17 @@ function AustraliaGame() {
       setTeamsById(nextTeams);
       teamsByIdRef.current = nextTeams;
 
+      // V6.8 Phase E: Parallel Planning's round-batch plan, built once per round from the exact
+      // same frozen projectedActors/nextTeams objects this planning pass already produced above —
+      // zero new snapshot-construction code. Explicitly reset to null when the toggle is off, so
+      // a stale plan from a prior session/toggle-state can never survive. Called via
+      // buildRoundAiPlanBatchRef (not directly) since buildRoundAiPlanBatch is declared later in
+      // the file than advanceDay — the established ref-indirection pattern for this exact
+      // forward-reference/TDZ constraint.
+      teamRoundPlanRef.current = (gameSettings.teamCompetitiveAiEnabled && gameSettings.parallelAiPlanningEnabled)
+        ? (buildRoundAiPlanBatchRef.current?.(projectedActors, nextTeams) || null)
+        : null;
+
       if (gameSettings.adaptiveAiEnabled) {
         [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
           const previousPhase = previousTeams[teamId]?.adaptiveState?.phase || 'normal';
@@ -20966,10 +21018,23 @@ function AustraliaGame() {
     return true;
   }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, updateTeamState]);
 
-  const getRankedTeamAiDecisions = useCallback((actorId: string): ScoredTeamAiDecision[] => {
-    const actor = getActorState(actorId);
+  const getRankedTeamAiDecisions = useCallback((actorId: string, snapshot?: RoundPlanningSnapshot): ScoredTeamAiDecision[] => {
+    // V6.8 Phase E: Parallel Planning — when `snapshot` is provided (round-batch planning only),
+    // every resolver below reads the frozen snapshot instead of live refs/closures, and
+    // selectThreatTarget's persisting write is skipped entirely (read-only fallback). When
+    // `snapshot` is omitted (every pre-existing call site, unchanged), each resolver falls through
+    // to the exact original live expression — byte-identical to pre-Phase-E behavior.
+    const resolveActor = (id: string): ActorState | undefined => snapshot ? snapshot.actors[id] : getActorState(id);
+    const resolveTeam = (teamId: string): TeamState | undefined => snapshot ? snapshot.teams[teamId] : teamsByIdRef.current[teamId];
+    const resolveTeamActorsList = (teamId: string): ActorState[] => snapshot
+      ? (snapshot.teams[teamId]?.actorIds || []).map(id => snapshot.actors[id]).filter((a): a is ActorState => Boolean(a))
+      : getTeamActors(teamId);
+    const actor = resolveActor(actorId);
     if (!actor) return [];
-    const team = teamsByIdRef.current[actor.teamId];
+    const team = resolveTeam(actor.teamId);
+    // V6.8 Phase E: getTeammateForSync internally reads live actor state regardless of `snapshot`
+    // (it's a small, widely-shared helper used well beyond this function) — an accepted, minor,
+    // stated imprecision during planning, on par with selectThreatTarget's read-only fallback below.
     const teammate = getTeammateForSync(actorId, team);
     const teammateReservations = (team?.activeReservations || []).filter(reservation => reservation.status === 'active' && reservation.actorId !== actorId);
     const {
@@ -20992,13 +21057,13 @@ function AustraliaGame() {
     const primaryDirectiveStrength = normalizeDirectiveStrength(primaryDirective?.strength);
     const directiveProfile = getEffectiveDirectiveStrengthProfile(primaryDirectiveStrength, { teamMode: true });
     const difficultyBehavior = getTeamDifficultyBehavior();
-    const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId);
+    const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId, snapshot?.actors);
     const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
     const teammateLiquidity = teammate ? liquidityAnalysis.byActorId[teammate.id] || null : null;
-    const adaptiveState = teamsByIdRef.current[actor.teamId]?.adaptiveState || createDefaultTeamAdaptiveState();
+    const adaptiveState = resolveTeam(actor.teamId)?.adaptiveState || createDefaultTeamAdaptiveState();
     const opponentTeamId = actor.teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
-    const opponentActors = getTeamActors(opponentTeamId);
-    const opponentLiquidityAnalysis = analyzeTeamLiquidity(opponentTeamId);
+    const opponentActors = resolveTeamActorsList(opponentTeamId);
+    const opponentLiquidityAnalysis = analyzeTeamLiquidity(opponentTeamId, snapshot?.actors);
     const teamSummary = teamScoreSummary[actor.teamId] || createDefaultTeamScoreBreakdown();
     const opponentSummary = teamScoreSummary[opponentTeamId] || createDefaultTeamScoreBreakdown();
     const currentDeposits = sanitizeRegionDeposits(gameState.regionDeposits);
@@ -21007,13 +21072,18 @@ function AustraliaGame() {
     // only fires once per decision-ranking call, not twice.
     const endgameAccelerationState = computeEndgameAccelerationState();
     const threatTargetingActiveForActor = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiThreatTargetingEnabled;
-    const threatTargetPickForActor = threatTargetingActiveForActor ? selectThreatTarget(actorId) : null;
-    const threatTargetActorForActor = threatTargetPickForActor ? getActorState(threatTargetPickForActor.targetActorId) : null;
+    // V6.8 Phase E: during round-batch planning (snapshot present), selectThreatTarget's
+    // persisting write is skipped entirely — read the frozen, possibly-stale activeThreatTarget
+    // instead. The live execution-time path (snapshot omitted) calls the real function unchanged.
+    const threatTargetPickForActor = threatTargetingActiveForActor
+      ? (snapshot ? (resolveTeam(actor.teamId)?.activeThreatTarget || null) : selectThreatTarget(actorId))
+      : null;
+    const threatTargetActorForActor = threatTargetPickForActor ? resolveActor(threatTargetPickForActor.targetActorId) : null;
     const teamModeAiSystemsActiveForDecision = isTeamModeSelection(gameState.selectedMode) && gameSettings.teamModeAiSystemsEnabled;
     const teamAiProfile = teamModeAiSystemsActiveForDecision
       ? normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile)
       : 'classic';
-    const teamActorsForContext = getTeamActors(actor.teamId);
+    const teamActorsForContext = resolveTeamActorsList(actor.teamId);
     const activeTeamDirectives = getActorActiveTeamMessages(actorId);
     const craftingOpportunityForActor = CRAFTING_RECIPES.some(recipe => Object.entries(recipe.inputs).every(([resource, count]) => (
       actor.inventory.filter(item => item === resource).length >= Number(count)
@@ -21085,7 +21155,7 @@ function AustraliaGame() {
       ? assignTeamAiRole(actor, team, teamAiContext)
       : normalizeTeamAiRole(actor.teamAiRole);
     const currentTeamObjective = teamModeAiSystemsActiveForDecision && team
-      ? chooseTeamObjective(team, teamsByIdRef.current[opponentTeamId] || null, teamAiContext)
+      ? chooseTeamObjective(team, resolveTeam(opponentTeamId) || null, teamAiContext)
       : null;
     const roleModeContext = deriveAiRoleMode(actor, {
       primaryDirective,
@@ -21351,7 +21421,7 @@ function AustraliaGame() {
     if (teamModeAiSystemsActiveForDecision && team) {
       const profileSupportAction = evaluateTeamSupportAction(actor, team, teamAiContext);
       if (profileSupportAction?.type === 'give_cash' || profileSupportAction?.type === 'give_resource') {
-        const targetActor = getActorState(profileSupportAction.data?.targetActorId);
+        const targetActor = resolveActor(profileSupportAction.data?.targetActorId);
         pushDecision({
           ...profileSupportAction,
           score: teamAiProfile === 'support_heavy' ? 260 : teamAiProfile === 'cooperative' ? 210 : 170,
@@ -22250,7 +22320,7 @@ function AustraliaGame() {
     // V6.7 Phase 3d: Team Plans transparency — identify this actor's next pending/in-progress step
     // on the active Team Plan (if any), with no ref/ordering dependency since it only reads
     // already-available team state.
-    const activePlanForActor = teamsByIdRef.current[actor.teamId]?.activeTeamPlan || null;
+    const activePlanForActor = resolveTeam(actor.teamId)?.activeTeamPlan || null;
     const myActivePlanStepIndex = activePlanForActor
       ? activePlanForActor.steps.findIndex(step => step.assignedActorId === actorId && (step.status === 'pending' || step.status === 'in_progress'))
       : -1;
@@ -22395,6 +22465,180 @@ function AustraliaGame() {
       };
     });
   }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
+
+  // V6.8 Phase E: Parallel Planning's execution-time revalidation — mirrors redeemActionToken's
+  // live checks (cash, inventory, reservation hard-block) for a planned-but-not-yet-executed
+  // decision, plus two decision-type-specific checks token redemption doesn't need (sabotage
+  // target already debuffed, challenge already completed this season). Ordinary per-turn budget
+  // decisions are never tokenized, so this deliberately does not touch actionTokens at all.
+  const revalidatePlannedTeamAiDecision = useCallback((actorId: string, decision: ScoredTeamAiDecision): boolean => {
+    if (gameState.gameMode !== 'game') return false;
+    const actor = getActorState(actorId);
+    if (!actor) return false;
+
+    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount;
+    if (typeof cashCost === 'number' && cashCost > 0 && actor.money < cashCost) return false;
+
+    const requiredResource = decision.data?.resource;
+    if (typeof requiredResource === 'string' && (decision.type === 'sell' || decision.type === 'craft' || decision.type === 'give_resource')) {
+      const requiredQty = typeof decision.data?.quantity === 'number' ? decision.data.quantity : 1;
+      const owned = (actor.inventory || []).filter(item => item === requiredResource).length;
+      if (owned < requiredQty) return false;
+    }
+
+    const targetKind = decision.data?.teamModeMeta?.reservationTargetKind as TeamReservationTargetKind | undefined;
+    const targetId = decision.data?.teamModeMeta?.reservationTargetId as string | undefined;
+    if (targetKind && targetId && isReservationHardBlocked(targetKind, targetId, actorId)) return false;
+
+    if (decision.type === 'sabotage') {
+      const targetActor = typeof decision.data?.targetActorId === 'string' ? getActorState(decision.data.targetActorId) : null;
+      if (!targetActor || targetActor.teamId === actor.teamId) return false;
+      if (typeof decision.data?.sabotageId === 'string' && hasActiveDebuff(targetActor.debuffs, decision.data.sabotageId)) return false;
+    }
+
+    if (decision.type === 'challenge' && decision.data?.challenge?.name) {
+      if ((actor.completedThisSeason || []).includes(decision.data.challenge.name)) return false;
+    }
+
+    return true;
+  }, [gameState.gameMode, getActorState, isReservationHardBlocked]);
+
+  // V6.8 Phase E: Parallel Planning's coordination pass — a plan-quality optimization, NOT a
+  // correctness requirement (see the plan's Governing Decision 4: today's fixed roster never puts
+  // same-team AI actors adjacent in turn order, so the existing Reservations system plus
+  // revalidatePlannedTeamAiDecision above already safely catch any genuine same-team conflict).
+  // GD4: same-team pass first (reassigns a lower-scoring teammate off an identical top-choice
+  // target when a non-conflicting candidate exists in its top 5). GD5: cross-team sabotage
+  // tie-break second (deterministic score-based resolution; drops the loser's entry entirely if
+  // no non-conflicting candidate exists, falling back to live decision-making at execution time).
+  const coordinateRoundPlannedDecisions = useCallback((
+    candidatesByActor: Record<string, ScoredTeamAiDecision[]>,
+    snapshot: RoundPlanningSnapshot
+  ): TeamRoundPlan => {
+    const strictness = gameSettings.parallelAiPlanningCoordinationStrictness;
+    const inspectCount = strictness === 'strict' ? 5 : strictness === 'balanced' ? 2 : 1;
+    const nearTieThreshold = strictness === 'strict' ? 0.1 : 0;
+
+    const getTargetKey = (decision: ScoredTeamAiDecision): string | null => {
+      const targetKind = decision.data?.teamModeMeta?.reservationTargetKind;
+      const targetId = decision.data?.teamModeMeta?.reservationTargetId;
+      return targetKind && targetId ? `${targetKind}:${targetId}` : null;
+    };
+
+    const actorIds = Object.keys(candidatesByActor);
+    const chosenIndexByActor: Record<string, number> = {};
+    actorIds.forEach(actorId => { chosenIndexByActor[actorId] = 0; });
+
+    const teamGroups: Record<string, string[]> = {};
+    actorIds.forEach(actorId => {
+      const teamId = snapshot.actors[actorId]?.teamId;
+      if (!teamId) return;
+      teamGroups[teamId] = teamGroups[teamId] || [];
+      teamGroups[teamId].push(actorId);
+    });
+    Object.values(teamGroups).forEach(teamActorIds => {
+      if (teamActorIds.length < 2) return;
+      const sorted = [...teamActorIds].sort((a, b) => (candidatesByActor[b][0]?.score || 0) - (candidatesByActor[a][0]?.score || 0));
+      const [higherId, ...lowerIds] = sorted;
+      const higherKey = getTargetKey(candidatesByActor[higherId][0]);
+      const higherScore = candidatesByActor[higherId][0]?.score || 0;
+      lowerIds.forEach(lowerId => {
+        const lowerCandidates = candidatesByActor[lowerId];
+        const topKey = getTargetKey(lowerCandidates[0]);
+        const exactCollision = Boolean(higherKey && topKey && higherKey === topKey);
+        const nearTieCollision = !exactCollision && nearTieThreshold > 0 && higherKey && topKey && higherKey === topKey;
+        if (exactCollision || nearTieCollision) {
+          for (let i = 1; i < Math.min(inspectCount, lowerCandidates.length); i += 1) {
+            if (getTargetKey(lowerCandidates[i]) !== higherKey) {
+              chosenIndexByActor[lowerId] = i;
+              break;
+            }
+          }
+        }
+      });
+    });
+
+    const plan: TeamRoundPlan = {};
+    actorIds.forEach(actorId => {
+      const candidates = candidatesByActor[actorId];
+      const index = chosenIndexByActor[actorId] || 0;
+      const decision = candidates[index];
+      if (!decision) return;
+      const teamId = snapshot.actors[actorId]?.teamId || '';
+      plan[actorId] = {
+        actorId,
+        teamId,
+        decision,
+        round: gameState.roundNumber,
+        coordinationNote: index > 0 ? 'Reassigned to avoid a same-team target collision.' : undefined
+      };
+    });
+
+    // GD5: cross-team sabotage conflict resolution, gated by its own sub-toggle.
+    if (gameSettings.parallelAiPlanningSabotageCoordinationEnabled) {
+      const sabotageGroups: Record<string, string[]> = {};
+      Object.values(plan).forEach(entry => {
+        if (entry.decision.type !== 'sabotage') return;
+        const key = `${entry.decision.data?.targetActorId}:${entry.decision.data?.sabotageId}`;
+        sabotageGroups[key] = sabotageGroups[key] || [];
+        sabotageGroups[key].push(entry.actorId);
+      });
+      Object.values(sabotageGroups).forEach(actorIdsInGroup => {
+        if (actorIdsInGroup.length < 2) return;
+        const sorted = [...actorIdsInGroup].sort((a, b) => {
+          const scoreDiff = (plan[b].decision.score || 0) - (plan[a].decision.score || 0);
+          return scoreDiff !== 0 ? scoreDiff : (a < b ? -1 : 1); // deterministic tie-break: lower actorId wins
+        });
+        const [, ...losers] = sorted;
+        losers.forEach(loserId => {
+          const candidates = candidatesByActor[loserId];
+          const currentKey = `${plan[loserId].decision.data?.targetActorId}:${plan[loserId].decision.data?.sabotageId}`;
+          const alt = candidates.find(candidate => {
+            if (candidate.type !== 'sabotage') return true;
+            return `${candidate.data?.targetActorId}:${candidate.data?.sabotageId}` !== currentKey;
+          });
+          if (alt) {
+            plan[loserId] = { ...plan[loserId], decision: alt, coordinationNote: 'Sabotage target conflict — reassigned to a non-conflicting candidate.' };
+          } else {
+            delete plan[loserId];
+          }
+        });
+      });
+    }
+
+    return plan;
+  }, [gameSettings.parallelAiPlanningCoordinationStrictness, gameSettings.parallelAiPlanningSabotageCoordinationEnabled, gameState.roundNumber]);
+
+  // V6.8 Phase E: Parallel Planning's round-batch orchestrator — calls the snapshot-aware
+  // getRankedTeamAiDecisions once per AI actor against the frozen advanceDay snapshot, takes each
+  // actor's top 5 candidates, then coordinates the batch. Returns null (no-op) when the master
+  // toggle is off or there are no AI actors to plan for — defensive, not load-bearing, since the
+  // call site in advanceDay already gates on the same toggle before calling this at all.
+  const buildRoundAiPlanBatch = useCallback((
+    projectedActors: Record<string, ActorState>,
+    nextTeams: Record<string, TeamState>
+  ): TeamRoundPlan | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.parallelAiPlanningEnabled) return null;
+    const snapshot: RoundPlanningSnapshot = { actors: projectedActors, teams: nextTeams };
+    const aiActorIds = Object.values(projectedActors).filter(actor => actor.kind === 'ai').map(actor => actor.id);
+    if (aiActorIds.length === 0) return null;
+
+    const candidatesByActor: Record<string, ScoredTeamAiDecision[]> = {};
+    aiActorIds.forEach(actorId => {
+      const ranked = getRankedTeamAiDecisions(actorId, snapshot);
+      if (ranked.length > 0) candidatesByActor[actorId] = ranked.slice(0, 5);
+    });
+    if (Object.keys(candidatesByActor).length === 0) return null;
+
+    const coordinatedPlan = coordinateRoundPlannedDecisions(candidatesByActor, snapshot);
+    if (gameSettings.parallelAiPlanningTransparencyEnabled) {
+      Object.values(coordinatedPlan).forEach(entry => {
+        if (entry.coordinationNote) appendTeamAiTraceNote(entry.actorId, entry.coordinationNote);
+      });
+    }
+    return coordinatedPlan;
+  }, [appendTeamAiTraceNote, coordinateRoundPlannedDecisions, gameSettings.teamCompetitiveAiEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, getRankedTeamAiDecisions]);
+  buildRoundAiPlanBatchRef.current = buildRoundAiPlanBatch;
 
   const shouldTeamActorUseOverride = useCallback((actorId: string, nextDecision: ScoredTeamAiDecision | null) => {
     const actor = getActorState(actorId);
@@ -22549,6 +22793,19 @@ function AustraliaGame() {
   // this turn — cleared at the top of each actor's turn. In-memory only (not persisted),
   // used solely to satisfy safeguard #11 ("not repeating a failed action").
   const lastFailedOverrideActionRef = useRef<Record<string, string>>({});
+
+  // V6.8 Phase E: Parallel Planning's round-batch plan — transient per-round working data,
+  // intentionally never persisted (safe to discard on save/reload; a reload mid-round simply
+  // falls back to live decision-making for the remainder of that round, byte-identical to the
+  // feature never having produced a plan). Built once per round inside advanceDay, consumed
+  // (and deleted) at most once per AI actor's turn inside performTeamAiTurn.
+  const teamRoundPlanRef = useRef<TeamRoundPlan | null>(null);
+
+  // V6.8 Phase E: ref-indirection for buildRoundAiPlanBatch, which is declared much later in the
+  // file than advanceDay but must be called from inside it — the established pattern (Phase 3d)
+  // for this exact forward-reference/TDZ constraint. Assigned right after the real function's own
+  // declaration, read via .current inside advanceDay.
+  const buildRoundAiPlanBatchRef = useRef<((projectedActors: Record<string, ActorState>, nextTeams: Record<string, TeamState>) => TeamRoundPlan | null) | null>(null);
 
   // V6.7 Phase 2a: per-actor "Approve Similar Actions This Turn" flag from the ask_first
   // confirmation dialog. Turn-scoped only (cleared in finishTeamAiTurn), never persisted.
@@ -23399,12 +23656,29 @@ function AustraliaGame() {
     // confirmation dialog), not an error, so it returns normally without ever reaching the catch.
     try {
     while (actionsTaken < actionBudget) {
+      // V6.8 Phase E: Parallel Planning — consult the round-batch plan for this actor's very
+      // first action of the turn only. Single-use: deleted from the ref whether valid or not, so
+      // it's never consulted twice even across a resumed/retried turn. Byte-identical to
+      // pre-Phase-E code when the toggle is off (roundPlanEntry is always undefined in that case).
+      const roundPlanEntry = (actionsTaken === 0 && gameSettings.teamCompetitiveAiEnabled && gameSettings.parallelAiPlanningEnabled)
+        ? teamRoundPlanRef.current?.[actor.id]
+        : undefined;
+      if (roundPlanEntry) delete teamRoundPlanRef.current![actor.id];
+      const plannedDecisionValid = Boolean(roundPlanEntry) && roundPlanEntry!.round === gameState.roundNumber
+        && revalidatePlannedTeamAiDecision(actor.id, roundPlanEntry!.decision);
+      if (roundPlanEntry && gameSettings.parallelAiPlanningTransparencyEnabled) {
+        appendTeamAiTraceNote(actor.id, plannedDecisionValid
+          ? `Used planned decision: ${roundPlanEntry.decision.type}.`
+          : 'Planned decision stale at execution — re-ranked live.');
+      }
       // V6.7 Phase 3a: "does the active plan have a step for me" check, tried before falling to
       // the normal top-pick decision. Consumes ordinary per-turn budget (no bonus, no token
       // minting) — it only steers WHICH decision executes this turn, matching the plan's
       // deliberate choice that plan-step-sourced grants stay 'normal' (untokenized) in 3a.
-      const planStepMatch = findExecutableTeamPlanStepDecision(actor.id);
-      const decision = planStepMatch ? planStepMatch.decision : makeTeamAiDecision(actor.id);
+      const planStepMatch = !plannedDecisionValid ? findExecutableTeamPlanStepDecision(actor.id) : null;
+      const decision = plannedDecisionValid
+        ? roundPlanEntry!.decision
+        : (planStepMatch ? planStepMatch.decision : makeTeamAiDecision(actor.id));
       if (decision.type === 'end_turn') {
         // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
         // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
@@ -23616,7 +23890,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -25450,7 +25724,11 @@ function AustraliaGame() {
       teammatePerformanceSync2ChallengeExpertiseMaxBonus: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus,
       guaranteedRecoveryProtocolEnabled: DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
       guaranteedRecoveryMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability,
-      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled
+      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
+      parallelAiPlanningEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
+      parallelAiPlanningCoordinationStrictness: DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
+      parallelAiPlanningSabotageCoordinationEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
+      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -25545,7 +25823,11 @@ function AustraliaGame() {
       teammatePerformanceSync2ChallengeExpertiseMaxBonus: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus,
       guaranteedRecoveryProtocolEnabled: DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
       guaranteedRecoveryMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability,
-      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled
+      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
+      parallelAiPlanningEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
+      parallelAiPlanningCoordinationStrictness: DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
+      parallelAiPlanningSabotageCoordinationEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
+      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -27777,6 +28059,76 @@ function AustraliaGame() {
                           </>
                         )}
                         <div className="text-xs opacity-60">Reuses the same shared recovery flag the Team Economy Governor uses — enabling this on its own (Governor off) still correctly maintains it. The Guaranteed Recovery Protocol never forces a reckless action; if liquidation, teammate support, and a safe challenge are all unavailable, it does nothing that turn.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.parallelPlanning"
+                tab="teamModeAi"
+                title="Parallel Planning"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.parallelPlanning')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Parallel Planning has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Parallel Planning</div>
+                        <div className="text-sm opacity-75">Batch-plans every AI actor's first decision of the round off one shared, frozen snapshot, with team and match-wide coordination, before any of them execute. JavaScript has no true concurrency — execution still proceeds sequentially, exactly as today, with each planned decision re-validated against live state immediately before it's used, falling back to today's ordinary live decision-making whenever the plan is stale or invalid.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, parallelAiPlanningEnabled: !prev.parallelAiPlanningEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.parallelAiPlanningEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.parallelAiPlanningEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.parallelAiPlanningEnabled && (
+                      <>
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div>
+                              <label className="block font-semibold mb-2">Coordination Strictness</label>
+                              <div className="flex gap-2">
+                                {(['low', 'balanced', 'strict'] as TeamAiReservationStrictness[]).map(strictness => (
+                                  <button
+                                    key={strictness}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, parallelAiPlanningCoordinationStrictness: strictness }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.parallelAiPlanningCoordinationStrictness === strictness ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {strictness}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="text-xs opacity-60 mt-1">How many of each actor's top 5 candidates the same-team coordination pass inspects when avoiding a redundant same-team claim.</div>
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.parallelAiPlanningSabotageCoordinationEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, parallelAiPlanningSabotageCoordinationEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.parallelAiPlanningSabotageCoordinationEnabled ? '☑' : '☐'} Cross-Team Sabotage Coordination</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.parallelAiPlanningTransparencyEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, parallelAiPlanningTransparencyEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.parallelAiPlanningTransparencyEnabled ? '☑' : '☐'} Show in Transparency (coordination + plan-consumption reasons)</span>
+                            </label>
+                          </>
+                        )}
+                        <div className="text-xs opacity-60">Planning only ever applies to the first action of an AI actor's turn each round — every subsequent action still uses live, up-to-the-moment decision-making exactly as today.</div>
                       </>
                     )}
                   </div>
