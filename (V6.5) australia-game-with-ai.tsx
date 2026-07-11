@@ -692,6 +692,117 @@ const getActorSpendableCash = (actor: { money: number; protectedCash?: number },
   return Math.max(0, actor.money - Math.min(actor.protectedCash || 0, actor.money));
 };
 
+// V6.8 Phase C: Team Economy Governor. All three helpers below are plain, module-level pure
+// functions (not hooks) specifically so they can be called from existing functions declared at
+// any point in the file — including ones declared long before the component's other Team AI
+// checker cluster — without any forward-reference/TDZ concern.
+
+// Reuses the same percentElapsed concept Phase 3b's computeEndgameAccelerationState established,
+// but as a standalone calculation independent of that feature's own teamAiEndgameAccelerationEnabled
+// toggle — the Governor's Endgame phase is a distinct concept that can be active even when Phase
+// 3b's Endgame Acceleration feature itself is off.
+const isEndgamePeriod = (day: number, totalDays: number, startPercent: number): boolean => {
+  const percentElapsed = totalDays > 0 ? day / totalDays : 0;
+  return percentElapsed >= startPercent;
+};
+
+// Four economic phases, computed on demand (never persisted) — only the recovery flag itself
+// (ActorState.inEconomicRecovery) is persisted; everything else is derived fresh each call.
+const computeEconomicPhase = (
+  actor: { inEconomicRecovery?: boolean },
+  spendableCash: number,
+  settings: GameSettingsState,
+  endgameActive: boolean
+): EconomicPhase => {
+  if (actor.inEconomicRecovery) return 'survival';
+  if (endgameActive) return 'endgame';
+  if (spendableCash >= settings.economyRecoveryTarget) return 'compounding';
+  return 'accumulation';
+};
+
+const ECONOMY_RESERVE_STRENGTH_MULTIPLIER: Record<EconomyReserveStrength, number> = {
+  low: 0.75,
+  balanced: 1.0,
+  high: 1.35
+};
+
+// The cash amount that must remain spendable for an actor's current phase — the one reserve
+// calculation both spending approval and dynamic wager sizing consult.
+const computeDynamicReserve = (
+  phase: EconomicPhase,
+  spendableCash: number,
+  settings: GameSettingsState
+): number => {
+  const strengthMultiplier = ECONOMY_RESERVE_STRENGTH_MULTIPLIER[settings.economyReserveStrength] || 1.0;
+  switch (phase) {
+    case 'compounding':
+      return Math.round(Math.max(settings.economyCashFloor * strengthMultiplier, spendableCash * 0.25 * strengthMultiplier));
+    case 'endgame':
+      return Math.round(settings.economyCashFloor * strengthMultiplier * 0.5);
+    case 'survival':
+    case 'accumulation':
+    default:
+      return Math.round(settings.economyCashFloor * strengthMultiplier);
+  }
+};
+
+type EconomySpendCategory = 'equipment' | 'investment' | 'sabotage' | 'region_deposit' | 'travel' | 'override' | 'support';
+
+// One shared spending-approval gate, consulted as an ADDITIONAL check alongside (never replacing)
+// each category's existing affordability/ROI math. Returns approved:true (a no-op) whenever the
+// Governor is off, so every call site is byte-identical to today when the toggle is off.
+const evaluateEconomySpendingApproval = (
+  actor: { money: number; protectedCash?: number; inEconomicRecovery?: boolean },
+  category: EconomySpendCategory,
+  cost: number,
+  settings: GameSettingsState,
+  currentDay: number,
+  context?: { expectedReturn?: number }
+): { approved: boolean; reason: string; phase: EconomicPhase } => {
+  if (!settings.teamCompetitiveAiEnabled || !settings.teamEconomyGovernorEnabled) {
+    return { approved: true, reason: 'Economy Governor is off.', phase: 'accumulation' };
+  }
+  const spendableCash = getActorSpendableCash(actor, settings.teamCashVaultEnabled);
+  const endgameActive = isEndgamePeriod(currentDay, settings.totalDays, settings.teamAiEndgameStartPercent);
+  const phase = computeEconomicPhase(actor, spendableCash, settings, endgameActive);
+  const reserve = computeDynamicReserve(phase, spendableCash, settings);
+  if ((spendableCash - cost) < reserve) {
+    return { approved: false, reason: `${phase} phase reserve of $${reserve} would be breached.`, phase };
+  }
+  const strictnessMultiplier = settings.economySpendingApprovalStrictness === 'strict' ? 1.5 : settings.economySpendingApprovalStrictness === 'low' ? 0.6 : 1.0;
+  const hasProfitableReturn = Boolean(context?.expectedReturn && context.expectedReturn > cost * (1.15 * strictnessMultiplier));
+  switch (phase) {
+    case 'survival':
+      if (category === 'equipment' || category === 'investment') {
+        return { approved: false, reason: 'Survival phase blocks long-payback spending.', phase };
+      }
+      if (category === 'sabotage') {
+        return { approved: false, reason: 'Survival phase blocks ordinary sabotage spending.', phase };
+      }
+      if (category === 'region_deposit' && settings.winCondition !== 'regions') {
+        return { approved: false, reason: 'Survival phase blocks speculative region deposits.', phase };
+      }
+      if (category === 'travel' && !hasProfitableReturn) {
+        return { approved: false, reason: 'Survival phase requires a clearly profitable travel objective.', phase };
+      }
+      break;
+    case 'accumulation':
+      if ((category === 'equipment' || category === 'investment') && !hasProfitableReturn) {
+        return { approved: false, reason: 'Accumulation phase requires a clearly profitable return before committing cash.', phase };
+      }
+      break;
+    case 'endgame':
+      if ((category === 'equipment' || category === 'investment') && !(context?.expectedReturn && context.expectedReturn > cost * 2)) {
+        return { approved: false, reason: 'Endgame phase deprioritizes long-payback spending.', phase };
+      }
+      break;
+    case 'compounding':
+    default:
+      break;
+  }
+  return { approved: true, reason: `${phase} phase: approved.`, phase };
+};
+
 const detectAdaptiveAiPhase = (
   playerNetWorth: number,
   aiNetWorth: number,
@@ -2523,6 +2634,11 @@ type TeamAiReservationStrictness = 'low' | 'balanced' | 'strict';
 // floor, which does not exist yet. Stored/wired end-to-end now so it's ready for that later.
 type VaultProtectionMode = 'spending_reserve' | 'secure_vault' | 'absolute_lock';
 
+// V6.8 Phase C: Team Economy Governor tuning unions.
+type EconomyReserveStrength = 'low' | 'balanced' | 'high';
+type EconomySpendingApprovalStrictness = 'low' | 'balanced' | 'strict';
+type EconomicPhase = 'survival' | 'accumulation' | 'compounding' | 'endgame';
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -2785,6 +2901,19 @@ type GameSettingsState = {
   vaultMinimumWorkingCash: number;
   vaultCountProtectedCashTowardVictory: boolean;
   vaultTransparencyEnabled: boolean;
+  // V6.8 Phase C: Team Economy Governor (inert unless teamCompetitiveAiEnabled &&
+  // teamEconomyGovernorEnabled). inEconomicRecovery (on ActorState) is the one shared
+  // hysteresis-based recovery flag this system creates; a later Sync 2.0 phase reuses the same
+  // flag rather than building a second, competing recovery system.
+  teamEconomyGovernorEnabled: boolean;
+  economyCashFloor: number;
+  economyRecoveryTarget: number;
+  economyMinimumChallengeProbability: number;
+  economyRecoverySpendingCap: number;
+  economyReserveStrength: EconomyReserveStrength;
+  economyEndgameCashConversionEnabled: boolean;
+  economySpendingApprovalStrictness: EconomySpendingApprovalStrictness;
+  economyGovernorTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3772,6 +3901,15 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   vaultMinimumWorkingCash: 500,
   vaultCountProtectedCashTowardVictory: true,
   vaultTransparencyEnabled: true,
+  teamEconomyGovernorEnabled: false,
+  economyCashFloor: 800,
+  economyRecoveryTarget: 5000,
+  economyMinimumChallengeProbability: 0.65,
+  economyRecoverySpendingCap: 0.10,
+  economyReserveStrength: 'balanced',
+  economyEndgameCashConversionEnabled: true,
+  economySpendingApprovalStrictness: 'balanced',
+  economyGovernorTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3908,6 +4046,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'] },
   { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
   { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
+  { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -7239,6 +7378,10 @@ const initialPlayerState = {
   // anything retroactively.
   protectedCash: 0,
   vaultBaselineMilestoneIndex: -1,
+  // V6.8 Phase C: Team Economy Governor's one shared hysteresis-based recovery flag. Enters true
+  // when spendable cash drops below economyCashFloor, stays true until economyRecoveryTarget is
+  // reached. A later Sync 2.0 phase reuses this same flag rather than building a second one.
+  inEconomicRecovery: false,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -8445,6 +8588,7 @@ function AustraliaGame() {
         vaultBaselineMilestoneIndex: typeof data?.vaultBaselineMilestoneIndex === 'number' && isFinite(data.vaultBaselineMilestoneIndex)
           ? Math.max(-1, Math.floor(data.vaultBaselineMilestoneIndex))
           : -1,
+        inEconomicRecovery: typeof data?.inEconomicRecovery === 'boolean' ? data.inEconomicRecovery : false,
         loans,
         completedThisSeason,
         challengeMastery,
@@ -9006,6 +9150,30 @@ function AustraliaGame() {
         vaultTransparencyEnabled: typeof settingsData.vaultTransparencyEnabled === 'boolean'
           ? settingsData.vaultTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
+        teamEconomyGovernorEnabled: typeof settingsData.teamEconomyGovernorEnabled === 'boolean'
+          ? settingsData.teamEconomyGovernorEnabled
+          : DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
+        economyCashFloor: clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
+        // Never sanitized below economyCashFloor (post-clamp), so the recovery target can never
+        // be misconfigured lower than the floor it's supposed to be above.
+        economyRecoveryTarget: Math.max(
+          clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
+          clampSettingNumber(settingsData.economyRecoveryTarget, DEFAULT_GAME_SETTINGS.economyRecoveryTarget, 0, 100000)
+        ),
+        economyMinimumChallengeProbability: clampSettingNumber(settingsData.economyMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.economyMinimumChallengeProbability, 0, 1),
+        economyRecoverySpendingCap: clampSettingNumber(settingsData.economyRecoverySpendingCap, DEFAULT_GAME_SETTINGS.economyRecoverySpendingCap, 0, 1),
+        economyReserveStrength: ['low', 'balanced', 'high'].includes(settingsData.economyReserveStrength)
+          ? settingsData.economyReserveStrength
+          : DEFAULT_GAME_SETTINGS.economyReserveStrength,
+        economyEndgameCashConversionEnabled: typeof settingsData.economyEndgameCashConversionEnabled === 'boolean'
+          ? settingsData.economyEndgameCashConversionEnabled
+          : DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
+        economySpendingApprovalStrictness: ['low', 'balanced', 'strict'].includes(settingsData.economySpendingApprovalStrictness)
+          ? settingsData.economySpendingApprovalStrictness
+          : DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
+        economyGovernorTransparencyEnabled: typeof settingsData.economyGovernorTransparencyEnabled === 'boolean'
+          ? settingsData.economyGovernorTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -11888,6 +12056,11 @@ function AustraliaGame() {
     }
     const roiValue = (investment.dailyIncome * daysRemaining) - investment.cost;
     if (roiValue <= 0) return { region: regionCode, score: -Infinity };
+    // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
+    // existing safety-buffer/ROI checks above, never a replacement for them. No-op when off.
+    if (!evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue }).approved) {
+      return { region: regionCode, score: -Infinity };
+    }
 
     let score = roiValue * 0.12;
     if (aiState.character.aiStrategy === "money-focused") {
@@ -11944,6 +12117,11 @@ function AustraliaGame() {
     }
     // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on.
     if (getActorSpendableCash(aiState, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - item.cost < AI_SAFETY_BUFFER) {
+      return { item, score: -Infinity };
+    }
+    // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
+    // existing safety-buffer check above, never a replacement for it. No-op when off.
+    if (!evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day).approved) {
       return { item, score: -Infinity };
     }
 
@@ -16976,6 +17154,11 @@ function AustraliaGame() {
       addNotification('Not enough money to transfer.', 'warning', false, 'system');
       return false;
     }
+    // V6.8 Phase C: Economy Governor spending approval — AI donors only, additional to the
+    // existing afford-gate above. No-op when off or when the donor is a human.
+    if (fromActor.kind === 'ai' && !evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day).approved) {
+      return false;
+    }
     const teamLiquidity = analyzeTeamLiquidity(fromActor.teamId);
     const giverReserve = Math.max(550, AI_SAFETY_BUFFER, Math.round(teamLiquidity.teamAverageMoney * 0.6));
     const recipientTargetCash = Math.max(500, Math.round(teamLiquidity.teamAverageMoney * 0.85));
@@ -18694,6 +18877,24 @@ function AustraliaGame() {
               }
             }
             projected.vaultBaselineMilestoneIndex = currentTierIndex;
+          }
+        }
+
+        // V6.8 Phase C: Team Economy Governor — daily hysteresis update for the one shared
+        // recovery flag. Enters recovery below economyCashFloor, only exits once economyRecoveryTarget
+        // is reached (never on a brief bounce above the floor alone). Team Mode AI actors only.
+        if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled) {
+          const spendableForRecovery = getActorSpendableCash(projected, gameSettings.teamCashVaultEnabled);
+          if (!projected.inEconomicRecovery && spendableForRecovery < gameSettings.economyCashFloor) {
+            projected.inEconomicRecovery = true;
+            if (gameSettings.economyGovernorTransparencyEnabled) {
+              addNotification(`🤖 ${projected.name} entered Survival phase (spendable cash below $${gameSettings.economyCashFloor}).`, 'ai', true);
+            }
+          } else if (projected.inEconomicRecovery && spendableForRecovery >= gameSettings.economyRecoveryTarget) {
+            projected.inEconomicRecovery = false;
+            if (gameSettings.economyGovernorTransparencyEnabled) {
+              addNotification(`🤖 ${projected.name} recovered above $${gameSettings.economyRecoveryTarget} and left Survival phase.`, 'ai', true);
+            }
           }
         }
 
@@ -20967,9 +21168,33 @@ function AustraliaGame() {
       const successChance = calculateActorChallengeSuccessChance(challenge, actor);
       // V6.8 Phase B: wager sizing is capped by spendable (not total) cash once the Vault is on —
       // protected cash is never voluntarily wagered. Falls back to raw money when the Vault is off.
-      const wager = Math.min(getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled), Math.max(MINIMUM_WAGER, Math.floor(150 + (actor.level * 35))));
+      const spendableForWager = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+      // V6.8 Phase C: when the Governor is on, replace the fixed level-linear wager formula with a
+      // phase-aware, bankroll-aware amount, and skip challenges below the configured minimum
+      // probability entirely rather than under-wagering on them. Off by default — the original
+      // fixed formula is the literal executed code path when the Governor is off.
+      const economyGovernorActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled;
+      let wager: number;
+      if (economyGovernorActive) {
+        if (successChance < gameSettings.economyMinimumChallengeProbability) return;
+        const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+        const phase = computeEconomicPhase(actor, spendableForWager, gameSettings, endgameActive);
+        const reserve = computeDynamicReserve(phase, spendableForWager, gameSettings);
+        const surplus = Math.max(0, spendableForWager - reserve);
+        if (surplus < MINIMUM_WAGER) return;
+        const phaseWagerFraction = phase === 'survival' ? 0.05
+          : phase === 'accumulation' ? 0.15
+          : phase === 'compounding' ? Math.min(0.5, 0.2 + successChance * 0.3)
+          : 0.35; // endgame
+        wager = Math.max(MINIMUM_WAGER, Math.min(surplus, Math.floor(surplus * phaseWagerFraction)));
+      } else {
+        wager = Math.min(spendableForWager, Math.max(MINIMUM_WAGER, Math.floor(150 + (actor.level * 35))));
+      }
       if (wager < MINIMUM_WAGER) return;
-      let score = (successChance * wager * challenge.reward) - ((1 - successChance) * wager * 0.6);
+      // V6.8 Phase C: corrected challenge EV — the full wager is lost on failure (factor 1.0), not
+      // dampened to a heuristic 0.6x. Off by default, preserving the original heuristic exactly.
+      const failureCostFactor = economyGovernorActive ? 1.0 : 0.6;
+      let score = (successChance * wager * challenge.reward) - ((1 - successChance) * wager * failureCostFactor);
       if (preferredRegion && preferredRegion === actor.currentRegion) score += 65;
       if (coverRequest?.payload?.region === actor.currentRegion) score += 55;
       if (helpRequest?.payload?.region === actor.currentRegion) score += 45;
@@ -21248,6 +21473,8 @@ function AustraliaGame() {
         SABOTAGE_ACTIONS.forEach(action => {
           // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
           if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
+          // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
+          if (!evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day).approved) return;
           if (hasActiveDebuff(sabotageTarget.target.debuffs, action.id)) return;
           let score = (typeof action.aiWeight === 'number' ? action.aiWeight : 100) + sabotageTarget.pressure - (action.cost * 0.05);
           if (teamBehindOnPrimaryMetric) score += 35 * difficultyBehavior.comebackMultiplier;
@@ -21289,7 +21516,8 @@ function AustraliaGame() {
       ? currentRegionInfo.minimumPlayerDeposit
       : currentRegionInfo.minimumAiDeposit;
     // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
-    if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit && !gameSettings.negotiationMode) {
+    // V6.8 Phase C: Economy Governor spending approval is an additional && term — no-op when off.
+    if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit && !gameSettings.negotiationMode && evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day).approved) {
       let score = gameSettings.winCondition === 'regions' ? 220 : gameSettings.winCondition === 'netWorth' ? 120 : 80;
       if (preferredRegion === actor.currentRegion) score += 70;
       if (hasReservationConflict('region', actor.currentRegion)) score -= 160;
@@ -21336,6 +21564,8 @@ function AustraliaGame() {
       const cost = calculateActorTravelCost(actor.currentRegion, region, actor);
       // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
       if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) < cost) return;
+      // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
+      if (!evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day).approved) return;
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
       score += (REGIONS[region]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
       if (!actor.visitedRegions.includes(region)) score += 55;
@@ -21689,6 +21919,37 @@ function AustraliaGame() {
             delta: endgameBonus,
             reason: endgameReason
           }, [endgameReason], gameSettings.teamAiEndgameAccelerationTransparencyEnabled);
+        }
+      }
+      // V6.8 Phase C: Economy Governor endgame cash-conversion nudge — reuses this same
+      // per-win-condition switch pattern Endgame Acceleration established above, but fires only
+      // when the Governor (a separate toggle) is on AND its own endgame phase agrees, never
+      // independently and never double-counted with the Endgame Acceleration bonus above.
+      if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled && gameSettings.economyEndgameCashConversionEnabled) {
+        const governorSpendable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+        const governorEndgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+        const governorPhase = computeEconomicPhase(actor, governorSpendable, gameSettings, governorEndgameActive);
+        if (governorPhase === 'endgame') {
+          let governorBonus = 0;
+          let governorReason = '';
+          if (candidate.type === 'sell' || candidate.type === 'cashout_region') {
+            governorBonus += 15;
+            governorReason = 'Economy Governor: Endgame phase favors converting to liquid cash.';
+          }
+          if (candidate.type === 'invest' || candidate.type === 'buy_equipment') {
+            governorBonus -= 15;
+            governorReason = 'Economy Governor: Endgame phase discourages new long-payback spending.';
+          }
+          if (governorBonus !== 0) {
+            bonus += governorBonus;
+            annotated = appendDecisionScoreStageV63(annotated, {
+              id: 'economy_governor_endgame_v68',
+              label: 'Economy Governor',
+              score: baseScore + bonus,
+              delta: governorBonus,
+              reason: governorReason
+            }, [governorReason], gameSettings.economyGovernorTransparencyEnabled);
+          }
         }
       }
       return {
@@ -22064,6 +22325,10 @@ function AustraliaGame() {
     if (overrideSpendable < cost) return ineligible('Cannot afford override cost.');
     if ((overrideSpendable - cost) < gameSettings.teamAiOverrideMinimumCashReserve) {
       return ineligible('Would breach minimum cash reserve.');
+    }
+    // V6.8 Phase C: Economy Governor spending approval — additional to the reserve check above.
+    if (!evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day).approved) {
+      return ineligible('Blocked by Economy Governor spending approval.');
     }
 
     // #8: score floor, additive on top of shouldTeamActorUseOverride's own thresholds.
@@ -24616,7 +24881,16 @@ function AustraliaGame() {
       vaultMilestoneSizeMultiplier: DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier,
       vaultMinimumWorkingCash: DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash,
       vaultCountProtectedCashTowardVictory: DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
-      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled
+      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
+      teamEconomyGovernorEnabled: DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
+      economyCashFloor: DEFAULT_GAME_SETTINGS.economyCashFloor,
+      economyRecoveryTarget: DEFAULT_GAME_SETTINGS.economyRecoveryTarget,
+      economyMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.economyMinimumChallengeProbability,
+      economyRecoverySpendingCap: DEFAULT_GAME_SETTINGS.economyRecoverySpendingCap,
+      economyReserveStrength: DEFAULT_GAME_SETTINGS.economyReserveStrength,
+      economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
+      economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
+      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -24694,7 +24968,16 @@ function AustraliaGame() {
       vaultMilestoneSizeMultiplier: DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier,
       vaultMinimumWorkingCash: DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash,
       vaultCountProtectedCashTowardVictory: DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
-      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled
+      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
+      teamEconomyGovernorEnabled: DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
+      economyCashFloor: DEFAULT_GAME_SETTINGS.economyCashFloor,
+      economyRecoveryTarget: DEFAULT_GAME_SETTINGS.economyRecoveryTarget,
+      economyMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.economyMinimumChallengeProbability,
+      economyRecoverySpendingCap: DEFAULT_GAME_SETTINGS.economyRecoverySpendingCap,
+      economyReserveStrength: DEFAULT_GAME_SETTINGS.economyReserveStrength,
+      economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
+      economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
+      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -26731,6 +27014,110 @@ function AustraliaGame() {
                           </>
                         )}
                         <div className="text-xs opacity-60">Protected cash only ever increases, is never spent voluntarily, and never funds challenge wagers, travel, equipment, investments, sabotage, region deposits, market purchases, or paid overrides.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.economyGovernor"
+                tab="teamModeAi"
+                title="Team Economy Governor"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.economyGovernor')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — the Economy Governor has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Team Economy Governor</div>
+                        <div className="text-sm opacity-75">Gives each Team Mode AI actor phase-aware financial discipline (Survival/Accumulation/Compounding/Endgame), replacing the fixed challenge wager formula with bankroll-aware wagering and adding a shared spending-approval gate before risky spending.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamEconomyGovernorEnabled: !prev.teamEconomyGovernorEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamEconomyGovernorEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teamEconomyGovernorEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamEconomyGovernorEnabled && (
+                      <>
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-semibold mb-2">Cash Floor: ${gameSettings.economyCashFloor}</label>
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.economyCashFloor} onChange={(e) => setGameSettings(prev => ({ ...prev, economyCashFloor: parseInt(e.target.value) }))} className="w-full" />
+                                <div className="text-xs opacity-60 mt-1">Spendable cash below this triggers Survival phase (the shared recovery flag).</div>
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Recovery Target: ${gameSettings.economyRecoveryTarget}</label>
+                                <input type="range" min="0" max="20000" step="100" value={gameSettings.economyRecoveryTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoveryTarget: parseInt(e.target.value) }))} className="w-full" />
+                                <div className="text-xs opacity-60 mt-1">Spendable cash must reach this (never lower than the Cash Floor) to exit Survival phase.</div>
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Challenge Probability: {Math.round(gameSettings.economyMinimumChallengeProbability * 100)}%</label>
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyMinimumChallengeProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, economyMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
+                                <div className="text-xs opacity-60 mt-1">Challenges below this success chance are skipped entirely, never under-wagered.</div>
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Recovery Spending Cap: {Math.round(gameSettings.economyRecoverySpendingCap * 100)}%</label>
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyRecoverySpendingCap} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoverySpendingCap: parseFloat(e.target.value) }))} className="w-full" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Reserve Strength</label>
+                              <div className="flex gap-2">
+                                {(['low', 'balanced', 'high'] as EconomyReserveStrength[]).map(strength => (
+                                  <button
+                                    key={strength}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, economyReserveStrength: strength }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.economyReserveStrength === strength ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {strength}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Spending Approval Strictness</label>
+                              <div className="flex gap-2">
+                                {(['low', 'balanced', 'strict'] as EconomySpendingApprovalStrictness[]).map(strictness => (
+                                  <button
+                                    key={strictness}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, economySpendingApprovalStrictness: strictness }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.economySpendingApprovalStrictness === strictness ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {strictness}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.economyEndgameCashConversionEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, economyEndgameCashConversionEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.economyEndgameCashConversionEnabled ? '☑' : '☐'} Endgame Cash-Conversion Nudge</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.economyGovernorTransparencyEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, economyGovernorTransparencyEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.economyGovernorTransparencyEnabled ? '☑' : '☐'} Show in Transparency (phase notifications + Decision Transparency reasons)</span>
+                            </label>
+                          </>
+                        )}
+                        <div className="text-xs opacity-60">Four economic phases — Survival, Accumulation, Compounding, Endgame — govern wager sizing and an additional spending-approval check on top of every existing affordability gate. Never overrides an existing check that already blocked a spend, only adds more.</div>
                       </>
                     )}
                   </div>
@@ -30974,6 +31361,36 @@ function AustraliaGame() {
 	                          <div>Spendable: ${(totalMoney - totalProtected).toLocaleString()}</div>
 	                          <div>Protected: ${totalProtected.toLocaleString()}</div>
 	                          <div>Total: ${totalMoney.toLocaleString()}</div>
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
+	              )}
+
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled && gameSettings.economyGovernorTransparencyEnabled && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">Economy Governor</span>
+	                    <span>Phase-aware spending discipline</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(governorTeamId => {
+	                      const governorActors = getTeamActors(governorTeamId).filter(a => a.kind === 'ai');
+	                      const teamLabel = governorTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+	                      return (
+	                        <div key={governorTeamId} className={`${governorTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
+	                          <div className="font-semibold mb-1">{teamLabel}</div>
+	                          {governorActors.map(governorActor => {
+	                            const governorSpendable = getActorSpendableCash(governorActor, gameSettings.teamCashVaultEnabled);
+	                            const governorEndgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+	                            const governorPhase = computeEconomicPhase(governorActor, governorSpendable, gameSettings, governorEndgameActive);
+	                            return (
+	                              <div key={governorActor.id}>
+	                                {getActorDisplayName(governorActor.id)}: <span className="capitalize">{governorPhase}</span>
+	                              </div>
+	                            );
+	                          })}
 	                        </div>
 	                      );
 	                    })}
