@@ -1895,6 +1895,16 @@ interface TeammatePerformanceSample {
   impact: number;
 }
 
+// V6.8 Phase D: Teammate Performance Sync 2.0's realized-value tracking — a parallel structure to
+// TeammatePerformanceSample above, storing actual net-worth-delta outcomes rather than hand-tuned
+// heuristic impact scores. Never mutates or replaces TeammatePerformanceSample/
+// recentPerformanceByActor, which Sync 1.0 still needs unchanged.
+interface RealizedValueSample {
+  turn: number;
+  category: TeammatePerformanceActionType; // reuses Sync 1.0's exact 5-category taxonomy
+  netWorthDelta: number;
+}
+
 interface TeamGoal {
   id: string;
   kind: 'money' | 'netWorth' | 'regions' | 'support' | 'crafting' | 'control' | 'sabotage' | 'recovery';
@@ -2527,6 +2537,9 @@ interface TeamState {
   scoreBreakdown: TeamScoreBreakdown;
   contributionByActor: Record<string, ActorContributionStats>;
   recentPerformanceByActor: Record<string, TeammatePerformanceSample[]>;
+  // V6.8 Phase D: Teammate Performance Sync 2.0's realized-value samples — a parallel structure
+  // to recentPerformanceByActor above, never merged with or replacing it.
+  realizedPerformanceByActor: Record<string, RealizedValueSample[]>;
   supportLedger: TeamSupportLedger;
   adaptiveState: TeamAdaptiveState;
   teamActionBank: TeamActionBankState;
@@ -2914,6 +2927,18 @@ type GameSettingsState = {
   economyEndgameCashConversionEnabled: boolean;
   economySpendingApprovalStrictness: EconomySpendingApprovalStrictness;
   economyGovernorTransparencyEnabled: boolean;
+  // V6.8 Phase D: Teammate Performance Sync 2.0 — a stronger, optional, mutually-exclusive
+  // alternative to Teammate Performance Sync (teammatePerformanceSyncEnabled above). When on, it
+  // supersedes Sync 1.0 team-mode-wide (Sync 1.0 becomes an inert no-op). Reuses ActorState's
+  // shared inEconomicRecovery flag (added by the Economy Governor) rather than a second one.
+  teammatePerformanceSync2Enabled: boolean;
+  teammatePerformanceSync2Strength: number;
+  teammatePerformanceSync2StrategyLearningEnabled: boolean;
+  teammatePerformanceSync2ChallengeExpertiseEnabled: boolean;
+  teammatePerformanceSync2ChallengeExpertiseMaxBonus: number;
+  guaranteedRecoveryProtocolEnabled: boolean;
+  guaranteedRecoveryMinimumChallengeProbability: number;
+  teammatePerformanceSync2TransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3910,6 +3935,14 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   economyEndgameCashConversionEnabled: true,
   economySpendingApprovalStrictness: 'balanced',
   economyGovernorTransparencyEnabled: true,
+  teammatePerformanceSync2Enabled: false,
+  teammatePerformanceSync2Strength: 1.0,
+  teammatePerformanceSync2StrategyLearningEnabled: true,
+  teammatePerformanceSync2ChallengeExpertiseEnabled: true,
+  teammatePerformanceSync2ChallengeExpertiseMaxBonus: 0.08,
+  guaranteedRecoveryProtocolEnabled: false,
+  guaranteedRecoveryMinimumChallengeProbability: 0.55,
+  teammatePerformanceSync2TransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -4047,6 +4080,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
   { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
   { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
+  { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -5347,6 +5381,102 @@ const computeRecentActorPerformance = (samples: TeammatePerformanceSample[]) => 
 
   const normalized = totalWeight > 0 ? (weightedImpact / totalWeight) : 0;
   return Math.max(-TEAMMATE_PERFORMANCE_SYNC_MAX, Math.min(TEAMMATE_PERFORMANCE_SYNC_MAX, normalized * TEAMMATE_PERFORMANCE_SYNC_MAX));
+};
+
+// V6.8 Phase D: Teammate Performance Sync 2.0 — realized-value tracking constants/helpers, kept
+// as plain module-level pure functions (not hooks) so they're callable from anywhere in the file
+// regardless of declaration order, following the exact TDZ-avoidance pattern V6.8 Phase C
+// established for its own module-level helpers.
+const SYNC2_REALIZED_VALUE_WINDOW = 8;
+const SYNC2_RECENCY_WEIGHTS = [1, 0.88, 0.78, 0.68, 0.6, 0.52, 0.46, 0.4];
+// V6.8 Phase D: Guaranteed Recovery Protocol Tier 2's fixed teammate-support transfer size.
+const GUARANTEED_RECOVERY_TEAMMATE_TRANSFER_AMOUNT = 500;
+
+const createDefaultRealizedPerformanceByActor = (actorIds: string[]) => {
+  return actorIds.reduce<Record<string, RealizedValueSample[]>>((acc, actorId) => {
+    acc[actorId] = [];
+    return acc;
+  }, {});
+};
+
+const sanitizeRealizedValueSamples = (samples: unknown): RealizedValueSample[] => {
+  if (!Array.isArray(samples)) return [];
+  return samples
+    .map(sample => {
+      if (!sample || typeof sample !== 'object') return null;
+      const category = (sample as RealizedValueSample).category;
+      if (!['challenge', 'craft', 'economy', 'support', 'control'].includes(category)) {
+        return null;
+      }
+      return {
+        turn: typeof (sample as RealizedValueSample).turn === 'number' && isFinite((sample as RealizedValueSample).turn)
+          ? Math.floor((sample as RealizedValueSample).turn)
+          : 0,
+        category,
+        netWorthDelta: typeof (sample as RealizedValueSample).netWorthDelta === 'number' && isFinite((sample as RealizedValueSample).netWorthDelta)
+          ? (sample as RealizedValueSample).netWorthDelta
+          : 0
+      } as RealizedValueSample;
+    })
+    .filter((sample): sample is RealizedValueSample => Boolean(sample))
+    .slice(-SYNC2_REALIZED_VALUE_WINDOW);
+};
+
+const computeRecentRealizedPerformance = (samples: RealizedValueSample[], referenceScale: number): number => {
+  const recentSamples = (Array.isArray(samples) ? samples : [])
+    .slice(-SYNC2_REALIZED_VALUE_WINDOW)
+    .reverse();
+  if (recentSamples.length === 0) return 0;
+
+  const scale = Math.max(100, (isFinite(referenceScale) ? referenceScale : 0) * 0.15);
+  let weightedDelta = 0;
+  let totalWeight = 0;
+  recentSamples.forEach((sample, index) => {
+    const weight = SYNC2_RECENCY_WEIGHTS[index] || SYNC2_RECENCY_WEIGHTS[SYNC2_RECENCY_WEIGHTS.length - 1];
+    weightedDelta += (sample.netWorthDelta / scale) * weight;
+    totalWeight += weight;
+  });
+
+  const normalized = totalWeight > 0 ? (weightedDelta / totalWeight) : 0;
+  return Math.max(-1, Math.min(1, normalized));
+};
+
+// V6.8 Phase D: strategy learning — a bounded, per-actor, per-category "what's-been-working-for-
+// me" bias, computed only from the actor's OWN realized-value samples (never the teammate's).
+const computeCategoryStrategyLearningBias = (
+  ownSamples: RealizedValueSample[],
+  category: TeammatePerformanceActionType,
+  referenceScale: number
+): number => {
+  const matching = (Array.isArray(ownSamples) ? ownSamples : []).filter(sample => sample.category === category);
+  if (matching.length === 0) return 0;
+  const scale = Math.max(100, (isFinite(referenceScale) ? referenceScale : 0) * 0.15);
+  const averageDelta = matching.reduce((sum, sample) => sum + sample.netWorthDelta, 0) / matching.length;
+  return Math.max(-1, Math.min(1, averageDelta / scale));
+};
+
+// V6.8 Phase D: maps an AI decision type onto Sync 1.0's exact 5-category taxonomy, reused here so
+// realized-value samples/strategy-learning buckets stay directly comparable to Sync 1.0's own
+// per-decision-type scoring table.
+const mapAiActionTypeToPerformanceCategory = (actionType: AIAction['type']): TeammatePerformanceActionType => {
+  if (actionType === 'challenge') return 'challenge';
+  if (actionType === 'craft') return 'craft';
+  if (actionType === 'give_cash' || actionType === 'give_resource') return 'support';
+  if (actionType === 'sabotage' || actionType === 'region_deposit' || actionType === 'travel' || actionType === 'special_ability') return 'control';
+  return 'economy';
+};
+
+// V6.8 Phase D: category-specific challenge expertise bonus, additive into
+// calculateActorChallengeSuccessChance's existing bonusChance parameter — composes with, never
+// replaces, the Team Initiative "challenge assist" bonus. Diminishing returns, capped by setting.
+const getChallengeCategoryExpertiseBonus = (
+  actor: { challengeCategoryExpertise?: Record<string, number> },
+  challengeType: string,
+  settings: GameSettingsState
+): number => {
+  if (!settings.teammatePerformanceSync2Enabled || !settings.teammatePerformanceSync2ChallengeExpertiseEnabled) return 0;
+  const wins = actor.challengeCategoryExpertise?.[challengeType] || 0;
+  return Math.min(settings.teammatePerformanceSync2ChallengeExpertiseMaxBonus, wins * 0.01);
 };
 
 const formatTeammatePerformanceSyncLabel = (modifier: number) => {
@@ -7319,6 +7449,7 @@ const createDefaultTeamState = (
     return acc;
   }, {}),
   recentPerformanceByActor: createDefaultRecentPerformanceByActor(actorIds),
+  realizedPerformanceByActor: createDefaultRealizedPerformanceByActor(actorIds),
   supportLedger: createDefaultTeamSupportLedger(),
   adaptiveState: createDefaultTeamAdaptiveState(),
   teamActionBank: createDefaultTeamActionBankState(),
@@ -7394,6 +7525,9 @@ const initialPlayerState = {
   daysSinceLastBankruptcy: 0,
   completedThisSeason: [] as string[],
   challengeMastery: {} as Record<string, number>,
+  // V6.8 Phase D: Teammate Performance Sync 2.0's category-specific challenge expertise, keyed by
+  // challenge.type (physical/social/wildlife/intelligence) rather than challenge name.
+  challengeCategoryExpertise: {} as Record<string, number>,
   stipendCooldown: 0,
   investments: [] as string[],
   equipment: [] as string[],
@@ -8518,6 +8652,7 @@ function AustraliaGame() {
       const mastery = Array.isArray(data?.masteryUnlocks) ? data.masteryUnlocks.map(String) : [];
       const completedThisSeason = Array.isArray(data?.completedThisSeason) ? data.completedThisSeason.map(String) : [];
       const challengeMastery = typeof data?.challengeMastery === 'object' && data.challengeMastery !== null ? data.challengeMastery : {};
+      const challengeCategoryExpertise = typeof data?.challengeCategoryExpertise === 'object' && data.challengeCategoryExpertise !== null ? data.challengeCategoryExpertise : {};
       const investments = Array.isArray(data?.investments)
         ? data.investments.filter((regionCode: string) => REGIONAL_INVESTMENTS[regionCode]).map(String)
         : [];
@@ -8592,6 +8727,7 @@ function AustraliaGame() {
         loans,
         completedThisSeason,
         challengeMastery,
+        challengeCategoryExpertise,
         stipendCooldown: typeof data?.stipendCooldown === 'number' ? data.stipendCooldown : 0,
         investments,
         equipment,
@@ -8771,6 +8907,7 @@ function AustraliaGame() {
       ? Object.entries(raw.teamsById).reduce<Record<string, TeamState>>((acc, [teamId, teamData]: [string, any]) => {
           const actorIds: string[] = Array.isArray(teamData?.actorIds) ? teamData.actorIds.map(String) : [];
           const defaultRecentPerformanceByActor = createDefaultRecentPerformanceByActor(actorIds);
+          const defaultRealizedPerformanceByActor = createDefaultRealizedPerformanceByActor(actorIds);
           acc[teamId] = {
             ...createDefaultTeamState(teamId, teamData?.name || teamId, actorIds, teamData?.color || '#3b82f6'),
             ...teamData,
@@ -8795,6 +8932,10 @@ function AustraliaGame() {
               : {},
             recentPerformanceByActor: actorIds.reduce<Record<string, TeammatePerformanceSample[]>>((historyByActor, actorId) => {
               historyByActor[actorId] = sanitizeTeammatePerformanceSamples(teamData?.recentPerformanceByActor?.[actorId] || defaultRecentPerformanceByActor[actorId]);
+              return historyByActor;
+            }, {}),
+            realizedPerformanceByActor: actorIds.reduce<Record<string, RealizedValueSample[]>>((historyByActor, actorId) => {
+              historyByActor[actorId] = sanitizeRealizedValueSamples(teamData?.realizedPerformanceByActor?.[actorId] || defaultRealizedPerformanceByActor[actorId]);
               return historyByActor;
             }, {}),
             supportLedger: sanitizeTeamSupportLedger(teamData?.supportLedger),
@@ -9174,6 +9315,24 @@ function AustraliaGame() {
         economyGovernorTransparencyEnabled: typeof settingsData.economyGovernorTransparencyEnabled === 'boolean'
           ? settingsData.economyGovernorTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+        teammatePerformanceSync2Enabled: typeof settingsData.teammatePerformanceSync2Enabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2Enabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
+        teammatePerformanceSync2Strength: clampSettingNumber(settingsData.teammatePerformanceSync2Strength, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength, 0, 2),
+        teammatePerformanceSync2StrategyLearningEnabled: typeof settingsData.teammatePerformanceSync2StrategyLearningEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2StrategyLearningEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
+        teammatePerformanceSync2ChallengeExpertiseEnabled: typeof settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseEnabled,
+        teammatePerformanceSync2ChallengeExpertiseMaxBonus: clampSettingNumber(settingsData.teammatePerformanceSync2ChallengeExpertiseMaxBonus, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus, 0, 0.2),
+        guaranteedRecoveryProtocolEnabled: typeof settingsData.guaranteedRecoveryProtocolEnabled === 'boolean'
+          ? settingsData.guaranteedRecoveryProtocolEnabled
+          : DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
+        guaranteedRecoveryMinimumChallengeProbability: clampSettingNumber(settingsData.guaranteedRecoveryMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability, 0, 1),
+        teammatePerformanceSync2TransparencyEnabled: typeof settingsData.teammatePerformanceSync2TransparencyEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2TransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -10225,6 +10384,33 @@ function AustraliaGame() {
     }));
   }, [gameState.selectedMode, gameState.turnCounter, updateTeamState]);
 
+  // V6.8 Phase D: Teammate Performance Sync 2.0's realized-value sample recorder — structural
+  // mirror of appendTeammatePerformanceSample above, writing to the separate
+  // realizedPerformanceByActor field so Sync 1.0's own pipeline is never touched.
+  const appendRealizedValueSample = useCallback((teamId: string, actorId: string, sample: RealizedValueSample) => {
+    if (!isTeamModeSelection(gameState.selectedMode)) return;
+    const team = teamsByIdRef.current[teamId];
+    if (!team || !(team.actorIds || []).includes(actorId) || (team.actorIds || []).length < 2) return;
+
+    const nextSample: RealizedValueSample = {
+      turn: typeof sample.turn === 'number' && isFinite(sample.turn) ? Math.max(0, Math.floor(sample.turn)) : gameState.turnCounter,
+      category: sample.category,
+      netWorthDelta: isFinite(sample.netWorthDelta) ? sample.netWorthDelta : 0
+    };
+
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      realizedPerformanceByActor: {
+        ...createDefaultRealizedPerformanceByActor(prev.actorIds || []),
+        ...(prev.realizedPerformanceByActor || {}),
+        [actorId]: sanitizeRealizedValueSamples([
+          ...((prev.realizedPerformanceByActor?.[actorId] || []).slice(-(SYNC2_REALIZED_VALUE_WINDOW - 1))),
+          nextSample
+        ])
+      }
+    }));
+  }, [gameState.selectedMode, gameState.turnCounter, updateTeamState]);
+
   const getTeammateForSync = useCallback((actorId: string, team: TeamState | null | undefined) => {
     if (!team) return null;
     const teammateId = (team.actorIds || []).find(id => id !== actorId);
@@ -10362,6 +10548,54 @@ function AustraliaGame() {
     ) * Math.max(0, gameSettings.teammatePerformanceSyncStrength || 1);
     return Math.max(-TEAM_SYNC_EFFECTIVE_MAX, Math.min(TEAM_SYNC_EFFECTIVE_MAX, combinedNormalized * TEAM_SYNC_EFFECTIVE_MAX));
   }, [analyzeTeamLiquidityForSync, gameSettings.teammatePerformanceSyncStrength, gameSettings.winCondition, gameState.resourcePrices, gameState.selectedMode, getActorState, getTeammateForSync]);
+
+  // V6.8 Phase D: Teammate Performance Sync 2.0's modifier — a structural mirror of
+  // getTeammatePerformanceSyncModifier above (same 4-component weighted shape: recent performance
+  // 0.45, starvation 0.25, net-worth-gap 0.2, action-lock 0.1). The one substituted component:
+  // recent performance reads realizedPerformanceByActor (actual net-worth deltas) via
+  // computeRecentRealizedPerformance instead of recentPerformanceByActor (heuristic impact scores)
+  // via computeRecentActorPerformance. Deliberately NOT extracted into a shared helper with Sync
+  // 1.0's function — matches this codebase's established precedent of parallel, not shared,
+  // per-system functions (e.g. the Governor and Sync 1.0 never share a helper either).
+  const getTeammatePerformanceSync2Modifier = useCallback((actorId: string) => {
+    if (!isTeamModeSelection(gameState.selectedMode)) return 0;
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai') return 0;
+    const team = teamsByIdRef.current[actor.teamId];
+    const teammate = getTeammateForSync(actorId, team);
+    if (!team || !teammate) return 0;
+    const liquidityAnalysis = analyzeTeamLiquidityForSync(actor.teamId);
+    const actorLiquidity = liquidityAnalysis.byActorId[actorId];
+    const teammateLiquidity = liquidityAnalysis.byActorId[teammate.id];
+    const recentPerformanceNormalized = computeRecentRealizedPerformance(team.realizedPerformanceByActor?.[teammate.id] || [], liquidityAnalysis.teamAverageMoney);
+    const starvationComponent = !actorLiquidity
+      ? 0
+      : actorLiquidity.liquidityState === 'BROKE'
+        ? -1
+        : actorLiquidity.liquidityState === 'UNDERFUNDED'
+          ? -0.72
+          : actorLiquidity.liquidityState === 'CARRYING'
+            ? 0.18
+            : actorLiquidity.liquidityState === 'RICH'
+              ? 0.12
+              : 0;
+    const actorNetWorth = actorLiquidity?.netWorth || calculateNetWorth(actor, gameState.resourcePrices);
+    const teammateNetWorth = teammateLiquidity?.netWorth || calculateNetWorth(teammate, gameState.resourcePrices);
+    const netWorthGapComponent = Math.max(-1, Math.min(1, (actorNetWorth - teammateNetWorth) / Math.max(1, Math.max(actorNetWorth, teammateNetWorth))));
+    const actionLockComponent = actor.money < Math.max(MINIMUM_WAGER, Math.round((liquidityAnalysis.teamAverageMoney || 0) * 0.45))
+      && (actor.inventory?.length || 0) === 0
+      ? -1
+      : actor.money < getWinMetricLowCashThreshold(gameSettings.winCondition)
+        ? -0.45
+        : 0;
+    const combinedNormalized = (
+      (recentPerformanceNormalized * 0.45) +
+      (starvationComponent * 0.25) +
+      (netWorthGapComponent * 0.2) +
+      (actionLockComponent * 0.1)
+    ) * Math.max(0, gameSettings.teammatePerformanceSync2Strength || 1);
+    return Math.max(-TEAM_SYNC_EFFECTIVE_MAX, Math.min(TEAM_SYNC_EFFECTIVE_MAX, combinedNormalized * TEAM_SYNC_EFFECTIVE_MAX));
+  }, [analyzeTeamLiquidityForSync, gameSettings.teammatePerformanceSync2Strength, gameSettings.winCondition, gameState.resourcePrices, gameState.selectedMode, getActorState, getTeammateForSync]);
 
   const getTeammatePerformanceSyncDetails = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -10588,7 +10822,11 @@ function AustraliaGame() {
       speculativeTravel?: boolean;
     }
   ) => {
-    if (!gameSettings.teammatePerformanceSyncEnabled || !isTeamModeSelection(gameState.selectedMode)) {
+    // V6.8 Phase D: Sync 2.0 is a stronger, mutually-exclusive alternative to Sync 1.0 — when its
+    // master toggle is on, Sync 1.0 becomes an unconditional no-op team-mode-wide (Sync 1.0 has no
+    // per-actor opt-in today either, so this is the honest scope of "alternative"). One added
+    // clause; no other line in this function changes.
+    if (!gameSettings.teammatePerformanceSyncEnabled || gameSettings.teammatePerformanceSync2Enabled || !isTeamModeSelection(gameState.selectedMode)) {
       return decision;
     }
 
@@ -10707,7 +10945,158 @@ function AustraliaGame() {
         ? `${formatTeammatePerformanceSyncLabel(modifier)} • Source ${syncDetails.sourceActor?.displayName || syncDetails.sourceActor?.name || 'teammate'}`
         : formatTeammatePerformanceSyncLabel(modifier)
     });
-  }, [appendDecisionScoreStage, ensureDecisionBaseScoreStage, gameSettings.teammatePerformanceSyncEnabled, gameState.selectedMode, getActorState, getTeammatePerformanceSyncDetails]);
+  }, [appendDecisionScoreStage, ensureDecisionBaseScoreStage, gameSettings.teammatePerformanceSyncEnabled, gameSettings.teammatePerformanceSync2Enabled, gameState.selectedMode, getActorState, getTeammatePerformanceSyncDetails]);
+
+  // V6.8 Phase D: Teammate Performance Sync 2.0's decision-scoring application — a structural
+  // mirror of applyTeammatePerformanceSyncToDecision above (identical per-decision-type table),
+  // plus one more additive term: a bounded per-actor, per-category "strategy learning" bias
+  // (GD3) computed from the actor's OWN realized-value samples, gated by its own sub-toggle.
+  const applyTeammatePerformanceSync2ToDecision = useCallback((
+    decision: AIAction & { score: number; plan: ActorAiPlan },
+    options: {
+      actorId: string;
+      modifier: number;
+      directiveAligned?: boolean;
+      respondsToSupport?: boolean;
+      teamPriority?: boolean;
+      lowConfidenceChallenge?: boolean;
+      positiveEconomy?: boolean;
+      speculativeTravel?: boolean;
+    }
+  ) => {
+    if (!gameSettings.teammatePerformanceSync2Enabled || !isTeamModeSelection(gameState.selectedMode)) {
+      return decision;
+    }
+
+    const actor = getActorState(options.actorId);
+    if (!actor || actor.kind !== 'ai') return decision;
+
+    const modifier = Math.max(-TEAM_SYNC_EFFECTIVE_MAX, Math.min(TEAM_SYNC_EFFECTIVE_MAX, options.modifier || 0));
+
+    const baseDecision = ensureDecisionBaseScoreStage(decision);
+    const momentumBias = Math.max(modifier, 0);
+    const recoveryBias = Math.max(-modifier, 0);
+    let nextScore = baseDecision.score;
+    let nextData = baseDecision.data;
+
+    if (modifier !== 0) {
+      if (baseDecision.type === 'challenge') {
+        nextScore += momentumBias * 120;
+        if (options.lowConfidenceChallenge) {
+          nextScore -= recoveryBias * 35;
+        }
+        if (typeof baseDecision.data?.wager === 'number') {
+          const wagerMultiplier = Math.max(0.92, Math.min(1.06, 1 + (momentumBias * 0.5) - (recoveryBias * 0.25)));
+          nextData = {
+            ...baseDecision.data,
+            wager: Math.max(
+              MINIMUM_WAGER,
+              Math.min(actor.money, Math.floor(baseDecision.data.wager * wagerMultiplier))
+            )
+          };
+        }
+      }
+      if (baseDecision.type === 'sell') {
+        nextScore += (recoveryBias * 135) + (momentumBias * 34);
+      }
+      if (baseDecision.type === 'craft') {
+        nextScore += (momentumBias * 84) + (recoveryBias * 72);
+      }
+      if (baseDecision.type === 'buy_market') {
+        nextScore += (recoveryBias * 96) + (momentumBias * 50);
+      }
+      if (baseDecision.type === 'travel') {
+        nextScore += (momentumBias * 52) - (recoveryBias * 28);
+      }
+      if (baseDecision.type === 'region_deposit') {
+        nextScore += (recoveryBias * 126) + (momentumBias * 64);
+      }
+      if (baseDecision.type === 'cashout_region') {
+        nextScore += (recoveryBias * 145) - (momentumBias * 38);
+      }
+      if (baseDecision.type === 'give_cash' || baseDecision.type === 'give_resource') {
+        nextScore += (recoveryBias * 190) + (momentumBias * 58);
+      }
+      if (baseDecision.type === 'invest') {
+        nextScore += (momentumBias * 56) - (recoveryBias * 80);
+      }
+      if (baseDecision.type === 'buy_equipment') {
+        nextScore += (momentumBias * 42) - (recoveryBias * 65);
+      }
+      if (baseDecision.type === 'sabotage') {
+        nextScore += (momentumBias * 66) - (recoveryBias * 48);
+      }
+
+      if (options.respondsToSupport) {
+        nextScore += (recoveryBias * 175) + (momentumBias * 62);
+      }
+      if (options.directiveAligned) {
+        nextScore += (momentumBias * 75) + (recoveryBias * 110);
+      }
+      if (options.teamPriority) {
+        nextScore += (recoveryBias * 160) + (momentumBias * 70);
+      }
+      if (options.positiveEconomy && baseDecision.score > 0) {
+        nextScore += recoveryBias * 110;
+      }
+      if (options.speculativeTravel) {
+        nextScore -= recoveryBias * 85;
+      }
+    }
+
+    // GD3: strategy learning — bounded, per-actor, per-category bias from the actor's OWN
+    // realized-value samples only (never the teammate's), independently toggleable.
+    let strategyLearningDelta = 0;
+    if (gameSettings.teammatePerformanceSync2StrategyLearningEnabled) {
+      const team = teamsByIdRef.current[actor.teamId];
+      const liquidityAnalysis = analyzeTeamLiquidityForSync(actor.teamId);
+      const ownSamples = team?.realizedPerformanceByActor?.[actor.id] || [];
+      const category = mapAiActionTypeToPerformanceCategory(baseDecision.type);
+      const strategyBias = computeCategoryStrategyLearningBias(ownSamples, category, liquidityAnalysis.teamAverageMoney);
+      strategyLearningDelta = strategyBias * 60 * Math.max(0, gameSettings.teammatePerformanceSync2Strength || 1);
+      nextScore += strategyLearningDelta;
+    }
+
+    if (modifier === 0 && strategyLearningDelta === 0) return decision;
+
+    const confidenceDelta = Math.max(-0.06, Math.min(0.06, (modifier / TEAM_SYNC_EFFECTIVE_MAX) * 0.06));
+    const nextDecision = {
+      ...baseDecision,
+      data: nextData,
+      score: nextScore,
+      plan: {
+        ...baseDecision.plan,
+        confidence: Math.max(0, Math.min(1, baseDecision.plan.confidence + confidenceDelta))
+      }
+    };
+    const influenceDelta = nextScore - baseDecision.score;
+    const teammate = getTeammateForSync(options.actorId, teamsByIdRef.current[actor.teamId]);
+    const nextDecisionWithMeta = {
+      ...nextDecision,
+      data: {
+        ...(nextDecision.data || {}),
+        sync2Meta: {
+          modifier,
+          strategyLearningDelta,
+          influenceDelta,
+          sourceActorId: teammate?.id || null,
+          sourceActorName: teammate?.displayName || teammate?.name || null,
+          teamId: actor.teamId,
+          teamName: teamsByIdRef.current[actor.teamId]?.name || actor.teamId
+        }
+      }
+    };
+    if (nextScore === baseDecision.score) {
+      return nextDecisionWithMeta;
+    }
+    return appendDecisionScoreStage(nextDecisionWithMeta, {
+      id: 'team_sync_2',
+      label: 'Teammate Sync 2.0',
+      score: nextScore,
+      delta: influenceDelta,
+      reason: `Sync 2.0: ${modifier >= 0 ? 'boosted' : 'stabilized'} (${Math.round(modifier * 100)}%)${strategyLearningDelta !== 0 ? ` • Strategy learning ${strategyLearningDelta >= 0 ? '+' : ''}${Math.round(strategyLearningDelta)}` : ''}`
+    });
+  }, [analyzeTeamLiquidityForSync, appendDecisionScoreStage, ensureDecisionBaseScoreStage, gameSettings.teammatePerformanceSync2Enabled, gameSettings.teammatePerformanceSync2StrategyLearningEnabled, gameSettings.teammatePerformanceSync2Strength, gameState.selectedMode, getActorState, getTeammateForSync]);
 
   const applyDirectiveStrengthToDecision = useCallback((
     decision: AIAction & { score: number; plan: ActorAiPlan },
@@ -18747,6 +19136,7 @@ function AustraliaGame() {
           masteryUnlocks: [...(actor.masteryUnlocks || [])],
           completedThisSeason: [...(actor.completedThisSeason || [])],
           challengeMastery: { ...(actor.challengeMastery || {}) },
+          challengeCategoryExpertise: { ...(actor.challengeCategoryExpertise || {}) },
           loans: [...(actor.loans || [])],
           investments: [...(actor.investments || [])],
           equipment: [...(actor.equipment || [])],
@@ -18883,7 +19273,10 @@ function AustraliaGame() {
         // V6.8 Phase C: Team Economy Governor — daily hysteresis update for the one shared
         // recovery flag. Enters recovery below economyCashFloor, only exits once economyRecoveryTarget
         // is reached (never on a brief bounce above the floor alone). Team Mode AI actors only.
-        if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled) {
+        // V6.8 Phase D: this same block also runs when Sync 2.0 (teammatePerformanceSync2Enabled)
+        // is on, even if the Governor itself is off — otherwise the Guaranteed Recovery Protocol's
+        // shared inEconomicRecovery flag would stay permanently false with the Governor disabled.
+        if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && (gameSettings.teamEconomyGovernorEnabled || gameSettings.teammatePerformanceSync2Enabled)) {
           const spendableForRecovery = getActorSpendableCash(projected, gameSettings.teamCashVaultEnabled);
           if (!projected.inEconomicRecovery && spendableForRecovery < gameSettings.economyCashFloor) {
             projected.inEconomicRecovery = true;
@@ -19899,13 +20292,18 @@ function AustraliaGame() {
   const takeChallengeForActor = useCallback((actorId: string, challenge: any, wager: number, bonusSuccessChance: number = 0) => {
     const actor = getActorState(actorId);
     if (!actor || actor.money < wager) return false;
-    const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance);
+    // V6.8 Phase D: category-specific challenge expertise composes additively into bonusChance,
+    // alongside (never replacing) the caller's own bonusSuccessChance (e.g. Team Initiative's
+    // challenge-assist spend). No-op (0) when Sync 2.0 or its expertise sub-toggle is off.
+    const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance + getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings));
     const success = aiRandom() < successChance;
     if (success) {
       let reward = Math.floor(wager * challenge.reward);
       if (actor.character.name === "Tourist") reward = Math.floor(reward * 1.2);
       if (actor.character.name === "Businessman") reward = Math.floor(reward * 1.1);
       const nextMasteryCount = (actor.challengeMastery?.[challenge.name] || 0) + 1;
+      const isTeamModeAiActorForExpertise = isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled && gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled;
+      const nextCategoryExpertiseCount = (actor.challengeCategoryExpertise?.[challenge.type] || 0) + 1;
       const xpGain = challenge.difficulty * 20;
       updateActorState(actorId, prev => {
         const newXp = prev.xp + xpGain;
@@ -19925,6 +20323,9 @@ function AustraliaGame() {
           challengesCompleted: [...prev.challengesCompleted, challenge.name],
           completedThisSeason: prev.completedThisSeason.includes(challenge.name) ? prev.completedThisSeason : [...prev.completedThisSeason, challenge.name],
           challengeMastery: { ...prev.challengeMastery, [challenge.name]: nextMasteryCount },
+          challengeCategoryExpertise: isTeamModeAiActorForExpertise
+            ? { ...prev.challengeCategoryExpertise, [challenge.type]: nextCategoryExpertiseCount }
+            : prev.challengeCategoryExpertise,
           consecutiveWins: prev.consecutiveWins + 1,
           activeSpecialAbility: ['Tourist Luck', 'Calculate Odds'].includes(String(prev.activeSpecialAbility || ''))
             ? null
@@ -19971,7 +20372,7 @@ function AustraliaGame() {
     });
     addNotification(`${getActorDisplayName(actorId)} failed ${challenge.name} and lost $${wager}.`, actor.kind === 'human' ? 'error' : 'ai', false, actor.kind === 'human' ? 'challenge_result' : 'ai_challenge');
     return true;
-  }, [addMoney, addNotification, appendTeammatePerformanceSample, aiRandom, applyGrandTourChallengeProgress, calculateActorChallengeSuccessChance, deductMoney, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
+  }, [addMoney, addNotification, appendTeammatePerformanceSample, aiRandom, applyGrandTourChallengeProgress, calculateActorChallengeSuccessChance, deductMoney, gameSettings, isTeamMode, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
 
   const investForActor = useCallback((actorId: string, regionCode: string) => {
     const actor = getActorState(actorId);
@@ -20074,6 +20475,10 @@ function AustraliaGame() {
     const actor = getActorState(actorId);
     if (!actor) return false;
     let actionSucceeded = false;
+    // V6.8 Phase D: Teammate Performance Sync 2.0's realized-value tracking snapshots net worth
+    // before/after this one action, rather than instrumenting every individual action function —
+    // a single chokepoint, computed unconditionally but only ever consumed when Sync 2.0 is on.
+    const netWorthBeforeAction = calculateNetWorth(actor, gameState.resourcePrices);
 
     switch (action.type) {
       case 'travel':
@@ -20163,11 +20568,24 @@ function AustraliaGame() {
         ...prev,
         actionsUsedThisTurn: (prev.actionsUsedThisTurn || 0) + 1
       }));
+      // V6.8 Phase D: Teammate Performance Sync 2.0 realized-value tracking — records the actual
+      // net-worth delta this one action produced. Additive/no-op when Sync 2.0 is off.
+      if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled && action.type !== 'end_turn') {
+        const actorAfterAction = getActorState(actorId);
+        if (actorAfterAction) {
+          const netWorthDelta = calculateNetWorth(actorAfterAction, gameState.resourcePrices) - netWorthBeforeAction;
+          appendRealizedValueSample(actor.teamId, actorId, {
+            turn: gameState.turnCounter,
+            category: mapAiActionTypeToPerformanceCategory(action.type),
+            netWorthDelta
+          });
+        }
+      }
       await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
     }
 
     return actionSucceeded;
-  }, [buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, craftForActor, depositInRegion, gameState.autoplay?.speed, getActorState, investForActor, repayAdvancedLoanForActor, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
+  }, [appendRealizedValueSample, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, craftForActor, depositInRegion, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
 
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -20570,6 +20988,7 @@ function AustraliaGame() {
     const inventoryFullness = actor.inventory.length / MAX_INVENTORY;
     const decisions: ScoredTeamAiDecision[] = [];
     const teammateSyncModifier = getTeammatePerformanceSyncModifier(actorId);
+    const teammateSync2Modifier = getTeammatePerformanceSync2Modifier(actorId);
     const primaryDirectiveStrength = normalizeDirectiveStrength(primaryDirective?.strength);
     const directiveProfile = getEffectiveDirectiveStrengthProfile(primaryDirectiveStrength, { teamMode: true });
     const difficultyBehavior = getTeamDifficultyBehavior();
@@ -20879,8 +21298,16 @@ function AustraliaGame() {
         modifier: teammateSyncModifier,
         ...(syncOptions || {})
       }) as ScoredTeamAiDecision;
+      // V6.8 Phase D: Sync 2.0 is applied right after Sync 1.0 in the same closure — a no-op
+      // (returns syncedDecision unchanged) whenever Sync 2.0 is off, since Sync 1.0 already ran
+      // its full no-op-when-off branch above.
+      const synced2Decision = applyTeammatePerformanceSync2ToDecision(syncedDecision, {
+        actorId,
+        modifier: teammateSync2Modifier,
+        ...(syncOptions || {})
+      }) as ScoredTeamAiDecision;
 
-      decisions.push(applyDirectiveStrengthToDecision(syncedDecision, {
+      decisions.push(applyDirectiveStrengthToDecision(synced2Decision, {
         primaryDirective,
         primaryAligned,
         supportsDirective,
@@ -21165,7 +21592,10 @@ function AustraliaGame() {
     const currentRegionChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name));
     currentRegionChallenges.forEach(challenge => {
       if (hasReservationConflict('challenge', challenge.name)) return;
-      const successChance = calculateActorChallengeSuccessChance(challenge, actor);
+      // V6.8 Phase D: category-specific challenge expertise applied at ranking time too — fixes
+      // the pre-existing ranking-vs-resolution-time inconsistency for this component (the Team
+      // Initiative challenge-assist bonus, decided after ranking, remains out of scope here).
+      const successChance = calculateActorChallengeSuccessChance(challenge, actor, getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings));
       // V6.8 Phase B: wager sizing is capped by spendable (not total) cash once the Vault is on —
       // protected cash is never voluntarily wagered. Falls back to raw money when the Vault is off.
       const spendableForWager = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
@@ -21964,7 +22394,7 @@ function AustraliaGame() {
         score: baseScore + bonus
       };
     });
-  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
+  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
 
   const shouldTeamActorUseOverride = useCallback((actorId: string, nextDecision: ScoredTeamAiDecision | null) => {
     const actor = getActorState(actorId);
@@ -22817,6 +23247,59 @@ function AustraliaGame() {
     }
   }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken]);
 
+  // V6.8 Phase D: Guaranteed Recovery Protocol — a deterministic (not competitively-scored) action
+  // for an actor already flagged inEconomicRecovery (the shared Phase C hysteresis flag). Tries
+  // exactly one of three fallback tiers in order, executing the first one actually possible.
+  // Never forces a reckless move; if none of the three tiers is possible, does nothing this turn
+  // (an honest, stated limitation — not a silently dropped guarantee).
+  const evaluateGuaranteedRecoveryAction = useCallback((actorId: string): { executed: boolean; tier?: 1 | 2 | 3; note?: string } => {
+    const actor = getActorState(actorId);
+    if (!actor) return { executed: false };
+
+    // Tier 1 — liquidate the single highest-market-value resource currently in inventory.
+    if (actor.inventory.length > 0) {
+      const bestResource = [...actor.inventory].sort((a, b) => getResourceMarketPrice(b) - getResourceMarketPrice(a))[0];
+      if (sellActorResource(actorId, bestResource)) {
+        return { executed: true, tier: 1, note: `Sold ${bestResource} for emergency cash.` };
+      }
+    }
+
+    // Tier 2 — a small, fixed teammate support transfer, only if the teammate can genuinely spare
+    // it (keeps at least as much as they give). allowRemoteTeamAid so region distance can't block
+    // this last-resort transfer; isAiSupport is deliberately omitted to skip the ordinary
+    // cooldown/reserve gates tuned for repeated voluntary support, not a one-time guarantee.
+    const team = teamsByIdRef.current[actor.teamId];
+    const teammate = getTeammateForSync(actorId, team);
+    if (teammate) {
+      const teammateSpendable = getActorSpendableCash(teammate, gameSettings.teamCashVaultEnabled);
+      const transferAmount = Math.min(GUARANTEED_RECOVERY_TEAMMATE_TRANSFER_AMOUNT, Math.floor(teammateSpendable / 2));
+      if (transferAmount >= 100 && transferCash(teammate.id, actorId, transferAmount, { allowRemoteTeamAid: true, reason: 'Guaranteed Recovery Protocol' })) {
+        return { executed: true, tier: 2, note: `${getActorDisplayName(teammate.id)} sent $${transferAmount}.` };
+      }
+    }
+
+    // Tier 3 — the actor's own highest-success-chance available challenge, only if it clears the
+    // configured minimum probability. Category expertise is already folded into
+    // calculateActorChallengeSuccessChance by takeChallengeForActor itself (V6.8 Phase D, D4).
+    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name));
+    if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
+      const ranked = availableChallenges
+        .map(challenge => ({
+          challenge,
+          chance: calculateActorChallengeSuccessChance(challenge, actor, getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings))
+        }))
+        .sort((a, b) => b.chance - a.chance);
+      const safest = ranked[0];
+      if (safest && safest.chance >= gameSettings.guaranteedRecoveryMinimumChallengeProbability) {
+        if (takeChallengeForActor(actorId, safest.challenge, MINIMUM_WAGER)) {
+          return { executed: true, tier: 3, note: `Attempted ${safest.challenge.name} (${Math.round(safest.chance * 100)}% odds).` };
+        }
+      }
+    }
+
+    return { executed: false };
+  }, [calculateActorChallengeSuccessChance, gameSettings, getActorDisplayName, getActorState, getTeammateForSync, sellActorResource, takeChallengeForActor, transferCash]);
+
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
     const actor = getActorState(gameState.currentActorId || '');
@@ -22893,6 +23376,17 @@ function AustraliaGame() {
       if (emergencyResult.bonusActionTokenId) {
         actionBudget += 1;
         pendingTokenQueue.push(emergencyResult.bonusActionTokenId);
+      }
+    }
+
+    // V6.8 Phase D: Guaranteed Recovery Protocol — also checked once at turn start, consuming zero
+    // ordinary budget, matching the Emergency Action precedent above. Can coexist with an Emergency
+    // Action firing the same turn (different, independent mechanisms). Deterministic: tries a fixed
+    // fallback order rather than competing in the normal scored decision loop.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled && gameSettings.guaranteedRecoveryProtocolEnabled && actor.kind === 'ai' && actor.inEconomicRecovery) {
+      const recoveryResult = evaluateGuaranteedRecoveryAction(actor.id);
+      if (recoveryResult.executed && gameSettings.teammatePerformanceSync2TransparencyEnabled) {
+        addNotification(`🛟 ${getActorDisplayName(actor.id)}'s Guaranteed Recovery Protocol fired (tier ${recoveryResult.tier}): ${recoveryResult.note}`, 'ai', true);
       }
     }
 
@@ -23122,7 +23616,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -24948,7 +25442,15 @@ function AustraliaGame() {
       economyReserveStrength: DEFAULT_GAME_SETTINGS.economyReserveStrength,
       economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
       economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
-      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled
+      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+      teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
+      teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
+      teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
+      teammatePerformanceSync2ChallengeExpertiseEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseEnabled,
+      teammatePerformanceSync2ChallengeExpertiseMaxBonus: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus,
+      guaranteedRecoveryProtocolEnabled: DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
+      guaranteedRecoveryMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability,
+      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -25035,7 +25537,15 @@ function AustraliaGame() {
       economyReserveStrength: DEFAULT_GAME_SETTINGS.economyReserveStrength,
       economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
       economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
-      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled
+      economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+      teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
+      teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
+      teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
+      teammatePerformanceSync2ChallengeExpertiseEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseEnabled,
+      teammatePerformanceSync2ChallengeExpertiseMaxBonus: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus,
+      guaranteedRecoveryProtocolEnabled: DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
+      guaranteedRecoveryMinimumChallengeProbability: DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability,
+      teammatePerformanceSync2TransparencyEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -27176,6 +27686,97 @@ function AustraliaGame() {
                           </>
                         )}
                         <div className="text-xs opacity-60">Four economic phases — Survival, Accumulation, Compounding, Endgame — govern wager sizing and an additional spending-approval check on top of every existing affordability gate. Never overrides an existing check that already blocked a spend, only adds more.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.performanceSync2"
+                tab="teamModeAi"
+                title="Teammate Performance Sync 2.0"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.performanceSync2')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Teammate Performance Sync 2.0 has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Teammate Performance Sync 2.0</div>
+                        <div className="text-sm opacity-75">A stronger, mutually-exclusive alternative to Teammate Performance Sync: tracks actual realized net-worth outcomes instead of heuristic scores, learns which decision types have recently worked for each actor, rewards category-specific challenge expertise, and can add a Guaranteed Recovery Protocol. Turning this on makes the classic Teammate Performance Sync inert.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2Enabled: !prev.teammatePerformanceSync2Enabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teammatePerformanceSync2Enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teammatePerformanceSync2Enabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teammatePerformanceSync2Enabled && (
+                      <>
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div>
+                              <label className="block font-semibold mb-2">Sync Strength: {gameSettings.teammatePerformanceSync2Strength.toFixed(1)}x</label>
+                              <input type="range" min="0" max="2" step="0.1" value={gameSettings.teammatePerformanceSync2Strength} onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2Strength: parseFloat(e.target.value) }))} className="w-full" />
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teammatePerformanceSync2StrategyLearningEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2StrategyLearningEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teammatePerformanceSync2StrategyLearningEnabled ? '☑' : '☐'} Strategy Learning</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled ? '☑' : '☐'} Category-Specific Challenge Expertise</span>
+                            </label>
+                            {gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled && (
+                              <div>
+                                <label className="block font-semibold mb-2">Expertise Max Bonus: +{Math.round(gameSettings.teammatePerformanceSync2ChallengeExpertiseMaxBonus * 100)}%</label>
+                                <input type="range" min="0" max="0.2" step="0.01" value={gameSettings.teammatePerformanceSync2ChallengeExpertiseMaxBonus} onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseMaxBonus: parseFloat(e.target.value) }))} className="w-full" />
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-sm">Guaranteed Recovery Protocol</div>
+                                <div className="text-xs opacity-75">When a Team Mode AI actor is in the shared recovery state (Survival phase), deterministically liquidates inventory, requests teammate support, or attempts a safe challenge — instead of competing for the win with other decisions and possibly doing nothing.</div>
+                              </div>
+                              <button
+                                onClick={() => setGameSettings(prev => ({ ...prev, guaranteedRecoveryProtocolEnabled: !prev.guaranteedRecoveryProtocolEnabled }))}
+                                className={`px-4 py-2 rounded font-semibold ${gameSettings.guaranteedRecoveryProtocolEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {gameSettings.guaranteedRecoveryProtocolEnabled ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
+                            {gameSettings.guaranteedRecoveryProtocolEnabled && (
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Challenge Probability (Tier 3): {Math.round(gameSettings.guaranteedRecoveryMinimumChallengeProbability * 100)}%</label>
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.guaranteedRecoveryMinimumChallengeProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, guaranteedRecoveryMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
+                              </div>
+                            )}
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teammatePerformanceSync2TransparencyEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2TransparencyEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teammatePerformanceSync2TransparencyEnabled ? '☑' : '☐'} Show in Transparency (Recovery Protocol notifications + Decision Transparency reasons)</span>
+                            </label>
+                          </>
+                        )}
+                        <div className="text-xs opacity-60">Reuses the same shared recovery flag the Team Economy Governor uses — enabling this on its own (Governor off) still correctly maintains it. The Guaranteed Recovery Protocol never forces a reckless action; if liquidation, teammate support, and a safe challenge are all unavailable, it does nothing that turn.</div>
                       </>
                     )}
                   </div>
