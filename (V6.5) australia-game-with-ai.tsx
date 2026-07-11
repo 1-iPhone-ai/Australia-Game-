@@ -8248,6 +8248,23 @@ function AustraliaGame() {
   const aiPlayerRef = useRef(aiPlayer);
   const additionalActorsRef = useRef<Record<string, ActorState>>(additionalActors);
   const teamsByIdRef = useRef<Record<string, TeamState>>(teamsById);
+
+  // V6.8 Phase E: Parallel Planning's round-batch plan — transient per-round working data,
+  // intentionally never persisted (safe to discard on save/reload; a reload mid-round simply
+  // falls back to live decision-making for the remainder of that round, byte-identical to the
+  // feature never having produced a plan). Built once per round inside advanceDay, consumed
+  // (and deleted) at most once per AI actor's turn inside performTeamAiTurn. Declared here (very
+  // early in the component) specifically so it's already initialized by the time the
+  // buildRoundAiPlanBatchRef assignment below (which runs synchronously during render, near
+  // getRankedTeamAiDecisions) executes — unlike the ref itself, that assignment is not deferred
+  // inside a callback, so it needs both refs declared before it, not just before invocation.
+  const teamRoundPlanRef = useRef<TeamRoundPlan | null>(null);
+
+  // V6.8 Phase E: ref-indirection for buildRoundAiPlanBatch, which is declared much later in the
+  // file than advanceDay but must be called from inside it — the established pattern (Phase 3d)
+  // for this exact forward-reference/TDZ constraint. Assigned right after the real function's own
+  // declaration, read via .current inside advanceDay.
+  const buildRoundAiPlanBatchRef = useRef<((projectedActors: Record<string, ActorState>, nextTeams: Record<string, TeamState>) => TeamRoundPlan | null) | null>(null);
   // V6.7 Phase 3d: ref-indirection for Decision Transparency. evaluateTeamAiOverrideEligibility /
   // evaluateTeamActionBankDraw / evaluateTeamActionLendEligibility are all pure "would this fire
   // and why" queries declared later in this component than getRankedTeamAiDecisions, so they can't
@@ -22793,19 +22810,6 @@ function AustraliaGame() {
   // this turn — cleared at the top of each actor's turn. In-memory only (not persisted),
   // used solely to satisfy safeguard #11 ("not repeating a failed action").
   const lastFailedOverrideActionRef = useRef<Record<string, string>>({});
-
-  // V6.8 Phase E: Parallel Planning's round-batch plan — transient per-round working data,
-  // intentionally never persisted (safe to discard on save/reload; a reload mid-round simply
-  // falls back to live decision-making for the remainder of that round, byte-identical to the
-  // feature never having produced a plan). Built once per round inside advanceDay, consumed
-  // (and deleted) at most once per AI actor's turn inside performTeamAiTurn.
-  const teamRoundPlanRef = useRef<TeamRoundPlan | null>(null);
-
-  // V6.8 Phase E: ref-indirection for buildRoundAiPlanBatch, which is declared much later in the
-  // file than advanceDay but must be called from inside it — the established pattern (Phase 3d)
-  // for this exact forward-reference/TDZ constraint. Assigned right after the real function's own
-  // declaration, read via .current inside advanceDay.
-  const buildRoundAiPlanBatchRef = useRef<((projectedActors: Record<string, ActorState>, nextTeams: Record<string, TeamState>) => TeamRoundPlan | null) | null>(null);
 
   // V6.7 Phase 2a: per-actor "Approve Similar Actions This Turn" flag from the ask_first
   // confirmation dialog. Turn-scoped only (cleared in finishTeamAiTurn), never persisted.
