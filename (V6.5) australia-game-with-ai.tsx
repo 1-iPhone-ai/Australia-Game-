@@ -24766,7 +24766,7 @@ function AustraliaGame() {
                   <div className="font-semibold">Action Limits</div>
                   <button
                     onClick={() => setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }))}
-                    className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                   >
                     {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
                   </button>
@@ -24775,7 +24775,7 @@ function AustraliaGame() {
                   <div className="font-semibold">UX Assist Pack</div>
                   <button
                     onClick={() => setGameSettings(prev => ({ ...prev, uxAssistPackEnabled: !prev.uxAssistPackEnabled }))}
-                    className={`px-4 py-2 rounded font-semibold ${gameSettings.uxAssistPackEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                    className={`px-4 py-2 rounded font-semibold ${gameSettings.uxAssistPackEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                   >
                     {gameSettings.uxAssistPackEnabled ? 'ON' : 'OFF'}
                   </button>
@@ -24880,7 +24880,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, [row.key]: !Boolean(prev[row.key]) } as GameSettingsState))}
-                          className={`px-4 py-2 rounded font-semibold ${active ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${active ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {active ? 'ON' : 'OFF'}
                         </button>
@@ -24928,7 +24928,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.showDayTransition ? 'ON' : 'OFF'}
 	                    </button>
@@ -24988,7 +24988,7 @@ function AustraliaGame() {
 	                    </div>
 	                    <button
 	                      onClick={() => setGameSettings(prev => ({ ...prev, allowCashOut: !prev.allowCashOut }))}
-	                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowCashOut ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+	                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowCashOut ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
 	                    >
 	                      {gameSettings.allowCashOut ? 'ON' : 'OFF'}
 	                    </button>
@@ -25000,7 +25000,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, negotiationMode: !prev.negotiationMode }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.negotiationMode ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.negotiationMode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.negotiationMode ? 'ON' : 'OFF'}
                       </button>
@@ -25124,7 +25124,7 @@ function AustraliaGame() {
                       onClick={() => {
                         setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }));
                       }}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25150,7 +25150,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, allowActionOverride: !prev.allowActionOverride }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowActionOverride ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowActionOverride ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.allowActionOverride ? 'ON' : 'OFF'}
                     </button>
@@ -25173,7 +25173,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, dynamicWagerEnabled: !prev.dynamicWagerEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.dynamicWagerEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.dynamicWagerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.dynamicWagerEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25185,7 +25185,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, doubleOrNothingEnabled: !prev.doubleOrNothingEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.doubleOrNothingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.doubleOrNothingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.doubleOrNothingEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25201,7 +25201,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, investmentsEnabled: !prev.investmentsEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.investmentsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.investmentsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.investmentsEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25213,7 +25213,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, equipmentShopEnabled: !prev.equipmentShopEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.equipmentShopEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.equipmentShopEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.equipmentShopEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25225,7 +25225,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, sabotageEnabled: !prev.sabotageEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.sabotageEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.sabotageEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.sabotageEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25241,7 +25241,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiUsesMarketModifiers: !prev.aiUsesMarketModifiers }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiUsesMarketModifiers ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiUsesMarketModifiers ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiUsesMarketModifiers ? 'ON' : 'OFF'}
                     </button>
@@ -25253,7 +25253,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiSpecialAbilitiesEnabled: !prev.aiSpecialAbilitiesEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiSpecialAbilitiesEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiSpecialAbilitiesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiSpecialAbilitiesEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25265,7 +25265,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiAffectsEconomy: !prev.aiAffectsEconomy }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiAffectsEconomy ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiAffectsEconomy ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiAffectsEconomy ? 'ON' : 'OFF'}
                     </button>
@@ -25277,7 +25277,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiWinConditionSpendingEnabled: !prev.aiWinConditionSpendingEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiWinConditionSpendingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiWinConditionSpendingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiWinConditionSpendingEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25289,7 +25289,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiRegionsMajorityRushEnabled: !prev.aiRegionsMajorityRushEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiRegionsMajorityRushEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiRegionsMajorityRushEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiRegionsMajorityRushEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25301,7 +25301,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, teammatePerformanceSyncEnabled: !prev.teammatePerformanceSyncEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teammatePerformanceSyncEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teammatePerformanceSyncEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.teammatePerformanceSyncEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25360,7 +25360,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiDeterministic: !prev.aiDeterministic }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiDeterministic ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiDeterministic ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiDeterministic ? 'ON' : 'OFF'}
                     </button>
@@ -25390,7 +25390,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, aiStrategyLabEnabled: !prev.aiStrategyLabEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiStrategyLabEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiStrategyLabEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiStrategyLabEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25599,7 +25599,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={toggleTeamBrainEnabled}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teamBrainV63Enabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teamBrainV63Enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.teamBrainV63Enabled ? 'ON' : 'OFF'}
                     </button>
@@ -25708,7 +25708,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCompetitiveAiEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCompetitiveAiEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.teamCompetitiveAiEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -25813,7 +25813,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionOverridesEnabled: !prev.teamAiActionOverridesEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionOverridesEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionOverridesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiActionOverridesEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -25916,7 +25916,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamActionBankEnabled: !prev.teamActionBankEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamActionBankEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamActionBankEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamActionBankEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -25991,7 +25991,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionLendingEnabled: !prev.teamAiActionLendingEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionLendingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionLendingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiActionLendingEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26057,7 +26057,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiPlanCommitmentEnabled: !prev.teamAiPlanCommitmentEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiPlanCommitmentEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiPlanCommitmentEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiPlanCommitmentEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26119,7 +26119,7 @@ function AustraliaGame() {
                           <button
                             key={level}
                             onClick={() => setGameSettings(prev => ({ ...prev, teamAiReservationStrictness: level }))}
-                            className={`px-3 py-2 rounded font-semibold capitalize flex-1 ${gameSettings.teamAiReservationStrictness === level ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                            className={`px-3 py-2 rounded font-semibold capitalize flex-1 ${gameSettings.teamAiReservationStrictness === level ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {level}
                           </button>
@@ -26180,7 +26180,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingEnabled: !prev.teamAiThreatTargetingEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiThreatTargetingEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiThreatTargetingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiThreatTargetingEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26245,7 +26245,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiEndgameAccelerationEnabled: !prev.teamAiEndgameAccelerationEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEndgameAccelerationEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEndgameAccelerationEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiEndgameAccelerationEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26314,7 +26314,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsEnabled: !prev.teamAiEmergencyActionsEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEmergencyActionsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEmergencyActionsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiEmergencyActionsEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26391,7 +26391,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamInitiativeEnabled: !prev.teamInitiativeEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamInitiativeEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamInitiativeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamInitiativeEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26460,7 +26460,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamComboBonusesEnabled: !prev.teamComboBonusesEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamComboBonusesEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamComboBonusesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamComboBonusesEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26519,7 +26519,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, advancedLoansEnabled: !prev.advancedLoansEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.advancedLoansEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.advancedLoansEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.advancedLoansEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -26555,7 +26555,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, creditScoreEnabled: !prev.creditScoreEnabled }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.creditScoreEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.creditScoreEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.creditScoreEnabled ? 'ON' : 'OFF'}
                         </button>
@@ -26567,7 +26567,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, loanEventsEnabled: !prev.loanEventsEnabled }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.loanEventsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.loanEventsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.loanEventsEnabled ? 'ON' : 'OFF'}
                         </button>
@@ -26579,7 +26579,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, earlyRepaymentEnabled: !prev.earlyRepaymentEnabled }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.earlyRepaymentEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.earlyRepaymentEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.earlyRepaymentEnabled ? 'ON' : 'OFF'}
                         </button>
@@ -26618,7 +26618,7 @@ function AustraliaGame() {
                           <button
                             onClick={() => setGameSettings(prev => ({ ...prev, aiLoanEmergencyOnly: !prev.aiLoanEmergencyOnly }))}
                             disabled={gameSettings.advancedLoansAccessMode === 'player_only'}
-                            className={`px-4 py-2 rounded font-semibold ${gameSettings.aiLoanEmergencyOnly ? themeStyles.success : themeStyles.buttonSecondary} text-white disabled:opacity-50`}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.aiLoanEmergencyOnly ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary} disabled:opacity-50`}
                           >
                             {gameSettings.aiLoanEmergencyOnly ? 'ON' : 'OFF'}
                           </button>
@@ -26642,7 +26642,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiEnabled: !prev.adaptiveAiEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.adaptiveAiEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -26656,7 +26656,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiPatternLearning: !prev.adaptiveAiPatternLearning }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiPatternLearning ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiPatternLearning ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiPatternLearning ? 'ON' : 'OFF'}
                         </button>
@@ -26668,7 +26668,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiRubberBanding: !prev.adaptiveAiRubberBanding }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiRubberBanding ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiRubberBanding ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiRubberBanding ? 'ON' : 'OFF'}
                         </button>
@@ -26680,7 +26680,7 @@ function AustraliaGame() {
                         </div>
                         <button
                           onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiTauntsEnabled: !prev.adaptiveAiTauntsEnabled }))}
-                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiTauntsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiTauntsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiTauntsEnabled ? 'ON' : 'OFF'}
                         </button>
@@ -26773,7 +26773,7 @@ function AustraliaGame() {
                           </div>
                           <button
                             onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiShowDecisionTransparency: !prev.adaptiveAiShowDecisionTransparency }))}
-                            className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowDecisionTransparency ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowDecisionTransparency ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.adaptiveAiShowDecisionTransparency ? 'ON' : 'OFF'}
                           </button>
@@ -26785,7 +26785,7 @@ function AustraliaGame() {
                           </div>
                           <button
                             onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiShowActiveModifiers: !prev.adaptiveAiShowActiveModifiers }))}
-                            className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowActiveModifiers ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowActiveModifiers ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.adaptiveAiShowActiveModifiers ? 'ON' : 'OFF'}
                           </button>
@@ -26834,7 +26834,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, deprioritizeLowImpactSettings: !prev.deprioritizeLowImpactSettings }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.deprioritizeLowImpactSettings ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.deprioritizeLowImpactSettings ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.deprioritizeLowImpactSettings ? 'ON' : 'OFF'}
                       </button>
@@ -26846,7 +26846,7 @@ function AustraliaGame() {
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, priorityTransparencyEnabled: !prev.priorityTransparencyEnabled }))}
-                        className={`px-4 py-2 rounded font-semibold ${gameSettings.priorityTransparencyEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.priorityTransparencyEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.priorityTransparencyEnabled ? 'ON' : 'OFF'}
                       </button>
@@ -26891,7 +26891,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => setGameSettings(prev => ({ ...prev, decisionTransparencyEnabled: !prev.decisionTransparencyEnabled }))}
-                      className={`px-4 py-2 rounded font-semibold ${gameSettings.decisionTransparencyEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.decisionTransparencyEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.decisionTransparencyEnabled ? 'ON' : 'OFF'}
                     </button>
@@ -28757,6 +28757,25 @@ function AustraliaGame() {
         </div>
 
         <div className={`${themeStyles.menuCard} rounded-2xl p-8 max-w-lg w-full text-center relative z-10`}>
+          {/* Theme selector — same uiState.theme / updateUiState as Settings -> Interface -> Appearance;
+              no second theme state, changing either control updates both immediately. */}
+          <div className="flex justify-center sm:absolute sm:top-4 sm:right-4 sm:justify-end mb-4 sm:mb-0">
+            <div className={`inline-flex ${themeStyles.border} border rounded overflow-hidden`}>
+              {(['dark', 'light', 'system'] as GameTheme[]).map(themeOption => (
+                <button
+                  key={themeOption}
+                  type="button"
+                  onClick={() => updateUiState({ theme: themeOption })}
+                  className={`px-2 py-1 text-xs font-semibold capitalize ${uiState.theme === themeOption ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary}`}
+                  aria-pressed={uiState.theme === themeOption}
+                  aria-label={`${themeOption} theme`}
+                >
+                  {themeOption}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Logo and Title */}
           <div className="mb-6">
             <div className="text-6xl mb-3 animate-bounce" style={{ animationDuration: '2s' }}>🦘</div>
