@@ -671,6 +671,27 @@ const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> 
   return money + inventoryValue + investmentsValue + equipmentValue;
 };
 
+// V6.8 Phase B: Ratcheting Cash Vault. Base milestone ladder matching the spec's examples
+// ($2k/$5k/$10k/$20k/$40k), extended indefinitely by doubling the last value, all scaled by
+// vaultMilestoneSizeMultiplier so the whole ladder can shift without redefining its shape.
+const VAULT_BASE_MILESTONES = [2000, 5000, 10000, 20000, 40000];
+const getVaultMilestoneLadder = (multiplier: number, tierCount: number = 12): number[] => {
+  const scale = isFinite(multiplier) && multiplier > 0 ? multiplier : 1.0;
+  const ladder = VAULT_BASE_MILESTONES.map(value => value * scale);
+  while (ladder.length < tierCount) {
+    ladder.push(ladder[ladder.length - 1] * 2);
+  }
+  return ladder;
+};
+
+// Protected cash is a soft floor on the same actor.money field, never a second balance — this is
+// the sole accessor voluntary AI spending gates should consult for affordability once the Vault is
+// enabled. Returns raw money unchanged (byte-identical to today) when vaultActive is false.
+const getActorSpendableCash = (actor: { money: number; protectedCash?: number }, vaultActive: boolean): number => {
+  if (!vaultActive) return actor.money;
+  return Math.max(0, actor.money - Math.min(actor.protectedCash || 0, actor.money));
+};
+
 const detectAdaptiveAiPhase = (
   playerNetWorth: number,
   aiNetWorth: number,
@@ -2496,6 +2517,12 @@ type TeamActionBankDistributionMode = 'equal' | 'role_based' | 'objective_based'
 // 'strict' hard-blocks any active conflict.
 type TeamAiReservationStrictness = 'low' | 'balanced' | 'strict';
 
+// V6.8 Phase B: Ratcheting Cash Vault protection modes. In this phase all three behave
+// identically for voluntary spending (protected cash is never voluntarily spent regardless of
+// mode) — they only differ once a mechanic exists that can force a cash loss below the protected
+// floor, which does not exist yet. Stored/wired end-to-end now so it's ready for that later.
+type VaultProtectionMode = 'spending_reserve' | 'secure_vault' | 'absolute_lock';
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -2748,6 +2775,16 @@ type GameSettingsState = {
   teamAiEmergencyActionsTransparencyEnabled: boolean;
   teamInitiativeTransparencyEnabled: boolean;
   teamComboBonusesTransparencyEnabled: boolean;
+  // V6.8 Phase B: Ratcheting Cash Vault (inert unless teamCompetitiveAiEnabled && teamCashVaultEnabled).
+  // Protected cash is a soft floor on the same actor.money field, not a second balance.
+  teamCashVaultEnabled: boolean;
+  automaticCashLockingEnabled: boolean;
+  vaultProtectionMode: VaultProtectionMode;
+  vaultLockPercentage: number;
+  vaultMilestoneSizeMultiplier: number;
+  vaultMinimumWorkingCash: number;
+  vaultCountProtectedCashTowardVictory: boolean;
+  vaultTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3727,6 +3764,14 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiEmergencyActionsTransparencyEnabled: true,
   teamInitiativeTransparencyEnabled: true,
   teamComboBonusesTransparencyEnabled: true,
+  teamCashVaultEnabled: false,
+  automaticCashLockingEnabled: false,
+  vaultProtectionMode: 'spending_reserve',
+  vaultLockPercentage: 50,
+  vaultMilestoneSizeMultiplier: 1.0,
+  vaultMinimumWorkingCash: 500,
+  vaultCountProtectedCashTowardVictory: true,
+  vaultTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3862,6 +3907,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.emergencyActions', tab: 'teamModeAi', title: 'Emergency Actions', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEmergencyActionsEnabled', 'teamAiEmergencyActionCooldownDays', 'teamAiEmergencyActionsPerGame', 'teamAiEmergencyActionStrength', 'teamAiEmergencyActionsForFriendlyTeam', 'teamAiEmergencyActionsForEnemyTeam', 'teamAiEmergencyActionsTransparencyEnabled'] },
   { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'] },
   { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
+  { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -7187,6 +7233,12 @@ const initialPlayerState = {
   // field's existing redemption code hardcodes source 'lent' and must not be touched.
   pendingEmergencyActionCredits: {} as Record<string, number>,
   sabotageProtectionExpiresTurn: 0,
+  // V6.8 Phase B: Ratcheting Cash Vault. protectedCash is a soft floor on this same money field,
+  // never a second balance. vaultBaselineMilestoneIndex of -1 means "not yet initialized" — the
+  // first automatic-lock check seeds it to the actor's current milestone tier without locking
+  // anything retroactively.
+  protectedCash: 0,
+  vaultBaselineMilestoneIndex: -1,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -8387,6 +8439,12 @@ function AustraliaGame() {
         sabotageProtectionExpiresTurn: typeof data?.sabotageProtectionExpiresTurn === 'number' && isFinite(data.sabotageProtectionExpiresTurn)
           ? Math.max(0, Math.floor(data.sabotageProtectionExpiresTurn))
           : 0,
+        protectedCash: typeof data?.protectedCash === 'number' && isFinite(data.protectedCash)
+          ? Math.max(0, Math.floor(data.protectedCash))
+          : 0,
+        vaultBaselineMilestoneIndex: typeof data?.vaultBaselineMilestoneIndex === 'number' && isFinite(data.vaultBaselineMilestoneIndex)
+          ? Math.max(-1, Math.floor(data.vaultBaselineMilestoneIndex))
+          : -1,
         loans,
         completedThisSeason,
         challengeMastery,
@@ -8930,6 +8988,24 @@ function AustraliaGame() {
         teamComboBonusesTransparencyEnabled: typeof settingsData.teamComboBonusesTransparencyEnabled === 'boolean'
           ? settingsData.teamComboBonusesTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
+        teamCashVaultEnabled: typeof settingsData.teamCashVaultEnabled === 'boolean'
+          ? settingsData.teamCashVaultEnabled
+          : DEFAULT_GAME_SETTINGS.teamCashVaultEnabled,
+        automaticCashLockingEnabled: typeof settingsData.automaticCashLockingEnabled === 'boolean'
+          ? settingsData.automaticCashLockingEnabled
+          : DEFAULT_GAME_SETTINGS.automaticCashLockingEnabled,
+        vaultProtectionMode: ['spending_reserve', 'secure_vault', 'absolute_lock'].includes(settingsData.vaultProtectionMode)
+          ? settingsData.vaultProtectionMode
+          : DEFAULT_GAME_SETTINGS.vaultProtectionMode,
+        vaultLockPercentage: clampSettingNumber(settingsData.vaultLockPercentage, DEFAULT_GAME_SETTINGS.vaultLockPercentage, 0, 100),
+        vaultMilestoneSizeMultiplier: clampSettingNumber(settingsData.vaultMilestoneSizeMultiplier, DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier, 0.25, 4),
+        vaultMinimumWorkingCash: clampSettingNumber(settingsData.vaultMinimumWorkingCash, DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash, 0, 5000),
+        vaultCountProtectedCashTowardVictory: typeof settingsData.vaultCountProtectedCashTowardVictory === 'boolean'
+          ? settingsData.vaultCountProtectedCashTowardVictory
+          : DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
+        vaultTransparencyEnabled: typeof settingsData.vaultTransparencyEnabled === 'boolean'
+          ? settingsData.vaultTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -11804,7 +11880,10 @@ function AustraliaGame() {
           ? (AI_SAFETY_BUFFER + 650)
           : (AI_SAFETY_BUFFER + 1200)
       : AI_SAFETY_BUFFER;
-    if (aiState.money - investment.cost < requiredSafetyBuffer) {
+    // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on. Inert
+    // (returns aiState.money unchanged) for solo-mode actors, which never accrue protectedCash.
+    const investSpendable = getActorSpendableCash(aiState, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+    if (investSpendable - investment.cost < requiredSafetyBuffer) {
       return { region: regionCode, score: -Infinity };
     }
     const roiValue = (investment.dailyIncome * daysRemaining) - investment.cost;
@@ -11863,7 +11942,8 @@ function AustraliaGame() {
     if ((aiState.equipment || []).includes(item.id)) {
       return { item, score: -Infinity };
     }
-    if (aiState.money - item.cost < AI_SAFETY_BUFFER) {
+    // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on.
+    if (getActorSpendableCash(aiState, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - item.cost < AI_SAFETY_BUFFER) {
       return { item, score: -Infinity };
     }
 
@@ -14765,16 +14845,26 @@ function AustraliaGame() {
     teamMode?: boolean;
   }) => {
     const teamMode = options.teamMode ?? isTeamMode;
+    // V6.8 Phase B: when the Vault is on and vaultCountProtectedCashTowardVictory is explicitly
+    // off, exclude protected cash from the win-condition metric only — calculateNetWorth's own
+    // real-money output and all HUD/display numbers are untouched, this never hides money from
+    // the player, it only optionally excludes it from who-wins math.
+    const vaultExclusionActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled && !gameSettings.vaultCountProtectedCashTowardVictory;
     if (teamMode) {
       const teamId = options.side === 'player' ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID;
-      if (metric === 'money') return computeTeamMoney(teamId);
-      if (metric === 'netWorth') return computeTeamNetWorth(teamId);
+      const protectedDeduction = vaultExclusionActive
+        ? getTeamActors(teamId).reduce((sum, teamActor) => sum + (teamActor.protectedCash || 0), 0)
+        : 0;
+      if (metric === 'money') return Math.max(0, computeTeamMoney(teamId) - protectedDeduction);
+      if (metric === 'netWorth') return Math.max(0, computeTeamNetWorth(teamId) - protectedDeduction);
       return options.side === 'player' ? playerControlledRegions : aiControlledRegions;
     }
-    if (metric === 'money') return options.side === 'player' ? player.money : aiPlayer.money;
-    if (metric === 'netWorth') return options.side === 'player' ? computeNetWorth(player) : computeNetWorth(aiPlayer);
+    const soloActor = options.side === 'player' ? player : aiPlayer;
+    const soloProtectedDeduction = vaultExclusionActive ? ((soloActor as any).protectedCash || 0) : 0;
+    if (metric === 'money') return Math.max(0, soloActor.money - soloProtectedDeduction);
+    if (metric === 'netWorth') return Math.max(0, computeNetWorth(soloActor) - soloProtectedDeduction);
     return options.side === 'player' ? playerControlledRegions : aiControlledRegions;
-  }, [aiControlledRegions, aiPlayer, computeNetWorth, computeTeamMoney, computeTeamNetWorth, isTeamMode, player, playerControlledRegions]);
+  }, [aiControlledRegions, aiPlayer, computeNetWorth, computeTeamMoney, computeTeamNetWorth, gameSettings.teamCashVaultEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.vaultCountProtectedCashTowardVictory, getTeamActors, isTeamMode, player, playerControlledRegions]);
 
   const compareCompetitiveSides = useCallback((primaryMetric: WinMetric, options?: {
     teamMode?: boolean;
@@ -16879,7 +16969,10 @@ function AustraliaGame() {
       addNotification('Cash support requires both teammates to be in the same region.', 'warning', false, 'system');
       return false;
     }
-    if (fromActor.money < amount) {
+    // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on — scoped to
+    // AI donors only (per spec, Vault rules never restrict ordinary human actions).
+    const transferSpendable = getActorSpendableCash(fromActor, fromActor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+    if (transferSpendable < amount) {
       addNotification('Not enough money to transfer.', 'warning', false, 'system');
       return false;
     }
@@ -17942,7 +18035,10 @@ function AustraliaGame() {
     const actorState = getActorState(actorId);
     if (!actorState) return false;
 
-    if ((actorState.money || 0) < totalCost) {
+    // V6.8 Phase B: afford-gate uses spendable (not total) cash once the Vault is on — scoped to
+    // AI actors only (per spec, Vault rules never restrict ordinary human actions).
+    const marketSpendable = getActorSpendableCash(actorState, actorState.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+    if (marketSpendable < totalCost) {
       if (!options?.silent) {
         const actorLabel = actorState.kind === 'human' ? 'Not enough money' : `🤖 ${actorState.name} cannot afford that purchase`;
         addNotification(`${actorLabel} ($${totalCost} needed).`, actorState.kind === 'human' ? 'error' : 'ai', false, 'market');
@@ -18570,6 +18666,34 @@ function AustraliaGame() {
             projected.money += AI_STIPEND_AMOUNT;
             projected.stipendCooldown = AI_STIPEND_COOLDOWN;
             addNotification(`🤖 Emergency fund: ${projected.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+          }
+        }
+
+        // V6.8 Phase B: Ratcheting Cash Vault — daily automatic-lock check, run after all other
+        // money adjustments above so it reacts to the actor's end-of-day balance. Team Mode AI
+        // actors only; inert unless both the master toggle and automatic locking are on.
+        if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled && gameSettings.automaticCashLockingEnabled) {
+          const vaultLadder = getVaultMilestoneLadder(gameSettings.vaultMilestoneSizeMultiplier);
+          const currentTierIndex = vaultLadder.reduce((highest, tier, index) => (projected.money >= tier ? index : highest), -1);
+          const baselineIndex = typeof projected.vaultBaselineMilestoneIndex === 'number' ? projected.vaultBaselineMilestoneIndex : -1;
+          if (baselineIndex === -1) {
+            // First check for this actor: seed the baseline to their current tier without locking
+            // anything retroactively (never slam-lock an existing balance on enable).
+            projected.vaultBaselineMilestoneIndex = currentTierIndex;
+          } else if (currentTierIndex > baselineIndex) {
+            const newMilestoneValue = vaultLadder[currentTierIndex];
+            const existingProtected = projected.protectedCash || 0;
+            const maxLockable = Math.max(0, projected.money - gameSettings.vaultMinimumWorkingCash - existingProtected);
+            const eligibleAboveFloor = Math.max(0, newMilestoneValue - gameSettings.vaultMinimumWorkingCash - existingProtected);
+            const appliedLock = Math.min(maxLockable, Math.floor(eligibleAboveFloor * (gameSettings.vaultLockPercentage / 100)));
+            if (appliedLock > 0) {
+              // Ratchet: protectedCash only ever increases.
+              projected.protectedCash = existingProtected + appliedLock;
+              if (gameSettings.vaultTransparencyEnabled) {
+                addNotification(`🤖 ${projected.name} locked $${appliedLock} into the Cash Vault (now protecting $${projected.protectedCash}).`, 'ai', true);
+              }
+            }
+            projected.vaultBaselineMilestoneIndex = currentTierIndex;
           }
         }
 
@@ -20841,7 +20965,9 @@ function AustraliaGame() {
     currentRegionChallenges.forEach(challenge => {
       if (hasReservationConflict('challenge', challenge.name)) return;
       const successChance = calculateActorChallengeSuccessChance(challenge, actor);
-      const wager = Math.min(actor.money, Math.max(MINIMUM_WAGER, Math.floor(150 + (actor.level * 35))));
+      // V6.8 Phase B: wager sizing is capped by spendable (not total) cash once the Vault is on —
+      // protected cash is never voluntarily wagered. Falls back to raw money when the Vault is off.
+      const wager = Math.min(getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled), Math.max(MINIMUM_WAGER, Math.floor(150 + (actor.level * 35))));
       if (wager < MINIMUM_WAGER) return;
       let score = (successChance * wager * challenge.reward) - ((1 - successChance) * wager * 0.6);
       if (preferredRegion && preferredRegion === actor.currentRegion) score += 65;
@@ -21120,7 +21246,8 @@ function AustraliaGame() {
             .sort((left, right) => right.pressure - left.pressure)[0] || null;
       if (sabotageTarget) {
         SABOTAGE_ACTIONS.forEach(action => {
-          if (actor.money - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
+          // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
+          if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
           if (hasActiveDebuff(sabotageTarget.target.debuffs, action.id)) return;
           let score = (typeof action.aiWeight === 'number' ? action.aiWeight : 100) + sabotageTarget.pressure - (action.cost * 0.05);
           if (teamBehindOnPrimaryMetric) score += 35 * difficultyBehavior.comebackMultiplier;
@@ -21161,7 +21288,8 @@ function AustraliaGame() {
     const minimalDeposit = actor.teamId === TEAM_PLAYER_ID
       ? currentRegionInfo.minimumPlayerDeposit
       : currentRegionInfo.minimumAiDeposit;
-    if (actor.money >= minimalDeposit && !gameSettings.negotiationMode) {
+    // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
+    if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit && !gameSettings.negotiationMode) {
       let score = gameSettings.winCondition === 'regions' ? 220 : gameSettings.winCondition === 'netWorth' ? 120 : 80;
       if (preferredRegion === actor.currentRegion) score += 70;
       if (hasReservationConflict('region', actor.currentRegion)) score -= 160;
@@ -21206,7 +21334,8 @@ function AustraliaGame() {
       if (region === actor.currentRegion) return;
       if (hasReservationConflict('region', region) && preferredRegion !== region) return;
       const cost = calculateActorTravelCost(actor.currentRegion, region, actor);
-      if (actor.money < cost) return;
+      // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
+      if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) < cost) return;
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
       score += (REGIONS[region]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
       if (!actor.visitedRegions.includes(region)) score += 55;
@@ -21930,8 +22059,10 @@ function AustraliaGame() {
     // to 1.0 (no discount) whenever that spend hasn't succeeded for this actor this turn.
     const initiativeDiscount = initiativeOverrideDiscountRef.current[actorId] ?? 1.0;
     const cost = Math.floor(baseCost * (gameSettings.teamAiOverrideBaseCostMultiplier || 1.0) * initiativeDiscount);
-    if (actor.money < cost) return ineligible('Cannot afford override cost.');
-    if ((actor.money - cost) < gameSettings.teamAiOverrideMinimumCashReserve) {
+    // V6.8 Phase B: override affordability now checks spendable (not total) cash once the Vault is on.
+    const overrideSpendable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+    if (overrideSpendable < cost) return ineligible('Cannot afford override cost.');
+    if ((overrideSpendable - cost) < gameSettings.teamAiOverrideMinimumCashReserve) {
       return ineligible('Would breach minimum cash reserve.');
     }
 
@@ -24477,7 +24608,15 @@ function AustraliaGame() {
       teamAiEndgameAccelerationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
       teamAiEmergencyActionsTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
       teamInitiativeTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
-      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled
+      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
+      teamCashVaultEnabled: DEFAULT_GAME_SETTINGS.teamCashVaultEnabled,
+      automaticCashLockingEnabled: DEFAULT_GAME_SETTINGS.automaticCashLockingEnabled,
+      vaultProtectionMode: DEFAULT_GAME_SETTINGS.vaultProtectionMode,
+      vaultLockPercentage: DEFAULT_GAME_SETTINGS.vaultLockPercentage,
+      vaultMilestoneSizeMultiplier: DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier,
+      vaultMinimumWorkingCash: DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash,
+      vaultCountProtectedCashTowardVictory: DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
+      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -24547,7 +24686,15 @@ function AustraliaGame() {
       teamAiEndgameAccelerationTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
       teamAiEmergencyActionsTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
       teamInitiativeTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
-      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled
+      teamComboBonusesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
+      teamCashVaultEnabled: DEFAULT_GAME_SETTINGS.teamCashVaultEnabled,
+      automaticCashLockingEnabled: DEFAULT_GAME_SETTINGS.automaticCashLockingEnabled,
+      vaultProtectionMode: DEFAULT_GAME_SETTINGS.vaultProtectionMode,
+      vaultLockPercentage: DEFAULT_GAME_SETTINGS.vaultLockPercentage,
+      vaultMilestoneSizeMultiplier: DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier,
+      vaultMinimumWorkingCash: DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash,
+      vaultCountProtectedCashTowardVictory: DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
+      vaultTransparencyEnabled: DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -26489,6 +26636,103 @@ function AustraliaGame() {
                       </label>
                     )}
                     <div className="text-xs opacity-60">Capped at 3 combos per team per day, and each action can only ever be part of one combo, to prevent farming.</div>
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.cashVault"
+                tab="teamModeAi"
+                title="Ratcheting Cash Vault"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.cashVault')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — the Cash Vault has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Ratcheting Cash Vault</div>
+                        <div className="text-sm opacity-75">Gives each Team Mode AI actor protected savings that count toward total wealth but can never be voluntarily spent, so a run of bad luck can't erase everything they've built up.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamCashVaultEnabled: !prev.teamCashVaultEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCashVaultEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teamCashVaultEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamCashVaultEnabled && (
+                      <>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-sm">Automatic Cash Locking</div>
+                            <div className="text-xs opacity-75">When on, crossing a cash milestone automatically locks a portion into the Vault. When off, cash is only ever protected if a future system explicitly locks it.</div>
+                          </div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, automaticCashLockingEnabled: !prev.automaticCashLockingEnabled }))}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.automaticCashLockingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.automaticCashLockingEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div>
+                              <label className="block font-semibold mb-2">Protection Mode</label>
+                              <div className="flex gap-2">
+                                {(['spending_reserve', 'secure_vault', 'absolute_lock'] as VaultProtectionMode[]).map(mode => (
+                                  <button
+                                    key={mode}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, vaultProtectionMode: mode }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.vaultProtectionMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {mode.replace(/_/g, ' ')}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="text-xs opacity-60 mt-1">All three modes currently behave identically for voluntary spending (protected cash is never voluntarily spent) — they will only differ once a mechanic exists that can force a cash loss below the protected floor.</div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-semibold mb-2">Lock Percentage: {gameSettings.vaultLockPercentage}%</label>
+                                <input type="range" min="0" max="100" value={gameSettings.vaultLockPercentage} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultLockPercentage: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Milestone Size: {gameSettings.vaultMilestoneSizeMultiplier.toFixed(2)}x</label>
+                                <input type="range" min="0.25" max="4" step="0.25" value={gameSettings.vaultMilestoneSizeMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultMilestoneSizeMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Working Cash: ${gameSettings.vaultMinimumWorkingCash}</label>
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.vaultMinimumWorkingCash} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultMinimumWorkingCash: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.vaultCountProtectedCashTowardVictory)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, vaultCountProtectedCashTowardVictory: e.target.checked }))}
+                              />
+                              <span>{gameSettings.vaultCountProtectedCashTowardVictory ? '☑' : '☐'} Protected Cash Counts Toward Victory</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.vaultTransparencyEnabled)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, vaultTransparencyEnabled: e.target.checked }))}
+                              />
+                              <span>{gameSettings.vaultTransparencyEnabled ? '☑' : '☐'} Show in Transparency (HUD meter + lock notifications)</span>
+                            </label>
+                          </>
+                        )}
+                        <div className="text-xs opacity-60">Protected cash only ever increases, is never spent voluntarily, and never funds challenge wagers, travel, equipment, investments, sabotage, region deposits, market purchases, or paid overrides.</div>
+                      </>
+                    )}
                   </div>
                 )}
               </SettingsSection>
@@ -30708,6 +30952,31 @@ function AustraliaGame() {
 	                        />
 	                      </div>
 	                    </div>
+	                  </div>
+	                </div>
+	              )}
+
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled && gameSettings.vaultTransparencyEnabled && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">Cash Vault</span>
+	                    <span>Protected cash never funds voluntary spending</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(vaultTeamId => {
+	                      const vaultActors = getTeamActors(vaultTeamId);
+	                      const totalMoney = vaultActors.reduce((sum, a) => sum + (a.money || 0), 0);
+	                      const totalProtected = vaultActors.reduce((sum, a) => sum + (a.protectedCash || 0), 0);
+	                      const teamLabel = vaultTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+	                      return (
+	                        <div key={vaultTeamId} className={`${vaultTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
+	                          <div>{teamLabel}</div>
+	                          <div>Spendable: ${(totalMoney - totalProtected).toLocaleString()}</div>
+	                          <div>Protected: ${totalProtected.toLocaleString()}</div>
+	                          <div>Total: ${totalMoney.toLocaleString()}</div>
+	                        </div>
+	                      );
+	                    })}
 	                  </div>
 	                </div>
 	              )}
