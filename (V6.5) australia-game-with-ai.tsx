@@ -392,6 +392,96 @@ const SABOTAGE_ACTIONS = [
   }
 ];
 
+// V6.7 Phase 3c: Emergency Actions. Team-wide, named responses distinct from every existing
+// per-actor emergency mechanism (Phase 2a's emergency_only override policy, individual-AI
+// emergency loan/liquidation flows). Structural template = SABOTAGE_ACTIONS above, extended with
+// the spec's activation-condition/cooldown/use-limit/min-decision-score fields.
+type EmergencyReasonTag = 'financial_crisis' | 'region_control_loss' | 'endgame_threat';
+
+interface EmergencyActionDefinition {
+  id: string;
+  name: string;
+  description: string;
+  activationConditions: EmergencyReasonTag[];
+  cost: number;
+  cooldownMultiplier: number;
+  minimumDecisionScore: number;
+  explanation: string;
+}
+
+const EMERGENCY_ACTIONS: EmergencyActionDefinition[] = [
+  {
+    id: 'emergency_funding',
+    name: 'Emergency Funding',
+    description: "Richest teammate wires emergency cash to the teammate at risk of going broke.",
+    activationConditions: ['financial_crisis'],
+    cost: 0,
+    cooldownMultiplier: 1.0,
+    minimumDecisionScore: 40,
+    explanation: '{team} activated Emergency Funding because {actor} was at immediate risk of running out of cash.'
+  },
+  {
+    id: 'rapid_redeployment',
+    name: 'Rapid Redeployment',
+    description: "Instantly relocates an idle teammate toward a region the team is losing control of, refunding the travel cost.",
+    activationConditions: ['region_control_loss'],
+    cost: 150,
+    cooldownMultiplier: 0.66,
+    minimumDecisionScore: 35,
+    explanation: '{team} activated Rapid Redeployment because it was at immediate risk of losing regional control.'
+  },
+  {
+    id: 'resource_consolidation',
+    name: 'Resource Consolidation',
+    description: "Gathers scattered plan-required resources from teammates onto the actor who needs them.",
+    activationConditions: ['financial_crisis', 'region_control_loss'],
+    cost: 0,
+    cooldownMultiplier: 1.0,
+    minimumDecisionScore: 30,
+    explanation: '{team} activated Resource Consolidation to gather scattered resources for {actor}.'
+  },
+  {
+    id: 'team_recovery',
+    name: 'Team Recovery',
+    description: "Broad, team-wide version of Emergency Funding: liquidates underused inventory across every underfunded teammate.",
+    activationConditions: ['financial_crisis'],
+    cost: 0,
+    cooldownMultiplier: 1.5,
+    minimumDecisionScore: 55,
+    explanation: '{team} activated Team Recovery because multiple teammates were financially underwater.'
+  },
+  {
+    id: 'last_push',
+    name: 'Last Push',
+    description: "Grants a bonus action to the team's strongest actor to close out the match.",
+    activationConditions: ['endgame_threat'],
+    cost: 0,
+    cooldownMultiplier: 2.0,
+    minimumDecisionScore: 60,
+    explanation: '{team} activated Last Push, granting {actor} a bonus action to close the gap.'
+  },
+  {
+    id: 'defensive_deposit',
+    name: 'Defensive Deposit',
+    description: "Shores up a contested region the team currently controls with an emergency deposit.",
+    activationConditions: ['region_control_loss'],
+    cost: 200,
+    cooldownMultiplier: 0.75,
+    minimumDecisionScore: 35,
+    explanation: "{team} activated Defensive Deposit to protect {actor}'s hold on a contested region."
+  },
+  {
+    id: 'emergency_action_transfer',
+    name: 'Emergency Action Transfer',
+    description: "Forces an urgent one-time bonus-action credit to a struggling teammate, bypassing normal Action Lending limits.",
+    activationConditions: ['financial_crisis', 'endgame_threat'],
+    cost: 0,
+    cooldownMultiplier: 1.5,
+    minimumDecisionScore: 45,
+    explanation: '{team} activated Emergency Action Transfer, sending {actor} an urgent bonus action.'
+  }
+];
+
 const AI_SAFETY_BUFFER = 600;
 const SABOTAGE_RUMORS_MULTIPLIER = 0.8;
 const SABOTAGE_MARKET_PANIC_MULTIPLIER = 0.65;
@@ -454,6 +544,10 @@ const getSabotageChallengePenalty = (debuffs: Array<{ type: string; remainingDay
 const isEquipmentJammed = (debuffs: Array<{ type: string; remainingDays: number }> | undefined) => {
   return hasActiveDebuff(debuffs, 'gear_jam');
 };
+
+// V6.7 Phase 3c: all sabotage-applied debuff types, used by the Team Initiative "sabotage
+// protection" spend effect to strip only sabotage-caused debuffs (never anything else).
+const SABOTAGE_DEBUFF_TYPES = ['customs_hold', 'border_lockdown', 'market_panic', 'rumors', 'challenge_jitters', 'gear_jam'];
 
 const tickDebuffs = (debuffs: Debuff[] = []) => {
   return debuffs
@@ -1658,6 +1752,7 @@ interface ActorContributionStats {
   resourcesTransferred: number;
   actionsLent: number;
   actionsReceived: number;
+  comboBonusValue: number;
 }
 
 type TeammatePerformanceActionType = 'challenge' | 'craft' | 'economy' | 'support' | 'control';
@@ -2252,6 +2347,44 @@ interface TeamThreatTargetState {
   reasonSummary: string;
 }
 
+// V6.7 Phase 3c: Emergency Actions / Team Initiative / Combo Bonuses runtime state. All team-level
+// (never per-actor), following the same precedent as activeTeamPlan/activeThreatTarget/actionTokens
+// — cross-actor coordination state belongs on TeamState.
+interface TeamEmergencyActionUsage {
+  actionId: string;
+  usesRemaining: number;
+  lastUsedDay: number;
+}
+
+interface TeamEmergencyState {
+  declared: boolean;
+  reasonTag: EmergencyReasonTag | null;
+  declaredDay: number;
+  reasonSummary: string;
+  usageByActionId: Record<string, TeamEmergencyActionUsage>;
+}
+
+interface TeamInitiativeState {
+  value: number;
+  gainedToday: number;
+  lastGainDay: number;
+}
+
+interface TeamComboActionEntry {
+  actorId: string;
+  actionType: AIAction['type'];
+  region?: string;
+  planId?: string;
+  turn: number;
+  comboConsumed: boolean;
+}
+
+interface TeamComboTrackingState {
+  sequence: TeamComboActionEntry[];
+  comboCountToday: number;
+  comboCountDay: number;
+}
+
 interface TeamState {
   id: string;
   name: string;
@@ -2269,6 +2402,9 @@ interface TeamState {
   activeTeamPlan: TeamPlan | null;
   teamPlanHistory: TeamPlan[];
   activeThreatTarget: TeamThreatTargetState | null;
+  activeEmergency: TeamEmergencyState | null;
+  teamInitiative: TeamInitiativeState;
+  comboTracking: TeamComboTrackingState;
   color: string;
 }
 
@@ -2586,6 +2722,23 @@ type GameSettingsState = {
   teamAiEndgameAggressionMultiplier: number;
   teamAiEndgameOverrideBias: number;
   teamAiEndgameCashConversionStrength: number;
+  // V6.7 Phase 3c: Emergency Actions (inert unless teamCompetitiveAiEnabled && teamAiEmergencyActionsEnabled)
+  teamAiEmergencyActionsEnabled: boolean;
+  teamAiEmergencyActionCooldownDays: number;
+  teamAiEmergencyActionsPerGame: number;
+  teamAiEmergencyActionStrength: number;
+  teamAiEmergencyActionsForFriendlyTeam: boolean;
+  teamAiEmergencyActionsForEnemyTeam: boolean;
+  // V6.7 Phase 3c: Team Initiative (inert unless teamCompetitiveAiEnabled && teamInitiativeEnabled)
+  teamInitiativeEnabled: boolean;
+  teamInitiativeMaximum: number;
+  teamInitiativeGainMultiplier: number;
+  teamInitiativeDecayEnabled: boolean;
+  teamInitiativeVisibleToPlayer: boolean;
+  // V6.7 Phase 3c: Combo Bonuses (inert unless teamCompetitiveAiEnabled && teamComboBonusesEnabled)
+  teamComboBonusesEnabled: boolean;
+  teamComboBonusStrength: number;
+  teamComboWindowActions: number;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3539,6 +3692,20 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiEndgameAggressionMultiplier: 1.5,
   teamAiEndgameOverrideBias: 0.15,
   teamAiEndgameCashConversionStrength: 50,
+  teamAiEmergencyActionsEnabled: false,
+  teamAiEmergencyActionCooldownDays: 3,
+  teamAiEmergencyActionsPerGame: 3,
+  teamAiEmergencyActionStrength: 50,
+  teamAiEmergencyActionsForFriendlyTeam: true,
+  teamAiEmergencyActionsForEnemyTeam: true,
+  teamInitiativeEnabled: false,
+  teamInitiativeMaximum: 100,
+  teamInitiativeGainMultiplier: 1.0,
+  teamInitiativeDecayEnabled: false,
+  teamInitiativeVisibleToPlayer: true,
+  teamComboBonusesEnabled: false,
+  teamComboBonusStrength: 20,
+  teamComboWindowActions: 3,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3586,7 +3753,7 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   },
   teamCompetitiveAiEnabled: {
     key: 'teamCompetitiveAiEnabled', tab: 'teamModeAi', label: 'Competitive AI',
-    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, and Endgame Acceleration are wired — see the Coming in future updates note).',
+    description: 'Master switch for Team Mode Competitive AI systems (currently AI Action Overrides, the Shared Action Bank, Action Lending, Team Plans, Reservations, Threat Targeting, Endgame Acceleration, Emergency Actions, Team Initiative, and Combo Bonuses are wired — see the Coming in future updates note).',
     warning: 'Has no effect outside Team Mode.',
     tags: ['Team Mode', 'AI'], chips: ['Team Mode only', 'AI only']
   },
@@ -3671,6 +3838,9 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.reservations', tab: 'teamModeAi', title: 'Reservations', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiReservationStrictness', 'friendlyAiRespectPlayerReservations', 'friendlyAiMayRequestReservedResource'] },
   { id: 'teamModeAi.threatTargeting', tab: 'teamModeAi', title: 'Threat Targeting', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiThreatTargetingEnabled', 'teamAiThreatTargetingStrength', 'teamAiThreatReevaluationFrequency', 'teamAiThreatFocusDuration', 'teamAiMayTargetFriendlyAiTeammate'] },
   { id: 'teamModeAi.endgameAcceleration', tab: 'teamModeAi', title: 'Endgame Acceleration', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEndgameAccelerationEnabled', 'teamAiEndgameStartPercent', 'teamAiEndgameAggressionMultiplier', 'teamAiEndgameOverrideBias', 'teamAiEndgameCashConversionStrength'] },
+  { id: 'teamModeAi.emergencyActions', tab: 'teamModeAi', title: 'Emergency Actions', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiEmergencyActionsEnabled', 'teamAiEmergencyActionCooldownDays', 'teamAiEmergencyActionsPerGame', 'teamAiEmergencyActionStrength', 'teamAiEmergencyActionsForFriendlyTeam', 'teamAiEmergencyActionsForEnemyTeam'] },
+  { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer'] },
+  { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -4610,7 +4780,8 @@ const createDefaultContributionStats = (): ActorContributionStats => ({
   cashTransferred: 0,
   resourcesTransferred: 0,
   actionsLent: 0,
-  actionsReceived: 0
+  actionsReceived: 0,
+  comboBonusValue: 0
 });
 
 const createDefaultTeamScoreBreakdown = (): TeamScoreBreakdown => ({
@@ -6373,6 +6544,76 @@ const sanitizeTeamThreatTarget = (value: unknown): TeamThreatTargetState | null 
   };
 };
 
+const EMERGENCY_REASON_TAGS: EmergencyReasonTag[] = ['financial_crisis', 'region_control_loss', 'endgame_threat'];
+
+// V6.7 Phase 3c: mirrors sanitizeTeamPlan's null-on-malformed-shape convention.
+const sanitizeTeamEmergencyState = (value: unknown): TeamEmergencyState | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamEmergencyState>;
+  if (typeof source.declared !== 'boolean') return null;
+  const usageByActionId: Record<string, TeamEmergencyActionUsage> = {};
+  if (source.usageByActionId && typeof source.usageByActionId === 'object') {
+    Object.entries(source.usageByActionId as Record<string, unknown>).forEach(([actionId, raw]) => {
+      if (!raw || typeof raw !== 'object') return;
+      const usage = raw as Partial<TeamEmergencyActionUsage>;
+      usageByActionId[actionId] = {
+        actionId,
+        usesRemaining: typeof usage.usesRemaining === 'number' && isFinite(usage.usesRemaining) ? Math.max(0, Math.floor(usage.usesRemaining)) : 0,
+        lastUsedDay: typeof usage.lastUsedDay === 'number' && isFinite(usage.lastUsedDay) ? Math.floor(usage.lastUsedDay) : -1
+      };
+    });
+  }
+  return {
+    declared: source.declared,
+    reasonTag: EMERGENCY_REASON_TAGS.includes(source.reasonTag as EmergencyReasonTag) ? source.reasonTag as EmergencyReasonTag : null,
+    declaredDay: typeof source.declaredDay === 'number' && isFinite(source.declaredDay) ? Math.max(0, Math.floor(source.declaredDay)) : 0,
+    reasonSummary: typeof source.reasonSummary === 'string' ? source.reasonSummary : '',
+    usageByActionId
+  };
+};
+
+// V6.7 Phase 3c: always returns a valid object (mirrors sanitizeTeamActionBank), never null.
+const sanitizeTeamInitiativeState = (value: unknown): TeamInitiativeState => {
+  const defaults: TeamInitiativeState = { value: 0, gainedToday: 0, lastGainDay: 0 };
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<TeamInitiativeState>;
+  return {
+    value: typeof source.value === 'number' && isFinite(source.value) ? Math.max(0, source.value) : defaults.value,
+    gainedToday: typeof source.gainedToday === 'number' && isFinite(source.gainedToday) ? Math.max(0, source.gainedToday) : defaults.gainedToday,
+    lastGainDay: typeof source.lastGainDay === 'number' && isFinite(source.lastGainDay) ? Math.floor(source.lastGainDay) : defaults.lastGainDay
+  };
+};
+
+const sanitizeTeamComboActionEntry = (value: unknown): TeamComboActionEntry | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamComboActionEntry>;
+  if (typeof source.actorId !== 'string' || typeof source.actionType !== 'string') return null;
+  return {
+    actorId: source.actorId,
+    actionType: source.actionType as AIAction['type'],
+    region: typeof source.region === 'string' ? source.region : undefined,
+    planId: typeof source.planId === 'string' ? source.planId : undefined,
+    turn: typeof source.turn === 'number' && isFinite(source.turn) ? Math.max(0, Math.floor(source.turn)) : 0,
+    comboConsumed: Boolean(source.comboConsumed)
+  };
+};
+
+// V6.7 Phase 3c: always returns a valid object; sequence entries individually validated and
+// dropped if malformed (mirrors sanitizeActionTokens), capped at 20 like the live tracking cap.
+const sanitizeTeamComboTrackingState = (value: unknown): TeamComboTrackingState => {
+  const defaults: TeamComboTrackingState = { sequence: [], comboCountToday: 0, comboCountDay: 0 };
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<TeamComboTrackingState>;
+  const sequence = Array.isArray(source.sequence)
+    ? source.sequence.map(entry => sanitizeTeamComboActionEntry(entry)).filter((entry): entry is TeamComboActionEntry => Boolean(entry)).slice(-20)
+    : [];
+  return {
+    sequence,
+    comboCountToday: typeof source.comboCountToday === 'number' && isFinite(source.comboCountToday) ? Math.max(0, Math.floor(source.comboCountToday)) : 0,
+    comboCountDay: typeof source.comboCountDay === 'number' && isFinite(source.comboCountDay) ? Math.max(0, Math.floor(source.comboCountDay)) : 0
+  };
+};
+
 const normalizePriorityMode = (value: unknown): PriorityMode => {
   return value === 'adaptive' || value === 'manual' ? value : 'balanced';
 };
@@ -6819,6 +7060,9 @@ const createDefaultTeamState = (
   activeTeamPlan: null,
   teamPlanHistory: [],
   activeThreatTarget: null,
+  activeEmergency: null,
+  teamInitiative: { value: 0, gainedToday: 0, lastGainDay: 0 },
+  comboTracking: { sequence: [], comboCountToday: 0, comboCountDay: 0 },
   color
 });
 
@@ -6858,6 +7102,10 @@ const initialPlayerState = {
   lentActionsUsedToday: 0,
   receivedActionsUsedToday: 0,
   pendingLentActionCredits: {} as Record<string, number>,
+  // V6.7 Phase 3c: separate field/redemption path from pendingLentActionCredits above — that
+  // field's existing redemption code hardcodes source 'lent' and must not be touched.
+  pendingEmergencyActionCredits: {} as Record<string, number>,
+  sabotageProtectionExpiresTurn: 0,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -8034,6 +8282,17 @@ function AustraliaGame() {
               return acc;
             }, {})
           : {},
+        pendingEmergencyActionCredits: (data?.pendingEmergencyActionCredits && typeof data.pendingEmergencyActionCredits === 'object')
+          ? Object.entries(data.pendingEmergencyActionCredits as Record<string, unknown>).reduce<Record<string, number>>((acc, [key, amount]) => {
+              if (typeof amount === 'number' && isFinite(amount)) {
+                acc[key] = Math.max(0, Math.floor(amount));
+              }
+              return acc;
+            }, {})
+          : {},
+        sabotageProtectionExpiresTurn: typeof data?.sabotageProtectionExpiresTurn === 'number' && isFinite(data.sabotageProtectionExpiresTurn)
+          ? Math.max(0, Math.floor(data.sabotageProtectionExpiresTurn))
+          : 0,
         loans,
         completedThisSeason,
         challengeMastery,
@@ -8248,7 +8507,10 @@ function AustraliaGame() {
             actionTokens: sanitizeActionTokens(teamData?.actionTokens),
             activeTeamPlan: sanitizeTeamPlan(teamData?.activeTeamPlan),
             teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory),
-            activeThreatTarget: sanitizeTeamThreatTarget(teamData?.activeThreatTarget)
+            activeThreatTarget: sanitizeTeamThreatTarget(teamData?.activeThreatTarget),
+            activeEmergency: sanitizeTeamEmergencyState(teamData?.activeEmergency),
+            teamInitiative: sanitizeTeamInitiativeState(teamData?.teamInitiative),
+            comboTracking: sanitizeTeamComboTrackingState(teamData?.comboTracking)
           };
           return acc;
         }, {})
@@ -8528,6 +8790,34 @@ function AustraliaGame() {
         teamAiEndgameAggressionMultiplier: clampSettingNumber(settingsData.teamAiEndgameAggressionMultiplier, DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier, 1.0, 3.0),
         teamAiEndgameOverrideBias: clampSettingNumber(settingsData.teamAiEndgameOverrideBias, DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias, 0, 0.5),
         teamAiEndgameCashConversionStrength: clampSettingNumber(settingsData.teamAiEndgameCashConversionStrength, DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength, 0, 100),
+        teamAiEmergencyActionsEnabled: typeof settingsData.teamAiEmergencyActionsEnabled === 'boolean'
+          ? settingsData.teamAiEmergencyActionsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsEnabled,
+        teamAiEmergencyActionCooldownDays: clampSettingNumber(settingsData.teamAiEmergencyActionCooldownDays, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionCooldownDays, 1, 10),
+        teamAiEmergencyActionsPerGame: clampSettingNumber(settingsData.teamAiEmergencyActionsPerGame, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsPerGame, 1, 10),
+        teamAiEmergencyActionStrength: clampSettingNumber(settingsData.teamAiEmergencyActionStrength, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionStrength, 0, 100),
+        teamAiEmergencyActionsForFriendlyTeam: typeof settingsData.teamAiEmergencyActionsForFriendlyTeam === 'boolean'
+          ? settingsData.teamAiEmergencyActionsForFriendlyTeam
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForFriendlyTeam,
+        teamAiEmergencyActionsForEnemyTeam: typeof settingsData.teamAiEmergencyActionsForEnemyTeam === 'boolean'
+          ? settingsData.teamAiEmergencyActionsForEnemyTeam
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForEnemyTeam,
+        teamInitiativeEnabled: typeof settingsData.teamInitiativeEnabled === 'boolean'
+          ? settingsData.teamInitiativeEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeEnabled,
+        teamInitiativeMaximum: clampSettingNumber(settingsData.teamInitiativeMaximum, DEFAULT_GAME_SETTINGS.teamInitiativeMaximum, 20, 500),
+        teamInitiativeGainMultiplier: clampSettingNumber(settingsData.teamInitiativeGainMultiplier, DEFAULT_GAME_SETTINGS.teamInitiativeGainMultiplier, 0, 3),
+        teamInitiativeDecayEnabled: typeof settingsData.teamInitiativeDecayEnabled === 'boolean'
+          ? settingsData.teamInitiativeDecayEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeDecayEnabled,
+        teamInitiativeVisibleToPlayer: typeof settingsData.teamInitiativeVisibleToPlayer === 'boolean'
+          ? settingsData.teamInitiativeVisibleToPlayer
+          : DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
+        teamComboBonusesEnabled: typeof settingsData.teamComboBonusesEnabled === 'boolean'
+          ? settingsData.teamComboBonusesEnabled
+          : DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
+        teamComboBonusStrength: clampSettingNumber(settingsData.teamComboBonusStrength, DEFAULT_GAME_SETTINGS.teamComboBonusStrength, 0, 100),
+        teamComboWindowActions: clampSettingNumber(settingsData.teamComboWindowActions, DEFAULT_GAME_SETTINGS.teamComboWindowActions, 2, 6),
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -16157,6 +16447,35 @@ function AustraliaGame() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }, []);
 
+  // V6.7 Phase 3c: gains Team Initiative for teamId, applying teamInitiativeGainMultiplier and a
+  // daily-gain cap (spec safeguard: "cap initiative gain per day"). dailyCap is 25% of the
+  // configured maximum — a single day can never fill more than a quarter of the meter regardless
+  // of how many qualifying triggers fire, which is also what prevents infinite-loop farming of any
+  // single trigger. GD6: this is the ONLY place 'complementary_combo' gains are applied — no
+  // separate "complementary actions" heuristic exists anywhere else. Declared here (before
+  // depositInRegion/transferCash/transferResource/runCompetitiveTeamPlanningPass) specifically so
+  // those earning triggers can call it without a forward-reference/TDZ problem.
+  const gainTeamInitiative = useCallback((teamId: string, rawAmount: number, reason: string): void => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return;
+    if (rawAmount <= 0) return;
+    updateTeamState(teamId, prev => {
+      const current = sanitizeTeamInitiativeState(prev.teamInitiative);
+      const alreadyGainedToday = current.lastGainDay === gameState.day ? current.gainedToday : 0;
+      const dailyCap = Math.max(1, Math.round(gameSettings.teamInitiativeMaximum * 0.25));
+      const requestedAmount = rawAmount * gameSettings.teamInitiativeGainMultiplier;
+      const appliedAmount = Math.max(0, Math.min(requestedAmount, dailyCap - alreadyGainedToday));
+      if (appliedAmount <= 0) return prev;
+      return {
+        ...prev,
+        teamInitiative: {
+          value: Math.min(gameSettings.teamInitiativeMaximum, current.value + appliedAmount),
+          gainedToday: alreadyGainedToday + appliedAmount,
+          lastGainDay: gameState.day
+        }
+      };
+    });
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, gameSettings.teamInitiativeMaximum, gameSettings.teamInitiativeGainMultiplier, gameState.day, updateTeamState]);
+
   const depositInRegion = useCallback((
     regionCode: string,
     actorId: string,
@@ -16235,12 +16554,19 @@ function AustraliaGame() {
         actionType: 'control',
         impact: 0.4
       });
+      // V6.7 Phase 3c Team Initiative trigger #5: gaining control of a region earns initiative.
+      gainTeamInitiative(actorState.teamId, 8, 'region_control_gained');
     } else if (meaningfulDefensiveDeposit) {
       appendTeammatePerformanceSample(actorState.teamId, actorId, {
         turn: gameState.turnCounter,
         actionType: 'control',
         impact: 0.22
       });
+      // V6.7 Phase 3c Team Initiative trigger #5: a meaningful defensive deposit (holding a
+      // contested region) earns initiative too.
+      if (isDefending) {
+        gainTeamInitiative(actorState.teamId, 4, 'region_defended');
+      }
     }
 
     if (actorState.kind === 'human' && options?.consumeAction !== false) {
@@ -16279,6 +16605,7 @@ function AustraliaGame() {
   }, [
     addNotification,
     deductMoney,
+    gainTeamInitiative,
     gameSettings.negotiationMode,
     gameState.day,
     gameState.turnCounter,
@@ -16476,6 +16803,9 @@ function AustraliaGame() {
         }
       }
     }));
+    // V6.7 Phase 3c: Team Initiative earning trigger #6 — teammate support (an OPEN request being
+    // answered, distinct from trigger #3 below which fires for any qualifying isAiSupport transfer).
+    const hadOpenCashRequest = sanitizeSupportRequests(toActor.supportRequests).some(request => request.type === 'cash' && request.status === 'open');
     updateActorState(toActorId, prev => ({
       ...prev,
       supportRequests: sanitizeSupportRequests(prev.supportRequests).map(request =>
@@ -16489,6 +16819,15 @@ function AustraliaGame() {
           : request
       )
     }));
+    if (hadOpenCashRequest) {
+      gainTeamInitiative(fromActor.teamId, 4, 'support_request_resolved');
+    }
+    // V6.7 Phase 3c: Team Initiative earning trigger #3 — useful transfers. Only isAiSupport-
+    // flagged transfers reach here having already cleared the "useful" bar (the
+    // TEAM_SUPPORT_MIN_IMPROVEMENT check above), so passing that gate is what "useful" means here.
+    if (options?.isAiSupport) {
+      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer');
+    }
     appendTeammatePerformanceSample(fromActor.teamId, fromActorId, {
       turn: gameState.turnCounter,
       actionType: 'support',
@@ -16504,7 +16843,7 @@ function AustraliaGame() {
       'system'
     );
     return true;
-  }, [addMoney, addNotification, analyzeTeamLiquidity, appendTeammatePerformanceSample, deductMoney, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, incrementAction, updateActorContribution, updateActorState, updateTeamState]);
+  }, [addMoney, addNotification, analyzeTeamLiquidity, appendTeammatePerformanceSample, deductMoney, gainTeamInitiative, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, incrementAction, updateActorContribution, updateActorState, updateTeamState]);
 
   const transferResource = useCallback((fromActorId: string, toActorId: string, resource: string, rawQuantity: number, options?: {
     isAiSupport?: boolean;
@@ -16597,12 +16936,16 @@ function AustraliaGame() {
       actionType: 'support',
       impact: 0.26
     });
+    // V6.7 Phase 3c Team Initiative trigger #3: a useful (AI-support-flagged) resource transfer.
+    if (options?.isAiSupport) {
+      gainTeamInitiative(fromActor.teamId, 5, 'support_transfer');
+    }
     if (fromActor.kind === 'human') {
       incrementAction();
     }
     addNotification(`${getActorDisplayName(fromActorId)} shared ${quantity}x ${resource} with ${getActorDisplayName(toActorId)}.`, fromActor.kind === 'human' ? 'success' : 'ai', false, 'system');
     return true;
-  }, [addNotification, appendTeammatePerformanceSample, gameState.turnCounter, getActorDisplayName, getActorState, incrementAction, updateActorContribution, updateActorState, updateTeamState]);
+  }, [addNotification, appendTeammatePerformanceSample, gainTeamInitiative, gameState.turnCounter, getActorDisplayName, getActorState, incrementAction, updateActorContribution, updateActorState, updateTeamState]);
 
   // V6.7 Phase 2c: Action Lending. A directed, pairwise credit — one AI actor hands a specific
   // unused action to a specific teammate. Unlike transferCash/transferResource this doesn't move
@@ -17826,6 +18169,8 @@ function AustraliaGame() {
       if (continuation.action === 'complete') {
         archivedPlan = { ...nextActiveTeamPlan, status: 'completed' };
         nextActiveTeamPlan = null;
+        // V6.7 Phase 3c: Team Initiative earning trigger #1 — completed plans.
+        gainTeamInitiative(teamId, 15, 'plan_completed');
       } else if (continuation.action === 'interrupt') {
         archivedPlan = { ...nextActiveTeamPlan, status: 'abandoned', failureReason: continuation.reason };
         nextActiveTeamPlan = null;
@@ -17873,7 +18218,7 @@ function AustraliaGame() {
       teamPlanHistory: archivedPlan ? [...(team.teamPlanHistory || []), archivedPlan].slice(-10) : (team.teamPlanHistory || []),
       teamGoals
     };
-  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, analyzeTeamLiquidity, aiRandom, reserveTeamTarget]);
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiPlanCommitmentEnabled, analyzeTeamLiquidity, aiRandom, reserveTeamTarget, gainTeamInitiative]);
 
   // V6.7 Phase 3a (Section 26 "Safe mid-game setting changes"): releases reservations, invalidates
   // unconsumed tokens, and abandons any active plan the instant Competitive AI is disabled mid-game
@@ -18274,7 +18619,9 @@ function AustraliaGame() {
           challengeValue: teamActors.reduce((sum, actor) => sum + ((actor.contributionStats?.challengesCompleted || 0) * 150), 0),
           craftedValue: teamActors.reduce((sum, actor) => sum + (actor.contributionStats?.craftedValue || 0), 0),
           investmentsValue: teamActors.reduce((sum, actor) => sum + ((actor.investments?.length || 0) * 2000), 0),
-          strategicAdvantage: (controlSnapshot.totalControlled[teamId] || 0) * 400 + teamActors.reduce((sum, actor) => sum + ((actor.supportRequests || []).filter(request => request.status === 'resolved').length * 75), 0),
+          // V6.7 Phase 3c: additive comboBonusValue term — always 0 when Combo Bonuses is off since
+          // nothing ever writes actor.contributionStats.comboBonusValue in that case.
+          strategicAdvantage: (controlSnapshot.totalControlled[teamId] || 0) * 400 + teamActors.reduce((sum, actor) => sum + ((actor.supportRequests || []).filter(request => request.status === 'resolved').length * 75) + (actor.contributionStats?.comboBonusValue || 0), 0),
           total: 0
         };
         scoreBreakdown.total = scoreBreakdown.netWorth + (scoreBreakdown.controlledRegions * 750) + scoreBreakdown.challengeValue + scoreBreakdown.craftedValue + scoreBreakdown.investmentsValue + scoreBreakdown.strategicAdvantage;
@@ -18315,6 +18662,54 @@ function AustraliaGame() {
           actionTokens: (teamState.actionTokens || []).filter(token =>
             token.status === 'granted' || (projectedTurnCounter - token.grantedTurn) < ACTION_TOKEN_PRUNE_TURN_WINDOW
           ).slice(-60),
+          // V6.7 Phase 3c: "declare emergency" recomputed once per day (GD1). Region-control-loss
+          // compares the scoreBreakdown just computed above against teamState.scoreBreakdown (the
+          // PREVIOUS day's value, still present here since this object hasn't been assigned back
+          // to teamsByIdRef yet) — free via reduce sequencing, no new persisted history needed.
+          // When either master toggle is off, the prior state carries through inertly.
+          activeEmergency: (() => {
+            if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiEmergencyActionsEnabled) {
+              return teamState.activeEmergency;
+            }
+            const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+            const financialCrisis = analyzeTeamLiquidity(teamId).balancingActive;
+            const regionControlLoss = scoreBreakdown.controlledRegions < (teamState.scoreBreakdown?.controlledRegions ?? scoreBreakdown.controlledRegions);
+            const metricValuesForEmergency = projectedTeamMetricValues[gameSettings.winCondition];
+            const teamMetricForEmergency = teamId === TEAM_PLAYER_ID ? metricValuesForEmergency.player : metricValuesForEmergency.ai;
+            const opponentMetricForEmergency = teamId === TEAM_PLAYER_ID ? metricValuesForEmergency.ai : metricValuesForEmergency.player;
+            const nearEndgame = gameSettings.totalDays > 0 && (newDay / gameSettings.totalDays) >= 0.8;
+            const endgameThreat = nearEndgame && opponentMetricForEmergency > teamMetricForEmergency && (opponentMetricForEmergency - teamMetricForEmergency) > scoreBreakdown.total * 0.5;
+
+            let reasonTag: EmergencyReasonTag | null = null;
+            if (financialCrisis) reasonTag = 'financial_crisis';
+            else if (regionControlLoss) reasonTag = 'region_control_loss';
+            else if (endgameThreat) reasonTag = 'endgame_threat';
+
+            const prevEmergency = teamState.activeEmergency;
+            return {
+              declared: reasonTag !== null,
+              reasonTag,
+              declaredDay: reasonTag !== null
+                ? ((prevEmergency?.declared && prevEmergency.reasonTag === reasonTag) ? prevEmergency.declaredDay : newDay)
+                : (prevEmergency?.declaredDay || 0),
+              reasonSummary: reasonTag ? `${teamState.name} declared an emergency: ${reasonTag.replace(/_/g, ' ')}.` : (prevEmergency?.reasonSummary || ''),
+              usageByActionId: prevEmergency?.usageByActionId || {}
+            };
+          })(),
+          // V6.7 Phase 3c: daily gain-cap reset (+ optional decay) for Team Initiative, and daily
+          // combo-count reset for Combo Bonuses — following the exact teamActionBank
+          // recompute-when-enabled/sanitize-passthrough-when-disabled pattern.
+          teamInitiative: (() => {
+            const prevInitiative = sanitizeTeamInitiativeState(teamState.teamInitiative);
+            if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return prevInitiative;
+            const decayedValue = gameSettings.teamInitiativeDecayEnabled ? Math.max(0, Math.round(prevInitiative.value * 0.9)) : prevInitiative.value;
+            return { value: decayedValue, gainedToday: 0, lastGainDay: newDay };
+          })(),
+          comboTracking: (() => {
+            const prevCombo = sanitizeTeamComboTrackingState(teamState.comboTracking);
+            if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamComboBonusesEnabled) return prevCombo;
+            return { ...prevCombo, comboCountToday: 0, comboCountDay: newDay };
+          })(),
           // V6.7 Phase 3a: single daily planning pass, gated by runCompetitiveTeamPlanningPass's
           // own early-return guard — with either master toggle off, planningResult is null and
           // activeTeamPlan/teamPlanHistory/teamGoals all pass through completely unchanged.
@@ -18824,7 +19219,9 @@ function AustraliaGame() {
     }
   }, [gameState.resourcePrices]);
 
-  const calculateActorChallengeSuccessChance = useCallback((challenge: any, actorState: ActorState) => {
+  // V6.7 Phase 3c: bonusChance is an optional additive term (default 0 preserves old behavior
+  // exactly) for the Team Initiative "challenge assistance" spend effect.
+  const calculateActorChallengeSuccessChance = useCallback((challenge: any, actorState: ActorState, bonusChance: number = 0) => {
     const baseChance = 0.5;
     const statValue = challenge.type === 'finale'
       ? ((actorState.stats.strength || 3) + (actorState.stats.charisma || 3) + (actorState.stats.luck || 3) + (actorState.stats.intelligence || 3)) / 4
@@ -18861,7 +19258,7 @@ function AustraliaGame() {
       guaranteeSuccess = true;
     }
     if (guaranteeSuccess) return 1;
-    return Math.min(0.97, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus));
+    return Math.min(0.97, Math.max(0.1, baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + equipmentBonus - fatiguePenalty - sabotagePenalty + abilityBonus + bonusChance));
   }, [gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.weather]);
 
   const calculateActorTravelCost = useCallback((fromRegion: string, toRegion: string, actorState: ActorState) => {
@@ -19027,14 +19424,20 @@ function AustraliaGame() {
         impact: 0.28 + (recipe.baseValue >= 750 ? 0.06 : 0)
       });
       addNotification(`${getActorDisplayName(actorId)} crafted ${recipe.output}.`, actor.kind === 'human' ? 'success' : 'ai', false, actor.kind === 'human' ? 'crafting' : 'ai_trade');
+      // V6.7 Phase 3c Team Initiative trigger #4: high-value crafting chains earn initiative.
+      if (recipe.baseValue >= 750) {
+        gainTeamInitiative(actor.teamId, 5, 'high_value_craft');
+      }
     }
     return craftedSuccessfully;
-  }, [addNotification, aiRandom, appendTeammatePerformanceSample, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
+  }, [addNotification, aiRandom, appendTeammatePerformanceSample, gainTeamInitiative, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
 
-  const takeChallengeForActor = useCallback((actorId: string, challenge: any, wager: number) => {
+  // V6.7 Phase 3c: bonusSuccessChance is an optional pass-through (default 0 preserves old
+  // behavior exactly) for the Team Initiative "challenge assistance" spend effect.
+  const takeChallengeForActor = useCallback((actorId: string, challenge: any, wager: number, bonusSuccessChance: number = 0) => {
     const actor = getActorState(actorId);
     if (!actor || actor.money < wager) return false;
-    const successChance = calculateActorChallengeSuccessChance(challenge, actor);
+    const successChance = calculateActorChallengeSuccessChance(challenge, actor, bonusSuccessChance);
     const success = aiRandom() < successChance;
     if (success) {
       let reward = Math.floor(wager * challenge.reward);
@@ -19215,7 +19618,9 @@ function AustraliaGame() {
         actionSucceeded = typeof action.data?.region === 'string' ? travelActor(actorId, action.data.region) : false;
         break;
       case 'challenge':
-        actionSucceeded = action.data?.challenge ? takeChallengeForActor(actorId, action.data.challenge, Math.max(MINIMUM_WAGER, action.data.wager || MINIMUM_WAGER)) : false;
+        // V6.7 Phase 3c: initiativeAssistBonus is read from the untyped data bag exactly like
+        // action.data?.region above — absent (undefined) ⇒ falls back to 0 ⇒ unchanged behavior.
+        actionSucceeded = action.data?.challenge ? takeChallengeForActor(actorId, action.data.challenge, Math.max(MINIMUM_WAGER, action.data.wager || MINIMUM_WAGER), action.data?.initiativeAssistBonus || 0) : false;
         break;
       case 'sell':
         actionSucceeded = typeof action.data?.resource === 'string' ? sellActorResource(actorId, action.data.resource) : false;
@@ -19496,6 +19901,190 @@ function AustraliaGame() {
     gameSettings.teamAiThreatReevaluationFrequency, gameSettings.teamAiThreatFocusDuration,
     gameState.turnCounter, getActorState, getTeamActors, computeThreatScore, computeEndgameAccelerationState, updateTeamState
   ]);
+
+  // V6.7 Phase 3c: Emergency Actions urgency scoring — 0-100 per reason tag, reusing signals
+  // already computed elsewhere (analyzeTeamLiquidity's imbalanceScore, teamScoreSummary's
+  // controlledRegions/total) rather than deriving anything from scratch.
+  const computeEmergencyUrgencyScore = useCallback((teamId: string, reasonTag: EmergencyReasonTag): number => {
+    const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    if (reasonTag === 'financial_crisis') {
+      return Math.min(100, analyzeTeamLiquidity(teamId).imbalanceScore);
+    }
+    if (reasonTag === 'region_control_loss') {
+      const teamControlled = teamScoreSummary[teamId]?.controlledRegions || 0;
+      const opponentControlled = teamScoreSummary[opponentTeamId]?.controlledRegions || 0;
+      return Math.min(100, Math.max(0, (opponentControlled - teamControlled) * 20));
+    }
+    // 'endgame_threat'
+    const teamTotal = teamScoreSummary[teamId]?.total || 0;
+    const opponentTotal = teamScoreSummary[opponentTeamId]?.total || 0;
+    const opponentLead = Math.max(0, opponentTotal - teamTotal);
+    return Math.min(100, (opponentLead / Math.max(1, teamTotal)) * 100);
+  }, [analyzeTeamLiquidity, teamScoreSummary]);
+
+  // V6.7 Phase 3c: Emergency Action eligibility gate. GD4's anti-rubber-banding safeguard is these
+  // four checks together — per-game per-action use-limit, per-action cooldown, per-action urgency
+  // floor, and (enforced by the caller, triggerTeamEmergencyAction) a mandatory notification.
+  const evaluateTeamEmergencyActionTrigger = useCallback((actorId: string): { action: EmergencyActionDefinition; team: TeamState } | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiEmergencyActionsEnabled) return null;
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai') return null;
+
+    const isEnemy = actor.teamId === TEAM_OPPONENT_ID;
+    if (isEnemy && !gameSettings.teamAiEmergencyActionsForEnemyTeam) return null;
+    if (!isEnemy && !gameSettings.teamAiEmergencyActionsForFriendlyTeam) return null;
+
+    const team = teamsByIdRef.current[actor.teamId];
+    const emergency = team?.activeEmergency;
+    if (!emergency || !emergency.declared || !emergency.reasonTag) return null;
+
+    const day = gameState.day;
+    const candidates = EMERGENCY_ACTIONS.filter(candidate => candidate.activationConditions.includes(emergency.reasonTag as EmergencyReasonTag));
+    for (const candidate of candidates) {
+      const usage = emergency.usageByActionId[candidate.id];
+      const usesRemaining = usage ? usage.usesRemaining : gameSettings.teamAiEmergencyActionsPerGame;
+      if (usesRemaining <= 0) continue;
+      const lastUsedDay = usage ? usage.lastUsedDay : -1;
+      const cooldownDays = gameSettings.teamAiEmergencyActionCooldownDays * candidate.cooldownMultiplier;
+      if (lastUsedDay >= 0 && (day - lastUsedDay) < cooldownDays) continue;
+      const urgency = computeEmergencyUrgencyScore(actor.teamId, emergency.reasonTag);
+      if (urgency < candidate.minimumDecisionScore) continue;
+      return { action: candidate, team };
+    }
+    return null;
+  }, [
+    gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEmergencyActionsEnabled,
+    gameSettings.teamAiEmergencyActionsForEnemyTeam, gameSettings.teamAiEmergencyActionsForFriendlyTeam,
+    gameSettings.teamAiEmergencyActionsPerGame, gameSettings.teamAiEmergencyActionCooldownDays,
+    gameState.day, getActorState, computeEmergencyUrgencyScore
+  ]);
+
+  // V6.7 Phase 3c: executes the mapped mechanism for a triggered Emergency Action (table in the
+  // plan), always records usage, and — per GD4 — always fires a notification. There is no
+  // transparency toggle for Emergency Actions; visibility is mandatory, not optional.
+  const triggerTeamEmergencyAction = useCallback((actorId: string, action: EmergencyActionDefinition, team: TeamState): { bonusActionTokenId?: string } => {
+    const actor = getActorState(actorId);
+    const result: { bonusActionTokenId?: string } = {};
+    if (!actor) return result;
+
+    const recordUsage = () => {
+      updateTeamState(team.id, prev => {
+        const existingUsage = prev.activeEmergency?.usageByActionId[action.id];
+        const usesRemaining = existingUsage ? existingUsage.usesRemaining : gameSettings.teamAiEmergencyActionsPerGame;
+        return {
+          ...prev,
+          activeEmergency: prev.activeEmergency ? {
+            ...prev.activeEmergency,
+            usageByActionId: {
+              ...prev.activeEmergency.usageByActionId,
+              [action.id]: { actionId: action.id, usesRemaining: Math.max(0, usesRemaining - 1), lastUsedDay: gameState.day }
+            }
+          } : prev.activeEmergency
+        };
+      });
+    };
+
+    const strengthScale = gameSettings.teamAiEmergencyActionStrength / 100;
+    const teamActors = getTeamActors(team.id);
+
+    switch (action.id) {
+      case 'emergency_funding': {
+        const richest = [...teamActors].sort((a, b) => b.money - a.money)[0];
+        const poorest = [...teamActors].sort((a, b) => a.money - b.money)[0];
+        if (richest && poorest && richest.id !== poorest.id) {
+          const teamAverageMoney = teamActors.reduce((sum, a) => sum + a.money, 0) / Math.max(1, teamActors.length);
+          const amount = Math.round(Math.min(Math.max(0, richest.money - AI_SAFETY_BUFFER), Math.max(0, teamAverageMoney * 0.5 - poorest.money)) * strengthScale);
+          if (amount > 0) {
+            transferCash(richest.id, poorest.id, amount, { allowRemoteTeamAid: true, reason: 'Emergency Funding' });
+          }
+        }
+        break;
+      }
+      case 'rapid_redeployment': {
+        const idleActor = teamActors.find(a => a.kind === 'ai') || teamActors[0];
+        if (idleActor) {
+          const targetRegion = Object.keys(REGIONS).find(code => code !== idleActor.currentRegion) || idleActor.currentRegion;
+          const cost = calculateActorTravelCost(idleActor.currentRegion, targetRegion, idleActor);
+          if (travelActor(idleActor.id, targetRegion)) {
+            updateActorState(idleActor.id, prev => ({ ...prev, money: addMoney(prev.money, cost) }));
+          }
+        }
+        break;
+      }
+      case 'resource_consolidation': {
+        const plan = team.activeTeamPlan;
+        const leadActorId = plan?.assignedActorIds[0];
+        if (leadActorId) {
+          const leadActor = getActorState(leadActorId);
+          const neededResources = plan ? Object.keys(plan.reservedResources) : [];
+          neededResources.forEach(resource => {
+            const donor = teamActors.find(a => a.id !== leadActorId && a.inventory.includes(resource));
+            if (donor && leadActor) {
+              transferResource(donor.id, leadActorId, resource, 1, { reason: 'Resource Consolidation' });
+            }
+          });
+        }
+        break;
+      }
+      case 'team_recovery': {
+        const teamAverageMoney = teamActors.reduce((sum, a) => sum + a.money, 0) / Math.max(1, teamActors.length);
+        teamActors.filter(a => a.money < teamAverageMoney * 0.7 && a.inventory.length > 0).forEach(a => {
+          const { cash } = liquidateInventoryForCash(a);
+          if (cash > 0) {
+            updateActorState(a.id, prev => ({ ...prev, money: addMoney(prev.money, Math.round(cash * strengthScale)), inventory: [] }));
+          }
+        });
+        break;
+      }
+      case 'last_push': {
+        result.bonusActionTokenId = mintActionToken(team.id, actorId, 'emergency');
+        break;
+      }
+      case 'defensive_deposit': {
+        const contestedRegion = actor.currentRegion;
+        depositInRegion(contestedRegion, actorId, Math.round(action.cost * strengthScale), { consumeAction: false, reason: 'Defensive Deposit' });
+        break;
+      }
+      case 'emergency_action_transfer': {
+        const recipient = teamActors.find(a => a.id !== actorId && a.kind === 'ai');
+        if (recipient) {
+          updateActorState(recipient.id, prev => ({
+            ...prev,
+            pendingEmergencyActionCredits: {
+              ...(prev.pendingEmergencyActionCredits || {}),
+              [actorId]: ((prev.pendingEmergencyActionCredits || {})[actorId] || 0) + 1
+            }
+          }));
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    recordUsage();
+    const explanation = action.explanation.replace('{team}', team.name).replace('{actor}', getActorDisplayName(actorId));
+    addNotification(`🚨 ${explanation}`, 'ai', true, 'system');
+    return result;
+  }, [
+    getActorState, updateTeamState, gameState.day, gameSettings.teamAiEmergencyActionsPerGame, gameSettings.teamAiEmergencyActionStrength,
+    getTeamActors, transferCash, calculateActorTravelCost, travelActor, updateActorState, transferResource, liquidateInventoryForCash,
+    mintActionToken, depositInRegion, addNotification, getActorDisplayName
+  ]);
+
+  // V6.7 Phase 3c: pure ledger debit — mirrors mintActionToken/redeemActionToken's split
+  // responsibility. Callers apply the mechanical effect only after this returns true.
+  const spendTeamInitiative = useCallback((teamId: string, cost: number): boolean => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return false;
+    const team = teamsByIdRef.current[teamId];
+    const current = sanitizeTeamInitiativeState(team?.teamInitiative);
+    if (current.value < cost) return false;
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      teamInitiative: { ...sanitizeTeamInitiativeState(prev.teamInitiative), value: sanitizeTeamInitiativeState(prev.teamInitiative).value - cost }
+    }));
+    return true;
+  }, [gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, updateTeamState]);
 
   const getRankedTeamAiDecisions = useCallback((actorId: string): ScoredTeamAiDecision[] => {
     const actor = getActorState(actorId);
@@ -20916,6 +21505,11 @@ function AustraliaGame() {
   // the daily cap value — the daily cap governs how many separate turns an actor can lend from,
   // not how many teammates they can help in one turn. Cleared alongside the refs above.
   const hasLentThisTurnRef = useRef<Record<string, boolean>>({});
+  // V6.7 Phase 3c: per-actor override-cost discount multiplier from a successful Team Initiative
+  // "reducing an override cost" spend this turn (GD8 edit #4) — a locally-read, non-mutating
+  // adjustment inside evaluateTeamAiOverrideEligibility's existing cost line, never gameSettings
+  // itself. Defaults to 1.0 (no discount) for every actor; cleared each turn like the refs above.
+  const initiativeOverrideDiscountRef = useRef<Record<string, number>>({});
 
   const buildOverrideDecisionSignature = (decision: ScoredTeamAiDecision | null): string => {
     if (!decision) return '';
@@ -21103,7 +21697,11 @@ function AustraliaGame() {
 
     // #6, #7: cost + minimum cash reserve (stricter than the existing AI_SAFETY_BUFFER floor)
     const baseCost = calculateActorOverrideCost(actorId);
-    const cost = Math.floor(baseCost * (gameSettings.teamAiOverrideBaseCostMultiplier || 1.0));
+    // V6.7 Phase 3c (GD8 edit #4): Team Initiative's "reducing an override cost" spend applies a
+    // per-actor, turn-scoped discount here — a local read, never a gameSettings mutation. Defaults
+    // to 1.0 (no discount) whenever that spend hasn't succeeded for this actor this turn.
+    const initiativeDiscount = initiativeOverrideDiscountRef.current[actorId] ?? 1.0;
+    const cost = Math.floor(baseCost * (gameSettings.teamAiOverrideBaseCostMultiplier || 1.0) * initiativeDiscount);
     if (actor.money < cost) return ineligible('Cannot afford override cost.');
     if ((actor.money - cost) < gameSettings.teamAiOverrideMinimumCashReserve) {
       return ineligible('Would breach minimum cash reserve.');
@@ -21367,6 +21965,7 @@ function AustraliaGame() {
     delete lastFailedOverrideActionRef.current[actorId];
     delete approveSimilarThisTurnRef.current[actorId];
     delete hasLentThisTurnRef.current[actorId];
+    delete initiativeOverrideDiscountRef.current[actorId];
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
     updateActorState(actorId, prev => ({
       ...prev,
@@ -21379,6 +21978,169 @@ function AustraliaGame() {
     advanceToNextActorTurn();
   }, [addNotification, advanceToNextActorTurn, getActorDisplayName, handleTurnTransition, updateActorState]);
 
+  // V6.7 Phase 3c Team Initiative trigger #7: an actor whose action type matches their assigned
+  // teamAiRole earns a small initiative bump — a pure lookup, no new state.
+  const TEAM_AI_ROLE_EXPECTED_ACTION_TYPES: Record<TeamAiRole, AIAction['type'][]> = {
+    earner: ['challenge', 'sell', 'buy_market'],
+    explorer: ['travel'],
+    crafter: ['craft'],
+    support: ['give_cash', 'give_resource'],
+    controller: ['region_deposit', 'cashout_region'],
+    saboteur: ['sabotage'],
+    recovery: ['sell', 'cashout_region']
+  };
+  const checkRoleFulfillment = useCallback((actor: ActorState, decisionType: AIAction['type']): void => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return;
+    const expectedTypes = TEAM_AI_ROLE_EXPECTED_ACTION_TYPES[normalizeTeamAiRole(actor.teamAiRole)] || [];
+    if (expectedTypes.includes(decisionType)) {
+      gainTeamInitiative(actor.teamId, 3, 'role_fulfilled');
+    }
+  }, [gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled]);
+
+  // V6.7 Phase 3c: evaluates at most one of the 7 Team Initiative spend effects for the decision
+  // about to execute this loop iteration, and applies it immediately (some mutate decision.data in
+  // place so the normal execution path picks the effect up for free — e.g. challenge assist reads
+  // via GD8's calculateActorChallengeSuccessChance/takeChallengeForActor bonusChance param; others
+  // are pure side effects applied here). Returns a bonus action token id when the "extra action"
+  // effect fires, so the caller can extend actionBudget exactly like the bank-draw/lending pattern.
+  const INITIATIVE_SPEND_COSTS = {
+    bonusAction: 40,
+    travelDiscount: 15,
+    challengeAssist: 20,
+    sabotageProtection: 25,
+    immediateResourceTransfer: 15,
+    recoverBlockedPlan: 30,
+    overrideDiscount: 20
+  };
+  const evaluateTeamInitiativeSpendOpportunity = useCallback((actorId: string, decision: ScoredTeamAiDecision, actionsTaken: number, actionBudget: number): { bonusActionTokenId?: string } => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamInitiativeEnabled) return {};
+    const actor = getActorState(actorId);
+    if (!actor) return {};
+    const team = teamsByIdRef.current[actor.teamId];
+    const initiative = sanitizeTeamInitiativeState(team?.teamInitiative);
+
+    // Recovering a blocked team plan takes priority — unsticks the whole team's coordination.
+    if (team?.activeTeamPlan?.status === 'blocked' && initiative.value >= INITIATIVE_SPEND_COSTS.recoverBlockedPlan) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.recoverBlockedPlan)) {
+        updateTeamState(actor.teamId, prev => prev.activeTeamPlan ? { ...prev, activeTeamPlan: { ...prev.activeTeamPlan, status: 'active' as const } } : prev);
+        addNotification(`🤖 ${team.name} spent Team Initiative to get a stalled plan back on track.`, 'ai', true);
+        return {};
+      }
+    }
+
+    // Arm sabotage protection when about to expose the actor by taking/defending a region.
+    if (decision.type === 'region_deposit' && (actor.sabotageProtectionExpiresTurn || 0) < gameState.turnCounter && initiative.value >= INITIATIVE_SPEND_COSTS.sabotageProtection) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.sabotageProtection)) {
+        updateActorState(actorId, prev => ({ ...prev, sabotageProtectionExpiresTurn: gameState.turnCounter + 2 }));
+        return {};
+      }
+    }
+
+    if (decision.type === 'challenge' && decision.data?.challenge && initiative.value >= INITIATIVE_SPEND_COSTS.challengeAssist) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.challengeAssist)) {
+        decision.data = { ...decision.data, initiativeAssistBonus: 0.1 };
+        return {};
+      }
+    }
+
+    if (decision.type === 'travel' && typeof decision.data?.region === 'string' && initiative.value >= INITIATIVE_SPEND_COSTS.travelDiscount) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.travelDiscount)) {
+        const travelCost = calculateActorTravelCost(actor.currentRegion, decision.data.region, actor);
+        const refund = Math.round(travelCost * 0.4);
+        if (refund > 0) {
+          updateActorState(actorId, prev => ({ ...prev, money: addMoney(prev.money, refund) }));
+        }
+        return {};
+      }
+    }
+
+    if (decision.type === 'give_resource' && typeof decision.data?.targetActorId === 'string' && typeof decision.data?.resource === 'string' && initiative.value >= INITIATIVE_SPEND_COSTS.immediateResourceTransfer) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.immediateResourceTransfer)) {
+        transferResource(actorId, decision.data.targetActorId, decision.data.resource, decision.data.quantity || 1, { reason: 'Initiative-assisted support' });
+        return {};
+      }
+    }
+
+    // Reducing an override cost: arms a per-turn discount consumed by evaluateTeamAiOverrideEligibility.
+    if (actionsTaken + 1 >= actionBudget && initiative.value >= INITIATIVE_SPEND_COSTS.overrideDiscount && !initiativeOverrideDiscountRef.current[actorId]) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.overrideDiscount)) {
+        initiativeOverrideDiscountRef.current[actorId] = 0.5;
+        return {};
+      }
+    }
+
+    // A bonus extra action for a strong, budget-exhausting decision.
+    if (actionsTaken + 1 >= actionBudget && decision.score >= 70 && initiative.value >= INITIATIVE_SPEND_COSTS.bonusAction) {
+      if (spendTeamInitiative(actor.teamId, INITIATIVE_SPEND_COSTS.bonusAction)) {
+        return { bonusActionTokenId: mintActionToken(actor.teamId, actorId, 'initiative') };
+      }
+    }
+
+    return {};
+  }, [addNotification, calculateActorTravelCost, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamInitiativeEnabled, gameState.turnCounter, getActorState, mintActionToken, spendTeamInitiative, transferResource, updateActorState, updateTeamState]);
+
+  // V6.7 Phase 3c: the 6 recognized 2-step combo shapes. Each pattern is checked against every
+  // ordered pair within the rolling window — GD6/GD7: this is the SOLE place combo bonuses (and
+  // the 'complementary_combo' Team Initiative gain) are ever produced.
+  const MAX_COMBOS_PER_TEAM_PER_DAY = 3;
+  const COMBO_PATTERNS: Array<{ id: string; matches: (a: TeamComboActionEntry, b: TeamComboActionEntry) => boolean }> = [
+    { id: 'transfer_craft', matches: (a, b) => a.actionType === 'give_resource' && b.actionType === 'craft' },
+    { id: 'sabotage_pressure', matches: (a, b) => a.actionType === 'sabotage' && b.actionType === 'region_deposit' },
+    { id: 'coordinated_deposits', matches: (a, b) => a.actionType === 'region_deposit' && b.actionType === 'region_deposit' && a.actorId !== b.actorId && Boolean(a.region) && a.region === b.region },
+    { id: 'cash_support_investment', matches: (a, b) => a.actionType === 'give_cash' && b.actionType === 'region_deposit' && a.actorId !== b.actorId },
+    { id: 'connected_plan_steps', matches: (a, b) => Boolean(a.planId) && a.planId === b.planId && a.actorId !== b.actorId },
+    { id: 'support_challenge', matches: (a, b) => (a.actionType === 'give_cash' || a.actionType === 'give_resource') && b.actionType === 'challenge' && a.actorId !== b.actorId }
+  ];
+  const detectComboBonus = useCallback((teamId: string, actorId: string, decisionType: AIAction['type'], day: number, region?: string, planId?: string): void => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamComboBonusesEnabled) return;
+    const team = teamsByIdRef.current[teamId];
+    const tracking = sanitizeTeamComboTrackingState(team?.comboTracking);
+    const comboCountToday = tracking.comboCountDay === day ? tracking.comboCountToday : 0;
+    const newEntry: TeamComboActionEntry = { actorId, actionType: decisionType, region, planId, turn: day, comboConsumed: false };
+    const nextSequence = [...tracking.sequence, newEntry].slice(-20);
+
+    if (comboCountToday >= MAX_COMBOS_PER_TEAM_PER_DAY) {
+      updateTeamState(teamId, prev => ({ ...prev, comboTracking: { sequence: nextSequence, comboCountToday, comboCountDay: day } }));
+      return;
+    }
+
+    const windowSize = Math.max(2, Math.min(6, gameSettings.teamComboWindowActions));
+    const windowEntries = nextSequence.filter(entry => !entry.comboConsumed).slice(-windowSize);
+    let matchedPair: [TeamComboActionEntry, TeamComboActionEntry] | null = null;
+    outer: for (let i = 0; i < windowEntries.length - 1; i += 1) {
+      for (let j = i + 1; j < windowEntries.length; j += 1) {
+        if (COMBO_PATTERNS.some(pattern => pattern.matches(windowEntries[i], windowEntries[j]))) {
+          matchedPair = [windowEntries[i], windowEntries[j]];
+          break outer;
+        }
+      }
+    }
+
+    if (!matchedPair) {
+      updateTeamState(teamId, prev => ({ ...prev, comboTracking: { sequence: nextSequence, comboCountToday, comboCountDay: day } }));
+      return;
+    }
+
+    const [firstEntry, secondEntry] = matchedPair;
+    const consumedSequence = nextSequence.map(entry =>
+      entry === firstEntry || entry === secondEntry ? { ...entry, comboConsumed: true } : entry
+    );
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      comboTracking: { sequence: consumedSequence, comboCountToday: comboCountToday + 1, comboCountDay: day }
+    }));
+
+    // GD7: applied retroactively to the completing (second) action's actor.
+    const completingActor = getActorState(secondEntry.actorId);
+    const bonusValue = Math.round(gameSettings.teamComboBonusStrength * 5);
+    updateActorContribution(secondEntry.actorId, {
+      comboBonusValue: (completingActor?.contributionStats?.comboBonusValue || 0) + bonusValue
+    });
+    addNotification(`🤖 ${getActorDisplayName(secondEntry.actorId)}'s teamwork paid off with a complementary combo!`, 'ai', false, 'system');
+    // GD6: the ONLY call site producing 'complementary_combo' Team Initiative gains.
+    gainTeamInitiative(teamId, 10, 'complementary_combo');
+  }, [addNotification, gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamComboBonusesEnabled, gameSettings.teamComboBonusStrength, gameSettings.teamComboWindowActions, getActorDisplayName, getActorState, updateActorContribution, updateTeamState]);
+
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
     const actor = getActorState(gameState.currentActorId || '');
@@ -21389,6 +22151,19 @@ function AustraliaGame() {
     delete lastFailedOverrideActionRef.current[actor.id];
     delete approveSimilarThisTurnRef.current[actor.id];
     delete hasLentThisTurnRef.current[actor.id];
+    delete initiativeOverrideDiscountRef.current[actor.id];
+    // V6.7 Phase 3c: Team Initiative "sabotage protection" spend effect — while armed, strip any
+    // sabotage-caused debuffs the instant this actor's turn begins. Additive on top of the
+    // existing sabotage-application code, which is never touched.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamInitiativeEnabled && (actor.sabotageProtectionExpiresTurn || 0) >= gameState.turnCounter) {
+      const hasSabotageDebuff = (actor.debuffs || []).some(debuff => SABOTAGE_DEBUFF_TYPES.includes(debuff.type));
+      if (hasSabotageDebuff) {
+        updateActorState(actor.id, prev => ({
+          ...prev,
+          debuffs: (prev.debuffs || []).filter(debuff => !SABOTAGE_DEBUFF_TYPES.includes(debuff.type))
+        }));
+      }
+    }
     let actionBudget = getActorActionBudget(actor.id);
     let actionsTaken = 0;
     // V6.7 Phase 3a: queue of minted ActionTokens for bonus grants (bank/override/lent) made this
@@ -21417,6 +22192,34 @@ function AustraliaGame() {
       }
     }
 
+    // V6.7 Phase 3c: redeem any Emergency Action Transfer credits. Separate field/redemption path
+    // from pendingLentActionCredits above — that field's redemption code hardcodes source 'lent'
+    // and must not be touched; this one mints source 'emergency' tokens instead.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiEmergencyActionsEnabled) {
+      const emergencyCredits = actor.pendingEmergencyActionCredits || {};
+      const totalEmergencyCredits = Object.values(emergencyCredits).reduce((sum, n) => sum + (n || 0), 0);
+      if (totalEmergencyCredits > 0) {
+        actionBudget += totalEmergencyCredits;
+        updateActorState(actor.id, prev => ({ ...prev, pendingEmergencyActionCredits: {} }));
+        for (let i = 0; i < totalEmergencyCredits; i += 1) {
+          pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'emergency'));
+        }
+        addNotification(`🚨 ${getActorDisplayName(actor.id)} redeemed ${totalEmergencyCredits} emergency action credit${totalEmergencyCredits > 1 ? 's' : ''}.`, 'ai', true);
+      }
+    }
+
+    // V6.7 Phase 3c: Emergency Action trigger — checked once at turn start, before the normal
+    // decision loop. GD5: 5 of 7 named actions execute as pure side effects consuming zero
+    // ordinary budget; Last Push mints a bonus token for the current actor inline.
+    const emergencyTrigger = evaluateTeamEmergencyActionTrigger(actor.id);
+    if (emergencyTrigger) {
+      const emergencyResult = triggerTeamEmergencyAction(actor.id, emergencyTrigger.action, emergencyTrigger.team);
+      if (emergencyResult.bonusActionTokenId) {
+        actionBudget += 1;
+        pendingTokenQueue.push(emergencyResult.bonusActionTokenId);
+      }
+    }
+
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
 
     while (actionsTaken < actionBudget) {
@@ -21440,6 +22243,13 @@ function AustraliaGame() {
           lendAction(actor.id, lendEligibility.toActorId, { reasonLabel: lendEligibility.reasonLabel });
         }
         break;
+      }
+      // V6.7 Phase 3c: Team Initiative spend opportunity, evaluated once per decision. May mutate
+      // decision.data in place (challenge assist) or return a bonus action token to extend budget.
+      const initiativeSpend = evaluateTeamInitiativeSpendOpportunity(actor.id, decision, actionsTaken, actionBudget);
+      if (initiativeSpend.bonusActionTokenId) {
+        actionBudget += 1;
+        pendingTokenQueue.push(initiativeSpend.bonusActionTokenId);
       }
       const disagreementProfile = normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile);
       const disagreementEnabled = gameState.selectedMode === 'team_ai_vs_ai' &&
@@ -21522,6 +22332,10 @@ function AustraliaGame() {
         lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
         break;
       }
+      // V6.7 Phase 3c Team Initiative trigger #7: role-matching action just executed successfully.
+      checkRoleFulfillment(actor, decision.type);
+      // V6.7 Phase 3c: combo detection after every successful action.
+      detectComboBonus(actor.teamId, actor.id, decision.type, gameState.day, decision.data?.region, planStepMatch?.planId);
       if (planStepMatch && decision === planStepMatch.decision) {
         updateTeamState(actor.teamId, prev => {
           if (!prev.activeTeamPlan || prev.activeTeamPlan.id !== planStepMatch.planId) return prev;
@@ -21535,6 +22349,11 @@ function AustraliaGame() {
             }
           };
         });
+        // V6.7 Phase 3c Team Initiative trigger #2: a plan-step-sourced (i.e. coordinated)
+        // challenge decision that just executed successfully earns initiative.
+        if (decision.type === 'challenge') {
+          gainTeamInitiative(actor.teamId, 6, 'coordinated_challenge');
+        }
       }
       refreshTeamLiquidityLedger(actor.teamId);
       actionsTaken += 1;
@@ -21615,7 +22434,7 @@ function AustraliaGame() {
     }
 
     finishTeamAiTurn(actor.id);
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -23404,7 +24223,21 @@ function AustraliaGame() {
       teamAiEndgameStartPercent: DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent,
       teamAiEndgameAggressionMultiplier: DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier,
       teamAiEndgameOverrideBias: DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias,
-      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength
+      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength,
+      teamAiEmergencyActionsEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsEnabled,
+      teamAiEmergencyActionCooldownDays: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionCooldownDays,
+      teamAiEmergencyActionsPerGame: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsPerGame,
+      teamAiEmergencyActionStrength: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionStrength,
+      teamAiEmergencyActionsForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForFriendlyTeam,
+      teamAiEmergencyActionsForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForEnemyTeam,
+      teamInitiativeEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeEnabled,
+      teamInitiativeMaximum: DEFAULT_GAME_SETTINGS.teamInitiativeMaximum,
+      teamInitiativeGainMultiplier: DEFAULT_GAME_SETTINGS.teamInitiativeGainMultiplier,
+      teamInitiativeDecayEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeDecayEnabled,
+      teamInitiativeVisibleToPlayer: DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
+      teamComboBonusesEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
+      teamComboBonusStrength: DEFAULT_GAME_SETTINGS.teamComboBonusStrength,
+      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -23454,7 +24287,21 @@ function AustraliaGame() {
       teamAiEndgameStartPercent: DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent,
       teamAiEndgameAggressionMultiplier: DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier,
       teamAiEndgameOverrideBias: DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias,
-      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength
+      teamAiEndgameCashConversionStrength: DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength,
+      teamAiEmergencyActionsEnabled: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsEnabled,
+      teamAiEmergencyActionCooldownDays: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionCooldownDays,
+      teamAiEmergencyActionsPerGame: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsPerGame,
+      teamAiEmergencyActionStrength: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionStrength,
+      teamAiEmergencyActionsForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForFriendlyTeam,
+      teamAiEmergencyActionsForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForEnemyTeam,
+      teamInitiativeEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeEnabled,
+      teamInitiativeMaximum: DEFAULT_GAME_SETTINGS.teamInitiativeMaximum,
+      teamInitiativeGainMultiplier: DEFAULT_GAME_SETTINGS.teamInitiativeGainMultiplier,
+      teamInitiativeDecayEnabled: DEFAULT_GAME_SETTINGS.teamInitiativeDecayEnabled,
+      teamInitiativeVisibleToPlayer: DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
+      teamComboBonusesEnabled: DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
+      teamComboBonusStrength: DEFAULT_GAME_SETTINGS.teamComboBonusStrength,
+      teamComboWindowActions: DEFAULT_GAME_SETTINGS.teamComboWindowActions
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -24695,7 +25542,7 @@ function AustraliaGame() {
 
                   <div className="text-xs opacity-75">
                     <div className="font-semibold mb-1">Coming in future updates</div>
-                    <div>Emergency Actions, Team Initiative, Combo Bonuses, Transparency &amp; Debugging.</div>
+                    <div>Decision Transparency &amp; Debugging.</div>
                   </div>
                 </div>
               </SettingsSection>
@@ -25171,6 +26018,179 @@ function AustraliaGame() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.emergencyActions"
+                tab="teamModeAi"
+                title="Emergency Actions"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.emergencyActions')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Emergency Actions has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Emergency Actions</div>
+                        <div className="text-sm opacity-75">Lets a team declare an emergency (financial crisis, losing region control, or falling behind late-game) and take one decisive, always-notified action to recover.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsEnabled: !prev.teamAiEmergencyActionsEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEmergencyActionsEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamAiEmergencyActionsEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiEmergencyActionsEnabled && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Cooldown (days): {gameSettings.teamAiEmergencyActionCooldownDays}</label>
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionCooldownDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionCooldownDays: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Uses Per Game (per action): {gameSettings.teamAiEmergencyActionsPerGame}</label>
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionsPerGame} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsPerGame: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                        </div>
+                        {uiState.settingsViewMode === 'advanced' && (
+                          <>
+                            <div>
+                              <label className="block font-semibold mb-2">Strength: {gameSettings.teamAiEmergencyActionStrength}</label>
+                              <input type="range" min="0" max="100" value={gameSettings.teamAiEmergencyActionStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionStrength: parseInt(e.target.value) }))} className="w-full" />
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teamAiEmergencyActionsForFriendlyTeam)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsForFriendlyTeam: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teamAiEmergencyActionsForFriendlyTeam ? '☑' : '☐'} Your Friendly AI Team May Declare Emergencies</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(gameSettings.teamAiEmergencyActionsForEnemyTeam)}
+                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsForEnemyTeam: e.target.checked }))}
+                              />
+                              <span>{gameSettings.teamAiEmergencyActionsForEnemyTeam ? '☑' : '☐'} Enemy AI Team May Declare Emergencies</span>
+                            </label>
+                          </>
+                        )}
+                        <div className="text-xs opacity-60">Emergency Actions always notify you when they fire, and are limited by a per-game use cap and cooldown per action so they can never become hidden rubber-banding.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.teamInitiative"
+                tab="teamModeAi"
+                title="Team Initiative"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.teamInitiative')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Team Initiative has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Team Initiative</div>
+                        <div className="text-sm opacity-75">A team-wide meter earned through good coordinated play (completed plans, useful support, crafting, region control) that can be spent on small tactical boosts.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamInitiativeEnabled: !prev.teamInitiativeEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamInitiativeEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamInitiativeEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamInitiativeEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Maximum: {gameSettings.teamInitiativeMaximum}</label>
+                            <input type="range" min="20" max="500" step="10" value={gameSettings.teamInitiativeMaximum} onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeMaximum: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Gain Multiplier: {gameSettings.teamInitiativeGainMultiplier.toFixed(1)}x</label>
+                            <input type="range" min="0" max="3" step="0.1" value={gameSettings.teamInitiativeGainMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeGainMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamInitiativeDecayEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeDecayEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamInitiativeDecayEnabled ? '☑' : '☐'} Decay Unused Initiative Daily</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamInitiativeVisibleToPlayer)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeVisibleToPlayer: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamInitiativeVisibleToPlayer ? '☑' : '☐'} Show Team Initiative Meter in HUD</span>
+                        </label>
+                        <div className="text-xs opacity-60">Gains are capped per day at 25% of the maximum, so a single day's play can never fill more than a quarter of the meter.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.comboBonuses"
+                tab="teamModeAi"
+                title="Combo Bonuses"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.comboBonuses')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Combo Bonuses has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Combo Bonuses</div>
+                        <div className="text-sm opacity-75">Rewards teammates for chaining complementary actions together (e.g. sharing a resource right before it's crafted) with a small score bonus and Team Initiative.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamComboBonusesEnabled: !prev.teamComboBonusesEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamComboBonusesEnabled ? themeStyles.success : themeStyles.buttonSecondary} text-white`}
+                      >
+                        {gameSettings.teamComboBonusesEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamComboBonusesEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold mb-2">Strength: {gameSettings.teamComboBonusStrength}</label>
+                          <input type="range" min="0" max="100" value={gameSettings.teamComboBonusStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboBonusStrength: parseInt(e.target.value) }))} className="w-full" />
+                        </div>
+                        <div>
+                          <label className="block font-semibold mb-2">Combo Window (actions): {gameSettings.teamComboWindowActions}</label>
+                          <input type="range" min="2" max="6" value={gameSettings.teamComboWindowActions} onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboWindowActions: parseInt(e.target.value) }))} className="w-full" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-xs opacity-60">Capped at 3 combos per team per day, and each action can only ever be part of one combo, to prevent farming.</div>
                   </div>
                 )}
               </SettingsSection>
@@ -29345,9 +30365,38 @@ function AustraliaGame() {
 	                  </div>
 	                </div>
 	              )}
+
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamInitiativeEnabled && gameSettings.teamInitiativeVisibleToPlayer && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">Team Initiative</span>
+	                    <span>Max {gameSettings.teamInitiativeMaximum}</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    <div className="bg-blue-900 bg-opacity-40 rounded p-2">
+	                      <div>{playerTeam?.name || 'Your Team'}: {Math.round(teamsById[TEAM_PLAYER_ID]?.teamInitiative?.value || 0)}</div>
+	                      <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
+	                        <div
+	                          className="bg-blue-500 h-2 rounded-full"
+	                          style={{ width: `${Math.min(100, ((teamsById[TEAM_PLAYER_ID]?.teamInitiative?.value || 0) / Math.max(1, gameSettings.teamInitiativeMaximum)) * 100)}%` }}
+	                        />
+	                      </div>
+	                    </div>
+	                    <div className="bg-pink-900 bg-opacity-40 rounded p-2">
+	                      <div>{opponentTeam?.name || 'AI Team'}: {Math.round(teamsById[TEAM_OPPONENT_ID]?.teamInitiative?.value || 0)}</div>
+	                      <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
+	                        <div
+	                          className="bg-pink-500 h-2 rounded-full"
+	                          style={{ width: `${Math.min(100, ((teamsById[TEAM_OPPONENT_ID]?.teamInitiative?.value || 0) / Math.max(1, gameSettings.teamInitiativeMaximum)) * 100)}%` }}
+	                        />
+	                      </div>
+	                    </div>
+	                  </div>
+	                </div>
+	              )}
 	            </div>
 	          )}
-          
+
           {!uiState.showMap && (
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow} lg:col-span-2 flex items-center justify-center`}>
 	              <button
