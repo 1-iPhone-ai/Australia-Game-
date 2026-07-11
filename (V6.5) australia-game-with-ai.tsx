@@ -21181,12 +21181,19 @@ function AustraliaGame() {
         const phase = computeEconomicPhase(actor, spendableForWager, gameSettings, endgameActive);
         const reserve = computeDynamicReserve(phase, spendableForWager, gameSettings);
         const surplus = Math.max(0, spendableForWager - reserve);
-        if (surplus < MINIMUM_WAGER) return;
+        // Bugfix (post-PR-#60): reserve == economyCashFloor in Survival phase by definition, so
+        // surplus is always 0 for a genuinely broke actor, permanently locking challenges out —
+        // the actor's own path back to solvency. Unlike discretionary spending categories (which
+        // stay reserve-gated via evaluateEconomySpendingApproval), challenges must remain available
+        // in Survival phase; the wager pool falls back to raw spendable cash there instead of the
+        // reserve-protected surplus. Every other phase is unchanged.
+        const wagerPool = phase === 'survival' ? spendableForWager : surplus;
+        if (wagerPool < MINIMUM_WAGER) return;
         const phaseWagerFraction = phase === 'survival' ? 0.05
           : phase === 'accumulation' ? 0.15
           : phase === 'compounding' ? Math.min(0.5, 0.2 + successChance * 0.3)
           : 0.35; // endgame
-        wager = Math.max(MINIMUM_WAGER, Math.min(surplus, Math.floor(surplus * phaseWagerFraction)));
+        wager = Math.max(MINIMUM_WAGER, Math.min(wagerPool, Math.floor(wagerPool * phaseWagerFraction)));
       } else {
         wager = Math.min(spendableForWager, Math.max(MINIMUM_WAGER, Math.floor(150 + (actor.level * 35))));
       }
@@ -22771,6 +22778,45 @@ function AustraliaGame() {
     }
   }, [addNotification, appendTeamAiTraceNote, gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamComboBonusesEnabled, gameSettings.teamComboBonusesTransparencyEnabled, gameSettings.teamComboBonusStrength, gameSettings.teamComboWindowActions, getActorDisplayName, getActorState, updateActorContribution, updateTeamState]);
 
+  // Bugfix (post-PR-#60): the friendly 'ask_first' override policy used to execute exactly one
+  // bonus action then immediately call finishTeamAiTurn, because the confirmation dialog's
+  // onConfirm callback fires asynchronously after performTeamAiTurn's while loop has already
+  // returned — abandoning that loop's local actionBudget/actionsTaken state. The automatic
+  // (non-ask_first) override path is unaffected and stays untouched; this helper gives the
+  // ask_first approval path its own small loop so the actor completes the full bonus batch
+  // (aiActionsPerDay extra actions) before the turn ends, matching the automatic path's behavior.
+  const runApprovedOverrideBonusActions = useCallback(async (
+    actorId: string,
+    initialDecision: ScoredTeamAiDecision,
+    initialTokenId: string
+  ) => {
+    // Hardening (post-PR-#60): finishTeamAiTurn must always fire, even on an unexpected exception,
+    // otherwise isAiThinking gets stuck true forever and every subsequent actor's turn silently
+    // no-ops for the rest of the game.
+    try {
+      const budget = getActorActionBudget(actorId);
+      let decision: ScoredTeamAiDecision | null = initialDecision;
+      let tokenId: string | undefined = initialTokenId;
+      for (let i = 0; i < budget && decision && decision.type !== 'end_turn'; i += 1) {
+        const actorForAction = getActorState(actorId);
+        if (!actorForAction) break;
+        const revalidated = tokenId ? redeemActionToken(actorForAction.teamId, actorId, decision, tokenId, isReservationHardBlocked) : true;
+        tokenId = undefined; // only the first bonus action was tokenized; the rest are this same budget grant, not separately tokenized
+        const success = revalidated ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
+        if (!success) break;
+        checkRoleFulfillment(actorForAction, decision.type);
+        detectComboBonus(actorForAction.teamId, actorId, decision.type, gameState.day, decision.data?.region);
+        if (i < budget - 1) {
+          decision = getRankedTeamAiDecisions(actorId)[0] || null;
+        }
+      }
+    } catch (error) {
+      console.error(`Override bonus actions for ${actorId} failed unexpectedly`, error);
+    } finally {
+      finishTeamAiTurn(actorId);
+    }
+  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken]);
+
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
     const actor = getActorState(gameState.currentActorId || '');
@@ -22852,6 +22898,12 @@ function AustraliaGame() {
 
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
 
+    // Hardening (post-PR-#60): guarantee finishTeamAiTurn (and thus SET_AI_THINKING reset) always
+    // runs even if an unexpected exception is thrown mid-loop — otherwise isAiThinking gets stuck
+    // true forever and every subsequent actor's turn silently no-ops for the rest of the game. The
+    // ask_first branch's intentional `return;` below is a deliberate pause (awaiting the human's
+    // confirmation dialog), not an error, so it returns normally without ever reaching the catch.
+    try {
     while (actionsTaken < actionBudget) {
       // V6.7 Phase 3a: "does the active plan have a step for me" check, tried before falling to
       // the normal top-pick decision. Consumes ordinary per-turn budget (no bonus, no token
@@ -23040,8 +23092,10 @@ function AustraliaGame() {
                 finishTeamAiTurn(pendingActorId);
                 return;
               }
-              mintActionToken(actor.teamId, pendingActorId, 'override');
-              executeTeamAiAction(pendingActorId, pendingDecision as unknown as AIAction).then(() => finishTeamAiTurn(pendingActorId));
+              // Bugfix (post-PR-#60): grant and consume the full bonus action batch here instead of
+              // executing a single action and finishing the turn — see runApprovedOverrideBonusActions.
+              const overrideTokenId = mintActionToken(actor.teamId, pendingActorId, 'override');
+              runApprovedOverrideBonusActions(pendingActorId, pendingDecision, overrideTokenId);
             },
             {
               actorId: pendingActorId,
@@ -23064,7 +23118,11 @@ function AustraliaGame() {
     }
 
     finishTeamAiTurn(actor.id);
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+    } catch (error) {
+      console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
+      finishTeamAiTurn(actor.id);
+    }
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -27058,7 +27116,7 @@ function AustraliaGame() {
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Recovery Target: ${gameSettings.economyRecoveryTarget}</label>
-                                <input type="range" min="0" max="20000" step="100" value={gameSettings.economyRecoveryTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoveryTarget: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="20000" step="100" value={gameSettings.economyRecoveryTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoveryTarget: Math.max(prev.economyCashFloor, parseInt(e.target.value)) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Spendable cash must reach this (never lower than the Cash Floor) to exit Survival phase.</div>
                               </div>
                               <div>
