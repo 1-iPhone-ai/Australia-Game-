@@ -1276,6 +1276,16 @@ const V67_CHANGELOG = [
   "Theme (Dark/Light/System) moved from the start screen into Settings → Interface",
   "New System theme option that follows your OS/browser preference live"
 ];
+const V69_CHANGELOG = [
+  "V6.9 - Teammate Action Sequences, Approval, and Requirements",
+  "Action Requirements: hard/soft permission gates for AI teammate actions, with nested condition groups",
+  "AI Action Approval: review, edit, or reject a teammate's proposed action before it executes",
+  "Teammate Action Sequences: build ordered, adaptive, or prioritized action plans for your AI teammate",
+  "Sequences support wager/spending limits, conditions, fallback behavior, and repeats",
+  "Sequence Interrupts and phase-based automatic sequence switching",
+  "10 named sequence templates, plus manual live controls (pause/skip/cancel/yield)",
+  "All new systems are off by default and Team Mode-only"
+];
 
 const ACTION_GROUPS = {
   primary: ["challenges", "travel", "market", "endTurn"],
@@ -2553,6 +2563,8 @@ interface TeamState {
   color: string;
   // V6.9 Phase F4: the player-authored Sequence library for this team.
   sequences: TeammateSequence[];
+  // V6.9 Phase F5: per-actor economic-phase -> sequence bindings for automatic switching.
+  phaseSequenceAssignments: PhaseSequenceAssignment[];
 }
 
 interface TeamAutoplayState {
@@ -2918,6 +2930,11 @@ interface ApprovalRequest {
   actionsRemaining: number;
   categoryBucket: TeamModeActionCategory;
   createdAtTurn: number;
+  // V6.9 Phase F5 (GD6): set only when the wrapped decision came from findExecutableSequenceStepDecision.
+  // Gives the approval card's 4 sequence-only controls (below) a real referent, and gives
+  // 'approve_sequence_actions_only' mode a real signal to discriminate on.
+  sequenceId?: string;
+  sequenceStepId?: string;
 }
 
 const APPROVAL_MODES: ApprovalMode[] = ['approve_every_action', 'approve_selected_types', 'approve_high_risk', 'approve_sequence_actions_only', 'mixed'];
@@ -2982,7 +2999,7 @@ const needsApproval = (
   decision: { type: string; data?: any },
   policy: ApprovalPolicy,
   settings: GameSettingsState,
-  context?: { cost?: number; wager?: number; percentCashAtRisk?: number }
+  context?: { cost?: number; wager?: number; percentCashAtRisk?: number; isSequenceSourced?: boolean }
 ): boolean => {
   if (!settings.teamCompetitiveAiEnabled || !settings.aiActionApprovalEnabled) return false;
   const override = policy.teammateOverrides.find(o => o.actorId === actor.id);
@@ -3012,9 +3029,11 @@ const needsApproval = (
       return false;
     }
     case 'approve_sequence_actions_only':
-      // V6.9 Phase F3: inert until Phase F4/F5 — no sequence-sourced decisions exist yet, so this
-      // mode is functionally identical to Approval being off (stated plainly in the Settings Hub).
-      return false;
+      // V6.9 Phase F5: real as of this phase — approval is required only for sequence-sourced
+      // decisions (context.isSequenceSourced, threaded in from the chokepoint that already knows
+      // whether the decision came from findExecutableSequenceStepDecision); every other decision
+      // proceeds without approval.
+      return context?.isSequenceSourced === true;
     default:
       return true;
   }
@@ -3159,6 +3178,19 @@ interface SequenceRepeatRule {
   targetPhase?: EconomicPhase;
   maxRepeats: number;
 }
+// V6.9 Phase F5: reuses EMERGENCY_ACTIONS's condition-tag/cooldown/threshold gating shape (GD2),
+// with the tag/score-threshold both replaced by Sequences' own existing boolean RequirementGroup
+// evaluator — one condition vocabulary across the whole feature, not a parallel scoring system.
+interface SequenceInterrupt {
+  id: string;
+  label: string;
+  enabled: boolean;
+  triggerConditionGroup: RequirementGroup | null;
+  cooldownDays: number;
+  lastTriggeredDay: number;
+  action: 'pause_sequence' | 'cancel_sequence' | 'jump_to_step' | 'allow_normal_ai_once';
+  jumpToStepId?: string;
+}
 interface TeammateSequence {
   id: string;
   name: string;
@@ -3169,9 +3201,20 @@ interface TeammateSequence {
   createdByPlayer: boolean;
   steps: SequenceStep[];
   repeatRule: SequenceRepeatRule;
+  interrupts: SequenceInterrupt[];
   activeStepId: string | null;
   sequenceRepeatCount: number;
   createdDay: number;
+}
+// V6.9 Phase F5: binds an actor's active sequence to the game's existing EconomicPhase (Phase C),
+// reusing computeEconomicPhase/activateSequenceForActor verbatim — no new phase-detection or
+// switching mutation logic, just a daily comparison + a minimum-commitment cooldown on top.
+interface PhaseSequenceAssignment {
+  actorId: string;
+  bindings: Partial<Record<EconomicPhase, string>>;
+  minimumCommitmentDays: number;
+  lastSwitchDay: number;
+  enabled: boolean;
 }
 
 const SEQUENCE_MODES: SequenceMode[] = ['strict', 'adaptive', 'priority'];
@@ -3201,9 +3244,20 @@ const createNewTeammateSequence = (): TeammateSequence => ({
   createdByPlayer: true,
   steps: [],
   repeatRule: { enabled: false, scope: 'full_sequence', until: 'fixed_count', fixedCount: 1, maxRepeats: 1 },
+  interrupts: [],
   activeStepId: null,
   sequenceRepeatCount: 0,
   createdDay: 0
+});
+
+const createNewSequenceInterrupt = (): SequenceInterrupt => ({
+  id: `seqint_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  label: 'New Interrupt',
+  enabled: true,
+  triggerConditionGroup: null,
+  cooldownDays: 3,
+  lastTriggeredDay: -1,
+  action: 'pause_sequence'
 });
 
 const sanitizeSequenceStep = (value: unknown): SequenceStep | null => {
@@ -3231,12 +3285,33 @@ const sanitizeSequenceStep = (value: unknown): SequenceStep | null => {
   };
 };
 
+const SEQUENCE_INTERRUPT_ACTIONS: SequenceInterrupt['action'][] = ['pause_sequence', 'cancel_sequence', 'jump_to_step', 'allow_normal_ai_once'];
+
+const sanitizeSequenceInterrupt = (value: unknown): SequenceInterrupt | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<SequenceInterrupt>;
+  if (typeof source.id !== 'string') return null;
+  return {
+    id: source.id,
+    label: typeof source.label === 'string' ? source.label : 'Interrupt',
+    enabled: Boolean(source.enabled),
+    triggerConditionGroup: source.triggerConditionGroup ? sanitizeRequirementGroup(source.triggerConditionGroup) : null,
+    cooldownDays: typeof source.cooldownDays === 'number' && isFinite(source.cooldownDays) ? Math.max(0, source.cooldownDays) : 3,
+    lastTriggeredDay: typeof source.lastTriggeredDay === 'number' && isFinite(source.lastTriggeredDay) ? source.lastTriggeredDay : -1,
+    action: SEQUENCE_INTERRUPT_ACTIONS.includes(source.action as SequenceInterrupt['action']) ? source.action as SequenceInterrupt['action'] : 'pause_sequence',
+    jumpToStepId: typeof source.jumpToStepId === 'string' ? source.jumpToStepId : undefined
+  };
+};
+
 const sanitizeTeammateSequence = (value: unknown): TeammateSequence | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<TeammateSequence>;
   if (typeof source.id !== 'string' || typeof source.name !== 'string') return null;
   const steps = Array.isArray(source.steps)
     ? source.steps.map(s => sanitizeSequenceStep(s)).filter((s): s is SequenceStep => Boolean(s))
+    : [];
+  const interrupts = Array.isArray(source.interrupts)
+    ? source.interrupts.map(i => sanitizeSequenceInterrupt(i)).filter((i): i is SequenceInterrupt => Boolean(i))
     : [];
   const repeatRuleSource = (source.repeatRule && typeof source.repeatRule === 'object') ? source.repeatRule as Partial<SequenceRepeatRule> : {};
   return {
@@ -3262,6 +3337,7 @@ const sanitizeTeammateSequence = (value: unknown): TeammateSequence | null => {
       targetPhase: typeof repeatRuleSource.targetPhase === 'string' ? repeatRuleSource.targetPhase as EconomicPhase : undefined,
       maxRepeats: Math.min(SEQUENCE_MAX_REPEATS, typeof repeatRuleSource.maxRepeats === 'number' && isFinite(repeatRuleSource.maxRepeats) ? Math.max(1, repeatRuleSource.maxRepeats) : 1)
     },
+    interrupts,
     activeStepId: typeof source.activeStepId === 'string' ? source.activeStepId : null,
     sequenceRepeatCount: typeof source.sequenceRepeatCount === 'number' && isFinite(source.sequenceRepeatCount) ? Math.max(0, source.sequenceRepeatCount) : 0,
     createdDay: typeof source.createdDay === 'number' && isFinite(source.createdDay) ? Math.max(0, source.createdDay) : 0
@@ -3271,6 +3347,31 @@ const sanitizeTeammateSequence = (value: unknown): TeammateSequence | null => {
 const sanitizeTeammateSequences = (value: unknown): TeammateSequence[] => {
   if (!Array.isArray(value)) return [];
   return value.map(entry => sanitizeTeammateSequence(entry)).filter((s): s is TeammateSequence => Boolean(s));
+};
+
+const ECONOMIC_PHASES: EconomicPhase[] = ['survival', 'accumulation', 'compounding', 'endgame'];
+
+const sanitizePhaseSequenceAssignment = (value: unknown): PhaseSequenceAssignment | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<PhaseSequenceAssignment>;
+  if (typeof source.actorId !== 'string') return null;
+  const rawBindings = (source.bindings && typeof source.bindings === 'object') ? source.bindings as Partial<Record<string, unknown>> : {};
+  const bindings: Partial<Record<EconomicPhase, string>> = {};
+  ECONOMIC_PHASES.forEach(phase => {
+    if (typeof rawBindings[phase] === 'string') bindings[phase] = rawBindings[phase] as string;
+  });
+  return {
+    actorId: source.actorId,
+    bindings,
+    minimumCommitmentDays: typeof source.minimumCommitmentDays === 'number' && isFinite(source.minimumCommitmentDays) ? Math.max(0, source.minimumCommitmentDays) : 3,
+    lastSwitchDay: typeof source.lastSwitchDay === 'number' && isFinite(source.lastSwitchDay) ? source.lastSwitchDay : -1,
+    enabled: Boolean(source.enabled)
+  };
+};
+
+const sanitizePhaseSequenceAssignments = (value: unknown): PhaseSequenceAssignment[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(entry => sanitizePhaseSequenceAssignment(entry)).filter((a): a is PhaseSequenceAssignment => Boolean(a));
 };
 
 // V6.9 Phase F4: maps a SequenceStep's category (+ support/loan sub-selector) onto the real
@@ -3342,6 +3443,187 @@ const resolveSequenceStepCandidate = (
     }
   }
   return finalDecision;
+};
+
+// V6.9 Phase F5 (GD4): 10 named, non-player-authored sequence templates, mirroring
+// SETTINGS_PRESETS's id-keyed-map-plus-instantiate-function shape. Never self-assigning —
+// instantiateSequenceTemplate below always produces an inactive, unassigned TeammateSequence
+// the player can then review/edit/activate like any player-authored one.
+type SequenceTemplateStep = Omit<SequenceStep, 'id' | 'status' | 'stepRepeatCount'>;
+const templateStep = (overrides: Partial<SequenceTemplateStep> & Pick<SequenceTemplateStep, 'actionCategory'>): SequenceTemplateStep => ({
+  order: 0,
+  priorityRank: 0,
+  conditionGroup: null,
+  fallbackBehavior: 'use_fallback_action',
+  ...overrides
+});
+interface SequenceTemplateDefinition {
+  label: string;
+  description: string;
+  mode: SequenceMode;
+  steps: SequenceTemplateStep[];
+  repeatRule: SequenceRepeatRule;
+}
+const SEQUENCE_TEMPLATES: Record<string, SequenceTemplateDefinition> = {
+  cash_builder: {
+    label: 'Cash Builder',
+    description: 'Sells surplus resources, then buys cheap market goods to resell later. Adaptive mode, repeats.',
+    mode: 'adaptive',
+    steps: [templateStep({ order: 0, actionCategory: 'sell' }), templateStep({ order: 1, actionCategory: 'buy_market' })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 10, maxRepeats: 10 }
+  },
+  challenge_specialist: {
+    label: 'Challenge Specialist',
+    description: 'Takes challenges aggressively, wagering a fifth of spendable cash each time. Priority mode.',
+    mode: 'priority',
+    steps: [templateStep({ order: 0, priorityRank: 10, actionCategory: 'challenge', wagerRule: { mode: 'percentage_of_cash', percentage: 0.2 }, fallbackBehavior: 'retry_next_action' })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 20, maxRepeats: 20 }
+  },
+  safe_challenge_grinder: {
+    label: 'Safe Challenge Grinder',
+    description: 'Takes challenges with a small, fixed, tightly bounded wager. Adaptive mode, repeats.',
+    mode: 'adaptive',
+    steps: [templateStep({ order: 0, actionCategory: 'challenge', wagerRule: { mode: 'fixed', fixedAmount: 50, minWager: 20, maxWager: 100 } })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 20, maxRepeats: 20 }
+  },
+  resource_collector: {
+    label: 'Resource Collector',
+    description: 'Buys market resources, then crafts with them. Adaptive mode, repeats.',
+    mode: 'adaptive',
+    steps: [templateStep({ order: 0, actionCategory: 'buy_market' }), templateStep({ order: 1, actionCategory: 'craft' })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 10, maxRepeats: 10 }
+  },
+  crafting_chain: {
+    label: 'Crafting Chain',
+    description: 'Buys ingredients, crafts, then sells the result, strictly in order. Repeats.',
+    mode: 'strict',
+    steps: [templateStep({ order: 0, actionCategory: 'buy_market' }), templateStep({ order: 1, actionCategory: 'craft' }), templateStep({ order: 2, actionCategory: 'sell' })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 10, maxRepeats: 10 }
+  },
+  regional_controller: {
+    label: 'Regional Controller',
+    description: 'Travels toward contested regions and deposits to secure control. Priority mode.',
+    mode: 'priority',
+    steps: [templateStep({ order: 0, priorityRank: 10, actionCategory: 'travel' }), templateStep({ order: 1, priorityRank: 5, actionCategory: 'region_deposit' })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 15, maxRepeats: 15 }
+  },
+  investment_builder: {
+    label: 'Investment Builder',
+    description: 'Invests a bounded share of spendable cash repeatedly. Adaptive mode.',
+    mode: 'adaptive',
+    steps: [templateStep({ order: 0, actionCategory: 'invest', spendingRule: { costCapPercentage: 0.3, allowRecoverySpending: false } })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 15, maxRepeats: 15 }
+  },
+  team_support: {
+    label: 'Team Support',
+    description: 'Sends cash support to the teammate within a bounded share of spendable cash. Adaptive mode.',
+    mode: 'adaptive',
+    steps: [templateStep({ order: 0, actionCategory: 'support', supportKind: 'give_cash', spendingRule: { costCapPercentage: 0.15, allowRecoverySpending: false } })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 10, maxRepeats: 10 }
+  },
+  conservative_recovery: {
+    label: 'Conservative Recovery',
+    description: 'Sells inventory, then takes a small, tightly-capped challenge wager to rebuild cash. Strict order, repeats.',
+    mode: 'strict',
+    steps: [templateStep({ order: 0, actionCategory: 'sell' }), templateStep({ order: 1, actionCategory: 'challenge', wagerRule: { mode: 'percentage_of_cash', percentage: 0.05, minWager: 10 } })],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 20, maxRepeats: 20 }
+  },
+  endgame_push: {
+    label: 'Endgame Push',
+    description: 'Cashes out controlled regions, sells remaining inventory, then wagers aggressively on challenges. Priority mode.',
+    mode: 'priority',
+    steps: [
+      templateStep({ order: 0, priorityRank: 10, actionCategory: 'cashout_region' }),
+      templateStep({ order: 1, priorityRank: 8, actionCategory: 'sell' }),
+      templateStep({ order: 2, priorityRank: 5, actionCategory: 'challenge', wagerRule: { mode: 'percentage_of_cash', percentage: 0.4 } })
+    ],
+    repeatRule: { enabled: true, scope: 'full_sequence', until: 'fixed_count', fixedCount: 20, maxRepeats: 20 }
+  }
+};
+
+const instantiateSequenceTemplate = (templateId: string): TeammateSequence | null => {
+  const template = SEQUENCE_TEMPLATES[templateId];
+  if (!template) return null;
+  return {
+    id: `seq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: template.label,
+    mode: template.mode,
+    scope: 'one_actor',
+    assignedActorId: null,
+    active: false,
+    createdByPlayer: false,
+    steps: template.steps.map(s => ({
+      ...s,
+      id: `seqstep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      status: 'pending' as const,
+      stepRepeatCount: 0
+    })),
+    repeatRule: { ...template.repeatRule },
+    interrupts: [],
+    activeStepId: null,
+    sequenceRepeatCount: 0,
+    createdDay: 0
+  };
+};
+
+// V6.9 Phase F5 (GD7): pre-activation validation — block-on-errors/warn-on-warnings. Pure, no
+// hooks needed. Errors block activation outright (surfaced inline, the ACTIVATE control stays
+// disabled); warnings never block, only inform the player before they choose to activate anyway.
+const validateSequenceForActivation = (sequence: TeammateSequence): { errors: string[]; warnings: string[] } => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (sequence.steps.length === 0) {
+    errors.push('Sequence has no steps.');
+    return { errors, warnings };
+  }
+  const stepIds = new Set(sequence.steps.map(s => s.id));
+  sequence.steps.forEach(step => {
+    if (step.fallbackBehavior === 'jump_to_step' && (!step.fallbackJumpToStepId || !stepIds.has(step.fallbackJumpToStepId))) {
+      errors.push(`A step's jump-to-step fallback points to a step that no longer exists.`);
+    }
+    if (step.wagerRule?.minWager !== undefined && step.wagerRule?.maxWager !== undefined && step.wagerRule.minWager > step.wagerRule.maxWager) {
+      errors.push(`A step's wager rule has a minimum wager greater than its maximum.`);
+    }
+    if (sequence.mode === 'strict' && !step.targetId && step.actionCategory !== 'wait' && step.actionCategory !== 'end_turn') {
+      warnings.push(`A Strict-mode step has no target configured — it will only match a candidate with no specific target.`);
+    }
+  });
+  sequence.interrupts.forEach(interrupt => {
+    if (interrupt.action === 'jump_to_step' && (!interrupt.jumpToStepId || !stepIds.has(interrupt.jumpToStepId))) {
+      errors.push(`An interrupt's jump-to-step action points to a step that no longer exists.`);
+    }
+  });
+  if (sequence.repeatRule.enabled && sequence.repeatRule.scope === 'step_range') {
+    if (!sequence.repeatRule.stepRangeStartId || !stepIds.has(sequence.repeatRule.stepRangeStartId)) {
+      errors.push('The repeat rule\'s step-range start references a step that doesn\'t exist.');
+    }
+    if (!sequence.repeatRule.stepRangeEndId || !stepIds.has(sequence.repeatRule.stepRangeEndId)) {
+      errors.push('The repeat rule\'s step-range end references a step that doesn\'t exist.');
+    }
+  }
+  if (sequence.mode === 'priority') {
+    const ranks = sequence.steps.map(s => s.priorityRank);
+    if (new Set(ranks).size !== ranks.length) {
+      warnings.push('Two or more steps share the same priority rank — ties are broken by list order, not explicitly.');
+    }
+  }
+  const checkGroupForDanglingStepRefs = (group: RequirementGroup | null | undefined) => {
+    if (!group) return;
+    const walk = (node: ActionRequirement | RequirementGroup) => {
+      if (Array.isArray((node as RequirementGroup).items)) {
+        (node as RequirementGroup).items.forEach(walk);
+        return;
+      }
+      const req = node as ActionRequirement;
+      if (req.kind === 'prior_step_success_required' && req.scope.kind === 'one_step' && req.scope.stepId && !stepIds.has(req.scope.stepId)) {
+        warnings.push('A condition references a step id that no longer exists — it will auto-pass rather than gate anything.');
+      }
+    };
+    walk(group);
+  };
+  sequence.steps.forEach(s => checkGroupForDanglingStepRefs(s.conditionGroup));
+  sequence.interrupts.forEach(i => checkGroupForDanglingStepRefs(i.triggerConditionGroup));
+  return { errors, warnings };
 };
 
 type GameSettingsState = {
@@ -3664,6 +3946,11 @@ type GameSettingsState = {
   // V6.9 Phase F4: Teammate Action Sequences transparency toggle. The sequence LIBRARY itself
   // lives on TeamState.sequences (not here), matching where activeTeamPlan already lives.
   teamAiActionSequencesTransparencyEnabled: boolean;
+  // V6.9 Phase F5: sequence interrupts and phase-based sequence switching, both their own
+  // sub-toggles under teamAiActionSequencesEnabled (F1) — off by default, no behavior when either
+  // the master toggle or these are off.
+  teamAiSequenceInterruptsEnabled: boolean;
+  teamAiPhaseSequenceSwitchingEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -4711,6 +4998,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
     autoRejectRecoverySpending: { enabled: false }
   },
   teamAiActionSequencesTransparencyEnabled: true,
+  teamAiSequenceInterruptsEnabled: false,
+  teamAiPhaseSequenceSwitchingEnabled: false,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -4855,7 +5144,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
-  { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled'] },
+  { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'] },
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
@@ -8238,7 +8527,8 @@ const createDefaultTeamState = (
   teamInitiative: { value: 0, gainedToday: 0, lastGainDay: 0 },
   comboTracking: { sequence: [], comboCountToday: 0, comboCountDay: 0 },
   color,
-  sequences: []
+  sequences: [],
+  phaseSequenceAssignments: []
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -9754,7 +10044,8 @@ function AustraliaGame() {
             activeEmergency: sanitizeTeamEmergencyState(teamData?.activeEmergency),
             teamInitiative: sanitizeTeamInitiativeState(teamData?.teamInitiative),
             comboTracking: sanitizeTeamComboTrackingState(teamData?.comboTracking),
-            sequences: sanitizeTeammateSequences(teamData?.sequences)
+            sequences: sanitizeTeammateSequences(teamData?.sequences),
+            phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments)
           };
           return acc;
         }, {})
@@ -10186,6 +10477,12 @@ function AustraliaGame() {
         teamAiActionSequencesTransparencyEnabled: typeof settingsData.teamAiActionSequencesTransparencyEnabled === 'boolean'
           ? settingsData.teamAiActionSequencesTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled,
+        teamAiSequenceInterruptsEnabled: typeof settingsData.teamAiSequenceInterruptsEnabled === 'boolean'
+          ? settingsData.teamAiSequenceInterruptsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiSequenceInterruptsEnabled,
+        teamAiPhaseSequenceSwitchingEnabled: typeof settingsData.teamAiPhaseSequenceSwitchingEnabled === 'boolean'
+          ? settingsData.teamAiPhaseSequenceSwitchingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPhaseSequenceSwitchingEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -15801,7 +16098,8 @@ function AustraliaGame() {
     actor: ActorState,
     decision: ScoredTeamAiDecision,
     requirementsResult: { reason: string; softViolations: string[] } | null,
-    actionsRemaining: number
+    actionsRemaining: number,
+    sequenceContext?: { sequenceId: string; stepId: string }
   ): ApprovalRequest => {
     const existing = pendingApprovalRequests.find(r => r.actorId === actor.id);
     if (existing) return existing;
@@ -15853,7 +16151,9 @@ function AustraliaGame() {
       fallbackAvailable: true,
       actionsRemaining,
       categoryBucket: decision.type as TeamModeActionCategory,
-      createdAtTurn: gameState.day
+      createdAtTurn: gameState.day,
+      sequenceId: sequenceContext?.sequenceId,
+      sequenceStepId: sequenceContext?.stepId
     };
   }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName]);
 
@@ -20743,6 +21043,39 @@ function AustraliaGame() {
             if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamComboBonusesEnabled) return prevCombo;
             return { ...prevCombo, comboCountToday: 0, comboCountDay: newDay };
           })(),
+          // V6.9 Phase F5 (GD3): daily phase-based sequence switching. Reuses computeEconomicPhase
+          // (Phase C, unmodified) for phase detection and the exact activate/deactivate semantics
+          // activateSequenceForActor already implements — written inline here (not by calling that
+          // function) since this whole per-team object is still being built and hasn't been
+          // committed to teamsByIdRef yet, so activateSequenceForActor's own updateTeamState call
+          // would write against stale state. With either master toggle off, both fields pass
+          // through inertly, unchanged from teamState's prior values.
+          ...(() => {
+            if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiActionSequencesEnabled || !gameSettings.teamAiPhaseSequenceSwitchingEnabled) {
+              return { phaseSequenceAssignments: teamState.phaseSequenceAssignments || [] };
+            }
+            const endgameActiveForPhaseSwitch = isEndgamePeriod(newDay, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+            let sequences = teamState.sequences || [];
+            const nextAssignments = (teamState.phaseSequenceAssignments || []).map(assignment => {
+              if (!assignment.enabled) return assignment;
+              const assignedActor = projectedActors[assignment.actorId];
+              if (!assignedActor) return assignment;
+              const spendable = getActorSpendableCash(assignedActor, gameSettings.teamCashVaultEnabled);
+              const currentPhase = computeEconomicPhase(assignedActor, spendable, gameSettings, endgameActiveForPhaseSwitch);
+              const boundSequenceId = assignment.bindings[currentPhase];
+              if (!boundSequenceId) return assignment;
+              const currentlyActive = sequences.find(s => s.assignedActorId === assignment.actorId && s.active);
+              if (currentlyActive?.id === boundSequenceId) return assignment;
+              if ((newDay - assignment.lastSwitchDay) < assignment.minimumCommitmentDays) return assignment;
+              sequences = sequences.map(seq => {
+                if (seq.id === boundSequenceId) return { ...seq, assignedActorId: assignment.actorId, active: true };
+                if (seq.assignedActorId === assignment.actorId && seq.active) return { ...seq, active: false };
+                return seq;
+              });
+              return { ...assignment, lastSwitchDay: newDay };
+            });
+            return { sequences, phaseSequenceAssignments: nextAssignments };
+          })(),
           // V6.7 Phase 3a: single daily planning pass, gated by runCompetitiveTeamPlanningPass's
           // own early-return guard — with either master toggle off, planningResult is null and
           // activeTeamPlan/teamPlanHistory/teamGoals all pass through completely unchanged.
@@ -24359,6 +24692,47 @@ function AustraliaGame() {
     if (!sequence || sequence.steps.length === 0) return null;
     if (sequenceYieldedThisTurnRef.current[actorId]) return null;
 
+    // V6.9 Phase F5 (GD2): Sequence Interrupts, evaluated once per call before normal step-matching.
+    // Mirrors EMERGENCY_ACTIONS's condition-tag/cooldown/threshold gating shape, with the tag/score
+    // threshold both replaced by Sequences' own existing boolean RequirementGroup evaluator — one
+    // condition vocabulary across the feature, not a parallel scoring system. Dispatch reuses the
+    // exact same pause/cancel/jump/allow-normal-ai mutation paths the fallback chain above already
+    // implements — interrupts are just a different trigger for machinery F4 already built.
+    if (gameSettings.teamAiSequenceInterruptsEnabled) {
+      const probeDecision: ScoredTeamAiDecision = { type: 'end_turn', description: '', data: {}, score: 0, plan: {} as ActorAiPlan };
+      const firingInterrupt = (sequence.interrupts || []).find(interrupt => {
+        if (!interrupt.enabled || !interrupt.triggerConditionGroup) return false;
+        if (gameState.day - interrupt.lastTriggeredDay < interrupt.cooldownDays) return false;
+        return evaluateActionRequirements(actor, probeDecision, undefined, [interrupt.triggerConditionGroup]).approved;
+      });
+      if (firingInterrupt) {
+        if (gameSettings.teamAiActionSequencesTransparencyEnabled) {
+          appendTeamAiTraceNote(actorId, `Sequence interrupt fired: ${firingInterrupt.label}`);
+        }
+        updateTeamState(actor.teamId, prev => ({
+          ...prev,
+          sequences: (prev.sequences || []).map(seq => {
+            if (seq.id !== sequence.id) return seq;
+            const interrupts = seq.interrupts.map(i => i.id === firingInterrupt.id ? { ...i, lastTriggeredDay: gameState.day } : i);
+            if (firingInterrupt.action === 'cancel_sequence') {
+              return { ...seq, interrupts, active: false, assignedActorId: null, activeStepId: null, sequenceRepeatCount: 0, steps: seq.steps.map(s => ({ ...s, status: 'pending' as const, stepRepeatCount: 0 })) };
+            }
+            if (firingInterrupt.action === 'pause_sequence') {
+              return { ...seq, interrupts, active: false };
+            }
+            if (firingInterrupt.action === 'jump_to_step' && firingInterrupt.jumpToStepId) {
+              return { ...seq, interrupts, activeStepId: firingInterrupt.jumpToStepId };
+            }
+            return { ...seq, interrupts };
+          })
+        }));
+        if (firingInterrupt.action === 'allow_normal_ai_once') {
+          sequenceYieldedThisTurnRef.current[actorId] = true;
+        }
+        return null; // this call yields; a jump_to_step's new activeStepId is picked up next call
+      }
+    }
+
     const candidates = getRankedTeamAiDecisions(actorId);
     const orderedSteps = sequence.mode === 'priority'
       ? [...sequence.steps].sort((a, b) => b.priorityRank - a.priorityRank)
@@ -24431,7 +24805,7 @@ function AustraliaGame() {
       step = eligibleSteps[idx + 1];
     }
     return null;
-  }, [gameSettings, getActorState, getRankedTeamAiDecisions, evaluateActionRequirements, appendTeamAiTraceNote]);
+  }, [gameSettings, getActorState, getRankedTeamAiDecisions, evaluateActionRequirements, appendTeamAiTraceNote, gameState.day, updateTeamState]);
 
   // V6.9 Phase F4: sibling to the TeamPlan completion-marker block — marks the step done/skipped/
   // failed, applies repeat-rule rollback (GD7, bounded by SEQUENCE_MAX_REPEATS regardless of the
@@ -25284,14 +25658,20 @@ function AustraliaGame() {
         highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
         teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
       };
+      // V6.9 Phase F5 (GD6): thread sequence-origin into the approval gate. sequenceStepMatch is
+      // already in scope at this exact point in the loop (computed earlier this same iteration,
+      // per F4's own wiring) — this is a one-line threaded argument, not new plumbing.
+      const isSequenceSourcedDecision = Boolean(sequenceStepMatch && decision === sequenceStepMatch.decision);
       const needsPlayerApproval = approvalAutoResolution.outcome === 'none'
         && needsApproval(actor, decision, approvalPolicy, gameSettings, {
           wager: decision.data?.wager,
-          cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
+          cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined,
+          isSequenceSourced: isSequenceSourcedDecision
         })
         && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
       if (needsPlayerApproval) {
-        const approvalRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
+        const approvalRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken,
+          isSequenceSourcedDecision && sequenceStepMatch ? { sequenceId: sequenceStepMatch.sequenceId, stepId: sequenceStepMatch.stepId } : undefined);
         setPendingApprovalRequests(prev => [...prev, approvalRequest]);
         if (!confirmationDialog.isOpen) {
           showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', approvalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(approvalRequest.id, 'approve'), { requestId: approvalRequest.id });
@@ -27328,6 +27708,56 @@ function AustraliaGame() {
     }));
   };
 
+  // V6.9 Phase F5 (GD5): manual, immediate teammate-sequence commands — direct synchronous control
+  // calls, not routed through TeamMessageType/postTeamMessage (that channel is a soft biasing/
+  // signal system, confirmed by research; this needs literal, immediate mutation). Delegates
+  // entirely to the exact mutation shapes F4's advanceSequenceProgress/fallback dispatch already
+  // implement for pause/cancel/skip — zero new mutation logic, just a direct entry point reused by
+  // both the live Sequence Builder controls (below) and the Approval card's sequence-only buttons.
+  const applyManualSequenceCommand = (
+    teamId: string,
+    sequenceId: string,
+    command: 'pause' | 'resume' | 'skip_step' | 'cancel' | 'force_normal_ai_once'
+  ) => {
+    if (command === 'force_normal_ai_once') {
+      const actorId = teamsByIdRef.current[teamId]?.sequences?.find(s => s.id === sequenceId)?.assignedActorId;
+      if (actorId) sequenceYieldedThisTurnRef.current[actorId] = true;
+      return;
+    }
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      sequences: (prev.sequences || []).map(seq => {
+        if (seq.id !== sequenceId) return seq;
+        if (command === 'cancel') {
+          return {
+            ...seq,
+            active: false,
+            assignedActorId: null,
+            activeStepId: null,
+            sequenceRepeatCount: 0,
+            steps: seq.steps.map(s => ({ ...s, status: 'pending' as const, stepRepeatCount: 0 }))
+          };
+        }
+        if (command === 'pause') return { ...seq, active: false };
+        if (command === 'resume') return { ...seq, active: true };
+        // skip_step: marks whichever step is currently "up next" (Strict: activeStepId / first by
+        // order; Adaptive/Priority: first pending-or-in-progress by mode's own ordering) as skipped.
+        const orderedIds = [...seq.steps].sort((a, b) => a.order - b.order).map(s => s.id);
+        const targetStepId = seq.mode === 'strict'
+          ? (seq.activeStepId || orderedIds[0])
+          : [...seq.steps]
+              .filter(s => s.status === 'pending' || s.status === 'in_progress')
+              .sort((a, b) => seq.mode === 'priority' ? b.priorityRank - a.priorityRank : a.order - b.order)[0]?.id;
+        if (!targetStepId) return seq;
+        const steps = seq.steps.map(s => s.id === targetStepId ? { ...s, status: 'skipped' as const } : s);
+        const nextActiveStepId = seq.mode === 'strict'
+          ? (orderedIds.find(id => steps.find(s => s.id === id)?.status === 'pending') || null)
+          : seq.activeStepId;
+        return { ...seq, steps, activeStepId: nextActiveStepId };
+      })
+    }));
+  };
+
   const renderSequenceStepEditor = (sequence: TeammateSequence, step: SequenceStep, index: number, total: number) => {
     const updateStep = (patch: Partial<SequenceStep>) => updateSequenceStepInPlayerTeam(sequence.id, step.id, patch);
     return (
@@ -27420,6 +27850,7 @@ function AustraliaGame() {
 
   const renderSequenceEditor = (sequence: TeammateSequence) => {
     const orderedSteps = [...sequence.steps].sort((a, b) => a.order - b.order);
+    const activationValidation = validateSequenceForActivation(sequence);
     return (
       <div key={sequence.id} className="border-2 rounded p-3 space-y-2" style={{ borderColor: 'currentColor' }}>
         <div className="flex flex-wrap gap-2 items-center">
@@ -27434,15 +27865,41 @@ function AustraliaGame() {
             <option value={ALLY_AI_ID}>{getActorDisplayName(ALLY_AI_ID)}</option>
           </select>
           <button
-            onClick={() => sequence.assignedActorId && updateSequenceInPlayerTeam(sequence.id, { active: !sequence.active })}
-            disabled={!sequence.assignedActorId}
-            className={`px-3 py-1 rounded text-xs font-semibold ${sequence.active ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary} ${!sequence.assignedActorId ? 'opacity-40' : ''}`}
+            onClick={() => {
+              if (!sequence.assignedActorId) return;
+              // V6.9 Phase F5 (GD7): only ACTIVATING (not deactivating) is gated by validation —
+              // turning a sequence off never needs to be blocked.
+              if (!sequence.active && activationValidation.errors.length > 0) return;
+              updateSequenceInPlayerTeam(sequence.id, { active: !sequence.active });
+            }}
+            disabled={!sequence.assignedActorId || (!sequence.active && activationValidation.errors.length > 0)}
+            className={`px-3 py-1 rounded text-xs font-semibold ${sequence.active ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary} ${(!sequence.assignedActorId || (!sequence.active && activationValidation.errors.length > 0)) ? 'opacity-40' : ''}`}
           >
             {sequence.active ? 'ACTIVE' : 'INACTIVE'}
           </button>
           <button onClick={() => duplicateSequenceInPlayerTeam(sequence)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
           <button onClick={() => removeSequenceFromPlayerTeam(sequence.id)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Remove</button>
         </div>
+        {!sequence.active && sequence.assignedActorId && activationValidation.errors.length > 0 && (
+          <div className="text-xs text-red-500 pl-3">Cannot activate: {activationValidation.errors.join(' ')}</div>
+        )}
+        {!sequence.active && sequence.assignedActorId && activationValidation.errors.length === 0 && activationValidation.warnings.length > 0 && (
+          <div className="text-xs text-yellow-500 pl-3">Warning (activation still allowed): {activationValidation.warnings.join(' ')}</div>
+        )}
+        {sequence.active && (
+          <div className="flex flex-wrap gap-2 items-center text-xs pl-3">
+            <span className="opacity-60">Live controls:</span>
+            <button onClick={() => applyManualSequenceCommand(TEAM_PLAYER_ID, sequence.id, 'pause')} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Pause</button>
+            <button onClick={() => applyManualSequenceCommand(TEAM_PLAYER_ID, sequence.id, 'skip_step')} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Skip Step</button>
+            <button onClick={() => applyManualSequenceCommand(TEAM_PLAYER_ID, sequence.id, 'force_normal_ai_once')} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Yield to Normal AI (this turn)</button>
+            <button onClick={() => applyManualSequenceCommand(TEAM_PLAYER_ID, sequence.id, 'cancel')} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Cancel</button>
+          </div>
+        )}
+        {!sequence.active && sequence.assignedActorId && (
+          <div className="flex flex-wrap gap-2 items-center text-xs pl-3">
+            <button onClick={() => applyManualSequenceCommand(TEAM_PLAYER_ID, sequence.id, 'resume')} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Resume</button>
+          </div>
+        )}
         <div className="space-y-2 pl-3">
           {orderedSteps.map((step, idx) => renderSequenceStepEditor(sequence, step, idx, orderedSteps.length))}
           {orderedSteps.length === 0 && <div className="text-xs opacity-50">No steps yet — add one below.</div>}
@@ -27465,6 +27922,66 @@ function AustraliaGame() {
               <span className="opacity-60">times (capped at {SEQUENCE_MAX_REPEATS})</span>
             </>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  // V6.9 Phase F5 (GD3 UI): binds an actor's active sequence to the game's EconomicPhase.
+  // Only ALLY_AI_ID is ever offered, matching the Sequence Builder's own single-assignable-
+  // AI-teammate scope on TEAM_PLAYER_ID (see the section description for why).
+  const updatePhaseSequenceAssignment = (actorId: string, patch: Partial<PhaseSequenceAssignment>) => {
+    updateTeamState(TEAM_PLAYER_ID, prev => ({
+      ...prev,
+      phaseSequenceAssignments: (prev.phaseSequenceAssignments || []).map(a => a.actorId === actorId ? { ...a, ...patch } : a)
+    }));
+  };
+
+  const renderPhaseSequenceAssignmentsEditor = () => {
+    const team = teamsById[TEAM_PLAYER_ID];
+    const assignments = team?.phaseSequenceAssignments || [];
+    const assignment = assignments.find(a => a.actorId === ALLY_AI_ID);
+    const sequences = team?.sequences || [];
+    if (!assignment) {
+      return (
+        <button
+          onClick={() => updateTeamState(TEAM_PLAYER_ID, prev => ({
+            ...prev,
+            phaseSequenceAssignments: [...(prev.phaseSequenceAssignments || []), { actorId: ALLY_AI_ID, bindings: {}, minimumCommitmentDays: 3, lastSwitchDay: -1, enabled: true }]
+          }))}
+          className={`px-3 py-2 rounded font-semibold text-sm ${themeStyles.buttonSecondary}`}
+        >
+          + Configure Phase Switching for {getActorDisplayName(ALLY_AI_ID)}
+        </button>
+      );
+    }
+    return (
+      <div className="space-y-2 text-xs">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={assignment.enabled} onChange={(e) => updatePhaseSequenceAssignment(ALLY_AI_ID, { enabled: e.target.checked })} />
+          <span>{assignment.enabled ? '☑' : '☐'} Active for {getActorDisplayName(ALLY_AI_ID)}</span>
+        </label>
+        {ECONOMIC_PHASES.map(phase => (
+          <div key={phase} className="flex items-center gap-2">
+            <span className="w-28 capitalize">{phase}:</span>
+            <select
+              value={assignment.bindings[phase] || ''}
+              onChange={(e) => updatePhaseSequenceAssignment(ALLY_AI_ID, { bindings: { ...assignment.bindings, [phase]: e.target.value || undefined } })}
+              className="px-2 py-1 rounded flex-1"
+            >
+              <option value="">(no binding)</option>
+              {sequences.map(seq => <option key={seq.id} value={seq.id}>{seq.name}</option>)}
+            </select>
+          </div>
+        ))}
+        <div className="flex items-center gap-2">
+          <span>Minimum commitment (days):</span>
+          <input
+            type="number"
+            value={assignment.minimumCommitmentDays}
+            onChange={(e) => updatePhaseSequenceAssignment(ALLY_AI_ID, { minimumCommitmentDays: Math.max(0, parseFloat(e.target.value) || 0) })}
+            className="px-2 py-1 rounded w-16"
+          />
         </div>
       </div>
     );
@@ -27754,7 +28271,9 @@ function AustraliaGame() {
       aiActionApprovalTransparencyEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
       aiActionApprovalAutoRulesEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
       aiActionApprovalAutoRules: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRules },
-      teamAiActionSequencesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled
+      teamAiActionSequencesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled,
+      teamAiSequenceInterruptsEnabled: DEFAULT_GAME_SETTINGS.teamAiSequenceInterruptsEnabled,
+      teamAiPhaseSequenceSwitchingEnabled: DEFAULT_GAME_SETTINGS.teamAiPhaseSequenceSwitchingEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -27867,7 +28386,9 @@ function AustraliaGame() {
       aiActionApprovalTransparencyEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
       aiActionApprovalAutoRulesEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
       aiActionApprovalAutoRules: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRules },
-      teamAiActionSequencesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled
+      teamAiActionSequencesTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled,
+      teamAiSequenceInterruptsEnabled: DEFAULT_GAME_SETTINGS.teamAiSequenceInterruptsEnabled,
+      teamAiPhaseSequenceSwitchingEnabled: DEFAULT_GAME_SETTINGS.teamAiPhaseSequenceSwitchingEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -28161,10 +28682,19 @@ function AustraliaGame() {
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interface" title="What's New" chips={['UX only']}>
+                <div className="text-sm font-semibold mb-1">{V69_CHANGELOG[0]}</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
-                  {V67_CHANGELOG.slice(1).map(item => (
+                  {V69_CHANGELOG.slice(1).map(item => (
                     <div key={item}>- {item}</div>
                   ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.7.0</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V67_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
                 </div>
                 <div className="mt-3 pt-3 border-t border-current border-opacity-10">
                   <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.2.0</div>
@@ -30191,7 +30721,7 @@ function AustraliaGame() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold">Enable Teammate Action Sequences</div>
-                        <div className="text-sm opacity-75">Build ordered (Strict), adaptive, or prioritized action plans and assign one to your AI teammate, with per-step targets, wager/spending limits, conditions, fallback behavior, and repeats. Shared-team sequences, phase-based switching, interrupts, and templates are not part of this phase yet.</div>
+                        <div className="text-sm opacity-75">Build ordered (Strict), adaptive, or prioritized action plans and assign one to your AI teammate, with per-step targets, wager/spending limits, conditions, fallback behavior, repeats, interrupts, phase-based switching, and named templates. Shared-team (multi-actor) sequences are not offered — this game's fixed team roster gives the player's own team only one assignable AI teammate, so there is no second actor to coordinate a shared sequence with.</div>
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionSequencesEnabled: !prev.teamAiActionSequencesEnabled }))}
@@ -30210,10 +30740,26 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.teamAiActionSequencesTransparencyEnabled ? '☑' : '☐'} Show in Transparency (soft-condition + fallback notes)</span>
                         </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiSequenceInterruptsEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiSequenceInterruptsEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiSequenceInterruptsEnabled ? '☑' : '☐'} Enable Sequence Interrupts (per-sequence, edited below)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiPhaseSequenceSwitchingEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPhaseSequenceSwitchingEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiPhaseSequenceSwitchingEnabled ? '☑' : '☐'} Enable Phase-Based Sequence Switching (per-teammate, edited below)</span>
+                        </label>
                         <div className="space-y-3">
                           {(teamsById[TEAM_PLAYER_ID]?.sequences || []).map(seq => renderSequenceEditor(seq))}
                           {(teamsById[TEAM_PLAYER_ID]?.sequences || []).length === 0 && (
-                            <div className="text-xs opacity-60">No sequences configured yet — add one below.</div>
+                            <div className="text-xs opacity-60">No sequences configured yet — add one below, or load a template.</div>
                           )}
                         </div>
                         <button
@@ -30223,6 +30769,26 @@ function AustraliaGame() {
                           + Add Sequence
                         </button>
                         <div className="text-xs opacity-60">Only one sequence per teammate may be active at a time — activating a sequence for a teammate automatically deactivates any other sequence already assigned to them.</div>
+                        <div className="text-sm font-semibold mt-2">Load Template (creates an inactive, unassigned copy you can then edit/assign)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(Object.entries(SEQUENCE_TEMPLATES) as Array<[string, SequenceTemplateDefinition]>).map(([templateId, template]) => (
+                            <button
+                              key={templateId}
+                              title={template.description}
+                              onClick={() => {
+                                const instantiated = instantiateSequenceTemplate(templateId);
+                                if (instantiated) updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, sequences: [...(prev.sequences || []), instantiated] }));
+                              }}
+                              className={`${themeStyles.border} border rounded-lg p-2 text-left text-xs hover:scale-[1.01] transition ${themeStyles.buttonSecondary}`}
+                            >
+                              {template.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-sm font-semibold mt-2">Phase-Based Sequence Switching</div>
+                        {!gameSettings.teamAiPhaseSequenceSwitchingEnabled ? (
+                          <div className="text-xs opacity-60">Enable the toggle above to bind sequences to economic phases per teammate.</div>
+                        ) : renderPhaseSequenceAssignmentsEditor()}
                       </>
                     )}
                   </div>
@@ -30270,7 +30836,7 @@ function AustraliaGame() {
                             <option value="mixed">Mixed (per teammate)</option>
                           </select>
                           {gameSettings.aiActionApprovalMode === 'approve_sequence_actions_only' && (
-                            <div className="text-xs opacity-60 mt-1">No sequences exist yet — approval will never trigger under this mode until Teammate Action Sequences ships.</div>
+                            <div className="text-xs opacity-60 mt-1">Only requires approval for decisions sourced from an active Teammate Action Sequence — normal AI decisions execute without approval under this mode.</div>
                           )}
                         </div>
                         {(gameSettings.aiActionApprovalMode === 'approve_selected_types' || gameSettings.aiActionApprovalMode === 'mixed') && (
@@ -36154,6 +36720,27 @@ function AustraliaGame() {
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'always_reject_similar')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Always Reject Similar</button>
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'use_fallback')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg col-span-2`}>Use Fallback Action</button>
               </div>
+              {(() => {
+                // V6.9 Phase F5 (GD6): sequence-only controls, rendered only when this request wraps
+                // a sequence-sourced decision. Each delegates the actual mutation to
+                // applyManualSequenceCommand (F5's own shared entry point into F4's already-built
+                // pause/cancel/skip mutation paths) and reuses the already-tested 'reject' dispatch
+                // so this decision never executes — no new resolution-dispatch path is added.
+                const seqRequest = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+                if (!seqRequest?.sequenceId) return null;
+                const withSequenceCommand = (command: 'pause' | 'cancel' | 'skip_step' | 'force_normal_ai_once') => () => {
+                  applyManualSequenceCommand(seqRequest.teamId, seqRequest.sequenceId!, command);
+                  resolveApprovalRequest(seqRequest.id, 'reject');
+                };
+                return (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <button onClick={withSequenceCommand('skip_step')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Skip Step</button>
+                    <button onClick={withSequenceCommand('force_normal_ai_once')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Return to Normal AI</button>
+                    <button onClick={withSequenceCommand('pause')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Pause Sequence</button>
+                    <button onClick={withSequenceCommand('cancel')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Cancel Sequence</button>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
           <div className="flex space-x-3">
