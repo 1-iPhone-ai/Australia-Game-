@@ -2803,6 +2803,249 @@ const resolveRequirementFailureAction = (
   }
 };
 
+// V6.9 Phase F3: AI Action Approval — an optional, off-by-default gate that pauses an AI
+// teammate's proposed action for player review (approve/reject/edit) before it executes, layered
+// as a THIRD condition alongside (never replacing) token revalidation and Action Requirements at
+// both existing execution chokepoints.
+type ApprovalMode = 'approve_every_action' | 'approve_selected_types' | 'approve_high_risk' | 'approve_sequence_actions_only' | 'mixed';
+interface ApprovalHighRiskThresholds {
+  wagerMin: number;
+  costMin: number;
+  percentCashAtRiskMin: number;
+}
+interface ApprovalTeammateOverride {
+  actorId: string;
+  mode: ApprovalMode;
+  selectedTypes?: TeamModeActionCategory[];
+  highRiskThresholds?: ApprovalHighRiskThresholds;
+}
+interface ApprovalPolicy {
+  mode: ApprovalMode;
+  selectedTypes: TeamModeActionCategory[];
+  highRiskThresholds: ApprovalHighRiskThresholds;
+  teammateOverrides: ApprovalTeammateOverride[];
+}
+// Reuses ActionRequirementFailureBehavior/SequenceStepFallbackAction's overlapping vocabulary
+// ('use_fallback_action'→'use_fallback', 'retry_next_turn', 'allow_normal_ai') plus F3-specific
+// values; 'pause_sequence'/'cancel_sequence' are sequence-only, inert, never offered in the picker.
+type ApprovalRejectionOutcome = 'propose_again' | 'use_fallback' | 'skip' | 'allow_normal_ai' | 'wait_next_action' | 'wait_next_turn' | 'end_turn' | 'pause_sequence' | 'cancel_sequence';
+// Full control vocabulary modeled now; only 9 are rendered as buttons this phase (see the Settings
+// Hub/approval card) — 'skip_step'/'return_to_normal_ai'/'pause_sequence'/'cancel_sequence' are
+// sequence-only and inert until Phase F4/F5, kept only for save-format/schema stability.
+type ApprovalControlAction = 'approve' | 'reject' | 'edit_and_approve' | 'approve_lower_wager' | 'approve_once' | 'always_approve_similar' | 'reject_once' | 'always_reject_similar' | 'use_fallback' | 'skip_step' | 'return_to_normal_ai' | 'pause_sequence' | 'cancel_sequence';
+interface AutomaticApprovalRuleThreshold {
+  enabled: boolean;
+  threshold: number;
+}
+interface AutomaticApprovalRules {
+  autoApproveWagerBelow: AutomaticApprovalRuleThreshold;
+  autoApproveLeavesMinReserve: { enabled: boolean };
+  autoApproveSuccessProbabilityAbove: AutomaticApprovalRuleThreshold;
+  autoApproveTravelCostBelow: AutomaticApprovalRuleThreshold;
+  autoApproveSupportBelow: AutomaticApprovalRuleThreshold;
+  autoRejectLoans: { enabled: boolean };
+  autoRejectSabotage: { enabled: boolean };
+  autoRejectRecoverySpending: { enabled: boolean };
+}
+interface ApprovalRequest {
+  id: string;
+  actorId: string;
+  teamId: string;
+  decision: ScoredTeamAiDecision;
+  actionSummary: string;
+  targetLabel: string;
+  cost: number | null;
+  wager: number | null;
+  percentCashAtRisk: number | null;
+  expectedReward: number | null;
+  successProbability: number | null;
+  minCashRemaining: number | null;
+  vaultEffect: string;
+  governorRuling: string;
+  requirementsSummary: string;
+  aiExplanation: string;
+  fallbackAvailable: boolean;
+  actionsRemaining: number;
+  categoryBucket: TeamModeActionCategory;
+  createdAtTurn: number;
+}
+
+const APPROVAL_MODES: ApprovalMode[] = ['approve_every_action', 'approve_selected_types', 'approve_high_risk', 'approve_sequence_actions_only', 'mixed'];
+const APPROVAL_REJECTION_OUTCOMES: ApprovalRejectionOutcome[] = ['propose_again', 'use_fallback', 'skip', 'allow_normal_ai', 'wait_next_action', 'wait_next_turn', 'end_turn', 'pause_sequence', 'cancel_sequence'];
+const APPROVAL_MAX_REVISED_PROPOSALS = 3;
+
+const sanitizeApprovalHighRiskThresholds = (value: unknown): ApprovalHighRiskThresholds => {
+  const source = (value && typeof value === 'object') ? value as Partial<ApprovalHighRiskThresholds> : {};
+  return {
+    wagerMin: typeof source.wagerMin === 'number' && isFinite(source.wagerMin) ? Math.max(0, source.wagerMin) : 200,
+    costMin: typeof source.costMin === 'number' && isFinite(source.costMin) ? Math.max(0, source.costMin) : 300,
+    percentCashAtRiskMin: typeof source.percentCashAtRiskMin === 'number' && isFinite(source.percentCashAtRiskMin) ? Math.max(0, Math.min(1, source.percentCashAtRiskMin)) : 0.25
+  };
+};
+
+const sanitizeApprovalTeammateOverride = (value: unknown): ApprovalTeammateOverride | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<ApprovalTeammateOverride>;
+  if (typeof source.actorId !== 'string') return null;
+  if (!APPROVAL_MODES.includes(source.mode as ApprovalMode)) return null;
+  return {
+    actorId: source.actorId,
+    mode: source.mode as ApprovalMode,
+    selectedTypes: Array.isArray(source.selectedTypes) ? source.selectedTypes.filter(t => typeof t === 'string') as TeamModeActionCategory[] : undefined,
+    highRiskThresholds: source.highRiskThresholds ? sanitizeApprovalHighRiskThresholds(source.highRiskThresholds) : undefined
+  };
+};
+
+const sanitizeApprovalTeammateOverrides = (value: unknown): ApprovalTeammateOverride[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(entry => sanitizeApprovalTeammateOverride(entry)).filter((o): o is ApprovalTeammateOverride => Boolean(o));
+};
+
+const sanitizeAutomaticApprovalRuleThreshold = (value: unknown, defaultThreshold: number): AutomaticApprovalRuleThreshold => {
+  const source = (value && typeof value === 'object') ? value as Partial<AutomaticApprovalRuleThreshold> : {};
+  return {
+    enabled: Boolean(source.enabled),
+    threshold: typeof source.threshold === 'number' && isFinite(source.threshold) ? Math.max(0, source.threshold) : defaultThreshold
+  };
+};
+
+const sanitizeAutomaticApprovalRules = (value: unknown): AutomaticApprovalRules => {
+  const source = (value && typeof value === 'object') ? value as Partial<AutomaticApprovalRules> : {};
+  return {
+    autoApproveWagerBelow: sanitizeAutomaticApprovalRuleThreshold(source.autoApproveWagerBelow, 0),
+    autoApproveLeavesMinReserve: { enabled: Boolean(source.autoApproveLeavesMinReserve?.enabled) },
+    autoApproveSuccessProbabilityAbove: sanitizeAutomaticApprovalRuleThreshold(source.autoApproveSuccessProbabilityAbove, 0.9),
+    autoApproveTravelCostBelow: sanitizeAutomaticApprovalRuleThreshold(source.autoApproveTravelCostBelow, 0),
+    autoApproveSupportBelow: sanitizeAutomaticApprovalRuleThreshold(source.autoApproveSupportBelow, 0),
+    autoRejectLoans: { enabled: Boolean(source.autoRejectLoans?.enabled) },
+    autoRejectSabotage: { enabled: Boolean(source.autoRejectSabotage?.enabled) },
+    autoRejectRecoverySpending: { enabled: Boolean(source.autoRejectRecoverySpending?.enabled) }
+  };
+};
+
+// V6.9 Phase F3: trigger evaluator for whether a decision needs player approval — no-op (false)
+// whenever the master toggles are off, matching every prior gate's off-switch idiom. Plain
+// module-level pure function, structurally typed (mirrors evaluateEconomySpendingApproval's own
+// convention) so it's callable regardless of where ActorState/ScoredTeamAiDecision are declared.
+const needsApproval = (
+  actor: { id: string },
+  decision: { type: string; data?: any },
+  policy: ApprovalPolicy,
+  settings: GameSettingsState,
+  context?: { cost?: number; wager?: number; percentCashAtRisk?: number }
+): boolean => {
+  if (!settings.teamCompetitiveAiEnabled || !settings.aiActionApprovalEnabled) return false;
+  const override = policy.teammateOverrides.find(o => o.actorId === actor.id);
+  if (policy.mode === 'mixed') {
+    if (override) {
+      return needsApproval(actor, decision, {
+        mode: override.mode,
+        selectedTypes: override.selectedTypes || policy.selectedTypes,
+        highRiskThresholds: override.highRiskThresholds || policy.highRiskThresholds,
+        teammateOverrides: []
+      }, settings, context);
+    }
+    // No override for this teammate under Mixed mode — default to the safest behavior
+    // (approve every action) rather than silently meaning "never approve anything."
+    return true;
+  }
+  switch (policy.mode) {
+    case 'approve_every_action':
+      return true;
+    case 'approve_selected_types':
+      return policy.selectedTypes.includes(decision.type as TeamModeActionCategory);
+    case 'approve_high_risk': {
+      const { wagerMin, costMin, percentCashAtRiskMin } = policy.highRiskThresholds;
+      if (context?.wager !== undefined && context.wager >= wagerMin) return true;
+      if (context?.cost !== undefined && context.cost >= costMin) return true;
+      if (context?.percentCashAtRisk !== undefined && context.percentCashAtRisk >= percentCashAtRiskMin) return true;
+      return false;
+    }
+    case 'approve_sequence_actions_only':
+      // V6.9 Phase F3: inert until Phase F4/F5 — no sequence-sourced decisions exist yet, so this
+      // mode is functionally identical to Approval being off (stated plainly in the Settings Hub).
+      return false;
+    default:
+      return true;
+  }
+};
+
+// V6.9 Phase F3: automatic approval/rejection rules — gated by their OWN separate opt-in
+// (aiActionApprovalAutoRulesEnabled), never activated merely by enabling Approval itself or
+// Advanced Settings. Auto-reject rules are checked first (always win over an auto-approve rule if
+// both would somehow match, matching the spec's stated conservatism). Never shown in the visible
+// queue — an auto-resolved decision is only ever logged via a trace note, never blocked/consumed.
+const resolveAutomaticApprovalRules = (
+  actor: { money: number; protectedCash?: number; inEconomicRecovery?: boolean },
+  decision: { type: string; data?: any },
+  settings: GameSettingsState,
+  currentDay: number,
+  context?: { cost?: number; wager?: number; successProbability?: number; travelCost?: number }
+): { outcome: 'approve' | 'reject' | 'none'; reason: string } => {
+  if (!settings.teamCompetitiveAiEnabled || !settings.aiActionApprovalEnabled || !settings.aiActionApprovalAutoRulesEnabled) {
+    return { outcome: 'none', reason: 'Automatic Approval Rules is off.' };
+  }
+  const rules = settings.aiActionApprovalAutoRules;
+  if (rules.autoRejectLoans.enabled && (decision.type === 'take_advanced_loan' || decision.type === 'loan')) {
+    return { outcome: 'reject', reason: 'Auto-reject rule: loans.' };
+  }
+  if (rules.autoRejectSabotage.enabled && decision.type === 'sabotage') {
+    return { outcome: 'reject', reason: 'Auto-reject rule: sabotage.' };
+  }
+  if (rules.autoRejectRecoverySpending.enabled && actor.inEconomicRecovery && (decision.type === 'invest' || decision.type === 'buy_equipment')) {
+    return { outcome: 'reject', reason: 'Auto-reject rule: recovery-phase spending.' };
+  }
+  if (rules.autoApproveWagerBelow.enabled && context?.wager !== undefined && context.wager < rules.autoApproveWagerBelow.threshold) {
+    return { outcome: 'approve', reason: 'Auto-approve rule: wager below threshold.' };
+  }
+  if (rules.autoApproveLeavesMinReserve.enabled) {
+    const spendableCash = getActorSpendableCash(actor, settings.teamCashVaultEnabled);
+    const endgameActive = isEndgamePeriod(currentDay, settings.totalDays, settings.teamAiEndgameStartPercent);
+    const phase = computeEconomicPhase(actor, spendableCash, settings, endgameActive);
+    const reserve = computeDynamicReserve(phase, spendableCash, settings);
+    const cost = context?.cost ?? context?.wager ?? 0;
+    if ((spendableCash - cost) >= reserve) {
+      return { outcome: 'approve', reason: 'Auto-approve rule: leaves minimum reserve.' };
+    }
+  }
+  if (rules.autoApproveSuccessProbabilityAbove.enabled && context?.successProbability !== undefined && context.successProbability >= rules.autoApproveSuccessProbabilityAbove.threshold) {
+    return { outcome: 'approve', reason: 'Auto-approve rule: high success probability.' };
+  }
+  if (rules.autoApproveTravelCostBelow.enabled && decision.type === 'travel' && context?.travelCost !== undefined && context.travelCost < rules.autoApproveTravelCostBelow.threshold) {
+    return { outcome: 'approve', reason: 'Auto-approve rule: cheap travel.' };
+  }
+  if (rules.autoApproveSupportBelow.enabled && (decision.type === 'give_cash' || decision.type === 'give_resource') && context?.cost !== undefined && context.cost < rules.autoApproveSupportBelow.threshold) {
+    return { outcome: 'approve', reason: 'Auto-approve rule: small support transfer.' };
+  }
+  return { outcome: 'none', reason: '' };
+};
+
+// V6.9 Phase F3: rejection-outcome dispatch, mirroring resolveRequirementFailureAction's exact
+// shape and reusing the same overlapping vocabulary. 'skip'/'wait_next_action' collapse to the
+// same 'retry' behavior pre-sequences (no step position or alternate decision source exists yet
+// to distinguish them), matching F2's own stated collapsing convention.
+const resolveApprovalRejectionOutcome = (
+  outcome: ApprovalRejectionOutcome,
+  revisionCount: number
+): 'end_turn' | 'retry' | 'fallback' => {
+  switch (outcome) {
+    case 'propose_again':
+      return revisionCount < APPROVAL_MAX_REVISED_PROPOSALS ? 'retry' : 'end_turn';
+    case 'use_fallback':
+      return 'fallback';
+    case 'skip':
+    case 'wait_next_action':
+      return 'retry';
+    case 'wait_next_turn':
+    case 'end_turn':
+    case 'allow_normal_ai':
+    case 'pause_sequence':
+    case 'cancel_sequence':
+    default:
+      return 'end_turn';
+  }
+};
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -3109,6 +3352,17 @@ type GameSettingsState = {
   // hard-requirement enforcement itself).
   actionRequirementGroups: RequirementGroup[];
   actionRequirementsTransparencyEnabled: boolean;
+  // V6.9 Phase F3: AI Action Approval configuration — inert unless aiActionApprovalEnabled (F1) is
+  // also on. aiActionApprovalAutoRulesEnabled is its OWN separate opt-in (never auto-enabled by
+  // turning on Approval itself or Advanced Settings).
+  aiActionApprovalMode: ApprovalMode;
+  aiActionApprovalSelectedTypes: TeamModeActionCategory[];
+  aiActionApprovalHighRiskThresholds: ApprovalHighRiskThresholds;
+  aiActionApprovalTeammateOverrides: ApprovalTeammateOverride[];
+  aiActionApprovalRejectionOutcome: ApprovalRejectionOutcome;
+  aiActionApprovalTransparencyEnabled: boolean;
+  aiActionApprovalAutoRulesEnabled: boolean;
+  aiActionApprovalAutoRules: AutomaticApprovalRules;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3151,7 +3405,7 @@ interface PersonalRecord {
 
 interface ConfirmationDialog {
   isOpen: boolean;
-  type: 'travel' | 'sell' | 'challenge' | 'endDay' | 'settingsPreset' | 'sellAllInventory' | 'teamAiOverrideRequest' | null;
+  type: 'travel' | 'sell' | 'challenge' | 'endDay' | 'settingsPreset' | 'sellAllInventory' | 'teamAiOverrideRequest' | 'aiActionApprovalRequest' | null;
   title: string;
   message: string;
   confirmText: string;
@@ -4138,6 +4392,23 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   actionRequirementsEnabled: false,
   actionRequirementGroups: [],
   actionRequirementsTransparencyEnabled: true,
+  aiActionApprovalMode: 'approve_every_action',
+  aiActionApprovalSelectedTypes: [],
+  aiActionApprovalHighRiskThresholds: { wagerMin: 200, costMin: 300, percentCashAtRiskMin: 0.25 },
+  aiActionApprovalTeammateOverrides: [],
+  aiActionApprovalRejectionOutcome: 'propose_again',
+  aiActionApprovalTransparencyEnabled: true,
+  aiActionApprovalAutoRulesEnabled: false,
+  aiActionApprovalAutoRules: {
+    autoApproveWagerBelow: { enabled: false, threshold: 0 },
+    autoApproveLeavesMinReserve: { enabled: false },
+    autoApproveSuccessProbabilityAbove: { enabled: false, threshold: 0.9 },
+    autoApproveTravelCostBelow: { enabled: false, threshold: 0 },
+    autoApproveSupportBelow: { enabled: false, threshold: 0 },
+    autoRejectLoans: { enabled: false },
+    autoRejectSabotage: { enabled: false },
+    autoRejectRecoverySpending: { enabled: false }
+  },
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -4146,6 +4417,10 @@ const createDefaultGameSettings = (): GameSettingsState => ({
   ...DEFAULT_GAME_SETTINGS,
   winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
   actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
+  aiActionApprovalSelectedTypes: [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
+  aiActionApprovalHighRiskThresholds: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalHighRiskThresholds },
+  aiActionApprovalTeammateOverrides: [...DEFAULT_GAME_SETTINGS.aiActionApprovalTeammateOverrides],
+  aiActionApprovalAutoRules: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRules },
   negotiationOptions: createDefaultNegotiationOptions(),
   manualPriorityWeights: { ...DEFAULT_GAME_SETTINGS.manualPriorityWeights },
   adaptiveAiAffectedModes: [...DEFAULT_GAME_SETTINGS.adaptiveAiAffectedModes],
@@ -4279,7 +4554,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled'] },
-  { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled'] },
+  { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
@@ -8402,6 +8677,11 @@ function AustraliaGame() {
     data: null
   });
 
+  // V6.9 Phase F3: the reviewable "queue" of pending AI Action Approval requests — a browsable
+  // mirror, never itself gating execution. The single live-blocking pause point per actor-turn
+  // continues to reuse the existing single-slot confirmationDialog above.
+  const [pendingApprovalRequests, setPendingApprovalRequests] = useState<ApprovalRequest[]>([]);
+
   // Don't ask again preferences
   const [dontAskAgain, setDontAskAgain] = useState<DontAskAgainPrefs>({ ...DEFAULT_DONT_ASK });
 
@@ -9575,6 +9855,24 @@ function AustraliaGame() {
         actionRequirementsTransparencyEnabled: typeof settingsData.actionRequirementsTransparencyEnabled === 'boolean'
           ? settingsData.actionRequirementsTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
+        aiActionApprovalMode: APPROVAL_MODES.includes(settingsData.aiActionApprovalMode)
+          ? settingsData.aiActionApprovalMode
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalMode,
+        aiActionApprovalSelectedTypes: Array.isArray(settingsData.aiActionApprovalSelectedTypes)
+          ? settingsData.aiActionApprovalSelectedTypes.filter((t: unknown) => typeof t === 'string')
+          : [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
+        aiActionApprovalHighRiskThresholds: sanitizeApprovalHighRiskThresholds(settingsData.aiActionApprovalHighRiskThresholds),
+        aiActionApprovalTeammateOverrides: sanitizeApprovalTeammateOverrides(settingsData.aiActionApprovalTeammateOverrides),
+        aiActionApprovalRejectionOutcome: APPROVAL_REJECTION_OUTCOMES.includes(settingsData.aiActionApprovalRejectionOutcome)
+          ? settingsData.aiActionApprovalRejectionOutcome
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalRejectionOutcome,
+        aiActionApprovalTransparencyEnabled: typeof settingsData.aiActionApprovalTransparencyEnabled === 'boolean'
+          ? settingsData.aiActionApprovalTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
+        aiActionApprovalAutoRulesEnabled: typeof settingsData.aiActionApprovalAutoRulesEnabled === 'boolean'
+          ? settingsData.aiActionApprovalAutoRulesEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
+        aiActionApprovalAutoRules: sanitizeAutomaticApprovalRules(settingsData.aiActionApprovalAutoRules),
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -15172,6 +15470,121 @@ function AustraliaGame() {
 
     return { approved: true, reason: 'Action Requirements: approved.', failureBehavior: null, softViolations };
   }, [computeTeamNetWorth, gameSettings, gameState.day, getActorState, getTeamActors]);
+
+  // V6.9 Phase F3: builds the player-facing ApprovalRequest card. Every field with a null/blank
+  // fallback follows the same "auto-blank on missing data" convention Requirements already
+  // established — no new normalization plumbing is added to ScoredTeamAiDecision this phase.
+  const buildApprovalRequest = useCallback((
+    actor: ActorState,
+    decision: ScoredTeamAiDecision,
+    requirementsResult: { reason: string; softViolations: string[] } | null,
+    actionsRemaining: number
+  ): ApprovalRequest => {
+    const existing = pendingApprovalRequests.find(r => r.actorId === actor.id);
+    if (existing) return existing;
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const cost: number | null = typeof decision.data?.purchases?.[0]?.cost === 'number'
+      ? decision.data.purchases[0].cost
+      : (typeof decision.data?.wager === 'number' ? null : null);
+    const wager: number | null = typeof decision.data?.wager === 'number' ? decision.data.wager : null;
+    const spendAmount = cost ?? wager;
+    const percentCashAtRisk = (spendAmount !== null && spendableCash > 0) ? spendAmount / spendableCash : null;
+    const expectedReward: number | null = typeof decision.plan?.expectedValue === 'number'
+      ? decision.plan.expectedValue
+      : (typeof decision.data?.expectedReward === 'number' ? decision.data.expectedReward : null);
+    const successProbability: number | null = typeof decision.data?.successChance === 'number' ? decision.data.successChance : null;
+    const minCashRemaining = spendAmount !== null ? spendableCash - spendAmount : null;
+    const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+    const phase = computeEconomicPhase(actor, spendableCash, gameSettings, endgameActive);
+    const vaultEffect = gameSettings.teamCashVaultEnabled
+      ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+      : 'Vault inactive.';
+    const governorCategoryByType: Partial<Record<AIAction['type'], EconomySpendCategory>> = {
+      buy_equipment: 'equipment', invest: 'investment', sabotage: 'sabotage', region_deposit: 'region_deposit', travel: 'travel', give_cash: 'support', give_resource: 'support'
+    };
+    const governorCategory = governorCategoryByType[decision.type];
+    const governorRuling = governorCategory
+      ? evaluateEconomySpendingApproval(actor, governorCategory, spendAmount || 0, gameSettings, gameState.day).reason
+      : 'n/a — no spend category.';
+    const targetLabel = decision.data?.region ? (REGIONS[decision.data.region as keyof typeof REGIONS]?.name || decision.data.region)
+      : (decision.data?.targetActorId ? getActorDisplayName(decision.data.targetActorId) : 'n/a');
+    return {
+      id: `approval_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      actorId: actor.id,
+      teamId: actor.teamId,
+      decision,
+      actionSummary: decision.description,
+      targetLabel,
+      cost,
+      wager,
+      percentCashAtRisk,
+      expectedReward,
+      successProbability,
+      minCashRemaining,
+      vaultEffect,
+      governorRuling,
+      requirementsSummary: requirementsResult
+        ? (requirementsResult.softViolations.length ? requirementsResult.softViolations.join('; ') : requirementsResult.reason)
+        : 'n/a',
+      aiExplanation: decision.plan?.requestedSupport || decision.description,
+      fallbackAvailable: true,
+      actionsRemaining,
+      categoryBucket: decision.type as TeamModeActionCategory,
+      createdAtTurn: gameState.day
+    };
+  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName]);
+
+  // Promise-based resume gate used only by runApprovedOverrideBonusActions's for loop, which
+  // cannot abandon-and-return the way performTeamAiTurn's while loop does — its own try/finally
+  // remains the single, unbroken guarantor of finishTeamAiTurn firing.
+  const approvalResolversRef = useRef<Record<string, (control: ApprovalControlAction) => void>>({});
+  const waitForApprovalResolution = useCallback((requestId: string): Promise<ApprovalControlAction> => {
+    return new Promise<ApprovalControlAction>(resolve => {
+      approvalResolversRef.current[requestId] = resolve;
+    });
+  }, []);
+
+  // TDZ-safe ref-indirection (established pattern, e.g. buildRoundAiPlanBatchRef): resolveApprovalRequest
+  // is declared here, well before resumeAfterApprovalResolution exists (it depends on
+  // executeTeamAiAction/checkRoleFulfillment/detectComboBonus/finishTeamAiTurn, all declared much
+  // later), so it reads the real function through a ref assigned right after that function's own
+  // declaration — safe because the read only ever happens inside a later-invoked callback, never
+  // as a bare synchronous statement during render.
+  const resumeAfterApprovalResolutionRef = useRef<((actorId: string, control: ApprovalControlAction, editedFields?: { cost?: number; wager?: number }) => Promise<void>) | null>(null);
+  const resolveApprovalRequest = useCallback((
+    requestId: string,
+    control: ApprovalControlAction,
+    editedFields?: { cost?: number; wager?: number }
+  ) => {
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request) return;
+    const remaining = pendingApprovalRequests.filter(r => r.id !== requestId);
+    setPendingApprovalRequests(remaining);
+    if (control === 'always_approve_similar') {
+      alwaysApproveSimilarRef.current[request.actorId] = alwaysApproveSimilarRef.current[request.actorId] || new Set<TeamModeActionCategory>();
+      alwaysApproveSimilarRef.current[request.actorId].add(request.categoryBucket);
+    }
+    if (control === 'always_reject_similar') {
+      alwaysRejectSimilarRef.current[request.actorId] = alwaysRejectSimilarRef.current[request.actorId] || new Set<TeamModeActionCategory>();
+      alwaysRejectSimilarRef.current[request.actorId].add(request.categoryBucket);
+    }
+    // If this request was the one currently driving the on-screen dialog, close it and, if
+    // another actor's request is still queued, immediately open the next one.
+    if (confirmationDialog.data?.requestId === requestId) {
+      closeConfirmation();
+      const next = remaining[0];
+      if (next) {
+        showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', next.actionSummary, 'Approve', () => resolveApprovalRequest(next.id, 'approve'), { requestId: next.id });
+      }
+    }
+    const resolver = approvalResolversRef.current[requestId];
+    if (resolver) {
+      delete approvalResolversRef.current[requestId];
+      resolver(control);
+      return;
+    }
+    resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, showConfirmation]);
 
   const analyzeTeamLiquidity = useCallback((teamId: string, actorMap?: Record<string, ActorState>): TeamLiquidityAnalysis => {
     const team = teamsById[teamId];
@@ -23206,6 +23619,14 @@ function AustraliaGame() {
   // V6.9 Phase F2: per-actor-per-turn count of 'retry_next_action' Requirements rejections, capped
   // by ACTION_REQUIREMENT_MAX_RETRIES so a bounded retry can never loop indefinitely.
   const requirementRetryCountRef = useRef<Record<string, number>>({});
+  // V6.9 Phase F3: turn-scoped Always-approve/reject-similar suppression sets, keyed by actorId,
+  // each a Set of TeamModeActionCategory. Cleared per-actor in finishTeamAiTurn alongside the
+  // other per-turn refs. Session/game-long scope is explicitly deferred (turn-scope only).
+  const alwaysApproveSimilarRef = useRef<Record<string, Set<TeamModeActionCategory>>>({});
+  const alwaysRejectSimilarRef = useRef<Record<string, Set<TeamModeActionCategory>>>({});
+  // V6.9 Phase F3: per-actor-per-turn count of 'propose_again' approval-rejection revisions,
+  // capped by APPROVAL_MAX_REVISED_PROPOSALS so a bounded retry can never loop indefinitely.
+  const approvalRevisionCountRef = useRef<Record<string, number>>({});
   // V6.7 Phase 3c: per-actor override-cost discount multiplier from a successful Team Initiative
   // "reducing an override cost" spend this turn (GD8 edit #4) — a locally-read, non-mutating
   // adjustment inside evaluateTeamAiOverrideEligibility's existing cost line, never gameSettings
@@ -23856,6 +24277,116 @@ function AustraliaGame() {
     }
   }, [addNotification, appendTeamAiTraceNote, gainTeamInitiative, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamComboBonusesEnabled, gameSettings.teamComboBonusesTransparencyEnabled, gameSettings.teamComboBonusStrength, gameSettings.teamComboWindowActions, getActorDisplayName, getActorState, updateActorContribution, updateTeamState]);
 
+  // V6.9 Phase F3: resumes an actor's NORMAL (non-bonus) turn after an AI Action Approval request
+  // is resolved. Mirrors runApprovedOverrideBonusActions's own established shape (a small
+  // dedicated loop, since the outer performTeamAiTurn while loop already abandoned its local
+  // actionBudget/actionsTaken state via `return` at the pause point) — this is the SAME fix
+  // pattern the bugfix-round-1 override bug required, applied to the new Approval pause point.
+  const resumeAfterApprovalResolution = useCallback(async (
+    actorId: string,
+    control: ApprovalControlAction,
+    editedFields?: { cost?: number; wager?: number }
+  ) => {
+    try {
+      let actor = getActorState(actorId);
+      if (!actor) return;
+      const actionBudget = getActorActionBudget(actorId);
+      let actionsTaken = actor.actionsUsedThisTurn || 0;
+      let decision: ScoredTeamAiDecision | null = getRankedTeamAiDecisions(actorId)[0] || null;
+      let skipApprovalCheckOnce = ['approve', 'approve_once', 'always_approve_similar', 'edit_and_approve', 'approve_lower_wager'].includes(control);
+
+      if (control === 'reject' || control === 'reject_once' || control === 'always_reject_similar') {
+        const revisionCount = approvalRevisionCountRef.current[actorId] || 0;
+        const dispatch = resolveApprovalRejectionOutcome(gameSettings.aiActionApprovalRejectionOutcome, revisionCount);
+        if (dispatch === 'retry') {
+          approvalRevisionCountRef.current[actorId] = revisionCount + 1;
+        } else if (dispatch === 'fallback') {
+          decision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
+          skipApprovalCheckOnce = true;
+        } else {
+          decision = null;
+        }
+      } else if ((control === 'edit_and_approve' || control === 'approve_lower_wager') && decision) {
+        const editedDecision = { ...decision, data: { ...decision.data } };
+        if (editedFields?.wager !== undefined && typeof editedDecision.data.wager === 'number') {
+          editedDecision.data.wager = Math.max(0, Math.min(editedFields.wager, editedDecision.data.wager));
+        }
+        if (editedFields?.cost !== undefined && Array.isArray(editedDecision.data.purchases) && editedDecision.data.purchases[0]) {
+          editedDecision.data.purchases = [{ ...editedDecision.data.purchases[0], cost: Math.max(0, Math.min(editedFields.cost, editedDecision.data.purchases[0].cost)) }];
+        }
+        const reqCheck = evaluateActionRequirements(actor, editedDecision, { wager: editedDecision.data?.wager, cost: editedDecision.data?.purchases?.[0]?.cost });
+        if (!reqCheck.approved) {
+          addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
+          decision = null;
+        } else {
+          decision = editedDecision;
+        }
+      }
+
+      while (decision && decision.type !== 'end_turn' && actionsTaken < actionBudget) {
+        actor = getActorState(actorId);
+        if (!actor) break;
+        if (!skipApprovalCheckOnce) {
+          const autoResolution = resolveAutomaticApprovalRules(actor, decision, gameSettings, gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
+          if (autoResolution.outcome === 'reject') {
+            if (gameSettings.aiActionApprovalTransparencyEnabled) appendTeamAiTraceNote(actorId, `Auto-rejected: ${autoResolution.reason}`);
+            break;
+          }
+          const policy: ApprovalPolicy = {
+            mode: gameSettings.aiActionApprovalMode,
+            selectedTypes: gameSettings.aiActionApprovalSelectedTypes,
+            highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
+            teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
+          };
+          const needsPlayerApproval = autoResolution.outcome === 'none'
+            && needsApproval(actor, decision, policy, gameSettings)
+            && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
+          if (needsPlayerApproval) {
+            const nextRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
+            setPendingApprovalRequests(prev => [...prev, nextRequest]);
+            if (!confirmationDialog.isOpen) {
+              showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', nextRequest.actionSummary, 'Approve', () => resolveApprovalRequest(nextRequest.id, 'approve'), { requestId: nextRequest.id });
+            }
+            return; // pause again — finishTeamAiTurn intentionally NOT called; a later resolution re-invokes this same function
+          }
+        }
+        skipApprovalCheckOnce = false;
+        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost, actionsRemaining: actionBudget - actionsTaken });
+        if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
+          requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
+        }
+        const success = requirementsResult.approved ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
+        if (!success) {
+          if (requirementsResult.approved) break; // real execution failure — end turn
+          const retryCount = requirementRetryCountRef.current[actorId] || 0;
+          const dispatch = resolveRequirementFailureAction(requirementsResult.failureBehavior || 'reject', retryCount);
+          if (dispatch === 'retry') {
+            requirementRetryCountRef.current[actorId] = retryCount + 1;
+            decision = getRankedTeamAiDecisions(actorId)[0] || null;
+            continue;
+          }
+          if (dispatch === 'fallback') {
+            decision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
+            skipApprovalCheckOnce = true;
+            continue;
+          }
+          break;
+        }
+        checkRoleFulfillment(actor, decision.type);
+        detectComboBonus(actor.teamId, actorId, decision.type, gameState.day, decision.data?.region);
+        refreshTeamLiquidityLedger(actor.teamId);
+        actionsTaken += 1;
+        if (actionsTaken >= actionBudget) break;
+        decision = getRankedTeamAiDecisions(actorId)[0] || null;
+      }
+      finishTeamAiTurn(actorId);
+    } catch (error) {
+      console.error(`AI Action Approval resume for ${actorId} failed unexpectedly`, error);
+      finishTeamAiTurn(actorId);
+    }
+  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation]);
+  resumeAfterApprovalResolutionRef.current = resumeAfterApprovalResolution;
+
   // Bugfix (post-PR-#60): the friendly 'ask_first' override policy used to execute exactly one
   // bonus action then immediately call finishTeamAiTurn, because the confirmation dialog's
   // onConfirm callback fires asynchronously after performTeamAiTurn's while loop has already
@@ -23880,6 +24411,43 @@ function AustraliaGame() {
         if (!actorForAction) break;
         const revalidated = tokenId ? redeemActionToken(actorForAction.teamId, actorId, decision, tokenId, isReservationHardBlocked) : true;
         tokenId = undefined; // only the first bonus action was tokenized; the rest are this same budget grant, not separately tokenized
+        // V6.9 Phase F3: AI Action Approval — identical trigger logic as performTeamAiTurn's main
+        // loop, but since this for loop's body runs synchronously to completion once invoked (it
+        // can't abandon-and-return the way the outer while loop can), the pause here awaits a
+        // promise-based resume gate instead — this function's own existing try/finally remains the
+        // single, unbroken guarantor that finishTeamAiTurn fires, never a second abandon path.
+        const bonusApprovalAutoResolution = resolveAutomaticApprovalRules(actorForAction, decision, gameSettings, gameState.day, { wager: decision.data?.wager });
+        if (bonusApprovalAutoResolution.outcome === 'reject') {
+          if (gameSettings.aiActionApprovalTransparencyEnabled) {
+            appendTeamAiTraceNote(actorId, `Auto-rejected: ${bonusApprovalAutoResolution.reason}`);
+          }
+          decision = getRankedTeamAiDecisions(actorId)[0] || null;
+          continue;
+        }
+        const bonusApprovalPolicy: ApprovalPolicy = {
+          mode: gameSettings.aiActionApprovalMode,
+          selectedTypes: gameSettings.aiActionApprovalSelectedTypes,
+          highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
+          teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
+        };
+        const bonusNeedsPlayerApproval = bonusApprovalAutoResolution.outcome === 'none'
+          && needsApproval(actorForAction, decision, bonusApprovalPolicy, gameSettings, { wager: decision.data?.wager })
+          && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory)
+          && !alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
+        if (bonusNeedsPlayerApproval) {
+          const bonusApprovalRequest = buildApprovalRequest(actorForAction, decision, null, budget - i);
+          setPendingApprovalRequests(prev => [...prev, bonusApprovalRequest]);
+          if (!confirmationDialog.isOpen) {
+            showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', bonusApprovalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(bonusApprovalRequest.id, 'approve'), { requestId: bonusApprovalRequest.id });
+          }
+          const bonusControl = await waitForApprovalResolution(bonusApprovalRequest.id);
+          if (bonusControl === 'reject' || bonusControl === 'reject_once' || bonusControl === 'always_reject_similar') {
+            decision = getRankedTeamAiDecisions(actorId)[0] || null;
+            continue;
+          }
+          // approve/approve_once/always_approve_similar/edit_and_approve/approve_lower_wager/use_fallback
+          // all fall through to execute the (possibly-approved-as-is) decision below.
+        }
         // V6.9 Phase F2: identical Requirements gate as performTeamAiTurn's main loop, via the
         // same shared dispatch helper — no-op (approved:true) when Requirements is off.
         const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager });
@@ -23920,7 +24488,7 @@ function AustraliaGame() {
     } finally {
       finishTeamAiTurn(actorId);
     }
-  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings.actionRequirementsTransparencyEnabled]);
+  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings, gameSettings.actionRequirementsTransparencyEnabled, buildApprovalRequest, resolveApprovalRequest, waitForApprovalResolution, confirmationDialog.isOpen, showConfirmation]);
 
   // V6.8 Phase D: Guaranteed Recovery Protocol — a deterministic (not competitively-scored) action
   // for an actor already flagged inEconomicRecovery (the shared Phase C hysteresis flag). Tries
@@ -23987,6 +24555,9 @@ function AustraliaGame() {
     delete hasLentThisTurnRef.current[actor.id];
     delete initiativeOverrideDiscountRef.current[actor.id];
     delete requirementRetryCountRef.current[actor.id];
+    delete alwaysApproveSimilarRef.current[actor.id];
+    delete alwaysRejectSimilarRef.current[actor.id];
+    delete approvalRevisionCountRef.current[actor.id];
     // V6.7 Phase 3c: Team Initiative "sabotage protection" spend effect — while armed, strip any
     // sabotage-caused debuffs the instant this actor's turn begins. Additive on top of the
     // existing sabotage-application code, which is never touched.
@@ -24187,6 +24758,45 @@ function AustraliaGame() {
           priority: Math.max(2, decision.plan?.priority || 3)
         });
       }
+      // V6.9 Phase F3: AI Action Approval — checked BEFORE token revalidation/Requirements are
+      // even acted upon, since approval may need to pause for player input (not a synchronous
+      // check like Requirements). A no-op whenever aiActionApprovalEnabled is off. If this
+      // decision needs approval and isn't auto-resolved, the loop returns here exactly like the
+      // existing ask_first override branch below — resumption happens only via
+      // resolveApprovalRequest/resumeAfterApprovalResolution.
+      const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, gameSettings, gameState.day, {
+        wager: decision.data?.wager,
+        cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
+      });
+      if (approvalAutoResolution.outcome === 'reject') {
+        if (gameSettings.aiActionApprovalTransparencyEnabled) {
+          appendTeamAiTraceNote(actor.id, `Auto-rejected: ${approvalAutoResolution.reason}`);
+        }
+        continue; // never consumes an action, never executes
+      }
+      if (approvalAutoResolution.outcome === 'none' && alwaysRejectSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory)) {
+        continue; // player previously chose "always reject similar" for this actor/category this turn
+      }
+      const approvalPolicy: ApprovalPolicy = {
+        mode: gameSettings.aiActionApprovalMode,
+        selectedTypes: gameSettings.aiActionApprovalSelectedTypes,
+        highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
+        teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
+      };
+      const needsPlayerApproval = approvalAutoResolution.outcome === 'none'
+        && needsApproval(actor, decision, approvalPolicy, gameSettings, {
+          wager: decision.data?.wager,
+          cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
+        })
+        && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
+      if (needsPlayerApproval) {
+        const approvalRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
+        setPendingApprovalRequests(prev => [...prev, approvalRequest]);
+        if (!confirmationDialog.isOpen) {
+          showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', approvalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(approvalRequest.id, 'approve'), { requestId: approvalRequest.id });
+        }
+        return; // identical abandonment shape to the existing ask_first branch below
+      }
       // V6.7 Phase 3a: revalidate-before-execution for any decision beyond the actor's own normal
       // per-turn budget (i.e. bonus-sourced from bank/override/lending) — never inside
       // executeTeamAiAction itself, keeping its existing per-type branches untouched.
@@ -24345,7 +24955,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -26437,7 +27047,15 @@ function AustraliaGame() {
       aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
       actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
       actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
-      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled
+      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
+      aiActionApprovalMode: DEFAULT_GAME_SETTINGS.aiActionApprovalMode,
+      aiActionApprovalSelectedTypes: [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
+      aiActionApprovalHighRiskThresholds: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalHighRiskThresholds },
+      aiActionApprovalTeammateOverrides: [...DEFAULT_GAME_SETTINGS.aiActionApprovalTeammateOverrides],
+      aiActionApprovalRejectionOutcome: DEFAULT_GAME_SETTINGS.aiActionApprovalRejectionOutcome,
+      aiActionApprovalTransparencyEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
+      aiActionApprovalAutoRulesEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
+      aiActionApprovalAutoRules: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRules }
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -26541,7 +27159,15 @@ function AustraliaGame() {
       aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
       actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
       actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
-      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled
+      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
+      aiActionApprovalMode: DEFAULT_GAME_SETTINGS.aiActionApprovalMode,
+      aiActionApprovalSelectedTypes: [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
+      aiActionApprovalHighRiskThresholds: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalHighRiskThresholds },
+      aiActionApprovalTeammateOverrides: [...DEFAULT_GAME_SETTINGS.aiActionApprovalTeammateOverrides],
+      aiActionApprovalRejectionOutcome: DEFAULT_GAME_SETTINGS.aiActionApprovalRejectionOutcome,
+      aiActionApprovalTransparencyEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
+      aiActionApprovalAutoRulesEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
+      aiActionApprovalAutoRules: { ...DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRules }
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -28894,7 +29520,7 @@ function AustraliaGame() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold">Enable AI Action Approval</div>
-                        <div className="text-sm opacity-75">Lets you require an AI teammate to propose an action — target, cost, wager, expected reward, and reason — and wait for your approval before it executes, with configurable rejection behavior and optional automatic-approval rules. Not yet implemented — enabling this toggle currently has no effect on gameplay; it exists so later updates can be revealed here without needing a new setting.</div>
+                        <div className="text-sm opacity-75">Requires an AI teammate to propose an action — target, cost, wager, expected reward, and reason — and wait for your approval before it executes, with configurable rejection behavior and optional automatic-approval rules.</div>
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalEnabled: !prev.aiActionApprovalEnabled }))}
@@ -28903,6 +29529,190 @@ function AustraliaGame() {
                         {gameSettings.aiActionApprovalEnabled ? 'ON' : 'OFF'}
                       </button>
                     </div>
+                    {gameSettings.aiActionApprovalEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <div>
+                          <label className="block font-semibold mb-2">Approval Mode</label>
+                          <select
+                            value={gameSettings.aiActionApprovalMode}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalMode: e.target.value as ApprovalMode }))}
+                            className="px-2 py-1 rounded w-full"
+                          >
+                            <option value="approve_every_action">Approve Every Action</option>
+                            <option value="approve_selected_types">Approve Selected Action Types</option>
+                            <option value="approve_high_risk">Approve High-Risk Actions</option>
+                            <option value="approve_sequence_actions_only">Approve Sequence Actions Only</option>
+                            <option value="mixed">Mixed (per teammate)</option>
+                          </select>
+                          {gameSettings.aiActionApprovalMode === 'approve_sequence_actions_only' && (
+                            <div className="text-xs opacity-60 mt-1">No sequences exist yet — approval will never trigger under this mode until Teammate Action Sequences ships.</div>
+                          )}
+                        </div>
+                        {(gameSettings.aiActionApprovalMode === 'approve_selected_types' || gameSettings.aiActionApprovalMode === 'mixed') && (
+                          <div>
+                            <label className="block font-semibold mb-2">Selected Action Types</label>
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              {(['travel', 'challenge', 'sell', 'craft', 'buy_market', 'region_deposit', 'cashout_region', 'sabotage', 'support', 'invest', 'buy_equipment', 'loan', 'wait', 'end_turn'] as TeamModeActionCategory[]).map(t => (
+                                <label key={t} className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={gameSettings.aiActionApprovalSelectedTypes.includes(t)}
+                                    onChange={(e) => setGameSettings(prev => ({
+                                      ...prev,
+                                      aiActionApprovalSelectedTypes: e.target.checked
+                                        ? [...prev.aiActionApprovalSelectedTypes, t]
+                                        : prev.aiActionApprovalSelectedTypes.filter(x => x !== t)
+                                    }))}
+                                  />
+                                  {t}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {(gameSettings.aiActionApprovalMode === 'approve_high_risk' || gameSettings.aiActionApprovalMode === 'mixed') && (
+                          <div>
+                            <label className="block font-semibold mb-2">High-Risk Thresholds (any one breach triggers approval)</label>
+                            <div className="flex flex-wrap gap-3 text-xs">
+                              <label className="flex items-center gap-1">Wager ≥ $
+                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.wagerMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, wagerMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
+                              </label>
+                              <label className="flex items-center gap-1">Cost ≥ $
+                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.costMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, costMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
+                              </label>
+                              <label className="flex items-center gap-1">% Cash At Risk ≥
+                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalHighRiskThresholds.percentCashAtRiskMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, percentCashAtRiskMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-16" />
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                        {gameSettings.aiActionApprovalMode === 'mixed' && (
+                          <div>
+                            <label className="block font-semibold mb-2">Per-Teammate Overrides</label>
+                            <div className="space-y-2">
+                              {gameSettings.aiActionApprovalTeammateOverrides.map((override, idx) => (
+                                <div key={idx} className="flex flex-wrap gap-2 items-center text-xs border rounded p-2" style={{ borderColor: 'currentColor' }}>
+                                  <input
+                                    type="text"
+                                    placeholder="actor id"
+                                    value={override.actorId}
+                                    onChange={(e) => setGameSettings(prev => ({
+                                      ...prev,
+                                      aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.map((o, i) => i === idx ? { ...o, actorId: e.target.value } : o)
+                                    }))}
+                                    className="px-2 py-1 rounded w-28"
+                                  />
+                                  <select
+                                    value={override.mode}
+                                    onChange={(e) => setGameSettings(prev => ({
+                                      ...prev,
+                                      aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.map((o, i) => i === idx ? { ...o, mode: e.target.value as ApprovalMode } : o)
+                                    }))}
+                                    className="px-2 py-1 rounded"
+                                  >
+                                    <option value="approve_every_action">Approve Every Action</option>
+                                    <option value="approve_selected_types">Approve Selected Types</option>
+                                    <option value="approve_high_risk">Approve High-Risk</option>
+                                    <option value="approve_sequence_actions_only">Approve Sequence Actions Only</option>
+                                  </select>
+                                  <button
+                                    onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.filter((_, i) => i !== idx) }))}
+                                    className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalTeammateOverrides: [...prev.aiActionApprovalTeammateOverrides, { actorId: '', mode: 'approve_every_action' }] }))}
+                              className={`mt-2 px-3 py-1 rounded text-xs font-semibold ${themeStyles.buttonSecondary}`}
+                            >
+                              + Add Teammate Override
+                            </button>
+                            <div className="text-xs opacity-60 mt-1">A teammate without an override defaults to Approve Every Action (the safest default) rather than silently never approving anything.</div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block font-semibold mb-2">On Rejection</label>
+                          <select
+                            value={gameSettings.aiActionApprovalRejectionOutcome}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalRejectionOutcome: e.target.value as ApprovalRejectionOutcome }))}
+                            className="px-2 py-1 rounded w-full"
+                          >
+                            <option value="propose_again">Propose Again</option>
+                            <option value="use_fallback">Use Fallback Action</option>
+                            <option value="skip">Skip</option>
+                            <option value="allow_normal_ai">Allow Normal AI</option>
+                            <option value="wait_next_action">Wait Next Action</option>
+                            <option value="wait_next_turn">Wait Next Turn</option>
+                            <option value="end_turn">End Turn</option>
+                          </select>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.aiActionApprovalTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.aiActionApprovalTransparencyEnabled ? '☑' : '☐'} Show in Transparency (auto-resolution notes)</span>
+                        </label>
+                        <div className="border-t pt-3" style={{ borderColor: 'currentColor' }}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold">Automatic Approval Rules</div>
+                              <div className="text-xs opacity-60">Off by default — a separate opt-in from Approval itself. Auto-resolved actions never appear in the visible queue.</div>
+                            </div>
+                            <button
+                              onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRulesEnabled: !prev.aiActionApprovalAutoRulesEnabled }))}
+                              className={`px-4 py-2 rounded font-semibold ${gameSettings.aiActionApprovalAutoRulesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                            >
+                              {gameSettings.aiActionApprovalAutoRulesEnabled ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+                          {gameSettings.aiActionApprovalAutoRulesEnabled && (
+                            <div className="mt-3 space-y-2 text-xs">
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, enabled: e.target.checked } } }))} />
+                                <span>Auto-approve wager below $</span>
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                              </div>
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveLeavesMinReserve.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveLeavesMinReserve: { enabled: e.target.checked } } }))} />
+                                Auto-approve actions that leave the Economy Governor's minimum reserve intact
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, enabled: e.target.checked } } }))} />
+                                <span>Auto-approve challenges with success probability ≥</span>
+                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-16" />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, enabled: e.target.checked } } }))} />
+                                <span>Auto-approve travel below $</span>
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, enabled: e.target.checked } } }))} />
+                                <span>Auto-approve teammate support below $</span>
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                              </div>
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectLoans.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectLoans: { enabled: e.target.checked } } }))} />
+                                Auto-reject loans
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectSabotage.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectSabotage: { enabled: e.target.checked } } }))} />
+                                Auto-reject sabotage
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectRecoverySpending.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectRecoverySpending: { enabled: e.target.checked } } }))} />
+                                Auto-reject recovery-phase spending (investments/equipment while in economic recovery)
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </SettingsSection>
@@ -34570,6 +35380,53 @@ function AustraliaGame() {
             </div>
           )}
 
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request) return null;
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            const fmtNum = (n: number | null) => n === null ? 'n/a' : `$${Math.round(n).toLocaleString()}`;
+            const fmtPct = (n: number | null) => n === null ? 'n/a' : `${Math.round(n * 100)}%`;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more teammate action(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Teammate:</span><span className="font-bold">{getActorDisplayName(request.actorId)}</span></div>
+                <div className="flex justify-between"><span>Action:</span><span className="font-bold text-right">{request.actionSummary}</span></div>
+                <div className="flex justify-between"><span>Target:</span><span className="font-bold">{request.targetLabel}</span></div>
+                <div className="flex justify-between"><span>Cost:</span><span className="font-bold text-red-500">{fmtNum(request.cost)}</span></div>
+                <div className="flex justify-between"><span>Wager:</span><span className="font-bold text-yellow-500">{fmtNum(request.wager)}</span></div>
+                <div className="flex justify-between"><span>% Cash At Risk:</span><span className="font-bold">{fmtPct(request.percentCashAtRisk)}</span></div>
+                <div className="flex justify-between"><span>Expected Reward:</span><span className="font-bold">{fmtNum(request.expectedReward)}</span></div>
+                <div className="flex justify-between"><span>Success Probability:</span><span className="font-bold">{fmtPct(request.successProbability)}</span></div>
+                <div className="flex justify-between"><span>Min Cash Remaining:</span><span className="font-bold">{fmtNum(request.minCashRemaining)}</span></div>
+                <div className="flex justify-between"><span>Vault Effect:</span><span className="font-bold text-right">{request.vaultEffect}</span></div>
+                <div className="flex justify-between"><span>Governor Ruling:</span><span className="font-bold text-right">{request.governorRuling}</span></div>
+                <div className="flex justify-between"><span>Requirements:</span><span className="font-bold text-right">{request.requirementsSummary}</span></div>
+                <div className="flex justify-between"><span>AI Explanation:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
+                <div className="flex justify-between"><span>Fallback Available:</span><span className="font-bold">{request.fallbackAvailable ? 'Yes' : 'No'}</span></div>
+                <div className="flex justify-between"><span>Actions Remaining:</span><span className="font-bold">{request.actionsRemaining}</span></div>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' ? (
+            <div className="space-y-2">
+              <div className="flex space-x-3">
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'edit_and_approve', { wager: 0, cost: 0 })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Edit &amp; Approve</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve_lower_wager', { wager: 0 })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Lower Wager</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve_once')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Once</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'always_approve_similar')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Always Approve Similar</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'reject_once')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Reject Once</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'always_reject_similar')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Always Reject Similar</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'use_fallback')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg col-span-2`}>Use Fallback Action</button>
+              </div>
+            </div>
+          ) : (
           <div className="flex space-x-3">
             <button
               onClick={handleConfirm}
@@ -34589,6 +35446,7 @@ function AustraliaGame() {
               {confirmationDialog.type === 'teamAiOverrideRequest' ? 'Deny' : 'Cancel'}
             </button>
           </div>
+          )}
 
           {confirmationDialog.type === 'teamAiOverrideRequest' && (
             <button
