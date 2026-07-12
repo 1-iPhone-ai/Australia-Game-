@@ -2660,6 +2660,149 @@ type EconomyReserveStrength = 'low' | 'balanced' | 'high';
 type EconomySpendingApprovalStrictness = 'low' | 'balanced' | 'strict';
 type EconomicPhase = 'survival' | 'accumulation' | 'compounding' | 'endgame';
 
+// V6.9 Phase F2: Action Requirements — a final, optional, off-by-default permission gate for
+// every configured AI action, layered alongside (never replacing) the existing Cash Vault and
+// Economy Governor checks. Scoped this phase to normal (non-sequence) AI actions only.
+type ActionRequirementKind =
+  | 'spendable_cash_min' | 'spendable_cash_max' | 'reserve_retention_min' | 'teammate_cash_threshold' | 'opponent_cash_threshold'
+  | 'cost_cap_absolute' | 'cost_cap_percentage' | 'wager_range_min' | 'wager_range_max' | 'success_probability_min'
+  | 'expected_reward_min' | 'expected_return_min' | 'travel_cost_max' | 'travel_payback_period_max'
+  | 'region_presence_required' | 'region_absence_required' | 'region_visited_required' | 'resource_possession_min'
+  | 'resource_possession_max' | 'resource_retention_min' | 'inventory_capacity_max' | 'recovery_status_in' | 'recovery_status_out'
+  | 'team_leading' | 'team_trailing' | 'game_phase_in' | 'actions_remaining_min' | 'win_condition_contribution_min'
+  | 'cash_vault_permission_required' | 'economy_governor_approval_required' | 'prior_step_success_required';
+type ActionRequirementScopeKind = 'all_teammates' | 'one_teammate' | 'one_team' | 'one_action_type' | 'one_region' | 'one_phase' | 'normal_only';
+interface ActionRequirementScope {
+  kind: ActionRequirementScopeKind;
+  actorId?: string;
+  teamId?: string;
+  actionType?: TeamModeActionCategory;
+  region?: string;
+  phase?: EconomicPhase;
+}
+// Reuses SequenceStepFallbackAction's literal vocabulary where semantics genuinely overlap
+// ('retry_next_action'/'retry_next_turn'/'use_fallback_action'/'allow_normal_ai') plus one new
+// value ('reject') and one consolidated sequence-only placeholder ('pause_or_cancel', inert this
+// phase, never offered in the Settings Hub picker — kept only for save-format/schema stability).
+type ActionRequirementFailureBehavior = 'reject' | 'retry_next_action' | 'use_fallback_action' | 'retry_next_turn' | 'allow_normal_ai' | 'pause_or_cancel';
+interface ActionRequirement {
+  id: string;
+  enabled: boolean;
+  strictness: 'hard' | 'soft';
+  scope: ActionRequirementScope;
+  kind: ActionRequirementKind;
+  comparator: 'min' | 'max' | 'equals' | 'in' | 'not_in';
+  value: number | string | string[];
+  failureBehavior: ActionRequirementFailureBehavior;
+  label: string;
+}
+interface RequirementGroup {
+  id: string;
+  mode: 'all_must_pass' | 'any_may_pass';
+  items: (ActionRequirement | RequirementGroup)[];
+}
+const ACTION_REQUIREMENT_KINDS: ActionRequirementKind[] = [
+  'spendable_cash_min', 'spendable_cash_max', 'reserve_retention_min', 'teammate_cash_threshold', 'opponent_cash_threshold',
+  'cost_cap_absolute', 'cost_cap_percentage', 'wager_range_min', 'wager_range_max', 'success_probability_min',
+  'expected_reward_min', 'expected_return_min', 'travel_cost_max', 'travel_payback_period_max',
+  'region_presence_required', 'region_absence_required', 'region_visited_required', 'resource_possession_min',
+  'resource_possession_max', 'resource_retention_min', 'inventory_capacity_max', 'recovery_status_in', 'recovery_status_out',
+  'team_leading', 'team_trailing', 'game_phase_in', 'actions_remaining_min', 'win_condition_contribution_min',
+  'cash_vault_permission_required', 'economy_governor_approval_required', 'prior_step_success_required'
+];
+const ACTION_REQUIREMENT_SCOPE_KINDS: ActionRequirementScopeKind[] = ['all_teammates', 'one_teammate', 'one_team', 'one_action_type', 'one_region', 'one_phase', 'normal_only'];
+const ACTION_REQUIREMENT_FAILURE_BEHAVIORS: ActionRequirementFailureBehavior[] = ['reject', 'retry_next_action', 'use_fallback_action', 'retry_next_turn', 'allow_normal_ai', 'pause_or_cancel'];
+const ACTION_REQUIREMENT_COMPARATORS: ActionRequirement['comparator'][] = ['min', 'max', 'equals', 'in', 'not_in'];
+// Hard depth limit of 3 (a group containing a group containing a group of plain requirements) —
+// enforced both here (defensive, fail-closed for hard items / fail-open/ignored for soft items past
+// the limit) and in the Settings Hub builder UI (the "add nested group" control disables at depth 3).
+const ACTION_REQUIREMENT_MAX_GROUP_DEPTH = 3;
+
+const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<ActionRequirement>;
+  if (typeof source.id !== 'string' || typeof source.label !== 'string') return null;
+  if (!ACTION_REQUIREMENT_KINDS.includes(source.kind as ActionRequirementKind)) return null;
+  if (!ACTION_REQUIREMENT_COMPARATORS.includes(source.comparator as ActionRequirement['comparator'])) return null;
+  if (!ACTION_REQUIREMENT_FAILURE_BEHAVIORS.includes(source.failureBehavior as ActionRequirementFailureBehavior)) return null;
+  const scopeSource = (source.scope && typeof source.scope === 'object') ? source.scope as Partial<ActionRequirementScope> : {};
+  const scopeKind = ACTION_REQUIREMENT_SCOPE_KINDS.includes(scopeSource.kind as ActionRequirementScopeKind) ? scopeSource.kind as ActionRequirementScopeKind : 'all_teammates';
+  const value_ = (typeof source.value === 'number' && isFinite(source.value)) || typeof source.value === 'string'
+    ? source.value
+    : (Array.isArray(source.value) ? source.value.filter(v => typeof v === 'string') : 0);
+  return {
+    id: source.id,
+    enabled: Boolean(source.enabled),
+    strictness: source.strictness === 'soft' ? 'soft' : 'hard',
+    scope: {
+      kind: scopeKind,
+      actorId: typeof scopeSource.actorId === 'string' ? scopeSource.actorId : undefined,
+      teamId: typeof scopeSource.teamId === 'string' ? scopeSource.teamId : undefined,
+      actionType: typeof scopeSource.actionType === 'string' ? scopeSource.actionType as TeamModeActionCategory : undefined,
+      region: typeof scopeSource.region === 'string' ? scopeSource.region : undefined,
+      phase: typeof scopeSource.phase === 'string' ? scopeSource.phase as EconomicPhase : undefined
+    },
+    kind: source.kind as ActionRequirementKind,
+    comparator: source.comparator as ActionRequirement['comparator'],
+    value: value_,
+    failureBehavior: source.failureBehavior as ActionRequirementFailureBehavior,
+    label: source.label
+  };
+};
+
+// Recursively sanitizes a RequirementGroup, dropping malformed items and truncating anything past
+// the hard depth limit (never throws on a corrupted/deeper-than-allowed saved structure).
+const sanitizeRequirementGroup = (value: unknown, depth: number = 1): RequirementGroup | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<RequirementGroup>;
+  if (typeof source.id !== 'string') return null;
+  const mode = source.mode === 'any_may_pass' ? 'any_may_pass' : 'all_must_pass';
+  const items = Array.isArray(source.items)
+    ? source.items.reduce<(ActionRequirement | RequirementGroup)[]>((acc, item) => {
+        if (!item || typeof item !== 'object') return acc;
+        const isNestedGroup = Array.isArray((item as Partial<RequirementGroup>).items);
+        if (isNestedGroup) {
+          if (depth >= ACTION_REQUIREMENT_MAX_GROUP_DEPTH) return acc; // drop anything past the depth cap
+          const nested = sanitizeRequirementGroup(item, depth + 1);
+          if (nested) acc.push(nested);
+        } else {
+          const requirement = sanitizeActionRequirement(item);
+          if (requirement) acc.push(requirement);
+        }
+        return acc;
+      }, [])
+    : [];
+  return { id: source.id, mode, items };
+};
+
+const sanitizeRequirementGroups = (value: unknown): RequirementGroup[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(entry => sanitizeRequirementGroup(entry)).filter((g): g is RequirementGroup => Boolean(g));
+};
+
+const ACTION_REQUIREMENT_MAX_RETRIES = 3;
+// Shared, pure dispatch used identically by both execution chokepoints (performTeamAiTurn's main
+// loop and runApprovedOverrideBonusActions) so their Requirements-rejection handling never drifts.
+// 'retry_next_turn'/'reject'/'allow_normal_ai'/'pause_or_cancel' all resolve to 'end_turn' this
+// phase (see ActionRequirementFailureBehavior's doc comment for why they currently collapse).
+const resolveRequirementFailureAction = (
+  behavior: ActionRequirementFailureBehavior,
+  retryCount: number
+): 'end_turn' | 'retry' | 'fallback' => {
+  switch (behavior) {
+    case 'retry_next_action':
+      return retryCount < ACTION_REQUIREMENT_MAX_RETRIES ? 'retry' : 'end_turn';
+    case 'use_fallback_action':
+      return 'fallback';
+    case 'retry_next_turn':
+    case 'reject':
+    case 'allow_normal_ai':
+    case 'pause_or_cancel':
+    default:
+      return 'end_turn';
+  }
+};
+
 type GameSettingsState = {
   actionLimitsEnabled: boolean;
   maxActionsPerTurn: number;
@@ -2961,6 +3104,11 @@ type GameSettingsState = {
   teamAiActionSequencesEnabled: boolean;
   aiActionApprovalEnabled: boolean;
   actionRequirementsEnabled: boolean;
+  // V6.9 Phase F2: player-authored requirement groups (empty by default — no rules exist until the
+  // player adds one) and a transparency toggle gating soft-violation trace notes only (never gates
+  // hard-requirement enforcement itself).
+  actionRequirementGroups: RequirementGroup[];
+  actionRequirementsTransparencyEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3988,6 +4136,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiActionSequencesEnabled: false,
   aiActionApprovalEnabled: false,
   actionRequirementsEnabled: false,
+  actionRequirementGroups: [],
+  actionRequirementsTransparencyEnabled: true,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -3995,6 +4145,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
 const createDefaultGameSettings = (): GameSettingsState => ({
   ...DEFAULT_GAME_SETTINGS,
   winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
+  actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
   negotiationOptions: createDefaultNegotiationOptions(),
   manualPriorityWeights: { ...DEFAULT_GAME_SETTINGS.manualPriorityWeights },
   adaptiveAiAffectedModes: [...DEFAULT_GAME_SETTINGS.adaptiveAiAffectedModes],
@@ -4129,7 +4280,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled'] },
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled'] },
-  { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled'] },
+  { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -9420,6 +9571,10 @@ function AustraliaGame() {
         actionRequirementsEnabled: typeof settingsData.actionRequirementsEnabled === 'boolean'
           ? settingsData.actionRequirementsEnabled
           : DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
+        actionRequirementGroups: sanitizeRequirementGroups(settingsData.actionRequirementGroups),
+        actionRequirementsTransparencyEnabled: typeof settingsData.actionRequirementsTransparencyEnabled === 'boolean'
+          ? settingsData.actionRequirementsTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -14817,6 +14972,206 @@ function AustraliaGame() {
   const computeTeamMoney = useCallback((teamId: string) => {
     return getTeamActors(teamId).reduce((sum, actor) => sum + (actor.money || 0), 0);
   }, [getTeamActors]);
+
+  // V6.9 Phase F2: Action Requirements — a final, optional, off-by-default permission gate for
+  // every configured AI action. No-op (approved:true) whenever the master toggles are off, so
+  // every call site is byte-identical to pre-F2 behavior when Requirements is disabled. Evaluates
+  // hard requirements first (the first failing hard requirement short-circuits and returns
+  // immediately); only if all hard requirements pass does it separately evaluate soft
+  // requirements, which never affect `approved` — they are only surfaced via softViolations for
+  // the caller to log through appendTeamAiTraceNote.
+  const evaluateActionRequirements = useCallback((
+    actor: ActorState,
+    decision: AIAction | ScoredTeamAiDecision,
+    context?: {
+      cost?: number;
+      wager?: number;
+      successProbability?: number;
+      expectedReward?: number;
+      expectedReturn?: number;
+      travelCost?: number;
+      resourceDelta?: { resource: string; delta: number };
+      actionsRemaining?: number;
+      governorApproved?: boolean;
+    }
+  ): { approved: boolean; reason: string; failureBehavior: ActionRequirementFailureBehavior | null; softViolations: string[] } => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.actionRequirementsEnabled) {
+      return { approved: true, reason: 'Action Requirements is off.', failureBehavior: null, softViolations: [] };
+    }
+    const groups = gameSettings.actionRequirementGroups || [];
+    if (groups.length === 0) {
+      return { approved: true, reason: 'No requirements configured.', failureBehavior: null, softViolations: [] };
+    }
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+    const phase = computeEconomicPhase(actor, spendableCash, gameSettings, endgameActive);
+    const opposingTeamId = actor.teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+
+    const matchesScope = (scope: ActionRequirementScope): boolean => {
+      switch (scope.kind) {
+        case 'one_teammate': return scope.actorId === actor.id;
+        case 'one_team': return scope.teamId === actor.teamId;
+        case 'one_action_type': return scope.actionType === decision.type;
+        case 'one_region': return Boolean(scope.region) && scope.region === (decision.data?.region || actor.currentRegion);
+        case 'one_phase': return scope.phase === phase;
+        case 'all_teammates':
+        case 'normal_only':
+        default:
+          return true;
+      }
+    };
+
+    const passThreshold = (req: ActionRequirement, actual: number): boolean => {
+      const numericValue = typeof req.value === 'number' ? req.value : 0;
+      switch (req.comparator) {
+        case 'min': return actual >= numericValue;
+        case 'max': return actual <= numericValue;
+        case 'equals': return actual === numericValue;
+        default: return true;
+      }
+    };
+
+    const evaluateRequirementValue = (req: ActionRequirement): boolean => {
+      const stringValue = typeof req.value === 'string' ? req.value : '';
+      const arrayValue = Array.isArray(req.value) ? req.value : [];
+      switch (req.kind) {
+        case 'spendable_cash_min':
+        case 'spendable_cash_max':
+          return passThreshold(req, spendableCash);
+        case 'reserve_retention_min': {
+          const reserve = computeDynamicReserve(phase, spendableCash, gameSettings);
+          return (spendableCash - (context?.cost || 0)) >= reserve;
+        }
+        case 'teammate_cash_threshold': {
+          const teammate = (scope => scope.actorId ? getActorState(scope.actorId) : getTeamActors(actor.teamId).find(a => a.id !== actor.id))(req.scope);
+          if (!teammate) return true;
+          return passThreshold(req, getActorSpendableCash(teammate, gameSettings.teamCashVaultEnabled));
+        }
+        case 'opponent_cash_threshold': {
+          const opponent = (scope => scope.actorId ? getActorState(scope.actorId) : getTeamActors(opposingTeamId)[0])(req.scope);
+          if (!opponent) return true;
+          return passThreshold(req, getActorSpendableCash(opponent, gameSettings.teamCashVaultEnabled));
+        }
+        case 'cost_cap_absolute':
+          return context?.cost === undefined ? true : passThreshold(req, context.cost);
+        case 'cost_cap_percentage':
+          return context?.cost === undefined ? true : passThreshold(req, spendableCash > 0 ? (context.cost / spendableCash) * 100 : 0);
+        case 'wager_range_min':
+        case 'wager_range_max':
+          return context?.wager === undefined ? true : passThreshold(req, context.wager);
+        case 'success_probability_min':
+          return context?.successProbability === undefined ? true : passThreshold(req, context.successProbability);
+        case 'expected_reward_min':
+          return context?.expectedReward === undefined ? true : passThreshold(req, context.expectedReward);
+        case 'expected_return_min':
+          return context?.expectedReturn === undefined ? true : passThreshold(req, context.expectedReturn);
+        case 'travel_cost_max':
+          return context?.travelCost === undefined ? true : passThreshold(req, context.travelCost);
+        case 'travel_payback_period_max': {
+          if (context?.travelCost === undefined || !context?.expectedReturn) return true;
+          return passThreshold(req, context.travelCost / Math.max(1, context.expectedReturn));
+        }
+        case 'region_presence_required':
+          return actor.currentRegion === stringValue;
+        case 'region_absence_required':
+          return actor.currentRegion !== stringValue;
+        case 'region_visited_required':
+          return (actor.visitedRegions || []).includes(stringValue);
+        case 'resource_possession_min':
+        case 'resource_possession_max': {
+          // Encoded as a 2-element array [resourceName, thresholdAsString] since a single scalar
+          // `value` can't carry both the resource identity and the count threshold.
+          const [resourceName, thresholdStr] = arrayValue;
+          const count = (actor.inventory || []).filter((r: string) => r === resourceName).length;
+          const threshold = parseFloat(thresholdStr || '0') || 0;
+          return req.comparator === 'max' ? count <= threshold : count >= threshold;
+        }
+        case 'resource_retention_min': {
+          const [resourceName, thresholdStr] = arrayValue;
+          if (!context?.resourceDelta || context.resourceDelta.resource !== resourceName) return true;
+          const currentCount = (actor.inventory || []).filter((r: string) => r === resourceName).length;
+          const threshold = parseFloat(thresholdStr || '0') || 0;
+          return (currentCount + context.resourceDelta.delta) >= threshold;
+        }
+        case 'inventory_capacity_max':
+          return passThreshold(req, (actor.inventory || []).length);
+        case 'recovery_status_in':
+          return Boolean(actor.inEconomicRecovery);
+        case 'recovery_status_out':
+          return !actor.inEconomicRecovery;
+        case 'team_leading':
+          return computeTeamNetWorth(actor.teamId) > computeTeamNetWorth(opposingTeamId);
+        case 'team_trailing':
+          return computeTeamNetWorth(actor.teamId) < computeTeamNetWorth(opposingTeamId);
+        case 'game_phase_in':
+          return arrayValue.length > 0 ? arrayValue.includes(phase) : stringValue === phase;
+        case 'actions_remaining_min':
+          return context?.actionsRemaining === undefined ? true : passThreshold(req, context.actionsRemaining);
+        case 'win_condition_contribution_min': {
+          const total = Object.values(actor.contributionStats || {}).reduce((sum: number, v) => sum + (typeof v === 'number' ? v : 0), 0);
+          return passThreshold(req, total);
+        }
+        case 'cash_vault_permission_required':
+          return (actor.money - (gameSettings.teamCashVaultEnabled ? Math.min(actor.protectedCash || 0, actor.money) : 0)) >= 0;
+        case 'economy_governor_approval_required':
+          return context?.governorApproved === undefined ? true : Boolean(context.governorApproved);
+        case 'prior_step_success_required':
+          // V6.9 Phase F2: inert until Phase F4/F5 — no sequence step exists yet to reference.
+          return true;
+        default:
+          return true;
+      }
+    };
+
+    // Recursively evaluates a group/requirement node, considering only leaves whose strictness
+    // matches `strictnessFilter` — leaves of the other strictness are skipped (neither pass nor
+    // fail), so a mixed-strictness group tree can be evaluated twice (once per strictness) without
+    // cross-contaminating hard/soft results.
+    const evaluateNode = (
+      node: ActionRequirement | RequirementGroup,
+      strictnessFilter: 'hard' | 'soft'
+    ): { applicable: boolean; passed: boolean; failing: ActionRequirement[] } => {
+      const isGroup = Array.isArray((node as RequirementGroup).items);
+      if (!isGroup) {
+        const req = node as ActionRequirement;
+        const reqStrictness: 'hard' | 'soft' = req.strictness === 'soft' ? 'soft' : 'hard';
+        if (!req.enabled || reqStrictness !== strictnessFilter || !matchesScope(req.scope)) {
+          return { applicable: false, passed: true, failing: [] };
+        }
+        const passed = evaluateRequirementValue(req);
+        return { applicable: true, passed, failing: passed ? [] : [req] };
+      }
+      const group = node as RequirementGroup;
+      const results = group.items.map(item => evaluateNode(item, strictnessFilter));
+      const applicableResults = results.filter(r => r.applicable);
+      if (applicableResults.length === 0) return { applicable: false, passed: true, failing: [] };
+      const failing = applicableResults.reduce<ActionRequirement[]>((acc, r) => acc.concat(r.failing), []);
+      const passed = group.mode === 'any_may_pass'
+        ? applicableResults.some(r => r.passed)
+        : applicableResults.every(r => r.passed);
+      return { applicable: true, passed, failing: passed ? [] : failing };
+    };
+
+    const topGroup: RequirementGroup = { id: '__top__', mode: 'all_must_pass', items: groups };
+
+    const hardResult = evaluateNode(topGroup, 'hard');
+    if (hardResult.applicable && !hardResult.passed && hardResult.failing.length > 0) {
+      const failedReq = hardResult.failing[0];
+      return {
+        approved: false,
+        reason: `Hard requirement not met: ${failedReq.label || failedReq.kind}.`,
+        failureBehavior: failedReq.failureBehavior,
+        softViolations: []
+      };
+    }
+
+    const softResult = evaluateNode(topGroup, 'soft');
+    const softViolations = (softResult.applicable && !softResult.passed)
+      ? softResult.failing.map(req => req.label || req.kind)
+      : [];
+
+    return { approved: true, reason: 'Action Requirements: approved.', failureBehavior: null, softViolations };
+  }, [computeTeamNetWorth, gameSettings, gameState.day, getActorState, getTeamActors]);
 
   const analyzeTeamLiquidity = useCallback((teamId: string, actorMap?: Record<string, ActorState>): TeamLiquidityAnalysis => {
     const team = teamsById[teamId];
@@ -22848,6 +23203,9 @@ function AustraliaGame() {
   // the daily cap value — the daily cap governs how many separate turns an actor can lend from,
   // not how many teammates they can help in one turn. Cleared alongside the refs above.
   const hasLentThisTurnRef = useRef<Record<string, boolean>>({});
+  // V6.9 Phase F2: per-actor-per-turn count of 'retry_next_action' Requirements rejections, capped
+  // by ACTION_REQUIREMENT_MAX_RETRIES so a bounded retry can never loop indefinitely.
+  const requirementRetryCountRef = useRef<Record<string, number>>({});
   // V6.7 Phase 3c: per-actor override-cost discount multiplier from a successful Team Initiative
   // "reducing an override cost" spend this turn (GD8 edit #4) — a locally-read, non-mutating
   // adjustment inside evaluateTeamAiOverrideEligibility's existing cost line, never gameSettings
@@ -23522,8 +23880,35 @@ function AustraliaGame() {
         if (!actorForAction) break;
         const revalidated = tokenId ? redeemActionToken(actorForAction.teamId, actorId, decision, tokenId, isReservationHardBlocked) : true;
         tokenId = undefined; // only the first bonus action was tokenized; the rest are this same budget grant, not separately tokenized
-        const success = revalidated ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
-        if (!success) break;
+        // V6.9 Phase F2: identical Requirements gate as performTeamAiTurn's main loop, via the
+        // same shared dispatch helper — no-op (approved:true) when Requirements is off.
+        const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager });
+        if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
+          requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
+        }
+        const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
+        if (!success) {
+          if (!revalidated) break;
+          const retryCount = requirementRetryCountRef.current[actorId] || 0;
+          const dispatch = resolveRequirementFailureAction(requirementsResult.failureBehavior || 'reject', retryCount);
+          if (gameSettings.actionRequirementsTransparencyEnabled) {
+            appendTeamAiTraceNote(actorId, requirementsResult.reason);
+          }
+          if (dispatch === 'retry') {
+            requirementRetryCountRef.current[actorId] = retryCount + 1;
+            decision = getRankedTeamAiDecisions(actorId)[0] || null;
+            continue;
+          }
+          if (dispatch === 'fallback') {
+            const fallbackDecision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
+            const fallbackSuccess = await executeTeamAiAction(actorId, fallbackDecision as unknown as AIAction);
+            if (!fallbackSuccess) break;
+            checkRoleFulfillment(actorForAction, fallbackDecision.type);
+            decision = (i < budget - 1) ? (getRankedTeamAiDecisions(actorId)[0] || null) : null;
+            continue;
+          }
+          break;
+        }
         checkRoleFulfillment(actorForAction, decision.type);
         detectComboBonus(actorForAction.teamId, actorId, decision.type, gameState.day, decision.data?.region);
         if (i < budget - 1) {
@@ -23535,7 +23920,7 @@ function AustraliaGame() {
     } finally {
       finishTeamAiTurn(actorId);
     }
-  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken]);
+  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings.actionRequirementsTransparencyEnabled]);
 
   // V6.8 Phase D: Guaranteed Recovery Protocol — a deterministic (not competitively-scored) action
   // for an actor already flagged inEconomicRecovery (the shared Phase C hysteresis flag). Tries
@@ -23601,6 +23986,7 @@ function AustraliaGame() {
     delete approveSimilarThisTurnRef.current[actor.id];
     delete hasLentThisTurnRef.current[actor.id];
     delete initiativeOverrideDiscountRef.current[actor.id];
+    delete requirementRetryCountRef.current[actor.id];
     // V6.7 Phase 3c: Team Initiative "sabotage protection" spend effect — while armed, strip any
     // sabotage-caused debuffs the instant this actor's turn begins. Additive on top of the
     // existing sabotage-application code, which is never touched.
@@ -23810,9 +24196,45 @@ function AustraliaGame() {
       const revalidated = pendingTokenId
         ? redeemActionToken(actor.teamId, actor.id, decision, pendingTokenId, isReservationHardBlocked)
         : true;
-      const success = revalidated ? await executeTeamAiAction(actor.id, decision) : false;
+      // V6.9 Phase F2: Action Requirements — a final, additional permission gate, layered
+      // alongside (never replacing) the existing token-revalidation check above. A no-op
+      // (approved:true) whenever Requirements is off, so this line is byte-identical to
+      // pre-F2 code in that case.
+      const requirementsResult = evaluateActionRequirements(actor, decision, {
+        wager: decision.data?.wager,
+        cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined,
+        actionsRemaining: actionBudget - actionsTaken
+      });
+      if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
+        requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actor.id, `Soft requirement not met: ${v} (action proceeded).`));
+      }
+      const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actor.id, decision) : false;
       if (!success) {
-        lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
+        if (!revalidated) {
+          lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
+          break;
+        }
+        // Requirements-rejected path: dispatch on requirementsResult.failureBehavior, never
+        // consuming an action (actionsTaken is only incremented after a successful execution,
+        // further down this loop — unreachable from this branch).
+        const retryCount = requirementRetryCountRef.current[actor.id] || 0;
+        const dispatch = resolveRequirementFailureAction(requirementsResult.failureBehavior || 'reject', retryCount);
+        if (gameSettings.actionRequirementsTransparencyEnabled) {
+          appendTeamAiTraceNote(actor.id, requirementsResult.reason);
+        }
+        if (dispatch === 'retry') {
+          requirementRetryCountRef.current[actor.id] = retryCount + 1;
+          continue;
+        }
+        if (dispatch === 'fallback') {
+          const fallbackDecision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
+          const fallbackSuccess = await executeTeamAiAction(actor.id, fallbackDecision as unknown as AIAction);
+          if (!fallbackSuccess) break;
+          checkRoleFulfillment(actor, fallbackDecision.type);
+          refreshTeamLiquidityLedger(actor.teamId);
+          actionsTaken += 1;
+          continue;
+        }
         break;
       }
       // V6.7 Phase 3c Team Initiative trigger #7: role-matching action just executed successfully.
@@ -23923,7 +24345,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -25491,6 +25913,255 @@ function AustraliaGame() {
     );
   };
 
+  // V6.9 Phase F2: Action Requirements builder UI helpers. Plain (non-hook) functions defined
+  // before renderSettingsModal's own declaration so they're safe to reference from its JSX.
+  const ACTION_REQUIREMENT_KIND_CATEGORIES: { label: string; kinds: ActionRequirementKind[] }[] = [
+    { label: 'Cash / Reserve', kinds: ['spendable_cash_min', 'spendable_cash_max', 'reserve_retention_min', 'teammate_cash_threshold', 'opponent_cash_threshold'] },
+    { label: 'Action Cost / Wager / EV', kinds: ['cost_cap_absolute', 'cost_cap_percentage', 'wager_range_min', 'wager_range_max', 'success_probability_min', 'expected_reward_min', 'expected_return_min', 'travel_cost_max', 'travel_payback_period_max'] },
+    { label: 'Location / Inventory / Recovery', kinds: ['region_presence_required', 'region_absence_required', 'region_visited_required', 'resource_possession_min', 'resource_possession_max', 'resource_retention_min', 'inventory_capacity_max', 'recovery_status_in', 'recovery_status_out'] },
+    { label: 'Team / Phase / Status', kinds: ['team_leading', 'team_trailing', 'game_phase_in', 'actions_remaining_min', 'win_condition_contribution_min'] },
+    { label: 'Meta / System Permission', kinds: ['cash_vault_permission_required', 'economy_governor_approval_required'] }
+  ];
+  const ACTION_REQUIREMENT_KIND_LABELS: Record<ActionRequirementKind, string> = {
+    spendable_cash_min: 'Spendable cash — minimum',
+    spendable_cash_max: 'Spendable cash — maximum',
+    reserve_retention_min: 'Reserve retained after action',
+    teammate_cash_threshold: 'Teammate cash threshold',
+    opponent_cash_threshold: 'Opponent cash threshold',
+    cost_cap_absolute: 'Cost cap (absolute $)',
+    cost_cap_percentage: 'Cost cap (% of spendable cash)',
+    wager_range_min: 'Wager — minimum',
+    wager_range_max: 'Wager — maximum',
+    success_probability_min: 'Success probability — minimum',
+    expected_reward_min: 'Expected reward — minimum',
+    expected_return_min: 'Expected return — minimum',
+    travel_cost_max: 'Travel cost — maximum',
+    travel_payback_period_max: 'Travel payback period — maximum',
+    region_presence_required: 'Must currently be in region',
+    region_absence_required: 'Must NOT currently be in region',
+    region_visited_required: 'Must have visited region',
+    resource_possession_min: 'Resource possession — minimum',
+    resource_possession_max: 'Resource possession — maximum',
+    resource_retention_min: 'Resource retained after action — minimum',
+    inventory_capacity_max: 'Inventory size — maximum',
+    recovery_status_in: 'Must be in economic recovery',
+    recovery_status_out: 'Must NOT be in economic recovery',
+    team_leading: 'Team must be leading (net worth)',
+    team_trailing: 'Team must be trailing (net worth)',
+    game_phase_in: 'Game phase must be one of',
+    actions_remaining_min: 'Actions remaining this turn — minimum',
+    win_condition_contribution_min: 'Win-condition contribution — minimum',
+    cash_vault_permission_required: 'Cash Vault permission required',
+    economy_governor_approval_required: 'Economy Governor approval required',
+    prior_step_success_required: 'Previous sequence step succeeded'
+  };
+  const ACTION_REQUIREMENT_RESOURCE_VALUE_KINDS: ActionRequirementKind[] = ['resource_possession_min', 'resource_possession_max', 'resource_retention_min'];
+  const ACTION_REQUIREMENT_REGION_VALUE_KINDS: ActionRequirementKind[] = ['region_presence_required', 'region_absence_required', 'region_visited_required'];
+  const ACTION_REQUIREMENT_PHASE_LIST_KINDS: ActionRequirementKind[] = ['game_phase_in'];
+  const ACTION_REQUIREMENT_NO_VALUE_KINDS: ActionRequirementKind[] = ['recovery_status_in', 'recovery_status_out', 'team_leading', 'team_trailing', 'cash_vault_permission_required', 'economy_governor_approval_required'];
+
+  const createNewActionRequirement = (): ActionRequirement => ({
+    id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    enabled: true,
+    strictness: 'hard',
+    scope: { kind: 'all_teammates' },
+    kind: 'spendable_cash_min',
+    comparator: 'min',
+    value: 0,
+    failureBehavior: 'reject',
+    label: ''
+  });
+  const createNewRequirementGroup = (): RequirementGroup => ({
+    id: `grp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    mode: 'all_must_pass',
+    items: []
+  });
+
+  // Recursively updates (or deletes, when updater returns null) the node at `path` within a
+  // RequirementGroup items array — reused for both top-level groups and nested-group items.
+  const updateRequirementNodeAtPath = (
+    items: (ActionRequirement | RequirementGroup)[],
+    path: number[],
+    updater: (node: ActionRequirement | RequirementGroup) => (ActionRequirement | RequirementGroup) | null
+  ): (ActionRequirement | RequirementGroup)[] => {
+    const [head, ...rest] = path;
+    return items.reduce<(ActionRequirement | RequirementGroup)[]>((acc, item, idx) => {
+      if (idx !== head) { acc.push(item); return acc; }
+      if (rest.length === 0) {
+        const updated = updater(item);
+        if (updated) acc.push(updated);
+        return acc;
+      }
+      const group = item as RequirementGroup;
+      acc.push({ ...group, items: updateRequirementNodeAtPath(group.items, rest, updater) });
+      return acc;
+    }, []);
+  };
+
+  const renderActionRequirementRow = (req: ActionRequirement, path: number[]) => {
+    const updateReq = (patch: Partial<ActionRequirement>) => {
+      setGameSettings(prev => ({
+        ...prev,
+        actionRequirementGroups: updateRequirementNodeAtPath(prev.actionRequirementGroups || [], path, node => ({ ...(node as ActionRequirement), ...patch })) as RequirementGroup[]
+      }));
+    };
+    const removeReq = () => {
+      setGameSettings(prev => ({
+        ...prev,
+        actionRequirementGroups: updateRequirementNodeAtPath(prev.actionRequirementGroups || [], path, () => null) as RequirementGroup[]
+      }));
+    };
+    const isResourceKind = ACTION_REQUIREMENT_RESOURCE_VALUE_KINDS.includes(req.kind);
+    const isRegionKind = ACTION_REQUIREMENT_REGION_VALUE_KINDS.includes(req.kind);
+    const isPhaseListKind = ACTION_REQUIREMENT_PHASE_LIST_KINDS.includes(req.kind);
+    const isNoValueKind = ACTION_REQUIREMENT_NO_VALUE_KINDS.includes(req.kind);
+    const arrayValue = Array.isArray(req.value) ? req.value : [];
+    return (
+      <div key={req.id} className="border rounded p-2 space-y-2 text-xs" style={{ borderColor: 'currentColor', opacity: req.enabled ? 1 : 0.5 }}>
+        <div className="flex flex-wrap gap-2 items-center">
+          <select value={req.scope.kind} onChange={(e) => updateReq({ scope: { ...req.scope, kind: e.target.value as ActionRequirementScopeKind } })} className="px-2 py-1 rounded">
+            {ACTION_REQUIREMENT_SCOPE_KINDS.map(k => <option key={k} value={k}>{k.replace(/_/g, ' ')}</option>)}
+          </select>
+          {req.scope.kind === 'one_teammate' && (
+            <input type="text" placeholder="actor id" value={req.scope.actorId || ''} onChange={(e) => updateReq({ scope: { ...req.scope, actorId: e.target.value } })} className="px-2 py-1 rounded w-28" />
+          )}
+          {req.scope.kind === 'one_team' && (
+            <select value={req.scope.teamId || ''} onChange={(e) => updateReq({ scope: { ...req.scope, teamId: e.target.value } })} className="px-2 py-1 rounded">
+              <option value="">(select team)</option>
+              <option value={TEAM_PLAYER_ID}>Your team</option>
+              <option value={TEAM_OPPONENT_ID}>Opponent team</option>
+            </select>
+          )}
+          {req.scope.kind === 'one_action_type' && (
+            <select value={req.scope.actionType || ''} onChange={(e) => updateReq({ scope: { ...req.scope, actionType: e.target.value as TeamModeActionCategory } })} className="px-2 py-1 rounded">
+              <option value="">(select action type)</option>
+              {(['travel', 'challenge', 'sell', 'craft', 'buy_market', 'region_deposit', 'cashout_region', 'sabotage', 'support', 'invest', 'buy_equipment', 'loan', 'wait', 'end_turn'] as TeamModeActionCategory[]).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          {req.scope.kind === 'one_region' && (
+            <select value={req.scope.region || ''} onChange={(e) => updateReq({ scope: { ...req.scope, region: e.target.value } })} className="px-2 py-1 rounded">
+              <option value="">(select region)</option>
+              {Object.keys(REGIONS).map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          )}
+          {req.scope.kind === 'one_phase' && (
+            <select value={req.scope.phase || ''} onChange={(e) => updateReq({ scope: { ...req.scope, phase: e.target.value as EconomicPhase } })} className="px-2 py-1 rounded">
+              <option value="">(select phase)</option>
+              {(['survival', 'accumulation', 'compounding', 'endgame'] as EconomicPhase[]).map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <select value={req.kind} onChange={(e) => updateReq({ kind: e.target.value as ActionRequirementKind, value: 0 })} className="px-2 py-1 rounded">
+            {ACTION_REQUIREMENT_KIND_CATEGORIES.map(cat => (
+              <optgroup key={cat.label} label={cat.label}>
+                {cat.kinds.map(k => <option key={k} value={k}>{ACTION_REQUIREMENT_KIND_LABELS[k]}</option>)}
+              </optgroup>
+            ))}
+          </select>
+          {!isNoValueKind && !isRegionKind && !isPhaseListKind && !isResourceKind && (
+            <>
+              <select value={req.comparator} onChange={(e) => updateReq({ comparator: e.target.value as ActionRequirement['comparator'] })} className="px-2 py-1 rounded">
+                <option value="min">≥</option>
+                <option value="max">≤</option>
+                <option value="equals">=</option>
+              </select>
+              <input type="number" value={typeof req.value === 'number' ? req.value : 0} onChange={(e) => updateReq({ value: parseFloat(e.target.value) || 0 })} className="px-2 py-1 rounded w-24" />
+            </>
+          )}
+          {isResourceKind && (
+            <>
+              <input type="text" placeholder="resource name" value={arrayValue[0] || ''} onChange={(e) => updateReq({ value: [e.target.value, arrayValue[1] || '0'] })} className="px-2 py-1 rounded w-28" />
+              <select value={req.comparator} onChange={(e) => updateReq({ comparator: e.target.value as ActionRequirement['comparator'] })} className="px-2 py-1 rounded">
+                <option value="min">≥</option>
+                <option value="max">≤</option>
+              </select>
+              <input type="number" placeholder="count" value={arrayValue[1] || ''} onChange={(e) => updateReq({ value: [arrayValue[0] || '', e.target.value] })} className="px-2 py-1 rounded w-20" />
+            </>
+          )}
+          {isRegionKind && (
+            <select value={typeof req.value === 'string' ? req.value : ''} onChange={(e) => updateReq({ value: e.target.value })} className="px-2 py-1 rounded">
+              <option value="">(select region)</option>
+              {Object.keys(REGIONS).map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          )}
+          {isPhaseListKind && (
+            <div className="flex gap-2">
+              {(['survival', 'accumulation', 'compounding', 'endgame'] as EconomicPhase[]).map(p => (
+                <label key={p} className="flex items-center gap-1">
+                  <input type="checkbox" checked={arrayValue.includes(p)} onChange={(e) => {
+                    const next = e.target.checked ? [...arrayValue, p] : arrayValue.filter(v => v !== p);
+                    updateReq({ value: next });
+                  }} />
+                  {p}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={req.enabled} onChange={(e) => updateReq({ enabled: e.target.checked })} /> Enabled</label>
+          <div className="flex gap-1">
+            <button onClick={() => updateReq({ strictness: 'hard' })} className={`px-2 py-1 rounded ${req.strictness === 'hard' ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}>Hard</button>
+            <button onClick={() => updateReq({ strictness: 'soft' })} className={`px-2 py-1 rounded ${req.strictness === 'soft' ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}>Soft</button>
+          </div>
+          <select value={req.failureBehavior} onChange={(e) => updateReq({ failureBehavior: e.target.value as ActionRequirementFailureBehavior })} className="px-2 py-1 rounded">
+            <option value="reject">On failure: Reject</option>
+            <option value="retry_next_action">On failure: Retry with another action</option>
+            <option value="use_fallback_action">On failure: Use fallback action</option>
+            <option value="retry_next_turn">On failure: Wait until next turn</option>
+            <option value="allow_normal_ai">On failure: Allow normal AI</option>
+          </select>
+          <input type="text" placeholder="label (optional)" value={req.label} onChange={(e) => updateReq({ label: e.target.value })} className="px-2 py-1 rounded flex-1 min-w-[8rem]" />
+          <button onClick={removeReq} className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}>Remove</button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRequirementGroupEditor = (group: RequirementGroup, path: number[], depth: number) => {
+    const updateGroup = (patch: Partial<RequirementGroup>) => {
+      setGameSettings(prev => ({
+        ...prev,
+        actionRequirementGroups: updateRequirementNodeAtPath(prev.actionRequirementGroups || [], path, node => ({ ...(node as RequirementGroup), ...patch })) as RequirementGroup[]
+      }));
+    };
+    const removeGroup = () => {
+      setGameSettings(prev => ({
+        ...prev,
+        actionRequirementGroups: updateRequirementNodeAtPath(prev.actionRequirementGroups || [], path, () => null) as RequirementGroup[]
+      }));
+    };
+    const addRequirement = () => updateGroup({ items: [...group.items, createNewActionRequirement()] });
+    const addNestedGroup = () => updateGroup({ items: [...group.items, createNewRequirementGroup()] });
+    return (
+      <div key={group.id} className="border-2 rounded p-3 space-y-2" style={{ borderColor: 'currentColor' }}>
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs opacity-60">Group (depth {depth}):</span>
+          <select value={group.mode} onChange={(e) => updateGroup({ mode: e.target.value as RequirementGroup['mode'] })} className="px-2 py-1 rounded text-xs">
+            <option value="all_must_pass">ALL must pass</option>
+            <option value="any_may_pass">ANY may pass</option>
+          </select>
+          <button onClick={addRequirement} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>+ Requirement</button>
+          <button
+            onClick={addNestedGroup}
+            disabled={depth >= ACTION_REQUIREMENT_MAX_GROUP_DEPTH}
+            className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary} ${depth >= ACTION_REQUIREMENT_MAX_GROUP_DEPTH ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            + Nested Group
+          </button>
+          <button onClick={removeGroup} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Remove Group</button>
+        </div>
+        <div className="space-y-2 pl-3">
+          {group.items.map((item, idx) => Array.isArray((item as RequirementGroup).items)
+            ? renderRequirementGroupEditor(item as RequirementGroup, [...path, idx], depth + 1)
+            : renderActionRequirementRow(item as ActionRequirement, [...path, idx]))}
+          {group.items.length === 0 && <div className="text-xs opacity-50">No requirements in this group yet.</div>}
+        </div>
+      </div>
+    );
+  };
+
   // Settings Modal
   const renderSettingsModal = () => {
     if (!uiState.showSettings) return null;
@@ -25764,7 +26435,9 @@ function AustraliaGame() {
       parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
       teamAiActionSequencesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
       aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
-      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled
+      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
+      actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
+      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -25866,7 +26539,9 @@ function AustraliaGame() {
       parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
       teamAiActionSequencesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
       aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
-      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled
+      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
+      actionRequirementGroups: [...DEFAULT_GAME_SETTINGS.actionRequirementGroups],
+      actionRequirementsTransparencyEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -28248,7 +28923,7 @@ function AustraliaGame() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold">Enable Action Requirements</div>
-                        <div className="text-sm opacity-75">Lets you set hard and soft permission rules (cash thresholds, wager ranges, success-probability minimums, region/inventory conditions, and more) that every AI action — normal or sequence-driven — must clear before it can execute. Hard requirements can never be bypassed; soft requirements may be approved as an exception when AI Action Approval is enabled. Not yet implemented — enabling this toggle currently has no effect on gameplay; it exists so later updates can be revealed here without needing a new setting.</div>
+                        <div className="text-sm opacity-75">Sets hard and soft permission rules (cash thresholds, wager ranges, success-probability minimums, region/inventory conditions, and more) that every normal AI action must clear before it can execute — a final gate layered alongside the existing Cash Vault and Economy Governor checks. Hard requirements can never be bypassed; soft requirements are logged (never blocked) until AI Action Approval exists to offer an exception.</div>
                       </div>
                       <button
                         onClick={() => setGameSettings(prev => ({ ...prev, actionRequirementsEnabled: !prev.actionRequirementsEnabled }))}
@@ -28257,6 +28932,31 @@ function AustraliaGame() {
                         {gameSettings.actionRequirementsEnabled ? 'ON' : 'OFF'}
                       </button>
                     </div>
+                    {gameSettings.actionRequirementsEnabled && uiState.settingsViewMode === 'advanced' && (
+                      <>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.actionRequirementsTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, actionRequirementsTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.actionRequirementsTransparencyEnabled ? '☑' : '☐'} Show in Transparency (soft-violation notes)</span>
+                        </label>
+                        <div className="space-y-3">
+                          {(gameSettings.actionRequirementGroups || []).map((group, idx) => renderRequirementGroupEditor(group, [idx], 1))}
+                          {(gameSettings.actionRequirementGroups || []).length === 0 && (
+                            <div className="text-xs opacity-60">No requirement groups configured yet — add one below.</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, actionRequirementGroups: [...(prev.actionRequirementGroups || []), createNewRequirementGroup()] }))}
+                          className={`px-3 py-2 rounded font-semibold text-sm ${themeStyles.buttonSecondary}`}
+                        >
+                          + Add Requirement Group
+                        </button>
+                        <div className="text-xs opacity-60">Hard requirements can never be bypassed. Soft requirements are logged but never block execution — scoped to normal AI actions only until Teammate Action Sequences exist.</div>
+                      </>
+                    )}
                   </div>
                 )}
               </SettingsSection>
