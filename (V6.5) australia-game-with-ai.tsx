@@ -2815,11 +2815,26 @@ const sanitizeRequirementGroups = (value: unknown): RequirementGroup[] => {
 // `strictnessFilter` — leaves of the other strictness (or scope mismatch, reported by `evalLeaf`
 // returning applicable:false) are skipped (neither pass nor fail), so a mixed-strictness group tree
 // can be evaluated twice (once per strictness) without cross-contaminating hard/soft results.
+let hasWarnedRequirementDepthCap = false;
 const evaluateRequirementGroupTree = (
   node: ActionRequirement | RequirementGroup,
   strictnessFilter: 'hard' | 'soft',
-  evalLeaf: (req: ActionRequirement) => { applicable: boolean; passed: boolean }
+  evalLeaf: (req: ActionRequirement) => { applicable: boolean; passed: boolean },
+  depth: number = 0
 ): { applicable: boolean; passed: boolean; failing: ActionRequirement[] } => {
+  // Bugfix (post-F5 review, GD3): the UI and sanitizer both cap nesting at
+  // ACTION_REQUIREMENT_MAX_GROUP_DEPTH, but the evaluator itself had no defensive backstop of its
+  // own — a save file bypassing those two layers (e.g. direct storage tampering) would recurse
+  // unbounded instead of the documented fail-closed(hard)/fail-open(soft) behavior.
+  if (depth > ACTION_REQUIREMENT_MAX_GROUP_DEPTH) {
+    if (!hasWarnedRequirementDepthCap) {
+      console.warn('Action Requirements: a group exceeded the maximum nesting depth and was treated as fail-closed (hard) / fail-open (soft).');
+      hasWarnedRequirementDepthCap = true;
+    }
+    return strictnessFilter === 'hard'
+      ? { applicable: true, passed: false, failing: [] }
+      : { applicable: false, passed: true, failing: [] };
+  }
   const isGroup = Array.isArray((node as RequirementGroup).items);
   if (!isGroup) {
     const req = node as ActionRequirement;
@@ -2832,7 +2847,7 @@ const evaluateRequirementGroupTree = (
     return { applicable: true, passed, failing: passed ? [] : [req] };
   }
   const group = node as RequirementGroup;
-  const results = group.items.map(item => evaluateRequirementGroupTree(item, strictnessFilter, evalLeaf));
+  const results = group.items.map(item => evaluateRequirementGroupTree(item, strictnessFilter, evalLeaf, depth + 1));
   const applicableResults = results.filter(r => r.applicable);
   if (applicableResults.length === 0) return { applicable: false, passed: true, failing: [] };
   const failing = applicableResults.reduce<ActionRequirement[]>((acc, r) => acc.concat(r.failing), []);
@@ -3426,7 +3441,12 @@ const resolveSequenceStepCandidate = (
       : rule.mode === 'percentage_of_cash' ? spendable * (rule.percentage ?? 0)
       : rule.mode === 'target_profit' ? (matched.plan?.expectedValue ?? spendable)
       : (matched.data?.wager ?? spendable);
-    const clamped = Math.max(rule.minWager ?? MINIMUM_WAGER, Math.min(rule.maxWager ?? spendable, rawAmount, spendable));
+    // Bugfix (post-F5 review): applying Math.max(minWager, ...) last let a misconfigured
+    // minWager > maxWager (or minWager > spendable) override both the rule's own maximum and the
+    // actor's actual spendable cash. spendable is a hard ceiling and must win regardless of rule
+    // configuration — clamp to the rule's [min,max] band first, then cap by spendable last.
+    const withinRuleBand = Math.max(rule.minWager ?? MINIMUM_WAGER, Math.min(rule.maxWager ?? spendable, rawAmount));
+    const clamped = Math.min(withinRuleBand, spendable);
     finalDecision = { ...matched, data: { ...matched.data, wager: clamped } };
   }
   if (step.spendingRule) {
@@ -16026,7 +16046,11 @@ function AustraliaGame() {
           return passThreshold(req, total);
         }
         case 'cash_vault_permission_required':
-          return (actor.money - (gameSettings.teamCashVaultEnabled ? Math.min(actor.protectedCash || 0, actor.money) : 0)) >= 0;
+          // Bugfix (post-F5 review): this must re-express Vault's own invariant as "spendable cash
+          // AFTER the action >= 0" (GD4). The previous expression never subtracted the action's own
+          // cost/wager, so `spendableCash - 0 >= 0` was always true regardless of what the action
+          // would actually spend.
+          return (spendableCash - (context?.cost ?? context?.wager ?? 0)) >= 0;
         case 'economy_governor_approval_required':
           return context?.governorApproved === undefined ? true : Boolean(context.governorApproved);
         case 'prior_step_success_required':
@@ -16160,10 +16184,13 @@ function AustraliaGame() {
   // Promise-based resume gate used only by runApprovedOverrideBonusActions's for loop, which
   // cannot abandon-and-return the way performTeamAiTurn's while loop does — its own try/finally
   // remains the single, unbroken guarantor of finishTeamAiTurn firing.
-  const approvalResolversRef = useRef<Record<string, (control: ApprovalControlAction) => void>>({});
-  const waitForApprovalResolution = useCallback((requestId: string): Promise<ApprovalControlAction> => {
-    return new Promise<ApprovalControlAction>(resolve => {
-      approvalResolversRef.current[requestId] = resolve;
+  // Bugfix (post-F5 review): the resolver used to carry only `control`, so edit_and_approve/
+  // approve_lower_wager's editedFields never reached runApprovedOverrideBonusActions — every bonus
+  // action "approved with an edited wager/cost" silently executed at its ORIGINAL, unedited value.
+  const approvalResolversRef = useRef<Record<string, (control: ApprovalControlAction, editedFields?: { cost?: number; wager?: number }) => void>>({});
+  const waitForApprovalResolution = useCallback((requestId: string): Promise<{ control: ApprovalControlAction; editedFields?: { cost?: number; wager?: number } }> => {
+    return new Promise(resolve => {
+      approvalResolversRef.current[requestId] = (control, editedFields) => resolve({ control, editedFields });
     });
   }, []);
 
@@ -16203,7 +16230,7 @@ function AustraliaGame() {
     const resolver = approvalResolversRef.current[requestId];
     if (resolver) {
       delete approvalResolversRef.current[requestId];
-      resolver(control);
+      resolver(control, editedFields);
       return;
     }
     resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
@@ -24767,7 +24794,10 @@ function AustraliaGame() {
             sequenceStepRetryCountRef.current[step.id] = count + 1;
             return null; // yields this one action slot to makeTeamAiDecision
           }
-          return null; // exhausted — the completion-marker block downgrades this step to 'skipped'
+          // Bugfix (post-F5 review): exhausted retries must actually downgrade to skipped —
+          // returning null here left sequenceStepMatch null, so the completion-marker block (gated
+          // on `sequenceStepMatch &&`) never ran and the step stayed 'pending' forever.
+          return { decision: { type: 'end_turn', description: 'Sequence: fallback retries exhausted, step skipped', data: {}, score: 0, plan: {} as ActorAiPlan }, stepId: step.id, sequenceId: sequence.id, wasFallback: true };
         }
         case 'retry_next_action': {
           const count = sequenceStepRetryCountRef.current[step.id] || 0;
@@ -24857,9 +24887,17 @@ function AustraliaGame() {
             sequenceRepeatCount += 1;
             steps = steps.map(s => ({ ...s, status: 'pending' as const }));
           } else {
+            // Bugfix (post-F5 review): if stepRangeStartId is ordered AFTER the completing step,
+            // slice(startIdx, endIdx+1) silently returns [] and the repeat rule never fires with
+            // no error shown. Normalize to ascending order regardless of configured start/end.
             const rangeIds = rule.scope === 'single_step'
               ? [stepId]
-              : orderedIds.slice(orderedIds.indexOf(rule.stepRangeStartId || stepId), orderedIds.indexOf(stepId) + 1);
+              : (() => {
+                  const startIdx = orderedIds.indexOf(rule.stepRangeStartId || stepId);
+                  const endIdx = orderedIds.indexOf(stepId);
+                  if (startIdx === -1 || endIdx === -1) return [stepId];
+                  return orderedIds.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1);
+                })();
             steps = steps.map(s => rangeIds.includes(s.id) ? { ...s, status: 'pending' as const, stepRepeatCount: (s.stepRepeatCount || 0) + 1 } : s);
           }
         }
@@ -25176,6 +25214,13 @@ function AustraliaGame() {
         } else {
           decision = null;
         }
+      } else if (control === 'use_fallback') {
+        // Bugfix (post-F5 review): 'use_fallback' fell through unhandled, leaving `decision`
+        // unchanged and `skipApprovalCheckOnce` false — the loop below would immediately need
+        // approval again for the SAME decision and reopen the identical dialog instead of ever
+        // substituting a fallback or ending the turn.
+        decision = { type: 'think', description: 'Approval fallback', data: {} } as unknown as ScoredTeamAiDecision;
+        skipApprovalCheckOnce = true;
       } else if ((control === 'edit_and_approve' || control === 'approve_lower_wager') && decision) {
         const editedDecision = { ...decision, data: { ...decision.data } };
         if (editedFields?.wager !== undefined && typeof editedDecision.data.wager === 'number') {
@@ -25208,8 +25253,16 @@ function AustraliaGame() {
             highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
             teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
           };
+          // Bugfix (post-F5 review): this call was missing the context argument the other two
+          // chokepoints always pass, so approve_high_risk's wager/cost thresholds silently never
+          // matched (context fields all undefined) on every resumed loop iteration — the approval
+          // gate was effectively bypassed for that mode (and for approve_sequence_actions_only, via
+          // isSequenceSourced) whenever a decision was resumed through this path. This loop never
+          // sources a sequence-stepped decision (it only re-ranks normal candidates), so
+          // isSequenceSourced is correctly omitted/undefined here — only the missing wager/cost
+          // fields were the actual bug.
           const needsPlayerApproval = autoResolution.outcome === 'none'
-            && needsApproval(actor, decision, policy, gameSettings)
+            && needsApproval(actor, decision, policy, gameSettings, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost })
             && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
           if (needsPlayerApproval) {
             const nextRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
@@ -25310,13 +25363,34 @@ function AustraliaGame() {
           if (!confirmationDialog.isOpen) {
             showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', bonusApprovalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(bonusApprovalRequest.id, 'approve'), { requestId: bonusApprovalRequest.id });
           }
-          const bonusControl = await waitForApprovalResolution(bonusApprovalRequest.id);
+          const { control: bonusControl, editedFields: bonusEditedFields } = await waitForApprovalResolution(bonusApprovalRequest.id);
           if (bonusControl === 'reject' || bonusControl === 'reject_once' || bonusControl === 'always_reject_similar') {
             decision = getRankedTeamAiDecisions(actorId)[0] || null;
             continue;
           }
-          // approve/approve_once/always_approve_similar/edit_and_approve/approve_lower_wager/use_fallback
-          // all fall through to execute the (possibly-approved-as-is) decision below.
+          // Bugfix (post-F5 review): edit_and_approve/approve_lower_wager/use_fallback used to fall
+          // through unconditionally and execute the ORIGINAL decision unchanged — the edit and the
+          // fallback substitution were both silently discarded. Apply them here, mirroring
+          // resumeAfterApprovalResolution's own edit-clamp/re-validate logic exactly.
+          if (bonusControl === 'use_fallback') {
+            decision = { type: 'think', description: 'Approval fallback', data: {} } as unknown as ScoredTeamAiDecision;
+          } else if ((bonusControl === 'edit_and_approve' || bonusControl === 'approve_lower_wager') && decision) {
+            const editedDecision = { ...decision, data: { ...decision.data } };
+            if (bonusEditedFields?.wager !== undefined && typeof editedDecision.data.wager === 'number') {
+              editedDecision.data.wager = Math.max(0, Math.min(bonusEditedFields.wager, editedDecision.data.wager));
+            }
+            if (bonusEditedFields?.cost !== undefined && Array.isArray(editedDecision.data.purchases) && editedDecision.data.purchases[0]) {
+              editedDecision.data.purchases = [{ ...editedDecision.data.purchases[0], cost: Math.max(0, Math.min(bonusEditedFields.cost, editedDecision.data.purchases[0].cost)) }];
+            }
+            const bonusReqCheck = evaluateActionRequirements(actorForAction, editedDecision, { wager: editedDecision.data?.wager, cost: editedDecision.data?.purchases?.[0]?.cost });
+            if (!bonusReqCheck.approved) {
+              addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
+              decision = getRankedTeamAiDecisions(actorId)[0] || null;
+              continue;
+            }
+            decision = editedDecision;
+          }
+          // approve/approve_once/always_approve_similar fall through to execute the as-is decision.
         }
         // V6.9 Phase F2: identical Requirements gate as performTeamAiTurn's main loop, via the
         // same shared dispatch helper — no-op (approved:true) when Requirements is off.
@@ -25335,6 +25409,10 @@ function AustraliaGame() {
           if (dispatch === 'retry') {
             requirementRetryCountRef.current[actorId] = retryCount + 1;
             decision = getRankedTeamAiDecisions(actorId)[0] || null;
+            // Bugfix (post-F5 review): the for-loop's own `i += 1` step would otherwise consume one
+            // of the actor's bonus-budget slots for a retried action that never executed, unlike
+            // performTeamAiTurn's main while loop (which never touches actionsTaken on 'retry').
+            i--;
             continue;
           }
           if (dispatch === 'fallback') {
@@ -25358,7 +25436,7 @@ function AustraliaGame() {
     } finally {
       finishTeamAiTurn(actorId);
     }
-  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings, gameSettings.actionRequirementsTransparencyEnabled, buildApprovalRequest, resolveApprovalRequest, waitForApprovalResolution, confirmationDialog.isOpen, showConfirmation]);
+  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings, gameSettings.actionRequirementsTransparencyEnabled, buildApprovalRequest, resolveApprovalRequest, waitForApprovalResolution, confirmationDialog.isOpen, showConfirmation, addNotification]);
 
   // V6.8 Phase D: Guaranteed Recovery Protocol — a deterministic (not competitively-scored) action
   // for an actor already flagged inEconomicRecovery (the shared Phase C hysteresis flag). Tries
@@ -25556,6 +25634,21 @@ function AustraliaGame() {
         if (lendEligibility.eligible && lendEligibility.toActorId) {
           hasLentThisTurnRef.current[actor.id] = true;
           lendAction(actor.id, lendEligibility.toActorId, { reasonLabel: lendEligibility.reasonLabel });
+        }
+        // Bugfix (post-F5 review): a sequence-sourced end_turn decision (a 'wait'/'end_turn'
+        // category step, or a retry_next_turn/pause_sequence/cancel_sequence/skip_step-with-no-
+        // candidate fallback) must still advance sequence progress before the turn ends — this
+        // used to `break` before ever reaching the completion-marker block below, so the
+        // pause/cancel mutation those fallbacks exist to perform never happened and the sequence
+        // silently deadlocked on the same step forever.
+        if (sequenceStepMatch && decision === sequenceStepMatch.decision) {
+          updateTeamState(actor.teamId, prev => advanceSequenceProgress(
+            prev,
+            sequenceStepMatch.sequenceId,
+            sequenceStepMatch.stepId,
+            sequenceStepMatch.wasFallback,
+            sequenceStepMatch.wasFallback ? 'skipped' : 'done'
+          ));
         }
         break;
       }
