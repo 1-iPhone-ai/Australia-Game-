@@ -2699,6 +2699,12 @@ interface ActionRequirementScope {
   phase?: EconomicPhase;
   sequenceId?: string;
   stepId?: string;
+  // Bugfix (post-F5 review): distinct from `actorId` above, which is exclusively "does this rule
+  // apply to this acting actor" (one_teammate scope). teammate_cash_threshold/opponent_cash_threshold
+  // need a SEPARATE "which actor's cash to compare against" target — reusing actorId for that
+  // purpose collided with its own applies-to meaning and silently disabled the rule whenever the
+  // acting actor wasn't the id being compared.
+  compareActorId?: string;
 }
 // V6.9 Phase F4: closed allow-list for the 'feature_enabled' requirement kind — never a dynamic
 // string-indexed lookup. An unrecognized value auto-passes rather than throwing.
@@ -2767,7 +2773,8 @@ const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => 
       region: typeof scopeSource.region === 'string' ? scopeSource.region : undefined,
       phase: typeof scopeSource.phase === 'string' ? scopeSource.phase as EconomicPhase : undefined,
       sequenceId: typeof scopeSource.sequenceId === 'string' ? scopeSource.sequenceId : undefined,
-      stepId: typeof scopeSource.stepId === 'string' ? scopeSource.stepId : undefined
+      stepId: typeof scopeSource.stepId === 'string' ? scopeSource.stepId : undefined,
+      compareActorId: typeof scopeSource.compareActorId === 'string' ? scopeSource.compareActorId : undefined
     },
     kind: source.kind as ActionRequirementKind,
     comparator: source.comparator as ActionRequirement['comparator'],
@@ -2855,6 +2862,20 @@ const evaluateRequirementGroupTree = (
     ? applicableResults.some(r => r.passed)
     : applicableResults.every(r => r.passed);
   return { applicable: true, passed, failing: passed ? [] : failing };
+};
+
+// Bugfix (post-F5 review, informational only — see the plan's Item 2 for why this is a UI warning
+// rather than an evaluator redesign): an any_may_pass group's hard-pass and soft-pass are evaluated
+// independently (GD7's deliberate non-cross-contamination design), so a group mixing hard and soft
+// direct children can't express "hard OR soft" the way "ANY may pass" reads at a glance — a failing
+// hard child still hard-rejects regardless of a passing soft sibling. This never changes evaluation
+// behavior; it only flags the combination so the player understands what will actually happen.
+const hasMixedStrictnessAnyGroup = (group: RequirementGroup): boolean => {
+  if (group.mode !== 'any_may_pass') return false;
+  const leafItems = group.items.filter(item => !Array.isArray((item as RequirementGroup).items)) as ActionRequirement[];
+  const hasHard = leafItems.some(r => r.strictness !== 'soft');
+  const hasSoft = leafItems.some(r => r.strictness === 'soft');
+  return hasHard && hasSoft;
 };
 
 const ACTION_REQUIREMENT_MAX_RETRIES = 3;
@@ -15976,13 +15997,17 @@ function AustraliaGame() {
           const reserve = computeDynamicReserve(phase, spendableCash, gameSettings);
           return (spendableCash - (context?.cost || 0)) >= reserve;
         }
+        // Bugfix (post-F5 review): reads scope.compareActorId, NOT scope.actorId — the latter is
+        // exclusively owned by matchesScope's one_teammate "applies to" check above. Using
+        // actorId here for "which actor to compare" collided with that meaning and silently
+        // disabled the rule whenever the acting actor wasn't the id being compared.
         case 'teammate_cash_threshold': {
-          const teammate = (scope => scope.actorId ? getActorState(scope.actorId) : getTeamActors(actor.teamId).find(a => a.id !== actor.id))(req.scope);
+          const teammate = (scope => scope.compareActorId ? getActorState(scope.compareActorId) : getTeamActors(actor.teamId).find(a => a.id !== actor.id))(req.scope);
           if (!teammate) return true;
           return passThreshold(req, getActorSpendableCash(teammate, gameSettings.teamCashVaultEnabled));
         }
         case 'opponent_cash_threshold': {
-          const opponent = (scope => scope.actorId ? getActorState(scope.actorId) : getTeamActors(opposingTeamId)[0])(req.scope);
+          const opponent = (scope => scope.compareActorId ? getActorState(scope.compareActorId) : getTeamActors(opposingTeamId)[0])(req.scope);
           if (!opponent) return true;
           return passThreshold(req, getActorSpendableCash(opponent, gameSettings.teamCashVaultEnabled));
         }
@@ -27615,6 +27640,15 @@ function AustraliaGame() {
           <select value={req.scope.kind} onChange={(e) => updateReq({ scope: { ...req.scope, kind: e.target.value as ActionRequirementScopeKind } })} className="px-2 py-1 rounded">
             {ACTION_REQUIREMENT_SCOPE_KINDS.map(k => <option key={k} value={k}>{k.replace(/_/g, ' ')}</option>)}
           </select>
+          {(req.kind === 'teammate_cash_threshold' || req.kind === 'opponent_cash_threshold') && (
+            <input
+              type="text"
+              placeholder="compare actor id (blank = first other teammate/opponent)"
+              value={req.scope.compareActorId || ''}
+              onChange={(e) => updateReq({ scope: { ...req.scope, compareActorId: e.target.value || undefined } })}
+              className="px-2 py-1 rounded w-64"
+            />
+          )}
           {req.scope.kind === 'one_teammate' && (
             <input type="text" placeholder="actor id" value={req.scope.actorId || ''} onChange={(e) => updateReq({ scope: { ...req.scope, actorId: e.target.value } })} className="px-2 py-1 rounded w-28" />
           )}
@@ -27739,6 +27773,11 @@ function AustraliaGame() {
           </button>
           <button onClick={removeGroup} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Remove Group</button>
         </div>
+        {hasMixedStrictnessAnyGroup(group) && (
+          <div className="text-xs text-yellow-500 pl-3">
+            This group mixes hard and soft requirements under "ANY may pass" — hard and soft are still checked independently, so a failing hard requirement here will still hard-reject even if a soft one in this group passes.
+          </div>
+        )}
         <div className="space-y-2 pl-3">
           {group.items.map((item, idx) => Array.isArray((item as RequirementGroup).items)
             ? renderRequirementGroupEditor(item as RequirementGroup, [...path, idx], depth + 1, groups, onChange)
