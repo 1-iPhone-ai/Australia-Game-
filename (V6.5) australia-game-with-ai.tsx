@@ -2641,6 +2641,14 @@ type TeamActionBankDistributionMode = 'equal' | 'role_based' | 'objective_based'
 // 'strict' hard-blocks any active conflict.
 type TeamAiReservationStrictness = 'low' | 'balanced' | 'strict';
 
+// V6.9 Phase F1: shared base types for Teammate Action Sequences, AI Action Approval, and
+// Action Requirements (Phases F2-F5). Declared now so later phases reuse one vocabulary instead
+// of near-duplicate unions; unreferenced by any runtime logic until those phases land.
+type TeamModeActionCategory = 'travel' | 'challenge' | 'sell' | 'craft' | 'buy_market' | 'region_deposit'
+  | 'cashout_region' | 'sabotage' | 'support' | 'invest' | 'buy_equipment' | 'loan' | 'wait' | 'end_turn';
+type SequenceStepFallbackAction = 'retry_next_action' | 'retry_next_turn' | 'skip_step' | 'jump_to_step'
+  | 'use_fallback_action' | 'allow_normal_ai' | 'pause_sequence' | 'end_turn' | 'cancel_sequence';
+
 // V6.8 Phase B: Ratcheting Cash Vault protection modes. In this phase all three behave
 // identically for voluntary spending (protected cash is never voluntarily spent regardless of
 // mode) — they only differ once a mechanic exists that can force a cash loss below the protected
@@ -2947,6 +2955,12 @@ type GameSettingsState = {
   parallelAiPlanningCoordinationStrictness: TeamAiReservationStrictness;
   parallelAiPlanningSabotageCoordinationEnabled: boolean;
   parallelAiPlanningTransparencyEnabled: boolean;
+  // V6.9 Phase F1: Foundations for Teammate Action Sequences, Approval, and Requirements —
+  // three independent master toggles, each off by default. No functional logic exists yet;
+  // these gate empty (enable-toggle-only) Settings Hub sections until later phases build on them.
+  teamAiActionSequencesEnabled: boolean;
+  aiActionApprovalEnabled: boolean;
+  actionRequirementsEnabled: boolean;
   notificationSettings: NotificationSettings;
   notificationClearShortcut: NotificationClearShortcut;
 };
@@ -3971,6 +3985,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   parallelAiPlanningCoordinationStrictness: 'balanced',
   parallelAiPlanningSabotageCoordinationEnabled: true,
   parallelAiPlanningTransparencyEnabled: true,
+  teamAiActionSequencesEnabled: false,
+  aiActionApprovalEnabled: false,
+  actionRequirementsEnabled: false,
   notificationSettings: createDefaultNotificationSettings(),
   notificationClearShortcut: 'ctrl+shift+c'
 };
@@ -4110,6 +4127,9 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
+  { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled'] },
+  { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled'] },
+  { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -9391,6 +9411,15 @@ function AustraliaGame() {
         parallelAiPlanningTransparencyEnabled: typeof settingsData.parallelAiPlanningTransparencyEnabled === 'boolean'
           ? settingsData.parallelAiPlanningTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
+        teamAiActionSequencesEnabled: typeof settingsData.teamAiActionSequencesEnabled === 'boolean'
+          ? settingsData.teamAiActionSequencesEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
+        aiActionApprovalEnabled: typeof settingsData.aiActionApprovalEnabled === 'boolean'
+          ? settingsData.aiActionApprovalEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
+        actionRequirementsEnabled: typeof settingsData.actionRequirementsEnabled === 'boolean'
+          ? settingsData.actionRequirementsEnabled
+          : DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
 	      notificationSettings: (() => {
 	        const source = settingsData.notificationSettings || {};
 	        const defaults = createDefaultNotificationSettings();
@@ -25732,7 +25761,10 @@ function AustraliaGame() {
       parallelAiPlanningEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
       parallelAiPlanningCoordinationStrictness: DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
       parallelAiPlanningSabotageCoordinationEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
-      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled
+      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
+      teamAiActionSequencesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
+      aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
+      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -25831,7 +25863,10 @@ function AustraliaGame() {
       parallelAiPlanningEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
       parallelAiPlanningCoordinationStrictness: DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
       parallelAiPlanningSabotageCoordinationEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
-      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled
+      parallelAiPlanningTransparencyEnabled: DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
+      teamAiActionSequencesEnabled: DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
+      aiActionApprovalEnabled: DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
+      actionRequirementsEnabled: DEFAULT_GAME_SETTINGS.actionRequirementsEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -28135,6 +28170,93 @@ function AustraliaGame() {
                         <div className="text-xs opacity-60">Planning only ever applies to the first action of an AI actor's turn each round — every subsequent action still uses live, up-to-the-moment decision-making exactly as today.</div>
                       </>
                     )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.actionSequences"
+                tab="teamModeAi"
+                title="Teammate Action Sequences"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.actionSequences')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Teammate Action Sequences has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Teammate Action Sequences</div>
+                        <div className="text-sm opacity-75">Lets you build ordered or prioritized action plans (a Sequence Builder) and assign them to individual AI teammates or the whole team, with configurable wager/spending rules, conditions, fallback behavior, repeats, and phase-based switching. Not yet implemented — enabling this toggle currently has no effect on gameplay; it exists so later updates can be revealed here without needing a new setting.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionSequencesEnabled: !prev.teamAiActionSequencesEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionSequencesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teamAiActionSequencesEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.actionApproval"
+                tab="teamModeAi"
+                title="AI Action Approval"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.actionApproval')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — AI Action Approval has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable AI Action Approval</div>
+                        <div className="text-sm opacity-75">Lets you require an AI teammate to propose an action — target, cost, wager, expected reward, and reason — and wait for your approval before it executes, with configurable rejection behavior and optional automatic-approval rules. Not yet implemented — enabling this toggle currently has no effect on gameplay; it exists so later updates can be revealed here without needing a new setting.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalEnabled: !prev.aiActionApprovalEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.aiActionApprovalEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.aiActionApprovalEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.actionRequirements"
+                tab="teamModeAi"
+                title="Action Requirements"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.actionRequirements')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — Action Requirements has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Action Requirements</div>
+                        <div className="text-sm opacity-75">Lets you set hard and soft permission rules (cash thresholds, wager ranges, success-probability minimums, region/inventory conditions, and more) that every AI action — normal or sequence-driven — must clear before it can execute. Hard requirements can never be bypassed; soft requirements may be approved as an exception when AI Action Approval is enabled. Not yet implemented — enabling this toggle currently has no effect on gameplay; it exists so later updates can be revealed here without needing a new setting.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, actionRequirementsEnabled: !prev.actionRequirementsEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.actionRequirementsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.actionRequirementsEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </SettingsSection>
