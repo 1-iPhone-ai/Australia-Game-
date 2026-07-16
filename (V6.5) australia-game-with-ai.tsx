@@ -1978,7 +1978,7 @@ interface TeamReservation {
 // than trusted purely at grant time. The base per-turn action budget itself is NOT tokenized —
 // only bonus grants are (see mintActionToken) — a full retrofit of the base budget is deferred
 // to Phase 3d's Decision Transparency integration pass.
-type ActionTokenSource = 'normal' | 'shared_bank' | 'lent' | 'override' | 'initiative' | 'emergency' | 'sequence';
+type ActionTokenSource = 'normal' | 'shared_bank' | 'lent' | 'override' | 'initiative' | 'emergency' | 'sequence' | 'treasury';
 type ActionTokenStatus = 'granted' | 'consumed' | 'invalidated';
 interface ActionToken {
   id: string;
@@ -2634,6 +2634,30 @@ interface TreasuryAutomaticContributionPolicy {
   endgameContributionMultiplier: number;
 }
 
+// Team Treasury Phase T2: a request against the shared treasury. Always reachable at exactly
+// $0 — never gated on the requester already having money.
+type TreasuryFundingRequestType = 'emergency_cash' | 'fund_specific_action' | 'custom';
+type TreasuryFundingRequestStatus = 'pending' | 'approved' | 'partially_approved' | 'rejected' | 'cancelled' | 'expired' | 'fulfilled';
+
+interface TreasuryFundingRequest {
+  id: string;
+  requestingActorId: string;
+  requestingTeamId: string;
+  requestType: TreasuryFundingRequestType;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  intendedActionType?: AIAction['type'];
+  intendedActionCost?: number;
+  expectedBenefit?: number;
+  reason: string;
+  status: TreasuryFundingRequestStatus;
+  createdDay: number;
+  createdTurn: number;
+  resolvedDay?: number;
+  fulfilledAmountSpent?: number;
+  unusedAmountReturned?: number;
+}
+
 interface TeamTreasuryState {
   teamId: string;
   balance: number;
@@ -2641,8 +2665,11 @@ interface TeamTreasuryState {
   totalWithdrawn: number;
   reserve: number;
   transactions: TreasuryTransaction[];
-  // Phase T2 populates this; always [] this phase (no funding-request mechanism exists yet).
+  // Phase T2 populates this; kept in sync at every funding-request status transition rather than
+  // recomputed on each read (matching actionTokens' own maintained-not-derived style).
   pendingFundingRequestIds: string[];
+  // Phase T2: capped .slice(-60), matching every other Treasury history array.
+  fundingRequests: TreasuryFundingRequest[];
   contributionTotalsByActor: Record<string, number>;
   withdrawalTotalsByActor: Record<string, number>;
   lastContributionDay: Record<string, number>;
@@ -3013,6 +3040,11 @@ type ApprovalRejectionOutcome = 'propose_again' | 'use_fallback' | 'skip' | 'all
 // Hub/approval card) — 'skip_step'/'return_to_normal_ai'/'pause_sequence'/'cancel_sequence' are
 // sequence-only and inert until Phase F4/F5, kept only for save-format/schema stability.
 type ApprovalControlAction = 'approve' | 'reject' | 'edit_and_approve' | 'approve_lower_wager' | 'approve_once' | 'always_approve_similar' | 'reject_once' | 'always_reject_similar' | 'use_fallback' | 'skip_step' | 'return_to_normal_ai' | 'pause_sequence' | 'cancel_sequence';
+// Team Treasury Phase T2 (GD2): distinct control vocabulary for a treasury_withdrawal request —
+// replaces (never appears alongside) the 9 ordinary ApprovalControlAction buttons for this one
+// request kind, matching the spec's "distinguish a funding request from an action-execution
+// request" requirement.
+type TreasuryApprovalControlAction = 'approve_full' | 'approve_minimum' | 'approve_partial' | 'edit_amount' | 'reject' | 'ask_cheaper' | 'emergency_only';
 interface AutomaticApprovalRuleThreshold {
   enabled: boolean;
   threshold: number;
@@ -3060,6 +3092,11 @@ interface ApprovalRequest {
   sequenceStepId?: string;
   // V6.9.1 bugfix: explicit lifecycle status, see ApprovalRequestStatus above.
   status: ApprovalRequestStatus;
+  // Team Treasury Phase T2: discriminates an ordinary action-execution request from a Treasury
+  // funding-request/withdrawal request reusing this same queue/dialog machinery (GD1/GD2) — never
+  // a second approval engine. Defaults 'ai_action' at every existing construction site.
+  requestKind: 'ai_action' | 'treasury_withdrawal';
+  treasuryRequestId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -3193,10 +3230,17 @@ const resolveAutomaticApprovalRules = (
   decision: { type: string; data?: any },
   settings: GameSettingsState,
   currentDay: number,
-  context?: { cost?: number; wager?: number; successProbability?: number; travelCost?: number }
+  context?: { cost?: number; wager?: number; successProbability?: number; travelCost?: number; requestKind?: 'ai_action' | 'treasury_withdrawal' }
 ): { outcome: 'approve' | 'reject' | 'none'; reason: string } => {
   if (!settings.teamCompetitiveAiEnabled || !settings.aiActionApprovalEnabled || !settings.aiActionApprovalAutoRulesEnabled) {
     return { outcome: 'none', reason: 'Automatic Approval Rules is off.' };
+  }
+  // Team Treasury Phase T2 (GD3): a Treasury withdrawal request must NEVER be auto-approved/
+  // auto-rejected by an ordinary-action rule (e.g. "always approve challenges" must not imply
+  // "always approve every Treasury withdrawal used for a challenge") — always routed through the
+  // normal ApprovalPolicy check instead.
+  if (context?.requestKind === 'treasury_withdrawal') {
+    return { outcome: 'none', reason: 'Automatic Approval Rules never apply to Treasury funding requests.' };
   }
   const rules = settings.aiActionApprovalAutoRules;
   if (rules.autoRejectLoans.enabled && (decision.type === 'take_advanced_loan' || decision.type === 'loan')) {
@@ -4123,6 +4167,20 @@ type GameSettingsState = {
   teamTreasuryDisableContributionDuringRecovery: boolean;
   teamTreasuryReserve: number;
   teamTreasuryDynamicReserveEnabled: boolean;
+  // Team Treasury Phase T2 (inert unless teamTreasuryEnabled): funding requests — a human/AI
+  // path to withdraw treasury funds, reachable at exactly $0.
+  teamTreasuryAllowHumanFundingRequests: boolean;
+  teamTreasuryAllowAiFundingRequests: boolean;
+  teamTreasuryAllowRequestsAtZeroCash: boolean;
+  teamTreasuryEmergencyOperatingTarget: number;
+  teamTreasuryMaxWithdrawalPerRequest: number;
+  teamTreasuryMaxWithdrawalPerActorPerDay: number;
+  teamTreasuryRequireApprovalForFriendlyAiWithdrawals: boolean;
+  teamTreasuryAllowPartialApproval: boolean;
+  teamTreasuryRequireIntendedAction: boolean;
+  teamTreasuryReturnUnusedRestrictedFunds: boolean;
+  teamTreasuryRequestCooldownDays: number;
+  teamAiTreasuryRequestsEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -5197,7 +5255,19 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamTreasuryContributionCooldownDays: 0,
   teamTreasuryDisableContributionDuringRecovery: true,
   teamTreasuryReserve: 500,
-  teamTreasuryDynamicReserveEnabled: false
+  teamTreasuryDynamicReserveEnabled: false,
+  teamTreasuryAllowHumanFundingRequests: true,
+  teamTreasuryAllowAiFundingRequests: false,
+  teamTreasuryAllowRequestsAtZeroCash: true,
+  teamTreasuryEmergencyOperatingTarget: 250,
+  teamTreasuryMaxWithdrawalPerRequest: 1000,
+  teamTreasuryMaxWithdrawalPerActorPerDay: 1500,
+  teamTreasuryRequireApprovalForFriendlyAiWithdrawals: true,
+  teamTreasuryAllowPartialApproval: true,
+  teamTreasuryRequireIntendedAction: false,
+  teamTreasuryReturnUnusedRestrictedFunds: true,
+  teamTreasuryRequestCooldownDays: 0,
+  teamAiTreasuryRequestsEnabled: false
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -5343,7 +5413,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'] },
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
-  { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled'] },
+  { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -8087,6 +8157,7 @@ const createDefaultTeamTreasuryState = (teamId: string): TeamTreasuryState => ({
   reserve: 0,
   transactions: [],
   pendingFundingRequestIds: [],
+  fundingRequests: [],
   contributionTotalsByActor: {},
   withdrawalTotalsByActor: {},
   lastContributionDay: {},
@@ -8118,6 +8189,40 @@ const sanitizeTreasuryTransaction = (value: unknown): TreasuryTransaction | null
   };
 };
 
+const TREASURY_FUNDING_REQUEST_TYPES: TreasuryFundingRequestType[] = ['emergency_cash', 'fund_specific_action', 'custom'];
+const TREASURY_FUNDING_REQUEST_STATUSES: TreasuryFundingRequestStatus[] = [
+  'pending', 'approved', 'partially_approved', 'rejected', 'cancelled', 'expired', 'fulfilled'
+];
+
+// Team Treasury Phase T2: a malformed funding request is dropped entirely, matching
+// sanitizeTreasuryTransaction's convention above.
+const sanitizeTreasuryFundingRequest = (value: unknown): TreasuryFundingRequest | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TreasuryFundingRequest>;
+  if (typeof source.id !== 'string' || typeof source.requestingActorId !== 'string' || typeof source.requestingTeamId !== 'string') return null;
+  if (!TREASURY_FUNDING_REQUEST_TYPES.includes(source.requestType as TreasuryFundingRequestType)) return null;
+  if (!TREASURY_FUNDING_REQUEST_STATUSES.includes(source.status as TreasuryFundingRequestStatus)) return null;
+  if (typeof source.requestedAmount !== 'number' || !isFinite(source.requestedAmount)) return null;
+  return {
+    id: source.id,
+    requestingActorId: source.requestingActorId,
+    requestingTeamId: source.requestingTeamId,
+    requestType: source.requestType as TreasuryFundingRequestType,
+    requestedAmount: Math.max(0, source.requestedAmount),
+    approvedAmount: typeof source.approvedAmount === 'number' && isFinite(source.approvedAmount) ? Math.max(0, source.approvedAmount) : null,
+    intendedActionType: typeof source.intendedActionType === 'string' ? source.intendedActionType as AIAction['type'] : undefined,
+    intendedActionCost: typeof source.intendedActionCost === 'number' && isFinite(source.intendedActionCost) ? Math.max(0, source.intendedActionCost) : undefined,
+    expectedBenefit: typeof source.expectedBenefit === 'number' && isFinite(source.expectedBenefit) ? source.expectedBenefit : undefined,
+    reason: typeof source.reason === 'string' ? source.reason : '',
+    status: source.status as TreasuryFundingRequestStatus,
+    createdDay: typeof source.createdDay === 'number' && isFinite(source.createdDay) ? Math.max(0, Math.floor(source.createdDay)) : 0,
+    createdTurn: typeof source.createdTurn === 'number' && isFinite(source.createdTurn) ? Math.max(0, Math.floor(source.createdTurn)) : 0,
+    resolvedDay: typeof source.resolvedDay === 'number' && isFinite(source.resolvedDay) ? Math.max(0, Math.floor(source.resolvedDay)) : undefined,
+    fulfilledAmountSpent: typeof source.fulfilledAmountSpent === 'number' && isFinite(source.fulfilledAmountSpent) ? Math.max(0, source.fulfilledAmountSpent) : undefined,
+    unusedAmountReturned: typeof source.unusedAmountReturned === 'number' && isFinite(source.unusedAmountReturned) ? Math.max(0, source.unusedAmountReturned) : undefined
+  };
+};
+
 // Team Treasury Phase T1: mirrors sanitizeTeamActionBank's always-valid-object style (never
 // null — a team always has a treasury record once the field exists) — capped to the last 60
 // transactions, same cap precedent as actionTokens/messageLog.
@@ -8146,6 +8251,9 @@ const sanitizeTeamTreasuryState = (value: unknown, teamId: string): TeamTreasury
     pendingFundingRequestIds: Array.isArray(source.pendingFundingRequestIds)
       ? source.pendingFundingRequestIds.filter((id): id is string => typeof id === 'string')
       : defaults.pendingFundingRequestIds,
+    fundingRequests: Array.isArray(source.fundingRequests)
+      ? source.fundingRequests.map(sanitizeTreasuryFundingRequest).filter((r): r is TreasuryFundingRequest => r !== null).slice(-60)
+      : defaults.fundingRequests,
     contributionTotalsByActor: recordField(source.contributionTotalsByActor, defaults.contributionTotalsByActor),
     withdrawalTotalsByActor: recordField(source.withdrawalTotalsByActor, defaults.withdrawalTotalsByActor),
     lastContributionDay: recordField(source.lastContributionDay, defaults.lastContributionDay),
@@ -8153,7 +8261,7 @@ const sanitizeTeamTreasuryState = (value: unknown, teamId: string): TeamTreasury
   };
 };
 
-const ACTION_TOKEN_SOURCES: ActionTokenSource[] = ['normal', 'shared_bank', 'lent', 'override', 'initiative', 'emergency', 'sequence'];
+const ACTION_TOKEN_SOURCES: ActionTokenSource[] = ['normal', 'shared_bank', 'lent', 'override', 'initiative', 'emergency', 'sequence', 'treasury'];
 const ACTION_TOKEN_STATUSES: ActionTokenStatus[] = ['granted', 'consumed', 'invalidated'];
 
 // V6.7 Phase 3a: never trust a persisted enum blindly (same convention as activeReservations/
@@ -8864,6 +8972,10 @@ const initialPlayerState = {
   // when spendable cash drops below economyCashFloor, stays true until economyRecoveryTarget is
   // reached. A later Sync 2.0 phase reuses this same flag rather than building a second one.
   inEconomicRecovery: false,
+  // Team Treasury Phase T2 (GD8): tracks which pending/approved fund_specific_action funding
+  // request currently authorizes this actor's next action, so executeTeamAiAction's post-success
+  // block knows which request to compute unused-funds-return against. Cleared once resolved.
+  activeTreasuryFundingRequestId: null as string | null,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -9564,6 +9676,12 @@ function AustraliaGame() {
   const [editedWagerInput, setEditedWagerInput] = useState<number | null>(null);
   const [editedCostInput, setEditedCostInput] = useState<number | null>(null);
 
+  // Team Treasury Phase T2: local form state for the "Request Team Funds" control — reused across
+  // the 3 request forms (emergency_cash/fund_specific_action/custom). Lives in the Settings Hub's
+  // Team Treasury section, matching F5 GD5's own precedent ("the Settings modal is already
+  // reachable mid-game, so no new UI surface is needed for this to be manual and immediate").
+  const [treasuryRequestForm, setTreasuryRequestForm] = useState<{ requestType: TreasuryFundingRequestType; customAmount: string; reason: string }>({ requestType: 'emergency_cash', customAmount: '', reason: '' });
+
   // Don't ask again preferences
   const [dontAskAgain, setDontAskAgain] = useState<DontAskAgainPrefs>({ ...DEFAULT_DONT_ASK });
 
@@ -10109,6 +10227,7 @@ function AustraliaGame() {
           ? Math.max(-1, Math.floor(data.vaultBaselineMilestoneIndex))
           : -1,
         inEconomicRecovery: typeof data?.inEconomicRecovery === 'boolean' ? data.inEconomicRecovery : false,
+        activeTreasuryFundingRequestId: typeof data?.activeTreasuryFundingRequestId === 'string' ? data.activeTreasuryFundingRequestId : null,
         loans,
         completedThisSeason,
         challengeMastery,
@@ -10875,7 +10994,43 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamTreasuryReserve,
 	      teamTreasuryDynamicReserveEnabled: typeof settingsData.teamTreasuryDynamicReserveEnabled === 'boolean'
 	        ? settingsData.teamTreasuryDynamicReserveEnabled
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled,
+	      teamTreasuryAllowHumanFundingRequests: typeof settingsData.teamTreasuryAllowHumanFundingRequests === 'boolean'
+	        ? settingsData.teamTreasuryAllowHumanFundingRequests
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowHumanFundingRequests,
+	      teamTreasuryAllowAiFundingRequests: typeof settingsData.teamTreasuryAllowAiFundingRequests === 'boolean'
+	        ? settingsData.teamTreasuryAllowAiFundingRequests
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowAiFundingRequests,
+	      teamTreasuryAllowRequestsAtZeroCash: typeof settingsData.teamTreasuryAllowRequestsAtZeroCash === 'boolean'
+	        ? settingsData.teamTreasuryAllowRequestsAtZeroCash
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowRequestsAtZeroCash,
+	      teamTreasuryEmergencyOperatingTarget: typeof settingsData.teamTreasuryEmergencyOperatingTarget === 'number' && isFinite(settingsData.teamTreasuryEmergencyOperatingTarget)
+	        ? Math.max(0, settingsData.teamTreasuryEmergencyOperatingTarget)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryEmergencyOperatingTarget,
+	      teamTreasuryMaxWithdrawalPerRequest: typeof settingsData.teamTreasuryMaxWithdrawalPerRequest === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerRequest)
+	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerRequest)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerRequest,
+	      teamTreasuryMaxWithdrawalPerActorPerDay: typeof settingsData.teamTreasuryMaxWithdrawalPerActorPerDay === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
+	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerActorPerDay,
+	      teamTreasuryRequireApprovalForFriendlyAiWithdrawals: typeof settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals === 'boolean'
+	        ? settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireApprovalForFriendlyAiWithdrawals,
+	      teamTreasuryAllowPartialApproval: typeof settingsData.teamTreasuryAllowPartialApproval === 'boolean'
+	        ? settingsData.teamTreasuryAllowPartialApproval
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowPartialApproval,
+	      teamTreasuryRequireIntendedAction: typeof settingsData.teamTreasuryRequireIntendedAction === 'boolean'
+	        ? settingsData.teamTreasuryRequireIntendedAction
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
+	      teamTreasuryReturnUnusedRestrictedFunds: typeof settingsData.teamTreasuryReturnUnusedRestrictedFunds === 'boolean'
+	        ? settingsData.teamTreasuryReturnUnusedRestrictedFunds
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
+	      teamTreasuryRequestCooldownDays: typeof settingsData.teamTreasuryRequestCooldownDays === 'number' && isFinite(settingsData.teamTreasuryRequestCooldownDays)
+	        ? Math.max(0, settingsData.teamTreasuryRequestCooldownDays)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
+	      teamAiTreasuryRequestsEnabled: typeof settingsData.teamAiTreasuryRequestsEnabled === 'boolean'
+	        ? settingsData.teamAiTreasuryRequestsEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -16527,7 +16682,8 @@ function AustraliaGame() {
       createdAtTurn: gameState.day,
       sequenceId: sequenceContext?.sequenceId,
       sequenceStepId: sequenceContext?.stepId,
-      status: 'pending'
+      status: 'pending',
+      requestKind: 'ai_action'
     };
   }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName]);
 
@@ -16556,6 +16712,10 @@ function AustraliaGame() {
   // declaration — safe because the read only ever happens inside a later-invoked callback, never
   // as a bare synchronous statement during render.
   const resumeAfterApprovalResolutionRef = useRef<((actorId: string, control: ApprovalControlAction, editedFields?: { cost?: number; wager?: number }) => Promise<void>) | null>(null);
+  // Team Treasury Phase T2: same TDZ-safe ref-indirection pattern — resolveTreasuryFundingRequest
+  // depends on contributeToTeamTreasury/getTreasuryAvailableAmount (declared much later), so it's
+  // read through a ref assigned right after its own real declaration.
+  const resolveTreasuryFundingRequestRef = useRef<((requestId: string, control: TreasuryApprovalControlAction, editedAmount?: number) => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -16594,6 +16754,28 @@ function AustraliaGame() {
     resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation]);
 
+  // Team Treasury Phase T2 (GD1/GD2): a treasury_withdrawal request's own resolution dispatcher —
+  // deliberately separate from resolveApprovalRequest's ApprovalControlAction union (a treasury
+  // request never executes an AIAction, so resumeAfterApprovalResolution's action-execution
+  // machinery must never be invoked for it) — but it removes the request from the SAME
+  // pendingApprovalRequests queue and closes the SAME confirmation dialog, since both request
+  // kinds share one queue/dialog pipeline per GD1.
+  const resolveTreasuryApprovalRequest = useCallback((
+    requestId: string,
+    control: TreasuryApprovalControlAction,
+    editedAmount?: number
+  ) => {
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== requestId));
+    if (confirmationDialog.data?.requestId === requestId) {
+      closeConfirmation();
+    }
+    resolveTreasuryFundingRequestRef.current?.(request.treasuryRequestId || '', control, editedAmount);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation]);
+
   // V6.9.1 bugfix (Bug 8): the single authoritative approval-queue processor. Whenever no dialog is
   // currently open and a 'pending' ApprovalRequest exists, this effect opens it — replacing the 3
   // scattered inline `if (!confirmationDialog.isOpen) { showConfirmation(...) }` checks that used to
@@ -16605,8 +16787,11 @@ function AustraliaGame() {
     const next = pendingApprovalRequests.find(r => r.status === 'pending');
     if (!next) return;
     setPendingApprovalRequests(prev => prev.map(r => r.id === next.id ? { ...r, status: 'displayed' as ApprovalRequestStatus } : r));
-    showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', next.actionSummary, 'Approve', () => resolveApprovalRequest(next.id, 'approve'), { requestId: next.id });
-  }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest]);
+    const onConfirmDefault = next.requestKind === 'treasury_withdrawal'
+      ? () => resolveTreasuryApprovalRequest(next.id, 'approve_full')
+      : () => resolveApprovalRequest(next.id, 'approve');
+    showConfirmation('aiActionApprovalRequest', next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds' : 'Teammate proposes an action', next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
+  }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest]);
 
   // V6.9.1 bugfix (Bug 6, GD8): reset the edit inputs to the newly-displayed request's own current
   // wager/cost whenever the displayed request changes, so the fields always start at a real,
@@ -19690,6 +19875,351 @@ function AustraliaGame() {
       }
     }));
   }, [deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState]);
+
+  // Team Treasury Phase T2 (GD5): the shared entry point for all 3 request forms (emergency_cash /
+  // fund_specific_action / custom). Always reachable at exactly $0 — never gated on the requester
+  // already having money. Pushes a 'pending' TreasuryFundingRequest onto team.treasury.fundingRequests
+  // and keeps pendingFundingRequestIds in sync (maintained-not-derived, matching actionTokens' style).
+  const createTreasuryFundingRequest = useCallback((
+    actorId: string,
+    form: { requestType: TreasuryFundingRequestType; customAmount?: number; intendedActionType?: AIAction['type']; intendedActionCost?: number; expectedBenefit?: number; reason?: string }
+  ): TreasuryFundingRequest | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamTreasuryEnabled) return null;
+    const actor = getActorState(actorId);
+    if (!actor) return null;
+    const team = teamsByIdRef.current[actor.teamId];
+    if (!team) return null;
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    if (spendableCash > 0 && !gameSettings.teamTreasuryAllowRequestsAtZeroCash && spendableCash >= gameSettings.teamTreasuryEmergencyOperatingTarget) return null;
+    let requestedAmount = 0;
+    if (form.requestType === 'emergency_cash') {
+      requestedAmount = Math.max(0, gameSettings.teamTreasuryEmergencyOperatingTarget - spendableCash);
+    } else if (form.requestType === 'fund_specific_action') {
+      if (gameSettings.teamTreasuryRequireIntendedAction && (!form.intendedActionType || typeof form.intendedActionCost !== 'number')) return null;
+      requestedAmount = Math.max(0, (form.intendedActionCost || 0) - spendableCash);
+    } else {
+      requestedAmount = Math.max(1, Math.floor(Number(form.customAmount) || 0));
+    }
+    requestedAmount = Math.min(requestedAmount, gameSettings.teamTreasuryMaxWithdrawalPerRequest);
+    if (requestedAmount <= 0) return null;
+    if (gameSettings.teamTreasuryRequestCooldownDays > 0) {
+      const recentSameActor = team.treasury.fundingRequests.filter(r => r.requestingActorId === actorId && r.status === 'pending');
+      if (recentSameActor.some(r => (gameState.day - r.createdDay) < gameSettings.teamTreasuryRequestCooldownDays)) return null;
+    }
+    const request: TreasuryFundingRequest = {
+      id: `treasury_req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      requestingActorId: actorId,
+      requestingTeamId: actor.teamId,
+      requestType: form.requestType,
+      requestedAmount,
+      approvedAmount: null,
+      intendedActionType: form.intendedActionType,
+      intendedActionCost: form.intendedActionCost,
+      expectedBenefit: form.expectedBenefit,
+      reason: form.reason || (form.requestType === 'emergency_cash' ? 'Emergency cash to restore basic operating balance.' : form.requestType === 'fund_specific_action' ? `Funding shortfall for ${form.intendedActionType || 'an action'}.` : 'Custom request.'),
+      status: 'pending',
+      createdDay: gameState.day,
+      createdTurn: gameState.turnCounter
+    };
+    updateTeamState(actor.teamId, prev => ({
+      ...prev,
+      treasury: {
+        ...prev.treasury,
+        fundingRequests: [...prev.treasury.fundingRequests, request].slice(-60),
+        pendingFundingRequestIds: [...prev.treasury.pendingFundingRequestIds, request.id]
+      }
+    }));
+    return request;
+  }, [gameSettings, gameState.day, gameState.turnCounter, getActorState, updateTeamState]);
+
+  // Team Treasury Phase T2 (GD1/GD2): constructs an ApprovalRequest-shaped object with
+  // requestKind: 'treasury_withdrawal', reusing the SAME pendingApprovalRequests queue/dialog/
+  // resolution pipeline as ordinary action-execution requests — never a second approval engine.
+  const buildTreasuryApprovalRequest = useCallback((
+    request: TreasuryFundingRequest,
+    actor: ActorState,
+    actionsRemaining: number
+  ): ApprovalRequest => {
+    const team = teamsByIdRef.current[actor.teamId];
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const syntheticDecision = {
+      type: 'request_team_funds' as AIAction['type'],
+      description: `${getActorDisplayName(actor.id)} requests $${request.requestedAmount} from the Team Treasury: ${request.reason}`,
+      data: {},
+      score: 0,
+      plan: undefined
+    } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_treasury_${request.id}`,
+      actorId: actor.id,
+      teamId: actor.teamId,
+      decision: syntheticDecision,
+      actionSummary: syntheticDecision.description,
+      targetLabel: 'Team Treasury',
+      cost: request.requestedAmount,
+      wager: null,
+      percentCashAtRisk: null,
+      expectedReward: request.expectedBenefit ?? null,
+      successProbability: null,
+      minCashRemaining: spendableCash,
+      vaultEffect: gameSettings.teamCashVaultEnabled
+        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+        : 'Vault inactive.',
+      governorRuling: `Treasury balance: $${team?.treasury.balance ?? 0}, reserve: $${team?.treasury.reserve ?? 0}, available: $${team ? getTreasuryAvailableAmount(team) : 0}.`,
+      requirementsSummary: request.reason,
+      aiExplanation: request.reason,
+      fallbackAvailable: true,
+      actionsRemaining,
+      categoryBucket: 'wait' as TeamModeActionCategory,
+      createdAtTurn: gameState.day,
+      status: 'pending',
+      requestKind: 'treasury_withdrawal',
+      treasuryRequestId: request.id
+    };
+  }, [gameSettings, gameState.day, getActorDisplayName, getTreasuryAvailableAmount]);
+
+  // Team Treasury Phase T2 (GD1/GD6): applies a resolution outcome to a pending
+  // TreasuryFundingRequest — the mirror image of contributeToTeamTreasury's atomicity (credits the
+  // actor, debits the treasury, records one TreasuryTransaction, updates the request's status in
+  // the SAME call), never leaving a half-applied withdrawal visible to a rerender/reload. Never
+  // exceeds the requested amount, the treasury's available balance, or the per-request/per-actor-
+  // per-day caps — the balance can never go negative.
+  const resolveTreasuryFundingRequest = useCallback((
+    requestId: string,
+    control: TreasuryApprovalControlAction,
+    editedAmount?: number
+  ): void => {
+    if (!requestId) return;
+    const teamId = [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].find(tid => teamsByIdRef.current[tid]?.treasury.fundingRequests.some(r => r.id === requestId));
+    if (!teamId) return;
+    const team = teamsByIdRef.current[teamId];
+    const request = team.treasury.fundingRequests.find(r => r.id === requestId);
+    if (!request || request.status !== 'pending') return;
+    const actor = getActorState(request.requestingActorId);
+    if (!actor) return;
+
+    const rejectRequest = (reasonSuffix: string) => {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        treasury: {
+          ...prev.treasury,
+          pendingFundingRequestIds: prev.treasury.pendingFundingRequestIds.filter(id => id !== requestId),
+          fundingRequests: prev.treasury.fundingRequests.map(r => r.id === requestId
+            ? { ...r, status: 'rejected' as TreasuryFundingRequestStatus, approvedAmount: null, resolvedDay: gameState.day }
+            : r)
+        }
+      }));
+      addNotification(`Team Treasury request rejected: ${reasonSuffix}`, actor.kind === 'human' ? 'info' : 'ai', false, 'system');
+    };
+
+    if (control === 'reject' || control === 'ask_cheaper') {
+      rejectRequest(control === 'ask_cheaper' ? 'AI was asked to choose a cheaper action instead.' : 'Request rejected.');
+      return;
+    }
+
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const available = getTreasuryAvailableAmount(team);
+    let amount = 0;
+    if (control === 'approve_full') {
+      amount = request.requestedAmount;
+    } else if (control === 'approve_minimum') {
+      amount = request.requestType === 'emergency_cash'
+        ? Math.max(0, gameSettings.teamTreasuryEmergencyOperatingTarget - spendableCash)
+        : request.requestedAmount;
+    } else if (control === 'approve_partial' || control === 'edit_amount') {
+      amount = Math.max(0, Math.floor(Number(editedAmount) || 0));
+    } else if (control === 'emergency_only') {
+      amount = Math.max(0, gameSettings.teamTreasuryEmergencyOperatingTarget - spendableCash);
+    }
+    amount = Math.min(amount, request.requestedAmount, available, gameSettings.teamTreasuryMaxWithdrawalPerRequest);
+    const dailyWithdrawnSoFar = team.treasury.transactions
+      .filter(t => t.actorId === request.requestingActorId && t.day === gameState.day && (t.type === 'approved_funding_request' || t.type === 'partial_funding_approval' || t.type === 'emergency_zero_cash_support'))
+      .reduce((sum, t) => sum + t.amount, 0);
+    amount = Math.min(amount, Math.max(0, gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay - dailyWithdrawnSoFar));
+    if (amount <= 0) {
+      rejectRequest('No funds could be approved (Treasury shortage or the daily withdrawal limit was reached).');
+      return;
+    }
+    const partial = amount < request.requestedAmount;
+    const balanceBefore = team.treasury.balance;
+    const balanceAfter = Math.max(0, balanceBefore - amount);
+    const transaction: TreasuryTransaction = {
+      id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      day: gameState.day,
+      turn: gameState.turnCounter,
+      teamId,
+      actorId: request.requestingActorId,
+      type: partial ? 'partial_funding_approval' : 'approved_funding_request',
+      amount,
+      balanceBefore,
+      balanceAfter,
+      reason: `${getActorDisplayName(request.requestingActorId)}'s Team Treasury request approved for $${amount}${partial ? ' (partial)' : ''}.`,
+      fundingRequestId: requestId,
+      automatic: false
+    };
+    updateActorState(request.requestingActorId, prev => ({
+      ...prev,
+      money: prev.money + amount,
+      // Team Treasury Phase T2 (GD8): earmark this approval so executeTeamAiAction's post-success
+      // block can compute unused-funds-return once the intended action actually executes.
+      activeTreasuryFundingRequestId: request.requestType === 'fund_specific_action' ? requestId : prev.activeTreasuryFundingRequestId
+    }));
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      treasury: {
+        ...prev.treasury,
+        balance: balanceAfter,
+        totalWithdrawn: prev.treasury.totalWithdrawn + amount,
+        withdrawalTotalsByActor: {
+          ...prev.treasury.withdrawalTotalsByActor,
+          [request.requestingActorId]: (prev.treasury.withdrawalTotalsByActor[request.requestingActorId] || 0) + amount
+        },
+        lastWithdrawalDay: { ...prev.treasury.lastWithdrawalDay, [request.requestingActorId]: gameState.day },
+        transactions: [...prev.treasury.transactions, transaction].slice(-60),
+        pendingFundingRequestIds: prev.treasury.pendingFundingRequestIds.filter(id => id !== requestId),
+        fundingRequests: prev.treasury.fundingRequests.map(r => r.id === requestId
+          ? { ...r, status: (partial ? 'partially_approved' : 'approved') as TreasuryFundingRequestStatus, approvedAmount: amount, resolvedDay: gameState.day }
+          : r)
+      }
+    }));
+    addNotification(`${getActorDisplayName(request.requestingActorId)} received $${amount} from the Team Treasury${partial ? ' (partial approval)' : ''}.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
+  }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState]);
+  resolveTreasuryFundingRequestRef.current = resolveTreasuryFundingRequest;
+
+  // Team Treasury Phase T2 (GD8): called once the intended action a fund_specific_action request
+  // authorized has actually executed. Always marks the request 'fulfilled' + records
+  // fulfilledAmountSpent, clears the actor's active-funding-request pointer, and — only when
+  // teamTreasuryReturnUnusedRestrictedFunds is on and a positive amount remains — auto-returns the
+  // unused restricted-purpose leftover to the treasury (never touching unrelated personal cash).
+  // General emergency-cash requests' unused portion intentionally remains personal (spec's explicit
+  // carve-out) and never reaches this function (only wired for fund_specific_action requests).
+  const returnUnusedTreasuryFunds = useCallback((requestId: string, actorId: string, actualCost: number) => {
+    const teamId = [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].find(tid => teamsByIdRef.current[tid]?.treasury.fundingRequests.some(r => r.id === requestId));
+    if (!teamId) return;
+    const team = teamsByIdRef.current[teamId];
+    const request = team.treasury.fundingRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'fulfilled') return;
+    const approved = request.approvedAmount || 0;
+    const unused = gameSettings.teamTreasuryReturnUnusedRestrictedFunds ? Math.max(0, Math.min(approved, approved - actualCost)) : 0;
+    updateActorState(actorId, prev => ({
+      ...prev,
+      money: unused > 0 ? deductMoney(prev.money, unused) : prev.money,
+      activeTreasuryFundingRequestId: null
+    }));
+    if (unused > 0) {
+      const balanceBefore = team.treasury.balance;
+      const balanceAfter = balanceBefore + unused;
+      const transaction: TreasuryTransaction = {
+        id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        day: gameState.day,
+        turn: gameState.turnCounter,
+        teamId,
+        actorId,
+        type: 'unused_funds_return',
+        amount: unused,
+        balanceBefore,
+        balanceAfter,
+        reason: `${getActorDisplayName(actorId)} returned $${unused} of unused Team Treasury funds.`,
+        fundingRequestId: requestId,
+        automatic: true
+      };
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        treasury: {
+          ...prev.treasury,
+          balance: balanceAfter,
+          transactions: [...prev.treasury.transactions, transaction].slice(-60),
+          fundingRequests: prev.treasury.fundingRequests.map(r => r.id === requestId
+            ? { ...r, status: 'fulfilled' as TreasuryFundingRequestStatus, fulfilledAmountSpent: actualCost, unusedAmountReturned: unused }
+            : r)
+        }
+      }));
+    } else {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        treasury: {
+          ...prev.treasury,
+          fundingRequests: prev.treasury.fundingRequests.map(r => r.id === requestId
+            ? { ...r, status: 'fulfilled' as TreasuryFundingRequestStatus, fulfilledAmountSpent: actualCost, unusedAmountReturned: 0 }
+            : r)
+        }
+      }));
+    }
+  }, [deductMoney, gameSettings.teamTreasuryReturnUnusedRestrictedFunds, gameState.day, gameState.turnCounter, getActorDisplayName, updateActorState, updateTeamState]);
+
+  // Team Treasury Phase T2 (GD6): friendly AI evaluates a human's (or another actor's) funding
+  // request. Reuses already-existing signals — never a new scoring system: getTreasuryAvailableAmount
+  // (partial-approval math), spendable cash near/at zero (zero-cash priority, "approve enough to
+  // restore basic participation" per spec, but never unlimited), and this actor's own recent
+  // funding-request history (a lightweight nudge toward suggesting a smaller amount, never a
+  // permanent reputation system — only the last few requests on the capped fundingRequests array).
+  const evaluateHumanFundingRequestResolution = useCallback((request: TreasuryFundingRequest): {
+    outcome: 'approve_full' | 'approve_partial' | 'approve_emergency' | 'reject' | 'suggest_cheaper' | 'delay';
+    approvedAmount: number;
+    reason: string;
+  } => {
+    const team = teamsByIdRef.current[request.requestingTeamId];
+    const requester = getActorState(request.requestingActorId);
+    if (!team || !requester) return { outcome: 'reject', approvedAmount: 0, reason: 'Requesting actor or team could not be found.' };
+    const spendableCash = getActorSpendableCash(requester, gameSettings.teamCashVaultEnabled);
+    const available = getTreasuryAvailableAmount(team);
+    const cap = gameSettings.teamTreasuryMaxWithdrawalPerRequest;
+    if (available <= 0) return { outcome: 'delay', approvedAmount: 0, reason: 'The Team Treasury has no available funds right now — try again once it recovers.' };
+    const recentSameActor = team.treasury.fundingRequests.filter(r => r.requestingActorId === request.requestingActorId && r.id !== request.id).slice(-3);
+    const recentUnproductive = recentSameActor.filter(r => r.status === 'fulfilled' && (r.fulfilledAmountSpent || 0) < (r.approvedAmount || 0) * 0.5).length;
+    if (recentUnproductive >= 2 && request.requestType !== 'emergency_cash') {
+      return { outcome: 'suggest_cheaper', approvedAmount: Math.min(request.requestedAmount, available, cap) * 0.5, reason: 'Recent Team Treasury requests left most of the approved funds unspent — suggesting a smaller, more specific amount.' };
+    }
+    const nearZeroCash = spendableCash <= gameSettings.teamTreasuryEmergencyOperatingTarget * 0.1;
+    if (nearZeroCash) {
+      const amount = Math.min(request.requestedAmount, available, cap);
+      return { outcome: request.requestType === 'emergency_cash' ? 'approve_emergency' : 'approve_full', approvedAmount: amount, reason: 'Zero-cash priority: approving enough to restore basic participation while the team stays solvent.' };
+    }
+    if (available < request.requestedAmount) {
+      return { outcome: 'approve_partial', approvedAmount: Math.min(available, cap), reason: 'The Team Treasury cannot fully cover this request — approving the available amount instead.' };
+    }
+    return { outcome: 'approve_full', approvedAmount: Math.min(request.requestedAmount, cap), reason: 'Request is affordable and the team stays solvent.' };
+  }, [gameSettings, getActorState, getTreasuryAvailableAmount]);
+
+  // Team Treasury Phase T2 (GD7): AI-AI team-policy mirror of evaluateHumanFundingRequestResolution
+  // — used only in AI-AI mode (no human on the requester's team) or when the human-approval setting
+  // is off, so the request never needs a human pause. Reuses the exact same evaluator logic (never a
+  // second scoring system) — both teams use equivalent logic per their own settings/difficulty, per
+  // the spec's explicit symmetry requirement.
+  const evaluateAiTeamFundingPolicy = useCallback((request: TreasuryFundingRequest) => {
+    return evaluateHumanFundingRequestResolution(request);
+  }, [evaluateHumanFundingRequestResolution]);
+
+  // Team Treasury Phase T2 (GD5/GD6): the human-facing "Request Team Funds" submit path. Always
+  // reachable at exactly $0 — createTreasuryFundingRequest never gates on the requester already
+  // having money. Routes to the SAME approval pipeline (buildTreasuryApprovalRequest) when Approval
+  // is enabled and teamTreasuryRequireApprovalForFriendlyAiWithdrawals is on; otherwise resolves the
+  // request immediately using evaluateHumanFundingRequestResolution's outcome — never silently
+  // withdraws when player approval is required (GD9's non-negotiable rule, applied symmetrically).
+  const submitTreasuryFundingRequest = useCallback((actorId: string, form: { requestType: TreasuryFundingRequestType; customAmount?: number; intendedActionType?: AIAction['type']; intendedActionCost?: number; reason?: string }) => {
+    const request = createTreasuryFundingRequest(actorId, form);
+    if (!request) {
+      addNotification('Team Treasury request could not be created (check your Treasury settings or request amount).', 'error', false, 'system');
+      return;
+    }
+    const actor = getActorState(actorId);
+    const autoResolve = !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
+    if (!autoResolve && actor) {
+      const approvalRequest = buildTreasuryApprovalRequest(request, actor, 0);
+      setPendingApprovalRequests(prev => [...prev, approvalRequest]);
+      return;
+    }
+    const resolution = evaluateHumanFundingRequestResolution(request);
+    if (resolution.outcome === 'delay') return;
+    const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
+      approve_full: 'approve_full',
+      approve_partial: 'approve_partial',
+      approve_emergency: 'emergency_only',
+      reject: 'reject',
+      suggest_cheaper: 'ask_cheaper'
+    };
+    resolveTreasuryFundingRequest(request.id, controlByOutcome[resolution.outcome] || 'reject', resolution.approvedAmount);
+  }, [addNotification, createTreasuryFundingRequest, buildTreasuryApprovalRequest, evaluateHumanFundingRequestResolution, gameSettings, getActorState, resolveTreasuryFundingRequest]);
 
   const transferResource = useCallback((fromActorId: string, toActorId: string, resource: string, rawQuantity: number, options?: {
     isAiSupport?: boolean;
@@ -22887,11 +23417,25 @@ function AustraliaGame() {
           }
         }
       }
+      // Team Treasury Phase T2 (GD8): if this actor had Treasury funds earmarked for a specific
+      // action and the JUST-EXECUTED action matches that request's intended action type, finalize
+      // the request (marks 'fulfilled', auto-returns any unused portion). Uses the actor's
+      // pre-execution activeTreasuryFundingRequestId (captured on `actor`, before this action ran).
+      if (isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled && actor.activeTreasuryFundingRequestId) {
+        const fundingTeam = teamsByIdRef.current[actor.teamId];
+        const fundingRequest = fundingTeam?.treasury.fundingRequests.find(r => r.id === actor.activeTreasuryFundingRequestId);
+        if (fundingRequest && fundingRequest.requestType === 'fund_specific_action' && fundingRequest.intendedActionType === action.type) {
+          const actualCost = typeof action.data?.wager === 'number' ? action.data.wager
+            : typeof action.data?.purchases?.[0]?.cost === 'number' ? action.data.purchases[0].cost
+            : (fundingRequest.intendedActionCost || 0);
+          returnUnusedTreasuryFunds(fundingRequest.id, actorId, actualCost);
+        }
+      }
       await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
     }
 
     return actionSucceeded;
-  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
+  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
 
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -26452,6 +26996,52 @@ function AustraliaGame() {
       }
     }
 
+    // Team Treasury Phase T2 (GD7): minimal AI-teammate zero-cash funding-request trigger —
+    // checked once at turn start, consuming zero ordinary budget, matching the Emergency
+    // Action/Guaranteed Recovery Protocol precedents above. Deliberately narrow this phase (true
+    // zero-cash + no affordable top candidate only) — the full 12-tier recovery-ladder search is
+    // Phase T4's job. Never creates a duplicate request while one is already pending for this actor.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled && gameSettings.teamAiTreasuryRequestsEnabled && actor.kind === 'ai') {
+      const treasurySpendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+      if (treasurySpendableCash <= 0) {
+        const topCandidate = getRankedTeamAiDecisions(actor.id)[0];
+        const topCandidateCost = typeof topCandidate?.data?.wager === 'number' ? topCandidate.data.wager
+          : typeof topCandidate?.data?.purchases?.[0]?.cost === 'number' ? topCandidate.data.purchases[0].cost
+          : 0;
+        if (topCandidate && topCandidateCost > treasurySpendableCash) {
+          const treasuryTeam = teamsByIdRef.current[actor.teamId];
+          const hasPendingRequest = treasuryTeam?.treasury.fundingRequests.some(r => r.requestingActorId === actor.id && r.status === 'pending');
+          if (!hasPendingRequest) {
+            const treasuryRequest = createTreasuryFundingRequest(actor.id, {
+              requestType: 'fund_specific_action',
+              intendedActionType: topCandidate.type,
+              intendedActionCost: topCandidateCost,
+              expectedBenefit: topCandidate.plan?.expectedValue,
+              reason: `${getActorDisplayName(actor.id)} has $0 and needs $${Math.max(0, topCandidateCost - treasurySpendableCash)} more to attempt ${topCandidate.type}.`
+            });
+            if (treasuryRequest) {
+              const teammatesOnTeam = getTeamActors(actor.teamId);
+              const hasHumanTeammate = teammatesOnTeam.some(a => a.kind === 'human');
+              const autoResolveTreasuryRequest = !hasHumanTeammate || !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
+              if (autoResolveTreasuryRequest) {
+                const policyResolution = evaluateAiTeamFundingPolicy(treasuryRequest);
+                if (policyResolution.outcome !== 'delay') {
+                  const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
+                    approve_full: 'approve_full', approve_partial: 'approve_partial',
+                    approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper'
+                  };
+                  resolveTreasuryFundingRequest(treasuryRequest.id, controlByOutcome[policyResolution.outcome] || 'reject', policyResolution.approvedAmount);
+                }
+              } else {
+                const treasuryApprovalRequest = buildTreasuryApprovalRequest(treasuryRequest, actor, actionBudget - actionsTaken);
+                setPendingApprovalRequests(prev => [...prev, treasuryApprovalRequest]);
+              }
+            }
+          }
+        }
+      }
+    }
+
     addNotification(`🤖 ${actor.displayName || actor.name}'s turn begins`, 'ai', true);
 
     // Hardening (post-PR-#60): guarantee finishTeamAiTurn (and thus SET_AI_THINKING reset) always
@@ -26813,7 +27403,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -29270,7 +29860,19 @@ function AustraliaGame() {
       teamTreasuryContributionCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryContributionCooldownDays,
       teamTreasuryDisableContributionDuringRecovery: DEFAULT_GAME_SETTINGS.teamTreasuryDisableContributionDuringRecovery,
       teamTreasuryReserve: DEFAULT_GAME_SETTINGS.teamTreasuryReserve,
-      teamTreasuryDynamicReserveEnabled: DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled
+      teamTreasuryDynamicReserveEnabled: DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled,
+      teamTreasuryAllowHumanFundingRequests: DEFAULT_GAME_SETTINGS.teamTreasuryAllowHumanFundingRequests,
+      teamTreasuryAllowAiFundingRequests: DEFAULT_GAME_SETTINGS.teamTreasuryAllowAiFundingRequests,
+      teamTreasuryAllowRequestsAtZeroCash: DEFAULT_GAME_SETTINGS.teamTreasuryAllowRequestsAtZeroCash,
+      teamTreasuryEmergencyOperatingTarget: DEFAULT_GAME_SETTINGS.teamTreasuryEmergencyOperatingTarget,
+      teamTreasuryMaxWithdrawalPerRequest: DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerRequest,
+      teamTreasuryMaxWithdrawalPerActorPerDay: DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerActorPerDay,
+      teamTreasuryRequireApprovalForFriendlyAiWithdrawals: DEFAULT_GAME_SETTINGS.teamTreasuryRequireApprovalForFriendlyAiWithdrawals,
+      teamTreasuryAllowPartialApproval: DEFAULT_GAME_SETTINGS.teamTreasuryAllowPartialApproval,
+      teamTreasuryRequireIntendedAction: DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
+      teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
+      teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
+      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -29402,7 +30004,19 @@ function AustraliaGame() {
       teamTreasuryContributionCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryContributionCooldownDays,
       teamTreasuryDisableContributionDuringRecovery: DEFAULT_GAME_SETTINGS.teamTreasuryDisableContributionDuringRecovery,
       teamTreasuryReserve: DEFAULT_GAME_SETTINGS.teamTreasuryReserve,
-      teamTreasuryDynamicReserveEnabled: DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled
+      teamTreasuryDynamicReserveEnabled: DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled,
+      teamTreasuryAllowHumanFundingRequests: DEFAULT_GAME_SETTINGS.teamTreasuryAllowHumanFundingRequests,
+      teamTreasuryAllowAiFundingRequests: DEFAULT_GAME_SETTINGS.teamTreasuryAllowAiFundingRequests,
+      teamTreasuryAllowRequestsAtZeroCash: DEFAULT_GAME_SETTINGS.teamTreasuryAllowRequestsAtZeroCash,
+      teamTreasuryEmergencyOperatingTarget: DEFAULT_GAME_SETTINGS.teamTreasuryEmergencyOperatingTarget,
+      teamTreasuryMaxWithdrawalPerRequest: DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerRequest,
+      teamTreasuryMaxWithdrawalPerActorPerDay: DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerActorPerDay,
+      teamTreasuryRequireApprovalForFriendlyAiWithdrawals: DEFAULT_GAME_SETTINGS.teamTreasuryRequireApprovalForFriendlyAiWithdrawals,
+      teamTreasuryAllowPartialApproval: DEFAULT_GAME_SETTINGS.teamTreasuryAllowPartialApproval,
+      teamTreasuryRequireIntendedAction: DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
+      teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
+      teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
+      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -32242,7 +32856,136 @@ function AustraliaGame() {
                               />
                               <span>{gameSettings.teamTreasuryDynamicReserveEnabled ? '☑' : '☐'} Dynamic Reserve (scales with teammate count, day progress, recovery-actor count, and endgame state — otherwise fixed)</span>
                             </label>
+
+                            <div className="pt-2 border-t border-opacity-20">
+                              <div className="font-semibold text-sm mb-1">Funding Requests (Phase T2)</div>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryAllowHumanFundingRequests)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowHumanFundingRequests: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryAllowHumanFundingRequests ? '☑' : '☐'} Allow Human Funding Requests</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamAiTreasuryRequestsEnabled)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiTreasuryRequestsEnabled: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamAiTreasuryRequestsEnabled ? '☑' : '☐'} Allow AI Teammate Funding Requests</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryAllowRequestsAtZeroCash)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowRequestsAtZeroCash: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryAllowRequestsAtZeroCash ? '☑' : '☐'} Guarantee Requests Are Reachable at $0</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequireApprovalForFriendlyAiWithdrawals: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals ? '☑' : '☐'} Require Player Approval for Friendly Withdrawals</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryAllowPartialApproval)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowPartialApproval: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryAllowPartialApproval ? '☑' : '☐'} Allow Partial Approval</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryRequireIntendedAction)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequireIntendedAction: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryRequireIntendedAction ? '☑' : '☐'} Require an Intended Action for "Fund a Specific Action" Requests</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamTreasuryReturnUnusedRestrictedFunds)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryReturnUnusedRestrictedFunds: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamTreasuryReturnUnusedRestrictedFunds ? '☑' : '☐'} Auto-Return Unused Restricted-Purpose Funds</span>
+                              </label>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                <div>
+                                  <label className="block font-semibold mb-2">Emergency Operating Target: ${gameSettings.teamTreasuryEmergencyOperatingTarget}</label>
+                                  <input type="range" min="0" max="1000" step="25" value={gameSettings.teamTreasuryEmergencyOperatingTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryEmergencyOperatingTarget: parseInt(e.target.value) }))} className="w-full" />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold mb-2">Max Withdrawal / Request: ${gameSettings.teamTreasuryMaxWithdrawalPerRequest}</label>
+                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerRequest} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMaxWithdrawalPerRequest: parseInt(e.target.value) }))} className="w-full" />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold mb-2">Max Withdrawal / Actor / Day: ${gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay}</label>
+                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMaxWithdrawalPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold mb-2">Request Cooldown: {gameSettings.teamTreasuryRequestCooldownDays} day(s)</label>
+                                  <input type="range" min="0" max="10" step="1" value={gameSettings.teamTreasuryRequestCooldownDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequestCooldownDays: parseInt(e.target.value) }))} className="w-full" />
+                                </div>
+                              </div>
+                            </div>
                           </>
+                        )}
+
+                        {/* Team Treasury Phase T2 (GD5): always-reachable "Request Team Funds" control —
+                            never gated on the human player already having money, never hidden inside a
+                            menu disabled for lacking cash. Visible in both Basic and Advanced view modes,
+                            matching F5 GD5's own precedent that the Settings modal is a valid, always-
+                            reachable surface for a manual, immediate control mid-game. */}
+                        {gameSettings.teamTreasuryAllowHumanFundingRequests && (
+                          <div className="pt-2 border-t border-opacity-20 space-y-2">
+                            <div className="font-semibold text-sm">Request Team Funds</div>
+                            <div className="text-xs opacity-70">Reachable at any cash balance, including exactly $0.</div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                              <button
+                                onClick={() => setTreasuryRequestForm(prev => ({ ...prev, requestType: 'emergency_cash' }))}
+                                className={`${treasuryRequestForm.requestType === 'emergency_cash' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}
+                              >Emergency Cash</button>
+                              <button
+                                onClick={() => setTreasuryRequestForm(prev => ({ ...prev, requestType: 'fund_specific_action' }))}
+                                className={`${treasuryRequestForm.requestType === 'fund_specific_action' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}
+                              >Fund a Specific Action</button>
+                              <button
+                                onClick={() => setTreasuryRequestForm(prev => ({ ...prev, requestType: 'custom' }))}
+                                className={`${treasuryRequestForm.requestType === 'custom' ? themeStyles.button + ' text-white' : themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}
+                              >Custom</button>
+                            </div>
+                            {treasuryRequestForm.requestType === 'custom' && (
+                              <input
+                                type="number"
+                                min={1}
+                                placeholder="Amount"
+                                value={treasuryRequestForm.customAmount}
+                                onChange={(e) => setTreasuryRequestForm(prev => ({ ...prev, customAmount: e.target.value }))}
+                                className={`${themeStyles.border} border rounded px-2 py-1 w-full bg-transparent text-sm`}
+                              />
+                            )}
+                            <input
+                              type="text"
+                              placeholder="Reason (optional)"
+                              value={treasuryRequestForm.reason}
+                              onChange={(e) => setTreasuryRequestForm(prev => ({ ...prev, reason: e.target.value }))}
+                              className={`${themeStyles.border} border rounded px-2 py-1 w-full bg-transparent text-sm`}
+                            />
+                            <button
+                              onClick={() => submitTreasuryFundingRequest('player', {
+                                requestType: treasuryRequestForm.requestType,
+                                customAmount: treasuryRequestForm.requestType === 'custom' ? parseFloat(treasuryRequestForm.customAmount) || 0 : undefined,
+                                reason: treasuryRequestForm.reason || undefined
+                              })}
+                              className={`${themeStyles.button} text-white px-4 py-2 rounded-lg font-semibold w-full`}
+                            >Submit Request</button>
+                          </div>
                         )}
                       </>
                     )}
@@ -37861,7 +38604,7 @@ function AustraliaGame() {
 
           {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
             const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
-            if (!request) return null;
+            if (!request || request.requestKind !== 'ai_action') return null;
             const otherPendingCount = pendingApprovalRequests.length - 1;
             const fmtNum = (n: number | null) => n === null ? 'n/a' : `$${Math.round(n).toLocaleString()}`;
             const fmtPct = (n: number | null) => n === null ? 'n/a' : `${Math.round(n * 100)}%`;
@@ -37926,7 +38669,55 @@ function AustraliaGame() {
             );
           })()}
 
-          {confirmationDialog.type === 'aiActionApprovalRequest' ? (
+          {/* Team Treasury Phase T2 (GD2): a distinct info panel for a treasury_withdrawal request —
+              never rendered alongside the ordinary ai_action panel above (mutually exclusive per
+              requestKind). Shows requested amount, current personal/spendable/protected cash,
+              Treasury balance/reserve/available, and the intended action + cost when present. */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'treasury_withdrawal') return null;
+            const actor = getActorState(request.actorId);
+            const team = actor ? teamsByIdRef.current[actor.teamId] : undefined;
+            const treasuryRequest = team?.treasury.fundingRequests.find(r => r.id === request.treasuryRequestId);
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Teammate:</span><span className="font-bold">{getActorDisplayName(request.actorId)}</span></div>
+                <div className="flex justify-between"><span>Requested Amount:</span><span className="font-bold text-red-500">${treasuryRequest?.requestedAmount.toLocaleString() ?? request.cost?.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Treasury Ruling:</span><span className="font-bold text-right">{request.governorRuling}</span></div>
+                <div className="flex justify-between"><span>Purpose:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
+                {treasuryRequest?.intendedActionType && (
+                  <div className="flex justify-between"><span>Intended Action:</span><span className="font-bold text-right">{treasuryRequest.intendedActionType}{typeof treasuryRequest.intendedActionCost === 'number' ? ` ($${treasuryRequest.intendedActionCost.toLocaleString()})` : ''}</span></div>
+                )}
+                {typeof treasuryRequest?.expectedBenefit === 'number' && (
+                  <div className="flex justify-between"><span>Expected Benefit:</span><span className="font-bold">${treasuryRequest.expectedBenefit.toLocaleString()}</span></div>
+                )}
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const treasuryRequestId = request.id;
+            return (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'approve_full')} className={`${themeStyles.button} text-white px-3 py-2 rounded-lg col-span-2 font-bold`}>Approve Full Amount</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'approve_minimum')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Minimum Required</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'approve_partial', editedCostInput ?? undefined)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Partial Amount</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'edit_amount', editedCostInput ?? undefined)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Edit Amount</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Reject</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'ask_cheaper')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Ask AI to Choose Cheaper Action</button>
+                <button onClick={() => resolveTreasuryApprovalRequest(treasuryRequestId, 'emergency_only')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Allow Emergency Cash Only</button>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
             <div className="space-y-2">
               <div className="flex space-x-3">
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
