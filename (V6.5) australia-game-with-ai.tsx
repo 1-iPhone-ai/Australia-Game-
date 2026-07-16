@@ -1972,6 +1972,11 @@ interface ActionToken {
   consumedActionType?: AIAction['type'];
   planId?: string;
   invalidatedReason?: string;
+  // V6.9.1 bugfix: captured at mint time for 'override'-sourced tokens only. redeemActionToken's
+  // own daily-cap re-check compares the actor's CURRENT overridesUsedToday against this baseline
+  // (not the live cap) so a token never invalidates itself because ITS OWN purchase already
+  // incremented the counter — only a genuinely later, additional override should trip this check.
+  overridesUsedTodayAtMint?: number;
 }
 
 // V6.7 Phase 3a: Persistent multi-actor Team Plans. Unlike TeamGoal/chooseTeamObjective (a pure,
@@ -2945,6 +2950,11 @@ interface AutomaticApprovalRules {
   autoRejectSabotage: { enabled: boolean };
   autoRejectRecoverySpending: { enabled: boolean };
 }
+// V6.9.1 bugfix: explicit lifecycle for an ApprovalRequest, replacing purely-inferred-from-array-
+// membership status. Enables idempotent resolution (resolveApprovalRequest no-ops once resolved/
+// cancelled) and lets the approval queue processor know exactly which request is currently on screen.
+type ApprovalRequestStatus = 'pending' | 'displayed' | 'resolved' | 'cancelled';
+
 interface ApprovalRequest {
   id: string;
   actorId: string;
@@ -2971,6 +2981,27 @@ interface ApprovalRequest {
   // 'approve_sequence_actions_only' mode a real signal to discriminate on.
   sequenceId?: string;
   sequenceStepId?: string;
+  // V6.9.1 bugfix: explicit lifecycle status, see ApprovalRequestStatus above.
+  status: ApprovalRequestStatus;
+}
+
+// V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
+// surviving the approval-pause `return` that would otherwise discard performTeamAiTurn's local
+// variables. Deliberately does NOT duplicate actionsCompleted — every comparison reads
+// actor.actionsUsedThisTurn fresh, since that field is already the single durable source the HUD
+// itself uses and is incremented exactly once per successful execution regardless of which of the
+// three turn-driving functions performs it.
+interface ActiveAiTurnSession {
+  actorId: string;
+  teamId: string;
+  totalActionBudget: number;
+  pendingTokenQueue: string[];
+  currentProposal: ScoredTeamAiDecision | null;
+  currentApprovalRequestId: string | null;
+  currentProposalTokenId?: string;
+  isPausedForApproval: boolean;
+  isProcessing: boolean;
+  isFinished: boolean;
 }
 
 const APPROVAL_MODES: ApprovalMode[] = ['approve_every_action', 'approve_selected_types', 'approve_high_risk', 'approve_sequence_actions_only', 'mixed'];
@@ -7937,7 +7968,10 @@ const sanitizeActionToken = (value: unknown): ActionToken | null => {
     consumedTurn: typeof source.consumedTurn === 'number' && isFinite(source.consumedTurn) ? Math.max(0, Math.floor(source.consumedTurn)) : undefined,
     consumedActionType: typeof source.consumedActionType === 'string' ? source.consumedActionType as AIAction['type'] : undefined,
     planId: typeof source.planId === 'string' ? source.planId : undefined,
-    invalidatedReason: typeof source.invalidatedReason === 'string' ? source.invalidatedReason : undefined
+    invalidatedReason: typeof source.invalidatedReason === 'string' ? source.invalidatedReason : undefined,
+    overridesUsedTodayAtMint: typeof source.overridesUsedTodayAtMint === 'number' && isFinite(source.overridesUsedTodayAtMint)
+      ? Math.max(0, Math.floor(source.overridesUsedTodayAtMint))
+      : undefined
   };
 };
 
@@ -9315,6 +9349,12 @@ function AustraliaGame() {
   // mirror, never itself gating execution. The single live-blocking pause point per actor-turn
   // continues to reuse the existing single-slot confirmationDialog above.
   const [pendingApprovalRequests, setPendingApprovalRequests] = useState<ApprovalRequest[]>([]);
+  // V6.9.1 bugfix (Bug 6, GD8): real, functioning edited values for the "Edit & Approve"/"Approve
+  // Lower Wager" controls — previously hardcoded to {wager:0, cost:0}/{wager:0}, so every "edit"
+  // was indistinguishable from silently approving at $0. Reset via the effect below whenever the
+  // displayed request changes.
+  const [editedWagerInput, setEditedWagerInput] = useState<number | null>(null);
+  const [editedCostInput, setEditedCostInput] = useState<number | null>(null);
 
   // Don't ask again preferences
   const [dontAskAgain, setDontAskAgain] = useState<DontAskAgainPrefs>({ ...DEFAULT_DONT_ASK });
@@ -16150,7 +16190,15 @@ function AustraliaGame() {
     actionsRemaining: number,
     sequenceContext?: { sequenceId: string; stepId: string }
   ): ApprovalRequest => {
-    const existing = pendingApprovalRequests.find(r => r.actorId === actor.id);
+    // V6.9.1 bugfix (Bug 1/8/9): re-key dedup off the session's own currentApprovalRequestId (a ref,
+    // synchronously up-to-date) instead of an actorId array scan against React state, which is
+    // vulnerable to async state-update timing and could hand back a stale/already-resolving
+    // request — a plausible root cause of orphaned waitForApprovalResolution promises and requests
+    // that silently never open a visible dialog.
+    const existingId = activeAiTurnSessionRef.current[actor.id]?.currentApprovalRequestId;
+    const existing = existingId
+      ? pendingApprovalRequests.find(r => r.id === existingId && (r.status === 'pending' || r.status === 'displayed'))
+      : undefined;
     if (existing) return existing;
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
     const cost: number | null = typeof decision.data?.purchases?.[0]?.cost === 'number'
@@ -16202,7 +16250,8 @@ function AustraliaGame() {
       categoryBucket: decision.type as TeamModeActionCategory,
       createdAtTurn: gameState.day,
       sequenceId: sequenceContext?.sequenceId,
-      sequenceStepId: sequenceContext?.stepId
+      sequenceStepId: sequenceContext?.stepId,
+      status: 'pending'
     };
   }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName]);
 
@@ -16213,6 +16262,11 @@ function AustraliaGame() {
   // approve_lower_wager's editedFields never reached runApprovedOverrideBonusActions — every bonus
   // action "approved with an edited wager/cost" silently executed at its ORIGINAL, unedited value.
   const approvalResolversRef = useRef<Record<string, (control: ApprovalControlAction, editedFields?: { cost?: number; wager?: number }) => void>>({});
+  // V6.9.1 bugfix (Bug 9/13): synchronous, ref-backed guard against resolving the same
+  // ApprovalRequest twice — immune to React state-update batching, unlike a check against
+  // pendingApprovalRequests state alone, which can still see the "old" array within the same
+  // event tick a rapid double-click fires two resolveApprovalRequest calls.
+  const resolvedApprovalRequestIdsRef = useRef<Set<string>>(new Set());
   const waitForApprovalResolution = useCallback((requestId: string): Promise<{ control: ApprovalControlAction; editedFields?: { cost?: number; wager?: number } }> => {
     return new Promise(resolve => {
       approvalResolversRef.current[requestId] = (control, editedFields) => resolve({ control, editedFields });
@@ -16231,8 +16285,13 @@ function AustraliaGame() {
     control: ApprovalControlAction,
     editedFields?: { cost?: number; wager?: number }
   ) => {
+    // V6.9.1 bugfix (Bug 9/13): idempotent resolution — a second call for the same requestId
+    // (rapid double-click, or a stale queued callback) is a safe no-op, never double-executing
+    // or double-consuming an action.
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
     const request = pendingApprovalRequests.find(r => r.id === requestId);
-    if (!request) return;
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
     const remaining = pendingApprovalRequests.filter(r => r.id !== requestId);
     setPendingApprovalRequests(remaining);
     if (control === 'always_approve_similar') {
@@ -16243,14 +16302,12 @@ function AustraliaGame() {
       alwaysRejectSimilarRef.current[request.actorId] = alwaysRejectSimilarRef.current[request.actorId] || new Set<TeamModeActionCategory>();
       alwaysRejectSimilarRef.current[request.actorId].add(request.categoryBucket);
     }
-    // If this request was the one currently driving the on-screen dialog, close it and, if
-    // another actor's request is still queued, immediately open the next one.
+    // If this request was the one currently driving the on-screen dialog, close it. Opening the
+    // next queued request (if any) is owned entirely by the approval-queue-processor effect below,
+    // which reacts to pendingApprovalRequests/confirmationDialog.isOpen — this avoids the async
+    // React state-update-timing hazard of doing it manually here (Bug 8).
     if (confirmationDialog.data?.requestId === requestId) {
       closeConfirmation();
-      const next = remaining[0];
-      if (next) {
-        showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', next.actionSummary, 'Approve', () => resolveApprovalRequest(next.id, 'approve'), { requestId: next.id });
-      }
     }
     const resolver = approvalResolversRef.current[requestId];
     if (resolver) {
@@ -16259,7 +16316,31 @@ function AustraliaGame() {
       return;
     }
     resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
-  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, showConfirmation]);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation]);
+
+  // V6.9.1 bugfix (Bug 8): the single authoritative approval-queue processor. Whenever no dialog is
+  // currently open and a 'pending' ApprovalRequest exists, this effect opens it — replacing the 3
+  // scattered inline `if (!confirmationDialog.isOpen) { showConfirmation(...) }` checks that used to
+  // live at each request-creation call site (all vulnerable to async React state-update timing,
+  // since confirmationDialog.isOpen could still read stale/false a moment after another request had
+  // already claimed the dialog). Popup visibility is now driven BY request state, never the reverse.
+  useEffect(() => {
+    if (confirmationDialog.isOpen) return;
+    const next = pendingApprovalRequests.find(r => r.status === 'pending');
+    if (!next) return;
+    setPendingApprovalRequests(prev => prev.map(r => r.id === next.id ? { ...r, status: 'displayed' as ApprovalRequestStatus } : r));
+    showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', next.actionSummary, 'Approve', () => resolveApprovalRequest(next.id, 'approve'), { requestId: next.id });
+  }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest]);
+
+  // V6.9.1 bugfix (Bug 6, GD8): reset the edit inputs to the newly-displayed request's own current
+  // wager/cost whenever the displayed request changes, so the fields always start at a real,
+  // editable value instead of a stale one from a previously-resolved request.
+  useEffect(() => {
+    const requestId = confirmationDialog.type === 'aiActionApprovalRequest' ? confirmationDialog.data?.requestId : undefined;
+    const displayed = requestId ? pendingApprovalRequests.find(r => r.id === requestId) : undefined;
+    setEditedWagerInput(displayed?.wager ?? null);
+    setEditedCostInput(displayed?.cost ?? null);
+  }, [confirmationDialog.type, confirmationDialog.data?.requestId, pendingApprovalRequests]);
 
   const analyzeTeamLiquidity = useCallback((teamId: string, actorMap?: Record<string, ActorState>): TeamLiquidityAnalysis => {
     const team = teamsById[teamId];
@@ -19369,6 +19450,10 @@ function AustraliaGame() {
   // deliberately NOT tokenized in 3a — only bonus grants are (see plan Governing Decision #2).
   const mintActionToken = useCallback((teamId: string, actorId: string, source: ActionTokenSource, planId?: string): string => {
     const tokenId = `team_token_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // V6.9.1 bugfix (Bug 5): for 'override'-sourced tokens, capture the actor's overridesUsedToday
+    // AT MINT TIME — see redeemActionToken's cap re-check for why this baseline (not the live count)
+    // is what must be compared later.
+    const overridesUsedTodayAtMint = source === 'override' ? (getActorState(actorId)?.overridesUsedToday || 0) : undefined;
     updateTeamState(teamId, prev => ({
       ...prev,
       actionTokens: [
@@ -19380,12 +19465,13 @@ function AustraliaGame() {
           source,
           grantedTurn: gameState.turnCounter,
           status: 'granted' as ActionTokenStatus,
-          planId
+          planId,
+          overridesUsedTodayAtMint
         }
       ].slice(-60)
     }));
     return tokenId;
-  }, [gameState.turnCounter, updateTeamState]);
+  }, [gameState.turnCounter, getActorState, updateTeamState]);
 
   // V6.7 Phase 3a: revalidation-before-execution, called immediately before executeTeamAiAction
   // for any token-sourced decision — never inside executeTeamAiAction itself, keeping its 15
@@ -19457,8 +19543,21 @@ function AustraliaGame() {
     // Daily limits: re-check the source-specific cap wasn't exhausted by another decision this
     // same turn (defensive — the turn loop is sequential/synchronous per actor today, so this
     // race isn't currently reachable, but Section 30 calls for it explicitly).
-    if (token.source === 'override' && (actor.overridesUsedToday || 0) >= OVERRIDE_DAILY_CAP) {
-      return invalidate('daily_override_cap_reached_at_execution');
+    // V6.9.1 bugfix (Bug 5): applyActorActionOverride increments actor.overridesUsedToday in the
+    // SAME call that deducts cost, BEFORE this token is ever minted/redeemed — so the live count
+    // already includes THIS token's own already-accounted-for purchase. Comparing against the live
+    // cap here invalidated the last legitimately-eligible override of the day (eligible when
+    // overridesUsedToday was cap-1, but already bumped to cap by the time redemption runs). Compare
+    // against the baseline captured at mint time instead: only a genuinely NEW, LATER override
+    // purchased after this token was minted should invalidate it.
+    if (token.source === 'override') {
+      const mintBaseline = token.overridesUsedTodayAtMint;
+      const cappedByBaseline = typeof mintBaseline === 'number'
+        ? (actor.overridesUsedToday || 0) > mintBaseline
+        : (actor.overridesUsedToday || 0) >= OVERRIDE_DAILY_CAP;
+      if (cappedByBaseline) {
+        return invalidate('daily_override_cap_reached_at_execution');
+      }
     }
 
     updateTeamState(teamId, prev => ({
@@ -24346,6 +24445,27 @@ function AustraliaGame() {
   // adjustment inside evaluateTeamAiOverrideEligibility's existing cost line, never gameSettings
   // itself. Defaults to 1.0 (no discount) for every actor; cleared each turn like the refs above.
   const initiativeOverrideDiscountRef = useRef<Record<string, number>>({});
+  // V6.9.1 bugfix: one authoritative, ref-backed ActiveAiTurnSession per actor — see the interface's
+  // own comment. Cleared per-actor inside finishTeamAiTurn alongside the other per-turn refs above.
+  const activeAiTurnSessionRef = useRef<Record<string, ActiveAiTurnSession>>({});
+
+  const getOrCreateAiTurnSession = (actorId: string, teamId: string, initialBudget: number): ActiveAiTurnSession => {
+    const existing = activeAiTurnSessionRef.current[actorId];
+    if (existing && !existing.isFinished) return existing;
+    const fresh: ActiveAiTurnSession = {
+      actorId,
+      teamId,
+      totalActionBudget: initialBudget,
+      pendingTokenQueue: [],
+      currentProposal: null,
+      currentApprovalRequestId: null,
+      isPausedForApproval: false,
+      isProcessing: false,
+      isFinished: false
+    };
+    activeAiTurnSessionRef.current[actorId] = fresh;
+    return fresh;
+  };
 
   const buildOverrideDecisionSignature = (decision: ScoredTeamAiDecision | null): string => {
     if (!decision) return '';
@@ -25027,10 +25147,27 @@ function AustraliaGame() {
   // V6.7 Phase 2a: extracted so the friendly ask_first confirmation flow can end an actor's
   // turn from its onConfirm/onDeny callbacks, not just from the normal end of the while loop.
   const finishTeamAiTurn = useCallback((actorId: string) => {
+    // V6.9.1 bugfix (GD14): defensive guards — should be structurally unreachable given the
+    // session-driven pause/resume design (GD2-GD4), but belt-and-suspenders against a stray/stale
+    // call: never end the turn while genuinely paused for player approval, and never run the real
+    // cleanup body twice for the same turn.
+    const session = activeAiTurnSessionRef.current[actorId];
+    if (session?.isPausedForApproval) return;
+    if (session?.isFinished) return;
+    if (session) session.isFinished = true;
     delete lastFailedOverrideActionRef.current[actorId];
     delete approveSimilarThisTurnRef.current[actorId];
     delete hasLentThisTurnRef.current[actorId];
     delete initiativeOverrideDiscountRef.current[actorId];
+    // V6.9.1 bugfix (GD13): these 5 refs used to be cleared only at next-turn-start, an
+    // inconsistency with the 4 refs above (already cleared here) — consolidated so every per-turn
+    // ref has one matching lifecycle, and the session itself never outlives the turn it belongs to.
+    delete requirementRetryCountRef.current[actorId];
+    delete alwaysApproveSimilarRef.current[actorId];
+    delete alwaysRejectSimilarRef.current[actorId];
+    delete approvalRevisionCountRef.current[actorId];
+    delete sequenceYieldedThisTurnRef.current[actorId];
+    delete activeAiTurnSessionRef.current[actorId];
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
     updateActorState(actorId, prev => ({
       ...prev,
@@ -25223,9 +25360,18 @@ function AustraliaGame() {
     try {
       let actor = getActorState(actorId);
       if (!actor) return;
-      const actionBudget = getActorActionBudget(actorId);
+      // V6.9.1 bugfix (Bug 3/4/7): read the authoritative session instead of recomputing a flat
+      // budget and re-ranking a fresh top candidate. The session's totalActionBudget already
+      // accounts for every override/bank/lending/initiative/emergency grant made earlier this
+      // turn (matching the HUD's own multiplied formula) — the old flat getActorActionBudget(...)
+      // read here was the exact mechanism behind "3/6 shown, but the AI stops acting."
+      const session = getOrCreateAiTurnSession(actorId, actor.teamId, getActorActionBudget(actorId));
+      session.isPausedForApproval = false;
+      const actionBudget = session.totalActionBudget;
       let actionsTaken = actor.actionsUsedThisTurn || 0;
-      let decision: ScoredTeamAiDecision | null = getRankedTeamAiDecisions(actorId)[0] || null;
+      // V6.9.1 bugfix (Bug 3): use the EXACT proposal the player was shown/approved, never a
+      // freshly re-ranked candidate, for every approve/edit control.
+      let decision: ScoredTeamAiDecision | null = session.currentProposal || getRankedTeamAiDecisions(actorId)[0] || null;
       let skipApprovalCheckOnce = ['approve', 'approve_once', 'always_approve_similar', 'edit_and_approve', 'approve_lower_wager'].includes(control);
 
       if (control === 'reject' || control === 'reject_once' || control === 'always_reject_similar') {
@@ -25233,6 +25379,8 @@ function AustraliaGame() {
         const dispatch = resolveApprovalRejectionOutcome(gameSettings.aiActionApprovalRejectionOutcome, revisionCount);
         if (dispatch === 'retry') {
           approvalRevisionCountRef.current[actorId] = revisionCount + 1;
+          // Rejecting correctly looks for a NEW proposal — fresh ranking is intentional here.
+          decision = getRankedTeamAiDecisions(actorId)[0] || null;
         } else if (dispatch === 'fallback') {
           decision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
           skipApprovalCheckOnce = true;
@@ -25249,7 +25397,9 @@ function AustraliaGame() {
       } else if ((control === 'edit_and_approve' || control === 'approve_lower_wager') && decision) {
         const editedDecision = { ...decision, data: { ...decision.data } };
         if (editedFields?.wager !== undefined && typeof editedDecision.data.wager === 'number') {
-          editedDecision.data.wager = Math.max(0, Math.min(editedFields.wager, editedDecision.data.wager));
+          // V6.9.1 bugfix (Bug 6): floor at MINIMUM_WAGER instead of 0 — an edited/lower wager must
+          // never silently become $0.
+          editedDecision.data.wager = Math.max(MINIMUM_WAGER, Math.min(editedFields.wager, editedDecision.data.wager));
         }
         if (editedFields?.cost !== undefined && Array.isArray(editedDecision.data.purchases) && editedDecision.data.purchases[0]) {
           editedDecision.data.purchases = [{ ...editedDecision.data.purchases[0], cost: Math.max(0, Math.min(editedFields.cost, editedDecision.data.purchases[0].cost)) }];
@@ -25272,6 +25422,13 @@ function AustraliaGame() {
             if (gameSettings.aiActionApprovalTransparencyEnabled) appendTeamAiTraceNote(actorId, `Auto-rejected: ${autoResolution.reason}`);
             break;
           }
+          // V6.9.1 bugfix (GD11): alwaysRejectSimilarRef was checked at 2 of 3 gate call sites but
+          // missing here — an actor told to always-reject a category could still get re-prompted
+          // for it after a resume.
+          if (autoResolution.outcome === 'none' && alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory)) {
+            decision = getRankedTeamAiDecisions(actorId)[0] || null;
+            continue;
+          }
           const policy: ApprovalPolicy = {
             mode: gameSettings.aiActionApprovalMode,
             selectedTypes: gameSettings.aiActionApprovalSelectedTypes,
@@ -25291,20 +25448,42 @@ function AustraliaGame() {
             && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
           if (needsPlayerApproval) {
             const nextRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
+            // V6.9.1 bugfix (Bug 8): opening the dialog is now owned entirely by the dedicated
+            // approval-queue-processor effect below, which reacts to pendingApprovalRequests/
+            // confirmationDialog.isOpen — never an inline check here, which was vulnerable to
+            // async React state-update timing.
             setPendingApprovalRequests(prev => [...prev, nextRequest]);
-            if (!confirmationDialog.isOpen) {
-              showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', nextRequest.actionSummary, 'Approve', () => resolveApprovalRequest(nextRequest.id, 'approve'), { requestId: nextRequest.id });
-            }
+            // V6.9.1 bugfix: every subsequent pause reached within this same resumed loop writes
+            // back to the session and returns again — the SAME session can pause/resume any number
+            // of times in one turn (Bug 2's required flow: one popup resolves one proposal, the
+            // popup reopens for the next one).
+            session.currentProposal = decision;
+            session.currentApprovalRequestId = nextRequest.id;
+            session.isPausedForApproval = true;
             return; // pause again — finishTeamAiTurn intentionally NOT called; a later resolution re-invokes this same function
           }
         }
         skipApprovalCheckOnce = false;
+        // V6.9.1 bugfix (Bug 5): revalidate-before-execute for bonus-sourced decisions, exactly like
+        // performTeamAiTurn's own loop already does — today's version skipped this entirely for the
+        // resumed path, meaning an override/bank/lending token backing a resumed decision was never
+        // redeemed or checked for staleness.
+        const baseActionBudget = getActorActionBudget(actorId);
+        const isBonusConsumption = actionsTaken >= baseActionBudget;
+        const pendingTokenId = isBonusConsumption ? session.pendingTokenQueue.shift() : undefined;
+        const revalidated = pendingTokenId
+          ? redeemActionToken(actor.teamId, actorId, decision, pendingTokenId, isReservationHardBlocked)
+          : true;
         const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost, actionsRemaining: actionBudget - actionsTaken });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
         }
-        const success = requirementsResult.approved ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
+        const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actorId, decision as unknown as AIAction) : false;
         if (!success) {
+          if (!revalidated) {
+            lastFailedOverrideActionRef.current[actorId] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
+            break;
+          }
           if (requirementsResult.approved) break; // real execution failure — end turn
           const retryCount = requirementRetryCountRef.current[actorId] || 0;
           const dispatch = resolveRequirementFailureAction(requirementsResult.failureBehavior || 'reject', retryCount);
@@ -25332,7 +25511,7 @@ function AustraliaGame() {
       console.error(`AI Action Approval resume for ${actorId} failed unexpectedly`, error);
       finishTeamAiTurn(actorId);
     }
-  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation]);
+  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation]);
   resumeAfterApprovalResolutionRef.current = resumeAfterApprovalResolution;
 
   // Bugfix (post-PR-#60): the friendly 'ask_first' override policy used to execute exactly one
@@ -25384,14 +25563,28 @@ function AustraliaGame() {
           && !alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
         if (bonusNeedsPlayerApproval) {
           const bonusApprovalRequest = buildApprovalRequest(actorForAction, decision, null, budget - i);
+          // V6.9.1 bugfix (Bug 8): opening owned by the approval-queue-processor effect, not an
+          // inline check here.
           setPendingApprovalRequests(prev => [...prev, bonusApprovalRequest]);
-          if (!confirmationDialog.isOpen) {
-            showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', bonusApprovalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(bonusApprovalRequest.id, 'approve'), { requestId: bonusApprovalRequest.id });
-          }
           const { control: bonusControl, editedFields: bonusEditedFields } = await waitForApprovalResolution(bonusApprovalRequest.id);
           if (bonusControl === 'reject' || bonusControl === 'reject_once' || bonusControl === 'always_reject_similar') {
-            decision = getRankedTeamAiDecisions(actorId)[0] || null;
-            continue;
+            // V6.9.1 bugfix (GD12): this reject-path used to be a bare re-rank with no counter at
+            // all, bounded only incidentally by the batch's own finite size. Dispatch through the
+            // same bounded-retry mechanism resumeAfterApprovalResolution already uses, so a
+            // pathological reject-loop can't consume the entire bonus batch without hitting
+            // APPROVAL_MAX_REVISED_PROPOSALS.
+            const bonusRevisionCount = approvalRevisionCountRef.current[actorId] || 0;
+            const bonusRejectDispatch = resolveApprovalRejectionOutcome(gameSettings.aiActionApprovalRejectionOutcome, bonusRevisionCount);
+            if (bonusRejectDispatch === 'retry') {
+              approvalRevisionCountRef.current[actorId] = bonusRevisionCount + 1;
+              decision = getRankedTeamAiDecisions(actorId)[0] || null;
+              continue;
+            }
+            if (bonusRejectDispatch === 'fallback') {
+              decision = { type: 'think', description: 'Approval fallback', data: {} } as unknown as ScoredTeamAiDecision;
+              continue;
+            }
+            break;
           }
           // Bugfix (post-F5 review): edit_and_approve/approve_lower_wager/use_fallback used to fall
           // through unconditionally and execute the ORIGINAL decision unchanged — the edit and the
@@ -25402,7 +25595,9 @@ function AustraliaGame() {
           } else if ((bonusControl === 'edit_and_approve' || bonusControl === 'approve_lower_wager') && decision) {
             const editedDecision = { ...decision, data: { ...decision.data } };
             if (bonusEditedFields?.wager !== undefined && typeof editedDecision.data.wager === 'number') {
-              editedDecision.data.wager = Math.max(0, Math.min(bonusEditedFields.wager, editedDecision.data.wager));
+              // V6.9.1 bugfix (Bug 6): floor at MINIMUM_WAGER, mirroring resumeAfterApprovalResolution's
+              // own fix — an edited/lower wager must never silently become $0 in the bonus batch either.
+              editedDecision.data.wager = Math.max(MINIMUM_WAGER, Math.min(bonusEditedFields.wager, editedDecision.data.wager));
             }
             if (bonusEditedFields?.cost !== undefined && Array.isArray(editedDecision.data.purchases) && editedDecision.data.purchases[0]) {
               editedDecision.data.purchases = [{ ...editedDecision.data.purchases[0], cost: Math.max(0, Math.min(bonusEditedFields.cost, editedDecision.data.purchases[0].cost)) }];
@@ -25552,6 +25747,16 @@ function AustraliaGame() {
     // if the queue underruns for any reason, revalidation is skipped rather than blocking
     // execution, so this is purely additive accounting, never a new failure mode.
     const pendingTokenQueue: string[] = [];
+    // V6.9.1 bugfix: authoritative session mirror for this actor's turn — see ActiveAiTurnSession's
+    // own comment. pendingTokenQueue is aliased (same array reference, mutated via the existing
+    // push/shift calls below) so it automatically survives an approval-pause return without any
+    // call-site changes; totalActionBudget is a primitive and is mirrored explicitly after each
+    // `actionBudget += N` below.
+    const aiTurnSession = getOrCreateAiTurnSession(actor.id, actor.teamId, actionBudget);
+    aiTurnSession.totalActionBudget = actionBudget;
+    aiTurnSession.pendingTokenQueue = pendingTokenQueue;
+    aiTurnSession.isPausedForApproval = false;
+    aiTurnSession.isFinished = false;
 
     // V6.7 Phase 2c: redeem any lent-action credits from teammates before this turn's budget is
     // spent. Unconditional — all the eligibility gating already happened when the credit was
@@ -25562,6 +25767,7 @@ function AustraliaGame() {
       const totalCredits = Object.values(credits).reduce((sum, n) => sum + (n || 0), 0);
       if (totalCredits > 0) {
         actionBudget += totalCredits;
+        aiTurnSession.totalActionBudget = actionBudget;
         updateActorState(actor.id, prev => ({ ...prev, pendingLentActionCredits: {} }));
         for (let i = 0; i < totalCredits; i += 1) {
           pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'lent'));
@@ -25580,6 +25786,7 @@ function AustraliaGame() {
       const totalEmergencyCredits = Object.values(emergencyCredits).reduce((sum, n) => sum + (n || 0), 0);
       if (totalEmergencyCredits > 0) {
         actionBudget += totalEmergencyCredits;
+        aiTurnSession.totalActionBudget = actionBudget;
         updateActorState(actor.id, prev => ({ ...prev, pendingEmergencyActionCredits: {} }));
         for (let i = 0; i < totalEmergencyCredits; i += 1) {
           pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'emergency'));
@@ -25596,6 +25803,7 @@ function AustraliaGame() {
       const emergencyResult = triggerTeamEmergencyAction(actor.id, emergencyTrigger.action, emergencyTrigger.team);
       if (emergencyResult.bonusActionTokenId) {
         actionBudget += 1;
+        aiTurnSession.totalActionBudget = actionBudget;
         pendingTokenQueue.push(emergencyResult.bonusActionTokenId);
       }
     }
@@ -25682,6 +25890,7 @@ function AustraliaGame() {
       const initiativeSpend = evaluateTeamInitiativeSpendOpportunity(actor.id, decision, actionsTaken, actionBudget);
       if (initiativeSpend.bonusActionTokenId) {
         actionBudget += 1;
+        aiTurnSession.totalActionBudget = actionBudget;
         pendingTokenQueue.push(initiativeSpend.bonusActionTokenId);
       }
       const disagreementProfile = normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile);
@@ -25790,10 +25999,14 @@ function AustraliaGame() {
       if (needsPlayerApproval) {
         const approvalRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken,
           isSequenceSourcedDecision && sequenceStepMatch ? { sequenceId: sequenceStepMatch.sequenceId, stepId: sequenceStepMatch.stepId } : undefined);
+        // V6.9.1 bugfix (Bug 8): opening owned by the approval-queue-processor effect, not an
+        // inline check here.
         setPendingApprovalRequests(prev => [...prev, approvalRequest]);
-        if (!confirmationDialog.isOpen) {
-          showConfirmation('aiActionApprovalRequest', 'Teammate proposes an action', approvalRequest.actionSummary, 'Approve', () => resolveApprovalRequest(approvalRequest.id, 'approve'), { requestId: approvalRequest.id });
-        }
+        // V6.9.1 bugfix: write the exact displayed proposal into the session before abandoning the
+        // loop, so resumeAfterApprovalResolution can execute THIS object rather than re-ranking.
+        aiTurnSession.currentProposal = decision;
+        aiTurnSession.currentApprovalRequestId = approvalRequest.id;
+        aiTurnSession.isPausedForApproval = true;
         return; // identical abandonment shape to the existing ask_first branch below
       }
       // V6.7 Phase 3a: revalidate-before-execution for any decision beyond the actor's own normal
@@ -25906,6 +26119,7 @@ function AustraliaGame() {
             };
           });
           actionBudget += 1;
+          aiTurnSession.totalActionBudget = actionBudget;
           pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'shared_bank'));
           if (gameSettings.teamActionBankTransparencyEnabled) {
             addNotification(`🤖 ${getActorDisplayName(actor.id)} drew a shared action from the team bank to ${bankDecision.reasonLabel}.`, 'ai', true);
@@ -25956,6 +26170,7 @@ function AustraliaGame() {
           break;
         }
         actionBudget += getActorActionBudget(actor.id);
+        aiTurnSession.totalActionBudget = actionBudget;
         pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'override'));
       }
     }
@@ -36823,6 +37038,43 @@ function AustraliaGame() {
                 <div className="flex justify-between"><span>Target:</span><span className="font-bold">{request.targetLabel}</span></div>
                 <div className="flex justify-between"><span>Cost:</span><span className="font-bold text-red-500">{fmtNum(request.cost)}</span></div>
                 <div className="flex justify-between"><span>Wager:</span><span className="font-bold text-yellow-500">{fmtNum(request.wager)}</span></div>
+                {/* V6.9.1 bugfix (Bug 6, GD8): the minimal edit-value inputs required to make "Edit &
+                    Approve"/"Approve Lower Wager" actually function — only rendered when the request
+                    has a real value for that field. Live-clamped on change. */}
+                {request.wager !== null && (
+                  <div className="flex justify-between items-center">
+                    <span>Edit wager to:</span>
+                    <input
+                      type="number"
+                      value={editedWagerInput ?? request.wager}
+                      min={MINIMUM_WAGER}
+                      max={request.wager}
+                      onChange={e => {
+                        const raw = Number(e.target.value);
+                        const clamped = Math.max(MINIMUM_WAGER, Math.min(isFinite(raw) ? raw : MINIMUM_WAGER, request.wager as number));
+                        setEditedWagerInput(clamped);
+                      }}
+                      className={`${themeStyles.border} border rounded px-2 py-1 w-24 text-right bg-transparent`}
+                    />
+                  </div>
+                )}
+                {request.cost !== null && (
+                  <div className="flex justify-between items-center">
+                    <span>Edit cost to:</span>
+                    <input
+                      type="number"
+                      value={editedCostInput ?? request.cost}
+                      min={0}
+                      max={request.cost}
+                      onChange={e => {
+                        const raw = Number(e.target.value);
+                        const clamped = Math.max(0, Math.min(isFinite(raw) ? raw : 0, request.cost as number));
+                        setEditedCostInput(clamped);
+                      }}
+                      className={`${themeStyles.border} border rounded px-2 py-1 w-24 text-right bg-transparent`}
+                    />
+                  </div>
+                )}
                 <div className="flex justify-between"><span>% Cash At Risk:</span><span className="font-bold">{fmtPct(request.percentCashAtRisk)}</span></div>
                 <div className="flex justify-between"><span>Expected Reward:</span><span className="font-bold">{fmtNum(request.expectedReward)}</span></div>
                 <div className="flex justify-between"><span>Success Probability:</span><span className="font-bold">{fmtPct(request.successProbability)}</span></div>
@@ -36844,8 +37096,8 @@ function AustraliaGame() {
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'edit_and_approve', { wager: 0, cost: 0 })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Edit &amp; Approve</button>
-                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve_lower_wager', { wager: 0 })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Lower Wager</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'edit_and_approve', { wager: editedWagerInput ?? undefined, cost: editedCostInput ?? undefined })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Edit &amp; Approve</button>
+                <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve_lower_wager', { wager: editedWagerInput ?? undefined })} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Lower Wager</button>
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve_once')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Once</button>
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'always_approve_similar')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Always Approve Similar</button>
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'reject_once')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Reject Once</button>
