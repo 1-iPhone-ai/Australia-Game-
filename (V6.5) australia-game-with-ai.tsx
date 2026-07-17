@@ -2833,7 +2833,9 @@ type TeamAiReservationStrictness = 'low' | 'balanced' | 'strict';
 // Action Requirements (Phases F2-F5). Declared now so later phases reuse one vocabulary instead
 // of near-duplicate unions; unreferenced by any runtime logic until those phases land.
 type TeamModeActionCategory = 'travel' | 'challenge' | 'sell' | 'craft' | 'buy_market' | 'region_deposit'
-  | 'cashout_region' | 'sabotage' | 'support' | 'invest' | 'buy_equipment' | 'loan' | 'wait' | 'end_turn';
+  | 'cashout_region' | 'sabotage' | 'support' | 'invest' | 'buy_equipment' | 'loan' | 'wait' | 'end_turn'
+  // Team Treasury Phase T5: makes Treasury contribution/withdrawal selectable as Sequence steps.
+  | 'contribute_treasury' | 'request_team_funds';
 type SequenceStepFallbackAction = 'retry_next_action' | 'retry_next_turn' | 'skip_step' | 'jump_to_step'
   | 'use_fallback_action' | 'allow_normal_ai' | 'pause_sequence' | 'end_turn' | 'cancel_sequence';
 
@@ -2862,7 +2864,10 @@ type ActionRequirementKind =
   // V6.9 Phase F4: sequence-only kinds, given a real referent now that TeammateSequence/SequenceStep
   // exist. 'prior_step_success_required' above (already declared in F2) also becomes meaningful now.
   | 'day_min' | 'day_max' | 'game_percent_elapsed_min' | 'game_percent_elapsed_max'
-  | 'market_price_min' | 'market_price_max' | 'recipe_available' | 'travel_available' | 'feature_enabled';
+  | 'market_price_min' | 'market_price_max' | 'recipe_available' | 'travel_available' | 'feature_enabled'
+  // Team Treasury Phase T5: mirrors team_leading/team_trailing's own "read a team-level number,
+  // compare against a threshold" shape, reading team.treasury.balance/getTreasuryAvailableAmount.
+  | 'team_treasury_balance_min' | 'team_treasury_available_min';
 type ActionRequirementScopeKind = 'all_teammates' | 'one_teammate' | 'one_team' | 'one_action_type' | 'one_region' | 'one_phase' | 'normal_only' | 'one_sequence' | 'one_step';
 interface ActionRequirementScope {
   kind: ActionRequirementScopeKind;
@@ -2882,7 +2887,7 @@ interface ActionRequirementScope {
 }
 // V6.9 Phase F4: closed allow-list for the 'feature_enabled' requirement kind — never a dynamic
 // string-indexed lookup. An unrecognized value auto-passes rather than throwing.
-type SequenceFeatureFlagName = 'teamCashVaultEnabled' | 'teamEconomyGovernorEnabled' | 'parallelAiPlanningEnabled' | 'aiActionApprovalEnabled' | 'actionRequirementsEnabled';
+type SequenceFeatureFlagName = 'teamCashVaultEnabled' | 'teamEconomyGovernorEnabled' | 'parallelAiPlanningEnabled' | 'aiActionApprovalEnabled' | 'actionRequirementsEnabled' | 'teamTreasuryEnabled';
 // Reuses SequenceStepFallbackAction's literal vocabulary where semantics genuinely overlap
 // ('retry_next_action'/'retry_next_turn'/'use_fallback_action'/'allow_normal_ai') plus one new
 // value ('reject') and one consolidated sequence-only placeholder ('pause_or_cancel', inert this
@@ -2913,7 +2918,8 @@ const ACTION_REQUIREMENT_KINDS: ActionRequirementKind[] = [
   'team_leading', 'team_trailing', 'game_phase_in', 'actions_remaining_min', 'win_condition_contribution_min',
   'cash_vault_permission_required', 'economy_governor_approval_required', 'prior_step_success_required',
   'day_min', 'day_max', 'game_percent_elapsed_min', 'game_percent_elapsed_max',
-  'market_price_min', 'market_price_max', 'recipe_available', 'travel_available', 'feature_enabled'
+  'market_price_min', 'market_price_max', 'recipe_available', 'travel_available', 'feature_enabled',
+  'team_treasury_balance_min', 'team_treasury_available_min'
 ];
 const ACTION_REQUIREMENT_SCOPE_KINDS: ActionRequirementScopeKind[] = ['all_teammates', 'one_teammate', 'one_team', 'one_action_type', 'one_region', 'one_phase', 'normal_only', 'one_sequence', 'one_step'];
 const ACTION_REQUIREMENT_FAILURE_BEHAVIORS: ActionRequirementFailureBehavior[] = ['reject', 'retry_next_action', 'use_fallback_action', 'retry_next_turn', 'allow_normal_ai', 'pause_or_cancel'];
@@ -4269,6 +4275,10 @@ type GameSettingsState = {
   teamTreasuryReturnUnusedRestrictedFunds: boolean;
   teamTreasuryRequestCooldownDays: number;
   teamAiTreasuryRequestsEnabled: boolean;
+  // Team Treasury Phase T5: whether the shared Treasury balance counts toward win-condition
+  // money/netWorth metrics — mirrors vaultCountProtectedCashTowardVictory's opt-out, but additive
+  // (Treasury cash is otherwise entirely invisible to those metrics) rather than subtractive.
+  countTeamTreasuryTowardVictory: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -4318,7 +4328,10 @@ interface ConfirmationDialog {
 }
 
 interface AIAction {
-  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage' | 'craft' | 'buy_market' | 'region_deposit' | 'cashout_region' | 'give_cash' | 'give_resource' | 'take_advanced_loan' | 'repay_advanced_loan' | 'refinance_advanced_loan';
+  type: 'challenge' | 'travel' | 'sell' | 'collect' | 'think' | 'end_turn' | 'special_ability' | 'invest' | 'buy_equipment' | 'sabotage' | 'craft' | 'buy_market' | 'region_deposit' | 'cashout_region' | 'give_cash' | 'give_resource' | 'take_advanced_loan' | 'repay_advanced_loan' | 'refinance_advanced_loan'
+    // Team Treasury Phase T5: 'request_team_funds' was already produced (via an unsafe `as` cast)
+    // by the T2 funding-request flow; this makes it (and its contribution counterpart) real members.
+    | 'contribute_treasury' | 'request_team_funds';
   description: string;
   data?: any;
   plan?: ActorAiPlan;
@@ -5364,7 +5377,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamTreasuryRequireIntendedAction: false,
   teamTreasuryReturnUnusedRestrictedFunds: true,
   teamTreasuryRequestCooldownDays: 0,
-  teamAiTreasuryRequestsEnabled: false
+  teamAiTreasuryRequestsEnabled: false,
+  countTeamTreasuryTowardVictory: true
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -5510,7 +5524,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'] },
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
-  { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled'] },
+  { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -11190,7 +11204,10 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
 	      teamAiTreasuryRequestsEnabled: typeof settingsData.teamAiTreasuryRequestsEnabled === 'boolean'
 	        ? settingsData.teamAiTreasuryRequestsEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
+	      countTeamTreasuryTowardVictory: typeof settingsData.countTeamTreasuryTowardVictory === 'boolean'
+	        ? settingsData.countTeamTreasuryTowardVictory
+	        : DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -16746,9 +16763,20 @@ function AustraliaGame() {
           return (getRankedTeamAiDecisionsRef.current?.(actor.id) || []).some(c => c.type === 'travel' && (!stringValue || c.data?.region === stringValue));
         case 'feature_enabled': {
           const flagName = stringValue as SequenceFeatureFlagName;
-          const knownFlags: SequenceFeatureFlagName[] = ['teamCashVaultEnabled', 'teamEconomyGovernorEnabled', 'parallelAiPlanningEnabled', 'aiActionApprovalEnabled', 'actionRequirementsEnabled'];
+          const knownFlags: SequenceFeatureFlagName[] = ['teamCashVaultEnabled', 'teamEconomyGovernorEnabled', 'parallelAiPlanningEnabled', 'aiActionApprovalEnabled', 'actionRequirementsEnabled', 'teamTreasuryEnabled'];
           if (!knownFlags.includes(flagName)) return true; // unrecognized value auto-passes, never throws
           return Boolean(gameSettings[flagName]);
+        }
+        // Team Treasury Phase T5: mirrors team_leading/team_trailing's shape exactly — read a
+        // team-level number, compare via passThreshold. getTreasuryAvailableAmount's own formula
+        // (balance - reserve, floored at 0) is inlined rather than called, since that function is
+        // declared later in the component and calling it here would be a TDZ violation.
+        case 'team_treasury_balance_min':
+          return passThreshold(req, teamsByIdRef.current[actor.teamId]?.treasury.balance || 0);
+        case 'team_treasury_available_min': {
+          const treasuryTeam = teamsByIdRef.current[actor.teamId];
+          const available = treasuryTeam ? Math.max(0, treasuryTeam.treasury.balance - treasuryTeam.treasury.reserve) : 0;
+          return passThreshold(req, available);
         }
         default:
           return true;
@@ -17673,13 +17701,20 @@ function AustraliaGame() {
     // real-money output and all HUD/display numbers are untouched, this never hides money from
     // the player, it only optionally excludes it from who-wins math.
     const vaultExclusionActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled && !gameSettings.vaultCountProtectedCashTowardVictory;
+    // Team Treasury Phase T5: the shared Treasury balance is otherwise entirely invisible to
+    // computeTeamMoney/computeTeamNetWorth (it isn't summed from any actor's own money field), so
+    // this inclusion is additive — the mirror image of the Vault's subtractive exclusion above.
+    const treasuryInclusionActive = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled && gameSettings.countTeamTreasuryTowardVictory;
     if (teamMode) {
       const teamId = options.side === 'player' ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID;
       const protectedDeduction = vaultExclusionActive
         ? getTeamActors(teamId).reduce((sum, teamActor) => sum + (teamActor.protectedCash || 0), 0)
         : 0;
-      if (metric === 'money') return Math.max(0, computeTeamMoney(teamId) - protectedDeduction);
-      if (metric === 'netWorth') return Math.max(0, computeTeamNetWorth(teamId) - protectedDeduction);
+      const treasuryInclusion = treasuryInclusionActive
+        ? (teamsById[teamId]?.treasury.balance || 0)
+        : 0;
+      if (metric === 'money') return Math.max(0, computeTeamMoney(teamId) - protectedDeduction + treasuryInclusion);
+      if (metric === 'netWorth') return Math.max(0, computeTeamNetWorth(teamId) - protectedDeduction + treasuryInclusion);
       return options.side === 'player' ? playerControlledRegions : aiControlledRegions;
     }
     const soloActor = options.side === 'player' ? player : aiPlayer;
@@ -17687,7 +17722,7 @@ function AustraliaGame() {
     if (metric === 'money') return Math.max(0, soloActor.money - soloProtectedDeduction);
     if (metric === 'netWorth') return Math.max(0, computeNetWorth(soloActor) - soloProtectedDeduction);
     return options.side === 'player' ? playerControlledRegions : aiControlledRegions;
-  }, [aiControlledRegions, aiPlayer, computeNetWorth, computeTeamMoney, computeTeamNetWorth, gameSettings.teamCashVaultEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.vaultCountProtectedCashTowardVictory, getTeamActors, isTeamMode, player, playerControlledRegions]);
+  }, [aiControlledRegions, aiPlayer, computeNetWorth, computeTeamMoney, computeTeamNetWorth, gameSettings.countTeamTreasuryTowardVictory, gameSettings.teamCashVaultEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamTreasuryEnabled, gameSettings.vaultCountProtectedCashTowardVictory, getTeamActors, isTeamMode, player, playerControlledRegions, teamsById]);
 
   const compareCompetitiveSides = useCallback((primaryMetric: WinMetric, options?: {
     teamMode?: boolean;
@@ -19927,6 +19962,13 @@ function AustraliaGame() {
     if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamTreasuryEnabled || !gameSettings.teamTreasuryAllowManualContributions) return false;
     const actor = getActorState(actorId);
     if (!actor) return false;
+    // Team Treasury Phase T5: consistency fix — the automatic-contribution call sites already
+    // respect this friendly/enemy split; manual contribution didn't. Both flags default false, so
+    // this is inert unless a user has already explicitly enabled Treasury for that team side.
+    const treasuryEnabledForActorTeam = actor.teamId === TEAM_PLAYER_ID
+      ? gameSettings.teamTreasuryEnabledForFriendlyTeam
+      : gameSettings.teamTreasuryEnabledForEnemyTeam;
+    if (!treasuryEnabledForActorTeam) return false;
     const team = teamsByIdRef.current[actor.teamId];
     if (!team) return false;
     const requested = Math.max(0, Math.floor(Number(rawAmount) || 0));
@@ -19981,6 +20023,11 @@ function AustraliaGame() {
     if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamTreasuryEnabled || !gameSettings.teamAiTreasuryContributionEnabled) return null;
     const actor = getActorState(actorId);
     if (!actor || actor.kind !== 'ai') return null;
+    // Team Treasury Phase T5: same friendly/enemy consistency fix as contributeToTeamTreasury.
+    const treasuryEnabledForActorTeam = actor.teamId === TEAM_PLAYER_ID
+      ? gameSettings.teamTreasuryEnabledForFriendlyTeam
+      : gameSettings.teamTreasuryEnabledForEnemyTeam;
+    if (!treasuryEnabledForActorTeam) return null;
     if (actor.inEconomicRecovery) return null;
     const team = teamsByIdRef.current[actor.teamId];
     if (!team) return null;
@@ -20078,6 +20125,12 @@ function AustraliaGame() {
     if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamTreasuryEnabled) return null;
     const actor = getActorState(actorId);
     if (!actor) return null;
+    // Team Treasury Phase T5: same friendly/enemy consistency fix as contributeToTeamTreasury —
+    // funding requests (withdrawals) previously ignored the per-side scoping entirely.
+    const treasuryEnabledForActorTeam = actor.teamId === TEAM_PLAYER_ID
+      ? gameSettings.teamTreasuryEnabledForFriendlyTeam
+      : gameSettings.teamTreasuryEnabledForEnemyTeam;
+    if (!treasuryEnabledForActorTeam) return null;
     const team = teamsByIdRef.current[actor.teamId];
     if (!team) return null;
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
@@ -20134,7 +20187,7 @@ function AustraliaGame() {
     const team = teamsByIdRef.current[actor.teamId];
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
     const syntheticDecision = {
-      type: 'request_team_funds' as AIAction['type'],
+      type: 'request_team_funds',
       description: `${getActorDisplayName(actor.id)} requests $${request.requestedAmount} from the Team Treasury: ${request.reason}`,
       data: {},
       score: 0,
@@ -20526,21 +20579,21 @@ function AustraliaGame() {
   // is enabled and teamTreasuryRequireApprovalForFriendlyAiWithdrawals is on; otherwise resolves the
   // request immediately using evaluateHumanFundingRequestResolution's outcome — never silently
   // withdraws when player approval is required (GD9's non-negotiable rule, applied symmetrically).
-  const submitTreasuryFundingRequest = useCallback((actorId: string, form: { requestType: TreasuryFundingRequestType; customAmount?: number; intendedActionType?: AIAction['type']; intendedActionCost?: number; reason?: string }) => {
+  const submitTreasuryFundingRequest = useCallback((actorId: string, form: { requestType: TreasuryFundingRequestType; customAmount?: number; intendedActionType?: AIAction['type']; intendedActionCost?: number; reason?: string }): boolean => {
     const request = createTreasuryFundingRequest(actorId, form);
     if (!request) {
       addNotification('Team Treasury request could not be created (check your Treasury settings or request amount).', 'error', false, 'system');
-      return;
+      return false;
     }
     const actor = getActorState(actorId);
     const autoResolve = !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
     if (!autoResolve && actor) {
       const approvalRequest = buildTreasuryApprovalRequest(request, actor, 0);
       setPendingApprovalRequests(prev => [...prev, approvalRequest]);
-      return;
+      return true;
     }
     const resolution = evaluateHumanFundingRequestResolution(request);
-    if (resolution.outcome === 'delay') return;
+    if (resolution.outcome === 'delay') return true;
     const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
       approve_full: 'approve_full',
       approve_partial: 'approve_partial',
@@ -20549,6 +20602,7 @@ function AustraliaGame() {
       suggest_cheaper: 'ask_cheaper'
     };
     resolveTreasuryFundingRequest(request.id, controlByOutcome[resolution.outcome] || 'reject', resolution.approvedAmount);
+    return true;
   }, [addNotification, createTreasuryFundingRequest, buildTreasuryApprovalRequest, evaluateHumanFundingRequestResolution, gameSettings, getActorState, resolveTreasuryFundingRequest]);
 
   const transferResource = useCallback((fromActorId: string, toActorId: string, resource: string, rawQuantity: number, options?: {
@@ -23720,6 +23774,22 @@ function AustraliaGame() {
           actionSucceeded = false;
         }
         break;
+      // Team Treasury Phase T5: Sequence-step execution reuses the existing T1/T2 functions
+      // verbatim — no new money-movement logic, purely wiring into this existing chokepoint.
+      case 'contribute_treasury':
+        actionSucceeded = typeof action.data?.amount === 'number'
+          ? contributeToTeamTreasury(actorId, action.data.amount, { allowProtectedCash: Boolean(action.data?.allowProtectedCash) })
+          : false;
+        break;
+      case 'request_team_funds':
+        actionSucceeded = submitTreasuryFundingRequest(actorId, {
+          requestType: action.data?.requestType || 'custom',
+          customAmount: action.data?.customAmount,
+          intendedActionType: action.data?.intendedActionType,
+          intendedActionCost: action.data?.intendedActionCost,
+          reason: action.data?.reason
+        });
+        break;
       case 'end_turn':
         return true;
       default:
@@ -23751,7 +23821,10 @@ function AustraliaGame() {
       if (
         isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled &&
         gameSettings.treasuryAutomaticContributionEnabled && action.type !== 'end_turn' &&
-        action.type !== 'challenge' && action.type !== 'sell'
+        action.type !== 'challenge' && action.type !== 'sell' &&
+        // Team Treasury Phase T5: excluded like challenge/sell — otherwise funds just granted by a
+        // 'request_team_funds' action would be immediately re-contributed back to the Treasury.
+        action.type !== 'request_team_funds'
       ) {
         const actorAfterActionForTreasury = getActorState(actorId);
         if (actorAfterActionForTreasury) {
@@ -23779,7 +23852,7 @@ function AustraliaGame() {
     }
 
     return actionSucceeded;
-  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
+  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
 
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -29768,7 +29841,7 @@ function AustraliaGame() {
     { label: 'Cash / Reserve', kinds: ['spendable_cash_min', 'spendable_cash_max', 'reserve_retention_min', 'teammate_cash_threshold', 'opponent_cash_threshold'] },
     { label: 'Action Cost / Wager / EV', kinds: ['cost_cap_absolute', 'cost_cap_percentage', 'wager_range_min', 'wager_range_max', 'success_probability_min', 'expected_reward_min', 'expected_return_min', 'travel_cost_max', 'travel_payback_period_max'] },
     { label: 'Location / Inventory / Recovery', kinds: ['region_presence_required', 'region_absence_required', 'region_visited_required', 'resource_possession_min', 'resource_possession_max', 'resource_retention_min', 'inventory_capacity_max', 'recovery_status_in', 'recovery_status_out'] },
-    { label: 'Team / Phase / Status', kinds: ['team_leading', 'team_trailing', 'game_phase_in', 'actions_remaining_min', 'win_condition_contribution_min'] },
+    { label: 'Team / Phase / Status', kinds: ['team_leading', 'team_trailing', 'game_phase_in', 'actions_remaining_min', 'win_condition_contribution_min', 'team_treasury_balance_min', 'team_treasury_available_min'] },
     { label: 'Meta / System Permission', kinds: ['cash_vault_permission_required', 'economy_governor_approval_required'] }
   ];
   const ACTION_REQUIREMENT_KIND_LABELS: Record<ActionRequirementKind, string> = {
@@ -29802,8 +29875,10 @@ function AustraliaGame() {
     win_condition_contribution_min: 'Win-condition contribution — minimum',
     cash_vault_permission_required: 'Cash Vault permission required',
     economy_governor_approval_required: 'Economy Governor approval required',
-    prior_step_success_required: 'Previous sequence step succeeded'
-  };
+    prior_step_success_required: 'Previous sequence step succeeded',
+    team_treasury_balance_min: 'Team Treasury balance — minimum',
+    team_treasury_available_min: 'Team Treasury available (balance − reserve) — minimum'
+  } as Record<ActionRequirementKind, string>;
   const ACTION_REQUIREMENT_RESOURCE_VALUE_KINDS: ActionRequirementKind[] = ['resource_possession_min', 'resource_possession_max', 'resource_retention_min'];
   const ACTION_REQUIREMENT_REGION_VALUE_KINDS: ActionRequirementKind[] = ['region_presence_required', 'region_absence_required', 'region_visited_required'];
   const ACTION_REQUIREMENT_PHASE_LIST_KINDS: ActionRequirementKind[] = ['game_phase_in'];
@@ -30672,7 +30747,8 @@ function AustraliaGame() {
       teamTreasuryRequireIntendedAction: DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
       teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
       teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
-      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
+      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
+      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -30825,7 +30901,8 @@ function AustraliaGame() {
       teamTreasuryRequireIntendedAction: DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
       teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
       teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
-      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled
+      teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
+      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -33752,6 +33829,14 @@ function AustraliaGame() {
                                   onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiTreasuryRequestsEnabled: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamAiTreasuryRequestsEnabled ? '☑' : '☐'} Allow AI Teammate Funding Requests</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.countTeamTreasuryTowardVictory)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, countTeamTreasuryTowardVictory: e.target.checked }))}
+                                />
+                                <span>{gameSettings.countTeamTreasuryTowardVictory ? '☑' : '☐'} Treasury Balance Counts Toward Victory</span>
                               </label>
                               <label className="flex items-center gap-2 cursor-pointer text-sm">
                                 <input
@@ -38156,6 +38241,45 @@ function AustraliaGame() {
 	                              </div>
 	                            );
 	                          })}
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
+	              )}
+
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled && gameSettings.teamTreasuryShowInUi && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">Team Treasury</span>
+	                    <span>Shared team cash pool</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(treasuryTeamId => {
+	                      const treasuryTeamState = teamsById[treasuryTeamId];
+	                      const teamLabel = treasuryTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+	                      const balance = treasuryTeamState?.treasury.balance || 0;
+	                      const reserve = treasuryTeamState?.treasury.reserve || 0;
+	                      const available = Math.max(0, balance - reserve);
+	                      const recentTransactions = (treasuryTeamState?.treasury.transactions || []).slice(-8).reverse();
+	                      return (
+	                        <div key={treasuryTeamId} className={`${treasuryTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
+	                          <div className="font-semibold mb-1">{teamLabel}</div>
+	                          <div>Balance: ${balance.toLocaleString()}</div>
+	                          <div>Reserve: ${reserve.toLocaleString()}</div>
+	                          <div>Available: ${available.toLocaleString()}</div>
+	                          {gameSettings.countTeamTreasuryTowardVictory && (
+	                            <div className="opacity-75 mt-1">Counts toward the win condition</div>
+	                          )}
+	                          {gameSettings.teamTreasuryShowTransactions && recentTransactions.length > 0 && (
+	                            <div className="mt-2 max-h-24 overflow-y-auto space-y-1 border-t border-white/20 pt-1">
+	                              {recentTransactions.map(tx => (
+	                                <div key={tx.id} className="opacity-80">
+	                                  Day {tx.day}: {tx.amount >= 0 ? '+' : ''}${tx.amount.toLocaleString()} ({tx.type})
+	                                </div>
+	                              ))}
+	                            </div>
+	                          )}
 	                        </div>
 	                      );
 	                    })}
