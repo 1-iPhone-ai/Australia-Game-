@@ -4503,6 +4503,11 @@ type GameSettingsState = {
   // Team AI Overseer System Phase O6: additive score bonus applied to a candidate whose type is
   // in an actor's ACTIVE directive's allowedActionCategories — never a gate bypass, only ranking.
   teamAiStrategicCommandDirectiveScoreBias: number;
+  // Team AI Overseer System Phase O7: interventions — directives delegate to already-shipped
+  // systems (Team Treasury, AI Action Overrides) rather than inventing new mechanics.
+  teamAiStrategicCommandMaxSpendingPercent: number;
+  teamAiStrategicCommandTreasuryAllocationCap: number;
+  teamAiStrategicCommandOverrideBias: number;
   teamAiAdaptiveOverseerEnabled: boolean;
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
@@ -5621,6 +5626,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiStrategicCommandAuthorityMode: 'shadow',
   teamAiStrategicCommandDirectiveDurationDays: 3,
   teamAiStrategicCommandDirectiveScoreBias: 15,
+  teamAiStrategicCommandMaxSpendingPercent: 50,
+  teamAiStrategicCommandTreasuryAllocationCap: 500,
+  teamAiStrategicCommandOverrideBias: 0.15,
   teamAiAdaptiveOverseerEnabled: false,
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
@@ -5777,7 +5785,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -6512,12 +6520,40 @@ const mapGoalKindToAllowedActionCategories = (kind: TeamGoal['kind']): TeamModeA
   }
 };
 
+// Team AI Overseer System Phase O7 (GD4): picks the single most profitable recipe (reusing the
+// exact profit comparison already used elsewhere: sell value vs. ingredient cost) and lists which
+// of its ingredients the actor is currently short on — display-only, no new profitability formula,
+// no new acquisition mechanic (existing market-purchase/crafting scoring already handles that).
+const computeDirectiveRequiredResources = (actor: { inventory?: string[] }): string[] => {
+  const inventory = actor.inventory || [];
+  let bestRecipe: (typeof CRAFTING_RECIPES)[number] | null = null;
+  let bestProfit = -Infinity;
+  for (const recipe of CRAFTING_RECIPES) {
+    const ingredientCost = Object.entries(recipe.inputs).reduce(
+      (sum, [resource, count]) => sum + getResourceMarketPrice(resource) * Number(count), 0
+    );
+    const sellValue = recipe.baseValue || getResourceMarketPrice(recipe.output);
+    const profit = sellValue - ingredientCost;
+    if (profit > bestProfit) {
+      bestProfit = profit;
+      bestRecipe = recipe;
+    }
+  }
+  if (!bestRecipe) return [];
+  return Object.entries(bestRecipe.inputs)
+    .filter(([resource, count]) => inventory.filter(item => item === resource).length < Number(count))
+    .map(([resource]) => resource);
+};
+
 // Team AI Overseer System Phase O5: builds one TeamDirective for a single AI actor from the
 // team's already-chosen objective (chooseTeamObjective, reused verbatim by the caller — not
-// re-derived per actor). Shadow/Advisory display only this phase: maxSpending/treasuryAllocation/
-// requiredResources are deliberately inert (0/0/[]) since no execution/Treasury delegation exists
-// until Phase O7; successCondition/failureCondition are plain display strings, not yet evaluated
-// against real outcomes (Phase O6+ gives them a real trigger once directives influence decisions).
+// re-derived per actor). Shadow/Advisory display only this phase originally; Phase O7 made
+// maxSpending/requiredResources real (see below) — treasuryAllocation is still populated at
+// creation time as 0 and only ever set by the O7 directive-scoped funding-request trigger
+// inside performTeamAiTurn, since it depends on a live shortfall check, not just the goal.
+// successCondition/failureCondition are still plain display strings, not yet evaluated against
+// real outcomes (a future phase gives them a real trigger once directives are observably tied to
+// completion/failure).
 function generateTeamDirective(
   actor: ActorState,
   team: TeamState,
@@ -6537,6 +6573,16 @@ function generateTeamDirective(
     : horizon === 'endgame'
       ? day + Math.max(1, context.totalDays - day)
       : day + Math.max(1, context.settings.teamAiStrategicCommandDirectiveDurationDays);
+  // Team AI Overseer System Phase O7 (GD1): a real spending cap, computed once at creation time
+  // from the actor's current spendable cash — reused verbatim, never re-derived, at the O6 bias
+  // site in getRankedTeamAiDecisions as an additional filter on the scoring bonus.
+  const vaultActive = context.settings.teamCompetitiveAiEnabled && context.settings.teamCashVaultEnabled;
+  const maxSpending = Math.round(getActorSpendableCash(actor, vaultActive) * (context.settings.teamAiStrategicCommandMaxSpendingPercent / 100));
+  // Team AI Overseer System Phase O7 (GD4): crafting-oriented directives list genuinely-missing
+  // ingredients for the actor's best-available recipe (reusing CRAFTING_RECIPES/inventory checks
+  // already used elsewhere) — display-only; acquisition is already handled by the existing
+  // market-purchase/crafting decision scoring, never a new fulfillment mechanic.
+  const requiredResources = goal.kind === 'crafting' ? computeDirectiveRequiredResources(actor) : [];
   return {
     id: `directive_${team.id}_${actor.id}_${day}_${Math.random().toString(36).slice(2, 8)}`,
     teamId: team.id,
@@ -6547,9 +6593,9 @@ function generateTeamDirective(
     createdDay: day,
     createdTurn: turn,
     expiresDay,
-    maxSpending: 0,
+    maxSpending,
     treasuryAllocation: 0,
-    requiredResources: [],
+    requiredResources,
     allowedActionCategories: mapGoalKindToAllowedActionCategories(goal.kind),
     successCondition: `Team's ${context.winCondition} metric improves before this directive expires.`,
     failureCondition: 'Directive expires with no measurable progress.',
@@ -11570,6 +11616,9 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
 	      teamAiStrategicCommandDirectiveDurationDays: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveDurationDays, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays, 1, 30),
 	      teamAiStrategicCommandDirectiveScoreBias: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveScoreBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias, 0, 100),
+	      teamAiStrategicCommandMaxSpendingPercent: clampSettingNumber(settingsData.teamAiStrategicCommandMaxSpendingPercent, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent, 0, 100),
+	      teamAiStrategicCommandTreasuryAllocationCap: clampSettingNumber(settingsData.teamAiStrategicCommandTreasuryAllocationCap, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap, 0, 100000),
+	      teamAiStrategicCommandOverrideBias: clampSettingNumber(settingsData.teamAiStrategicCommandOverrideBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias, 0, 0.5),
 	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
 	        ? settingsData.teamAiAdaptiveOverseerEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
@@ -26664,7 +26713,17 @@ function AustraliaGame() {
       if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled) {
         const myActiveDirective = (resolveTeam(actor.teamId)?.overseer.strategicDirectives || [])
           .find(d => d.assignedActorId === actorId && d.status === 'active');
-        if (myActiveDirective && myActiveDirective.allowedActionCategories.includes(candidate.type as TeamModeActionCategory)) {
+        // Team AI Overseer System Phase O7 (GD1): maxSpending is an additional filter on the
+        // bonus itself, never a new gate — a candidate over the cap simply doesn't get the
+        // directive's scoring nudge, it can still be chosen (or rejected) on every other factor.
+        const candidateCost = typeof candidate.data?.wager === 'number' ? candidate.data.wager
+          : typeof candidate.data?.purchases?.[0]?.cost === 'number' ? candidate.data.purchases[0].cost
+          : 0;
+        if (
+          myActiveDirective &&
+          myActiveDirective.allowedActionCategories.includes(candidate.type as TeamModeActionCategory) &&
+          candidateCost <= myActiveDirective.maxSpending
+        ) {
           const directiveBonus = gameSettings.teamAiStrategicCommandDirectiveScoreBias;
           bonus += directiveBonus;
           const directiveReason = `Strategic Command directive: ${myActiveDirective.objective}.`;
@@ -27392,9 +27451,23 @@ function AustraliaGame() {
     // a locally-computed adjusted value, never mutating gameSettings itself. Identical to the
     // unmodified setting whenever Endgame Acceleration is off (fractional reduction of 0 no-ops).
     const endgameOverrideState = computeEndgameAccelerationState();
-    const effectiveMinimumDecisionScore = endgameOverrideState.active
-      ? gameSettings.teamAiOverrideMinimumDecisionScore * (1 - gameSettings.teamAiEndgameOverrideBias)
-      : gameSettings.teamAiOverrideMinimumDecisionScore;
+    // Team AI Overseer System Phase O7 (GD3): a second, independent threshold reduction —
+    // mirrors teamAiEndgameOverrideBias exactly (a locally-computed adjusted value, never
+    // mutating gameSettings), applied only when this actor has an ACTIVE directive whose
+    // allowedActionCategories include the decision being considered for Override. The two
+    // biases compose additively (both reductions stack, matching how independent discounts
+    // would combine), clamped so the combined reduction can never exceed 90%.
+    const directiveForOverrideBias = (teamsByIdRef.current[actor.teamId]?.overseer.strategicDirectives || [])
+      .find(d => d.assignedActorId === actorId && d.status === 'active');
+    const directiveOverrideBiasActive = Boolean(
+      gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled &&
+      directiveForOverrideBias && directiveForOverrideBias.allowedActionCategories.includes(nextDecision.type as TeamModeActionCategory)
+    );
+    const totalOverrideBiasFraction = Math.min(0.9,
+      (endgameOverrideState.active ? gameSettings.teamAiEndgameOverrideBias : 0) +
+      (directiveOverrideBiasActive ? gameSettings.teamAiStrategicCommandOverrideBias : 0)
+    );
+    const effectiveMinimumDecisionScore = gameSettings.teamAiOverrideMinimumDecisionScore * (1 - totalOverrideBiasFraction);
     if (nextDecision.score < effectiveMinimumDecisionScore) {
       return ineligible('Decision score below Competitive AI threshold.');
     }
@@ -27423,6 +27496,7 @@ function AustraliaGame() {
     gameSettings.enemyTeamAiPreset, gameSettings.teamAiOverrideMaxPerActorPerDay, gameSettings.teamAiOverrideMaxPerTeamPerDay,
     gameSettings.teamAiOverridePolicy, gameSettings.friendlyAiOverridePolicy, gameSettings.teamAiOverrideBaseCostMultiplier,
     gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameSettings.teamAiEndgameOverrideBias,
+    gameSettings.teamAiOverseerSystemEnabled, gameSettings.teamAiStrategicCommandEnabled, gameSettings.teamAiStrategicCommandOverrideBias,
     gameState.gameMode, getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity, computeEndgameAccelerationState
   ]);
   // V6.7 Phase 3d: ref-indirection assignment — see overrideEligibilityRef's declaration comment.
@@ -28809,6 +28883,66 @@ function AustraliaGame() {
               } else {
                 const treasuryApprovalRequest = buildTreasuryApprovalRequest(treasuryRequest, actor, actionBudget - actionsTaken);
                 setPendingApprovalRequests(prev => [...prev, treasuryApprovalRequest]);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Team AI Overseer System Phase O7 (GD2): a second, directive-scoped Treasury funding-request
+    // trigger, additive alongside (never replacing) the T2 zero-cash trigger above. T2's trigger
+    // only ever fires at true $0 spendable cash; this one fires whenever an actor with an ACTIVE
+    // directive has SOME cash but not enough for the best candidate within the directive's own
+    // allowedActionCategories — reusing createTreasuryFundingRequest/evaluateAiTeamFundingPolicy/
+    // buildTreasuryApprovalRequest completely unmodified, exactly like T2's own trigger does.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled && gameSettings.teamTreasuryEnabled && actor.kind === 'ai') {
+      const directiveTeam = teamsByIdRef.current[actor.teamId];
+      const activeDirectiveForFunding = (directiveTeam?.overseer.strategicDirectives || [])
+        .find(d => d.assignedActorId === actor.id && d.status === 'active');
+      if (activeDirectiveForFunding) {
+        const directiveSpendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+        const inCategoryCandidates = getRankedTeamAiDecisions(actor.id)
+          .filter(c => activeDirectiveForFunding.allowedActionCategories.includes(c.type as TeamModeActionCategory));
+        const bestInCategoryCandidate = inCategoryCandidates[0];
+        const bestInCategoryCost = typeof bestInCategoryCandidate?.data?.wager === 'number' ? bestInCategoryCandidate.data.wager
+          : typeof bestInCategoryCandidate?.data?.purchases?.[0]?.cost === 'number' ? bestInCategoryCandidate.data.purchases[0].cost
+          : 0;
+        if (bestInCategoryCandidate && bestInCategoryCost > directiveSpendableCash && directiveSpendableCash > 0) {
+          const hasPendingDirectiveRequest = directiveTeam?.treasury.fundingRequests.some(r => r.requestingActorId === actor.id && r.status === 'pending');
+          if (!hasPendingDirectiveRequest) {
+            const shortfall = Math.min(bestInCategoryCost - directiveSpendableCash, gameSettings.teamAiStrategicCommandTreasuryAllocationCap);
+            const directiveTreasuryRequest = createTreasuryFundingRequest(actor.id, {
+              requestType: 'fund_specific_action',
+              intendedActionType: bestInCategoryCandidate.type,
+              intendedActionCost: bestInCategoryCost,
+              expectedBenefit: bestInCategoryCandidate.plan?.expectedValue,
+              reason: `Strategic Command directive shortfall: ${getActorDisplayName(actor.id)} needs $${shortfall} more toward "${activeDirectiveForFunding.objective}".`
+            });
+            if (directiveTreasuryRequest) {
+              narrowPathUsedThisTurn = true;
+              updateTeamState(actor.teamId, prev => ({
+                ...prev,
+                overseer: {
+                  ...prev.overseer,
+                  strategicDirectives: prev.overseer.strategicDirectives.map(d => d.id === activeDirectiveForFunding.id ? { ...d, treasuryAllocation: shortfall } : d)
+                }
+              }));
+              const directiveTeammates = getTeamActors(actor.teamId);
+              const directiveHasHumanTeammate = directiveTeammates.some(a => a.kind === 'human');
+              const autoResolveDirectiveRequest = !directiveHasHumanTeammate || !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
+              if (autoResolveDirectiveRequest) {
+                const directivePolicyResolution = evaluateAiTeamFundingPolicy(directiveTreasuryRequest);
+                if (directivePolicyResolution.outcome !== 'delay') {
+                  const directiveControlByOutcome: Record<string, TreasuryApprovalControlAction> = {
+                    approve_full: 'approve_full', approve_partial: 'approve_partial',
+                    approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper'
+                  };
+                  resolveTreasuryFundingRequest(directiveTreasuryRequest.id, directiveControlByOutcome[directivePolicyResolution.outcome] || 'reject', directivePolicyResolution.approvedAmount);
+                }
+              } else {
+                const directiveTreasuryApprovalRequest = buildTreasuryApprovalRequest(directiveTreasuryRequest, actor, actionBudget - actionsTaken);
+                setPendingApprovalRequests(prev => [...prev, directiveTreasuryApprovalRequest]);
               }
             }
           }
@@ -31736,6 +31870,9 @@ function AustraliaGame() {
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
       teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
       teamAiStrategicCommandDirectiveScoreBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias,
+      teamAiStrategicCommandMaxSpendingPercent: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent,
+      teamAiStrategicCommandTreasuryAllocationCap: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap,
+      teamAiStrategicCommandOverrideBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -31905,6 +32042,9 @@ function AustraliaGame() {
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
       teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
       teamAiStrategicCommandDirectiveScoreBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias,
+      teamAiStrategicCommandMaxSpendingPercent: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent,
+      teamAiStrategicCommandTreasuryAllocationCap: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap,
+      teamAiStrategicCommandOverrideBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -35036,6 +35176,21 @@ function AustraliaGame() {
                               <label className="block font-semibold mb-2">Directive Score Bias: +{gameSettings.teamAiStrategicCommandDirectiveScoreBias}</label>
                               <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandDirectiveScoreBias} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveScoreBias: parseInt(e.target.value) }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">Score bonus applied to a candidate action whose type matches an actor's ACTIVE directive's allowed categories — additive only, never bypasses any gate.</div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Max Spending: {gameSettings.teamAiStrategicCommandMaxSpendingPercent}% of spendable cash</label>
+                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandMaxSpendingPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandMaxSpendingPercent: parseInt(e.target.value) }))} className="w-full" />
+                              <div className="text-xs opacity-60 mt-1">A directive's own spending cap, computed at creation time. A candidate over this cap never gets the Strategic Command score bonus (it can still be chosen on its own merits).</div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Treasury Allocation Cap: ${gameSettings.teamAiStrategicCommandTreasuryAllocationCap}</label>
+                              <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiStrategicCommandTreasuryAllocationCap} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandTreasuryAllocationCap: parseInt(e.target.value) }))} className="w-full" />
+                              <div className="text-xs opacity-60 mt-1">Maximum a directive-scoped Team Treasury funding request may ask for (requires Team Treasury enabled).</div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Override Bias: {Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)}%</label>
+                              <input type="range" min="0" max="50" step="1" value={Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
+                              <div className="text-xs opacity-60 mt-1">Lowers the Override eligibility score threshold when an actor's active directive can't otherwise be pursued (requires AI Action Overrides enabled) — composes with Endgame Acceleration's own Override Bias.</div>
                             </div>
                           </div>
                         )}
@@ -39502,6 +39657,12 @@ function AustraliaGame() {
 	                                <div key={directive.id}>
 	                                  <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
 	                                  <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay} • <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span></div>
+	                                  {directive.maxSpending > 0 && (
+	                                    <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString()}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString()}` : ''}</div>
+	                                  )}
+	                                  {directive.requiredResources.length > 0 && (
+	                                    <div className="opacity-60">Needs: {directive.requiredResources.join(', ')}</div>
+	                                  )}
 	                                  <div className="flex gap-1 mt-1">
 	                                    {directive.status === 'proposed' && (
 	                                      <button onClick={() => applyOverseerAdvisoryDirective(overseerTeamId, directive.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded`}>Apply</button>
