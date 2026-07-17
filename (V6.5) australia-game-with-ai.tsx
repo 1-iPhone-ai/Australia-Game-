@@ -3042,6 +3042,84 @@ const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
   };
 };
 
+// Team AI Overseer System Phase O2: pure diagnostic — reads only existing state (win-metric gap,
+// Governor-restricted actor count, endgame timing) and picks which AdaptiveStrategyMode currently
+// applies. Coordination Repair's real signal doesn't exist until Strategic Command ships (O5+); the
+// caller always passes hasCoordinationConflict=false until then — a stated, honest gap rather than
+// a faked signal, matching this file's own convention of disclosing structural limits inline.
+const computeAdaptiveStrategyModeSignal = (params: {
+  teamMetricValue: number;
+  opponentMetricValue: number;
+  restrictedActorCount: number;
+  hasCoordinationConflict: boolean;
+  endgameActive: boolean;
+  currentMode: AdaptiveStrategyMode;
+  settings: GameSettingsState;
+}): { candidateMode: AdaptiveStrategyMode; confidence: number; evidence: string[] } => {
+  const { teamMetricValue, opponentMetricValue, restrictedActorCount, hasCoordinationConflict, endgameActive, currentMode, settings } = params;
+  const referenceValue = Math.max(teamMetricValue, opponentMetricValue, 1);
+  const percentBehind = teamMetricValue < opponentMetricValue ? ((opponentMetricValue - teamMetricValue) / referenceValue) * 100 : 0;
+  const percentAhead = teamMetricValue > opponentMetricValue ? ((teamMetricValue - opponentMetricValue) / referenceValue) * 100 : 0;
+
+  if (restrictedActorCount > 0) {
+    return {
+      candidateMode: 'recovery',
+      confidence: Math.min(0.95, 0.6 + restrictedActorCount * 0.1),
+      evidence: [`${restrictedActorCount} teammate(s) at or above the Governor-restricted-turns threshold.`]
+    };
+  }
+
+  const comebackThreshold = currentMode === 'comeback' ? settings.teamAiAdaptiveOverseerComebackExitPercent : settings.teamAiAdaptiveOverseerComebackEnterPercent;
+  if (percentBehind >= comebackThreshold) {
+    return {
+      candidateMode: 'comeback',
+      confidence: Math.min(0.95, 0.5 + (percentBehind / Math.max(1, comebackThreshold)) * 0.25),
+      evidence: [`Team is ${percentBehind.toFixed(1)}% behind the opponent on the active win-condition metric.`]
+    };
+  }
+
+  const protectLeadThreshold = currentMode === 'protect_lead' ? settings.teamAiAdaptiveOverseerProtectLeadExitPercent : settings.teamAiAdaptiveOverseerProtectLeadEnterPercent;
+  if (percentAhead >= protectLeadThreshold) {
+    return {
+      candidateMode: 'protect_lead',
+      confidence: Math.min(0.95, 0.5 + (percentAhead / Math.max(1, protectLeadThreshold)) * 0.25),
+      evidence: [`Team is ${percentAhead.toFixed(1)}% ahead of the opponent on the active win-condition metric.`]
+    };
+  }
+
+  if (endgameActive) {
+    return {
+      candidateMode: 'endgame_push',
+      confidence: 0.7,
+      evidence: ['The match has entered its endgame window.']
+    };
+  }
+
+  if (hasCoordinationConflict) {
+    return {
+      candidateMode: 'coordination_repair',
+      confidence: 0.6,
+      evidence: ['Repeated coordination conflicts detected between teammates.']
+    };
+  }
+
+  return { candidateMode: 'stable', confidence: 0.5, evidence: ['No strategy-mode trigger currently active.'] };
+};
+// Team AI Overseer System Phase O2: applies Part 11's stability rules — a non-Recovery mode change
+// must wait teamAiAdaptiveOverseerMinimumStrategyDurationDays since the last change; Recovery is
+// the spec's stated emergency exception and can pre-empt immediately.
+const resolveAdaptiveStrategyModeTransition = (
+  candidateMode: AdaptiveStrategyMode,
+  currentMode: AdaptiveStrategyMode,
+  strategyModeSinceDay: number,
+  currentDay: number,
+  minimumDurationDays: number
+): boolean => {
+  if (candidateMode === currentMode) return false;
+  if (candidateMode === 'recovery') return true;
+  return (currentDay - strategyModeSinceDay) >= minimumDurationDays;
+};
+
 const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<ActionRequirement>;
@@ -4404,6 +4482,15 @@ type GameSettingsState = {
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
   teamAiOverseerTransparencyEnabled: boolean;
+  // Team AI Overseer System Phase O2 (inert unless teamAiAdaptiveOverseerEnabled): hysteresis
+  // thresholds and stability guard for shadow-only strategy-mode diagnostics. No policy overlay
+  // exists yet — these only govern which AdaptiveStrategyMode label gets recorded/displayed.
+  teamAiAdaptiveOverseerComebackEnterPercent: number;
+  teamAiAdaptiveOverseerComebackExitPercent: number;
+  teamAiAdaptiveOverseerProtectLeadEnterPercent: number;
+  teamAiAdaptiveOverseerProtectLeadExitPercent: number;
+  teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: number;
+  teamAiAdaptiveOverseerMinimumStrategyDurationDays: number;
 };
 
 type DontAskAgainPrefs = {
@@ -5510,7 +5597,13 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAdaptiveOverseerEnabled: false,
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
-  teamAiOverseerTransparencyEnabled: true
+  teamAiOverseerTransparencyEnabled: true,
+  teamAiAdaptiveOverseerComebackEnterPercent: 20,
+  teamAiAdaptiveOverseerComebackExitPercent: 10,
+  teamAiAdaptiveOverseerProtectLeadEnterPercent: 20,
+  teamAiAdaptiveOverseerProtectLeadExitPercent: 10,
+  teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: 3,
+  teamAiAdaptiveOverseerMinimumStrategyDurationDays: 2
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -5657,7 +5750,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -11363,7 +11456,13 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
 	      teamAiOverseerTransparencyEnabled: typeof settingsData.teamAiOverseerTransparencyEnabled === 'boolean'
 	        ? settingsData.teamAiOverseerTransparencyEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+	      teamAiAdaptiveOverseerComebackEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent, 0, 100),
+	      teamAiAdaptiveOverseerComebackExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent, 0, 100),
+	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
+	      teamAiAdaptiveOverseerProtectLeadExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent, 0, 100),
+	      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: clampSettingNumber(settingsData.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, 1, 20),
+	      teamAiAdaptiveOverseerMinimumStrategyDurationDays: clampSettingNumber(settingsData.teamAiAdaptiveOverseerMinimumStrategyDurationDays, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays, 0, 30)
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -22622,6 +22721,11 @@ function AustraliaGame() {
 
       const controlSnapshot = projectedControlSnapshot;
       const previousTeams = teamsByIdRef.current;
+      // Team AI Overseer System Phase O2: collected during the per-team reduce below (shadow-only
+      // strategy-mode diagnostic), flushed as trace notes/notifications AFTER nextTeams commits —
+      // mirrors the existing pattern of the Treasury AI-contribution pass running right after this
+      // same commit rather than inside the reduce's own accumulator.
+      const adaptiveOverseerModeChanges: { teamId: string; mode: AdaptiveStrategyMode; evidence: string[]; confidence: number }[] = [];
       const nextTeams = (Object.entries(teamsByIdRef.current) as Array<[string, TeamState]>).reduce<Record<string, TeamState>>((acc, [teamId, teamState]) => {
         const sanitizedLedger = sanitizeTeamSupportLedger(teamState.supportLedger);
         const teamActors = (teamState.actorIds || [])
@@ -22812,12 +22916,72 @@ function AustraliaGame() {
               return { ...exception, status: 'expired' as GovernorExceptionStatus, resolvedDay: newDay };
             }
             return exception;
-          })
+          }),
+          // Team AI Overseer System Phase O2: shadow-only strategy-mode diagnostic. Computes and
+          // labels which AdaptiveStrategyMode currently applies but changes no AI policy/decision —
+          // that overlay logic ships in Phase O3. Inert (passes teamState.overseer through
+          // unchanged) unless both the system master and the Adaptive Overseer module are enabled.
+          overseer: (() => {
+            if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiOverseerSystemEnabled || !gameSettings.teamAiAdaptiveOverseerEnabled) {
+              return teamState.overseer;
+            }
+            const overseerMetricValues = projectedTeamMetricValues[gameSettings.winCondition];
+            const overseerTeamMetricValue = teamId === TEAM_PLAYER_ID ? overseerMetricValues.player : overseerMetricValues.ai;
+            const overseerOpponentMetricValue = teamId === TEAM_PLAYER_ID ? overseerMetricValues.ai : overseerMetricValues.player;
+            const restrictedActorCount = teamActors.filter(a => (a.consecutiveRestrictedTurns || 0) >= gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold).length;
+            const endgameActiveForOverseer = isEndgamePeriod(newDay, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+            const signal = computeAdaptiveStrategyModeSignal({
+              teamMetricValue: overseerTeamMetricValue,
+              opponentMetricValue: overseerOpponentMetricValue,
+              restrictedActorCount,
+              // Coordination Repair's real signal doesn't exist until Strategic Command ships
+              // (O5+) — always false until then, a stated gap rather than a faked signal.
+              hasCoordinationConflict: false,
+              endgameActive: endgameActiveForOverseer,
+              currentMode: teamState.overseer.currentAdaptiveStrategyMode,
+              settings: gameSettings
+            });
+            const shouldTransition = resolveAdaptiveStrategyModeTransition(
+              signal.candidateMode,
+              teamState.overseer.currentAdaptiveStrategyMode,
+              teamState.overseer.strategyModeSinceDay,
+              newDay,
+              gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays
+            );
+            if (shouldTransition) {
+              adaptiveOverseerModeChanges.push({ teamId, mode: signal.candidateMode, evidence: signal.evidence, confidence: signal.confidence });
+            }
+            return {
+              ...teamState.overseer,
+              currentAdaptiveStrategyMode: shouldTransition ? signal.candidateMode : teamState.overseer.currentAdaptiveStrategyMode,
+              strategyModeSinceDay: shouldTransition ? newDay : teamState.overseer.strategyModeSinceDay,
+              lastEvaluationDay: newDay,
+              lastEvaluationTurn: projectedTurnCounter
+            };
+          })()
         };
         return acc;
       }, {});
       setTeamsById(nextTeams);
       teamsByIdRef.current = nextTeams;
+
+      // Team AI Overseer System Phase O2: flush shadow-only strategy-mode-change notices collected
+      // during the reduce above. Reuses the existing trace-note and notification pipelines
+      // verbatim (appendTeamAiTraceNote/addNotification) rather than a new explanation UI — never
+      // mutates gameSettings or any decision score, purely observability.
+      if (gameSettings.teamAiOverseerTransparencyEnabled) {
+        adaptiveOverseerModeChanges.forEach(({ teamId, mode, evidence, confidence }) => {
+          const team = teamsByIdRef.current[teamId];
+          if (!team) return;
+          const teamLabel = teamId === TEAM_PLAYER_ID ? (team.name || 'Your Team') : (team.name || 'AI Team');
+          const summary = `${teamLabel}'s Adaptive Overseer diagnosed ${mode.replace(/_/g, ' ')} (confidence ${Math.round(confidence * 100)}%): ${evidence[0] || ''}`;
+          addNotification(`🧭 ${summary}`, 'ai', false, 'system');
+          (team.actorIds || []).forEach(actorId => {
+            const actor = projectedActors[actorId];
+            if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, summary);
+          });
+        });
+      }
 
       // Team Treasury Phase T1 (GD4): apply AI contributions once per day, using the
       // just-committed nextTeams/actor state so evaluateTeamAiTreasuryContribution reads today's
@@ -23383,7 +23547,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, applyLoanTick, buildLiveTeamAdaptiveState, compareCompetitiveMetricValues, computeNetWorth, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, compareCompetitiveMetricValues, computeNetWorth, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -30911,7 +31075,13 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
-      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
+      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+      teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
+      teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
+      teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
+      teamAiAdaptiveOverseerProtectLeadExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent,
+      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold,
+      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -31072,7 +31242,13 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
-      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
+      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+      teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
+      teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
+      teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
+      teamAiAdaptiveOverseerProtectLeadExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent,
+      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold,
+      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -34210,7 +34386,40 @@ function AustraliaGame() {
                                 </button>
                               ))}
                             </div>
-                            <div className="text-xs opacity-60 mt-1">No behavior yet — the Adaptive Overseer's diagnostic and overlay logic ships in later updates. This only records the intended authority level.</div>
+                            <div className="text-xs opacity-60 mt-1">Shadow-only diagnostics run now regardless of this mode (a strategy-mode label is computed and logged daily) — actual policy overlays that change AI behavior ship in a later update. This only records the intended future authority level.</div>
+                          </div>
+                        )}
+                        {gameSettings.teamAiAdaptiveOverseerEnabled && uiState.settingsViewMode === 'advanced' && (
+                          <div className="space-y-3">
+                            <div className="text-sm font-semibold">Strategy Diagnostic Thresholds (shadow-only — labels/logs the detected strategy mode, applies no policy changes yet)</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block font-semibold mb-2">Comeback Mode — Enter: {gameSettings.teamAiAdaptiveOverseerComebackEnterPercent}% behind</label>
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackEnterPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerComebackEnterPercent: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Comeback Mode — Exit: {gameSettings.teamAiAdaptiveOverseerComebackExitPercent}% behind</label>
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackExitPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerComebackExitPercent: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Protect the Lead — Enter: {gameSettings.teamAiAdaptiveOverseerProtectLeadEnterPercent}% ahead</label>
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadEnterPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadEnterPercent: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Protect the Lead — Exit: {gameSettings.teamAiAdaptiveOverseerProtectLeadExitPercent}% ahead</label>
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadExitPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadExitPercent: parseInt(e.target.value) }))} className="w-full" />
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Recovery Mode — Restricted Turns Threshold: {gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold}</label>
+                                <input type="range" min="1" max="20" step="1" value={gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
+                                <div className="text-xs opacity-60 mt-1">An actor at or above this many consecutive Governor-restricted turns counts as a Recovery signal.</div>
+                              </div>
+                              <div>
+                                <label className="block font-semibold mb-2">Minimum Strategy Duration: {gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays} day(s)</label>
+                                <input type="range" min="0" max="30" step="1" value={gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerMinimumStrategyDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                                <div className="text-xs opacity-60 mt-1">Prevents strategy oscillation — a non-Recovery mode change must wait this long since the last change. Recovery Mode can pre-empt immediately (spec's stated emergency exception).</div>
+                              </div>
+                            </div>
                           </div>
                         )}
 
@@ -34230,7 +34439,7 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.teamAiOverseerTransparencyEnabled ? '☑' : '☐'} Show Overseer Reasoning (confidence, evidence, added in a later update)</span>
                         </label>
-                        <div className="text-xs opacity-60">This is the foundation release: both modules can be toggled and configured here, but neither yet changes team behavior. Coordination and adaptive-policy logic ship in upcoming updates — nothing here currently affects gameplay.</div>
+                        <div className="text-xs opacity-60">Strategic Command AI still has no effect yet. The Adaptive Overseer now runs shadow-only diagnostics daily (labeling each team's current strategy mode and logging why), but does not yet change any AI policy setting or decision — that overlay logic ships in a later update.</div>
                       </>
                     )}
                   </div>
