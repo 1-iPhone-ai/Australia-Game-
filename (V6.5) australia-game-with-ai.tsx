@@ -827,6 +827,42 @@ const evaluateEconomySpendingApproval = (
   return { approved: true, reason: `${phase} phase: approved.`, phase };
 };
 
+// Team Treasury Phase T4 (GD1): a small allow-list eligibility check for the Productive Recovery
+// Ladder — never a new scoring system, and never an auto-approval. Every real gate (Governor,
+// Requirements) still fully re-evaluates probability/expected-return/downside/reserve-breach for
+// whichever candidate this returns true for; this only decides which candidates are worth trying.
+const isRecoverySafeCandidate = (
+  candidate: ScoredTeamAiDecision,
+  actor: ActorState,
+  settings: GameSettingsState
+): boolean => {
+  switch (candidate.type) {
+    case 'sell':
+      return true;
+    case 'craft': {
+      const recipe = CRAFTING_RECIPES.find(item => item.id === candidate.data?.recipeId);
+      if (!recipe) return false;
+      const ingredientCost = Object.entries(recipe.inputs).reduce(
+        (sum, [resource, count]) => sum + getResourceMarketPrice(resource) * Number(count), 0
+      );
+      const sellValue = recipe.baseValue || getResourceMarketPrice(recipe.output);
+      return sellValue > ingredientCost;
+    }
+    case 'challenge': {
+      const chance = typeof candidate.data?.successChance === 'number' ? candidate.data.successChance : 0;
+      return chance >= settings.guaranteedRecoveryMinimumChallengeProbability;
+    }
+    case 'travel':
+      return Boolean(candidate.plan?.expectedValue && candidate.plan.expectedValue > 0);
+    case 'buy_market':
+      return Boolean(candidate.plan?.expectedValue && candidate.plan.expectedValue > 0);
+    case 'region_deposit':
+      return settings.winCondition === 'regions';
+    default:
+      return false;
+  }
+};
+
 const detectAdaptiveAiPhase = (
   playerNetWorth: number,
   aiNetWorth: number,
@@ -2598,6 +2634,9 @@ interface TeamState {
   // own money/protectedCash. Never duplicated onto ActorState — this is the one authoritative
   // treasury balance for this team.
   treasury: TeamTreasuryState;
+  // Team Treasury Phase T4: bounded, scoped Governor exceptions (never a permanent Governor
+  // settings change — every grant is a reversible, expiring record). Capped .slice(-30).
+  governorExceptions: TeamGovernorException[];
 }
 
 // Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
@@ -2679,6 +2718,27 @@ interface TeamTreasuryState {
   withdrawalTotalsByActor: Record<string, number>;
   lastContributionDay: Record<string, number>;
   lastWithdrawalDay: Record<string, number>;
+}
+
+// Team Treasury Phase T4: a bounded, scoped Governor exception, mirroring TreasuryFundingRequest's
+// own shape/lifecycle precedent. Never mutates GameSettingsState — every grant is fully reversible
+// by letting it expire per its own scope.
+type GovernorExceptionScope = 'single_action' | 'current_turn' | 'until_recovery_target' | 'temporary_reserve_reduction';
+type GovernorExceptionStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'consumed';
+
+interface TeamGovernorException {
+  id: string;
+  actorId: string;
+  teamId: string;
+  scope: GovernorExceptionScope;
+  allowedCategories: EconomySpendCategory[];
+  maxReserveBreach: number;
+  reserveReductionAmount?: number;
+  expiresDay?: number;
+  status: GovernorExceptionStatus;
+  reason: string;
+  createdDay: number;
+  resolvedDay?: number;
 }
 
 interface TeamAutoplayState {
@@ -3050,6 +3110,10 @@ type ApprovalControlAction = 'approve' | 'reject' | 'edit_and_approve' | 'approv
 // request kind, matching the spec's "distinguish a funding request from an action-execution
 // request" requirement.
 type TreasuryApprovalControlAction = 'approve_full' | 'approve_minimum' | 'approve_partial' | 'edit_amount' | 'reject' | 'ask_cheaper' | 'emergency_only';
+// Team Treasury Phase T4 (GD6): distinct control vocabulary for a governor_exception request —
+// replaces (never appears alongside) the ordinary 9 ApprovalControlAction buttons or the Treasury
+// 7-button row for this one request kind, mirroring T2's own requestKind-gated button-row precedent.
+type GovernorExceptionControlAction = 'approve_once' | 'approve_lower' | 'use_treasury' | 'approve_current_turn' | 'lower_reserve' | 'reject_strict' | 'reject_end_turn';
 interface AutomaticApprovalRuleThreshold {
   enabled: boolean;
   threshold: number;
@@ -3097,11 +3161,14 @@ interface ApprovalRequest {
   sequenceStepId?: string;
   // V6.9.1 bugfix: explicit lifecycle status, see ApprovalRequestStatus above.
   status: ApprovalRequestStatus;
-  // Team Treasury Phase T2: discriminates an ordinary action-execution request from a Treasury
-  // funding-request/withdrawal request reusing this same queue/dialog machinery (GD1/GD2) — never
-  // a second approval engine. Defaults 'ai_action' at every existing construction site.
-  requestKind: 'ai_action' | 'treasury_withdrawal';
+  // Team Treasury Phase T2/T4: discriminates an ordinary action-execution request from a Treasury
+  // funding-request/withdrawal request, or (T4) a Governor exception proposal, all reusing this
+  // same queue/dialog machinery (GD1/GD2) — never a second approval engine. Defaults 'ai_action'
+  // at every existing construction site.
+  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception';
   treasuryRequestId?: string;
+  // Team Treasury Phase T4: set only when requestKind === 'governor_exception'.
+  governorExceptionId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -4103,6 +4170,18 @@ type GameSettingsState = {
   // a pure detection/explanation layer on top of the Governor above — never a new spending mechanism.
   teamAiGovernorRestrictionDetectionEnabled: boolean;
   teamAiGovernorRestrictionTransparencyEnabled: boolean;
+  // Team Treasury Phase T4 (inert unless teamCompetitiveAiEnabled && teamAiProductiveRecoveryLadderEnabled):
+  // a bounded, reuse-everything fallback search tried before an actor is ever allowed to just wait,
+  // plus a controlled, bounded Governor exception mechanism. Independent of the T3 toggle above —
+  // if T3's restriction detection is off, this ladder simply never fires (its trigger reads T3's
+  // classifier), stated honestly rather than silently degrading.
+  teamAiProductiveRecoveryLadderEnabled: boolean;
+  teamAiGovernorAutomaticExceptionsEnabled: boolean;
+  teamAiGovernorExceptionConsecutiveTurnsThreshold: number;
+  teamAiGovernorExceptionMaxReserveBreach: number;
+  teamAiGovernorExceptionMinProbability: number;
+  teamAiGovernorExceptionMinEvRatio: number;
+  teamAiGovernorExceptionMaxCost: number;
   // V6.8 Phase D: Teammate Performance Sync 2.0 — a stronger, optional, mutually-exclusive
   // alternative to Teammate Performance Sync (teammatePerformanceSyncEnabled above). When on, it
   // supersedes Sync 1.0 team-mode-wide (Sync 1.0 becomes an inert no-op). Reuses ActorState's
@@ -5202,6 +5281,13 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   economyGovernorTransparencyEnabled: true,
   teamAiGovernorRestrictionDetectionEnabled: false,
   teamAiGovernorRestrictionTransparencyEnabled: true,
+  teamAiProductiveRecoveryLadderEnabled: false,
+  teamAiGovernorAutomaticExceptionsEnabled: false,
+  teamAiGovernorExceptionConsecutiveTurnsThreshold: 3,
+  teamAiGovernorExceptionMaxReserveBreach: 300,
+  teamAiGovernorExceptionMinProbability: 0.6,
+  teamAiGovernorExceptionMinEvRatio: 1.2,
+  teamAiGovernorExceptionMaxCost: 500,
   teammatePerformanceSync2Enabled: false,
   teammatePerformanceSync2Strength: 1.0,
   teammatePerformanceSync2StrategyLearningEnabled: true,
@@ -5418,7 +5504,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'] },
   { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
   { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
-  { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled', 'teamAiGovernorRestrictionDetectionEnabled', 'teamAiGovernorRestrictionTransparencyEnabled'] },
+  { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled', 'teamAiGovernorRestrictionDetectionEnabled', 'teamAiGovernorRestrictionTransparencyEnabled', 'teamAiProductiveRecoveryLadderEnabled', 'teamAiGovernorAutomaticExceptionsEnabled', 'teamAiGovernorExceptionConsecutiveTurnsThreshold', 'teamAiGovernorExceptionMaxReserveBreach', 'teamAiGovernorExceptionMinProbability', 'teamAiGovernorExceptionMinEvRatio', 'teamAiGovernorExceptionMaxCost'] },
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'] },
@@ -8234,6 +8320,42 @@ const sanitizeTreasuryFundingRequest = (value: unknown): TreasuryFundingRequest 
   };
 };
 
+const GOVERNOR_EXCEPTION_SCOPES: GovernorExceptionScope[] = ['single_action', 'current_turn', 'until_recovery_target', 'temporary_reserve_reduction'];
+const GOVERNOR_EXCEPTION_STATUSES: GovernorExceptionStatus[] = ['pending', 'approved', 'rejected', 'expired', 'consumed'];
+const ECONOMY_SPEND_CATEGORIES: EconomySpendCategory[] = ['equipment', 'investment', 'sabotage', 'region_deposit', 'travel', 'override', 'support'];
+
+// Team Treasury Phase T4: a malformed Governor exception is dropped entirely, matching
+// sanitizeTreasuryFundingRequest's convention above.
+const sanitizeTeamGovernorException = (value: unknown): TeamGovernorException | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<TeamGovernorException>;
+  if (typeof source.id !== 'string' || typeof source.actorId !== 'string' || typeof source.teamId !== 'string') return null;
+  if (!GOVERNOR_EXCEPTION_SCOPES.includes(source.scope as GovernorExceptionScope)) return null;
+  if (!GOVERNOR_EXCEPTION_STATUSES.includes(source.status as GovernorExceptionStatus)) return null;
+  const allowedCategories = Array.isArray(source.allowedCategories)
+    ? source.allowedCategories.filter((c): c is EconomySpendCategory => ECONOMY_SPEND_CATEGORIES.includes(c as EconomySpendCategory))
+    : [];
+  return {
+    id: source.id,
+    actorId: source.actorId,
+    teamId: source.teamId,
+    scope: source.scope as GovernorExceptionScope,
+    allowedCategories,
+    maxReserveBreach: typeof source.maxReserveBreach === 'number' && isFinite(source.maxReserveBreach) ? Math.max(0, source.maxReserveBreach) : 0,
+    reserveReductionAmount: typeof source.reserveReductionAmount === 'number' && isFinite(source.reserveReductionAmount) ? Math.max(0, source.reserveReductionAmount) : undefined,
+    expiresDay: typeof source.expiresDay === 'number' && isFinite(source.expiresDay) ? Math.max(0, Math.floor(source.expiresDay)) : undefined,
+    status: source.status as GovernorExceptionStatus,
+    reason: typeof source.reason === 'string' ? source.reason : '',
+    createdDay: typeof source.createdDay === 'number' && isFinite(source.createdDay) ? Math.max(0, Math.floor(source.createdDay)) : 0,
+    resolvedDay: typeof source.resolvedDay === 'number' && isFinite(source.resolvedDay) ? Math.max(0, Math.floor(source.resolvedDay)) : undefined
+  };
+};
+
+const sanitizeTeamGovernorExceptions = (value: unknown): TeamGovernorException[] =>
+  Array.isArray(value)
+    ? value.map(sanitizeTeamGovernorException).filter((e): e is TeamGovernorException => e !== null).slice(-30)
+    : [];
+
 // Team Treasury Phase T1: mirrors sanitizeTeamActionBank's always-valid-object style (never
 // null — a team always has a treasury record once the field exists) — capped to the last 60
 // transactions, same cap precedent as actionTokens/messageLog.
@@ -8930,7 +9052,8 @@ const createDefaultTeamState = (
   color,
   sequences: [],
   phaseSequenceAssignments: [],
-  treasury: createDefaultTeamTreasuryState(id)
+  treasury: createDefaultTeamTreasuryState(id),
+  governorExceptions: []
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -10473,7 +10596,8 @@ function AustraliaGame() {
             comboTracking: sanitizeTeamComboTrackingState(teamData?.comboTracking),
             sequences: sanitizeTeammateSequences(teamData?.sequences),
             phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments),
-            treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId)
+            treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId),
+            governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions)
           };
           return acc;
         }, {})
@@ -10847,6 +10971,17 @@ function AustraliaGame() {
         teamAiGovernorRestrictionTransparencyEnabled: typeof settingsData.teamAiGovernorRestrictionTransparencyEnabled === 'boolean'
           ? settingsData.teamAiGovernorRestrictionTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
+        teamAiProductiveRecoveryLadderEnabled: typeof settingsData.teamAiProductiveRecoveryLadderEnabled === 'boolean'
+          ? settingsData.teamAiProductiveRecoveryLadderEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiProductiveRecoveryLadderEnabled,
+        teamAiGovernorAutomaticExceptionsEnabled: typeof settingsData.teamAiGovernorAutomaticExceptionsEnabled === 'boolean'
+          ? settingsData.teamAiGovernorAutomaticExceptionsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorAutomaticExceptionsEnabled,
+        teamAiGovernorExceptionConsecutiveTurnsThreshold: clampSettingNumber(settingsData.teamAiGovernorExceptionConsecutiveTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionConsecutiveTurnsThreshold, 1, 20),
+        teamAiGovernorExceptionMaxReserveBreach: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxReserveBreach, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxReserveBreach, 0, 100000),
+        teamAiGovernorExceptionMinProbability: clampSettingNumber(settingsData.teamAiGovernorExceptionMinProbability, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinProbability, 0, 1),
+        teamAiGovernorExceptionMinEvRatio: clampSettingNumber(settingsData.teamAiGovernorExceptionMinEvRatio, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinEvRatio, 0, 10),
+        teamAiGovernorExceptionMaxCost: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxCost, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxCost, 0, 100000),
         teammatePerformanceSync2Enabled: typeof settingsData.teammatePerformanceSync2Enabled === 'boolean'
           ? settingsData.teammatePerformanceSync2Enabled
           : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
@@ -14134,7 +14269,10 @@ function AustraliaGame() {
     if (roiValue <= 0) return { region: regionCode, score: -Infinity };
     // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
     // existing safety-buffer/ROI checks above, never a replacement for them. No-op when off.
-    const investmentGovernorResult = evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue });
+    const investmentException = findActiveGovernorException(aiState.id, 'investment', investment.cost);
+    const investmentGovernorResult = investmentException
+      ? { approved: true, reason: `Governor exception (${investmentException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+      : evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue });
     if (!investmentGovernorResult.approved) {
       recordGovernorBlock(aiState.id, 'investment', investmentGovernorResult.reason);
       return { region: regionCode, score: -Infinity };
@@ -14199,7 +14337,10 @@ function AustraliaGame() {
     }
     // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
     // existing safety-buffer check above, never a replacement for it. No-op when off.
-    const equipmentGovernorResult = evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day);
+    const equipmentException = findActiveGovernorException(aiState.id, 'equipment', item.cost);
+    const equipmentGovernorResult = equipmentException
+      ? { approved: true, reason: `Governor exception (${equipmentException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+      : evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day);
     if (!equipmentGovernorResult.approved) {
       recordGovernorBlock(aiState.id, 'equipment', equipmentGovernorResult.reason);
       return { item, score: -Infinity };
@@ -16745,6 +16886,10 @@ function AustraliaGame() {
   // depends on contributeToTeamTreasury/getTreasuryAvailableAmount (declared much later), so it's
   // read through a ref assigned right after its own real declaration.
   const resolveTreasuryFundingRequestRef = useRef<((requestId: string, control: TreasuryApprovalControlAction, editedAmount?: number) => void) | null>(null);
+  // Team Treasury Phase T4: same TDZ-safe ref-indirection pattern — resolveGovernorExceptionRequest
+  // depends on createTreasuryFundingRequest/evaluateAiTeamFundingPolicy/resolveTreasuryFundingRequest
+  // (declared much later), so it's read through a ref assigned right after its own real declaration.
+  const resolveGovernorExceptionRequestRef = useRef<((approvalRequestId: string, control: GovernorExceptionControlAction) => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -16818,8 +16963,13 @@ function AustraliaGame() {
     setPendingApprovalRequests(prev => prev.map(r => r.id === next.id ? { ...r, status: 'displayed' as ApprovalRequestStatus } : r));
     const onConfirmDefault = next.requestKind === 'treasury_withdrawal'
       ? () => resolveTreasuryApprovalRequest(next.id, 'approve_full')
+      : next.requestKind === 'governor_exception'
+      ? () => resolveGovernorExceptionRequestRef.current?.(next.id, 'approve_once')
       : () => resolveApprovalRequest(next.id, 'approve');
-    showConfirmation('aiActionApprovalRequest', next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds' : 'Teammate proposes an action', next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
+    const dialogTitle = next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds'
+      : next.requestKind === 'governor_exception' ? 'Teammate requests a Governor exception'
+      : 'Teammate proposes an action';
+    showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
   }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest]);
 
   // V6.9.1 bugfix (Bug 6, GD8): reset the edit inputs to the newly-displayed request's own current
@@ -19647,7 +19797,10 @@ function AustraliaGame() {
     // V6.8 Phase C: Economy Governor spending approval — AI donors only, additional to the
     // existing afford-gate above. No-op when off or when the donor is a human.
     if (fromActor.kind === 'ai') {
-      const supportGovernorResult = evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day);
+      const supportException = findActiveGovernorException(fromActor.id, 'support', amount);
+      const supportGovernorResult = supportException
+        ? { approved: true, reason: `Governor exception (${supportException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+        : evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day);
       if (!supportGovernorResult.approved) {
         recordGovernorBlock(fromActor.id, 'support', supportGovernorResult.reason);
         return false;
@@ -20118,6 +20271,144 @@ function AustraliaGame() {
     addNotification(`${getActorDisplayName(request.requestingActorId)} received $${amount} from the Team Treasury${partial ? ' (partial approval)' : ''}.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
   }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState]);
   resolveTreasuryFundingRequestRef.current = resolveTreasuryFundingRequest;
+
+  // Team Treasury Phase T4 (GD6): mirrors buildTreasuryApprovalRequest exactly — a synthetic
+  // ApprovalRequest, requestKind 'governor_exception', pushed onto the SAME pendingApprovalRequests
+  // queue/dialog pipeline. No decision is actually wrapped (a Governor exception isn't an action
+  // proposal itself — it's a permission grant), so the synthetic decision is purely descriptive.
+  const buildGovernorExceptionApprovalRequest = useCallback((
+    exception: TeamGovernorException,
+    actor: ActorState,
+    actionsRemaining: number
+  ): ApprovalRequest => {
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const syntheticDecision = {
+      type: 'think' as AIAction['type'],
+      description: exception.reason,
+      data: {},
+      score: 0,
+      plan: undefined
+    } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_exception_${exception.id}`,
+      actorId: actor.id,
+      teamId: actor.teamId,
+      decision: syntheticDecision,
+      actionSummary: `${getActorDisplayName(actor.id)} is severely restricted and requests a Governor exception (${exception.allowedCategories.join(', ')}).`,
+      targetLabel: 'Economy Governor',
+      cost: null,
+      wager: null,
+      percentCashAtRisk: null,
+      expectedReward: null,
+      successProbability: null,
+      minCashRemaining: spendableCash,
+      vaultEffect: gameSettings.teamCashVaultEnabled
+        ? `Vault active: $${(actor.protectedCash || 0).toLocaleString()} protected, $${spendableCash.toLocaleString()} spendable.`
+        : 'Vault inactive.',
+      governorRuling: `Requested scope: ${exception.scope}; max reserve breach: $${exception.maxReserveBreach}.`,
+      requirementsSummary: exception.reason,
+      aiExplanation: exception.reason,
+      fallbackAvailable: true,
+      actionsRemaining,
+      categoryBucket: 'wait' as TeamModeActionCategory,
+      createdAtTurn: gameState.day,
+      status: 'pending',
+      requestKind: 'governor_exception',
+      governorExceptionId: exception.id
+    };
+  }, [gameSettings, gameState.day, getActorDisplayName]);
+
+  // Team Treasury Phase T4 (GD6): the governor_exception request's own resolution dispatcher —
+  // structurally identical to resolveTreasuryApprovalRequest/resolveTreasuryFundingRequest's split,
+  // merged into one function since exception resolution has no partial-amount complexity. Removes
+  // the request from the SAME queue/dialog pipeline and applies exactly one of the 7 GD6 outcomes
+  // to the matching TeamGovernorException — never grants anything broader than what was requested.
+  const resolveGovernorExceptionRequest = useCallback((
+    approvalRequestId: string,
+    control: GovernorExceptionControlAction
+  ): void => {
+    if (resolvedApprovalRequestIdsRef.current.has(approvalRequestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === approvalRequestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(approvalRequestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== approvalRequestId));
+    if (confirmationDialog.data?.requestId === approvalRequestId) {
+      closeConfirmation();
+    }
+    const exceptionId = request.governorExceptionId;
+    if (!exceptionId) return;
+    const teamId = [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].find(tid => teamsByIdRef.current[tid]?.governorExceptions?.some(e => e.id === exceptionId));
+    if (!teamId) return;
+    const team = teamsByIdRef.current[teamId];
+    const exception = team.governorExceptions.find(e => e.id === exceptionId);
+    if (!exception || exception.status !== 'pending') return;
+    const actor = getActorState(exception.actorId);
+
+    if (control === 'reject_strict' || control === 'reject_end_turn') {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, status: 'rejected' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
+      }));
+      return;
+    }
+    if (control === 'use_treasury') {
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, status: 'rejected' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
+      }));
+      if (actor && gameSettings.teamTreasuryEnabled) {
+        const treasuryRequest = createTreasuryFundingRequest(actor.id, {
+          requestType: 'custom',
+          customAmount: exception.maxReserveBreach,
+          reason: `Requested via a rejected Governor exception: ${exception.reason}`
+        });
+        if (treasuryRequest) {
+          const policyResolution = evaluateAiTeamFundingPolicy(treasuryRequest);
+          if (policyResolution.outcome !== 'delay') {
+            const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
+              approve_full: 'approve_full', approve_partial: 'approve_partial',
+              approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper'
+            };
+            resolveTreasuryFundingRequest(treasuryRequest.id, controlByOutcome[policyResolution.outcome] || 'reject', policyResolution.approvedAmount);
+          }
+        }
+      }
+      return;
+    }
+    let updatedFields: Partial<TeamGovernorException> = { status: 'approved' as GovernorExceptionStatus, resolvedDay: gameState.day };
+    if (control === 'approve_lower') {
+      updatedFields = { ...updatedFields, maxReserveBreach: Math.round(exception.maxReserveBreach * 0.5) };
+    } else if (control === 'approve_current_turn') {
+      updatedFields = {
+        ...updatedFields,
+        scope: 'current_turn' as GovernorExceptionScope,
+        allowedCategories: ['equipment', 'investment', 'sabotage', 'region_deposit', 'travel', 'support'] as EconomySpendCategory[],
+        expiresDay: gameState.day
+      };
+    } else if (control === 'lower_reserve') {
+      updatedFields = {
+        ...updatedFields,
+        scope: 'temporary_reserve_reduction' as GovernorExceptionScope,
+        reserveReductionAmount: exception.maxReserveBreach,
+        expiresDay: gameState.day + 2
+      };
+    }
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, ...updatedFields } : e)
+    }));
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, updateTeamState]);
+  resolveGovernorExceptionRequestRef.current = resolveGovernorExceptionRequest;
+
+  // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
+  // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
+  // when the exception's own configured reserve breach is within the configured threshold.
+  const evaluateAiTeamExceptionPolicy = useCallback((exception: TeamGovernorException): { outcome: GovernorExceptionControlAction } => {
+    if (exception.maxReserveBreach > gameSettings.teamAiGovernorExceptionMaxReserveBreach) {
+      return { outcome: 'reject_strict' };
+    }
+    return { outcome: 'approve_once' };
+  }, [gameSettings.teamAiGovernorExceptionMaxReserveBreach]);
 
   // Team Treasury Phase T2 (GD8): called once the intended action a fund_specific_action request
   // authorized has actually executed. Always marks the request 'fulfilled' + records
@@ -22291,7 +22582,21 @@ function AustraliaGame() {
           treasury: {
             ...teamState.treasury,
             reserve: computeTeamTreasuryReserve(teamActors, gameSettings, newDay, isEndgamePeriod(newDay, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent))
-          }
+          },
+          // Team Treasury Phase T4 (GD5): daily expiration for 'until_recovery_target' exceptions —
+          // checked in the same per-team daily rebuild block that already maintains
+          // inEconomicRecovery (via projectedActors, computed above), the instant it clears. Every
+          // other scope's expiration (single_action/current_turn) is handled elsewhere
+          // (findActiveGovernorException's own consume-on-use, and finishTeamAiTurn's per-turn
+          // cleanup respectively) — this is additive, never re-expiring an already-terminal status.
+          governorExceptions: (teamState.governorExceptions || []).map(exception => {
+            if (exception.status !== 'approved' || exception.scope !== 'until_recovery_target') return exception;
+            const owningActor = projectedActors[exception.actorId];
+            if (owningActor && !owningActor.inEconomicRecovery) {
+              return { ...exception, status: 'expired' as GovernorExceptionStatus, resolvedDay: newDay };
+            }
+            return exception;
+          })
         };
         return acc;
       }, {});
@@ -24815,7 +25120,10 @@ function AustraliaGame() {
           // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
           if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
           // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
-          const sabotageGovernorResult = evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day);
+          const sabotageException = findActiveGovernorException(actor.id, 'sabotage', action.cost);
+          const sabotageGovernorResult = sabotageException
+            ? { approved: true, reason: `Governor exception (${sabotageException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+            : evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day);
           if (!sabotageGovernorResult.approved) { recordGovernorBlock(actor.id, 'sabotage', sabotageGovernorResult.reason); return; }
           if (hasActiveDebuff(sabotageTarget.target.debuffs, action.id)) return;
           let score = (typeof action.aiWeight === 'number' ? action.aiWeight : 100) + sabotageTarget.pressure - (action.cost * 0.05);
@@ -24860,7 +25168,10 @@ function AustraliaGame() {
     // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
     // V6.8 Phase C: Economy Governor spending approval is an additional && term — no-op when off.
     const regionDepositAffordable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit;
-    const regionDepositGovernorResult = evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day);
+    const regionDepositException = findActiveGovernorException(actor.id, 'region_deposit', minimalDeposit);
+    const regionDepositGovernorResult = regionDepositException
+      ? { approved: true, reason: `Governor exception (${regionDepositException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+      : evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day);
     if (regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
       recordGovernorBlock(actor.id, 'region_deposit', regionDepositGovernorResult.reason);
     }
@@ -24912,7 +25223,10 @@ function AustraliaGame() {
       // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
       if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) < cost) return;
       // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
-      const travelGovernorResult = evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day);
+      const travelException = findActiveGovernorException(actor.id, 'travel', cost);
+      const travelGovernorResult = travelException
+        ? { approved: true, reason: `Governor exception (${travelException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+        : evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day);
       if (!travelGovernorResult.approved) { recordGovernorBlock(actor.id, 'travel', travelGovernorResult.reason); return; }
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
       score += (REGIONS[region]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
@@ -25751,6 +26065,40 @@ function AustraliaGame() {
     return '';
   };
 
+  // Team Treasury Phase T4 (GD5): consulted at the same 7 gate sites T3 instrumented, BEFORE
+  // calling evaluateEconomySpendingApproval — a pure Governor-bypass check, never touching the
+  // Governor function itself (it stays byte-identical when no exception is active). Bounded by the
+  // exception's own maxReserveBreach so an exception never bypasses further than what it was
+  // actually granted for. single_action exceptions are marked 'consumed' as the one side effect of
+  // being found/used, matching redeemActionToken's own combined check-and-mutate precedent.
+  const findActiveGovernorException = (actorId: string, category: EconomySpendCategory, cost: number): TeamGovernorException | null => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiProductiveRecoveryLadderEnabled) return null;
+    const actor = getActorState(actorId);
+    if (!actor) return null;
+    const team = teamsByIdRef.current[actor.teamId];
+    if (!team) return null;
+    const match = (team.governorExceptions || []).find(exception =>
+      exception.actorId === actorId &&
+      exception.status === 'approved' &&
+      exception.allowedCategories.includes(category) &&
+      (exception.scope !== 'until_recovery_target' || actor.inEconomicRecovery)
+    );
+    if (!match) return null;
+    const spendable = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+    const phase = computeEconomicPhase(actor, spendable, gameSettings, endgameActive);
+    const reserve = computeDynamicReserve(phase, spendable, gameSettings) - (match.scope === 'temporary_reserve_reduction' ? (match.reserveReductionAmount || 0) : 0);
+    const breach = Math.max(0, reserve - (spendable - cost));
+    if (breach > match.maxReserveBreach) return null;
+    if (match.scope === 'single_action') {
+      updateTeamState(actor.teamId, prev => ({
+        ...prev,
+        governorExceptions: (prev.governorExceptions || []).map(e => e.id === match.id ? { ...e, status: 'consumed' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
+      }));
+    }
+    return match;
+  };
+
   const getOrCreateAiTurnSession = (actorId: string, teamId: string, initialBudget: number): ActiveAiTurnSession => {
     const existing = activeAiTurnSessionRef.current[actorId];
     if (existing && !existing.isFinished) return existing;
@@ -25969,7 +26317,10 @@ function AustraliaGame() {
       return ineligible('Would breach minimum cash reserve.');
     }
     // V6.8 Phase C: Economy Governor spending approval — additional to the reserve check above.
-    const overrideGovernorResult = evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day);
+    const overrideException = findActiveGovernorException(actor.id, 'override', cost);
+    const overrideGovernorResult = overrideException
+      ? { approved: true, reason: `Governor exception (${overrideException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+      : evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day);
     if (!overrideGovernorResult.approved) {
       recordGovernorBlock(actor.id, 'override', overrideGovernorResult.reason);
       return ineligible('Blocked by Economy Governor spending approval.');
@@ -26472,6 +26823,21 @@ function AustraliaGame() {
     delete approvalRevisionCountRef.current[actorId];
     delete sequenceYieldedThisTurnRef.current[actorId];
     delete activeAiTurnSessionRef.current[actorId];
+    // Team Treasury Phase T4 (GD5): expire this actor's own 'current_turn' Governor exceptions at
+    // the exact per-turn boundary GD5 specifies, alongside the other per-turn cleanup above.
+    const exceptionCleanupActor = getActorState(actorId);
+    if (exceptionCleanupActor) {
+      updateTeamState(exceptionCleanupActor.teamId, prev => {
+        const hasCurrentTurnException = (prev.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'approved' && e.scope === 'current_turn');
+        if (!hasCurrentTurnException) return prev;
+        return {
+          ...prev,
+          governorExceptions: prev.governorExceptions.map(e => (e.actorId === actorId && e.status === 'approved' && e.scope === 'current_turn')
+            ? { ...e, status: 'expired' as GovernorExceptionStatus, resolvedDay: gameState.day }
+            : e)
+        };
+      });
+    }
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
     updateActorState(actorId, prev => ({
       ...prev,
@@ -26482,7 +26848,7 @@ function AustraliaGame() {
     }
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
     advanceToNextActorTurn();
-  }, [addNotification, advanceToNextActorTurn, getActorDisplayName, handleTurnTransition, updateActorState]);
+  }, [addNotification, advanceToNextActorTurn, getActorDisplayName, getActorState, gameState.day, handleTurnTransition, updateActorState, updateTeamState]);
 
   // V6.7 Phase 3c Team Initiative trigger #7: an actor whose action type matches their assigned
   // teamAiRole earns a small initiative bump — a pure lookup, no new state.
@@ -27015,6 +27381,215 @@ function AustraliaGame() {
     return { executed: false };
   }, [calculateActorChallengeSuccessChance, gameSettings, getActorDisplayName, getActorState, getTeammateForSync, sellActorResource, takeChallengeForActor, transferCash]);
 
+  // Team Treasury Phase T4 (GD2): maps a candidate's AIAction type to the EconomySpendCategory the
+  // Economy Governor actually gates it under, for Tiers 4/11 (Treasury request / exception
+  // proposal) — categories with no Governor gate at all (sell/craft/challenge/buy_market/collect)
+  // return null, since neither a funding request nor an exception has anything to bypass for them.
+  const mapCandidateTypeToSpendCategory = (type: AIAction['type']): EconomySpendCategory | null => {
+    if (type === 'invest') return 'investment';
+    if (type === 'buy_equipment') return 'equipment';
+    if (type === 'sabotage') return 'sabotage';
+    if (type === 'region_deposit') return 'region_deposit';
+    if (type === 'travel') return 'travel';
+    if (type === 'give_cash' || type === 'give_resource') return 'support';
+    return null;
+  };
+
+  // Team Treasury Phase T4 (GD2): the 12-tier Productive Recovery Ladder. A single ordered search,
+  // each tier a thin wrapper around an already-shipped function — never a new execution mechanism.
+  // Tried once per actor turn, called only when a preview ranking pass shows the Governor would
+  // otherwise classify this turn as severely_restricted/governor_deadlock (see the call site in
+  // performTeamAiTurn). The search stops at the first tier that actually does something; every
+  // tier's own existing eligibility/legality checks still fully apply — this never forces a tier to
+  // "succeed," it just tries the next one on failure. Bounded and terminating by construction (12
+  // fixed tiers, no recursion, each tier attempted at most once per turn).
+  const searchProductiveRecoveryLadder = useCallback((
+    actorId: string,
+    rankedCandidates: ScoredTeamAiDecision[]
+  ): { executed: boolean; tier?: number; note?: string; exceptionId?: string } => {
+    const actor = getActorState(actorId);
+    if (!actor) return { executed: false };
+    const team = teamsByIdRef.current[actor.teamId];
+    if (!team) return { executed: false };
+
+    // Tier 1 — a genuinely free (cost/wager === 0), recovery-safe candidate is a bail-out, not a
+    // forced execution: the ordinary decision loop right after this pre-loop cluster will pick it
+    // up and execute it completely normally (it was never actually Governor-blocked), so the ladder
+    // simply steps aside rather than duplicating that execution.
+    const freeCandidate = rankedCandidates.find(c => {
+      const cost = typeof c.data?.wager === 'number' ? c.data.wager : typeof c.data?.purchases?.[0]?.cost === 'number' ? c.data.purchases[0].cost : 0;
+      return cost === 0 && isRecoverySafeCandidate(c, actor, gameSettings);
+    });
+    if (freeCandidate) return { executed: false };
+
+    // Tier 2 — sell unneeded inventory (same call evaluateGuaranteedRecoveryAction's own Tier 1 makes).
+    if (actor.inventory.length > 0) {
+      const bestResource = [...actor.inventory].sort((a, b) => getResourceMarketPrice(b) - getResourceMarketPrice(a))[0];
+      if (sellActorResource(actorId, bestResource)) {
+        return { executed: true, tier: 2, note: `Sold ${bestResource} for recovery cash.` };
+      }
+    }
+
+    // Tier 3 — craft an immediately-profitable item (GD1's own profitability check).
+    const craftCandidate = rankedCandidates.find(c => c.type === 'craft' && isRecoverySafeCandidate(c, actor, gameSettings));
+    if (craftCandidate && craftForActor(actorId, craftCandidate.data?.recipeId)) {
+      return { executed: true, tier: 3, note: `Crafted ${craftCandidate.data?.recipeId} for recovery.` };
+    }
+
+    // Tier 4 — request Treasury funds, distinct from the zero-cash-only trigger earlier in this
+    // same pre-loop cluster (this attempt fires for any severely_restricted/governor_deadlock
+    // actor, not only a literal $0 balance).
+    if (gameSettings.teamTreasuryEnabled && gameSettings.teamAiTreasuryRequestsEnabled) {
+      const hasPendingRequest = team.treasury.fundingRequests.some(r => r.requestingActorId === actorId && r.status === 'pending');
+      const topCandidate = rankedCandidates[0];
+      if (!hasPendingRequest && topCandidate) {
+        const spendable = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+        const topCandidateCost = typeof topCandidate.data?.wager === 'number' ? topCandidate.data.wager
+          : typeof topCandidate.data?.purchases?.[0]?.cost === 'number' ? topCandidate.data.purchases[0].cost : 0;
+        if (topCandidateCost > spendable) {
+          const treasuryRequest = createTreasuryFundingRequest(actorId, {
+            requestType: 'fund_specific_action',
+            intendedActionType: topCandidate.type,
+            intendedActionCost: topCandidateCost,
+            expectedBenefit: topCandidate.plan?.expectedValue,
+            reason: `${getActorDisplayName(actorId)} is severely restricted and needs $${Math.max(0, topCandidateCost - spendable)} more to attempt ${topCandidate.type}.`
+          });
+          if (treasuryRequest) {
+            const policyResolution = evaluateAiTeamFundingPolicy(treasuryRequest);
+            if (policyResolution.outcome !== 'delay') {
+              const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
+                approve_full: 'approve_full', approve_partial: 'approve_partial',
+                approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper'
+              };
+              resolveTreasuryFundingRequest(treasuryRequest.id, controlByOutcome[policyResolution.outcome] || 'reject', policyResolution.approvedAmount);
+            }
+            return { executed: true, tier: 4, note: `Requested $${treasuryRequest.requestedAmount} from the Team Treasury.` };
+          }
+        }
+      }
+    }
+
+    // Tier 5 — teammate support (same call evaluateGuaranteedRecoveryAction's own Tier 2 makes).
+    const teammate = getTeammateForSync(actorId, team);
+    if (teammate) {
+      const teammateSpendable = getActorSpendableCash(teammate, gameSettings.teamCashVaultEnabled);
+      const transferAmount = Math.min(GUARANTEED_RECOVERY_TEAMMATE_TRANSFER_AMOUNT, Math.floor(teammateSpendable / 2));
+      if (transferAmount >= 100 && transferCash(teammate.id, actorId, transferAmount, { allowRemoteTeamAid: true, reason: 'Productive Recovery Ladder' })) {
+        return { executed: true, tier: 5, note: `${getActorDisplayName(teammate.id)} sent $${transferAmount}.` };
+      }
+    }
+
+    // Tier 6 — a low-cost, safe recovery challenge (same call evaluateGuaranteedRecoveryAction's
+    // own Tier 3 makes).
+    const availableChallenges = (REGIONS[actor.currentRegion]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name));
+    if (availableChallenges.length > 0 && actor.money >= MINIMUM_WAGER) {
+      const rankedChallenges = availableChallenges
+        .map(challenge => ({ challenge, chance: calculateActorChallengeSuccessChance(challenge, actor, getChallengeCategoryExpertiseBonus(actor, challenge.type, gameSettings)) }))
+        .sort((a, b) => b.chance - a.chance);
+      const safest = rankedChallenges[0];
+      if (safest && safest.chance >= gameSettings.guaranteedRecoveryMinimumChallengeProbability && takeChallengeForActor(actorId, safest.challenge, MINIMUM_WAGER)) {
+        return { executed: true, tier: 6, note: `Attempted ${safest.challenge.name} (${Math.round(safest.chance * 100)}% odds).` };
+      }
+    }
+
+    // Tier 7 — travel only for a clearly profitable objective (GD1's own travel eligibility check).
+    const travelCandidate = rankedCandidates.find(c => c.type === 'travel' && isRecoverySafeCandidate(c, actor, gameSettings));
+    if (travelCandidate && travelCandidate.data?.region && travelActor(actorId, travelCandidate.data.region)) {
+      return { executed: true, tier: 7, note: `Traveled to ${travelCandidate.data.region} for a profitable objective.` };
+    }
+
+    // Tier 8 — liquidate a nonessential holding (existing region-position cash-out path), if the
+    // actor currently holds one in their own current region.
+    if (cashOutRegionPosition(actor.currentRegion, actorId, { reason: 'Productive Recovery Ladder' })) {
+      return { executed: true, tier: 8, note: `Cashed out the region position in ${actor.currentRegion}.` };
+    }
+
+    // Tier 9 — existing emergency action (Phase 3c, unchanged). Already tried once, unconditionally,
+    // earlier in this same pre-loop cluster — reusing the identical evaluator/executor here is a
+    // deliberate no-op when it already fired or was already ineligible, never a second, different path.
+    const emergencyTrigger = evaluateTeamEmergencyActionTrigger(actorId);
+    if (emergencyTrigger) {
+      triggerTeamEmergencyAction(actorId, emergencyTrigger.action, emergencyTrigger.team);
+      return { executed: true, tier: 9, note: `Emergency Action: ${emergencyTrigger.action.name}.` };
+    }
+
+    // Tier 10 — existing loan/recovery mechanism (Advanced Loans), only if genuinely eligible under
+    // its own existing rules (level requirement, simultaneous-loan cap, feature enabled).
+    if (isAdvancedLoansEnabledForActor(actor)) {
+      const eligibleTier = LOAN_TIERS.find(t => actor.level >= t.levelRequired);
+      if (eligibleTier && (actor.advancedLoans || []).length < gameSettings.maxSimultaneousLoans
+          && takeAdvancedLoanForActor(actorId, eligibleTier.id, false, undefined, { silent: true })) {
+        return { executed: true, tier: 10, note: `Took a ${eligibleTier.name} loan for recovery.` };
+      }
+    }
+
+    // Tier 11 — propose a controlled Governor exception (GD3-GD6), computed only after Tiers 1-10
+    // all failed. Creates a bounded, scoped, 'pending' TeamGovernorException record — never
+    // auto-approved here; human/AI-AI resolution and automatic-safe-exception thresholds are wired
+    // separately (see buildGovernorExceptionApprovalRequest/evaluateAiTeamExceptionPolicy).
+    const exceptionTopCandidate = rankedCandidates[0];
+    const exceptionCategory = exceptionTopCandidate ? mapCandidateTypeToSpendCategory(exceptionTopCandidate.type) : null;
+    if (exceptionCategory) {
+      const alreadyPending = (team.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'pending' && e.allowedCategories.includes(exceptionCategory));
+      // GD4's per-turn rejection dedup: never re-propose an identical (actor, category) exception
+      // that was already rejected THIS SAME TURN — a coarser, save-format-free stand-in for a
+      // dedicated per-turn Set, reusing the exception record's own createdDay/status instead.
+      const recentlyRejected = (team.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'rejected' && e.allowedCategories.includes(exceptionCategory) && e.createdDay === gameState.day);
+      if (!alreadyPending && !recentlyRejected) {
+        const exceptionCost = typeof exceptionTopCandidate.data?.wager === 'number' ? exceptionTopCandidate.data.wager
+          : typeof exceptionTopCandidate.data?.purchases?.[0]?.cost === 'number' ? exceptionTopCandidate.data.purchases[0].cost : 0;
+        const maxReserveBreach = Math.min(gameSettings.teamAiGovernorExceptionMaxReserveBreach, Math.max(0, exceptionCost));
+
+        // Team Treasury Phase T4 (GD8): optional, off-by-default automatic safe-exception grant —
+        // auto-approves this SAME single_action exception, with no human/AI-AI approval step,
+        // ONLY when every one of the 6 independently-configured thresholds passes. Missing-data
+        // fields (e.g. a candidate type with no successChance) are treated as passing that one
+        // specific threshold rather than blocking the whole check, matching this codebase's
+        // established "missing context auto-passes" convention (used throughout F2's Requirements).
+        const successProbability = typeof exceptionTopCandidate.data?.successChance === 'number' ? exceptionTopCandidate.data.successChance : 1;
+        const expectedReward = typeof exceptionTopCandidate.plan?.expectedValue === 'number' ? exceptionTopCandidate.plan.expectedValue : exceptionCost;
+        const evRatio = exceptionCost > 0 ? expectedReward / exceptionCost : Infinity;
+        const autoGrantEligible = gameSettings.teamAiGovernorAutomaticExceptionsEnabled
+          && (actor.consecutiveRestrictedTurns || 0) >= gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold
+          && maxReserveBreach <= gameSettings.teamAiGovernorExceptionMaxReserveBreach
+          && successProbability >= gameSettings.teamAiGovernorExceptionMinProbability
+          && evRatio >= gameSettings.teamAiGovernorExceptionMinEvRatio
+          && exceptionCost <= gameSettings.teamAiGovernorExceptionMaxCost
+          && isRecoverySafeCandidate(exceptionTopCandidate, actor, gameSettings);
+
+        const newException: TeamGovernorException = {
+          id: Date.now().toString() + Math.random(),
+          actorId,
+          teamId: actor.teamId,
+          scope: 'single_action',
+          allowedCategories: [exceptionCategory],
+          maxReserveBreach,
+          status: autoGrantEligible ? 'approved' : 'pending',
+          reason: `${getActorDisplayName(actorId)} is severely restricted and has no other recovery path available for ${exceptionTopCandidate.type}.`,
+          createdDay: gameState.day,
+          resolvedDay: autoGrantEligible ? gameState.day : undefined
+        };
+        updateTeamState(actor.teamId, prev => ({
+          ...prev,
+          governorExceptions: [...(prev.governorExceptions || []), newException].slice(-30)
+        }));
+        // GD8: always recorded in the transparency trace even when auto-granted — never a silent
+        // bypass. The ordinary (non-auto-granted) note is appended by the call site as usual.
+        return {
+          executed: true,
+          tier: 11,
+          note: autoGrantEligible
+            ? `Automatically granted a safe Governor exception for ${exceptionCategory}.`
+            : `Proposed a Governor exception for ${exceptionCategory}.`,
+          exceptionId: newException.id
+        };
+      }
+    }
+
+    // Tier 12 — wait. No-op; the loop simply proceeds to the ordinary decision/end_turn path.
+    return { executed: false };
+  }, [calculateActorChallengeSuccessChance, cashOutRegionPosition, craftForActor, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, evaluateTeamEmergencyActionTrigger, gameSettings, gameState.day, getActorDisplayName, getActorSpendableCash, getActorState, getChallengeCategoryExpertiseBonus, getTeammateForSync, isAdvancedLoansEnabledForActor, resolveTreasuryFundingRequest, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, travelActor, triggerTeamEmergencyAction, updateTeamState]);
+
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
     const actor = getActorState(gameState.currentActorId || '');
@@ -27173,6 +27748,59 @@ function AustraliaGame() {
               } else {
                 const treasuryApprovalRequest = buildTreasuryApprovalRequest(treasuryRequest, actor, actionBudget - actionsTaken);
                 setPendingApprovalRequests(prev => [...prev, treasuryApprovalRequest]);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Team Treasury Phase T4 (GD2): the Productive Recovery Ladder — tried once per actor turn,
+    // before the ordinary decision loop, but only when a preview ranking pass (reusing
+    // getRankedTeamAiDecisions/classifyGovernorRestriction, never a second ranking/classification
+    // system) shows the Governor would otherwise classify this turn as severely_restricted or
+    // governor_deadlock. Skipped entirely if a narrow path already fired above this turn (Emergency
+    // Action / Guaranteed Recovery Protocol / Treasury zero-cash trigger) — no need to also search
+    // the ladder once one deterministic action has already been taken.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiGovernorRestrictionDetectionEnabled
+        && gameSettings.teamAiProductiveRecoveryLadderEnabled && actor.kind === 'ai' && !narrowPathUsedThisTurn) {
+      const previewCandidates = getRankedTeamAiDecisions(actor.id);
+      const preview = classifyGovernorRestriction(actor.id, false, false);
+      if (preview.level === 'severely_restricted' || preview.level === 'governor_deadlock') {
+        const ladderResult = searchProductiveRecoveryLadder(actor.id, previewCandidates);
+        if (ladderResult.executed) {
+          narrowPathUsedThisTurn = true;
+          if (gameSettings.teamAiGovernorRestrictionTransparencyEnabled) {
+            appendTeamAiTraceNote(actor.id, `Productive Recovery Ladder tier ${ladderResult.tier}: ${ladderResult.note}`);
+          }
+          // Tier 11 only ever CREATES a pending exception (searchProductiveRecoveryLadder itself
+          // never auto-approves) — route it to human approval (reusing the same requestKind-gated
+          // queue/dialog T2's Treasury requests already use) or AI-AI auto-resolution here, exactly
+          // mirroring the Treasury zero-cash trigger's own routing decision above.
+          if (ladderResult.tier === 11 && ladderResult.exceptionId) {
+            const exceptionTeam = teamsByIdRef.current[actor.teamId];
+            const exception = exceptionTeam?.governorExceptions.find(e => e.id === ladderResult.exceptionId);
+            // GD8: an already-'approved' exception here means it was auto-granted at creation time
+            // (the automatic-safe-exception path) — no routing needed, it's already resolved.
+            if (exception && exception.status === 'pending') {
+              const teammatesOnTeam = getTeamActors(actor.teamId);
+              const hasHumanTeammate = teammatesOnTeam.some(a => a.kind === 'human');
+              const autoResolveException = !hasHumanTeammate || !gameSettings.aiActionApprovalEnabled;
+              if (autoResolveException) {
+                // AI-AI mode: no dialog exists to route through, so the outcome is applied directly
+                // to the exception record — approving only the SAME bounded scope Tier 11 itself
+                // requested (evaluateAiTeamExceptionPolicy never returns a broader-grant outcome).
+                const policyResolution = evaluateAiTeamExceptionPolicy(exception);
+                const approved = policyResolution.outcome !== 'reject_strict' && policyResolution.outcome !== 'reject_end_turn';
+                updateTeamState(actor.teamId, prev => ({
+                  ...prev,
+                  governorExceptions: prev.governorExceptions.map(e => e.id === exception.id
+                    ? { ...e, status: (approved ? 'approved' : 'rejected') as GovernorExceptionStatus, resolvedDay: gameState.day }
+                    : e)
+                }));
+              } else {
+                const exceptionApprovalRequest = buildGovernorExceptionApprovalRequest(exception, actor, actionBudget - actionsTaken);
+                setPendingApprovalRequests(prev => [...prev, exceptionApprovalRequest]);
               }
             }
           }
@@ -27560,7 +28188,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -29975,6 +30603,13 @@ function AustraliaGame() {
       economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
       teamAiGovernorRestrictionDetectionEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
       teamAiGovernorRestrictionTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
+      teamAiProductiveRecoveryLadderEnabled: DEFAULT_GAME_SETTINGS.teamAiProductiveRecoveryLadderEnabled,
+      teamAiGovernorAutomaticExceptionsEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorAutomaticExceptionsEnabled,
+      teamAiGovernorExceptionConsecutiveTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionConsecutiveTurnsThreshold,
+      teamAiGovernorExceptionMaxReserveBreach: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxReserveBreach,
+      teamAiGovernorExceptionMinProbability: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinProbability,
+      teamAiGovernorExceptionMinEvRatio: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinEvRatio,
+      teamAiGovernorExceptionMaxCost: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxCost,
       teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
       teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
       teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
@@ -30121,6 +30756,13 @@ function AustraliaGame() {
       economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
       teamAiGovernorRestrictionDetectionEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
       teamAiGovernorRestrictionTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
+      teamAiProductiveRecoveryLadderEnabled: DEFAULT_GAME_SETTINGS.teamAiProductiveRecoveryLadderEnabled,
+      teamAiGovernorAutomaticExceptionsEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorAutomaticExceptionsEnabled,
+      teamAiGovernorExceptionConsecutiveTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionConsecutiveTurnsThreshold,
+      teamAiGovernorExceptionMaxReserveBreach: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxReserveBreach,
+      teamAiGovernorExceptionMinProbability: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinProbability,
+      teamAiGovernorExceptionMinEvRatio: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinEvRatio,
+      teamAiGovernorExceptionMaxCost: DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxCost,
       teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
       teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
       teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
@@ -32342,6 +32984,56 @@ function AustraliaGame() {
                                 />
                                 <span>{gameSettings.teamAiGovernorRestrictionTransparencyEnabled ? '☑' : '☐'} Show Restriction Explanations in Decision Transparency</span>
                               </label>
+                            </div>
+                            <div className="pt-2 border-t border-opacity-20">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="font-semibold text-sm">Productive Recovery Ladder (Phase T4)</div>
+                                  <div className="text-xs opacity-75">A bounded, 12-tier fallback search (sell → craft → Treasury request → teammate support → safe challenge → travel → liquidate → emergency action → loan → Governor exception → wait) tried before a severely-restricted or deadlocked actor is ever allowed to just wait. Every tier reuses an already-shipped mechanism — never a new execution path.</div>
+                                </div>
+                                <button
+                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiProductiveRecoveryLadderEnabled: !prev.teamAiProductiveRecoveryLadderEnabled }))}
+                                  className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiProductiveRecoveryLadderEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                >
+                                  {gameSettings.teamAiProductiveRecoveryLadderEnabled ? 'ON' : 'OFF'}
+                                </button>
+                              </div>
+                              {gameSettings.teamAiProductiveRecoveryLadderEnabled && (
+                                <div className="mt-3 space-y-3">
+                                  <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(gameSettings.teamAiGovernorAutomaticExceptionsEnabled)}
+                                      onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorAutomaticExceptionsEnabled: e.target.checked }))}
+                                    />
+                                    <span>{gameSettings.teamAiGovernorAutomaticExceptionsEnabled ? '☑' : '☐'} Allow Automatic Safe Exceptions (off by default — auto-grants a bounded, single-action exception with no human/AI review, only when every threshold below passes)</span>
+                                  </label>
+                                  {gameSettings.teamAiGovernorAutomaticExceptionsEnabled && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-1">
+                                      <div>
+                                        <label className="block font-semibold mb-2 text-sm">Consecutive Restricted Turns: {gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold}</label>
+                                        <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionConsecutiveTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="block font-semibold mb-2 text-sm">Max Reserve Breach: ${gameSettings.teamAiGovernorExceptionMaxReserveBreach}</label>
+                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxReserveBreach} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMaxReserveBreach: parseInt(e.target.value) }))} className="w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="block font-semibold mb-2 text-sm">Min Success Probability: {Math.round(gameSettings.teamAiGovernorExceptionMinProbability * 100)}%</label>
+                                        <input type="range" min="0" max="1" step="0.05" value={gameSettings.teamAiGovernorExceptionMinProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMinProbability: parseFloat(e.target.value) }))} className="w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="block font-semibold mb-2 text-sm">Min EV Ratio: {gameSettings.teamAiGovernorExceptionMinEvRatio.toFixed(1)}x</label>
+                                        <input type="range" min="0.5" max="3" step="0.1" value={gameSettings.teamAiGovernorExceptionMinEvRatio} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMinEvRatio: parseFloat(e.target.value) }))} className="w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="block font-semibold mb-2 text-sm">Max Cost: ${gameSettings.teamAiGovernorExceptionMaxCost}</label>
+                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxCost} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMaxCost: parseInt(e.target.value) }))} className="w-full" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </>
                         )}
@@ -38915,7 +39607,50 @@ function AustraliaGame() {
             );
           })()}
 
-          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
+          {/* Team Treasury Phase T4 (GD6): a distinct info panel for a governor_exception request —
+              never rendered alongside the ai_action/treasury_withdrawal panels above (mutually
+              exclusive per requestKind). Shows the requested scope/categories/reserve-breach bound
+              and the reason the ladder proposed this exception. */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'governor_exception') return null;
+            const actor = getActorState(request.actorId);
+            const team = actor ? teamsByIdRef.current[actor.teamId] : undefined;
+            const exception = team?.governorExceptions.find(e => e.id === request.governorExceptionId);
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Teammate:</span><span className="font-bold">{getActorDisplayName(request.actorId)}</span></div>
+                <div className="flex justify-between"><span>Requested Scope:</span><span className="font-bold text-right">{exception?.scope ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Categories:</span><span className="font-bold text-right">{exception?.allowedCategories.join(', ') ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Max Reserve Breach:</span><span className="font-bold">${exception?.maxReserveBreach.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Current Cash:</span><span className="font-bold">${request.minCashRemaining?.toLocaleString() ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Reason:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const approvalRequestId = request.id;
+            return (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'approve_once')} className={`${themeStyles.button} text-white px-3 py-2 rounded-lg col-span-2 font-bold`}>Approve This Action Once</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'approve_lower')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve with Lower Wager or Cost</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'use_treasury')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Use Team Treasury Instead</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'approve_current_turn')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Approve Recovery-Safe Actions for This Turn</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'lower_reserve')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Temporarily Lower Reserve for This Actor</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'reject_strict')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Reject and Keep Strict Policy</button>
+                <button onClick={() => resolveGovernorExceptionRequestRef.current?.(approvalRequestId, 'reject_end_turn')} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded-lg`}>Reject and End Actor Turn</button>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
             <div className="space-y-2">
               <div className="flex space-x-3">
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
