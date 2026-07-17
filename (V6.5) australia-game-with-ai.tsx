@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useReducer, useRef, ChangeEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useReducer, useRef, useContext, createContext, ChangeEvent } from 'react';
 
 // =========================================
 // GAME DATA AND CONSTANTS
@@ -10277,6 +10277,78 @@ interface LoadPreviewState {
   filename?: string;
   error?: string;
 }
+
+// Settings Hub: SettingsSection is hoisted to module scope (rather than declared inside
+// AustraliaGame's render body) so its component identity stays stable across renders — a
+// stable identity is what lets React reconcile prop/children changes in place instead of
+// unmounting and remounting every section (which was disrupting scroll position/focus on
+// every settings toggle/slider change). Shared, render-scoped inputs it needs are threaded
+// in via this small Context rather than as explicit props at every call site, since every
+// value here is identical at all ~35 call sites (Settings-Hub-global, not per-section data).
+type SettingsSectionCtxValue = {
+  searchMatchedIds: Set<string> | null;
+  activeTab: SettingsHubTabId;
+  changedOnly: boolean;
+  changedFieldKeys: (keyof GameSettingsState)[];
+  collapsedSections: Record<string, boolean>;
+  onToggleCollapse: (id: string) => void;
+  border: string;
+  buttonSecondary: string;
+};
+const SettingsSectionCtx = createContext<SettingsSectionCtxValue | null>(null);
+
+const SettingsSection: React.FC<{
+  id: string;
+  tab: SettingsHubTabId;
+  title: string;
+  chips?: SettingsHubChip[];
+  description?: string;
+  warning?: string;
+  onReset?: () => void;
+  resetLabel?: string;
+  fieldKeys?: (keyof GameSettingsState)[];
+  className?: string;
+  children: React.ReactNode;
+}> = ({ id, tab, title, chips = [], description, warning, onReset, resetLabel, fieldKeys = [], className, children }) => {
+  const ctx = useContext(SettingsSectionCtx)!; // always rendered inside SettingsSectionCtx.Provider
+  const searching = ctx.searchMatchedIds !== null;
+  const tabActive = ctx.activeTab === tab;
+  if (!searching && !tabActive) return null;
+  if (searching && !ctx.searchMatchedIds!.has(id)) return null;
+  const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => ctx.changedFieldKeys.includes(k));
+  if (ctx.changedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
+  const collapsed = ctx.collapsedSections[id] ?? false;
+  return (
+    <div className={`${ctx.border} border rounded-lg p-4 ${className || ''}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap cursor-pointer" onClick={() => ctx.onToggleCollapse(id)}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h4 className="text-lg font-bold">{title}</h4>
+          {searching && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{SETTINGS_HUB_TAB_LABELS[tab]}</span>
+          )}
+          {chips.map(chip => (
+            <span key={chip} className={`text-[10px] px-2 py-0.5 rounded-full ${ctx.buttonSecondary}`}>{chip}</span>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {onReset && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onReset(); }}
+              className={`${ctx.buttonSecondary} px-2 py-1 rounded text-xs`}
+            >
+              {resetLabel || 'Reset section'}
+            </button>
+          )}
+          <span className="text-sm opacity-70">{collapsed ? '▸' : '▾'}</span>
+        </div>
+      </div>
+      {description && <div className="text-xs opacity-75 mt-1">{description}</div>}
+      {warning && <div className="text-xs mt-1 text-amber-500">⚠️ {warning}</div>}
+      {!collapsed && <div className="mt-3 space-y-4">{children}</div>}
+    </div>
+  );
+};
 
 // =========================================
 // MAIN COMPONENT
@@ -31301,57 +31373,9 @@ function AustraliaGame() {
       .filter(k => JSON.stringify(gameSettings[k]) !== JSON.stringify(DEFAULT_GAME_SETTINGS[k]));
   }, [gameSettings]);
 
-  const SettingsSection: React.FC<{
-    id: string;
-    tab: SettingsHubTabId;
-    title: string;
-    chips?: SettingsHubChip[];
-    description?: string;
-    warning?: string;
-    onReset?: () => void;
-    resetLabel?: string;
-    fieldKeys?: (keyof GameSettingsState)[];
-    className?: string;
-    children: React.ReactNode;
-  }> = ({ id, tab, title, chips = [], description, warning, onReset, resetLabel, fieldKeys = [], className, children }) => {
-    const searching = settingsSearchMatchedIds !== null;
-    const tabActive = uiState.settingsActiveTab === tab;
-    if (!searching && !tabActive) return null;
-    if (searching && !settingsSearchMatchedIds!.has(id)) return null;
-    const hasChangedField = fieldKeys.length === 0 || fieldKeys.some(k => settingsChangedFieldKeys.includes(k));
-    if (uiState.settingsChangedOnly && fieldKeys.length > 0 && !hasChangedField) return null;
-    const collapsed = uiState.settingsCollapsedSections[id] ?? false;
-    return (
-      <div className={`${themeStyles.border} border rounded-lg p-4 ${className || ''}`}>
-        <div className="flex items-center justify-between gap-2 flex-wrap cursor-pointer" onClick={() => toggleSettingsSection(id)}>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="text-lg font-bold">{title}</h4>
-            {searching && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${themeStyles.buttonSecondary}`}>{SETTINGS_HUB_TAB_LABELS[tab]}</span>
-            )}
-            {chips.map(chip => (
-              <span key={chip} className={`text-[10px] px-2 py-0.5 rounded-full ${themeStyles.buttonSecondary}`}>{chip}</span>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {onReset && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onReset(); }}
-                className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}
-              >
-                {resetLabel || 'Reset section'}
-              </button>
-            )}
-            <span className="text-sm opacity-70">{collapsed ? '▸' : '▾'}</span>
-          </div>
-        </div>
-        {description && <div className="text-xs opacity-75 mt-1">{description}</div>}
-        {warning && <div className="text-xs mt-1 text-amber-500">⚠️ {warning}</div>}
-        {!collapsed && <div className="mt-3 space-y-4">{children}</div>}
-      </div>
-    );
-  };
+  // SettingsSection was hoisted to module scope (above AustraliaGame) to give it a stable
+  // component identity across renders — it now reads its shared inputs via SettingsSectionCtx
+  // instead of this scope's closures. See the module-scope definition for details.
 
   // V6.9 Phase F2: Action Requirements builder UI helpers. Plain (non-hook) functions defined
   // before renderSettingsModal's own declaration so they're safe to reference from its JSX.
@@ -32657,6 +32681,16 @@ function AustraliaGame() {
             {settingsSearchMatchedIds !== null && settingsSearchMatchedIds.size === 0 && (
               <div className="text-sm opacity-75 mb-4">No settings match "{uiState.settingsSearchQuery}".</div>
             )}
+            <SettingsSectionCtx.Provider value={{
+              searchMatchedIds: settingsSearchMatchedIds,
+              activeTab: uiState.settingsActiveTab,
+              changedOnly: uiState.settingsChangedOnly,
+              changedFieldKeys: settingsChangedFieldKeys,
+              collapsedSections: uiState.settingsCollapsedSections,
+              onToggleCollapse: toggleSettingsSection,
+              border: themeStyles.border,
+              buttonSecondary: themeStyles.buttonSecondary
+            }}>
             <div className="space-y-6">
               <SettingsSection id="quickSetup.core" tab="quickSetup" title="Quick Setup" chips={getAutoChipsForField('uxAssistPackEnabled', SETTINGS_HUB_FIELD_META.uxAssistPackEnabled)} description="The essentials — fine-tune everything else from the other tabs." fieldKeys={['totalDays', 'winCondition', 'actionLimitsEnabled', 'uxAssistPackEnabled', 'teamModeAiSystemProfile', 'teamBrainModeV63']}>
                 <div>
@@ -36735,6 +36769,7 @@ function AustraliaGame() {
                 </div>
               )}
             </div>
+            </SettingsSectionCtx.Provider>
           </div>
           </div>
 
