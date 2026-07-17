@@ -3362,10 +3362,12 @@ interface ApprovalRequest {
   // funding-request/withdrawal request, or (T4) a Governor exception proposal, all reusing this
   // same queue/dialog machinery (GD1/GD2) — never a second approval engine. Defaults 'ai_action'
   // at every existing construction site.
-  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception';
+  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy';
   treasuryRequestId?: string;
   // Team Treasury Phase T4: set only when requestKind === 'governor_exception'.
   governorExceptionId?: string;
+  // Team AI Overseer System Phase O3: set only when requestKind === 'overseer_adaptive_policy'.
+  overseerOverlayId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -10079,6 +10081,22 @@ function AustraliaGame() {
   const aiPlayerRef = useRef(aiPlayer);
   const additionalActorsRef = useRef<Record<string, ActorState>>(additionalActors);
   const teamsByIdRef = useRef<Record<string, TeamState>>(teamsById);
+  // Team AI Overseer System Phase O3: the "effective value" read-time accessor — configured
+  // settings are never mutated; only a shallow-cloned settings object (used at read-time by the
+  // handful of call sites that consult economyReserveStrength) reflects any active overlay. Returns
+  // the exact same gameSettings reference when no active overlay exists for the team, so callers
+  // that were passing gameSettings straight through before this phase see byte-identical behavior.
+  // Declared this early (right after teamsByIdRef, its only dependency besides gameSettings) so
+  // every earlier-declared closure that calls evaluateEconomySpendingApproval/
+  // resolveAutomaticApprovalRules can call this without a TDZ violation.
+  const getEffectiveGameSettingsForTeam = useCallback((teamId: string): GameSettingsState => {
+    const team = teamsByIdRef.current[teamId];
+    const activeOverlay = (team?.overseer.policyOverlays || []).find(o =>
+      o.settingKey === 'economyReserveStrength' && (o.approvalStatus === 'auto' || o.approvalStatus === 'approved')
+    );
+    if (!activeOverlay) return gameSettings;
+    return { ...gameSettings, economyReserveStrength: activeOverlay.effectiveValue as EconomyReserveStrength };
+  }, [gameSettings]);
   // V6.9 Phase F4: TDZ-safe ref-indirection (established pattern, e.g. buildRoundAiPlanBatchRef) —
   // getRankedTeamAiDecisions is declared much later in the file than evaluateActionRequirements,
   // which now needs to call it (for recipe_available/travel_available conditions). Assigned right
@@ -14544,7 +14562,7 @@ function AustraliaGame() {
     const investmentException = findActiveGovernorException(aiState.id, 'investment', investment.cost);
     const investmentGovernorResult = investmentException
       ? { approved: true, reason: `Governor exception (${investmentException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-      : evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue });
+      : evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, getEffectiveGameSettingsForTeam(aiState.teamId), gameState.day, { expectedReturn: investment.cost + roiValue });
     if (!investmentGovernorResult.approved) {
       recordGovernorBlock(aiState.id, 'investment', investmentGovernorResult.reason);
       return { region: regionCode, score: -Infinity };
@@ -14612,7 +14630,7 @@ function AustraliaGame() {
     const equipmentException = findActiveGovernorException(aiState.id, 'equipment', item.cost);
     const equipmentGovernorResult = equipmentException
       ? { approved: true, reason: `Governor exception (${equipmentException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-      : evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day);
+      : evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, getEffectiveGameSettingsForTeam(aiState.teamId), gameState.day);
     if (!equipmentGovernorResult.approved) {
       recordGovernorBlock(aiState.id, 'equipment', equipmentGovernorResult.reason);
       return { item, score: -Infinity };
@@ -16907,7 +16925,7 @@ function AustraliaGame() {
         case 'spendable_cash_max':
           return passThreshold(req, spendableCash);
         case 'reserve_retention_min': {
-          const reserve = computeDynamicReserve(phase, spendableCash, gameSettings);
+          const reserve = computeDynamicReserve(phase, spendableCash, getEffectiveGameSettingsForTeam(actor.teamId));
           return (spendableCash - (context?.cost || 0)) >= reserve;
         }
         // Bugfix (post-F5 review): reads scope.compareActorId, NOT scope.actorId — the latter is
@@ -17106,7 +17124,7 @@ function AustraliaGame() {
     };
     const governorCategory = governorCategoryByType[decision.type];
     const governorRuling = governorCategory
-      ? evaluateEconomySpendingApproval(actor, governorCategory, spendAmount || 0, gameSettings, gameState.day).reason
+      ? evaluateEconomySpendingApproval(actor, governorCategory, spendAmount || 0, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day).reason
       : 'n/a — no spend category.';
     const targetLabel = decision.data?.region ? (REGIONS[decision.data.region as keyof typeof REGIONS]?.name || decision.data.region)
       : (decision.data?.targetActorId ? getActorDisplayName(decision.data.targetActorId) : 'n/a');
@@ -17178,6 +17196,10 @@ function AustraliaGame() {
   // submitTreasuryFundingRequest), so it's read through a ref assigned right after that function's
   // own real declaration, rather than moving resolveGovernorExceptionRequest's declaration point.
   const evaluateAiTeamFundingPolicyRef = useRef<((request: TreasuryFundingRequest) => { outcome: string; approvedAmount: number; reason: string }) | null>(null);
+  // Team AI Overseer System Phase O3: same TDZ-safe ref-indirection pattern — the real
+  // resolveOverseerAdaptivePolicyRequest is declared later (it needs updateTeamState and the
+  // PolicyOverlay lookup logic), so it's read through a ref assigned right after its declaration.
+  const resolveOverseerAdaptivePolicyRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -17253,9 +17275,12 @@ function AustraliaGame() {
       ? () => resolveTreasuryApprovalRequest(next.id, 'approve_full')
       : next.requestKind === 'governor_exception'
       ? () => resolveGovernorExceptionRequestRef.current?.(next.id, 'approve_once')
+      : next.requestKind === 'overseer_adaptive_policy'
+      ? () => resolveOverseerAdaptivePolicyRequestRef.current?.(next.id, 'approve')
       : () => resolveApprovalRequest(next.id, 'approve');
     const dialogTitle = next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds'
       : next.requestKind === 'governor_exception' ? 'Teammate requests a Governor exception'
+      : next.requestKind === 'overseer_adaptive_policy' ? 'Adaptive Overseer recommends a policy change'
       : 'Teammate proposes an action';
     showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
   }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest]);
@@ -20095,7 +20120,7 @@ function AustraliaGame() {
       const supportException = findActiveGovernorException(fromActor.id, 'support', amount);
       const supportGovernorResult = supportException
         ? { approved: true, reason: `Governor exception (${supportException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-        : evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day);
+        : evaluateEconomySpendingApproval(fromActor, 'support', amount, getEffectiveGameSettingsForTeam(fromActor.teamId), gameState.day);
       if (!supportGovernorResult.approved) {
         recordGovernorBlock(fromActor.id, 'support', supportGovernorResult.reason);
         return false;
@@ -20293,7 +20318,7 @@ function AustraliaGame() {
     const spendable = getActorSpendableCash(actor, vaultActive);
     const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
     const phase = computeEconomicPhase(actor, spendable, gameSettings, endgameActive);
-    const actorReserve = computeDynamicReserve(phase, spendable, gameSettings);
+    const actorReserve = computeDynamicReserve(phase, spendable, getEffectiveGameSettingsForTeam(actor.teamId));
     const excess = Math.max(0, spendable - actorReserve - gameSettings.teamTreasuryMinPersonalCashRemaining);
     if (excess <= 0) return null;
     const liquidity = analyzeTeamLiquidity(actor.teamId);
@@ -20712,6 +20737,88 @@ function AustraliaGame() {
     }));
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, resolveTreasuryFundingRequest, updateTeamState]);
   resolveGovernorExceptionRequestRef.current = resolveGovernorExceptionRequest;
+
+  // Team AI Overseer System Phase O3 ('approval' authority mode): mirrors buildTreasuryApprovalRequest's
+  // shape most closely, minus its wager/cost editing (a policy overlay has no cost). Since this is a
+  // team-level recommendation (not tied to one acting actor's own decision), the request's mandatory
+  // actorId is populated with a representative actor purely so it can share the existing ApprovalRequest
+  // shape/queue — nothing reads that actorId as "the actor who is doing something."
+  const buildOverseerAdaptivePolicyApprovalRequest = useCallback((overlay: PolicyOverlay, teamId: string): ApprovalRequest => {
+    const team = teamsByIdRef.current[teamId];
+    const representativeActorId = (team?.actorIds || [])[0] || '';
+    const teamLabel = team?.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team');
+    const summary = `${teamLabel}'s Adaptive Overseer recommends changing ${overlay.settingKey} from ${overlay.configuredValue} to ${overlay.temporaryValue}: ${overlay.reason}`;
+    const syntheticDecision = {
+      type: 'end_turn',
+      description: summary,
+      data: {},
+      score: 0,
+      plan: undefined
+    } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_overseer_${overlay.id}`,
+      actorId: representativeActorId,
+      teamId,
+      decision: syntheticDecision,
+      actionSummary: summary,
+      targetLabel: 'Team AI Overseer',
+      cost: null,
+      wager: null,
+      percentCashAtRisk: null,
+      expectedReward: null,
+      successProbability: overlay.confidence,
+      minCashRemaining: null,
+      vaultEffect: 'Not applicable — this is a policy overlay, not a spending action.',
+      governorRuling: `Confidence: ${Math.round(overlay.confidence * 100)}%. Risk level: ${overlay.riskLevel}.`,
+      requirementsSummary: overlay.evidence.join(' '),
+      aiExplanation: overlay.reason,
+      fallbackAvailable: false,
+      actionsRemaining: 0,
+      categoryBucket: 'wait' as TeamModeActionCategory,
+      createdAtTurn: gameState.day,
+      status: 'pending',
+      requestKind: 'overseer_adaptive_policy',
+      overseerOverlayId: overlay.id
+    };
+  }, [gameState.day]);
+
+  // Team AI Overseer System Phase O3: approve flips the overlay active (approvalStatus:
+  // 'approved', becomes visible to getEffectiveGameSettingsForTeam); reject moves it straight to
+  // overlayHistory marked reverted — mirrors resolveTreasuryApprovalRequest's dequeue shape exactly.
+  const resolveOverseerAdaptivePolicyRequest = useCallback((requestId: string, control: 'approve' | 'reject') => {
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== requestId));
+    if (confirmationDialog.data?.requestId === requestId) {
+      closeConfirmation();
+    }
+    const overlayId = request.overseerOverlayId;
+    if (!overlayId) return;
+    updateTeamState(request.teamId, prev => {
+      const overlay = prev.overseer.policyOverlays.find(o => o.id === overlayId);
+      if (!overlay) return prev;
+      if (control === 'approve') {
+        return {
+          ...prev,
+          overseer: {
+            ...prev.overseer,
+            policyOverlays: prev.overseer.policyOverlays.map(o => o.id === overlayId ? { ...o, approvalStatus: 'approved' as const } : o)
+          }
+        };
+      }
+      return {
+        ...prev,
+        overseer: {
+          ...prev.overseer,
+          policyOverlays: prev.overseer.policyOverlays.filter(o => o.id !== overlayId),
+          overlayHistory: [...prev.overseer.overlayHistory, { ...overlay, approvalStatus: 'rejected' as const, reverted: true }].slice(-30)
+        }
+      };
+    });
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, updateTeamState]);
+  resolveOverseerAdaptivePolicyRequestRef.current = resolveOverseerAdaptivePolicyRequest;
 
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
   // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
@@ -22286,6 +22393,43 @@ function AustraliaGame() {
     });
   }, [gameSettings.teamCompetitiveAiEnabled, updateTeamState]);
 
+  // Team AI Overseer System Phase O3: decision rule for the one adaptable setting this phase wires
+  // end-to-end (economyReserveStrength) — deliberately simple, directly demonstrating the spec's own
+  // worked example ("Configured Reserve Strength: High, Temporary Overseer Overlay: Balanced")
+  // rather than spreading effort across many partially-wired settings. Reuses the same evidence
+  // shape computeAdaptiveStrategyModeSignal already produces (recomputed here since that function's
+  // own locals aren't accessible outside its scope — cheap and pure, no duplicated state).
+  const evaluateAdaptiveOverseerOverlay = useCallback((teamId: string): {
+    temporaryValue: EconomyReserveStrength;
+    reason: string;
+    evidence: string[];
+    confidence: number;
+    riskLevel: 'low' | 'moderate' | 'high';
+  } | null => {
+    const team = teamsByIdRef.current[teamId];
+    if (!team) return null;
+    const mode = team.overseer.currentAdaptiveStrategyMode;
+    if (mode === 'recovery' || mode === 'comeback') {
+      return {
+        temporaryValue: 'low',
+        reason: `Loosening the Economy Governor's reserve strength while the team is in ${mode.replace(/_/g, ' ')} mode.`,
+        evidence: [`Team strategy mode: ${mode}.`],
+        confidence: 0.7,
+        riskLevel: 'moderate'
+      };
+    }
+    if (mode === 'protect_lead') {
+      return {
+        temporaryValue: 'high',
+        reason: 'Tightening the Economy Governor\'s reserve strength while protecting a lead.',
+        evidence: ['Team strategy mode: protect_lead.'],
+        confidence: 0.7,
+        riskLevel: 'low'
+      };
+    }
+    return null;
+  }, []);
+
   const advanceDay = useCallback(() => {
     const prevDay = gameState.day;
     const currentPlayer = player;
@@ -22983,6 +23127,109 @@ function AustraliaGame() {
         });
       }
 
+      // Team AI Overseer System Phase O3: overlay-decision pass, run as its own post-commit loop
+      // (O2's currentAdaptiveStrategyMode is only fully committed to teamsByIdRef after the reduce
+      // above finishes, so this reads the now-committed value). Shadow mode computes + logs only;
+      // Advisory creates a pending, inert overlay; Approval routes through the existing approval
+      // queue; Autonomous applies immediately, respecting the one-major-change-per-day budget
+      // scaffolded in O1 (majorChangesToday/lastChangeDay).
+      if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiAdaptiveOverseerEnabled) {
+        [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
+          const team = teamsByIdRef.current[teamId];
+          if (!team) return;
+          const candidate = evaluateAdaptiveOverseerOverlay(teamId);
+          const existingOverlay = team.overseer.policyOverlays.find(o => o.settingKey === 'economyReserveStrength');
+          const teamLabel = team.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team');
+
+          if (!candidate) {
+            if (existingOverlay) {
+              updateTeamState(teamId, prev => ({
+                ...prev,
+                overseer: {
+                  ...prev.overseer,
+                  policyOverlays: prev.overseer.policyOverlays.filter(o => o.id !== existingOverlay.id),
+                  overlayHistory: [...prev.overseer.overlayHistory, { ...existingOverlay, reverted: true }].slice(-30)
+                }
+              }));
+            }
+            return;
+          }
+
+          if (existingOverlay && existingOverlay.temporaryValue === candidate.temporaryValue) return;
+
+          const authorityMode = gameSettings.teamAiAdaptiveOverseerAuthorityMode;
+          if (authorityMode === 'shadow') {
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              (team.actorIds || []).forEach(actorId => {
+                const actor = projectedActors[actorId];
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Shadow Mode: Adaptive Overseer would change economyReserveStrength to ${candidate.temporaryValue} (${candidate.reason})`);
+              });
+            }
+            return;
+          }
+
+          if (authorityMode === 'autonomous' && team.overseer.lastChangeDay === newDay && team.overseer.majorChangesToday >= 1) {
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              (team.actorIds || []).forEach(actorId => {
+                const actor = projectedActors[actorId];
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer deferred a reserve-strength change to ${candidate.temporaryValue} — daily change budget already used.`);
+              });
+            }
+            return;
+          }
+
+          const overlayId = `overseer_overlay_${teamId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const newOverlay: PolicyOverlay = {
+            id: overlayId,
+            settingKey: 'economyReserveStrength',
+            configuredValue: gameSettings.economyReserveStrength,
+            temporaryValue: candidate.temporaryValue,
+            effectiveValue: candidate.temporaryValue,
+            reason: candidate.reason,
+            evidence: candidate.evidence,
+            confidence: candidate.confidence,
+            riskLevel: candidate.riskLevel,
+            startDay: newDay,
+            startTurn: projectedTurnCounter,
+            expiresDay: newDay + Math.max(1, gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays),
+            sourceModule: 'adaptive_overseer',
+            approvalStatus: authorityMode === 'autonomous' ? 'auto' : 'pending',
+            autoRenewable: true,
+            reverted: false
+          };
+
+          updateTeamState(teamId, prev => ({
+            ...prev,
+            overseer: {
+              ...prev.overseer,
+              policyOverlays: [...prev.overseer.policyOverlays.filter(o => o.settingKey !== 'economyReserveStrength'), newOverlay],
+              majorChangesToday: prev.overseer.lastChangeDay === newDay ? prev.overseer.majorChangesToday + 1 : 1,
+              lastChangeDay: newDay
+            }
+          }));
+
+          if (authorityMode === 'advisory') {
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              (team.actorIds || []).forEach(actorId => {
+                const actor = projectedActors[actorId];
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer recommends changing economyReserveStrength to ${candidate.temporaryValue} (${candidate.reason}) — awaiting manual review.`);
+              });
+            }
+          } else if (authorityMode === 'approval') {
+            const approvalRequest = buildOverseerAdaptivePolicyApprovalRequest(newOverlay, teamId);
+            setPendingApprovalRequests(prev => [...prev, approvalRequest]);
+          } else if (authorityMode === 'autonomous') {
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              addNotification(`🧭 ${teamLabel}'s Adaptive Overseer changed economyReserveStrength to ${candidate.temporaryValue} (${candidate.reason})`, 'ai', false, 'system');
+              (team.actorIds || []).forEach(actorId => {
+                const actor = projectedActors[actorId];
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer changed economyReserveStrength to ${candidate.temporaryValue} (${candidate.reason})`);
+              });
+            }
+          }
+        });
+      }
+
       // Team Treasury Phase T1 (GD4): apply AI contributions once per day, using the
       // just-committed nextTeams/actor state so evaluateTeamAiTreasuryContribution reads today's
       // final numbers. Placed AFTER the commit (not inside the nextTeams reduce above) since it
@@ -23547,7 +23794,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, compareCompetitiveMetricValues, computeNetWorth, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -25217,7 +25464,7 @@ function AustraliaGame() {
         if (successChance < gameSettings.economyMinimumChallengeProbability) return;
         const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
         const phase = computeEconomicPhase(actor, spendableForWager, gameSettings, endgameActive);
-        const reserve = computeDynamicReserve(phase, spendableForWager, gameSettings);
+        const reserve = computeDynamicReserve(phase, spendableForWager, getEffectiveGameSettingsForTeam(actor.teamId));
         const surplus = Math.max(0, spendableForWager - reserve);
         // Bugfix (post-PR-#60): reserve == economyCashFloor in Survival phase by definition, so
         // surplus is always 0 for a genuinely broke actor, permanently locking challenges out —
@@ -25522,7 +25769,7 @@ function AustraliaGame() {
           const sabotageException = findActiveGovernorException(actor.id, 'sabotage', action.cost);
           const sabotageGovernorResult = sabotageException
             ? { approved: true, reason: `Governor exception (${sabotageException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-            : evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day);
+            : evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day);
           if (!sabotageGovernorResult.approved) { recordGovernorBlock(actor.id, 'sabotage', sabotageGovernorResult.reason); return; }
           if (hasActiveDebuff(sabotageTarget.target.debuffs, action.id)) return;
           let score = (typeof action.aiWeight === 'number' ? action.aiWeight : 100) + sabotageTarget.pressure - (action.cost * 0.05);
@@ -25570,7 +25817,7 @@ function AustraliaGame() {
     const regionDepositException = findActiveGovernorException(actor.id, 'region_deposit', minimalDeposit);
     const regionDepositGovernorResult = regionDepositException
       ? { approved: true, reason: `Governor exception (${regionDepositException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-      : evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day);
+      : evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day);
     if (regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
       recordGovernorBlock(actor.id, 'region_deposit', regionDepositGovernorResult.reason);
     }
@@ -25625,7 +25872,7 @@ function AustraliaGame() {
       const travelException = findActiveGovernorException(actor.id, 'travel', cost);
       const travelGovernorResult = travelException
         ? { approved: true, reason: `Governor exception (${travelException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-        : evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day);
+        : evaluateEconomySpendingApproval(actor, 'travel', cost, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day);
       if (!travelGovernorResult.approved) { recordGovernorBlock(actor.id, 'travel', travelGovernorResult.reason); return; }
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
       score += (REGIONS[region]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
@@ -26486,7 +26733,7 @@ function AustraliaGame() {
     const spendable = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
     const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
     const phase = computeEconomicPhase(actor, spendable, gameSettings, endgameActive);
-    const reserve = computeDynamicReserve(phase, spendable, gameSettings) - (match.scope === 'temporary_reserve_reduction' ? (match.reserveReductionAmount || 0) : 0);
+    const reserve = computeDynamicReserve(phase, spendable, getEffectiveGameSettingsForTeam(actor.teamId)) - (match.scope === 'temporary_reserve_reduction' ? (match.reserveReductionAmount || 0) : 0);
     const breach = Math.max(0, reserve - (spendable - cost));
     if (breach > match.maxReserveBreach) return null;
     if (match.scope === 'single_action') {
@@ -26719,7 +26966,7 @@ function AustraliaGame() {
     const overrideException = findActiveGovernorException(actor.id, 'override', cost);
     const overrideGovernorResult = overrideException
       ? { approved: true, reason: `Governor exception (${overrideException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
-      : evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day);
+      : evaluateEconomySpendingApproval(actor, 'override', cost, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day);
     if (!overrideGovernorResult.approved) {
       recordGovernorBlock(actor.id, 'override', overrideGovernorResult.reason);
       return ineligible('Blocked by Economy Governor spending approval.');
@@ -27486,7 +27733,7 @@ function AustraliaGame() {
         actor = getActorState(actorId);
         if (!actor) break;
         if (!skipApprovalCheckOnce) {
-          const autoResolution = resolveAutomaticApprovalRules(actor, decision, gameSettings, gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
+          const autoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
           if (autoResolution.outcome === 'reject') {
             if (gameSettings.aiActionApprovalTransparencyEnabled) appendTeamAiTraceNote(actorId, `Auto-rejected: ${autoResolution.reason}`);
             break;
@@ -27612,7 +27859,7 @@ function AustraliaGame() {
         // can't abandon-and-return the way the outer while loop can), the pause here awaits a
         // promise-based resume gate instead — this function's own existing try/finally remains the
         // single, unbroken guarantor that finishTeamAiTurn fires, never a second abandon path.
-        const bonusApprovalAutoResolution = resolveAutomaticApprovalRules(actorForAction, decision, gameSettings, gameState.day, { wager: decision.data?.wager });
+        const bonusApprovalAutoResolution = resolveAutomaticApprovalRules(actorForAction, decision, getEffectiveGameSettingsForTeam(actorForAction.teamId), gameState.day, { wager: decision.data?.wager });
         if (bonusApprovalAutoResolution.outcome === 'reject') {
           if (gameSettings.aiActionApprovalTransparencyEnabled) {
             appendTeamAiTraceNote(actorId, `Auto-rejected: ${bonusApprovalAutoResolution.reason}`);
@@ -28354,7 +28601,7 @@ function AustraliaGame() {
       // decision needs approval and isn't auto-resolved, the loop returns here exactly like the
       // existing ask_first override branch below — resumption happens only via
       // resolveApprovalRequest/resumeAfterApprovalResolution.
-      const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, gameSettings, gameState.day, {
+      const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, {
         wager: decision.data?.wager,
         cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
       });
@@ -40270,7 +40517,43 @@ function AustraliaGame() {
             );
           })()}
 
-          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
+          {/* Team AI Overseer System Phase O3: info panel for an overseer_adaptive_policy request —
+              never rendered alongside the other panels above (mutually exclusive per requestKind).
+              Shows the configured/temporary values and the Overseer's own confidence/evidence. */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'overseer_adaptive_policy') return null;
+            const team = teamsByIdRef.current[request.teamId];
+            const overlay = team?.overseer.policyOverlays.find(o => o.id === request.overseerOverlayId);
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Setting:</span><span className="font-bold text-right">{overlay ? String(overlay.settingKey) : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Configured Value:</span><span className="font-bold">{overlay ? String(overlay.configuredValue) : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Proposed Value:</span><span className="font-bold">{overlay ? String(overlay.temporaryValue) : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Confidence:</span><span className="font-bold">{overlay ? `${Math.round(overlay.confidence * 100)}%` : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Risk Level:</span><span className="font-bold capitalize">{overlay?.riskLevel ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Reason:</span><span className="font-bold text-right">{request.aiExplanation}</span></div>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const approvalRequestId = request.id;
+            return (
+              <div className="flex space-x-3">
+                <button onClick={() => resolveOverseerAdaptivePolicyRequestRef.current?.(approvalRequestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
+                <button onClick={() => resolveOverseerAdaptivePolicyRequestRef.current?.(approvalRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
             <div className="space-y-2">
               <div className="flex space-x-3">
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
