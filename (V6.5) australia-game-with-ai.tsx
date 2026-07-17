@@ -3000,8 +3000,41 @@ interface TeamOverseerState {
   minorChangesThisTurn: number;
   majorChangesToday: number;
   lastChangeDay: number;
+  // Team AI Overseer System Phase O9: user locks — a locked setting key/actor id is never
+  // touched by new O3 overlay creation / O5-O6 directive creation (existing live entries are
+  // untouched; only NEW creation is blocked). No downstream consumer needs to change since a
+  // locked setting/actor simply never has an entry for them to find.
+  lockedOverlaySettingKeys: (keyof GameSettingsState)[];
+  lockedDirectiveActorIds: string[];
 }
+type OverseerDashboardTabId = 'overview' | 'strategicPlan' | 'adaptivePolicy' | 'recommendations' | 'timeline' | 'performance' | 'controls';
 const OVERSEER_AUTHORITY_MODES: OverseerAuthorityMode[] = ['off', 'shadow', 'advisory', 'approval', 'autonomous'];
+// Team AI Overseer System Phase O9: tab order/labels for the Overseer Dashboard modal, mirroring
+// SETTINGS_HUB_TAB_ORDER/_LABELS's own const-pair convention.
+const OVERSEER_DASHBOARD_TAB_ORDER: OverseerDashboardTabId[] = ['overview', 'strategicPlan', 'adaptivePolicy', 'recommendations', 'timeline', 'performance', 'controls'];
+const OVERSEER_DASHBOARD_TAB_LABELS: Record<OverseerDashboardTabId, string> = {
+  overview: 'Overview',
+  strategicPlan: 'Strategic Plan',
+  adaptivePolicy: 'Adaptive Policy',
+  recommendations: 'Recommendations',
+  timeline: 'Timeline',
+  performance: 'Performance',
+  controls: 'Controls'
+};
+// Team AI Overseer System Phase O9 (GD4): a static, read-only reference table cross-referencing
+// the two existing global authority-mode enums against what each module currently affects — NOT a
+// new per-category configuration axis (see the O9 plan's explicit scope-down).
+const OVERSEER_AUTHORITY_MATRIX_ROWS: { category: string; module: 'strategic_command' | 'adaptive_overseer'; description: string }[] = [
+  { category: 'Directive scoring bias', module: 'strategic_command', description: "Additive score bonus for a candidate action within an actor's active directive's allowed categories." },
+  { category: 'Max spending cap', module: 'strategic_command', description: "Caps which candidates the scoring bias applies to, based on the directive's own spendable-cash-derived limit." },
+  { category: 'Treasury allocation', module: 'strategic_command', description: 'A directive-scoped Team Treasury funding request, triggered on a spending shortfall within allowed categories.' },
+  { category: 'Override eligibility bias', module: 'strategic_command', description: "Lowers the effective minimum decision score for an actor's active directive's allowed categories." },
+  { category: 'Required resources', module: 'strategic_command', description: 'Display-only: ingredients a crafting-oriented directive currently lists as missing.' },
+  { category: 'economyReserveStrength', module: 'adaptive_overseer', description: "The one setting this module can currently overlay (configured/temporary/effective), based on a team's diagnosed adaptive strategy mode." }
+];
+// Team AI Overseer System Phase O9 (GD6): setting keys the user-locks Controls tab may lock —
+// a one-line change to extend once O3 supports overlaying more than one setting key.
+const OVERSEER_LOCKABLE_SETTING_KEYS: (keyof GameSettingsState)[] = ['economyReserveStrength'];
 const createDefaultTeamOverseerState = (): TeamOverseerState => ({
   strategicDirectives: [],
   directiveHistory: [],
@@ -3015,7 +3048,9 @@ const createDefaultTeamOverseerState = (): TeamOverseerState => ({
   lastEvaluationTurn: 0,
   minorChangesThisTurn: 0,
   majorChangesToday: 0,
-  lastChangeDay: 0
+  lastChangeDay: 0,
+  lockedOverlaySettingKeys: [],
+  lockedDirectiveActorIds: []
 });
 // Team AI Overseer System Phase O1: shallow, fail-safe sanitizer. Deep per-directive/per-overlay
 // validation is deferred to O5/O3 (the phases that actually produce those array entries) — a
@@ -3039,7 +3074,9 @@ const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
     lastEvaluationTurn: typeof source.lastEvaluationTurn === 'number' ? source.lastEvaluationTurn : defaults.lastEvaluationTurn,
     minorChangesThisTurn: typeof source.minorChangesThisTurn === 'number' ? source.minorChangesThisTurn : defaults.minorChangesThisTurn,
     majorChangesToday: typeof source.majorChangesToday === 'number' ? source.majorChangesToday : defaults.majorChangesToday,
-    lastChangeDay: typeof source.lastChangeDay === 'number' ? source.lastChangeDay : defaults.lastChangeDay
+    lastChangeDay: typeof source.lastChangeDay === 'number' ? source.lastChangeDay : defaults.lastChangeDay,
+    lockedOverlaySettingKeys: Array.isArray(source.lockedOverlaySettingKeys) ? source.lockedOverlaySettingKeys.filter(k => typeof k === 'string') as (keyof GameSettingsState)[] : defaults.lockedOverlaySettingKeys,
+    lockedDirectiveActorIds: Array.isArray(source.lockedDirectiveActorIds) ? source.lockedDirectiveActorIds.filter(id => typeof id === 'string') : defaults.lockedDirectiveActorIds
   };
 };
 
@@ -3132,6 +3169,34 @@ const computeOverlayOutcomeNote = (overlay: PolicyOverlay, currentMetricValue: n
   const delta = currentMetricValue - overlay.startMetricValue;
   const direction = delta > 0 ? 'increased' : delta < 0 ? 'decreased' : 'stayed the same';
   return `Team's win-condition metric ${direction} from $${Math.round(overlay.startMetricValue)} to $${Math.round(currentMetricValue)} while this was active.`;
+};
+
+// Team AI Overseer System Phase O9 (GD5): a pure filtered/merged view over TeamOverseerState's own
+// arrays — no new AI subsystem, just .filter()+.concat()+.sort(), reusing the exact same
+// approvalStatus/status values O3/O5/O6 already produce.
+const getOverseerPendingRecommendations = (overseer: TeamOverseerState): Array<{ kind: 'overlay' | 'directive'; item: PolicyOverlay | TeamDirective }> => {
+  const pendingOverlays = (overseer.policyOverlays || [])
+    .filter(o => o.approvalStatus === 'pending')
+    .map(o => ({ kind: 'overlay' as const, item: o, day: o.startDay }));
+  const pendingDirectives = (overseer.strategicDirectives || [])
+    .filter(d => d.status === 'proposed' || d.status === 'awaiting_approval')
+    .map(d => ({ kind: 'directive' as const, item: d, day: d.createdDay }));
+  return [...pendingOverlays, ...pendingDirectives]
+    .sort((a, b) => b.day - a.day)
+    .map(({ kind, item }) => ({ kind, item }));
+};
+
+// Team AI Overseer System Phase O9: Performance tab filter — only ever shows the already-shipped
+// Strategic Command DecisionScoreStage tag (Phase O6, id 'strategic_command_directive_v67'), plus a
+// best-effort text match for Adaptive Overseer's economyReserveStrength overlay (which changes a
+// SETTING rather than emitting its own scoring stage, so no exact id tag exists for it yet).
+const filterOverseerScoreStages = (stages: DecisionScoreStage[] | undefined): DecisionScoreStage[] => {
+  if (!Array.isArray(stages)) return [];
+  return stages.filter(stage =>
+    stage.id === 'strategic_command_directive_v67' ||
+    stage.label === 'Strategic Command' ||
+    /economyReserveStrength|reserve strength/i.test(stage.reason || '')
+  );
 };
 
 const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => {
@@ -4522,6 +4587,10 @@ type GameSettingsState = {
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
   teamAiOverseerTransparencyEnabled: boolean;
+  // Team AI Overseer System Phase O9: gates whether the "Open Overseer Dashboard" HUD button
+  // appears at all. The dashboard's own tab state and the two new user-lock arrays are otherwise
+  // fully inert for anyone who never opens it.
+  teamAiOverseerDashboardEnabled: boolean;
   // Team AI Overseer System Phase O2 (inert unless teamAiAdaptiveOverseerEnabled): hysteresis
   // thresholds and stability guard for shadow-only strategy-mode diagnostics. No policy overlay
   // exists yet — these only govern which AdaptiveStrategyMode label gets recorded/displayed.
@@ -5646,6 +5715,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
   teamAiOverseerTransparencyEnabled: true,
+  teamAiOverseerDashboardEnabled: false,
   teamAiAdaptiveOverseerComebackEnterPercent: 20,
   teamAiAdaptiveOverseerComebackExitPercent: 10,
   teamAiAdaptiveOverseerProtectLeadEnterPercent: 20,
@@ -5798,7 +5868,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -10155,6 +10225,7 @@ function AustraliaGame() {
     showHelp: false,
     showSettings: false,
     showNegotiationCenter: false,
+    showOverseerDashboard: false,
     showEndGameModes: false,
     notificationFilter: 'all',
     quickActionsOpen: true,
@@ -10182,6 +10253,10 @@ function AustraliaGame() {
   const [selectedDecisionActorId, setSelectedDecisionActorId] = useState<string>('ai');
   const [decisionTransparencyGroupView, setDecisionTransparencyGroupView] = useState<DecisionTransparencyGroupView>(DEFAULT_GAME_SETTINGS.decisionTransparencyDefaultGroupView);
   const [expandedHudDecisionActorId, setExpandedHudDecisionActorId] = useState<string | null>(null);
+  // Team AI Overseer System Phase O9: pure navigation state for the Overseer Dashboard panel —
+  // never persisted (gameState/uiState/save data), mirroring selectedDecisionActorId's own convention.
+  const [overseerDashboardTab, setOverseerDashboardTab] = useState<OverseerDashboardTabId>('overview');
+  const [dashboardTeamId, setDashboardTeamId] = useState<string>(TEAM_PLAYER_ID);
 
   // Special ability state tracking
   const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
@@ -11653,6 +11728,9 @@ function AustraliaGame() {
 	      teamAiOverseerTransparencyEnabled: typeof settingsData.teamAiOverseerTransparencyEnabled === 'boolean'
 	        ? settingsData.teamAiOverseerTransparencyEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+	      teamAiOverseerDashboardEnabled: typeof settingsData.teamAiOverseerDashboardEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerDashboardEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
 	      teamAiAdaptiveOverseerComebackEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent, 0, 100),
 	      teamAiAdaptiveOverseerComebackExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent, 0, 100),
 	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
@@ -16475,6 +16553,7 @@ function AustraliaGame() {
 	            showStats: false,
 	            showNotifications: false,
             showNegotiationCenter: false,
+	            showOverseerDashboard: false,
 	            showProgress: false,
 	            showHelp: false,
 	            showAiStats: false,
@@ -16652,6 +16731,7 @@ function AustraliaGame() {
     updateUiState({
       showCampaignSelect: false,
       showNegotiationCenter: false,
+      showOverseerDashboard: false,
       showNotifications: false,
       showProgress: false,
       showSettings: false,
@@ -16818,6 +16898,7 @@ function AustraliaGame() {
 	      showStats: false,
 	      showNotifications: false,
       showNegotiationCenter: false,
+      showOverseerDashboard: false,
       showProgress: false,
 	      showHelp: false,
 	      showSettings: false,
@@ -21162,6 +21243,33 @@ function AustraliaGame() {
     }));
   }, [updateTeamState]);
 
+  // Team AI Overseer System Phase O9 (GD6): user locks. Toggling a lock ON/OFF only ever affects
+  // NEW O3 overlay / O5-O6 directive creation (wired at the two gates in advanceDay) — an already-
+  // live overlay/directive for a locked key/actor is never retroactively touched by these toggles.
+  const toggleOverseerSettingLock = useCallback((teamId: string, settingKey: keyof GameSettingsState) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        lockedOverlaySettingKeys: (prev.overseer.lockedOverlaySettingKeys || []).includes(settingKey)
+          ? prev.overseer.lockedOverlaySettingKeys.filter(k => k !== settingKey)
+          : [...(prev.overseer.lockedOverlaySettingKeys || []), settingKey]
+      }
+    }));
+  }, [updateTeamState]);
+
+  const toggleOverseerDirectiveActorLock = useCallback((teamId: string, actorId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        lockedDirectiveActorIds: (prev.overseer.lockedDirectiveActorIds || []).includes(actorId)
+          ? prev.overseer.lockedDirectiveActorIds.filter(id => id !== actorId)
+          : [...(prev.overseer.lockedDirectiveActorIds || []), actorId]
+      }
+    }));
+  }, [updateTeamState]);
+
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
   // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
   // when the exception's own configured reserve breach is within the configured threshold.
@@ -23502,6 +23610,20 @@ function AustraliaGame() {
 
           if (existingOverlay && existingOverlay.temporaryValue === candidate.temporaryValue) return;
 
+          // Team AI Overseer System Phase O9 (GD6): user lock — a locked setting key is never
+          // touched by NEW overlay creation. An already-live overlay for this key (if any) is
+          // untouched (this early-return only fires when a NEW/changed candidate would otherwise
+          // be applied); the actor's trace gets a note when Transparency is on.
+          if ((team.overseer.lockedOverlaySettingKeys || []).includes('economyReserveStrength')) {
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              (team.actorIds || []).forEach(actorId => {
+                const actor = projectedActors[actorId];
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer skipped changing economyReserveStrength — locked by user.`);
+              });
+            }
+            return;
+          }
+
           const authorityMode = gameSettings.teamAiAdaptiveOverseerAuthorityMode;
           if (authorityMode === 'shadow') {
             if (gameSettings.teamAiOverseerTransparencyEnabled) {
@@ -23644,6 +23766,14 @@ function AustraliaGame() {
             const actor = projectedActors[actorId];
             if (!actor || actor.kind !== 'ai') return;
             if (stillLive.some(d => d.assignedActorId === actorId)) return;
+            // Team AI Overseer System Phase O9 (GD6): user lock — a locked actor never gets a NEW
+            // directive generated for them; other, non-locked actors on the same team are unaffected.
+            if ((team.overseer.lockedDirectiveActorIds || []).includes(actorId)) {
+              if (gameSettings.teamAiOverseerTransparencyEnabled) {
+                appendTeamAiTraceNote(actorId, `Strategic Command skipped issuing a new directive — locked by user.`);
+              }
+              return;
+            }
             const directive = generateTeamDirective(actor, team, goal, directiveContext, newDay, projectedTurnCounter);
 
             // Team AI Overseer System Phase O6: real 4-way authority-mode dispatch, mirroring
@@ -31913,6 +32043,7 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
       teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+      teamAiOverseerDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
       teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
       teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
@@ -32088,6 +32219,7 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
       teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+      teamAiOverseerDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
       teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
       teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
@@ -39758,6 +39890,14 @@ function AustraliaGame() {
 	                  </div>
 	                </div>
 	              )}
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiOverseerDashboardEnabled && (
+	                <button
+	                  onClick={() => updateUiState({ showOverseerDashboard: true })}
+	                  className={`${themeStyles.buttonSecondary} px-3 py-2 rounded mt-4 text-sm w-full`}
+	                >
+	                  🧭 Open Overseer Dashboard
+	                </button>
+	              )}
 	            </div>
 	          )}
 
@@ -39874,6 +40014,7 @@ function AustraliaGame() {
         {renderEndGameModesModal()}
         {renderConfirmationDialog()}
         {renderNegotiationCenter()}
+        {renderOverseerDashboard()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -41415,6 +41556,335 @@ function AustraliaGame() {
               <span className="opacity-75">Don't ask me again</span>
             </label>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  // Team AI Overseer System Phase O9: unified tabbed dashboard, UI-only (see the O9 plan's GD1) —
+  // every tab reads state O1-O8 already produce; the one real behavioral piece (user locks, GD6) is
+  // wired separately at the two advanceDay gates. Modal shell mirrors renderNegotiationCenter's own
+  // shape; tab state is the plain component-local overseerDashboardTab/dashboardTeamId declared
+  // near selectedDecisionActorId — never persisted to gameState/uiState/save data.
+  const renderOverseerDashboard = () => {
+    if (!uiState.showOverseerDashboard) return null;
+    const close = () => updateUiState({ showOverseerDashboard: false });
+    const dashboardTeam = teamsById[dashboardTeamId];
+    const overseer = dashboardTeam?.overseer;
+    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+    const dashboardTeamActors = getTeamActors(dashboardTeamId);
+    const dashboardAiActors = dashboardTeamActors.filter(a => a.kind === 'ai');
+    const effectiveSettings = getEffectiveGameSettingsForTeam(dashboardTeamId);
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">🧭 Overseer Dashboard</h3>
+                <div className="text-sm opacity-75">Team AI Overseer System — unified view</div>
+              </div>
+              <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(tId => (
+                <button
+                  key={tId}
+                  onClick={() => setDashboardTeamId(tId)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${dashboardTeamId === tId ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {tId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team')}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {OVERSEER_DASHBOARD_TAB_ORDER.map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setOverseerDashboardTab(tab)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${overseerDashboardTab === tab ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {OVERSEER_DASHBOARD_TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={`flex-1 overflow-y-auto p-5 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
+            {!overseer ? (
+              <div className="opacity-70 text-sm">No Overseer data for {teamLabel} yet.</div>
+            ) : (
+              <>
+                {overseerDashboardTab === 'overview' && (
+                  <div className="space-y-3 text-sm">
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-1">{teamLabel}</div>
+                      <div>Adaptive strategy mode: <span className="capitalize">{overseer.currentAdaptiveStrategyMode.replace(/_/g, ' ')}</span> <span className="opacity-60">(since day {overseer.strategyModeSinceDay})</span></div>
+                      <div>Strategic Command authority: <span className="capitalize">{gameSettings.teamAiStrategicCommandAuthorityMode}</span></div>
+                      <div>Adaptive Overseer authority: <span className="capitalize">{gameSettings.teamAiAdaptiveOverseerAuthorityMode}</span></div>
+                      <div>Active directives: {overseer.strategicDirectives.length} • Active/pending overlays: {overseer.policyOverlays.length}</div>
+                      <div className="mt-1">Safe Mode: {overseer.safeModeActive ? <span className="text-yellow-500">Active — {overseer.safeModeReason || 'no reason recorded'}</span> : 'Inactive'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'strategicPlan' && (
+                  <div className="space-y-3 text-sm">
+                    {overseer.strategicDirectives.length === 0 ? (
+                      <div className="opacity-70">No active directives for {teamLabel}.</div>
+                    ) : overseer.strategicDirectives.map(directive => (
+                      <div key={directive.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                        <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
+                        <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay} • <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span></div>
+                        {directive.maxSpending > 0 && (
+                          <div className="opacity-60">Max spending: ${directive.maxSpending.toLocaleString()}{directive.treasuryAllocation > 0 ? ` • Treasury allocated: $${directive.treasuryAllocation.toLocaleString()}` : ''}</div>
+                        )}
+                        {directive.requiredResources.length > 0 && (
+                          <div className="opacity-60">Needs: {directive.requiredResources.join(', ')}</div>
+                        )}
+                        <div className="flex gap-1 mt-1">
+                          {directive.status === 'proposed' && (
+                            <button onClick={() => applyOverseerAdvisoryDirective(dashboardTeamId, directive.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs`}>Apply</button>
+                          )}
+                          <button onClick={() => cancelStrategicDirective(dashboardTeamId, directive.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Cancel</button>
+                        </div>
+                      </div>
+                    ))}
+                    {overseer.directiveHistory.length > 0 && (
+                      <details className={`${themeStyles.border} border rounded-lg p-3`}>
+                        <summary className="cursor-pointer font-semibold">History ({overseer.directiveHistory.length})</summary>
+                        <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                          {overseer.directiveHistory.slice().reverse().map(directive => (
+                            <div key={directive.id} className="opacity-75 border-t border-white/10 pt-1">
+                              {directive.objective} — <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span> (day {directive.createdDay}–{directive.expiresDay})
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'adaptivePolicy' && (
+                  <div className="space-y-3 text-sm">
+                    {overseer.policyOverlays.length === 0 ? (
+                      <div className="opacity-70">No active or pending policy overlays for {teamLabel}.</div>
+                    ) : overseer.policyOverlays.map(overlay => {
+                      const isActive = overlay.approvalStatus === 'auto' || overlay.approvalStatus === 'approved';
+                      const isPendingAdvisory = overlay.approvalStatus === 'pending' && gameSettings.teamAiAdaptiveOverseerAuthorityMode === 'advisory';
+                      return (
+                        <div key={overlay.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                          <div className="font-semibold capitalize">{String(overlay.settingKey)}</div>
+                          {isActive ? (
+                            <>
+                              <div>{String(overlay.configuredValue)} → {String(overlay.effectiveValue)}</div>
+                              <div className="opacity-75">Confidence {Math.round(overlay.confidence * 100)}% • expires day {overlay.expiresDay}</div>
+                              <button onClick={() => revertOverseerOverlayNow(dashboardTeamId, overlay.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs mt-1`}>Revert Now</button>
+                            </>
+                          ) : isPendingAdvisory ? (
+                            <>
+                              <div>Recommended: {String(overlay.configuredValue)} → {String(overlay.temporaryValue)}</div>
+                              <div className="opacity-75">{overlay.reason}</div>
+                              <div className="flex gap-1 mt-1">
+                                <button onClick={() => applyOverseerAdvisoryOverlay(dashboardTeamId, overlay.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs`}>Apply</button>
+                                <button onClick={() => dismissOverseerAdvisoryOverlay(dashboardTeamId, overlay.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Dismiss</button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="opacity-75">Awaiting approval: {String(overlay.configuredValue)} → {String(overlay.temporaryValue)}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {overseer.overlayHistory.length > 0 && (
+                      <details className={`${themeStyles.border} border rounded-lg p-3`}>
+                        <summary className="cursor-pointer font-semibold">History ({overseer.overlayHistory.length})</summary>
+                        <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                          {overseer.overlayHistory.slice().reverse().map(overlay => (
+                            <div key={overlay.id} className="opacity-75 border-t border-white/10 pt-1">
+                              {String(overlay.settingKey)}: {String(overlay.configuredValue)} → {String(overlay.temporaryValue)}{overlay.outcomeReview ? ` — ${overlay.outcomeReview}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'recommendations' && (
+                  <div className="space-y-3 text-sm">
+                    {getOverseerPendingRecommendations(overseer).length === 0 ? (
+                      <div className="opacity-70">Nothing awaiting review for {teamLabel}.</div>
+                    ) : getOverseerPendingRecommendations(overseer).map(rec => (
+                      <div key={`${rec.kind}-${rec.item.id}`} className={`${themeStyles.border} border rounded-lg p-3`}>
+                        <div className="text-xs uppercase opacity-60 mb-1">{rec.kind === 'overlay' ? 'Adaptive Policy' : 'Strategic Directive'}</div>
+                        {rec.kind === 'overlay' ? (
+                          <>
+                            <div className="font-semibold capitalize">{String((rec.item as PolicyOverlay).settingKey)}</div>
+                            <div>{String((rec.item as PolicyOverlay).configuredValue)} → {String((rec.item as PolicyOverlay).temporaryValue)}</div>
+                            <div className="opacity-75">{(rec.item as PolicyOverlay).reason}</div>
+                            {gameSettings.teamAiAdaptiveOverseerAuthorityMode === 'advisory' && (
+                              <div className="flex gap-1 mt-1">
+                                <button onClick={() => applyOverseerAdvisoryOverlay(dashboardTeamId, rec.item.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs`}>Apply</button>
+                                <button onClick={() => dismissOverseerAdvisoryOverlay(dashboardTeamId, rec.item.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Dismiss</button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-semibold">{(rec.item as TeamDirective).objective}</div>
+                            <div className="opacity-75">Assigned: {getActorDisplayName((rec.item as TeamDirective).assignedActorId)} • <span className="capitalize">{(rec.item as TeamDirective).status.replace(/_/g, ' ')}</span></div>
+                            <div className="flex gap-1 mt-1">
+                              {(rec.item as TeamDirective).status === 'proposed' && (
+                                <button onClick={() => applyOverseerAdvisoryDirective(dashboardTeamId, rec.item.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs`}>Apply</button>
+                              )}
+                              <button onClick={() => cancelStrategicDirective(dashboardTeamId, rec.item.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Cancel</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'timeline' && (
+                  <div className="space-y-3">
+                    {dashboardAiActors.length === 0 ? (
+                      <div className="opacity-70 text-sm">No AI actors on {teamLabel}.</div>
+                    ) : transparencyAiCards
+                      .filter(card => card.actor.teamId === dashboardTeamId)
+                      .map(card => (
+                        <div key={card.actor.id}>{renderDecisionTransparencyMiniCard(card)}</div>
+                      ))}
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'performance' && (
+                  <div className="space-y-3 text-sm">
+                    {transparencyAiCards.filter(card => card.actor.teamId === dashboardTeamId).map(card => {
+                      const overseerStages = filterOverseerScoreStages(card.trace?.scoreStages);
+                      return (
+                        <div key={card.actor.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                          <div className="font-semibold mb-1">{getActorDisplayName(card.actor.id)}</div>
+                          {overseerStages.length === 0 ? (
+                            <div className="opacity-70">No Overseer-attributed scoring this decision.</div>
+                          ) : overseerStages.map((stage, i) => (
+                            <div key={`${stage.id}-${i}`} className="opacity-80">
+                              {stage.label}: {stage.delta >= 0 ? '+' : ''}{stage.delta.toFixed(1)} — {stage.reason}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {overseerDashboardTab === 'controls' && (
+                  <div className="space-y-4 text-sm">
+                    <div className={`${themeStyles.border} border rounded-lg p-3 overflow-x-auto`}>
+                      <div className="font-semibold mb-2">Authority Matrix</div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left opacity-60">
+                            <th className="pr-2 pb-1">Category</th>
+                            <th className="pr-2 pb-1">Module</th>
+                            <th className="pr-2 pb-1">Authority Mode</th>
+                            <th className="pb-1">What it affects</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {OVERSEER_AUTHORITY_MATRIX_ROWS.map(row => (
+                            <tr key={row.category} className="align-top border-t border-white/10">
+                              <td className="pr-2 py-1 font-semibold">{row.category}</td>
+                              <td className="pr-2 py-1 capitalize">{row.module.replace(/_/g, ' ')}</td>
+                              <td className="pr-2 py-1 capitalize">{row.module === 'strategic_command' ? gameSettings.teamAiStrategicCommandAuthorityMode : gameSettings.teamAiAdaptiveOverseerAuthorityMode}</td>
+                              <td className="py-1 opacity-75">{row.description}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 overflow-x-auto`}>
+                      <div className="font-semibold mb-2">Before / After Settings</div>
+                      {overseer.policyOverlays.length === 0 ? (
+                        <div className="opacity-70 text-xs">No active/pending policy overlays to compare.</div>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left opacity-60">
+                              <th className="pr-2 pb-1">Setting</th>
+                              <th className="pr-2 pb-1">Configured</th>
+                              <th className="pr-2 pb-1">Temporary/Proposed</th>
+                              <th className="pr-2 pb-1">Effective</th>
+                              <th className="pr-2 pb-1">Confidence</th>
+                              <th className="pb-1">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {overseer.policyOverlays.map(overlay => (
+                              <tr key={overlay.id} className="border-t border-white/10">
+                                <td className="pr-2 py-1 font-semibold capitalize">{String(overlay.settingKey)}</td>
+                                <td className="pr-2 py-1">{String(overlay.configuredValue)}</td>
+                                <td className="pr-2 py-1">{String(overlay.temporaryValue)}</td>
+                                <td className="pr-2 py-1">{String(effectiveSettings[overlay.settingKey] ?? overlay.effectiveValue)}</td>
+                                <td className="pr-2 py-1">{Math.round(overlay.confidence * 100)}%</td>
+                                <td className="py-1 capitalize">{overlay.approvalStatus}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-2">User Locks</div>
+                      <div className="text-xs opacity-60 mb-2">A locked setting/actor is never touched by NEW Adaptive Overseer overlay creation or NEW Strategic Command directive creation — already-live overlays/directives are untouched.</div>
+                      <div className="mb-2">
+                        <div className="opacity-75 mb-1">Locked settings (Adaptive Overseer)</div>
+                        {OVERSEER_LOCKABLE_SETTING_KEYS.map(key => {
+                          const locked = (overseer.lockedOverlaySettingKeys || []).includes(key);
+                          return (
+                            <div key={String(key)} className="flex items-center justify-between gap-2 mb-1">
+                              <span className="capitalize">{String(key)}</span>
+                              <button
+                                onClick={() => toggleOverseerSettingLock(dashboardTeamId, key)}
+                                className={`px-2 py-1 rounded text-xs ${locked ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {locked ? 'Locked' : 'Unlocked'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div>
+                        <div className="opacity-75 mb-1">Locked actors (Strategic Command)</div>
+                        {dashboardTeamActors.map(actor => {
+                          const locked = (overseer.lockedDirectiveActorIds || []).includes(actor.id);
+                          return (
+                            <div key={actor.id} className="flex items-center justify-between gap-2 mb-1">
+                              <span>{getActorDisplayName(actor.id)}</span>
+                              <button
+                                onClick={() => toggleOverseerDirectiveActorLock(dashboardTeamId, actor.id)}
+                                className={`px-2 py-1 rounded text-xs ${locked ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {locked ? 'Locked' : 'Unlocked'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
