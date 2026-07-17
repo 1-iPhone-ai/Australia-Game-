@@ -16890,6 +16890,11 @@ function AustraliaGame() {
   // depends on createTreasuryFundingRequest/evaluateAiTeamFundingPolicy/resolveTreasuryFundingRequest
   // (declared much later), so it's read through a ref assigned right after its own real declaration.
   const resolveGovernorExceptionRequestRef = useRef<((approvalRequestId: string, control: GovernorExceptionControlAction) => void) | null>(null);
+  // Team Treasury Phase T4: same TDZ-safe ref-indirection pattern — resolveGovernorExceptionRequest's
+  // own 'use_treasury' branch needs evaluateAiTeamFundingPolicy (declared much later, after T2's own
+  // submitTreasuryFundingRequest), so it's read through a ref assigned right after that function's
+  // own real declaration, rather than moving resolveGovernorExceptionRequest's declaration point.
+  const evaluateAiTeamFundingPolicyRef = useRef<((request: TreasuryFundingRequest) => { outcome: string; approvedAmount: number; reason: string }) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -20363,8 +20368,8 @@ function AustraliaGame() {
           reason: `Requested via a rejected Governor exception: ${exception.reason}`
         });
         if (treasuryRequest) {
-          const policyResolution = evaluateAiTeamFundingPolicy(treasuryRequest);
-          if (policyResolution.outcome !== 'delay') {
+          const policyResolution = evaluateAiTeamFundingPolicyRef.current?.(treasuryRequest);
+          if (policyResolution && policyResolution.outcome !== 'delay') {
             const controlByOutcome: Record<string, TreasuryApprovalControlAction> = {
               approve_full: 'approve_full', approve_partial: 'approve_partial',
               approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper'
@@ -20397,7 +20402,7 @@ function AustraliaGame() {
       ...prev,
       governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, ...updatedFields } : e)
     }));
-  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, updateTeamState]);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, resolveTreasuryFundingRequest, updateTeamState]);
   resolveGovernorExceptionRequestRef.current = resolveGovernorExceptionRequest;
 
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
@@ -20513,6 +20518,7 @@ function AustraliaGame() {
   const evaluateAiTeamFundingPolicy = useCallback((request: TreasuryFundingRequest) => {
     return evaluateHumanFundingRequestResolution(request);
   }, [evaluateHumanFundingRequestResolution]);
+  evaluateAiTeamFundingPolicyRef.current = evaluateAiTeamFundingPolicy;
 
   // Team Treasury Phase T2 (GD5/GD6): the human-facing "Request Team Funds" submit path. Always
   // reachable at exactly $0 — createTreasuryFundingRequest never gates on the requester already
