@@ -2984,6 +2984,7 @@ interface PolicyOverlay {
   autoRenewable: boolean;
   outcomeReview?: string;
   reverted: boolean;
+  startMetricValue?: number;
 }
 interface TeamOverseerState {
   strategicDirectives: TeamDirective[];
@@ -3118,6 +3119,19 @@ const resolveAdaptiveStrategyModeTransition = (
   if (candidateMode === currentMode) return false;
   if (candidateMode === 'recovery') return true;
   return (currentDay - strategyModeSinceDay) >= minimumDurationDays;
+};
+
+// Team AI Overseer System Phase O4: lightweight outcome review, called from every path that
+// ends a PolicyOverlay's active life (daily no-candidate revert, manual Revert Now, Dismiss).
+// Reuses the overlay's own startMetricValue (captured once at creation time) rather than
+// re-deriving a baseline — pure, no closures, matching this file's module-level-helper convention.
+const computeOverlayOutcomeNote = (overlay: PolicyOverlay, currentMetricValue: number): string => {
+  if (typeof overlay.startMetricValue !== 'number' || !isFinite(overlay.startMetricValue)) {
+    return 'Outcome unavailable (no baseline metric was recorded when this overlay began).';
+  }
+  const delta = currentMetricValue - overlay.startMetricValue;
+  const direction = delta > 0 ? 'increased' : delta < 0 ? 'decreased' : 'stayed the same';
+  return `Team's win-condition metric ${direction} from $${Math.round(overlay.startMetricValue)} to $${Math.round(currentMetricValue)} while this was active.`;
 };
 
 const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => {
@@ -20820,6 +20834,52 @@ function AustraliaGame() {
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, updateTeamState]);
   resolveOverseerAdaptivePolicyRequestRef.current = resolveOverseerAdaptivePolicyRequest;
 
+  // Team AI Overseer System Phase O4: manual controls for the HUD status card. All three reuse
+  // updateTeamState exactly like O3's own revert logic — no new state machinery. Current metric
+  // value is read fresh via the existing getCompetitiveMetricValue selector (same one every other
+  // UI call site already uses), never a re-derivation.
+  const revertOverseerOverlayNow = useCallback((teamId: string, overlayId: string) => {
+    const team = teamsByIdRef.current[teamId];
+    const overlay = team?.overseer.policyOverlays.find(o => o.id === overlayId);
+    if (!overlay) return;
+    const currentMetricValue = getCompetitiveMetricValue(gameSettings.winCondition, { side: teamId === TEAM_PLAYER_ID ? 'player' : 'opponent', teamMode: isTeamMode });
+    const outcomeReview = computeOverlayOutcomeNote(overlay, currentMetricValue);
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        policyOverlays: prev.overseer.policyOverlays.filter(o => o.id !== overlayId),
+        overlayHistory: [...prev.overseer.overlayHistory, { ...overlay, reverted: true, outcomeReview }].slice(-30)
+      }
+    }));
+  }, [gameSettings.winCondition, isTeamMode, getCompetitiveMetricValue, updateTeamState]);
+
+  const applyOverseerAdvisoryOverlay = useCallback((teamId: string, overlayId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        policyOverlays: prev.overseer.policyOverlays.map(o => o.id === overlayId ? { ...o, approvalStatus: 'approved' as const } : o)
+      }
+    }));
+  }, [updateTeamState]);
+
+  const dismissOverseerAdvisoryOverlay = useCallback((teamId: string, overlayId: string) => {
+    const team = teamsByIdRef.current[teamId];
+    const overlay = team?.overseer.policyOverlays.find(o => o.id === overlayId);
+    if (!overlay) return;
+    const currentMetricValue = getCompetitiveMetricValue(gameSettings.winCondition, { side: teamId === TEAM_PLAYER_ID ? 'player' : 'opponent', teamMode: isTeamMode });
+    const outcomeReview = computeOverlayOutcomeNote(overlay, currentMetricValue);
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        policyOverlays: prev.overseer.policyOverlays.filter(o => o.id !== overlayId),
+        overlayHistory: [...prev.overseer.overlayHistory, { ...overlay, approvalStatus: 'rejected' as const, reverted: true, outcomeReview }].slice(-30)
+      }
+    }));
+  }, [gameSettings.winCondition, isTeamMode, getCompetitiveMetricValue, updateTeamState]);
+
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
   // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
   // when the exception's own configured reserve breach is within the configured threshold.
@@ -23140,15 +23200,18 @@ function AustraliaGame() {
           const candidate = evaluateAdaptiveOverseerOverlay(teamId);
           const existingOverlay = team.overseer.policyOverlays.find(o => o.settingKey === 'economyReserveStrength');
           const teamLabel = team.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team');
+          const overlayMetricValues = projectedTeamMetricValues[gameSettings.winCondition];
+          const overlayCurrentMetricValue = teamId === TEAM_PLAYER_ID ? overlayMetricValues.player : overlayMetricValues.ai;
 
           if (!candidate) {
             if (existingOverlay) {
+              const outcomeReview = computeOverlayOutcomeNote(existingOverlay, overlayCurrentMetricValue);
               updateTeamState(teamId, prev => ({
                 ...prev,
                 overseer: {
                   ...prev.overseer,
                   policyOverlays: prev.overseer.policyOverlays.filter(o => o.id !== existingOverlay.id),
-                  overlayHistory: [...prev.overseer.overlayHistory, { ...existingOverlay, reverted: true }].slice(-30)
+                  overlayHistory: [...prev.overseer.overlayHistory, { ...existingOverlay, reverted: true, outcomeReview }].slice(-30)
                 }
               }));
             }
@@ -23195,7 +23258,8 @@ function AustraliaGame() {
             sourceModule: 'adaptive_overseer',
             approvalStatus: authorityMode === 'autonomous' ? 'auto' : 'pending',
             autoRenewable: true,
-            reverted: false
+            reverted: false,
+            startMetricValue: overlayCurrentMetricValue
           };
 
           updateTeamState(teamId, prev => ({
@@ -39016,6 +39080,52 @@ function AustraliaGame() {
 	                                </div>
 	                              ))}
 	                            </div>
+	                          )}
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
+	              )}
+
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiOverseerShowStatusCard && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">Team AI Overseer</span>
+	                    <span>Adaptive policy status</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(overseerTeamId => {
+	                      const overseerTeamState = teamsById[overseerTeamId];
+	                      const teamLabel = overseerTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+	                      const overseer = overseerTeamState?.overseer;
+	                      const strategyMode = overseer?.currentAdaptiveStrategyMode || 'stable';
+	                      const activeOverlay = (overseer?.policyOverlays || []).find(o => o.settingKey === 'economyReserveStrength' && (o.approvalStatus === 'auto' || o.approvalStatus === 'approved'));
+	                      const pendingOverlay = (overseer?.policyOverlays || []).find(o => o.approvalStatus === 'pending');
+	                      const pendingIsAdvisory = Boolean(pendingOverlay) && gameSettings.teamAiAdaptiveOverseerAuthorityMode === 'advisory';
+	                      return (
+	                        <div key={overseerTeamId} className={`${overseerTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
+	                          <div className="font-semibold mb-1">{teamLabel}</div>
+	                          <div>Strategy mode: <span className="capitalize">{strategyMode.replace(/_/g, ' ')}</span></div>
+	                          {activeOverlay && (
+	                            <div className="mt-1">
+	                              <div>Reserve strength: {String(activeOverlay.configuredValue)} → {String(activeOverlay.effectiveValue)}</div>
+	                              <div className="opacity-75">Confidence {Math.round(activeOverlay.confidence * 100)}% • expires day {activeOverlay.expiresDay}</div>
+	                              <button onClick={() => revertOverseerOverlayNow(overseerTeamId, activeOverlay.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded mt-1`}>Revert Now</button>
+	                            </div>
+	                          )}
+	                          {pendingOverlay && pendingIsAdvisory && (
+	                            <div className="mt-1">
+	                              <div>Recommended: {String(pendingOverlay.configuredValue)} → {String(pendingOverlay.temporaryValue)}</div>
+	                              <div className="opacity-75">{pendingOverlay.reason}</div>
+	                              <div className="flex gap-1 mt-1">
+	                                <button onClick={() => applyOverseerAdvisoryOverlay(overseerTeamId, pendingOverlay.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded`}>Apply</button>
+	                                <button onClick={() => dismissOverseerAdvisoryOverlay(overseerTeamId, pendingOverlay.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded`}>Dismiss</button>
+	                              </div>
+	                            </div>
+	                          )}
+	                          {pendingOverlay && !pendingIsAdvisory && (
+	                            <div className="mt-1 opacity-75">Awaiting approval: {String(pendingOverlay.configuredValue)} → {String(pendingOverlay.temporaryValue)}</div>
 	                          )}
 	                        </div>
 	                      );
