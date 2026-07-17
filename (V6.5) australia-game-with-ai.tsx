@@ -4494,6 +4494,10 @@ type GameSettingsState = {
   teamAiOverseerSystemEnabled: boolean;
   teamAiStrategicCommandEnabled: boolean;
   teamAiStrategicCommandAuthorityMode: OverseerAuthorityMode;
+  // Team AI Overseer System Phase O5: how long a 'short_term'-horizon TeamDirective stays live
+  // before expiring. 'immediate' directives always expire next day; 'endgame' directives run to
+  // (a capped) game end — neither reads this setting.
+  teamAiStrategicCommandDirectiveDurationDays: number;
   teamAiAdaptiveOverseerEnabled: boolean;
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
@@ -5610,6 +5614,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiOverseerSystemEnabled: false,
   teamAiStrategicCommandEnabled: false,
   teamAiStrategicCommandAuthorityMode: 'shadow',
+  teamAiStrategicCommandDirectiveDurationDays: 3,
   teamAiAdaptiveOverseerEnabled: false,
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
@@ -5766,7 +5771,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -6475,6 +6480,86 @@ function evaluateTeamPlanContinuation(
   }
 
   return { action: 'continue' };
+}
+
+// Team AI Overseer System Phase O5: maps a TeamGoal's kind to the categories of action a
+// Strategic Command directive addressing that goal should permit — same lookup-table style as
+// TEAM_PLAN_TYPE_TO_GOAL_KIND/mapGoalKindToPlanType above, not a new abstraction.
+const mapGoalKindToAllowedActionCategories = (kind: TeamGoal['kind']): TeamModeActionCategory[] => {
+  switch (kind) {
+    case 'control':
+    case 'regions':
+      return ['region_deposit', 'travel'];
+    case 'support':
+      return ['support'];
+    case 'sabotage':
+      return ['sabotage'];
+    case 'netWorth':
+      return ['craft', 'invest', 'sell'];
+    case 'crafting':
+      return ['craft', 'buy_market'];
+    case 'recovery':
+      return ['support', 'challenge', 'sell'];
+    case 'money':
+    default:
+      return ['sell', 'craft', 'buy_market'];
+  }
+};
+
+// Team AI Overseer System Phase O5: builds one TeamDirective for a single AI actor from the
+// team's already-chosen objective (chooseTeamObjective, reused verbatim by the caller — not
+// re-derived per actor). Shadow/Advisory display only this phase: maxSpending/treasuryAllocation/
+// requiredResources are deliberately inert (0/0/[]) since no execution/Treasury delegation exists
+// until Phase O7; successCondition/failureCondition are plain display strings, not yet evaluated
+// against real outcomes (Phase O6+ gives them a real trigger once directives influence decisions).
+function generateTeamDirective(
+  actor: ActorState,
+  team: TeamState,
+  goal: TeamGoal,
+  context: TeamAiContext,
+  day: number,
+  turn: number
+): TeamDirective {
+  const endgameActive = isEndgamePeriod(day, context.totalDays, context.settings.teamAiEndgameStartPercent);
+  const horizon: TeamDirective['horizon'] = endgameActive
+    ? 'endgame'
+    : (actor.inEconomicRecovery || goal.kind === 'recovery')
+      ? 'immediate'
+      : 'short_term';
+  const expiresDay = horizon === 'immediate'
+    ? day + 1
+    : horizon === 'endgame'
+      ? day + Math.max(1, context.totalDays - day)
+      : day + Math.max(1, context.settings.teamAiStrategicCommandDirectiveDurationDays);
+  return {
+    id: `directive_${team.id}_${actor.id}_${day}_${Math.random().toString(36).slice(2, 8)}`,
+    teamId: team.id,
+    assignedActorId: actor.id,
+    objective: goal.description,
+    horizon,
+    priority: goal.priority,
+    createdDay: day,
+    createdTurn: turn,
+    expiresDay,
+    maxSpending: 0,
+    treasuryAllocation: 0,
+    requiredResources: [],
+    allowedActionCategories: mapGoalKindToAllowedActionCategories(goal.kind),
+    successCondition: `Team's ${context.winCondition} metric improves before this directive expires.`,
+    failureCondition: 'Directive expires with no measurable progress.',
+    retryLimit: 1,
+    retryCount: 0,
+    fallback: 'reassess next cycle',
+    reassignmentPermitted: true,
+    status: 'proposed'
+  };
+}
+
+// Team AI Overseer System Phase O5: deliberately minimal lifecycle this phase — a directive only
+// ever expires on its own schedule. Real completion/failure detection tied to observed actor
+// behavior is Phase O6+'s job, once directives can actually be seen influencing decisions.
+function evaluateTeamDirectiveContinuation(directive: TeamDirective, currentDay: number): 'continue' | 'expire' {
+  return currentDay >= directive.expiresDay ? 'expire' : 'continue';
 }
 
 const DEFAULT_PERSONAL_RECORDS: PersonalRecord = {
@@ -11477,6 +11562,7 @@ function AustraliaGame() {
 	      teamAiStrategicCommandAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
 	        ? (settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
 	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+	      teamAiStrategicCommandDirectiveDurationDays: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveDurationDays, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays, 1, 30),
 	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
 	        ? settingsData.teamAiAdaptiveOverseerEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
@@ -20880,6 +20966,24 @@ function AustraliaGame() {
     }));
   }, [gameSettings.winCondition, isTeamMode, getCompetitiveMetricValue, updateTeamState]);
 
+  // Team AI Overseer System Phase O5: manual Cancel control for a 'proposed' Strategic Command
+  // directive, mirroring O4's Dismiss-overlay pattern exactly — moves the directive straight to
+  // directiveHistory with status 'cancelled', freeing the actor for a new directive next daily pass.
+  const cancelStrategicDirective = useCallback((teamId: string, directiveId: string) => {
+    updateTeamState(teamId, prev => {
+      const directive = prev.overseer.strategicDirectives.find(d => d.id === directiveId);
+      if (!directive) return prev;
+      return {
+        ...prev,
+        overseer: {
+          ...prev.overseer,
+          strategicDirectives: prev.overseer.strategicDirectives.filter(d => d.id !== directiveId),
+          directiveHistory: [...prev.overseer.directiveHistory, { ...directive, status: 'cancelled' as TeamDirectiveStatus }].slice(-30)
+        }
+      };
+    });
+  }, [updateTeamState]);
+
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
   // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
   // when the exception's own configured reserve breach is within the configured threshold.
@@ -23291,6 +23395,87 @@ function AustraliaGame() {
               });
             }
           }
+        });
+      }
+
+      // Team AI Overseer System Phase O5: Strategic Command directive generation + expiration
+      // pass, run as its own post-commit loop immediately alongside O3's Adaptive Overseer overlay
+      // pass above (same shape — needs projectedActors' already-committed inEconomicRecovery).
+      // Deliberately minimal lifecycle this phase ('proposed'/'expired'/'cancelled' only) — no
+      // scoring bias, no approval-queue integration; those are Phase O6's job, mirroring how
+      // Phase O3 followed Phase O2's own shadow-diagnostic-first precedent.
+      if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled) {
+        [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
+          const team = teamsByIdRef.current[teamId];
+          if (!team) return;
+          const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+          const opponentTeamState = teamsByIdRef.current[opponentTeamId];
+
+          // Expire past-due directives before generating anything new (one live directive per
+          // actor at a time, mirrors TeamPlan's own "one active plan" precedent).
+          const stillLive: TeamDirective[] = [];
+          const newlyExpired: TeamDirective[] = [];
+          (team.overseer.strategicDirectives || []).forEach(directive => {
+            if (evaluateTeamDirectiveContinuation(directive, newDay) === 'expire') {
+              newlyExpired.push({ ...directive, status: 'expired' as TeamDirectiveStatus });
+            } else {
+              stillLive.push(directive);
+            }
+          });
+          if (newlyExpired.length > 0) {
+            updateTeamState(teamId, prev => ({
+              ...prev,
+              overseer: {
+                ...prev.overseer,
+                strategicDirectives: prev.overseer.strategicDirectives.filter(d => !newlyExpired.some(e => e.id === d.id)),
+                directiveHistory: [...prev.overseer.directiveHistory, ...newlyExpired].slice(-30)
+              }
+            }));
+          }
+
+          const authorityMode = gameSettings.teamAiStrategicCommandAuthorityMode;
+          const directiveMetricValues = projectedTeamMetricValues[gameSettings.winCondition];
+          const directiveTeamMetricValue = teamId === TEAM_PLAYER_ID ? directiveMetricValues.player : directiveMetricValues.ai;
+          const directiveOpponentMetricValue = teamId === TEAM_PLAYER_ID ? directiveMetricValues.ai : directiveMetricValues.player;
+          const directiveContext: TeamAiContext = {
+            profile: normalizeTeamModeAiSystemProfile(gameSettings.teamModeAiSystemProfile),
+            winCondition: gameSettings.winCondition,
+            selectedMode: gameState.selectedMode,
+            settings: gameSettings,
+            day: newDay,
+            totalDays: gameSettings.totalDays,
+            teamActors: (team.actorIds || []).map(actorId => projectedActors[actorId]).filter(Boolean),
+            opponentActors: (opponentTeamState?.actorIds || []).map(actorId => projectedActors[actorId]).filter(Boolean),
+            teamScore: team.scoreBreakdown,
+            opponentScore: opponentTeamState?.scoreBreakdown,
+            opponentLead: Math.max(0, directiveOpponentMetricValue - directiveTeamMetricValue),
+            controlledRegions: team.scoreBreakdown?.controlledRegions,
+            currentTurn: projectedTurnCounter
+          };
+          const goal = chooseTeamObjective(team, opponentTeamState || null, directiveContext);
+
+          (team.actorIds || []).forEach(actorId => {
+            const actor = projectedActors[actorId];
+            if (!actor || actor.kind !== 'ai') return;
+            if (stillLive.some(d => d.assignedActorId === actorId)) return;
+            const directive = generateTeamDirective(actor, team, goal, directiveContext, newDay, projectedTurnCounter);
+            if (authorityMode === 'shadow') {
+              if (gameSettings.teamAiOverseerTransparencyEnabled) {
+                appendTeamAiTraceNote(actorId, `Shadow Mode: Strategic Command would issue directive "${directive.objective}" (${directive.horizon}).`);
+              }
+              return;
+            }
+            updateTeamState(teamId, prev => ({
+              ...prev,
+              overseer: {
+                ...prev.overseer,
+                strategicDirectives: [...prev.overseer.strategicDirectives, directive]
+              }
+            }));
+            if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              appendTeamAiTraceNote(actorId, `Strategic Command issued directive: ${directive.objective} (${directive.horizon}, expires day ${directive.expiresDay}).`);
+            }
+          });
         });
       }
 
@@ -31383,6 +31568,7 @@ function AustraliaGame() {
       teamAiOverseerSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
       teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+      teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -31550,6 +31736,7 @@ function AustraliaGame() {
       teamAiOverseerSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
       teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+      teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -34667,7 +34854,14 @@ function AustraliaGame() {
                                 </button>
                               ))}
                             </div>
-                            <div className="text-xs opacity-60 mt-1">No behavior yet — Strategic Command's actual coordination logic ships in a later update. This only records the intended authority level.</div>
+                            <div className="text-xs opacity-60 mt-1">Directives are generated and displayed now (Shadow mode logs only; every other mode also stores the directive) — biasing AI decisions and a dedicated approval queue ship in a later update.</div>
+                          </div>
+                        )}
+                        {gameSettings.teamAiStrategicCommandEnabled && uiState.settingsViewMode === 'advanced' && (
+                          <div>
+                            <label className="block font-semibold mb-2">Short-Term Directive Duration: {gameSettings.teamAiStrategicCommandDirectiveDurationDays} day(s)</label>
+                            <input type="range" min="1" max="30" step="1" value={gameSettings.teamAiStrategicCommandDirectiveDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                            <div className="text-xs opacity-60 mt-1">How long a 'short_term'-horizon directive stays live before expiring. 'Immediate' directives always expire the next day; 'endgame' directives run to (a capped) game end.</div>
                           </div>
                         )}
 
@@ -39126,6 +39320,17 @@ function AustraliaGame() {
 	                          )}
 	                          {pendingOverlay && !pendingIsAdvisory && (
 	                            <div className="mt-1 opacity-75">Awaiting approval: {String(pendingOverlay.configuredValue)} → {String(pendingOverlay.temporaryValue)}</div>
+	                          )}
+	                          {(overseer?.strategicDirectives || []).length > 0 && (
+	                            <div className="mt-2 border-t border-white/20 pt-1 space-y-1">
+	                              {(overseer?.strategicDirectives || []).map(directive => (
+	                                <div key={directive.id}>
+	                                  <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
+	                                  <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay}</div>
+	                                  <button onClick={() => cancelStrategicDirective(overseerTeamId, directive.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded mt-1`}>Cancel</button>
+	                                </div>
+	                              ))}
+	                            </div>
 	                          )}
 	                        </div>
 	                      );
