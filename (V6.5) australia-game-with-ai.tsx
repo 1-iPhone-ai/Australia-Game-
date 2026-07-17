@@ -766,6 +766,11 @@ const computeTeamTreasuryReserve = (
 };
 
 type EconomySpendCategory = 'equipment' | 'investment' | 'sabotage' | 'region_deposit' | 'travel' | 'override' | 'support';
+// Team Treasury Phase T3: a pure detection/explanation classification of this turn's Governor
+// activity — never a new spending mechanism, and never applied when zero Governor rejections
+// occurred this turn (deliberate strategic waiting is always 'operational', regardless of what
+// the AI chose to do).
+type GovernorRestrictionLevel = 'operational' | 'restricted_but_operational' | 'severely_restricted' | 'governor_deadlock';
 
 // One shared spending-approval gate, consulted as an ADDITIONAL check alongside (never replacing)
 // each category's existing affordability/ROI math. Returns approved:true (a no-op) whenever the
@@ -4094,6 +4099,10 @@ type GameSettingsState = {
   economyEndgameCashConversionEnabled: boolean;
   economySpendingApprovalStrictness: EconomySpendingApprovalStrictness;
   economyGovernorTransparencyEnabled: boolean;
+  // Team Treasury Phase T3 (inert unless teamCompetitiveAiEnabled && teamAiGovernorRestrictionDetectionEnabled):
+  // a pure detection/explanation layer on top of the Governor above — never a new spending mechanism.
+  teamAiGovernorRestrictionDetectionEnabled: boolean;
+  teamAiGovernorRestrictionTransparencyEnabled: boolean;
   // V6.8 Phase D: Teammate Performance Sync 2.0 — a stronger, optional, mutually-exclusive
   // alternative to Teammate Performance Sync (teammatePerformanceSyncEnabled above). When on, it
   // supersedes Sync 1.0 team-mode-wide (Sync 1.0 becomes an inert no-op). Reuses ActorState's
@@ -5191,6 +5200,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   economyEndgameCashConversionEnabled: true,
   economySpendingApprovalStrictness: 'balanced',
   economyGovernorTransparencyEnabled: true,
+  teamAiGovernorRestrictionDetectionEnabled: false,
+  teamAiGovernorRestrictionTransparencyEnabled: true,
   teammatePerformanceSync2Enabled: false,
   teammatePerformanceSync2Strength: 1.0,
   teammatePerformanceSync2StrategyLearningEnabled: true,
@@ -5407,7 +5418,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.teamInitiative', tab: 'teamModeAi', title: 'Team Initiative', tags: ['Team Mode', 'AI'], fieldKeys: ['teamInitiativeEnabled', 'teamInitiativeMaximum', 'teamInitiativeGainMultiplier', 'teamInitiativeDecayEnabled', 'teamInitiativeVisibleToPlayer', 'teamInitiativeTransparencyEnabled'] },
   { id: 'teamModeAi.comboBonuses', tab: 'teamModeAi', title: 'Combo Bonuses', tags: ['Team Mode', 'AI'], fieldKeys: ['teamComboBonusesEnabled', 'teamComboBonusStrength', 'teamComboWindowActions', 'teamComboBonusesTransparencyEnabled'] },
   { id: 'teamModeAi.cashVault', tab: 'teamModeAi', title: 'Ratcheting Cash Vault', tags: ['Team Mode', 'AI'], fieldKeys: ['teamCashVaultEnabled', 'automaticCashLockingEnabled', 'vaultProtectionMode', 'vaultLockPercentage', 'vaultMilestoneSizeMultiplier', 'vaultMinimumWorkingCash', 'vaultCountProtectedCashTowardVictory', 'vaultTransparencyEnabled'] },
-  { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled'] },
+  { id: 'teamModeAi.economyGovernor', tab: 'teamModeAi', title: 'Team Economy Governor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamEconomyGovernorEnabled', 'economyCashFloor', 'economyRecoveryTarget', 'economyMinimumChallengeProbability', 'economyRecoverySpendingCap', 'economyReserveStrength', 'economyEndgameCashConversionEnabled', 'economySpendingApprovalStrictness', 'economyGovernorTransparencyEnabled', 'teamAiGovernorRestrictionDetectionEnabled', 'teamAiGovernorRestrictionTransparencyEnabled'] },
   { id: 'teamModeAi.performanceSync2', tab: 'teamModeAi', title: 'Teammate Performance Sync 2.0', tags: ['Team Mode', 'AI'], fieldKeys: ['teammatePerformanceSync2Enabled', 'teammatePerformanceSync2Strength', 'teammatePerformanceSync2StrategyLearningEnabled', 'teammatePerformanceSync2ChallengeExpertiseEnabled', 'teammatePerformanceSync2ChallengeExpertiseMaxBonus', 'guaranteedRecoveryProtocolEnabled', 'guaranteedRecoveryMinimumChallengeProbability', 'teammatePerformanceSync2TransparencyEnabled'] },
   { id: 'teamModeAi.parallelPlanning', tab: 'teamModeAi', title: 'Parallel Planning', tags: ['Team Mode', 'AI'], fieldKeys: ['parallelAiPlanningEnabled', 'parallelAiPlanningCoordinationStrictness', 'parallelAiPlanningSabotageCoordinationEnabled', 'parallelAiPlanningTransparencyEnabled'] },
   { id: 'teamModeAi.actionSequences', tab: 'teamModeAi', title: 'Teammate Action Sequences', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiActionSequencesEnabled', 'teamAiActionSequencesTransparencyEnabled', 'teamAiSequenceInterruptsEnabled', 'teamAiPhaseSequenceSwitchingEnabled'] },
@@ -8976,6 +8987,11 @@ const initialPlayerState = {
   // request currently authorizes this actor's next action, so executeTeamAiAction's post-success
   // block knows which request to compute unused-funds-return against. Cleared once resolved.
   activeTreasuryFundingRequestId: null as string | null,
+  // Team Treasury Phase T3: how many consecutive turns this actor's classified Governor
+  // restriction level was severely_restricted/governor_deadlock. Reset to 0 on any
+  // operational/restricted_but_operational turn. Phase T4's automatic-exception eligibility
+  // gating reads this same counter.
+  consecutiveRestrictedTurns: 0,
   loans: [] as Array<{ id: string; amount: number; accrued: number }>,
   advancedLoans: [] as AdvancedLoan[],
   creditScore: 50,
@@ -10228,6 +10244,9 @@ function AustraliaGame() {
           : -1,
         inEconomicRecovery: typeof data?.inEconomicRecovery === 'boolean' ? data.inEconomicRecovery : false,
         activeTreasuryFundingRequestId: typeof data?.activeTreasuryFundingRequestId === 'string' ? data.activeTreasuryFundingRequestId : null,
+        consecutiveRestrictedTurns: typeof data?.consecutiveRestrictedTurns === 'number' && isFinite(data.consecutiveRestrictedTurns)
+          ? Math.max(0, Math.floor(data.consecutiveRestrictedTurns))
+          : 0,
         loans,
         completedThisSeason,
         challengeMastery,
@@ -10822,6 +10841,12 @@ function AustraliaGame() {
         economyGovernorTransparencyEnabled: typeof settingsData.economyGovernorTransparencyEnabled === 'boolean'
           ? settingsData.economyGovernorTransparencyEnabled
           : DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+        teamAiGovernorRestrictionDetectionEnabled: typeof settingsData.teamAiGovernorRestrictionDetectionEnabled === 'boolean'
+          ? settingsData.teamAiGovernorRestrictionDetectionEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
+        teamAiGovernorRestrictionTransparencyEnabled: typeof settingsData.teamAiGovernorRestrictionTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiGovernorRestrictionTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
         teammatePerformanceSync2Enabled: typeof settingsData.teammatePerformanceSync2Enabled === 'boolean'
           ? settingsData.teammatePerformanceSync2Enabled
           : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
@@ -14109,7 +14134,9 @@ function AustraliaGame() {
     if (roiValue <= 0) return { region: regionCode, score: -Infinity };
     // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
     // existing safety-buffer/ROI checks above, never a replacement for them. No-op when off.
-    if (!evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue }).approved) {
+    const investmentGovernorResult = evaluateEconomySpendingApproval(aiState, 'investment', investment.cost, gameSettings, gameState.day, { expectedReturn: investment.cost + roiValue });
+    if (!investmentGovernorResult.approved) {
+      recordGovernorBlock(aiState.id, 'investment', investmentGovernorResult.reason);
       return { region: regionCode, score: -Infinity };
     }
 
@@ -14172,7 +14199,9 @@ function AustraliaGame() {
     }
     // V6.8 Phase C: Economy Governor spending approval — an additional gate on top of the
     // existing safety-buffer check above, never a replacement for it. No-op when off.
-    if (!evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day).approved) {
+    const equipmentGovernorResult = evaluateEconomySpendingApproval(aiState, 'equipment', item.cost, gameSettings, gameState.day);
+    if (!equipmentGovernorResult.approved) {
+      recordGovernorBlock(aiState.id, 'equipment', equipmentGovernorResult.reason);
       return { item, score: -Infinity };
     }
 
@@ -19617,8 +19646,12 @@ function AustraliaGame() {
     }
     // V6.8 Phase C: Economy Governor spending approval — AI donors only, additional to the
     // existing afford-gate above. No-op when off or when the donor is a human.
-    if (fromActor.kind === 'ai' && !evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day).approved) {
-      return false;
+    if (fromActor.kind === 'ai') {
+      const supportGovernorResult = evaluateEconomySpendingApproval(fromActor, 'support', amount, gameSettings, gameState.day);
+      if (!supportGovernorResult.approved) {
+        recordGovernorBlock(fromActor.id, 'support', supportGovernorResult.reason);
+        return false;
+      }
     }
     const teamLiquidity = analyzeTeamLiquidity(fromActor.teamId);
     const giverReserve = Math.max(550, AI_SAFETY_BUFFER, Math.round(teamLiquidity.teamAverageMoney * 0.6));
@@ -23829,6 +23862,9 @@ function AustraliaGame() {
       : getTeamActors(teamId);
     const actor = resolveActor(actorId);
     if (!actor) return [];
+    // Team Treasury Phase T3: reset this actor's Governor-block observation trace once per ranking
+    // pass — the 7 gate sites below and the reservation filter further down populate it fresh.
+    resetGovernorBlockTrace(actorId);
     const team = resolveTeam(actor.teamId);
     // V6.8 Phase E: getTeammateForSync internally reads live actor state regardless of `snapshot`
     // (it's a small, widely-shared helper used well beyond this function) — an accepted, minor,
@@ -24779,7 +24815,8 @@ function AustraliaGame() {
           // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
           if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) - action.cost < Math.max(AI_SAFETY_BUFFER, Math.round(liquidityAnalysis.teamAverageMoney * 0.6))) return;
           // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
-          if (!evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day).approved) return;
+          const sabotageGovernorResult = evaluateEconomySpendingApproval(actor, 'sabotage', action.cost, gameSettings, gameState.day);
+          if (!sabotageGovernorResult.approved) { recordGovernorBlock(actor.id, 'sabotage', sabotageGovernorResult.reason); return; }
           if (hasActiveDebuff(sabotageTarget.target.debuffs, action.id)) return;
           let score = (typeof action.aiWeight === 'number' ? action.aiWeight : 100) + sabotageTarget.pressure - (action.cost * 0.05);
           if (teamBehindOnPrimaryMetric) score += 35 * difficultyBehavior.comebackMultiplier;
@@ -24822,7 +24859,12 @@ function AustraliaGame() {
       : currentRegionInfo.minimumAiDeposit;
     // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
     // V6.8 Phase C: Economy Governor spending approval is an additional && term — no-op when off.
-    if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit && !gameSettings.negotiationMode && evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day).approved) {
+    const regionDepositAffordable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit;
+    const regionDepositGovernorResult = evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, gameSettings, gameState.day);
+    if (regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
+      recordGovernorBlock(actor.id, 'region_deposit', regionDepositGovernorResult.reason);
+    }
+    if (regionDepositAffordable && !gameSettings.negotiationMode && regionDepositGovernorResult.approved) {
       let score = gameSettings.winCondition === 'regions' ? 220 : gameSettings.winCondition === 'netWorth' ? 120 : 80;
       if (preferredRegion === actor.currentRegion) score += 70;
       if (hasReservationConflict('region', actor.currentRegion)) score -= 160;
@@ -24870,7 +24912,8 @@ function AustraliaGame() {
       // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
       if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) < cost) return;
       // V6.8 Phase C: Economy Governor spending approval — additional to the afford-gate above.
-      if (!evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day).approved) return;
+      const travelGovernorResult = evaluateEconomySpendingApproval(actor, 'travel', cost, gameSettings, gameState.day);
+      if (!travelGovernorResult.approved) { recordGovernorBlock(actor.id, 'travel', travelGovernorResult.reason); return; }
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
       score += (REGIONS[region]?.challenges || []).filter(challenge => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
       if (!actor.visitedRegions.includes(region)) score += 55;
@@ -25109,7 +25152,9 @@ function AustraliaGame() {
             }
           }
           if (!targetKind || !targetId) return true;
-          return !isReservationHardBlocked(targetKind, targetId, actorId);
+          const reservationBlocked = isReservationHardBlocked(targetKind, targetId, actorId);
+          if (reservationBlocked) recordReservationBlock(actorId);
+          return !reservationBlocked;
         });
     // V6.7 Phase 3d: Reservations transparency — a single shared zero-delta stage recording how
     // many candidates this pass removed, attached to every survivor. Purely informational; the
@@ -25626,6 +25671,86 @@ function AustraliaGame() {
   // own comment. Cleared per-actor inside finishTeamAiTurn alongside the other per-turn refs above.
   const activeAiTurnSessionRef = useRef<Record<string, ActiveAiTurnSession>>({});
 
+  // Team Treasury Phase T3: per-actor-per-turn Governor-block observation trace. Populated at the
+  // 7 existing evaluateEconomySpendingApproval gate call sites (an added observation tap, never a
+  // change to their existing approve/reject control flow) plus a sibling counter for
+  // reservation-conflict blocks (a DIFFERENT kind of block, never folded into the Governor count).
+  // Reset once per actor at the start of that actor's own getRankedTeamAiDecisions call.
+  const governorBlockTraceRef = useRef<Record<string, { candidatesBlocked: number; reasons: string[]; blockedCategories: Set<EconomySpendCategory>; reservationBlockedCount: number }>>({});
+  // Team Treasury Phase T3: the most recently classified restriction level per actor, read by
+  // renderTurnIndicator for an accurate status label — a separate ref from the per-ranking-pass
+  // trace above (that one resets every getRankedTeamAiDecisions call; this one only updates once,
+  // at the end of an actor's turn, so a UI read mid-turn never sees a transiently-empty trace).
+  const governorRestrictionLevelRef = useRef<Record<string, GovernorRestrictionLevel>>({});
+
+  const recordGovernorBlock = (actorId: string, category: EconomySpendCategory, reason: string) => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiGovernorRestrictionDetectionEnabled) return;
+    const existing = governorBlockTraceRef.current[actorId] || { candidatesBlocked: 0, reasons: [], blockedCategories: new Set<EconomySpendCategory>(), reservationBlockedCount: 0 };
+    existing.candidatesBlocked += 1;
+    existing.blockedCategories.add(category);
+    existing.reasons = [...existing.reasons, reason].slice(-5);
+    governorBlockTraceRef.current[actorId] = existing;
+  };
+
+  const recordReservationBlock = (actorId: string) => {
+    if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiGovernorRestrictionDetectionEnabled) return;
+    const existing = governorBlockTraceRef.current[actorId] || { candidatesBlocked: 0, reasons: [], blockedCategories: new Set<EconomySpendCategory>(), reservationBlockedCount: 0 };
+    existing.reservationBlockedCount += 1;
+    governorBlockTraceRef.current[actorId] = existing;
+  };
+
+  const resetGovernorBlockTrace = (actorId: string) => {
+    governorBlockTraceRef.current[actorId] = { candidatesBlocked: 0, reasons: [], blockedCategories: new Set<EconomySpendCategory>(), reservationBlockedCount: 0 };
+  };
+
+  // Team Treasury Phase T3 (GD4/GD5): the 3-level (4-value, since 'operational' covers both "no
+  // restriction" and "deliberate waiting") classifier. Computed once per actor per turn — reads
+  // this turn's own Governor-block trace plus two signals only performTeamAiTurn knows: whether
+  // any action actually executed this turn, and whether a narrow non-ordinary path (Emergency
+  // Action / Guaranteed Recovery Protocol / Treasury funding request) fired instead.
+  const classifyGovernorRestriction = (
+    actorId: string,
+    actionExecutedThisTurn: boolean,
+    narrowPathUsedThisTurn: boolean
+  ): { level: GovernorRestrictionLevel; blockedCount: number; reasons: string[]; blockedCategories: EconomySpendCategory[] } => {
+    const trace = governorBlockTraceRef.current[actorId];
+    const blockedCount = trace?.candidatesBlocked || 0;
+    const reasons = trace?.reasons || [];
+    const blockedCategories = trace ? Array.from(trace.blockedCategories) : [];
+    if (blockedCount === 0) return { level: 'operational', blockedCount, reasons, blockedCategories };
+    if (actionExecutedThisTurn) return { level: 'restricted_but_operational', blockedCount, reasons, blockedCategories };
+    if (narrowPathUsedThisTurn) return { level: 'severely_restricted', blockedCount, reasons, blockedCategories };
+    return { level: 'governor_deadlock', blockedCount, reasons, blockedCategories };
+  };
+
+  // Team Treasury Phase T3 (GD7): a one-sentence "why no ordinary action happened" explanation,
+  // surfaced via the existing Decision Transparency trace-note channel — never a new UI surface.
+  // Only ever called when restriction.blockedCount > 0 (the call site's own guard), so this never
+  // mislabels ordinary, zero-Governor-rejection strategic waiting as a restriction.
+  const explainNoActionTaken = (
+    actorId: string,
+    restriction: { level: GovernorRestrictionLevel; blockedCount: number; reasons: string[]; blockedCategories: EconomySpendCategory[] },
+    actionExecutedThisTurn: boolean
+  ): string => {
+    const restrictedActor = getActorState(actorId);
+    const team = restrictedActor ? teamsByIdRef.current[restrictedActor.teamId] : undefined;
+    const pendingTreasuryRequest = team?.treasury.fundingRequests.find(r => r.requestingActorId === actorId && (r.status === 'pending' || r.status === 'displayed'));
+    const categoriesLabel = restriction.blockedCategories.length ? restriction.blockedCategories.join(', ') : 'spending';
+    if (restriction.level === 'governor_deadlock') {
+      if (pendingTreasuryRequest) {
+        return `Governor-restricted: ${categoriesLabel} blocked; awaiting Team Treasury funding approval ($${pendingTreasuryRequest.requestedAmount}).`;
+      }
+      return `Governor deadlock: every considered action was blocked (${categoriesLabel}) and no recovery path was available this turn.`;
+    }
+    if (restriction.level === 'severely_restricted') {
+      return `Severely restricted by the Economy Governor (${categoriesLabel} blocked) — used a narrow recovery path instead of an ordinary action.`;
+    }
+    if (restriction.level === 'restricted_but_operational') {
+      return `Operating under Governor restrictions this turn (${categoriesLabel} blocked) — took a permitted alternative action.`;
+    }
+    return '';
+  };
+
   const getOrCreateAiTurnSession = (actorId: string, teamId: string, initialBudget: number): ActiveAiTurnSession => {
     const existing = activeAiTurnSessionRef.current[actorId];
     if (existing && !existing.isFinished) return existing;
@@ -25844,7 +25969,9 @@ function AustraliaGame() {
       return ineligible('Would breach minimum cash reserve.');
     }
     // V6.8 Phase C: Economy Governor spending approval — additional to the reserve check above.
-    if (!evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day).approved) {
+    const overrideGovernorResult = evaluateEconomySpendingApproval(actor, 'override', cost, gameSettings, gameState.day);
+    if (!overrideGovernorResult.approved) {
+      recordGovernorBlock(actor.id, 'override', overrideGovernorResult.reason);
       return ineligible('Blocked by Economy Governor spending approval.');
     }
 
@@ -26972,11 +27099,18 @@ function AustraliaGame() {
       }
     }
 
+    // Team Treasury Phase T3: tracks whether a narrow, non-ordinary path (Emergency Action /
+    // Guaranteed Recovery Protocol / Treasury funding request) fired this turn — used only to
+    // distinguish severely_restricted ("one narrow path remained and was used") from
+    // governor_deadlock ("nothing at all happened") in classifyGovernorRestriction below.
+    let narrowPathUsedThisTurn = false;
+
     // V6.7 Phase 3c: Emergency Action trigger — checked once at turn start, before the normal
     // decision loop. GD5: 5 of 7 named actions execute as pure side effects consuming zero
     // ordinary budget; Last Push mints a bonus token for the current actor inline.
     const emergencyTrigger = evaluateTeamEmergencyActionTrigger(actor.id);
     if (emergencyTrigger) {
+      narrowPathUsedThisTurn = true;
       const emergencyResult = triggerTeamEmergencyAction(actor.id, emergencyTrigger.action, emergencyTrigger.team);
       if (emergencyResult.bonusActionTokenId) {
         actionBudget += 1;
@@ -26991,8 +27125,11 @@ function AustraliaGame() {
     // fallback order rather than competing in the normal scored decision loop.
     if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled && gameSettings.guaranteedRecoveryProtocolEnabled && actor.kind === 'ai' && actor.inEconomicRecovery) {
       const recoveryResult = evaluateGuaranteedRecoveryAction(actor.id);
-      if (recoveryResult.executed && gameSettings.teammatePerformanceSync2TransparencyEnabled) {
-        addNotification(`🛟 ${getActorDisplayName(actor.id)}'s Guaranteed Recovery Protocol fired (tier ${recoveryResult.tier}): ${recoveryResult.note}`, 'ai', true);
+      if (recoveryResult.executed) {
+        narrowPathUsedThisTurn = true;
+        if (gameSettings.teammatePerformanceSync2TransparencyEnabled) {
+          addNotification(`🛟 ${getActorDisplayName(actor.id)}'s Guaranteed Recovery Protocol fired (tier ${recoveryResult.tier}): ${recoveryResult.note}`, 'ai', true);
+        }
       }
     }
 
@@ -27020,6 +27157,7 @@ function AustraliaGame() {
               reason: `${getActorDisplayName(actor.id)} has $0 and needs $${Math.max(0, topCandidateCost - treasurySpendableCash)} more to attempt ${topCandidate.type}.`
             });
             if (treasuryRequest) {
+              narrowPathUsedThisTurn = true;
               const teammatesOnTeam = getTeamActors(actor.teamId);
               const hasHumanTeammate = teammatesOnTeam.some(a => a.kind === 'human');
               const autoResolveTreasuryRequest = !hasHumanTeammate || !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
@@ -27395,6 +27533,25 @@ function AustraliaGame() {
         actionBudget += getActorActionBudget(actor.id);
         aiTurnSession.totalActionBudget = actionBudget;
         pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'override'));
+      }
+    }
+
+    // Team Treasury Phase T3: classify this turn's Governor restriction level + update the
+    // consecutive-restricted-turns counter, right before the turn actually ends — a pure
+    // detection/explanation step, never altering what already happened this turn.
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiGovernorRestrictionDetectionEnabled && actor.kind === 'ai') {
+      const postTurnActorState = getActorState(actor.id);
+      const actionExecutedThisTurn = (postTurnActorState?.actionsUsedThisTurn || 0) > (actor.actionsUsedThisTurn || 0);
+      const restriction = classifyGovernorRestriction(actor.id, actionExecutedThisTurn, narrowPathUsedThisTurn);
+      governorRestrictionLevelRef.current[actor.id] = restriction.level;
+      const severelyOrDeadlocked = restriction.level === 'severely_restricted' || restriction.level === 'governor_deadlock';
+      updateActorState(actor.id, prev => ({
+        ...prev,
+        consecutiveRestrictedTurns: severelyOrDeadlocked ? (prev.consecutiveRestrictedTurns || 0) + 1 : 0
+      }));
+      if (gameSettings.teamAiGovernorRestrictionTransparencyEnabled && restriction.blockedCount > 0) {
+        const explanation = explainNoActionTaken(actor.id, restriction, actionExecutedThisTurn);
+        if (explanation) appendTeamAiTraceNote(actor.id, explanation);
       }
     }
 
@@ -29816,6 +29973,8 @@ function AustraliaGame() {
       economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
       economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
       economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+      teamAiGovernorRestrictionDetectionEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
+      teamAiGovernorRestrictionTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
       teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
       teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
       teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
@@ -29960,6 +30119,8 @@ function AustraliaGame() {
       economyEndgameCashConversionEnabled: DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
       economySpendingApprovalStrictness: DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
       economyGovernorTransparencyEnabled: DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+      teamAiGovernorRestrictionDetectionEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
+      teamAiGovernorRestrictionTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
       teammatePerformanceSync2Enabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
       teammatePerformanceSync2Strength: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength,
       teammatePerformanceSync2StrategyLearningEnabled: DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
@@ -32163,6 +32324,25 @@ function AustraliaGame() {
                               />
                               <span>{gameSettings.economyGovernorTransparencyEnabled ? '☑' : '☐'} Show in Transparency (phase notifications + Decision Transparency reasons)</span>
                             </label>
+                            <div className="pt-2 border-t border-opacity-20">
+                              <div className="font-semibold text-sm mb-1">Governor Restriction Detection (Phase T3)</div>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamAiGovernorRestrictionDetectionEnabled)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorRestrictionDetectionEnabled: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamAiGovernorRestrictionDetectionEnabled ? '☑' : '☐'} Enable Restriction Detection (classifies a turn as operational / restricted / severely restricted / deadlock — never changes what the Governor allows, only explains it)</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(gameSettings.teamAiGovernorRestrictionTransparencyEnabled)}
+                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorRestrictionTransparencyEnabled: e.target.checked }))}
+                                />
+                                <span>{gameSettings.teamAiGovernorRestrictionTransparencyEnabled ? '☑' : '☐'} Show Restriction Explanations in Decision Transparency</span>
+                              </label>
+                            </div>
                           </>
                         )}
                         <div className="text-xs opacity-60">Four economic phases — Survival, Accumulation, Compounding, Endgame — govern wager sizing and an additional spending-approval check on top of every existing affordability gate. Never overrides an existing check that already blocked a spend, only adds more.</div>
@@ -34298,8 +34478,26 @@ function AustraliaGame() {
     const activeTeam = activeActor ? teamsById[activeActor.teamId] : null;
     const isPlayerTurn = activeActor?.kind === 'human';
     const isAiTurn = activeActor?.kind === 'ai';
+    // Team Treasury Phase T3 (GD8): accurate status strings — the flat 'Thinking...' fallback is
+    // now only shown for the actual thinking window; once evaluation completes, a priority-ordered
+    // lookup replaces the old single ternary. The 'operational' fallback chain is preserved
+    // verbatim (byte-identical when the master toggle is off, since these refs are never populated).
+    const activeActorTreasuryRequest = activeActor && gameSettings.teamTreasuryEnabled
+      ? teamsById[activeActor.teamId]?.treasury.fundingRequests.find(r => r.requestingActorId === activeActor.id && (r.status === 'pending' || r.status === 'displayed'))
+      : undefined;
+    const activeActorHasApprovalPending = activeActor
+      ? pendingApprovalRequests.some(r => r.actorId === activeActor.id)
+      : false;
+    const activeActorRestrictionLevel = activeActor ? governorRestrictionLevelRef.current[activeActor.id] : undefined;
+    const restrictionLabel = activeActorRestrictionLevel === 'restricted_but_operational' ? 'Operating under restrictions'
+      : activeActorRestrictionLevel === 'severely_restricted' ? 'Severely restricted — evaluating economy'
+      : activeActorRestrictionLevel === 'governor_deadlock' ? 'Governor deadlock — no permitted action'
+      : null;
     const turnSummary = isAiTurn
-      ? (gameState.isAiThinking ? 'Thinking...' : activeActor?.aiPlan?.summary || currentAiAction?.description || 'Planning next move')
+      ? (gameState.isAiThinking ? 'Thinking...'
+        : activeActorTreasuryRequest ? 'Awaiting funding approval'
+        : activeActorHasApprovalPending ? 'Awaiting your approval'
+        : restrictionLabel || activeActor?.aiPlan?.summary || currentAiAction?.description || 'Planning next move')
       : (isTeamMode ? `${activeActor?.displayName || activeActor?.name}'s turn` : 'Awaiting your action');
     
     return (
