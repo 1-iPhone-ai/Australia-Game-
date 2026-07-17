@@ -2986,6 +2986,15 @@ interface PolicyOverlay {
   reverted: boolean;
   startMetricValue?: number;
 }
+// Team AI Overseer System Phase O10 (GD7): AI+AI independence audit. Directly read the full body
+// of every function that computes/consumes TeamOverseerState — chooseTeamObjective, generateTeamDirective,
+// evaluateAdaptiveOverseerOverlay, computeAdaptiveStrategyModeSignal — and every .overseer read site
+// in getRankedTeamAiDecisions/evaluateTeamAiOverrideEligibility/the O7 Treasury-delegation trigger.
+// Conclusion: no code path anywhere reads or is influenced by another team's TeamOverseerState.
+// Every one resolves strictly via its own teamId/actor.teamId parameter; opponent-team influence is
+// limited to plain numeric metric comparisons (opponentLead, opponentMetricValue) and non-Overseer
+// fields (opponentTeam.name/activeThreatTarget). This is a documentation/audit deliverable, not a
+// fix — no leak was found, so none is "fixed."
 interface TeamOverseerState {
   strategicDirectives: TeamDirective[];
   directiveHistory: TeamDirective[];
@@ -3006,6 +3015,9 @@ interface TeamOverseerState {
   // locked setting/actor simply never has an entry for them to find.
   lockedOverlaySettingKeys: (keyof GameSettingsState)[];
   lockedDirectiveActorIds: string[];
+  // Team AI Overseer System Phase O10: manual, player-only pause — never auto-set (Safe Mode,
+  // below, is the auto-triggered sibling). Checked at the same two gate sites as the O9 locks.
+  paused: boolean;
 }
 type OverseerDashboardTabId = 'overview' | 'strategicPlan' | 'adaptivePolicy' | 'recommendations' | 'timeline' | 'performance' | 'controls';
 const OVERSEER_AUTHORITY_MODES: OverseerAuthorityMode[] = ['off', 'shadow', 'advisory', 'approval', 'autonomous'];
@@ -3035,6 +3047,22 @@ const OVERSEER_AUTHORITY_MATRIX_ROWS: { category: string; module: 'strategic_com
 // Team AI Overseer System Phase O9 (GD6): setting keys the user-locks Controls tab may lock —
 // a one-line change to extend once O3 supports overlaying more than one setting key.
 const OVERSEER_LOCKABLE_SETTING_KEYS: (keyof GameSettingsState)[] = ['economyReserveStrength'];
+// Team AI Overseer System Phase O10 (GD5): a thin, Overseer-scoped bias layer consumed ONLY by
+// generateTeamDirective and evaluateAdaptiveOverseerOverlay — deliberately NOT AiPersonalityV63
+// (a separate, actor-scoped, 8-value Team Brain V6.3 base-decision-scoring system this never
+// touches). 'balanced' multipliers are exact identities, so its default is a provable no-op.
+type OverseerPersonalityId = 'balanced' | 'cautious' | 'aggressive';
+const OVERSEER_PERSONALITY_IDS: OverseerPersonalityId[] = ['balanced', 'cautious', 'aggressive'];
+interface OverseerPersonalityProfile {
+  maxSpendingMultiplier: number;
+  directiveDurationMultiplier: number;
+  overlayConfidenceThreshold: number;
+}
+const OVERSEER_PERSONALITY_PROFILES: Record<OverseerPersonalityId, OverseerPersonalityProfile> = {
+  balanced: { maxSpendingMultiplier: 1.0, directiveDurationMultiplier: 1.0, overlayConfidenceThreshold: 0.0 },
+  cautious: { maxSpendingMultiplier: 0.7, directiveDurationMultiplier: 1.3, overlayConfidenceThreshold: 0.75 },
+  aggressive: { maxSpendingMultiplier: 1.3, directiveDurationMultiplier: 0.7, overlayConfidenceThreshold: 0.0 }
+};
 const createDefaultTeamOverseerState = (): TeamOverseerState => ({
   strategicDirectives: [],
   directiveHistory: [],
@@ -3050,20 +3078,39 @@ const createDefaultTeamOverseerState = (): TeamOverseerState => ({
   majorChangesToday: 0,
   lastChangeDay: 0,
   lockedOverlaySettingKeys: [],
-  lockedDirectiveActorIds: []
+  lockedDirectiveActorIds: [],
+  paused: false
 });
+// Team AI Overseer System Phase O10 (GD8): structural/referential validation only — never semantic
+// (an objective string's content, an allowedActionCategories set's internal consistency, etc. are
+// never re-derived). A well-formed directive/overlay saved by this build always has every one of
+// these fields at the right type and a still-valid settingKey, so this never rejects a currently-
+// valid save; it only ever drops entries that were already malformed or reference since-removed data.
+const isWellFormedTeamDirectiveEntry = (value: unknown): value is TeamDirective => {
+  if (!value || typeof value !== 'object') return false;
+  const d = value as Partial<TeamDirective>;
+  return typeof d.id === 'string' && typeof d.assignedActorId === 'string' && typeof d.status === 'string' && typeof d.expiresDay === 'number';
+};
+const isWellFormedPolicyOverlayEntry = (value: unknown): value is PolicyOverlay => {
+  if (!value || typeof value !== 'object') return false;
+  const o = value as Partial<PolicyOverlay>;
+  return typeof o.id === 'string' && typeof o.approvalStatus === 'string'
+    && typeof o.settingKey === 'string' && OVERSEER_LOCKABLE_SETTING_KEYS.includes(o.settingKey as keyof GameSettingsState);
+};
 // Team AI Overseer System Phase O1: shallow, fail-safe sanitizer. Deep per-directive/per-overlay
 // validation is deferred to O5/O3 (the phases that actually produce those array entries) — a
 // malformed or missing save value always falls back to the safe empty default rather than throwing.
+// Phase O10 (GD8) tightened this per-entry (see the two helpers directly above), additively on top
+// of the existing Array.isArray checks below — never replacing them.
 const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
   const defaults = createDefaultTeamOverseerState();
   if (!value || typeof value !== 'object') return defaults;
   const source = value as Partial<TeamOverseerState>;
   return {
-    strategicDirectives: Array.isArray(source.strategicDirectives) ? source.strategicDirectives : defaults.strategicDirectives,
-    directiveHistory: Array.isArray(source.directiveHistory) ? source.directiveHistory.slice(-30) : defaults.directiveHistory,
-    policyOverlays: Array.isArray(source.policyOverlays) ? source.policyOverlays : defaults.policyOverlays,
-    overlayHistory: Array.isArray(source.overlayHistory) ? source.overlayHistory.slice(-30) : defaults.overlayHistory,
+    strategicDirectives: Array.isArray(source.strategicDirectives) ? source.strategicDirectives.filter(isWellFormedTeamDirectiveEntry) : defaults.strategicDirectives,
+    directiveHistory: Array.isArray(source.directiveHistory) ? source.directiveHistory.filter(isWellFormedTeamDirectiveEntry).slice(-30) : defaults.directiveHistory,
+    policyOverlays: Array.isArray(source.policyOverlays) ? source.policyOverlays.filter(isWellFormedPolicyOverlayEntry) : defaults.policyOverlays,
+    overlayHistory: Array.isArray(source.overlayHistory) ? source.overlayHistory.filter(isWellFormedPolicyOverlayEntry).slice(-30) : defaults.overlayHistory,
     currentAdaptiveStrategyMode: (['stable', 'recovery', 'comeback', 'protect_lead', 'endgame_push', 'coordination_repair'] as AdaptiveStrategyMode[]).includes(source.currentAdaptiveStrategyMode as AdaptiveStrategyMode)
       ? (source.currentAdaptiveStrategyMode as AdaptiveStrategyMode)
       : defaults.currentAdaptiveStrategyMode,
@@ -3075,8 +3122,9 @@ const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
     minorChangesThisTurn: typeof source.minorChangesThisTurn === 'number' ? source.minorChangesThisTurn : defaults.minorChangesThisTurn,
     majorChangesToday: typeof source.majorChangesToday === 'number' ? source.majorChangesToday : defaults.majorChangesToday,
     lastChangeDay: typeof source.lastChangeDay === 'number' ? source.lastChangeDay : defaults.lastChangeDay,
-    lockedOverlaySettingKeys: Array.isArray(source.lockedOverlaySettingKeys) ? source.lockedOverlaySettingKeys.filter(k => typeof k === 'string') as (keyof GameSettingsState)[] : defaults.lockedOverlaySettingKeys,
-    lockedDirectiveActorIds: Array.isArray(source.lockedDirectiveActorIds) ? source.lockedDirectiveActorIds.filter(id => typeof id === 'string') : defaults.lockedDirectiveActorIds
+    lockedOverlaySettingKeys: Array.isArray(source.lockedOverlaySettingKeys) ? source.lockedOverlaySettingKeys.filter(k => typeof k === 'string' && OVERSEER_LOCKABLE_SETTING_KEYS.includes(k as keyof GameSettingsState)) as (keyof GameSettingsState)[] : defaults.lockedOverlaySettingKeys,
+    lockedDirectiveActorIds: Array.isArray(source.lockedDirectiveActorIds) ? source.lockedDirectiveActorIds.filter(id => typeof id === 'string') : defaults.lockedDirectiveActorIds,
+    paused: typeof source.paused === 'boolean' ? source.paused : defaults.paused
   };
 };
 
@@ -4591,6 +4639,14 @@ type GameSettingsState = {
   // appears at all. The dashboard's own tab state and the two new user-lock arrays are otherwise
   // fully inert for anyone who never opens it.
   teamAiOverseerDashboardEnabled: boolean;
+  // Team AI Overseer System Phase O10: Safe Mode auto-trigger, reusing the O9 lock gates (never a
+  // third gate) — inert unless explicitly enabled.
+  teamAiSafeModeEnabled: boolean;
+  teamAiSafeModeRestrictedActorThreshold: number;
+  // Team AI Overseer System Phase O10 (GD5): 'balanced' multipliers are exact identities, so the
+  // default is a provable no-op versus pre-O10 behavior.
+  teamAiStrategicCommandPersonality: OverseerPersonalityId;
+  teamAiAdaptiveOverseerPersonality: OverseerPersonalityId;
   // Team AI Overseer System Phase O2 (inert unless teamAiAdaptiveOverseerEnabled): hysteresis
   // thresholds and stability guard for shadow-only strategy-mode diagnostics. No policy overlay
   // exists yet — these only govern which AdaptiveStrategyMode label gets recorded/displayed.
@@ -5716,6 +5772,10 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiOverseerShowStatusCard: true,
   teamAiOverseerTransparencyEnabled: true,
   teamAiOverseerDashboardEnabled: false,
+  teamAiSafeModeEnabled: false,
+  teamAiSafeModeRestrictedActorThreshold: 2,
+  teamAiStrategicCommandPersonality: 'balanced',
+  teamAiAdaptiveOverseerPersonality: 'balanced',
   teamAiAdaptiveOverseerComebackEnterPercent: 20,
   teamAiAdaptiveOverseerComebackExitPercent: 10,
   teamAiAdaptiveOverseerProtectLeadEnterPercent: 20,
@@ -5868,7 +5928,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -5908,7 +5968,11 @@ type SettingsPresetId =
   | 'chaosMode'
   | 'aiSandbox'
   | 'hardcoreEconomy'
-  | 'teamSimulation';
+  | 'teamSimulation'
+  | 'overseerFullAutonomy'
+  | 'overseerShadowOnly'
+  | 'overseerCautiousAdaptive'
+  | 'overseerAggressiveCommand';
 
 interface SettingsPresetConfig {
   label: string;
@@ -6057,6 +6121,59 @@ const SETTINGS_PRESETS: Record<SettingsPresetId, SettingsPresetConfig> = {
       priorityTransparencyEnabled: true
     },
     aiDifficulty: 'hard'
+  },
+  // Team AI Overseer System Phase O10 (GD6): pure Partial<GameSettingsState> bags of Overseer-
+  // prefixed keys only — zero changes needed to applySettingsPreset or the presets UI.
+  overseerFullAutonomy: {
+    label: 'Overseer: Full Autonomy',
+    description: 'Both Strategic Command and Adaptive Overseer run autonomously, with an aggressive Strategic Command personality.',
+    settings: {
+      teamCompetitiveAiEnabled: true,
+      teamAiOverseerSystemEnabled: true,
+      teamAiStrategicCommandEnabled: true,
+      teamAiStrategicCommandAuthorityMode: 'autonomous',
+      teamAiStrategicCommandInterventionsEnabled: true,
+      teamAiStrategicCommandPersonality: 'aggressive',
+      teamAiAdaptiveOverseerEnabled: true,
+      teamAiAdaptiveOverseerAuthorityMode: 'autonomous',
+      teamAiAdaptiveOverseerPersonality: 'balanced'
+    }
+  },
+  overseerShadowOnly: {
+    label: 'Overseer: Shadow / Observe Only',
+    description: 'Both modules compute and log their diagnoses daily, but never change any AI decision or setting.',
+    settings: {
+      teamCompetitiveAiEnabled: true,
+      teamAiOverseerSystemEnabled: true,
+      teamAiStrategicCommandEnabled: true,
+      teamAiStrategicCommandAuthorityMode: 'shadow',
+      teamAiStrategicCommandInterventionsEnabled: false,
+      teamAiAdaptiveOverseerEnabled: true,
+      teamAiAdaptiveOverseerAuthorityMode: 'shadow'
+    }
+  },
+  overseerCautiousAdaptive: {
+    label: 'Overseer: Cautious Adaptive Policy',
+    description: 'Adaptive Overseer runs in Advisory mode with a cautious personality — proposes fewer, higher-bar overlay changes for manual review.',
+    settings: {
+      teamCompetitiveAiEnabled: true,
+      teamAiOverseerSystemEnabled: true,
+      teamAiAdaptiveOverseerEnabled: true,
+      teamAiAdaptiveOverseerAuthorityMode: 'advisory',
+      teamAiAdaptiveOverseerPersonality: 'cautious'
+    }
+  },
+  overseerAggressiveCommand: {
+    label: 'Overseer: Aggressive Strategic Command',
+    description: 'Strategic Command runs in Approval mode with an aggressive personality — higher spending caps, shorter directive cycles, all routed through the approval queue.',
+    settings: {
+      teamCompetitiveAiEnabled: true,
+      teamAiOverseerSystemEnabled: true,
+      teamAiStrategicCommandEnabled: true,
+      teamAiStrategicCommandAuthorityMode: 'approval',
+      teamAiStrategicCommandInterventionsEnabled: true,
+      teamAiStrategicCommandPersonality: 'aggressive'
+    }
   }
 };
 
@@ -6651,16 +6768,19 @@ function generateTeamDirective(
     : (actor.inEconomicRecovery || goal.kind === 'recovery')
       ? 'immediate'
       : 'short_term';
+  // Team AI Overseer System Phase O10 (GD5): personality multipliers — 'balanced' (default) is an
+  // exact identity (1.0), so this is a provable no-op unless the player explicitly changes it.
+  const personalityProfile = OVERSEER_PERSONALITY_PROFILES[context.settings.teamAiStrategicCommandPersonality] || OVERSEER_PERSONALITY_PROFILES.balanced;
   const expiresDay = horizon === 'immediate'
     ? day + 1
     : horizon === 'endgame'
       ? day + Math.max(1, context.totalDays - day)
-      : day + Math.max(1, context.settings.teamAiStrategicCommandDirectiveDurationDays);
+      : day + Math.max(1, Math.round(context.settings.teamAiStrategicCommandDirectiveDurationDays * personalityProfile.directiveDurationMultiplier));
   // Team AI Overseer System Phase O7 (GD1): a real spending cap, computed once at creation time
   // from the actor's current spendable cash — reused verbatim, never re-derived, at the O6 bias
   // site in getRankedTeamAiDecisions as an additional filter on the scoring bonus.
   const vaultActive = context.settings.teamCompetitiveAiEnabled && context.settings.teamCashVaultEnabled;
-  const maxSpending = Math.round(getActorSpendableCash(actor, vaultActive) * (context.settings.teamAiStrategicCommandMaxSpendingPercent / 100));
+  const maxSpending = Math.round(getActorSpendableCash(actor, vaultActive) * (context.settings.teamAiStrategicCommandMaxSpendingPercent / 100) * personalityProfile.maxSpendingMultiplier);
   // Team AI Overseer System Phase O7 (GD4): crafting-oriented directives list genuinely-missing
   // ingredients for the actor's best-available recipe (reusing CRAFTING_RECIPES/inventory checks
   // already used elsewhere) — display-only; acquisition is already handled by the existing
@@ -11096,7 +11216,19 @@ function AustraliaGame() {
             phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments),
             treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId),
             governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions),
-            overseer: sanitizeTeamOverseerState(teamData?.overseer)
+            // Team AI Overseer System Phase O10 (GD8, item d): the actor-roster-aware prune lives
+            // here (not inside the pure sanitizeTeamOverseerState) since only this reduce actually
+            // knows the team's current actorIds — strips any strategicDirectives/lockedDirectiveActorIds
+            // entry referencing an actor no longer on this team. Additive-only, same "well-formed
+            // save is provably unaffected" guarantee as the rest of Phase O10's sanitizer hardening.
+            overseer: (() => {
+              const sanitizedOverseer = sanitizeTeamOverseerState(teamData?.overseer);
+              return {
+                ...sanitizedOverseer,
+                strategicDirectives: sanitizedOverseer.strategicDirectives.filter(d => actorIds.includes(d.assignedActorId)),
+                lockedDirectiveActorIds: sanitizedOverseer.lockedDirectiveActorIds.filter(id => actorIds.includes(id))
+              };
+            })()
           };
           return acc;
         }, {})
@@ -11731,6 +11863,16 @@ function AustraliaGame() {
 	      teamAiOverseerDashboardEnabled: typeof settingsData.teamAiOverseerDashboardEnabled === 'boolean'
 	        ? settingsData.teamAiOverseerDashboardEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
+      teamAiSafeModeEnabled: typeof settingsData.teamAiSafeModeEnabled === 'boolean'
+        ? settingsData.teamAiSafeModeEnabled
+        : DEFAULT_GAME_SETTINGS.teamAiSafeModeEnabled,
+      teamAiSafeModeRestrictedActorThreshold: clampSettingNumber(settingsData.teamAiSafeModeRestrictedActorThreshold, DEFAULT_GAME_SETTINGS.teamAiSafeModeRestrictedActorThreshold, 1, 10),
+      teamAiStrategicCommandPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
+        ? (settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
+        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandPersonality,
+      teamAiAdaptiveOverseerPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
+        ? (settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
+        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerPersonality,
 	      teamAiAdaptiveOverseerComebackEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent, 0, 100),
 	      teamAiAdaptiveOverseerComebackExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent, 0, 100),
 	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
@@ -21270,6 +21412,60 @@ function AustraliaGame() {
     }));
   }, [updateTeamState]);
 
+  // Team AI Overseer System Phase O10 (GD4): bulk controls — thin whole-array generalizations of
+  // the per-item callbacks directly above. Each only ever affects the ONE team it's called with.
+  const revertAllOverseerOverlays = useCallback((teamId: string) => {
+    const team = teamsByIdRef.current[teamId];
+    if (!team) return;
+    const currentMetricValue = getCompetitiveMetricValue(gameSettings.winCondition, { side: teamId === TEAM_PLAYER_ID ? 'player' : 'opponent', teamMode: isTeamMode });
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        policyOverlays: [],
+        overlayHistory: [
+          ...prev.overseer.overlayHistory,
+          ...prev.overseer.policyOverlays.map(overlay => ({ ...overlay, reverted: true, outcomeReview: computeOverlayOutcomeNote(overlay, currentMetricValue) }))
+        ].slice(-30)
+      }
+    }));
+  }, [gameSettings.winCondition, isTeamMode, getCompetitiveMetricValue, updateTeamState]);
+
+  const cancelAllStrategicDirectives = useCallback((teamId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        strategicDirectives: [],
+        directiveHistory: [
+          ...prev.overseer.directiveHistory,
+          ...prev.overseer.strategicDirectives.map(d => ({ ...d, status: 'cancelled' as TeamDirectiveStatus }))
+        ].slice(-30)
+      }
+    }));
+  }, [updateTeamState]);
+
+  const lockAllOverseerSettings = useCallback((teamId: string) => {
+    const team = teamsByIdRef.current[teamId];
+    if (!team) return;
+    const allActorIds = team.actorIds || [];
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        lockedOverlaySettingKeys: [...OVERSEER_LOCKABLE_SETTING_KEYS],
+        lockedDirectiveActorIds: [...allActorIds]
+      }
+    }));
+  }, [updateTeamState]);
+
+  const toggleOverseerPause = useCallback((teamId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: { ...prev.overseer, paused: !prev.overseer.paused }
+    }));
+  }, [updateTeamState]);
+
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
   // scope the ladder's Tier 11 itself requested ('single_action'), never a broader grant, and only
   // when the exception's own configured reserve breach is within the configured threshold.
@@ -22858,27 +23054,44 @@ function AustraliaGame() {
   } | null => {
     const team = teamsByIdRef.current[teamId];
     if (!team) return null;
+    // Team AI Overseer System Phase O10 (GD7): cheap defensive assertion — this function must only
+    // ever resolve the ONE team named by its own `teamId` parameter, never a second team's overseer
+    // state. Confirmed true by direct audit (see the comment above TeamOverseerState); this warns
+    // rather than silently regressing if a future edit ever introduces a second lookup.
+    if (team.id !== teamId) {
+      console.warn(`evaluateAdaptiveOverseerOverlay: resolved team.id (${team.id}) does not match the requested teamId (${teamId}) — possible AI+AI independence violation.`);
+    }
     const mode = team.overseer.currentAdaptiveStrategyMode;
+    // Team AI Overseer System Phase O10 (GD5): personality confidence-threshold gate. Neither
+    // branch below computed a confidence gate before — both always returned a candidate at a
+    // fixed confidence of 0.7. 'balanced'/'aggressive' use threshold 0.0, so this is a provable
+    // no-op for the default; only 'cautious' (threshold 0.75) ever suppresses a proposal.
+    const personalityProfile = OVERSEER_PERSONALITY_PROFILES[gameSettings.teamAiAdaptiveOverseerPersonality] || OVERSEER_PERSONALITY_PROFILES.balanced;
+    const applyPersonalityGate = (candidate: { temporaryValue: EconomyReserveStrength; reason: string; evidence: string[]; confidence: number; riskLevel: 'low' | 'moderate' | 'high' } | null) => {
+      if (!candidate) return null;
+      if (personalityProfile.overlayConfidenceThreshold > 0 && candidate.confidence < personalityProfile.overlayConfidenceThreshold) return null;
+      return candidate;
+    };
     if (mode === 'recovery' || mode === 'comeback') {
-      return {
+      return applyPersonalityGate({
         temporaryValue: 'low',
         reason: `Loosening the Economy Governor's reserve strength while the team is in ${mode.replace(/_/g, ' ')} mode.`,
         evidence: [`Team strategy mode: ${mode}.`],
         confidence: 0.7,
         riskLevel: 'moderate'
-      };
+      });
     }
     if (mode === 'protect_lead') {
-      return {
+      return applyPersonalityGate({
         temporaryValue: 'high',
         reason: 'Tightening the Economy Governor\'s reserve strength while protecting a lead.',
         evidence: ['Team strategy mode: protect_lead.'],
         confidence: 0.7,
         riskLevel: 'low'
-      };
+      });
     }
     return null;
-  }, []);
+  }, [gameSettings.teamAiAdaptiveOverseerPersonality]);
 
   const advanceDay = useCallback(() => {
     const prevDay = gameState.day;
@@ -23516,8 +23729,26 @@ function AustraliaGame() {
           // that overlay logic ships in Phase O3. Inert (passes teamState.overseer through
           // unchanged) unless both the system master and the Adaptive Overseer module are enabled.
           overseer: (() => {
+            // Team AI Overseer System Phase O10 (GD1/GD2): Safe Mode auto-trigger, computed
+            // independently of the Adaptive Overseer module's own enablement (it also protects
+            // Strategic Command directive creation) — reuses the exact same restricted-actor-count
+            // signal Recovery mode already computes, just against a distinct, higher threshold.
+            // Auto-clears the moment the count drops back below threshold. Byte-identical
+            // (safeModePatch === {}) whenever teamAiSafeModeEnabled is off, the default.
+            const safeModeGateEnabled = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiSafeModeEnabled;
+            let safeModePatch: Partial<TeamOverseerState> = {};
+            if (safeModeGateEnabled) {
+              const restrictedActorCountForSafeMode = teamActors.filter(a => (a.consecutiveRestrictedTurns || 0) >= gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold).length;
+              const safeModeShouldBeActive = restrictedActorCountForSafeMode >= gameSettings.teamAiSafeModeRestrictedActorThreshold;
+              safeModePatch = {
+                safeModeActive: safeModeShouldBeActive,
+                safeModeReason: safeModeShouldBeActive
+                  ? `${restrictedActorCountForSafeMode} teammate(s) at/above the Governor-restricted-turns threshold (Safe Mode threshold: ${gameSettings.teamAiSafeModeRestrictedActorThreshold}).`
+                  : ''
+              };
+            }
             if (!gameSettings.teamCompetitiveAiEnabled || !gameSettings.teamAiOverseerSystemEnabled || !gameSettings.teamAiAdaptiveOverseerEnabled) {
-              return teamState.overseer;
+              return { ...teamState.overseer, ...safeModePatch };
             }
             const overseerMetricValues = projectedTeamMetricValues[gameSettings.winCondition];
             const overseerTeamMetricValue = teamId === TEAM_PLAYER_ID ? overseerMetricValues.player : overseerMetricValues.ai;
@@ -23550,7 +23781,8 @@ function AustraliaGame() {
               currentAdaptiveStrategyMode: shouldTransition ? signal.candidateMode : teamState.overseer.currentAdaptiveStrategyMode,
               strategyModeSinceDay: shouldTransition ? newDay : teamState.overseer.strategyModeSinceDay,
               lastEvaluationDay: newDay,
-              lastEvaluationTurn: projectedTurnCounter
+              lastEvaluationTurn: projectedTurnCounter,
+              ...safeModePatch
             };
           })()
         };
@@ -23614,11 +23846,16 @@ function AustraliaGame() {
           // touched by NEW overlay creation. An already-live overlay for this key (if any) is
           // untouched (this early-return only fires when a NEW/changed candidate would otherwise
           // be applied); the actor's trace gets a note when Transparency is on.
-          if ((team.overseer.lockedOverlaySettingKeys || []).includes('economyReserveStrength')) {
+          // Team AI Overseer System Phase O10: Safe Mode/Pause reuse this same gate — no third
+          // check anywhere downstream. Only NEW creation is suppressed; an already-live overlay is
+          // never touched by either.
+          const overlayLockedByUser = (team.overseer.lockedOverlaySettingKeys || []).includes('economyReserveStrength');
+          const overlaySuppressedReason = overlayLockedByUser ? 'locked by user' : team.overseer.safeModeActive ? 'Safe Mode active' : team.overseer.paused ? 'paused by user' : null;
+          if (overlaySuppressedReason) {
             if (gameSettings.teamAiOverseerTransparencyEnabled) {
               (team.actorIds || []).forEach(actorId => {
                 const actor = projectedActors[actorId];
-                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer skipped changing economyReserveStrength — locked by user.`);
+                if (actor?.kind === 'ai') appendTeamAiTraceNote(actorId, `Adaptive Overseer skipped changing economyReserveStrength — ${overlaySuppressedReason}.`);
               });
             }
             return;
@@ -23768,9 +24005,11 @@ function AustraliaGame() {
             if (stillLive.some(d => d.assignedActorId === actorId)) return;
             // Team AI Overseer System Phase O9 (GD6): user lock — a locked actor never gets a NEW
             // directive generated for them; other, non-locked actors on the same team are unaffected.
-            if ((team.overseer.lockedDirectiveActorIds || []).includes(actorId)) {
+            const directiveLockedByUser = (team.overseer.lockedDirectiveActorIds || []).includes(actorId);
+            const directiveSuppressedReason = directiveLockedByUser ? 'locked by user' : team.overseer.safeModeActive ? 'Safe Mode active' : team.overseer.paused ? 'paused by user' : null;
+            if (directiveSuppressedReason) {
               if (gameSettings.teamAiOverseerTransparencyEnabled) {
-                appendTeamAiTraceNote(actorId, `Strategic Command skipped issuing a new directive — locked by user.`);
+                appendTeamAiTraceNote(actorId, `Strategic Command skipped issuing a new directive — ${directiveSuppressedReason}.`);
               }
               return;
             }
@@ -32044,6 +32283,10 @@ function AustraliaGame() {
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
       teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
       teamAiOverseerDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
+      teamAiSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiSafeModeEnabled,
+      teamAiSafeModeRestrictedActorThreshold: DEFAULT_GAME_SETTINGS.teamAiSafeModeRestrictedActorThreshold,
+      teamAiStrategicCommandPersonality: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandPersonality,
+      teamAiAdaptiveOverseerPersonality: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerPersonality,
       teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
       teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
@@ -32220,6 +32463,10 @@ function AustraliaGame() {
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
       teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
       teamAiOverseerDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
+      teamAiSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiSafeModeEnabled,
+      teamAiSafeModeRestrictedActorThreshold: DEFAULT_GAME_SETTINGS.teamAiSafeModeRestrictedActorThreshold,
+      teamAiStrategicCommandPersonality: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandPersonality,
+      teamAiAdaptiveOverseerPersonality: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerPersonality,
       teamAiAdaptiveOverseerComebackEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent,
       teamAiAdaptiveOverseerComebackExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent,
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
@@ -35403,6 +35650,21 @@ function AustraliaGame() {
                               <input type="range" min="0" max="50" step="1" value={Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">Lowers the Override eligibility score threshold when an actor's active directive can't otherwise be pursued (requires AI Action Overrides enabled) — composes with Endgame Acceleration's own Override Bias.</div>
                             </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Strategic Command Personality</label>
+                              <div className="flex gap-2 flex-wrap">
+                                {OVERSEER_PERSONALITY_IDS.map(personality => (
+                                  <button
+                                    key={personality}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandPersonality: personality }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiStrategicCommandPersonality === personality ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {personality}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="text-xs opacity-60 mt-1">'Balanced' (default) is byte-identical to prior behavior. 'Aggressive' raises max spending and shortens directive duration; 'Cautious' does the reverse.</div>
+                            </div>
                           </div>
                         )}
 
@@ -35466,6 +35728,21 @@ function AustraliaGame() {
                                 <div className="text-xs opacity-60 mt-1">Prevents strategy oscillation — a non-Recovery mode change must wait this long since the last change. Recovery Mode can pre-empt immediately (spec's stated emergency exception).</div>
                               </div>
                             </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Adaptive Overseer Personality</label>
+                              <div className="flex gap-2 flex-wrap">
+                                {OVERSEER_PERSONALITY_IDS.map(personality => (
+                                  <button
+                                    key={personality}
+                                    onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerPersonality: personality }))}
+                                    className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiAdaptiveOverseerPersonality === personality ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  >
+                                    {personality}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="text-xs opacity-60 mt-1">'Balanced'/'Aggressive' (default confidence bar) never suppress a proposal. 'Cautious' raises the confidence bar, so fewer overlays get proposed.</div>
+                            </div>
                           </div>
                         )}
 
@@ -35485,6 +35762,24 @@ function AustraliaGame() {
                           />
                           <span>{gameSettings.teamAiOverseerTransparencyEnabled ? '☑' : '☐'} Show Overseer Reasoning (confidence, evidence, added in a later update)</span>
                         </label>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-sm">Safe Mode Auto-Trigger</div>
+                            <div className="text-xs opacity-60">When a team has this many teammates simultaneously Governor-restricted for consecutive turns, Safe Mode activates for that team — reusing the same gates as a full user lock (new overlay/directive creation stops; already-live entries are untouched). Auto-clears once the count drops back below the threshold.</div>
+                          </div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiSafeModeEnabled: !prev.teamAiSafeModeEnabled }))}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiSafeModeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiSafeModeEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        {gameSettings.teamAiSafeModeEnabled && (
+                          <div>
+                            <label className="block font-semibold mb-2">Safe Mode Restricted-Actor Threshold: {gameSettings.teamAiSafeModeRestrictedActorThreshold}</label>
+                            <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiSafeModeRestrictedActorThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiSafeModeRestrictedActorThreshold: parseInt(e.target.value) }))} className="w-full" />
+                          </div>
+                        )}
                         <div className="text-xs opacity-60">Strategic Command AI still has no effect yet. The Adaptive Overseer now runs shadow-only diagnostics daily (labeling each team's current strategy mode and logging why), but does not yet change any AI policy setting or decision — that overlay logic ships in a later update.</div>
                       </>
                     )}
@@ -41629,6 +41924,7 @@ function AustraliaGame() {
                       <div>Adaptive Overseer authority: <span className="capitalize">{gameSettings.teamAiAdaptiveOverseerAuthorityMode}</span></div>
                       <div>Active directives: {overseer.strategicDirectives.length} • Active/pending overlays: {overseer.policyOverlays.length}</div>
                       <div className="mt-1">Safe Mode: {overseer.safeModeActive ? <span className="text-yellow-500">Active — {overseer.safeModeReason || 'no reason recorded'}</span> : 'Inactive'}</div>
+                      <div>Paused: {overseer.paused ? <span className="text-yellow-500">Yes</span> : 'No'}</div>
                     </div>
                   </div>
                 )}
@@ -41840,6 +42136,19 @@ function AustraliaGame() {
                           </tbody>
                         </table>
                       )}
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-2">Bulk Controls — {teamLabel}</div>
+                      <div className="text-xs opacity-60 mb-2">Only ever affects the selected team above. Revert/Cancel move every live entry to its history array; Pause/Lock only ever stop NEW creation — nothing already active is touched.</div>
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => toggleOverseerPause(dashboardTeamId)} className={`px-3 py-2 rounded text-xs ${overseer.paused ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}>
+                          {overseer.paused ? 'Resume Overseer Activity' : 'Pause All Overseer Activity'}
+                        </button>
+                        <button onClick={() => revertAllOverseerOverlays(dashboardTeamId)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-xs`}>Revert All Overlays</button>
+                        <button onClick={() => cancelAllStrategicDirectives(dashboardTeamId)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-xs`}>Cancel All Directives</button>
+                        <button onClick={() => lockAllOverseerSettings(dashboardTeamId)} className={`${themeStyles.buttonSecondary} px-3 py-2 rounded text-xs`}>Lock All Settings & Actors</button>
+                      </div>
                     </div>
 
                     <div className={`${themeStyles.border} border rounded-lg p-3`}>
