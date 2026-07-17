@@ -2637,6 +2637,9 @@ interface TeamState {
   // Team Treasury Phase T4: bounded, scoped Governor exceptions (never a permanent Governor
   // settings change — every grant is a reversible, expiring record). Capped .slice(-30).
   governorExceptions: TeamGovernorException[];
+  // Team AI Overseer System Phase O1: runtime state for both Overseer modules (directives, policy
+  // overlays, current strategy mode, Safe Mode). Inert — no code path populates this until O2/O5.
+  overseer: TeamOverseerState;
 }
 
 // Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
@@ -2928,6 +2931,116 @@ const ACTION_REQUIREMENT_COMPARATORS: ActionRequirement['comparator'][] = ['min'
 // enforced both here (defensive, fail-closed for hard items / fail-open/ignored for soft items past
 // the limit) and in the Settings Hub builder UI (the "add nested group" control disables at depth 3).
 const ACTION_REQUIREMENT_MAX_GROUP_DEPTH = 3;
+
+// Team AI Overseer System Phase O1: shared base types for Strategic Command AI (Phases O5-O8) and
+// Adaptive Team AI Overseer (Phases O2-O4). Declared now, unreferenced by any runtime logic until
+// those phases land — same "declare the vocabulary early" precedent as Phase F1's shared base types
+// above. Both modules are Team-Mode-only and share one authority-mode scale.
+type OverseerAuthorityMode = 'off' | 'shadow' | 'advisory' | 'approval' | 'autonomous';
+// Reserved for Phase O2 (Adaptive Overseer diagnostics); not read anywhere until then.
+type AdaptiveStrategyMode = 'stable' | 'recovery' | 'comeback' | 'protect_lead' | 'endgame_push' | 'coordination_repair';
+// Reserved for Phase O5 (Strategic Command directive engine); not read anywhere until then.
+type TeamDirectiveStatus = 'proposed' | 'awaiting_approval' | 'active' | 'paused' | 'blocked' | 'completed' | 'failed' | 'reassigned' | 'cancelled' | 'expired';
+interface TeamDirective {
+  id: string;
+  teamId: string;
+  assignedActorId: string;
+  objective: string;
+  horizon: 'immediate' | 'short_term' | 'endgame';
+  priority: number;
+  createdDay: number;
+  createdTurn: number;
+  expiresDay: number;
+  maxSpending: number;
+  treasuryAllocation: number;
+  requiredResources: string[];
+  allowedActionCategories: TeamModeActionCategory[];
+  successCondition: string;
+  failureCondition: string;
+  retryLimit: number;
+  retryCount: number;
+  fallback: string;
+  reassignmentPermitted: boolean;
+  relatedSequenceId?: string;
+  status: TeamDirectiveStatus;
+  completionResult?: string;
+}
+// Reserved for Phase O3 (Adaptive Overseer overlay engine); not read anywhere until then.
+interface PolicyOverlay {
+  id: string;
+  settingKey: keyof GameSettingsState;
+  configuredValue: unknown;
+  temporaryValue: unknown;
+  effectiveValue: unknown;
+  reason: string;
+  evidence: string[];
+  confidence: number;
+  riskLevel: 'low' | 'moderate' | 'high';
+  startDay: number;
+  startTurn: number;
+  expiresDay: number;
+  sourceModule: 'adaptive_overseer';
+  approvalStatus: 'auto' | 'pending' | 'approved' | 'rejected';
+  autoRenewable: boolean;
+  outcomeReview?: string;
+  reverted: boolean;
+}
+interface TeamOverseerState {
+  strategicDirectives: TeamDirective[];
+  directiveHistory: TeamDirective[];
+  policyOverlays: PolicyOverlay[];
+  overlayHistory: PolicyOverlay[];
+  currentAdaptiveStrategyMode: AdaptiveStrategyMode;
+  strategyModeSinceDay: number;
+  safeModeActive: boolean;
+  safeModeReason: string;
+  lastEvaluationDay: number;
+  lastEvaluationTurn: number;
+  minorChangesThisTurn: number;
+  majorChangesToday: number;
+  lastChangeDay: number;
+}
+const OVERSEER_AUTHORITY_MODES: OverseerAuthorityMode[] = ['off', 'shadow', 'advisory', 'approval', 'autonomous'];
+const createDefaultTeamOverseerState = (): TeamOverseerState => ({
+  strategicDirectives: [],
+  directiveHistory: [],
+  policyOverlays: [],
+  overlayHistory: [],
+  currentAdaptiveStrategyMode: 'stable',
+  strategyModeSinceDay: 0,
+  safeModeActive: false,
+  safeModeReason: '',
+  lastEvaluationDay: 0,
+  lastEvaluationTurn: 0,
+  minorChangesThisTurn: 0,
+  majorChangesToday: 0,
+  lastChangeDay: 0
+});
+// Team AI Overseer System Phase O1: shallow, fail-safe sanitizer. Deep per-directive/per-overlay
+// validation is deferred to O5/O3 (the phases that actually produce those array entries) — a
+// malformed or missing save value always falls back to the safe empty default rather than throwing.
+const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
+  const defaults = createDefaultTeamOverseerState();
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<TeamOverseerState>;
+  return {
+    strategicDirectives: Array.isArray(source.strategicDirectives) ? source.strategicDirectives : defaults.strategicDirectives,
+    directiveHistory: Array.isArray(source.directiveHistory) ? source.directiveHistory.slice(-30) : defaults.directiveHistory,
+    policyOverlays: Array.isArray(source.policyOverlays) ? source.policyOverlays : defaults.policyOverlays,
+    overlayHistory: Array.isArray(source.overlayHistory) ? source.overlayHistory.slice(-30) : defaults.overlayHistory,
+    currentAdaptiveStrategyMode: (['stable', 'recovery', 'comeback', 'protect_lead', 'endgame_push', 'coordination_repair'] as AdaptiveStrategyMode[]).includes(source.currentAdaptiveStrategyMode as AdaptiveStrategyMode)
+      ? (source.currentAdaptiveStrategyMode as AdaptiveStrategyMode)
+      : defaults.currentAdaptiveStrategyMode,
+    strategyModeSinceDay: typeof source.strategyModeSinceDay === 'number' ? source.strategyModeSinceDay : defaults.strategyModeSinceDay,
+    safeModeActive: typeof source.safeModeActive === 'boolean' ? source.safeModeActive : defaults.safeModeActive,
+    safeModeReason: typeof source.safeModeReason === 'string' ? source.safeModeReason : defaults.safeModeReason,
+    lastEvaluationDay: typeof source.lastEvaluationDay === 'number' ? source.lastEvaluationDay : defaults.lastEvaluationDay,
+    lastEvaluationTurn: typeof source.lastEvaluationTurn === 'number' ? source.lastEvaluationTurn : defaults.lastEvaluationTurn,
+    minorChangesThisTurn: typeof source.minorChangesThisTurn === 'number' ? source.minorChangesThisTurn : defaults.minorChangesThisTurn,
+    majorChangesToday: typeof source.majorChangesToday === 'number' ? source.majorChangesToday : defaults.majorChangesToday,
+    lastChangeDay: typeof source.lastChangeDay === 'number' ? source.lastChangeDay : defaults.lastChangeDay
+  };
+};
 
 const sanitizeActionRequirement = (value: unknown): ActionRequirement | null => {
   if (!value || typeof value !== 'object') return null;
@@ -4279,6 +4392,18 @@ type GameSettingsState = {
   // money/netWorth metrics — mirrors vaultCountProtectedCashTowardVictory's opt-out, but additive
   // (Treasury cash is otherwise entirely invisible to those metrics) rather than subtractive.
   countTeamTreasuryTowardVictory: boolean;
+  // Team AI Overseer System Phase O1 (inert unless teamCompetitiveAiEnabled && the relevant
+  // module toggle is on): master + per-module toggles and authority modes. Both modules default
+  // off; when the top-level master is off, both modules stay fully inert regardless of their own
+  // toggle state — mirrors the "one master switch gates everything else" convention used by every
+  // prior Team Mode AI feature in this file (Cash Vault, Governor, Treasury, Sequences, Approval).
+  teamAiOverseerSystemEnabled: boolean;
+  teamAiStrategicCommandEnabled: boolean;
+  teamAiStrategicCommandAuthorityMode: OverseerAuthorityMode;
+  teamAiAdaptiveOverseerEnabled: boolean;
+  teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
+  teamAiOverseerShowStatusCard: boolean;
+  teamAiOverseerTransparencyEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -5378,7 +5503,14 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamTreasuryReturnUnusedRestrictedFunds: true,
   teamTreasuryRequestCooldownDays: 0,
   teamAiTreasuryRequestsEnabled: false,
-  countTeamTreasuryTowardVictory: true
+  countTeamTreasuryTowardVictory: true,
+  teamAiOverseerSystemEnabled: false,
+  teamAiStrategicCommandEnabled: false,
+  teamAiStrategicCommandAuthorityMode: 'shadow',
+  teamAiAdaptiveOverseerEnabled: false,
+  teamAiAdaptiveOverseerAuthorityMode: 'shadow',
+  teamAiOverseerShowStatusCard: true,
+  teamAiOverseerTransparencyEnabled: true
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -5525,6 +5657,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -9067,7 +9200,8 @@ const createDefaultTeamState = (
   sequences: [],
   phaseSequenceAssignments: [],
   treasury: createDefaultTeamTreasuryState(id),
-  governorExceptions: []
+  governorExceptions: [],
+  overseer: createDefaultTeamOverseerState()
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -10611,7 +10745,8 @@ function AustraliaGame() {
             sequences: sanitizeTeammateSequences(teamData?.sequences),
             phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments),
             treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId),
-            governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions)
+            governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions),
+            overseer: sanitizeTeamOverseerState(teamData?.overseer)
           };
           return acc;
         }, {})
@@ -11207,7 +11342,28 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
 	      countTeamTreasuryTowardVictory: typeof settingsData.countTeamTreasuryTowardVictory === 'boolean'
 	        ? settingsData.countTeamTreasuryTowardVictory
-	        : DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
+	        : DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory,
+	      teamAiOverseerSystemEnabled: typeof settingsData.teamAiOverseerSystemEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerSystemEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
+	      teamAiStrategicCommandEnabled: typeof settingsData.teamAiStrategicCommandEnabled === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
+	      teamAiStrategicCommandAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
+	        ? (settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
+	        ? settingsData.teamAiAdaptiveOverseerEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
+	      teamAiAdaptiveOverseerAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
+	        ? (settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
+	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
+	      teamAiOverseerShowStatusCard: typeof settingsData.teamAiOverseerShowStatusCard === 'boolean'
+	        ? settingsData.teamAiOverseerShowStatusCard
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
+	      teamAiOverseerTransparencyEnabled: typeof settingsData.teamAiOverseerTransparencyEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerTransparencyEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -30748,7 +30904,14 @@ function AustraliaGame() {
       teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
       teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
       teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
-      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
+      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory,
+      teamAiOverseerSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
+      teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
+      teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+      teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
+      teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
+      teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
+      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -30902,7 +31065,14 @@ function AustraliaGame() {
       teamTreasuryReturnUnusedRestrictedFunds: DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
       teamTreasuryRequestCooldownDays: DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
       teamAiTreasuryRequestsEnabled: DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
-      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory
+      countTeamTreasuryTowardVictory: DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory,
+      teamAiOverseerSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
+      teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
+      teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+      teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
+      teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
+      teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
+      teamAiOverseerTransparencyEnabled: DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -33950,6 +34120,117 @@ function AustraliaGame() {
                             >Submit Request</button>
                           </div>
                         )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.overseer"
+                tab="teamModeAi"
+                title="Team AI Overseer System"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.overseer')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — the Team AI Overseer System has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable Team AI Overseer System</div>
+                        <div className="text-sm opacity-75">Master switch for two independent modules — Strategic Command AI (coordinates what the team should do) and Adaptive Team AI Overseer (temporarily adjusts how permissively the team behaves). Both stay fully inert while this is off, regardless of their own toggles below.</div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiOverseerSystemEnabled: !prev.teamAiOverseerSystemEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiOverseerSystemEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teamAiOverseerSystemEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {gameSettings.teamAiOverseerSystemEnabled && (
+                      <>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold">Strategic Command AI</div>
+                            <div className="text-sm opacity-75">Coordinates team objectives, actor assignments, and resource allocation. Never changes AI policy settings.</div>
+                          </div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabled: !prev.teamAiStrategicCommandEnabled }))}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiStrategicCommandEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        {gameSettings.teamAiStrategicCommandEnabled && (
+                          <div>
+                            <label className="block font-semibold mb-2">Strategic Command Authority Mode</label>
+                            <div className="flex gap-2 flex-wrap">
+                              {OVERSEER_AUTHORITY_MODES.filter(mode => mode !== 'off').map(mode => (
+                                <button
+                                  key={mode}
+                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandAuthorityMode: mode }))}
+                                  className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiStrategicCommandAuthorityMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                >
+                                  {mode}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="text-xs opacity-60 mt-1">No behavior yet — Strategic Command's actual coordination logic ships in a later update. This only records the intended authority level.</div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold">Adaptive Team AI Overseer</div>
+                            <div className="text-sm opacity-75">Temporarily adjusts permitted AI policy settings based on match performance. Never assigns exact actor objectives.</div>
+                          </div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerEnabled: !prev.teamAiAdaptiveOverseerEnabled }))}
+                            className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiAdaptiveOverseerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiAdaptiveOverseerEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        {gameSettings.teamAiAdaptiveOverseerEnabled && (
+                          <div>
+                            <label className="block font-semibold mb-2">Adaptive Overseer Authority Mode</label>
+                            <div className="flex gap-2 flex-wrap">
+                              {OVERSEER_AUTHORITY_MODES.filter(mode => mode !== 'off').map(mode => (
+                                <button
+                                  key={mode}
+                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerAuthorityMode: mode }))}
+                                  className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiAdaptiveOverseerAuthorityMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                >
+                                  {mode}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="text-xs opacity-60 mt-1">No behavior yet — the Adaptive Overseer's diagnostic and overlay logic ships in later updates. This only records the intended authority level.</div>
+                          </div>
+                        )}
+
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiOverseerShowStatusCard)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverseerShowStatusCard: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiOverseerShowStatusCard ? '☑' : '☐'} Show Overseer Status Card (added in a later update)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(gameSettings.teamAiOverseerTransparencyEnabled)}
+                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverseerTransparencyEnabled: e.target.checked }))}
+                          />
+                          <span>{gameSettings.teamAiOverseerTransparencyEnabled ? '☑' : '☐'} Show Overseer Reasoning (confidence, evidence, added in a later update)</span>
+                        </label>
+                        <div className="text-xs opacity-60">This is the foundation release: both modules can be toggled and configured here, but neither yet changes team behavior. Coordination and adaptive-policy logic ship in upcoming updates — nothing here currently affects gameplay.</div>
                       </>
                     )}
                   </div>
