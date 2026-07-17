@@ -3376,12 +3376,14 @@ interface ApprovalRequest {
   // funding-request/withdrawal request, or (T4) a Governor exception proposal, all reusing this
   // same queue/dialog machinery (GD1/GD2) — never a second approval engine. Defaults 'ai_action'
   // at every existing construction site.
-  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy';
+  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy' | 'overseer_directive';
   treasuryRequestId?: string;
   // Team Treasury Phase T4: set only when requestKind === 'governor_exception'.
   governorExceptionId?: string;
   // Team AI Overseer System Phase O3: set only when requestKind === 'overseer_adaptive_policy'.
   overseerOverlayId?: string;
+  // Team AI Overseer System Phase O6: set only when requestKind === 'overseer_directive'.
+  overseerDirectiveId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -4498,6 +4500,9 @@ type GameSettingsState = {
   // before expiring. 'immediate' directives always expire next day; 'endgame' directives run to
   // (a capped) game end — neither reads this setting.
   teamAiStrategicCommandDirectiveDurationDays: number;
+  // Team AI Overseer System Phase O6: additive score bonus applied to a candidate whose type is
+  // in an actor's ACTIVE directive's allowedActionCategories — never a gate bypass, only ranking.
+  teamAiStrategicCommandDirectiveScoreBias: number;
   teamAiAdaptiveOverseerEnabled: boolean;
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
@@ -5615,6 +5620,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiStrategicCommandEnabled: false,
   teamAiStrategicCommandAuthorityMode: 'shadow',
   teamAiStrategicCommandDirectiveDurationDays: 3,
+  teamAiStrategicCommandDirectiveScoreBias: 15,
   teamAiAdaptiveOverseerEnabled: false,
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
@@ -5771,7 +5777,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -11563,6 +11569,7 @@ function AustraliaGame() {
 	        ? (settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
 	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
 	      teamAiStrategicCommandDirectiveDurationDays: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveDurationDays, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays, 1, 30),
+	      teamAiStrategicCommandDirectiveScoreBias: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveScoreBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias, 0, 100),
 	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
 	        ? settingsData.teamAiAdaptiveOverseerEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
@@ -17300,6 +17307,10 @@ function AustraliaGame() {
   // resolveOverseerAdaptivePolicyRequest is declared later (it needs updateTeamState and the
   // PolicyOverlay lookup logic), so it's read through a ref assigned right after its declaration.
   const resolveOverseerAdaptivePolicyRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
+  // Team AI Overseer System Phase O6: same TDZ-safe ref-indirection pattern — the real
+  // resolveOverseerDirectiveRequest is declared later (it needs updateTeamState), so it's read
+  // through a ref assigned right after its declaration.
+  const resolveOverseerDirectiveRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -17377,10 +17388,13 @@ function AustraliaGame() {
       ? () => resolveGovernorExceptionRequestRef.current?.(next.id, 'approve_once')
       : next.requestKind === 'overseer_adaptive_policy'
       ? () => resolveOverseerAdaptivePolicyRequestRef.current?.(next.id, 'approve')
+      : next.requestKind === 'overseer_directive'
+      ? () => resolveOverseerDirectiveRequestRef.current?.(next.id, 'approve')
       : () => resolveApprovalRequest(next.id, 'approve');
     const dialogTitle = next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds'
       : next.requestKind === 'governor_exception' ? 'Teammate requests a Governor exception'
       : next.requestKind === 'overseer_adaptive_policy' ? 'Adaptive Overseer recommends a policy change'
+      : next.requestKind === 'overseer_directive' ? 'Strategic Command recommends a directive'
       : 'Teammate proposes an action';
     showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
   }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest]);
@@ -20920,6 +20934,86 @@ function AustraliaGame() {
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, updateTeamState]);
   resolveOverseerAdaptivePolicyRequestRef.current = resolveOverseerAdaptivePolicyRequest;
 
+  // Team AI Overseer System Phase O6 ('approval' authority mode): mirrors
+  // buildOverseerAdaptivePolicyApprovalRequest's exact shape — a directive, like a policy overlay,
+  // has no single execution to preview, so the synthetic decision/actionSummary carry the
+  // objective/horizon instead.
+  const buildOverseerDirectiveApprovalRequest = useCallback((directive: TeamDirective, teamId: string): ApprovalRequest => {
+    const team = teamsByIdRef.current[teamId];
+    const teamLabel = team?.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team');
+    const summary = `${teamLabel}'s Strategic Command recommends issuing a directive to ${getActorDisplayName(directive.assignedActorId)}: ${directive.objective} (${directive.horizon.replace(/_/g, ' ')}).`;
+    const syntheticDecision = {
+      type: 'end_turn',
+      description: summary,
+      data: {},
+      score: 0,
+      plan: undefined
+    } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_directive_${directive.id}`,
+      actorId: directive.assignedActorId,
+      teamId,
+      decision: syntheticDecision,
+      actionSummary: summary,
+      targetLabel: 'Strategic Command',
+      cost: null,
+      wager: null,
+      percentCashAtRisk: null,
+      expectedReward: null,
+      successProbability: null,
+      minCashRemaining: null,
+      vaultEffect: 'Not applicable — this is a directive, not a spending action.',
+      governorRuling: 'n/a',
+      requirementsSummary: `Allowed categories: ${directive.allowedActionCategories.join(', ')}. Expires day ${directive.expiresDay}.`,
+      aiExplanation: directive.objective,
+      fallbackAvailable: false,
+      actionsRemaining: 0,
+      categoryBucket: 'wait' as TeamModeActionCategory,
+      createdAtTurn: gameState.day,
+      status: 'pending',
+      requestKind: 'overseer_directive',
+      overseerDirectiveId: directive.id
+    };
+  }, [gameState.day]);
+
+  // Team AI Overseer System Phase O6: approve flips the directive to 'active' (making it eligible
+  // for the scoring bias in getRankedTeamAiDecisions); reject moves it straight to directiveHistory
+  // marked 'cancelled' — mirrors resolveOverseerAdaptivePolicyRequest's dequeue shape exactly.
+  const resolveOverseerDirectiveRequest = useCallback((requestId: string, control: 'approve' | 'reject') => {
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== requestId));
+    if (confirmationDialog.data?.requestId === requestId) {
+      closeConfirmation();
+    }
+    const directiveId = request.overseerDirectiveId;
+    if (!directiveId) return;
+    updateTeamState(request.teamId, prev => {
+      const directive = prev.overseer.strategicDirectives.find(d => d.id === directiveId);
+      if (!directive) return prev;
+      if (control === 'approve') {
+        return {
+          ...prev,
+          overseer: {
+            ...prev.overseer,
+            strategicDirectives: prev.overseer.strategicDirectives.map(d => d.id === directiveId ? { ...d, status: 'active' as TeamDirectiveStatus } : d)
+          }
+        };
+      }
+      return {
+        ...prev,
+        overseer: {
+          ...prev.overseer,
+          strategicDirectives: prev.overseer.strategicDirectives.filter(d => d.id !== directiveId),
+          directiveHistory: [...prev.overseer.directiveHistory, { ...directive, status: 'cancelled' as TeamDirectiveStatus }].slice(-30)
+        }
+      };
+    });
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, updateTeamState]);
+  resolveOverseerDirectiveRequestRef.current = resolveOverseerDirectiveRequest;
+
   // Team AI Overseer System Phase O4: manual controls for the HUD status card. All three reuse
   // updateTeamState exactly like O3's own revert logic — no new state machinery. Current metric
   // value is read fresh via the existing getCompetitiveMetricValue selector (same one every other
@@ -20982,6 +21076,19 @@ function AustraliaGame() {
         }
       };
     });
+  }, [updateTeamState]);
+
+  // Team AI Overseer System Phase O6: manual Apply control for a 'proposed' Advisory-sourced
+  // directive, mirroring O4's applyOverseerAdvisoryOverlay exactly — flips status to 'active',
+  // making it eligible for the getRankedTeamAiDecisions scoring bias. No new state machinery.
+  const applyOverseerAdvisoryDirective = useCallback((teamId: string, directiveId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      overseer: {
+        ...prev.overseer,
+        strategicDirectives: prev.overseer.strategicDirectives.map(d => d.id === directiveId ? { ...d, status: 'active' as TeamDirectiveStatus } : d)
+      }
+    }));
   }, [updateTeamState]);
 
   // Team Treasury Phase T4 (GD6): AI-AI auto-resolution mirror — approves ONLY the same bounded
@@ -23459,20 +23566,58 @@ function AustraliaGame() {
             if (!actor || actor.kind !== 'ai') return;
             if (stillLive.some(d => d.assignedActorId === actorId)) return;
             const directive = generateTeamDirective(actor, team, goal, directiveContext, newDay, projectedTurnCounter);
+
+            // Team AI Overseer System Phase O6: real 4-way authority-mode dispatch, mirroring
+            // Phase O3's exact branching for Adaptive Overseer overlays. Shadow logs only; Advisory
+            // stores 'proposed' (inert until manually applied); Approval stores 'awaiting_approval'
+            // and routes through the approval queue; Autonomous stores 'active' immediately (the
+            // only status the getRankedTeamAiDecisions scoring bias ever reads).
             if (authorityMode === 'shadow') {
               if (gameSettings.teamAiOverseerTransparencyEnabled) {
                 appendTeamAiTraceNote(actorId, `Shadow Mode: Strategic Command would issue directive "${directive.objective}" (${directive.horizon}).`);
               }
               return;
             }
+
+            if (authorityMode === 'advisory') {
+              updateTeamState(teamId, prev => ({
+                ...prev,
+                overseer: {
+                  ...prev.overseer,
+                  strategicDirectives: [...prev.overseer.strategicDirectives, { ...directive, status: 'proposed' as TeamDirectiveStatus }]
+                }
+              }));
+              if (gameSettings.teamAiOverseerTransparencyEnabled) {
+                appendTeamAiTraceNote(actorId, `Strategic Command recommends issuing directive: ${directive.objective} (${directive.horizon}) — awaiting manual review.`);
+              }
+              return;
+            }
+
+            if (authorityMode === 'approval') {
+              const awaitingDirective = { ...directive, status: 'awaiting_approval' as TeamDirectiveStatus };
+              updateTeamState(teamId, prev => ({
+                ...prev,
+                overseer: {
+                  ...prev.overseer,
+                  strategicDirectives: [...prev.overseer.strategicDirectives, awaitingDirective]
+                }
+              }));
+              const approvalRequest = buildOverseerDirectiveApprovalRequest(awaitingDirective, teamId);
+              setPendingApprovalRequests(prev => [...prev, approvalRequest]);
+              return;
+            }
+
+            // authorityMode === 'autonomous'
+            const activeDirective = { ...directive, status: 'active' as TeamDirectiveStatus };
             updateTeamState(teamId, prev => ({
               ...prev,
               overseer: {
                 ...prev.overseer,
-                strategicDirectives: [...prev.overseer.strategicDirectives, directive]
+                strategicDirectives: [...prev.overseer.strategicDirectives, activeDirective]
               }
             }));
             if (gameSettings.teamAiOverseerTransparencyEnabled) {
+              addNotification(`🧭 ${team.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team')}'s Strategic Command issued a directive to ${getActorDisplayName(actorId)}: ${directive.objective} (${directive.horizon}).`, 'ai', false, 'system');
               appendTeamAiTraceNote(actorId, `Strategic Command issued directive: ${directive.objective} (${directive.horizon}, expires day ${directive.expiresDay}).`);
             }
           });
@@ -24043,7 +24188,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -26511,12 +26656,33 @@ function AustraliaGame() {
           }
         }
       }
+      // Team AI Overseer System Phase O6: Strategic Command directive scoring bias — additive
+      // only, never a gate bypass. Only an ACTIVE directive (Autonomous mode, or an Advisory
+      // recommendation the player applied, or an approved Approval-mode request) ever biases
+      // anything; 'proposed'/'awaiting_approval' directives never do, which is what makes those
+      // modes meaningfully different from Autonomous.
+      if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled) {
+        const myActiveDirective = (resolveTeam(actor.teamId)?.overseer.strategicDirectives || [])
+          .find(d => d.assignedActorId === actorId && d.status === 'active');
+        if (myActiveDirective && myActiveDirective.allowedActionCategories.includes(candidate.type as TeamModeActionCategory)) {
+          const directiveBonus = gameSettings.teamAiStrategicCommandDirectiveScoreBias;
+          bonus += directiveBonus;
+          const directiveReason = `Strategic Command directive: ${myActiveDirective.objective}.`;
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'strategic_command_directive_v67',
+            label: 'Strategic Command',
+            score: baseScore + bonus,
+            delta: directiveBonus,
+            reason: directiveReason
+          }, [directiveReason], gameSettings.teamAiOverseerTransparencyEnabled);
+        }
+      }
       return {
         ...annotated,
         score: baseScore + bonus
       };
     });
-  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
+  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.teamAiOverseerSystemEnabled, gameSettings.teamAiStrategicCommandEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, resolveTeam, selectThreatTarget, teamScoreSummary]);
   getRankedTeamAiDecisionsRef.current = getRankedTeamAiDecisions;
 
   // V6.8 Phase E: Parallel Planning's execution-time revalidation — mirrors redeemActionToken's
@@ -31569,6 +31735,7 @@ function AustraliaGame() {
       teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
       teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
+      teamAiStrategicCommandDirectiveScoreBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -31737,6 +31904,7 @@ function AustraliaGame() {
       teamAiStrategicCommandEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
       teamAiStrategicCommandAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
       teamAiStrategicCommandDirectiveDurationDays: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays,
+      teamAiStrategicCommandDirectiveScoreBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -34854,14 +35022,21 @@ function AustraliaGame() {
                                 </button>
                               ))}
                             </div>
-                            <div className="text-xs opacity-60 mt-1">Directives are generated and displayed now (Shadow mode logs only; every other mode also stores the directive) — biasing AI decisions and a dedicated approval queue ship in a later update.</div>
+                            <div className="text-xs opacity-60 mt-1">Directives are generated now and, once active, bias which of an actor's already-legal candidate actions ranks highest (Shadow mode logs only; Advisory needs manual Apply; Approval routes through the approval queue; Autonomous applies immediately). Never bypasses Requirements/Approval/Governor/Vault.</div>
                           </div>
                         )}
                         {gameSettings.teamAiStrategicCommandEnabled && uiState.settingsViewMode === 'advanced' && (
-                          <div>
-                            <label className="block font-semibold mb-2">Short-Term Directive Duration: {gameSettings.teamAiStrategicCommandDirectiveDurationDays} day(s)</label>
-                            <input type="range" min="1" max="30" step="1" value={gameSettings.teamAiStrategicCommandDirectiveDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveDurationDays: parseInt(e.target.value) }))} className="w-full" />
-                            <div className="text-xs opacity-60 mt-1">How long a 'short_term'-horizon directive stays live before expiring. 'Immediate' directives always expire the next day; 'endgame' directives run to (a capped) game end.</div>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block font-semibold mb-2">Short-Term Directive Duration: {gameSettings.teamAiStrategicCommandDirectiveDurationDays} day(s)</label>
+                              <input type="range" min="1" max="30" step="1" value={gameSettings.teamAiStrategicCommandDirectiveDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                              <div className="text-xs opacity-60 mt-1">How long a 'short_term'-horizon directive stays live before expiring. 'Immediate' directives always expire the next day; 'endgame' directives run to (a capped) game end.</div>
+                            </div>
+                            <div>
+                              <label className="block font-semibold mb-2">Directive Score Bias: +{gameSettings.teamAiStrategicCommandDirectiveScoreBias}</label>
+                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandDirectiveScoreBias} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveScoreBias: parseInt(e.target.value) }))} className="w-full" />
+                              <div className="text-xs opacity-60 mt-1">Score bonus applied to a candidate action whose type matches an actor's ACTIVE directive's allowed categories — additive only, never bypasses any gate.</div>
+                            </div>
                           </div>
                         )}
 
@@ -39326,8 +39501,13 @@ function AustraliaGame() {
 	                              {(overseer?.strategicDirectives || []).map(directive => (
 	                                <div key={directive.id}>
 	                                  <div>{directive.objective} <span className="opacity-60 capitalize">({directive.horizon.replace(/_/g, ' ')})</span></div>
-	                                  <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay}</div>
-	                                  <button onClick={() => cancelStrategicDirective(overseerTeamId, directive.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded mt-1`}>Cancel</button>
+	                                  <div className="opacity-75">Assigned: {getActorDisplayName(directive.assignedActorId)} • expires day {directive.expiresDay} • <span className="capitalize">{directive.status.replace(/_/g, ' ')}</span></div>
+	                                  <div className="flex gap-1 mt-1">
+	                                    {directive.status === 'proposed' && (
+	                                      <button onClick={() => applyOverseerAdvisoryDirective(overseerTeamId, directive.id)} className={`${themeStyles.button} text-white px-2 py-1 rounded`}>Apply</button>
+	                                    )}
+	                                    <button onClick={() => cancelStrategicDirective(overseerTeamId, directive.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded`}>Cancel</button>
+	                                  </div>
 	                                </div>
 	                              ))}
 	                            </div>
@@ -40868,7 +41048,44 @@ function AustraliaGame() {
             );
           })()}
 
-          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
+          {/* Team AI Overseer System Phase O6: info panel for an overseer_directive request —
+              never rendered alongside the other panels above (mutually exclusive per requestKind).
+              Shows the directive's objective/horizon/priority/assigned actor instead of an
+              overlay's configured/temporary values. */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'overseer_directive') return null;
+            const team = teamsByIdRef.current[request.teamId];
+            const directive = team?.overseer.strategicDirectives.find(d => d.id === request.overseerDirectiveId);
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Assigned Actor:</span><span className="font-bold text-right">{directive ? getActorDisplayName(directive.assignedActorId) : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Objective:</span><span className="font-bold text-right">{directive ? directive.objective : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Horizon:</span><span className="font-bold capitalize">{directive ? directive.horizon.replace(/_/g, ' ') : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Priority:</span><span className="font-bold">{directive ? directive.priority : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Expires:</span><span className="font-bold">{directive ? `Day ${directive.expiresDay}` : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Allowed Categories:</span><span className="font-bold text-right">{directive ? directive.allowedActionCategories.join(', ') : 'n/a'}</span></div>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_directive' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const approvalRequestId = request.id;
+            return (
+              <div className="flex space-x-3">
+                <button onClick={() => resolveOverseerDirectiveRequestRef.current?.(approvalRequestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
+                <button onClick={() => resolveOverseerDirectiveRequestRef.current?.(approvalRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_directive') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
             <div className="space-y-2">
               <div className="flex space-x-3">
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
