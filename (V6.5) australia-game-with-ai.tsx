@@ -4508,6 +4508,16 @@ type GameSettingsState = {
   teamAiStrategicCommandMaxSpendingPercent: number;
   teamAiStrategicCommandTreasuryAllocationCap: number;
   teamAiStrategicCommandOverrideBias: number;
+  // Team AI Overseer System Phase O8: friendly/enemy scoping, mirroring Team Treasury's own
+  // pattern exactly — both default true since the master teamAiStrategicCommandEnabled toggle
+  // (default false) is what actually gates the feature off for new saves.
+  teamAiStrategicCommandEnabledForFriendlyTeam: boolean;
+  teamAiStrategicCommandEnabledForEnemyTeam: boolean;
+  // Team AI Overseer System Phase O8: one flag gating all three O7 interventions (maxSpending
+  // filter, Treasury delegation trigger, Override bias) as a unit — default true so nothing
+  // changes for anyone already using O7; lets a player keep directive generation/scoring bias
+  // (O5/O6) while opting out of the more invasive Treasury/Override side effects.
+  teamAiStrategicCommandInterventionsEnabled: boolean;
   teamAiAdaptiveOverseerEnabled: boolean;
   teamAiAdaptiveOverseerAuthorityMode: OverseerAuthorityMode;
   teamAiOverseerShowStatusCard: boolean;
@@ -5629,6 +5639,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiStrategicCommandMaxSpendingPercent: 50,
   teamAiStrategicCommandTreasuryAllocationCap: 500,
   teamAiStrategicCommandOverrideBias: 0.15,
+  teamAiStrategicCommandEnabledForFriendlyTeam: true,
+  teamAiStrategicCommandEnabledForEnemyTeam: true,
+  teamAiStrategicCommandInterventionsEnabled: true,
   teamAiAdaptiveOverseerEnabled: false,
   teamAiAdaptiveOverseerAuthorityMode: 'shadow',
   teamAiOverseerShowStatusCard: true,
@@ -5785,7 +5798,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionApproval', tab: 'teamModeAi', title: 'AI Action Approval', tags: ['Team Mode', 'AI'], fieldKeys: ['aiActionApprovalEnabled', 'aiActionApprovalMode', 'aiActionApprovalSelectedTypes', 'aiActionApprovalHighRiskThresholds', 'aiActionApprovalTeammateOverrides', 'aiActionApprovalRejectionOutcome', 'aiActionApprovalTransparencyEnabled', 'aiActionApprovalAutoRulesEnabled', 'aiActionApprovalAutoRules'] },
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
-  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -11619,6 +11632,15 @@ function AustraliaGame() {
 	      teamAiStrategicCommandMaxSpendingPercent: clampSettingNumber(settingsData.teamAiStrategicCommandMaxSpendingPercent, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent, 0, 100),
 	      teamAiStrategicCommandTreasuryAllocationCap: clampSettingNumber(settingsData.teamAiStrategicCommandTreasuryAllocationCap, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap, 0, 100000),
 	      teamAiStrategicCommandOverrideBias: clampSettingNumber(settingsData.teamAiStrategicCommandOverrideBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias, 0, 0.5),
+	      teamAiStrategicCommandEnabledForFriendlyTeam: typeof settingsData.teamAiStrategicCommandEnabledForFriendlyTeam === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabledForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForFriendlyTeam,
+	      teamAiStrategicCommandEnabledForEnemyTeam: typeof settingsData.teamAiStrategicCommandEnabledForEnemyTeam === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabledForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForEnemyTeam,
+	      teamAiStrategicCommandInterventionsEnabled: typeof settingsData.teamAiStrategicCommandInterventionsEnabled === 'boolean'
+	        ? settingsData.teamAiStrategicCommandInterventionsEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandInterventionsEnabled,
 	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
 	        ? settingsData.teamAiAdaptiveOverseerEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
@@ -23564,6 +23586,14 @@ function AustraliaGame() {
         [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
           const team = teamsByIdRef.current[teamId];
           if (!team) return;
+          // Team AI Overseer System Phase O8: friendly/enemy scoping, mirroring Team Treasury's
+          // exact pattern — this is the ONLY gate needed for this side; the O6 scoring bias and
+          // every O7 intervention key off an active directive existing for this actor, which
+          // simply never gets created for a scoped-off side.
+          const strategicCommandEnabledForThisTeam = teamId === TEAM_PLAYER_ID
+            ? gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam
+            : gameSettings.teamAiStrategicCommandEnabledForEnemyTeam;
+          if (!strategicCommandEnabledForThisTeam) return;
           const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
           const opponentTeamState = teamsByIdRef.current[opponentTeamId];
 
@@ -26722,7 +26752,9 @@ function AustraliaGame() {
         if (
           myActiveDirective &&
           myActiveDirective.allowedActionCategories.includes(candidate.type as TeamModeActionCategory) &&
-          candidateCost <= myActiveDirective.maxSpending
+          // Team AI Overseer System Phase O8: with interventions off, the cap is treated as
+          // unbounded — restoring exact O6-era "any in-category candidate gets the bonus".
+          (!gameSettings.teamAiStrategicCommandInterventionsEnabled || candidateCost <= myActiveDirective.maxSpending)
         ) {
           const directiveBonus = gameSettings.teamAiStrategicCommandDirectiveScoreBias;
           bonus += directiveBonus;
@@ -26741,7 +26773,7 @@ function AustraliaGame() {
         score: baseScore + bonus
       };
     });
-  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.teamAiOverseerSystemEnabled, gameSettings.teamAiStrategicCommandEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
+  }, [analyzeTeamLiquidity, annotateAiDecisionTraceMeta, applyActorAdaptiveEffectsToDecision, applyDirectiveStrengthToDecision, applyStrategicDirectorScoring, applyTeammatePerformanceSyncToDecision, applyTeammatePerformanceSync2ToDecision, buildDecisionTraceFromCandidates, calculateActorChallengeSuccessChance, calculateActorTravelCost, computeEndgameAccelerationState, computeNetWorth, computeThreatScore, deriveAiRoleMode, ensureDecisionBaseScoreStage, evaluateEquipmentPurchase, evaluateInvestment, evaluateTeamSupportDecision, gameSettings, gameSettings.aiSpecialAbilitiesEnabled, gameSettings.allowCashOut, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.negotiationMode, gameSettings.sabotageEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.teamAiReservationStrictness, gameSettings.teamAiThreatTargetingEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamAiEndgameAccelerationEnabled, gameSettings.teamAiOverseerSystemEnabled, gameSettings.teamAiStrategicCommandEnabled, gameSettings.teamAiStrategicCommandInterventionsEnabled, gameSettings.totalDays, gameSettings.winCondition, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameState.selectedMode, gameState.turnCounter, getActorActiveTeamMessages, getActorDirectiveContext, getActorDisplayName, getActorRelationshipLabel, getActorState, getAiLoanDecisionCandidates, getRegionControlInfo, getResourceMarketPrice, getTeamActors, getTeamDifficultyBehavior, getTeammateForSync, getTeammatePerformanceSyncModifier, getTeammatePerformanceSync2Modifier, isReservationHardBlocked, isTeamMode, selectThreatTarget, teamScoreSummary]);
   getRankedTeamAiDecisionsRef.current = getRankedTeamAiDecisions;
 
   // V6.8 Phase E: Parallel Planning's execution-time revalidation — mirrors redeemActionToken's
@@ -27460,7 +27492,7 @@ function AustraliaGame() {
     const directiveForOverrideBias = (teamsByIdRef.current[actor.teamId]?.overseer.strategicDirectives || [])
       .find(d => d.assignedActorId === actorId && d.status === 'active');
     const directiveOverrideBiasActive = Boolean(
-      gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled &&
+      gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled && gameSettings.teamAiStrategicCommandInterventionsEnabled &&
       directiveForOverrideBias && directiveForOverrideBias.allowedActionCategories.includes(nextDecision.type as TeamModeActionCategory)
     );
     const totalOverrideBiasFraction = Math.min(0.9,
@@ -27497,6 +27529,7 @@ function AustraliaGame() {
     gameSettings.teamAiOverridePolicy, gameSettings.friendlyAiOverridePolicy, gameSettings.teamAiOverrideBaseCostMultiplier,
     gameSettings.teamAiOverrideMinimumCashReserve, gameSettings.teamAiOverrideMinimumDecisionScore, gameSettings.teamAiEndgameOverrideBias,
     gameSettings.teamAiOverseerSystemEnabled, gameSettings.teamAiStrategicCommandEnabled, gameSettings.teamAiStrategicCommandOverrideBias,
+    gameSettings.teamAiStrategicCommandInterventionsEnabled,
     gameState.gameMode, getActorState, calculateActorOverrideCost, shouldTeamActorUseOverride, analyzeTeamLiquidity, computeEndgameAccelerationState
   ]);
   // V6.7 Phase 3d: ref-indirection assignment — see overrideEligibilityRef's declaration comment.
@@ -28896,7 +28929,7 @@ function AustraliaGame() {
     // directive has SOME cash but not enough for the best candidate within the directive's own
     // allowedActionCategories — reusing createTreasuryFundingRequest/evaluateAiTeamFundingPolicy/
     // buildTreasuryApprovalRequest completely unmodified, exactly like T2's own trigger does.
-    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled && gameSettings.teamTreasuryEnabled && actor.kind === 'ai') {
+    if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled && gameSettings.teamAiStrategicCommandInterventionsEnabled && gameSettings.teamTreasuryEnabled && actor.kind === 'ai') {
       const directiveTeam = teamsByIdRef.current[actor.teamId];
       const activeDirectiveForFunding = (directiveTeam?.overseer.strategicDirectives || [])
         .find(d => d.assignedActorId === actor.id && d.status === 'active');
@@ -31873,6 +31906,9 @@ function AustraliaGame() {
       teamAiStrategicCommandMaxSpendingPercent: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent,
       teamAiStrategicCommandTreasuryAllocationCap: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap,
       teamAiStrategicCommandOverrideBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias,
+      teamAiStrategicCommandEnabledForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForFriendlyTeam,
+      teamAiStrategicCommandEnabledForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForEnemyTeam,
+      teamAiStrategicCommandInterventionsEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandInterventionsEnabled,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -32045,6 +32081,9 @@ function AustraliaGame() {
       teamAiStrategicCommandMaxSpendingPercent: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent,
       teamAiStrategicCommandTreasuryAllocationCap: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap,
       teamAiStrategicCommandOverrideBias: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias,
+      teamAiStrategicCommandEnabledForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForFriendlyTeam,
+      teamAiStrategicCommandEnabledForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForEnemyTeam,
+      teamAiStrategicCommandInterventionsEnabled: DEFAULT_GAME_SETTINGS.teamAiStrategicCommandInterventionsEnabled,
       teamAiAdaptiveOverseerEnabled: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
       teamAiAdaptiveOverseerAuthorityMode: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
       teamAiOverseerShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
@@ -35163,6 +35202,46 @@ function AustraliaGame() {
                               ))}
                             </div>
                             <div className="text-xs opacity-60 mt-1">Directives are generated now and, once active, bias which of an actor's already-legal candidate actions ranks highest (Shadow mode logs only; Advisory needs manual Apply; Approval routes through the approval queue; Autonomous applies immediately). Never bypasses Requirements/Approval/Governor/Vault.</div>
+                          </div>
+                        )}
+                        {gameSettings.teamAiStrategicCommandEnabled && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-sm">Strategic Command for Friendly Team</div>
+                                <div className="text-xs opacity-60">Whether directives are ever generated for your own team's AI actor.</div>
+                              </div>
+                              <button
+                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabledForFriendlyTeam: !prev.teamAiStrategicCommandEnabledForFriendlyTeam }))}
+                                className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-sm">Strategic Command for Enemy Team</div>
+                                <div className="text-xs opacity-60">Whether directives are ever generated for the opposing team's AI actors.</div>
+                              </div>
+                              <button
+                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabledForEnemyTeam: !prev.teamAiStrategicCommandEnabledForEnemyTeam }))}
+                                className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabledForEnemyTeam ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {gameSettings.teamAiStrategicCommandEnabledForEnemyTeam ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-sm">Strategic Command Interventions</div>
+                                <div className="text-xs opacity-60">Gates the Treasury funding-request delegation and the Override eligibility bias. Turning this off restores directive generation and scoring bias to their pre-intervention (O6-era) behavior — a directive's spending cap is treated as unbounded, no directive-scoped Treasury requests fire, and Override eligibility never gets a directive-aware discount.</div>
+                              </div>
+                              <button
+                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandInterventionsEnabled: !prev.teamAiStrategicCommandInterventionsEnabled }))}
+                                className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandInterventionsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {gameSettings.teamAiStrategicCommandInterventionsEnabled ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
                           </div>
                         )}
                         {gameSettings.teamAiStrategicCommandEnabled && uiState.settingsViewMode === 'advanced' && (
