@@ -2640,6 +2640,9 @@ interface TeamState {
   // Team AI Overseer System Phase O1: runtime state for both Overseer modules (directives, policy
   // overlays, current strategy mode, Safe Mode). Inert — no code path populates this until O2/O5.
   overseer: TeamOverseerState;
+  // AI Operations Auditor Phase AA1: genuinely separate per-team state from `overseer` above —
+  // observes, never replaces, the existing AI systems. Inert until AA2+ wires real detection.
+  auditor: AiOperationsAuditorState;
 }
 
 // Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
@@ -3125,6 +3128,208 @@ const sanitizeTeamOverseerState = (value: unknown): TeamOverseerState => {
     lockedOverlaySettingKeys: Array.isArray(source.lockedOverlaySettingKeys) ? source.lockedOverlaySettingKeys.filter(k => typeof k === 'string' && OVERSEER_LOCKABLE_SETTING_KEYS.includes(k as keyof GameSettingsState)) as (keyof GameSettingsState)[] : defaults.lockedOverlaySettingKeys,
     lockedDirectiveActorIds: Array.isArray(source.lockedDirectiveActorIds) ? source.lockedDirectiveActorIds.filter(id => typeof id === 'string') : defaults.lockedDirectiveActorIds,
     paused: typeof source.paused === 'boolean' ? source.paused : defaults.paused
+  };
+};
+
+// AI Operations Auditor Phase AA1: pure scaffolding. This is a genuinely SEPARATE system from
+// the Team AI Overseer System above — it never replaces Strategic Command AI, the Adaptive
+// Overseer, the Economy Governor, Action Requirements, AI Action Approval, Team Treasury,
+// Action Overrides, or Sequences; it only observes them for operational (not strategic) failures
+// once explicitly enabled. Every type below is declared now and unreferenced until AA2+ actually
+// emits events/incidents, matching this file's own repeated "declare the full enum now, reach most
+// values later" pattern (e.g. TeamDirectiveStatus's 10 values were declared in O1 but most were
+// unreachable until O5/O6).
+interface AiOperationsEventBase {
+  id: string;
+  teamId: string;
+  actorId: string | null;
+  day: number;
+  turn: number;
+  timestamp: number;
+  sourceSystem: AiOperationsSourceSystem;
+  committed: boolean;
+}
+type AiOperationsSourceSystem =
+  | 'turn_engine' | 'approval_queue' | 'action_tokens' | 'action_overrides' | 'sequences'
+  | 'treasury' | 'economy_governor' | 'strategic_command' | 'adaptive_overseer' | 'save_load' | 'ui';
+
+// Discriminated union (not one flat optional-field interface) so AA2-AA4's emission call sites and
+// later detection rules can narrow on `event.type` with full type safety on the payload — the same
+// tradeoff this file already made for TeamMessageType/AiDecisionTrace-style closed unions.
+type AiOperationsEvent =
+  | (AiOperationsEventBase & { type: 'AI_TURN_STARTED'; totalActionBudget: number })
+  | (AiOperationsEventBase & { type: 'AI_TURN_PAUSED_FOR_APPROVAL'; approvalRequestId: string })
+  | (AiOperationsEventBase & { type: 'AI_TURN_RESUMED'; approvalRequestId: string })
+  | (AiOperationsEventBase & { type: 'AI_TURN_FINISHED'; actionsUsedThisTurn: number })
+  | (AiOperationsEventBase & { type: 'AI_APPROVAL_REQUEST_CREATED'; requestId: string; requestKind: string })
+  | (AiOperationsEventBase & { type: 'AI_APPROVAL_REQUEST_DISPLAYED'; requestId: string })
+  | (AiOperationsEventBase & { type: 'AI_APPROVAL_REQUEST_RESOLVED'; requestId: string; outcome: 'approved' | 'rejected' | 'cancelled' })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_PROPOSAL_SCORED'; proposalSignature: string })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_PROPOSAL_REJECTED'; proposalSignature: string })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_TOKEN_MINTED'; tokenId: string; source: ActionTokenSource })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_TOKEN_CONSUMED'; tokenId: string; actionType: string })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_TOKEN_INVALIDATED'; tokenId: string; reason: string })
+  | (AiOperationsEventBase & { type: 'AI_OVERRIDE_GRANTED'; grantId: string; bonusBudget: number })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_EXECUTION_COMMITTED'; actionType: string })
+  | (AiOperationsEventBase & { type: 'AI_ACTION_EXECUTION_FAILED'; actionType: string; reason: string })
+  | (AiOperationsEventBase & { type: 'SEQUENCE_STEP_RETRY_INCREMENTED'; stepId: string; retryCount: number })
+  | (AiOperationsEventBase & { type: 'SEQUENCE_STEP_TERMINATED'; stepId: string; outcome: 'skipped' | 'completed' | 'stuck' })
+  | (AiOperationsEventBase & { type: 'TREASURY_FUNDING_REQUEST_RESOLVED'; requestId: string; status: string })
+  | (AiOperationsEventBase & { type: 'TREASURY_FUNDS_RETURNED'; requestId: string })
+  | (AiOperationsEventBase & { type: 'GOVERNOR_EXCEPTION_CREATED'; exceptionId: string })
+  | (AiOperationsEventBase & { type: 'GOVERNOR_EXCEPTION_RESOLVED'; exceptionId: string; status: string })
+  | (AiOperationsEventBase & { type: 'GOVERNOR_RESTRICTION_CLASSIFIED'; level: GovernorRestrictionLevel })
+  | (AiOperationsEventBase & { type: 'OVERSEER_DIRECTIVE_ISSUED'; directiveId: string })
+  | (AiOperationsEventBase & { type: 'SAVE_COMPLETED' })
+  | (AiOperationsEventBase & { type: 'LOAD_COMPLETED' })
+  | (AiOperationsEventBase & { type: 'UI_STATE_DESYNC_OBSERVED'; description: string });
+
+type AiOperationsIncidentCategory =
+  | 'turn_lifecycle' | 'approval_flow' | 'action_proposal' | 'action_execution' | 'action_budget'
+  | 'action_token' | 'override' | 'sequence' | 'treasury' | 'economy_governor' | 'overseer'
+  | 'save_load' | 'parallel_execution' | 'state_invariant' | 'performance' | 'ui_synchronization' | 'recovery_failure';
+type AiOperationsIncidentSeverity = 'informational' | 'warning' | 'major' | 'critical';
+type AiOperationsIncidentStatus =
+  | 'detected' | 'investigating' | 'awaiting_user' | 'recovery_proposed' | 'recovering'
+  | 'verifying' | 'resolved' | 'resolved_with_warning' | 'unresolved' | 'escalated'
+  | 'ignored' | 'suppressed' | 'safe_mode';
+// 0=UI sync, 1=workflow resume, 2=safe fallback, 3=cross-system request, 4=turn termination, 5=Safe Mode.
+type AiOperationsRecoveryLevel = 0 | 1 | 2 | 3 | 4 | 5;
+type AiOperationsCategoryAuthority = 'monitor' | 'recommend' | 'approval' | 'automatic' | 'locked';
+type AiOperationsAuditorMode = 'off' | 'monitor' | 'recommend' | 'approval' | 'automatic';
+
+interface AiOperationsRecoveryAction {
+  id: string;
+  level: AiOperationsRecoveryLevel;
+  description: string;
+  risk: 'low' | 'medium' | 'high';
+  confidence: number;
+  deterministic: boolean;
+  idempotent: boolean;
+}
+
+// ~25-field incident record. Declared now; no code anywhere constructs one until AA5+.
+interface AiOperationsIncident {
+  id: string;
+  type: string;
+  category: AiOperationsIncidentCategory;
+  severity: AiOperationsIncidentSeverity;
+  teamId: string;
+  actorId: string | null;
+  relatedApprovalRequestId?: string;
+  relatedTokenId?: string;
+  relatedOverrideGrantId?: string;
+  relatedSequenceStepId?: string;
+  relatedTreasuryRequestId?: string;
+  relatedGovernorExceptionId?: string;
+  relatedDirectiveId?: string;
+  day: number;
+  turn: number;
+  expectedWorkflowState: string;
+  actualWorkflowState: string;
+  evidence: AiOperationsEvent[];
+  likelyCause: string;
+  confidence: number;
+  userSummary: string;
+  technicalDetails: string;
+  recoveryOptions: AiOperationsRecoveryAction[];
+  selectedRecoveryId?: string;
+  authorityRequired: AiOperationsCategoryAuthority;
+  status: AiOperationsIncidentStatus;
+  attempts: number;
+  result?: string;
+  verificationStatus?: 'pending' | 'passed' | 'failed';
+  resolutionDay?: number;
+  resolutionTurn?: number;
+  safeModeTriggered: boolean;
+  dedupSignature: string;
+  relatedIncidentIds: string[];
+  firstSeenDay: number;
+  lastSeenDay: number;
+  occurrenceCount: number;
+}
+
+// Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
+type AuditorDashboardTabId =
+  | 'overview' | 'activeIncidents' | 'turnPipeline' | 'actionAccounting' | 'approvalHealth'
+  | 'sequenceHealth' | 'treasuryHealth' | 'overseerHealth' | 'incidentTimeline' | 'settings';
+
+// Per-team Auditor state — genuinely separate from TeamOverseerState (never folded into it), so
+// the Auditor's inertness can be proven independently of the Overseer's own state.
+interface AiOperationsAuditorState {
+  mode: AiOperationsAuditorMode;
+  incidents: AiOperationsIncident[];
+  incidentHistory: AiOperationsIncident[];
+  eventLog: AiOperationsEvent[];
+  categoryAuthority: Record<AiOperationsIncidentCategory, AiOperationsCategoryAuthority>;
+  metrics: {
+    totalIncidentsDetected: number;
+    totalRecoveriesAttempted: number;
+    totalRecoveriesSucceeded: number;
+    totalRecoveriesFailed: number;
+  };
+  cooldowns: Record<string, number>;
+  safeModeActive: boolean;
+  safeModeReason: string;
+  lastEvaluationDay: number;
+  lastEvaluationTurn: number;
+  proposalSignatureCounts: Record<string, number>;
+}
+
+const createDefaultAiOperationsAuditorState = (): AiOperationsAuditorState => ({
+  mode: 'off',
+  incidents: [],
+  incidentHistory: [],
+  eventLog: [],
+  categoryAuthority: {
+    // Read-only/observation-only categories default to 'monitor' (harmless); everything that
+    // touches budgets/tokens/overrides/treasury/governor/execution/state-invariants/recovery
+    // itself defaults 'locked' — per the spec's own "default every category to Locked or
+    // Monitor-only" instruction. Enabling the master toggle never changes any of these.
+    turn_lifecycle: 'monitor', approval_flow: 'monitor', action_proposal: 'monitor',
+    action_execution: 'locked', action_budget: 'locked', action_token: 'locked',
+    override: 'locked', sequence: 'locked', treasury: 'locked', economy_governor: 'locked',
+    overseer: 'monitor', save_load: 'monitor', parallel_execution: 'monitor',
+    state_invariant: 'locked', performance: 'monitor', ui_synchronization: 'monitor',
+    recovery_failure: 'locked'
+  },
+  metrics: { totalIncidentsDetected: 0, totalRecoveriesAttempted: 0, totalRecoveriesSucceeded: 0, totalRecoveriesFailed: 0 },
+  cooldowns: {},
+  safeModeActive: false,
+  safeModeReason: '',
+  lastEvaluationDay: 0,
+  lastEvaluationTurn: 0,
+  proposalSignatureCounts: {}
+});
+
+// Deliberately more conservative than every other sanitizer in this file: only `mode` is trusted
+// from a persisted save (validated against the closed union); every other field always resets to
+// its default regardless of what's stored, since AA1 has no code path that could have produced a
+// legitimate non-default value yet, and the spec requires the Auditor to "never replay old
+// recoveries, revalidate/expire stale incidents rather than trusting them." Later phases may
+// selectively loosen specific fields once real incident-revalidation logic exists to make
+// trusting them safe — a deliberate one-way ratchet in the opposite direction of this file's
+// usual "trust unless malformed" sanitizers, justified by how much riskier stale Auditor
+// recovery/incident state would be to silently trust than stale gameplay state.
+const sanitizeAiOperationsAuditorState = (value: unknown): AiOperationsAuditorState => {
+  const defaults = createDefaultAiOperationsAuditorState();
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<AiOperationsAuditorState>;
+  return {
+    mode: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(source.mode as AiOperationsAuditorMode)
+      ? (source.mode as AiOperationsAuditorMode)
+      : defaults.mode,
+    incidents: [],
+    incidentHistory: [],
+    eventLog: [],
+    categoryAuthority: defaults.categoryAuthority,
+    metrics: defaults.metrics,
+    cooldowns: {},
+    safeModeActive: false,
+    safeModeReason: '',
+    lastEvaluationDay: 0,
+    lastEvaluationTurn: 0,
+    proposalSignatureCounts: {}
   };
 };
 
@@ -4656,6 +4861,14 @@ type GameSettingsState = {
   teamAiAdaptiveOverseerProtectLeadExitPercent: number;
   teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: number;
   teamAiAdaptiveOverseerMinimumStrategyDurationDays: number;
+  // AI Operations Auditor Phase AA1: master toggle + per-team mode, genuinely separate namespace
+  // from teamAiOverseer* above. All default off/'off' — enabling the master toggle alone never
+  // enables monitoring/recovery; the user must also pick a mode per team.
+  teamAiAuditorSystemEnabled: boolean;
+  teamAiAuditorModeForFriendlyTeam: AiOperationsAuditorMode;
+  teamAiAuditorModeForEnemyTeam: AiOperationsAuditorMode;
+  teamAiAuditorShowStatusCard: boolean;
+  teamAiAuditorDashboardEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -5781,7 +5994,12 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAdaptiveOverseerProtectLeadEnterPercent: 20,
   teamAiAdaptiveOverseerProtectLeadExitPercent: 10,
   teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: 3,
-  teamAiAdaptiveOverseerMinimumStrategyDurationDays: 2
+  teamAiAdaptiveOverseerMinimumStrategyDurationDays: 2,
+  teamAiAuditorSystemEnabled: false,
+  teamAiAuditorModeForFriendlyTeam: 'off',
+  teamAiAuditorModeForEnemyTeam: 'off',
+  teamAiAuditorShowStatusCard: false,
+  teamAiAuditorDashboardEnabled: false
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -5929,6 +6147,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
+  { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -9650,7 +9869,8 @@ const createDefaultTeamState = (
   phaseSequenceAssignments: [],
   treasury: createDefaultTeamTreasuryState(id),
   governorExceptions: [],
-  overseer: createDefaultTeamOverseerState()
+  overseer: createDefaultTeamOverseerState(),
+  auditor: createDefaultAiOperationsAuditorState()
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -11300,7 +11520,9 @@ function AustraliaGame() {
                 strategicDirectives: sanitizedOverseer.strategicDirectives.filter(d => actorIds.includes(d.assignedActorId)),
                 lockedDirectiveActorIds: sanitizedOverseer.lockedDirectiveActorIds.filter(id => actorIds.includes(id))
               };
-            })()
+            })(),
+            // AI Operations Auditor Phase AA1: genuinely separate from `overseer` above.
+            auditor: sanitizeAiOperationsAuditorState(teamData?.auditor)
           };
           return acc;
         }, {})
@@ -11950,7 +12172,22 @@ function AustraliaGame() {
 	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
 	      teamAiAdaptiveOverseerProtectLeadExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent, 0, 100),
 	      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: clampSettingNumber(settingsData.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, 1, 20),
-	      teamAiAdaptiveOverseerMinimumStrategyDurationDays: clampSettingNumber(settingsData.teamAiAdaptiveOverseerMinimumStrategyDurationDays, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays, 0, 30)
+	      teamAiAdaptiveOverseerMinimumStrategyDurationDays: clampSettingNumber(settingsData.teamAiAdaptiveOverseerMinimumStrategyDurationDays, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays, 0, 30),
+	      teamAiAuditorSystemEnabled: typeof settingsData.teamAiAuditorSystemEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorSystemEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSystemEnabled,
+	      teamAiAuditorModeForFriendlyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForFriendlyTeam)
+	        ? settingsData.teamAiAuditorModeForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
+	      teamAiAuditorModeForEnemyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForEnemyTeam)
+	        ? settingsData.teamAiAuditorModeForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
+	      teamAiAuditorShowStatusCard: typeof settingsData.teamAiAuditorShowStatusCard === 'boolean'
+	        ? settingsData.teamAiAuditorShowStatusCard
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
+	      teamAiAuditorDashboardEnabled: typeof settingsData.teamAiAuditorDashboardEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorDashboardEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -32316,7 +32553,12 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
       teamAiAdaptiveOverseerProtectLeadExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent,
       teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold,
-      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays
+      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays,
+      teamAiAuditorSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSystemEnabled,
+      teamAiAuditorModeForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
+      teamAiAuditorModeForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
+      teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
+      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -32496,7 +32738,12 @@ function AustraliaGame() {
       teamAiAdaptiveOverseerProtectLeadEnterPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent,
       teamAiAdaptiveOverseerProtectLeadExitPercent: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent,
       teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold,
-      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays
+      teamAiAdaptiveOverseerMinimumStrategyDurationDays: DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays,
+      teamAiAuditorSystemEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSystemEnabled,
+      teamAiAuditorModeForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
+      teamAiAuditorModeForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
+      teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
+      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -35816,6 +36063,76 @@ function AustraliaGame() {
                         )}
                         <div className="text-xs opacity-60">Strategic Command AI still has no effect yet. The Adaptive Overseer now runs shadow-only diagnostics daily (labeling each team's current strategy mode and logging why), but does not yet change any AI policy setting or decision — that overlay logic ships in a later update.</div>
                       </>
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.auditor"
+                tab="teamModeAi"
+                title="AI Operations Auditor"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.auditor')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — the AI Operations Auditor has no effect.</div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">Enable AI Operations Auditor</div>
+                        <div className="text-sm opacity-75">
+                          A separate, optional system that watches the AI turn engine and its subsystems for
+                          operational bugs and stuck states — never strategic decisions. It never replaces
+                          Strategic Command AI, the Adaptive Overseer, the Economy Governor, Team Treasury,
+                          Action Overrides, Sequences, Action Requirements, or AI Action Approval. Fully inert
+                          until you also pick a mode below for at least one team.
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorSystemEnabled: !prev.teamAiAuditorSystemEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiAuditorSystemEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.teamAiAuditorSystemEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                    {gameSettings.teamAiAuditorSystemEnabled && (
+                      <div className="space-y-3 pl-2 border-l-2 border-opacity-30">
+                        <div className="text-sm opacity-75">
+                          Enabling the master switch above does not turn on any monitoring by itself — pick a
+                          mode per team below. "Monitor Only" is recommended as the first mode to enable: it
+                          only detects and explains, it never changes gameplay.
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Friendly Team Mode</div>
+                          <select
+                            value={gameSettings.teamAiAuditorModeForFriendlyTeam}
+                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForFriendlyTeam: e.target.value as AiOperationsAuditorMode }))}
+                          >
+                            <option value="off">Off</option>
+                            <option value="monitor">Monitor Only</option>
+                            <option value="recommend">Recommend Recovery</option>
+                            <option value="approval">Recovery Approval</option>
+                            <option value="automatic">Bounded Automatic Recovery</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Enemy Team Mode</div>
+                          <select
+                            value={gameSettings.teamAiAuditorModeForEnemyTeam}
+                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForEnemyTeam: e.target.value as AiOperationsAuditorMode }))}
+                          >
+                            <option value="off">Off</option>
+                            <option value="monitor">Monitor Only</option>
+                            <option value="recommend">Recommend Recovery</option>
+                            <option value="approval">Recovery Approval</option>
+                            <option value="automatic">Bounded Automatic Recovery</option>
+                          </select>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
