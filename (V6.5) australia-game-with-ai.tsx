@@ -12491,6 +12491,57 @@ function AustraliaGame() {
     });
   }, []);
 
+  // AI Operations Auditor Phase AA2: common event envelope, so every emission call site (this
+  // phase's 7, and every later phase's) produces a consistent shape instead of hand-rolling
+  // id/day/turn/timestamp separately.
+  const buildAiOperationsEventBase = useCallback((
+    teamId: string,
+    actorId: string | null,
+    sourceSystem: AiOperationsSourceSystem,
+    committed: boolean
+  ): AiOperationsEventBase => ({
+    id: `aaevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    teamId,
+    actorId,
+    day: gameState.day,
+    turn: gameState.turnCounter,
+    timestamp: Date.now(),
+    sourceSystem,
+    committed
+  }), [gameState.day, gameState.turnCounter]);
+
+  // AI Operations Auditor Phase AA2: the ONE sanctioned way to append an event, built on
+  // updateTeamState per AA1's own mandate — never a parallel state-update mechanism. No-ops
+  // (never calls updateTeamState, so zero re-render/state-churn cost) whenever the master
+  // toggle is off or this specific team's mode is 'off'. Capped at 60 entries, matching this
+  // file's own precedent for rolling trace/history-style arrays.
+  const appendAiOperationsEvent = useCallback((teamId: string, event: AiOperationsEvent) => {
+    const modeForTeam = teamId === TEAM_PLAYER_ID
+      ? gameSettings.teamAiAuditorModeForFriendlyTeam
+      : gameSettings.teamAiAuditorModeForEnemyTeam;
+    if (!gameSettings.teamAiAuditorSystemEnabled || modeForTeam === 'off') return;
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      auditor: { ...prev.auditor, eventLog: [...prev.auditor.eventLog, event].slice(-60) }
+    }));
+  }, [gameSettings.teamAiAuditorSystemEnabled, gameSettings.teamAiAuditorModeForFriendlyTeam, gameSettings.teamAiAuditorModeForEnemyTeam, updateTeamState]);
+
+  // AI Operations Auditor Phase AA2: maps the 13-value ApprovalControlAction union down to the
+  // 3-value outcome AI_APPROVAL_REQUEST_RESOLVED needs. 'cancelled' is schema-complete but
+  // currently unreachable — no code path resolves via a distinct "cancel" control today.
+  const mapApprovalControlToAuditorOutcome = useCallback((control: ApprovalControlAction): 'approved' | 'rejected' | 'cancelled' => {
+    switch (control) {
+      case 'approve':
+      case 'edit_and_approve':
+      case 'approve_lower_wager':
+      case 'approve_once':
+      case 'always_approve_similar':
+        return 'approved';
+      default:
+        return 'rejected';
+    }
+  }, []);
+
   const getActorDisplayName = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
     return actor?.displayName || actor?.name || actorId;
@@ -17838,8 +17889,15 @@ function AustraliaGame() {
       : 'n/a — no spend category.';
     const targetLabel = decision.data?.region ? (REGIONS[decision.data.region as keyof typeof REGIONS]?.name || decision.data.region)
       : (decision.data?.targetActorId ? getActorDisplayName(decision.data.targetActorId) : 'n/a');
+    const newRequestId = `approval_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    appendAiOperationsEvent(actor.teamId, {
+      ...buildAiOperationsEventBase(actor.teamId, actor.id, 'approval_queue', true),
+      type: 'AI_APPROVAL_REQUEST_CREATED',
+      requestId: newRequestId,
+      requestKind: 'ai_action'
+    });
     return {
-      id: `approval_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: newRequestId,
       actorId: actor.id,
       teamId: actor.teamId,
       decision,
@@ -17866,7 +17924,7 @@ function AustraliaGame() {
       status: 'pending',
       requestKind: 'ai_action'
     };
-  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName]);
+  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // Promise-based resume gate used only by runApprovedOverrideBonusActions's for loop, which
   // cannot abandon-and-return the way performTeamAiTurn's while loop does — its own try/finally
@@ -17928,6 +17986,14 @@ function AustraliaGame() {
     resolvedApprovalRequestIdsRef.current.add(requestId);
     const remaining = pendingApprovalRequests.filter(r => r.id !== requestId);
     setPendingApprovalRequests(remaining);
+    if (request.requestKind === 'ai_action') {
+      appendAiOperationsEvent(request.teamId, {
+        ...buildAiOperationsEventBase(request.teamId, request.actorId, 'approval_queue', true),
+        type: 'AI_APPROVAL_REQUEST_RESOLVED',
+        requestId: request.id,
+        outcome: mapApprovalControlToAuditorOutcome(control)
+      });
+    }
     if (control === 'always_approve_similar') {
       alwaysApproveSimilarRef.current[request.actorId] = alwaysApproveSimilarRef.current[request.actorId] || new Set<TeamModeActionCategory>();
       alwaysApproveSimilarRef.current[request.actorId].add(request.categoryBucket);
@@ -17950,7 +18016,7 @@ function AustraliaGame() {
       return;
     }
     resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
-  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation]);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase, mapApprovalControlToAuditorOutcome]);
 
   // Team Treasury Phase T2 (GD1/GD2): a treasury_withdrawal request's own resolution dispatcher —
   // deliberately separate from resolveApprovalRequest's ApprovalControlAction union (a treasury
@@ -17985,6 +18051,13 @@ function AustraliaGame() {
     const next = pendingApprovalRequests.find(r => r.status === 'pending');
     if (!next) return;
     setPendingApprovalRequests(prev => prev.map(r => r.id === next.id ? { ...r, status: 'displayed' as ApprovalRequestStatus } : r));
+    if (next.requestKind === 'ai_action') {
+      appendAiOperationsEvent(next.teamId, {
+        ...buildAiOperationsEventBase(next.teamId, next.actorId, 'approval_queue', true),
+        type: 'AI_APPROVAL_REQUEST_DISPLAYED',
+        requestId: next.id
+      });
+    }
     const onConfirmDefault = next.requestKind === 'treasury_withdrawal'
       ? () => resolveTreasuryApprovalRequest(next.id, 'approve_full')
       : next.requestKind === 'governor_exception'
@@ -18000,7 +18073,7 @@ function AustraliaGame() {
       : next.requestKind === 'overseer_directive' ? 'Strategic Command recommends a directive'
       : 'Teammate proposes an action';
     showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
-  }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest]);
+  }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // V6.9.1 bugfix (Bug 6, GD8): reset the edit inputs to the newly-displayed request's own current
   // wager/cost whenever the displayed request changes, so the fields always start at a real,
@@ -28683,6 +28756,11 @@ function AustraliaGame() {
             : e)
         };
       });
+      appendAiOperationsEvent(exceptionCleanupActor.teamId, {
+        ...buildAiOperationsEventBase(exceptionCleanupActor.teamId, exceptionCleanupActor.id, 'turn_engine', true),
+        type: 'AI_TURN_FINISHED',
+        actionsUsedThisTurn: exceptionCleanupActor.actionsUsedThisTurn || 0
+      });
     }
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
     updateActorState(actorId, prev => ({
@@ -28694,7 +28772,7 @@ function AustraliaGame() {
     }
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
     advanceToNextActorTurn();
-  }, [addNotification, advanceToNextActorTurn, getActorDisplayName, getActorState, gameState.day, handleTurnTransition, updateActorState, updateTeamState]);
+  }, [addNotification, advanceToNextActorTurn, getActorDisplayName, getActorState, gameState.day, handleTurnTransition, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // V6.7 Phase 3c Team Initiative trigger #7: an actor whose action type matches their assigned
   // teamAiRole earns a small initiative bump — a pure lookup, no new state.
@@ -28883,6 +28961,11 @@ function AustraliaGame() {
       // read here was the exact mechanism behind "3/6 shown, but the AI stops acting."
       const session = getOrCreateAiTurnSession(actorId, actor.teamId, getActorActionBudget(actorId));
       session.isPausedForApproval = false;
+      appendAiOperationsEvent(actor.teamId, {
+        ...buildAiOperationsEventBase(actor.teamId, actor.id, 'turn_engine', true),
+        type: 'AI_TURN_RESUMED',
+        approvalRequestId: session.currentApprovalRequestId || ''
+      });
       const actionBudget = session.totalActionBudget;
       let actionsTaken = actor.actionsUsedThisTurn || 0;
       // V6.9.1 bugfix (Bug 3): use the EXACT proposal the player was shown/approved, never a
@@ -28976,6 +29059,11 @@ function AustraliaGame() {
             session.currentProposal = decision;
             session.currentApprovalRequestId = nextRequest.id;
             session.isPausedForApproval = true;
+            appendAiOperationsEvent(actor.teamId, {
+              ...buildAiOperationsEventBase(actor.teamId, actor.id, 'turn_engine', true),
+              type: 'AI_TURN_PAUSED_FOR_APPROVAL',
+              approvalRequestId: nextRequest.id
+            });
             return; // pause again — finishTeamAiTurn intentionally NOT called; a later resolution re-invokes this same function
           }
         }
@@ -29027,7 +29115,7 @@ function AustraliaGame() {
       console.error(`AI Action Approval resume for ${actorId} failed unexpectedly`, error);
       finishTeamAiTurn(actorId);
     }
-  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation]);
+  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase]);
   resumeAfterApprovalResolutionRef.current = resumeAfterApprovalResolution;
 
   // Bugfix (post-PR-#60): the friendly 'ask_first' override policy used to execute exactly one
@@ -29483,6 +29571,12 @@ function AustraliaGame() {
     aiTurnSession.isPausedForApproval = false;
     aiTurnSession.isFinished = false;
 
+    appendAiOperationsEvent(actor.teamId, {
+      ...buildAiOperationsEventBase(actor.teamId, actor.id, 'turn_engine', true),
+      type: 'AI_TURN_STARTED',
+      totalActionBudget: actionBudget
+    });
+
     // V6.7 Phase 2c: redeem any lent-action credits from teammates before this turn's budget is
     // spent. Unconditional — all the eligibility gating already happened when the credit was
     // created (see evaluateTeamActionLendEligibility/lendAction), so redemption itself has no
@@ -29902,6 +29996,11 @@ function AustraliaGame() {
         aiTurnSession.currentProposal = decision;
         aiTurnSession.currentApprovalRequestId = approvalRequest.id;
         aiTurnSession.isPausedForApproval = true;
+        appendAiOperationsEvent(actor.teamId, {
+          ...buildAiOperationsEventBase(actor.teamId, actor.id, 'turn_engine', true),
+          type: 'AI_TURN_PAUSED_FOR_APPROVAL',
+          approvalRequestId: approvalRequest.id
+        });
         return; // identical abandonment shape to the existing ask_first branch below
       }
       // V6.7 Phase 3a: revalidate-before-execution for any decision beyond the actor's own normal
@@ -30094,7 +30193,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
