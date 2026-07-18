@@ -21324,6 +21324,14 @@ function AustraliaGame() {
         }
       }));
       addNotification(`Team Treasury request rejected: ${reasonSuffix}`, actor.kind === 'human' ? 'info' : 'ai', false, 'system');
+      // AI Operations Auditor Phase AA4: single chokepoint for the reject outcome — covers both call
+      // sites below (explicit reject/ask_cheaper and the "no funds could be approved" case).
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, request.requestingActorId, 'treasury', true),
+        type: 'TREASURY_FUNDING_REQUEST_RESOLVED',
+        requestId,
+        status: 'rejected'
+      });
     };
 
     if (control === 'reject' || control === 'ask_cheaper') {
@@ -21397,7 +21405,13 @@ function AustraliaGame() {
       }
     }));
     addNotification(`${getActorDisplayName(request.requestingActorId)} received $${amount} from the Team Treasury${partial ? ' (partial approval)' : ''}.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
-  }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState]);
+    appendAiOperationsEvent(teamId, {
+      ...buildAiOperationsEventBase(teamId, request.requestingActorId, 'treasury', true),
+      type: 'TREASURY_FUNDING_REQUEST_RESOLVED',
+      requestId,
+      status: partial ? 'partially_approved' : 'approved'
+    });
+  }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
   resolveTreasuryFundingRequestRef.current = resolveTreasuryFundingRequest;
 
   // Team Treasury Phase T4 (GD6): mirrors buildTreasuryApprovalRequest exactly — a synthetic
@@ -21477,6 +21491,12 @@ function AustraliaGame() {
         ...prev,
         governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, status: 'rejected' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
       }));
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, exception.actorId, 'economy_governor', true),
+        type: 'GOVERNOR_EXCEPTION_RESOLVED',
+        exceptionId,
+        status: 'rejected'
+      });
       return;
     }
     if (control === 'use_treasury') {
@@ -21484,6 +21504,12 @@ function AustraliaGame() {
         ...prev,
         governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, status: 'rejected' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
       }));
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, exception.actorId, 'economy_governor', true),
+        type: 'GOVERNOR_EXCEPTION_RESOLVED',
+        exceptionId,
+        status: 'rejected'
+      });
       if (actor && gameSettings.teamTreasuryEnabled) {
         const treasuryRequest = createTreasuryFundingRequest(actor.id, {
           requestType: 'custom',
@@ -21525,7 +21551,13 @@ function AustraliaGame() {
       ...prev,
       governorExceptions: prev.governorExceptions.map(e => e.id === exceptionId ? { ...e, ...updatedFields } : e)
     }));
-  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, resolveTreasuryFundingRequest, updateTeamState]);
+    appendAiOperationsEvent(teamId, {
+      ...buildAiOperationsEventBase(teamId, exception.actorId, 'economy_governor', true),
+      type: 'GOVERNOR_EXCEPTION_RESOLVED',
+      exceptionId,
+      status: 'approved'
+    });
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, getActorState, gameSettings, gameState.day, createTreasuryFundingRequest, resolveTreasuryFundingRequest, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
   resolveGovernorExceptionRequestRef.current = resolveGovernorExceptionRequest;
 
   // Team AI Overseer System Phase O3 ('approval' authority mode): mirrors buildTreasuryApprovalRequest's
@@ -21906,6 +21938,19 @@ function AustraliaGame() {
             : r)
         }
       }));
+      // AI Operations Auditor Phase AA4: 'fulfilled' is a status resolveTreasuryFundingRequest
+      // itself never produces — this is the only place it's ever written.
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, actorId, 'treasury', true),
+        type: 'TREASURY_FUNDING_REQUEST_RESOLVED',
+        requestId,
+        status: 'fulfilled'
+      });
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, actorId, 'treasury', true),
+        type: 'TREASURY_FUNDS_RETURNED',
+        requestId
+      });
     } else {
       updateTeamState(teamId, prev => ({
         ...prev,
@@ -21916,8 +21961,14 @@ function AustraliaGame() {
             : r)
         }
       }));
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, actorId, 'treasury', true),
+        type: 'TREASURY_FUNDING_REQUEST_RESOLVED',
+        requestId,
+        status: 'fulfilled'
+      });
     }
-  }, [deductMoney, gameSettings.teamTreasuryReturnUnusedRestrictedFunds, gameState.day, gameState.turnCounter, getActorDisplayName, updateActorState, updateTeamState]);
+  }, [deductMoney, gameSettings.teamTreasuryReturnUnusedRestrictedFunds, gameState.day, gameState.turnCounter, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // Team Treasury Phase T2 (GD6): friendly AI evaluates a human's (or another actor's) funding
   // request. Reuses already-existing signals — never a new scoring system: getTreasuryAvailableAmount
@@ -24446,6 +24497,11 @@ function AustraliaGame() {
               if (gameSettings.teamAiOverseerTransparencyEnabled) {
                 appendTeamAiTraceNote(actorId, `Strategic Command recommends issuing directive: ${directive.objective} (${directive.horizon}) — awaiting manual review.`);
               }
+              appendAiOperationsEvent(teamId, {
+                ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+                type: 'OVERSEER_DIRECTIVE_ISSUED',
+                directiveId: directive.id
+              });
               return;
             }
 
@@ -24460,6 +24516,11 @@ function AustraliaGame() {
               }));
               const approvalRequest = buildOverseerDirectiveApprovalRequest(awaitingDirective, teamId);
               setPendingApprovalRequests(prev => [...prev, approvalRequest]);
+              appendAiOperationsEvent(teamId, {
+                ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+                type: 'OVERSEER_DIRECTIVE_ISSUED',
+                directiveId: directive.id
+              });
               return;
             }
 
@@ -24476,6 +24537,11 @@ function AustraliaGame() {
               addNotification(`🧭 ${team.name || (teamId === TEAM_PLAYER_ID ? 'Your Team' : 'AI Team')}'s Strategic Command issued a directive to ${getActorDisplayName(actorId)}: ${directive.objective} (${directive.horizon}).`, 'ai', false, 'system');
               appendTeamAiTraceNote(actorId, `Strategic Command issued directive: ${directive.objective} (${directive.horizon}, expires day ${directive.expiresDay}).`);
             }
+            appendAiOperationsEvent(teamId, {
+              ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+              type: 'OVERSEER_DIRECTIVE_ISSUED',
+              directiveId: directive.id
+            });
           });
         });
       }
@@ -25044,7 +25110,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -28051,6 +28117,14 @@ function AustraliaGame() {
         ...prev,
         governorExceptions: (prev.governorExceptions || []).map(e => e.id === match.id ? { ...e, status: 'consumed' as GovernorExceptionStatus, resolvedDay: gameState.day } : e)
       }));
+      // AI Operations Auditor Phase AA4: plain function in the same component closure as the
+      // helpers — no dep-array changes needed anywhere, including this function's 7 callers.
+      appendAiOperationsEvent(actor.teamId, {
+        ...buildAiOperationsEventBase(actor.teamId, actorId, 'economy_governor', true),
+        type: 'GOVERNOR_EXCEPTION_RESOLVED',
+        exceptionId: match.id,
+        status: 'consumed'
+      });
     }
     return match;
   };
@@ -28564,6 +28638,12 @@ function AustraliaGame() {
           const count = sequenceStepRetryCountRef.current[step.id] || 0;
           if (count < SEQUENCE_STEP_MAX_RETRIES) {
             sequenceStepRetryCountRef.current[step.id] = count + 1;
+            appendAiOperationsEvent(actor.teamId, {
+              ...buildAiOperationsEventBase(actor.teamId, actorId, 'sequences', true),
+              type: 'SEQUENCE_STEP_RETRY_INCREMENTED',
+              stepId: step.id,
+              retryCount: count + 1
+            });
             return null; // yields this one action slot to makeTeamAiDecision
           }
           // Bugfix (post-F5 review): exhausted retries must actually downgrade to skipped —
@@ -28575,9 +28655,24 @@ function AustraliaGame() {
           const count = sequenceStepRetryCountRef.current[step.id] || 0;
           if (count < SEQUENCE_STEP_MAX_RETRIES) {
             sequenceStepRetryCountRef.current[step.id] = count + 1;
+            appendAiOperationsEvent(actor.teamId, {
+              ...buildAiOperationsEventBase(actor.teamId, actorId, 'sequences', true),
+              type: 'SEQUENCE_STEP_RETRY_INCREMENTED',
+              stepId: step.id,
+              retryCount: count + 1
+            });
             if (sequence.mode === 'strict') return null;
             break; // Adaptive/Priority: fall through to try the next eligible step this same call
           }
+          // AI Operations Auditor Phase AA4: retry cap reached with no further progress possible
+          // this call — an observational judgment call (no explicit "stuck" step-status field
+          // exists in the data model; this only reports the auditor's own diagnosis).
+          appendAiOperationsEvent(actor.teamId, {
+            ...buildAiOperationsEventBase(actor.teamId, actorId, 'sequences', true),
+            type: 'SEQUENCE_STEP_TERMINATED',
+            stepId: step.id,
+            outcome: 'stuck'
+          });
           return null;
         }
         case 'retry_next_turn':
@@ -28607,7 +28702,7 @@ function AustraliaGame() {
       step = eligibleSteps[idx + 1];
     }
     return null;
-  }, [gameSettings, getActorState, getRankedTeamAiDecisions, evaluateActionRequirements, appendTeamAiTraceNote, gameState.day, updateTeamState]);
+  }, [gameSettings, getActorState, getRankedTeamAiDecisions, evaluateActionRequirements, appendTeamAiTraceNote, gameState.day, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // V6.9 Phase F4: sibling to the TeamPlan completion-marker block — marks the step done/skipped/
   // failed, applies repeat-rule rollback (GD7, bounded by SEQUENCE_MAX_REPEATS regardless of the
@@ -28799,6 +28894,12 @@ function AustraliaGame() {
     // the exact per-turn boundary GD5 specifies, alongside the other per-turn cleanup above.
     const exceptionCleanupActor = getActorState(actorId);
     if (exceptionCleanupActor) {
+      // AI Operations Auditor Phase AA4: find the matching exception(s) before the updateTeamState
+      // call below — its own .map() doesn't surface which entries it touched, so this is the only
+      // way to know each expiring exception's id for the GOVERNOR_EXCEPTION_RESOLVED emission.
+      const expiringExceptionIds = (teamsByIdRef.current[exceptionCleanupActor.teamId]?.governorExceptions || [])
+        .filter(e => e.actorId === actorId && e.status === 'approved' && e.scope === 'current_turn')
+        .map(e => e.id);
       updateTeamState(exceptionCleanupActor.teamId, prev => {
         const hasCurrentTurnException = (prev.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'approved' && e.scope === 'current_turn');
         if (!hasCurrentTurnException) return prev;
@@ -28808,6 +28909,14 @@ function AustraliaGame() {
             ? { ...e, status: 'expired' as GovernorExceptionStatus, resolvedDay: gameState.day }
             : e)
         };
+      });
+      expiringExceptionIds.forEach(exceptionId => {
+        appendAiOperationsEvent(exceptionCleanupActor.teamId, {
+          ...buildAiOperationsEventBase(exceptionCleanupActor.teamId, exceptionCleanupActor.id, 'economy_governor', true),
+          type: 'GOVERNOR_EXCEPTION_RESOLVED',
+          exceptionId,
+          status: 'expired'
+        });
       });
       appendAiOperationsEvent(exceptionCleanupActor.teamId, {
         ...buildAiOperationsEventBase(exceptionCleanupActor.teamId, exceptionCleanupActor.id, 'turn_engine', true),
@@ -29560,6 +29669,14 @@ function AustraliaGame() {
           ...prev,
           governorExceptions: [...(prev.governorExceptions || []), newException].slice(-30)
         }));
+        // AI Operations Auditor Phase AA4: creation is creation regardless of whether it starts
+        // 'pending' or auto-granted 'approved' — status is separately observable via
+        // GOVERNOR_EXCEPTION_RESOLVED if/when it later transitions.
+        appendAiOperationsEvent(actor.teamId, {
+          ...buildAiOperationsEventBase(actor.teamId, actorId, 'economy_governor', true),
+          type: 'GOVERNOR_EXCEPTION_CREATED',
+          exceptionId: newException.id
+        });
         // GD8: always recorded in the transparency trace even when auto-granted — never a silent
         // bypass. The ordinary (non-auto-granted) note is appended by the call site as usual.
         return {
@@ -29575,7 +29692,7 @@ function AustraliaGame() {
 
     // Tier 12 — wait. No-op; the loop simply proceeds to the ordinary decision/end_turn path.
     return { executed: false };
-  }, [calculateActorChallengeSuccessChance, cashOutRegionPosition, craftForActor, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, evaluateTeamEmergencyActionTrigger, gameSettings, gameState.day, getActorDisplayName, getActorSpendableCash, getActorState, getChallengeCategoryExpertiseBonus, getTeammateForSync, isAdvancedLoansEnabledForActor, resolveTreasuryFundingRequest, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, travelActor, triggerTeamEmergencyAction, updateTeamState]);
+  }, [calculateActorChallengeSuccessChance, cashOutRegionPosition, craftForActor, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, evaluateTeamEmergencyActionTrigger, gameSettings, gameState.day, getActorDisplayName, getActorSpendableCash, getActorState, getChallengeCategoryExpertiseBonus, getTeammateForSync, isAdvancedLoansEnabledForActor, resolveTreasuryFundingRequest, sellActorResource, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, travelActor, triggerTeamEmergencyAction, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   const performTeamAiTurn = useCallback(async () => {
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking) return;
@@ -29851,6 +29968,12 @@ function AustraliaGame() {
                     ? { ...e, status: (approved ? 'approved' : 'rejected') as GovernorExceptionStatus, resolvedDay: gameState.day }
                     : e)
                 }));
+                appendAiOperationsEvent(actor.teamId, {
+                  ...buildAiOperationsEventBase(actor.teamId, actor.id, 'economy_governor', true),
+                  type: 'GOVERNOR_EXCEPTION_RESOLVED',
+                  exceptionId: exception.id,
+                  status: approved ? 'approved' : 'rejected'
+                });
               } else {
                 const exceptionApprovalRequest = buildGovernorExceptionApprovalRequest(exception, actor, actionBudget - actionsTaken);
                 setPendingApprovalRequests(prev => [...prev, exceptionApprovalRequest]);
@@ -29924,6 +30047,12 @@ function AustraliaGame() {
             sequenceStepMatch.wasFallback,
             sequenceStepMatch.wasFallback ? 'skipped' : 'done'
           ));
+          appendAiOperationsEvent(actor.teamId, {
+            ...buildAiOperationsEventBase(actor.teamId, actor.id, 'sequences', true),
+            type: 'SEQUENCE_STEP_TERMINATED',
+            stepId: sequenceStepMatch.stepId,
+            outcome: sequenceStepMatch.wasFallback ? 'skipped' : 'completed'
+          });
         }
         break;
       }
@@ -30139,6 +30268,12 @@ function AustraliaGame() {
           sequenceStepMatch.wasFallback,
           sequenceStepMatch.wasFallback ? 'skipped' : 'done'
         ));
+        appendAiOperationsEvent(actor.teamId, {
+          ...buildAiOperationsEventBase(actor.teamId, actor.id, 'sequences', true),
+          type: 'SEQUENCE_STEP_TERMINATED',
+          stepId: sequenceStepMatch.stepId,
+          outcome: sequenceStepMatch.wasFallback ? 'skipped' : 'completed'
+        });
       }
       refreshTeamLiquidityLedger(actor.teamId);
       actionsTaken += 1;
@@ -30247,6 +30382,13 @@ function AustraliaGame() {
       const actionExecutedThisTurn = (postTurnActorState?.actionsUsedThisTurn || 0) > (actor.actionsUsedThisTurn || 0);
       const restriction = classifyGovernorRestriction(actor.id, actionExecutedThisTurn, narrowPathUsedThisTurn);
       governorRestrictionLevelRef.current[actor.id] = restriction.level;
+      // AI Operations Auditor Phase AA4: the ONE authoritative, once-per-actor-per-turn
+      // classification — never the preview call above, which would double-count.
+      appendAiOperationsEvent(actor.teamId, {
+        ...buildAiOperationsEventBase(actor.teamId, actor.id, 'economy_governor', true),
+        type: 'GOVERNOR_RESTRICTION_CLASSIFIED',
+        level: restriction.level
+      });
       const severelyOrDeadlocked = restriction.level === 'severely_restricted' || restriction.level === 'governor_deadlock';
       updateActorState(actor.id, prev => ({
         ...prev,
