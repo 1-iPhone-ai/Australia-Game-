@@ -22208,8 +22208,16 @@ function AustraliaGame() {
         }
       ].slice(-60)
     }));
+    // AI Operations Auditor Phase AA3: single chokepoint for AI_ACTION_TOKEN_MINTED — mintActionToken
+    // has no branching, so every one of its call sites is covered here without touching any of them.
+    appendAiOperationsEvent(teamId, {
+      ...buildAiOperationsEventBase(teamId, actorId, 'action_tokens', true),
+      type: 'AI_ACTION_TOKEN_MINTED',
+      tokenId,
+      source
+    });
     return tokenId;
-  }, [gameState.turnCounter, getActorState, updateTeamState]);
+  }, [gameState.turnCounter, getActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   // V6.7 Phase 3a: revalidation-before-execution, called immediately before executeTeamAiAction
   // for any token-sourced decision — never inside executeTeamAiAction itself, keeping its 15
@@ -22238,6 +22246,15 @@ function AustraliaGame() {
           t.id === tokenId ? { ...t, status: 'invalidated' as ActionTokenStatus, invalidatedReason: reason } : t
         )
       }));
+      // AI Operations Auditor Phase AA3: single chokepoint for AI_ACTION_TOKEN_INVALIDATED — covers
+      // every real revalidation-failure reason (cash, resource, reservation, plan-gone, plan-step-
+      // missing, plan-deps-incomplete, daily-cap) without touching any of those call sites.
+      appendAiOperationsEvent(teamId, {
+        ...buildAiOperationsEventBase(teamId, actorId, 'action_tokens', true),
+        type: 'AI_ACTION_TOKEN_INVALIDATED',
+        tokenId,
+        reason
+      });
       return false;
     };
 
@@ -22304,8 +22321,17 @@ function AustraliaGame() {
         t.id === tokenId ? { ...t, status: 'consumed' as ActionTokenStatus, consumedTurn: gameState.turnCounter, consumedActionType: decision.type } : t
       )
     }));
+    // AI Operations Auditor Phase AA3: the one true "consumed" path — the two bare `return false`
+    // guard clauses above (token not found / actor missing) never reach here, by design (no valid
+    // token to speak of, so nothing to report as consumed).
+    appendAiOperationsEvent(teamId, {
+      ...buildAiOperationsEventBase(teamId, actorId, 'action_tokens', true),
+      type: 'AI_ACTION_TOKEN_CONSUMED',
+      tokenId,
+      actionType: decision.type
+    });
     return true;
-  }, [gameState.gameMode, gameState.turnCounter, getActorState, updateTeamState]);
+  }, [gameState.gameMode, gameState.turnCounter, getActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   const issueTeamDirective = useCallback((directive: {
     fromActorId: string;
@@ -25582,6 +25608,13 @@ function AustraliaGame() {
         });
         break;
       case 'end_turn':
+        // AI Operations Auditor Phase AA3: end_turn bypasses the shared tail below, so it needs its
+        // own commit emission — it's always a successful, terminal action by construction.
+        appendAiOperationsEvent(actor.teamId, {
+          ...buildAiOperationsEventBase(actor.teamId, actorId, 'turn_engine', true),
+          type: 'AI_ACTION_EXECUTION_COMMITTED',
+          actionType: action.type
+        });
         return true;
       default:
         actionSucceeded = false;
@@ -25642,8 +25675,28 @@ function AustraliaGame() {
       await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
     }
 
+    // AI Operations Auditor Phase AA3: the sole commit/fail boundary for the other 14 action types
+    // (end_turn already emitted its own commit above and returned early). No per-branch failure
+    // reason exists anywhere in the switch above (would require touching all 15 cases individually
+    // — out of scope, matching this file's own "don't touch the well-tested execution branches"
+    // principle), so AI_ACTION_EXECUTION_FAILED.reason is a synthesized generic string.
+    if (actionSucceeded) {
+      appendAiOperationsEvent(actor.teamId, {
+        ...buildAiOperationsEventBase(actor.teamId, actorId, 'turn_engine', true),
+        type: 'AI_ACTION_EXECUTION_COMMITTED',
+        actionType: action.type
+      });
+    } else {
+      appendAiOperationsEvent(actor.teamId, {
+        ...buildAiOperationsEventBase(actor.teamId, actorId, 'turn_engine', true),
+        type: 'AI_ACTION_EXECUTION_FAILED',
+        actionType: action.type,
+        reason: `execution_failed:${action.type}`
+      });
+    }
+
     return actionSucceeded;
-  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility]);
+  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -30143,6 +30196,15 @@ function AustraliaGame() {
                 finishTeamAiTurn(pendingActorId);
                 return;
               }
+              // AI Operations Auditor Phase AA3: emitted right after the grant succeeds — grantId is
+              // a fresh, locally-minted id (no existing "grant" id concept elsewhere in the file),
+              // mirroring this file's own ad-hoc id-minting style (see mintActionToken's tokenId).
+              appendAiOperationsEvent(actor.teamId, {
+                ...buildAiOperationsEventBase(actor.teamId, pendingActorId, 'action_overrides', true),
+                type: 'AI_OVERRIDE_GRANTED',
+                grantId: `override_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                bonusBudget: getActorActionBudget(pendingActorId)
+              });
               // Bugfix (post-PR-#60): grant and consume the full bonus action batch here instead of
               // executing a single action and finishing the turn — see runApprovedOverrideBonusActions.
               const overrideTokenId = mintActionToken(actor.teamId, pendingActorId, 'override');
@@ -30163,6 +30225,14 @@ function AustraliaGame() {
         if (!applyActorActionOverride(actor.id)) {
           break;
         }
+        // AI Operations Auditor Phase AA3: emitted right after the grant succeeds, mirroring the
+        // ask_first-approved path's own emission above.
+        appendAiOperationsEvent(actor.teamId, {
+          ...buildAiOperationsEventBase(actor.teamId, actor.id, 'action_overrides', true),
+          type: 'AI_OVERRIDE_GRANTED',
+          grantId: `override_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          bonusBudget: getActorActionBudget(actor.id)
+        });
         actionBudget += getActorActionBudget(actor.id);
         aiTurnSession.totalActionBudget = actionBudget;
         pendingTokenQueue.push(mintActionToken(actor.teamId, actor.id, 'override'));
