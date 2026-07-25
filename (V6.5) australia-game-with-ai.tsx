@@ -6075,6 +6075,50 @@ interface RoundPlannedDecision {
 }
 type TeamRoundPlan = Record<string, RoundPlannedDecision>;
 
+// AE1 (AI Thinking & Algorithm System, foundations phase): the central decision-engine boundary's
+// type universe. Declared now, unreferenced by any real turn-execution code path until AE3 — pure
+// scaffolding, matching this file's own AA1/O1/F1/T1 "types + inert display first" precedent. A
+// custom Algorithm Builder config's own configId (Phase AB+) also satisfies this union structurally,
+// so no separate "is this a custom config id" check is ever needed at the type level.
+type AiDecisionEngineId = 'classic_layered' | 'end_to_end_planner' | string;
+
+// Read-only game context handed to any decision engine (built-in or custom). An engine must never
+// mutate React/game state directly — it only ever returns an AiDecisionResult, which existing
+// chokepoints (Action Requirements, AI Action Approval, Economy Governor, Cash Vault, Treasury,
+// Sequences, cooldowns, game-over checks) continue to validate exactly as they do today.
+interface AiDecisionContext {
+  actorId: string;
+  teamId: string;
+  gameState: GameState;
+  gameSettings: GameSettingsState;
+  // Every engine must draw randomness from this exact closure (aiRandom) — never Math.random()
+  // directly — to preserve gameSettings.aiDeterministic/aiDeterministicSeed reproducibility.
+  aiRandom: () => number;
+}
+
+// Every decision engine's return shape, per the AE1 roadmap's own required-fields list: algorithm/
+// config used, selected immediate action, optional short plan, situation summary, goals, utility,
+// confidence, expected/worst-case outcome, alternatives, explanation, diagnostics, fallback info.
+// Declared now with its final intended shape; no real engine populates every field until AE5-AE9.
+interface AiDecisionResult {
+  engineId: AiDecisionEngineId;
+  configRevision?: number;
+  selectedAction: ScoredTeamAiDecision | null;
+  plan?: ScoredTeamAiDecision[];
+  situationSummary?: string;
+  primaryGoal?: string;
+  secondaryGoals?: string[];
+  utility?: number;
+  confidence?: number;
+  expectedOutcome?: string;
+  worstCaseOutcome?: string;
+  alternatives?: ScoredTeamAiDecision[];
+  explanation?: string;
+  diagnostics?: Record<string, unknown>;
+  usedFallback: boolean;
+  fallbackReason?: string;
+}
+
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
   'ai_travel', 'ai_sabotage', 'ai_trade', 'ai_challenge',
   'resource_buy', 'resource_sell', 'crafting', 'market',
@@ -7150,6 +7194,9 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'] },
+  // AE1: inert-display-only this phase — no real settings fields exist yet (nothing to select
+  // into until AE2 adds per-side algorithm-selection settings), so fieldKeys is empty.
+  { id: 'teamModeAi.aiThinkingAlgorithm', tab: 'teamModeAi', title: 'AI Thinking & Algorithm', tags: ['Team Mode', 'AI'], fieldKeys: [] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -8255,6 +8302,15 @@ const isTeamModeSelection = (mode: GameModeSelection | string | null | undefined
 
 const isCompetitiveModeSelection = (mode: GameModeSelection | string | null | undefined) => {
   return mode === 'ai' || mode === 'grand_tour' || isTeamModeSelection(mode);
+};
+
+// AE1: mode-gating helper for the new AI Thinking & Algorithm system, mirroring
+// shouldShowDecisionTransparencyForMode's shape. Deliberately its own explicit mode list rather
+// than reusing isCompetitiveModeSelection (which folds in Grand Tour) — the spec requires this
+// feature active ONLY in Human vs AI, Human+AI vs AI+AI, and Team AI vs Team AI, excluding Grand
+// Tour, Single Player, and menus.
+const isAiAlgorithmFeatureActiveForMode = (mode: GameModeSelection | string | null | undefined) => {
+  return mode === 'ai' || mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
 };
 
 const createDefaultContributionStats = (): ActorContributionStats => ({
@@ -13478,6 +13534,28 @@ function AustraliaGame() {
     if (actorId === 'player') return playerRef.current as ActorState;
     if (actorId === 'ai') return aiPlayerRef.current as ActorState;
     return additionalActorsRef.current[actorId] || null;
+  }, []);
+
+  // AE1 (AI Thinking & Algorithm System, foundations phase): always resolves to 'classic_layered'
+  // this phase — per-side/opponent selection logic arrives in AE2, but the signature is final now
+  // so AE2 only adds logic, never a signature change. Genuinely off-by-default-equivalent: no master
+  // toggle exists for algorithm selection itself, since Classic Layered AI IS today's exact
+  // behavior and IS the default. Uncalled by any real turn-execution code path this phase.
+  const resolveAiDecisionEngineForActor = useCallback((_actorId: string): AiDecisionEngineId => {
+    return 'classic_layered';
+  }, []);
+
+  // AE1: an explicit, named, zero-logic-change adapter for Classic Layered AI. Written now so its
+  // shape can be reviewed before it's load-bearing; uncalled by any real code path this phase. Its
+  // eventual (AE3+) job is to wrap the existing makeAiDecision/getRankedTeamAiDecisions call and
+  // repackage the already-existing return value into this shape — never altering the underlying
+  // scoring/selection logic itself.
+  const runClassicLayeredAiEngine = useCallback((_context: AiDecisionContext): AiDecisionResult => {
+    return {
+      engineId: 'classic_layered',
+      selectedAction: null,
+      usedFallback: false
+    };
   }, []);
 
   const updateActorState = useCallback((actorId: string, updater: (prev: ActorState) => ActorState) => {
@@ -37960,6 +38038,38 @@ function AustraliaGame() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.aiThinkingAlgorithm"
+                tab="teamModeAi"
+                title="AI Thinking & Algorithm"
+                chips={['Team Mode only', 'AI only', 'Off by default']}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.aiThinkingAlgorithm')!.fieldKeys}
+              >
+                {!gameSettings.teamCompetitiveAiEnabled ? (
+                  <div className="text-sm opacity-75">Competitive AI is off — AI Thinking & Algorithm selection has no effect.</div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-sm opacity-75">
+                      Lets you choose, per AI actor or side, between Classic Layered AI (today's
+                      exact behavior, and always the default), a built-in End-to-End Strategic
+                      Planner, or a custom algorithm you build yourself. Only active in Human vs AI,
+                      Human+AI vs AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand
+                      Tour, and menus. Real per-side selection, the Planner, and the Algorithm
+                      Builder are not built yet; every AI actor currently always uses Classic
+                      Layered AI.
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold text-sm">Friendly Team</div>
+                      <div className="text-sm opacity-75">Currently: Classic Layered AI</div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold text-sm">Enemy Team</div>
+                      <div className="text-sm opacity-75">Currently: Classic Layered AI</div>
+                    </div>
                   </div>
                 )}
               </SettingsSection>
