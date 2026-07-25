@@ -4099,10 +4099,38 @@ const computeAuditorStatusCardState = (team: TeamState, modeForTeam: AiOperation
     : { icon: '⚙️', label: 'Automatic — idle' };
 };
 
-// Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
+// Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — used starting AA15.
 type AuditorDashboardTabId =
   | 'overview' | 'activeIncidents' | 'turnPipeline' | 'actionAccounting' | 'approvalHealth'
   | 'sequenceHealth' | 'treasuryHealth' | 'overseerHealth' | 'incidentTimeline' | 'settings';
+// AI Operations Auditor Phase AA15: tab order/labels for the Auditor Dashboard modal, mirroring
+// OVERSEER_DASHBOARD_TAB_ORDER/_LABELS's own const-pair convention exactly.
+const AUDITOR_DASHBOARD_TAB_ORDER: AuditorDashboardTabId[] = ['overview', 'activeIncidents', 'turnPipeline', 'actionAccounting', 'approvalHealth', 'sequenceHealth', 'treasuryHealth', 'overseerHealth', 'incidentTimeline', 'settings'];
+const AUDITOR_DASHBOARD_TAB_LABELS: Record<AuditorDashboardTabId, string> = {
+  overview: 'Overview',
+  activeIncidents: 'Active Incidents',
+  turnPipeline: 'Turn Pipeline',
+  actionAccounting: 'Action Accounting',
+  approvalHealth: 'Approval Health',
+  sequenceHealth: 'Sequence Health',
+  treasuryHealth: 'Treasury Health',
+  overseerHealth: 'Overseer Health',
+  incidentTimeline: 'Incident Timeline',
+  settings: 'Settings'
+};
+// AI Operations Auditor Phase AA15: source-system groupings for the 6 shared event-log-filtering
+// tabs (turnPipeline/actionAccounting/approvalHealth/sequenceHealth/treasuryHealth/overseerHealth) —
+// each tab is the SAME generic renderer parameterized by which AiOperationsSourceSystem values it
+// filters eventLog to, per the AA15 plan's "reuse over invention" principle (one shared helper
+// across 6 tabs, not 6 bespoke renderers).
+const AUDITOR_DASHBOARD_TAB_SOURCE_SYSTEMS: Partial<Record<AuditorDashboardTabId, AiOperationsSourceSystem[]>> = {
+  turnPipeline: ['turn_engine', 'approval_queue'],
+  actionAccounting: ['action_tokens', 'action_overrides'],
+  approvalHealth: ['approval_queue'],
+  sequenceHealth: ['sequences'],
+  treasuryHealth: ['treasury'],
+  overseerHealth: ['adaptive_overseer', 'strategic_command', 'economy_governor']
+};
 
 // Per-team Auditor state — genuinely separate from TeamOverseerState (never folded into it), so
 // the Auditor's inertness can be proven independently of the Overseer's own state.
@@ -11522,6 +11550,7 @@ function AustraliaGame() {
     showSettings: false,
     showNegotiationCenter: false,
     showOverseerDashboard: false,
+    showAuditorDashboard: false,
     showEndGameModes: false,
     notificationFilter: 'all',
     quickActionsOpen: true,
@@ -11557,6 +11586,10 @@ function AustraliaGame() {
   // never persisted (gameState/uiState/save data), mirroring selectedDecisionActorId's own convention.
   const [overseerDashboardTab, setOverseerDashboardTab] = useState<OverseerDashboardTabId>('overview');
   const [dashboardTeamId, setDashboardTeamId] = useState<string>(TEAM_PLAYER_ID);
+  // AI Operations Auditor Phase AA15: pure navigation state for the Auditor Dashboard panel —
+  // never persisted, mirrors overseerDashboardTab's own convention exactly. dashboardTeamId (above)
+  // is shared/reused, no second team-selector state is needed.
+  const [auditorDashboardTab, setAuditorDashboardTab] = useState<AuditorDashboardTabId>('overview');
 
   // Special ability state tracking
   const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
@@ -18100,6 +18133,7 @@ function AustraliaGame() {
 	            showNotifications: false,
             showNegotiationCenter: false,
 	            showOverseerDashboard: false,
+	            showAuditorDashboard: false,
 	            showProgress: false,
 	            showHelp: false,
 	            showAiStats: false,
@@ -18278,6 +18312,7 @@ function AustraliaGame() {
       showCampaignSelect: false,
       showNegotiationCenter: false,
       showOverseerDashboard: false,
+      showAuditorDashboard: false,
       showNotifications: false,
       showProgress: false,
       showSettings: false,
@@ -18445,6 +18480,7 @@ function AustraliaGame() {
 	      showNotifications: false,
       showNegotiationCenter: false,
       showOverseerDashboard: false,
+      showAuditorDashboard: false,
       showProgress: false,
 	      showHelp: false,
 	      showSettings: false,
@@ -37691,6 +37727,68 @@ function AustraliaGame() {
                             <option value="automatic">Bounded Automatic Recovery</option>
                           </select>
                         </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Show Status Card</div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorShowStatusCard: !prev.teamAiAuditorShowStatusCard }))}
+                            className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorShowStatusCard ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiAuditorShowStatusCard ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Enable Full Dashboard</div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorDashboardEnabled: !prev.teamAiAuditorDashboardEnabled }))}
+                            className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorDashboardEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiAuditorDashboardEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Safe Mode</div>
+                          <button
+                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorSafeModeEnabled: !prev.teamAiAuditorSafeModeEnabled }))}
+                            className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorSafeModeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                          >
+                            {gameSettings.teamAiAuditorSafeModeEnabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                        {gameSettings.teamAiAuditorSafeModeEnabled && (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium">Safe Mode escalated-incident threshold: {gameSettings.teamAiAuditorSafeModeEscalatedIncidentThreshold}</div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="20"
+                              step="1"
+                              value={gameSettings.teamAiAuditorSafeModeEscalatedIncidentThreshold}
+                              onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorSafeModeEscalatedIncidentThreshold: parseInt(e.target.value, 10) }))}
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Automatic recovery minimum confidence: {Math.round(gameSettings.teamAiAuditorAutomaticRecoveryMinConfidence * 100)}%</div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={gameSettings.teamAiAuditorAutomaticRecoveryMinConfidence}
+                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMinConfidence: parseFloat(e.target.value) }))}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">Automatic recoveries max per day: {gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay}</div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="20"
+                            step="1"
+                            value={gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay}
+                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMaxPerDay: parseInt(e.target.value, 10) }))}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -42182,6 +42280,14 @@ function AustraliaGame() {
 	                  </div>
 	                </div>
 	              )}
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiAuditorSystemEnabled && gameSettings.teamAiAuditorDashboardEnabled && (
+	                <button
+	                  onClick={() => updateUiState({ showAuditorDashboard: true })}
+	                  className={`${themeStyles.buttonSecondary} px-3 py-2 rounded mt-4 text-sm w-full`}
+	                >
+	                  🛠️ Open Auditor Dashboard
+	                </button>
+	              )}
 	            </div>
 	          )}
 
@@ -42299,6 +42405,7 @@ function AustraliaGame() {
         {renderConfirmationDialog()}
         {renderNegotiationCenter()}
         {renderOverseerDashboard()}
+        {renderAuditorDashboard()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -44219,6 +44326,247 @@ function AustraliaGame() {
                     </div>
                   </div>
                 )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // AI Operations Auditor Phase AA15: Full Auditor Dashboard — mirrors renderOverseerDashboard's
+  // exact shell (fixed overlay -> bordered card -> header w/ team-select + tab row -> single
+  // scrollable content div), reusing the shared dashboardTeamId/setDashboardTeamId state. 10 tabs:
+  // Overview/Active Incidents/Incident Timeline/Settings get real, distinct content; the other 6
+  // (turnPipeline/actionAccounting/approvalHealth/sequenceHealth/treasuryHealth/overseerHealth) are
+  // ONE shared event-log-filtering renderer parameterized by AUDITOR_DASHBOARD_TAB_SOURCE_SYSTEMS,
+  // per the AA15 plan's "reuse over invention" principle — not 6 bespoke renderers.
+  const AUDITOR_INCIDENT_CATEGORY_LIST: AiOperationsIncidentCategory[] = ['turn_lifecycle', 'approval_flow', 'action_proposal', 'action_execution', 'action_budget', 'action_token', 'override', 'sequence', 'treasury', 'economy_governor', 'overseer', 'save_load', 'parallel_execution', 'state_invariant', 'performance', 'ui_synchronization', 'recovery_failure'];
+  const AUDITOR_CATEGORY_AUTHORITY_OPTIONS: AiOperationsCategoryAuthority[] = ['locked', 'monitor', 'recommend', 'approval', 'automatic'];
+
+  const renderAuditorDashboard = () => {
+    if (!uiState.showAuditorDashboard) return null;
+    const close = () => updateUiState({ showAuditorDashboard: false });
+    const dashboardTeam = teamsById[dashboardTeamId];
+    const auditor = dashboardTeam?.auditor;
+    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+    const modeForDashboardTeam = dashboardTeamId === TEAM_PLAYER_ID ? gameSettings.teamAiAuditorModeForFriendlyTeam : gameSettings.teamAiAuditorModeForEnemyTeam;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">🛠️ Auditor Dashboard</h3>
+                <div className="text-sm opacity-75">AI Operations Auditor — runtime integrity monitor</div>
+              </div>
+              <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(tId => (
+                <button
+                  key={tId}
+                  onClick={() => setDashboardTeamId(tId)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${dashboardTeamId === tId ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {tId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team')}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {AUDITOR_DASHBOARD_TAB_ORDER.map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setAuditorDashboardTab(tab)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${auditorDashboardTab === tab ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {AUDITOR_DASHBOARD_TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={`flex-1 overflow-y-auto p-5 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
+            {!auditor ? (
+              <div className="opacity-70 text-sm">No Auditor data for {teamLabel} yet.</div>
+            ) : (
+              <>
+                {auditorDashboardTab === 'overview' && (
+                  <div className="space-y-3 text-sm">
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-1">{teamLabel}</div>
+                      <div>Mode: <span className="capitalize">{modeForDashboardTeam.replace(/_/g, ' ')}</span></div>
+                      <div>Safe Mode: {auditor.safeModeActive ? `🛑 Active — ${auditor.safeModeReason || 'no reason recorded'}` : 'Inactive'}</div>
+                      {auditor.safeModeActive && (
+                        <button onClick={() => resumeAuditorFromSafeMode(dashboardTeamId)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs mt-1`}>Resume From Safe Mode</button>
+                      )}
+                      <div className="mt-1">Last evaluated: day {auditor.lastEvaluationDay}, turn {auditor.lastEvaluationTurn}</div>
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-1">Metrics</div>
+                      <div>Total incidents detected: {auditor.metrics.totalIncidentsDetected}</div>
+                      <div>Recoveries attempted: {auditor.metrics.totalRecoveriesAttempted}</div>
+                      <div>Recoveries succeeded: {auditor.metrics.totalRecoveriesSucceeded}</div>
+                      <div>Recoveries failed: {auditor.metrics.totalRecoveriesFailed}</div>
+                      <div className="mt-1">Active incidents: {auditor.incidents.length} — History: {auditor.incidentHistory.length}</div>
+                      {gameSettings.teamAiAuditorSystemEnabled && gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay > 0 && (
+                        <div className="opacity-70">Automatic recoveries today: {auditor.automaticRecoveryCountDay === gameState.day ? auditor.automaticRecoveryCountToday : 0} / {gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay}</div>
+                      )}
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-2">Category Authority</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                        {AUDITOR_INCIDENT_CATEGORY_LIST.map(category => (
+                          <div key={category} className="flex items-center justify-between gap-2">
+                            <span className="capitalize opacity-80">{category.replace(/_/g, ' ')}</span>
+                            <select
+                              value={auditor.categoryAuthority[category]}
+                              onChange={e => setAuditorCategoryAuthority(dashboardTeamId, category, e.target.value as AiOperationsCategoryAuthority)}
+                              className={`${themeStyles.input} text-xs rounded px-1 py-0.5`}
+                            >
+                              {AUDITOR_CATEGORY_AUTHORITY_OPTIONS.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {auditorDashboardTab === 'activeIncidents' && (
+                  <div className="space-y-2 text-sm">
+                    {auditor.incidents.length === 0 ? (
+                      <div className="opacity-70">No active incidents for {teamLabel}.</div>
+                    ) : (
+                      [...auditor.incidents].reverse().map(incident => (
+                        <div key={incident.id} className={`${themeStyles.border} border rounded-lg p-3`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-semibold">{incident.userSummary}</div>
+                              <div className="opacity-70 text-xs mt-0.5">
+                                {incident.category.replace(/_/g, ' ')} · {incident.severity} · status: {incident.status} · seen {incident.occurrenceCount}x (day {incident.firstSeenDay}–{incident.lastSeenDay})
+                              </div>
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              {incident.recoveryOptions.length > 0 && (
+                                <button onClick={() => applyIncidentRecoveryManually(dashboardTeamId, incident.id)} className={`${themeStyles.button} text-white px-2 py-0.5 rounded text-xs`}>Apply</button>
+                              )}
+                              <button onClick={() => setExpandedAuditorIncidentId(prev => prev === incident.id ? null : incident.id)} className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded text-xs`}>
+                                {expandedAuditorIncidentId === incident.id ? 'Hide' : 'Details'}
+                              </button>
+                              <button onClick={() => resolveAiOperationsIncident(dashboardTeamId, incident.id, 'ignored', gameState.day, gameState.turnCounter)} className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded text-xs`}>Ignore</button>
+                              <button onClick={() => resolveAiOperationsIncident(dashboardTeamId, incident.id, 'suppressed', gameState.day, gameState.turnCounter)} className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded text-xs`}>Suppress</button>
+                            </div>
+                          </div>
+                          {incident.recoveryOptions.length > 0 && (
+                            <div className="mt-2 opacity-80 text-xs">
+                              <div className="font-semibold">Recovery Preview</div>
+                              {incident.recoveryOptions.map(opt => (
+                                <div key={opt.id}>Level {opt.level} — {opt.description} (risk: {opt.risk}, confidence: {Math.round(opt.confidence * 100)}%)</div>
+                              ))}
+                            </div>
+                          )}
+                          {expandedAuditorIncidentId === incident.id && (
+                            <div className="mt-2 opacity-75 text-xs space-y-0.5 border-t pt-2 border-white/10">
+                              <div>Technical details: {incident.technicalDetails}</div>
+                              <div>Likely cause: {incident.likelyCause}</div>
+                              <div>Confidence: {Math.round(incident.confidence * 100)}%</div>
+                              <div>Expected workflow state: {incident.expectedWorkflowState}</div>
+                              <div>Actual workflow state: {incident.actualWorkflowState}</div>
+                              <div>Authority required: {incident.authorityRequired}</div>
+                              {incident.result && <div>Result: {incident.result}</div>}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {auditorDashboardTab === 'incidentTimeline' && (
+                  <div className="space-y-2 text-sm">
+                    {auditor.incidentHistory.length === 0 ? (
+                      <div className="opacity-70">No resolved incidents for {teamLabel} yet.</div>
+                    ) : (
+                      [...auditor.incidentHistory].reverse().map(incident => (
+                        <div key={incident.id} className={`${themeStyles.border} border rounded-lg p-2 text-xs`}>
+                          <div className="font-semibold">{incident.userSummary}</div>
+                          <div className="opacity-70">
+                            {incident.category.replace(/_/g, ' ')} · final status: {incident.status} · day {incident.firstSeenDay}–{incident.resolutionDay ?? incident.lastSeenDay}
+                            {incident.verificationStatus && ` · verification: ${incident.verificationStatus}`}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {auditorDashboardTab === 'settings' && (
+                  <div className="space-y-3 text-sm">
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-1">Safe Mode</div>
+                      <div>Enabled: {gameSettings.teamAiAuditorSafeModeEnabled ? 'Yes' : 'No'}</div>
+                      <div>Escalated-incident threshold: {gameSettings.teamAiAuditorSafeModeEscalatedIncidentThreshold}</div>
+                      {auditor.safeModeActive && (
+                        <button onClick={() => resumeAuditorFromSafeMode(dashboardTeamId)} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs mt-1`}>Resume From Safe Mode</button>
+                      )}
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-1">Automatic Recovery</div>
+                      <div>Minimum confidence: {Math.round(gameSettings.teamAiAuditorAutomaticRecoveryMinConfidence * 100)}%</div>
+                      <div>Max per day: {gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay}</div>
+                      <div className="opacity-70 mt-1">Adjust these and the master toggle/mode/status-card/dashboard-visibility settings in Settings Hub → Team Mode AI → AI Operations Auditor.</div>
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                      <div className="font-semibold mb-2">Category Authority (editable here too)</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                        {AUDITOR_INCIDENT_CATEGORY_LIST.map(category => (
+                          <div key={category} className="flex items-center justify-between gap-2">
+                            <span className="capitalize opacity-80">{category.replace(/_/g, ' ')}</span>
+                            <select
+                              value={auditor.categoryAuthority[category]}
+                              onChange={e => setAuditorCategoryAuthority(dashboardTeamId, category, e.target.value as AiOperationsCategoryAuthority)}
+                              className={`${themeStyles.input} text-xs rounded px-1 py-0.5`}
+                            >
+                              {AUDITOR_CATEGORY_AUTHORITY_OPTIONS.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {AUDITOR_DASHBOARD_TAB_SOURCE_SYSTEMS[auditorDashboardTab] && (() => {
+                  const sourceSystems = AUDITOR_DASHBOARD_TAB_SOURCE_SYSTEMS[auditorDashboardTab]!;
+                  const filteredEvents = auditor.eventLog.filter(ev => sourceSystems.includes(ev.sourceSystem)).slice(-40).reverse();
+                  return (
+                    <div className="space-y-1 text-xs">
+                      <div className="opacity-70 mb-2">Recent {AUDITOR_DASHBOARD_TAB_LABELS[auditorDashboardTab]} events for {teamLabel} ({filteredEvents.length} of last 40 shown, capped eventLog).</div>
+                      {filteredEvents.length === 0 ? (
+                        <div className="opacity-70">No events recorded for this category yet.</div>
+                      ) : (
+                        filteredEvents.map(ev => (
+                          <div key={ev.id} className={`${themeStyles.border} border rounded p-2`}>
+                            <div className="font-semibold">{ev.type}</div>
+                            <div className="opacity-70">
+                              day {ev.day}, turn {ev.turn} · {ev.sourceSystem}{ev.actorId ? ` · ${getActorDisplayName(ev.actorId)}` : ''} · {ev.committed ? 'committed' : 'pending'}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
