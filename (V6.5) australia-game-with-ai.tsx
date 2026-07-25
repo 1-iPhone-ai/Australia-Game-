@@ -4054,6 +4054,11 @@ const canApplyAutomaticRecovery = (
   settings: GameSettingsState
 ): boolean => {
   if (modeForTeam !== 'automatic') return false;
+  // AI Operations Auditor Phase AA13: stop-automatic-recovery effect — once this team's Auditor
+  // Safe Mode is active, automatic recovery is fully suspended (approval-mode/monitor-mode
+  // incident detection and display are completely unaffected) until an explicit
+  // resumeAuditorFromSafeMode call, never a daily re-check.
+  if (team.auditor.safeModeActive) return false;
   if (team.auditor.categoryAuthority[incident.category] !== 'automatic') return false;
   if (!recovery.deterministic || !recovery.idempotent) return false;
   if (recovery.confidence < settings.teamAiAuditorAutomaticRecoveryMinConfidence) return false;
@@ -5704,6 +5709,14 @@ type GameSettingsState = {
   // default even with these fields at their defaults.
   teamAiAuditorAutomaticRecoveryMinConfidence: number;
   teamAiAuditorAutomaticRecoveryMaxPerDay: number;
+  // AI Operations Auditor Phase AA13: dedicated Auditor Safe Mode — distinct from the O10 Overseer
+  // Safe Mode (which watches Governor-restricted-turn counts). Triggers on repeated automatic-
+  // recovery failures (escalated incidents), not on strategic/economic signals. Unlike O10's own
+  // Safe Mode, this one never auto-clears on its own — resuming always requires an explicit call to
+  // resumeAuditorFromSafeMode (mandatory user confirmation to resume, per the roadmap's own
+  // requirement), never a daily hysteresis re-check.
+  teamAiAuditorSafeModeEnabled: boolean;
+  teamAiAuditorSafeModeEscalatedIncidentThreshold: number;
 };
 
 type DontAskAgainPrefs = {
@@ -6836,7 +6849,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAuditorShowStatusCard: false,
   teamAiAuditorDashboardEnabled: false,
   teamAiAuditorAutomaticRecoveryMinConfidence: 0.5,
-  teamAiAuditorAutomaticRecoveryMaxPerDay: 3
+  teamAiAuditorAutomaticRecoveryMaxPerDay: 3,
+  teamAiAuditorSafeModeEnabled: false,
+  teamAiAuditorSafeModeEscalatedIncidentThreshold: 2
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -6984,7 +6999,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
-  { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay'] },
+  { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -13026,7 +13041,11 @@ function AustraliaGame() {
 	        ? settingsData.teamAiAuditorDashboardEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
 	      teamAiAuditorAutomaticRecoveryMinConfidence: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMinConfidence, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence, 0, 1),
-	      teamAiAuditorAutomaticRecoveryMaxPerDay: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMaxPerDay, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay, 0, 20)
+	      teamAiAuditorAutomaticRecoveryMaxPerDay: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMaxPerDay, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay, 0, 20),
+	      teamAiAuditorSafeModeEnabled: typeof settingsData.teamAiAuditorSafeModeEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorSafeModeEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
+	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20)
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -13504,6 +13523,27 @@ function AustraliaGame() {
         }
       }
     });
+    // AI Operations Auditor Phase AA13: Safe Mode trigger — distinct from the O10 Overseer Safe
+    // Mode's Governor-restricted-turn signal. Fires when this team's own live incidents include at
+    // least teamAiAuditorSafeModeEscalatedIncidentThreshold entries with status 'escalated' (i.e.
+    // Bounded Automatic Recovery has repeatedly attempted a fix and failed its own post-recovery
+    // verification) — a signal specifically about the Auditor's own recovery mechanism
+    // malfunctioning, not about team strategy/economy. Never auto-clears once set (see
+    // resumeAuditorFromSafeMode) — this check only ever sets it, never unsets it.
+    if (gameSettings.teamAiAuditorSafeModeEnabled) {
+      const latestTeam = teamsByIdRef.current[teamId];
+      const escalatedCount = latestTeam?.auditor.incidents.filter(i => i.status === 'escalated').length || 0;
+      if (!latestTeam?.auditor.safeModeActive && escalatedCount >= gameSettings.teamAiAuditorSafeModeEscalatedIncidentThreshold) {
+        updateTeamState(teamId, prev => ({
+          ...prev,
+          auditor: {
+            ...prev.auditor,
+            safeModeActive: true,
+            safeModeReason: `${escalatedCount} incident(s) escalated after a failed automatic-recovery verification.`
+          }
+        }));
+      }
+    }
     updateTeamState(teamId, prev => ({
       ...prev,
       auditor: { ...prev.auditor, lastEvaluationDay: day, lastEvaluationTurn: turn }
@@ -22806,6 +22846,19 @@ function AustraliaGame() {
     updateTeamState(teamId, prev => ({
       ...prev,
       auditor: { ...prev.auditor, categoryAuthority: { ...prev.auditor.categoryAuthority, [category]: authority } }
+    }));
+  }, [updateTeamState]);
+
+  // AI Operations Auditor Phase AA13: the only way Auditor Safe Mode ever clears — mandatory
+  // explicit user confirmation to resume, per the roadmap's own requirement. Never auto-clears via
+  // a daily hysteresis re-check (unlike O10's own Overseer Safe Mode) — a call to this function is
+  // the sole exit path. Not yet exposed via any Settings Hub/dashboard control (arrives with AA15's
+  // dashboard), matching AA12's own setAuditorCategoryAuthority precedent — built and directly
+  // verifiable now, wired to a real button later.
+  const resumeAuditorFromSafeMode = useCallback((teamId: string) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      auditor: { ...prev.auditor, safeModeActive: false, safeModeReason: '' }
     }));
   }, [updateTeamState]);
 
@@ -34010,7 +34063,9 @@ function AustraliaGame() {
       teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
       teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
       teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
-      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay
+      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay,
+      teamAiAuditorSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
+      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -34197,7 +34252,9 @@ function AustraliaGame() {
       teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
       teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
       teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
-      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay
+      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay,
+      teamAiAuditorSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
+      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
