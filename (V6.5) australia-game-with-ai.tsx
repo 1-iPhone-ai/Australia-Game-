@@ -3254,12 +3254,142 @@ interface AiOperationsIncident {
 type AiOperationsIncidentCandidate = Omit<AiOperationsIncident, 'id' | 'status' | 'attempts' | 'relatedIncidentIds' | 'firstSeenDay' | 'lastSeenDay' | 'occurrenceCount'>;
 type AiOperationsDetectionRule = (team: TeamState, day: number, turn: number) => AiOperationsIncidentCandidate | null;
 
+// AI Operations Auditor Phase AA6: Rule 1 — an actor's turn opened (AI_TURN_STARTED or
+// AI_TURN_PAUSED_FOR_APPROVAL) on an earlier day than today with no later AI_TURN_RESUMED/
+// AI_TURN_FINISHED for that same actor anywhere after it in the log — the turn never closed out
+// across a day boundary, the "stuck Thinking" signature. Monitor-only: never touches turn state.
+const detectAiTurnLifecycleStall: AiOperationsDetectionRule = (team, day, _turn) => {
+  for (const actorId of team.actorIds) {
+    const actorEvents = team.auditor.eventLog.filter(e => e.actorId === actorId
+      && (e.type === 'AI_TURN_STARTED' || e.type === 'AI_TURN_PAUSED_FOR_APPROVAL' || e.type === 'AI_TURN_RESUMED' || e.type === 'AI_TURN_FINISHED'));
+    if (actorEvents.length === 0) continue;
+    const last = actorEvents[actorEvents.length - 1];
+    if ((last.type === 'AI_TURN_STARTED' || last.type === 'AI_TURN_PAUSED_FOR_APPROVAL') && last.day < day) {
+      return {
+        type: 'ai_turn_lifecycle_stall',
+        category: 'turn_lifecycle',
+        severity: 'warning',
+        teamId: team.id,
+        actorId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'AI_TURN_FINISHED (or AI_TURN_RESUMED then finished) within the same day the turn opened',
+        actualWorkflowState: `still ${last.type === 'AI_TURN_STARTED' ? 'in progress' : 'paused for approval'} since day ${last.day}`,
+        evidence: actorEvents.slice(-3),
+        likelyCause: 'The turn engine never reached finishTeamAiTurn for this actor before the day advanced.',
+        confidence: 0.6,
+        userSummary: 'A teammate’s turn appears to have never finished after starting.',
+        technicalDetails: `Last observed lifecycle event for actor ${actorId} was ${last.type} on day ${last.day}; no AI_TURN_RESUMED/AI_TURN_FINISHED observed since.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_turn_lifecycle_stall:${actorId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA6: Rule 2 — an approval request was created/displayed on an
+// earlier day than today with no later AI_APPROVAL_REQUEST_RESOLVED for that same requestId
+// anywhere after it in the log — the request never reached a resolution, the "orphaned approval"
+// signature. Monitor-only: never touches the approval queue.
+const detectOrphanedApprovalRequest: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openByRequestId = new Map<string, AiOperationsEvent>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type === 'AI_APPROVAL_REQUEST_CREATED' || event.type === 'AI_APPROVAL_REQUEST_DISPLAYED') {
+      openByRequestId.set(event.requestId, event);
+    } else if (event.type === 'AI_APPROVAL_REQUEST_RESOLVED') {
+      openByRequestId.delete(event.requestId);
+    }
+  }
+  for (const [requestId, opened] of openByRequestId) {
+    if (opened.day < day) {
+      return {
+        type: 'ai_approval_request_orphaned',
+        category: 'approval_flow',
+        severity: 'warning',
+        teamId: team.id,
+        actorId: opened.actorId,
+        relatedApprovalRequestId: requestId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'AI_APPROVAL_REQUEST_RESOLVED (approved/rejected/cancelled) within the same day the request was created',
+        actualWorkflowState: `still unresolved since day ${opened.day}`,
+        evidence: [opened],
+        likelyCause: 'The approval dialog never received a resolution for this request (e.g. dropped/replaced before the player could act).',
+        confidence: 0.55,
+        userSummary: 'An approval request never received a decision.',
+        technicalDetails: `Approval request ${requestId} for actor ${opened.actorId ?? 'unknown'} was created/displayed on day ${opened.day} with no AI_APPROVAL_REQUEST_RESOLVED event observed since.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_approval_request_orphaned:${requestId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA6: Rule 3 — an actor accumulated 3+ AI_APPROVAL_REQUEST_RESOLVED
+// { outcome: 'rejected' } events within the capped event log with no intervening 'approved' —
+// a repeated-rejection pattern. Honest simplification, stated plainly: AI_APPROVAL_REQUEST_RESOLVED
+// carries no proposal-signature/decision-type field (never added by AA2/AA3), so this rule dedups
+// by actorId rather than by the specific rejected proposal's shape; a future phase could add a
+// signature field to the event if finer-grained matching is ever needed. Monitor-only: never
+// touches the approval queue or decision-making.
+const AA6_REPEATED_REJECTION_THRESHOLD = 3;
+const detectRepeatedRejectedProposals: AiOperationsDetectionRule = (team, day, _turn) => {
+  const rejectionStreakByActor = new Map<string, AiOperationsEvent[]>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type !== 'AI_APPROVAL_REQUEST_RESOLVED' || !event.actorId) continue;
+    if (event.outcome === 'approved') {
+      rejectionStreakByActor.delete(event.actorId);
+      continue;
+    }
+    if (event.outcome === 'rejected') {
+      const streak = rejectionStreakByActor.get(event.actorId) || [];
+      streak.push(event);
+      rejectionStreakByActor.set(event.actorId, streak);
+    }
+  }
+  for (const [actorId, streak] of rejectionStreakByActor) {
+    if (streak.length >= AA6_REPEATED_REJECTION_THRESHOLD) {
+      return {
+        type: 'ai_repeated_rejected_proposals',
+        category: 'action_proposal',
+        severity: 'warning',
+        teamId: team.id,
+        actorId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'Proposals for this actor are approved at least occasionally',
+        actualWorkflowState: `${streak.length} consecutive rejections observed with no approval in between`,
+        evidence: streak.slice(-3),
+        likelyCause: 'The AI keeps proposing actions the player consistently rejects, possibly the same underlying action each time.',
+        confidence: 0.5,
+        userSummary: 'A teammate’s proposals keep getting rejected.',
+        technicalDetails: `Actor ${actorId} has ${streak.length} consecutive AI_APPROVAL_REQUEST_RESOLVED{outcome:'rejected'} events with no intervening approval; dedup is by actor, not by proposal shape, since no proposal-signature field exists on this event yet.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_repeated_rejected_proposals:${actorId}`
+      };
+    }
+  }
+  return null;
+};
+
 // AI Operations Auditor Phase AA5: exactly one placeholder rule, always returns null — proves the
 // detection pipeline (candidate shape, dedup, create/occurrence-bump, status transition) type-checks
 // and is wired correctly before any real detection logic exists. Never fires during real play.
-// AA6+ appends real rules to this same array.
+// AA6 appends the first 3 real rules (turn-lifecycle stall, orphaned approval, repeated rejected
+// proposals) below; AA7+ appends further rules to this same array.
 const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
-  (_team, _day, _turn) => null
+  (_team, _day, _turn) => null,
+  detectAiTurnLifecycleStall,
+  detectOrphanedApprovalRequest,
+  detectRepeatedRejectedProposals
 ];
 
 // AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
