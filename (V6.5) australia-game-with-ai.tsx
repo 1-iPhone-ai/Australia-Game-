@@ -4479,7 +4479,7 @@ interface ApprovalRequest {
   // funding-request/withdrawal request, or (T4) a Governor exception proposal, all reusing this
   // same queue/dialog machinery (GD1/GD2) — never a second approval engine. Defaults 'ai_action'
   // at every existing construction site.
-  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy' | 'overseer_directive';
+  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy' | 'overseer_directive' | 'operations_recovery';
   treasuryRequestId?: string;
   // Team Treasury Phase T4: set only when requestKind === 'governor_exception'.
   governorExceptionId?: string;
@@ -4487,6 +4487,12 @@ interface ApprovalRequest {
   overseerOverlayId?: string;
   // Team AI Overseer System Phase O6: set only when requestKind === 'overseer_directive'.
   overseerDirectiveId?: string;
+  // AI Operations Auditor Phase AA11: set only when requestKind === 'operations_recovery'. Both
+  // reference the incident/recovery-action this request is asking the player to approve/reject —
+  // structurally distinct from every other requestKind (this is the Auditor asking permission to
+  // touch OTHER systems' state on the player's behalf, never an ordinary gameplay-action proposal).
+  auditorIncidentId?: string;
+  auditorRecoveryActionId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -13397,6 +13403,12 @@ function AustraliaGame() {
     });
   }, [updateTeamState]);
 
+  // AI Operations Auditor Phase AA11: same TDZ-safe ref-indirection pattern as
+  // resolveOverseerDirectiveRequestRef/etc. — the real enqueueAuditorRecoveryApprovalRequest needs
+  // pendingApprovalRequests/setPendingApprovalRequests (F3 state, declared later), so it's read
+  // through a ref assigned right after its own declaration.
+  const enqueueAuditorRecoveryApprovalRequestRef = useRef<((teamId: string, incident: AiOperationsIncident) => void) | null>(null);
+
   // AI Operations Auditor Phase AA5: per-team detection-pass entry point — no-ops (never calls
   // upsertAiOperationsIncident/updateTeamState beyond the evaluation-timestamp bump) whenever the
   // master toggle is off or this team's own mode is 'off', identical gating shape to
@@ -13412,7 +13424,18 @@ function AustraliaGame() {
     AUDITOR_DETECTION_RULES.forEach(rule => {
       const candidate = rule(team, day, turn);
       if (candidate) {
-        upsertAiOperationsIncident(teamId, { ...candidate, recoveryOptions: buildRecoveryOptionsForIncident(candidate.type, modeForTeam) });
+        const candidateWithRecovery = { ...candidate, recoveryOptions: buildRecoveryOptionsForIncident(candidate.type, modeForTeam) };
+        upsertAiOperationsIncident(teamId, candidateWithRecovery);
+        // AI Operations Auditor Phase AA11: Recovery Approval mode — when this team's mode is
+        // 'approval' and the just-upserted incident has real recovery options, actively prompt the
+        // player via the SAME approval queue/dialog every other request kind already uses (never a
+        // second dialog system). updateTeamState mutates teamsByIdRef.current synchronously (its own
+        // documented behavior, reused throughout this file), so the freshly-created/updated incident
+        // is already readable here.
+        if (modeForTeam === 'approval' && candidateWithRecovery.recoveryOptions.length > 0) {
+          const incident = teamsByIdRef.current[teamId]?.auditor.incidents.find(i => i.dedupSignature === candidateWithRecovery.dedupSignature);
+          if (incident) enqueueAuditorRecoveryApprovalRequestRef.current?.(teamId, incident);
+        }
       }
     });
     updateTeamState(teamId, prev => ({
@@ -18851,6 +18874,10 @@ function AustraliaGame() {
   // resolveOverseerDirectiveRequest is declared later (it needs updateTeamState), so it's read
   // through a ref assigned right after its declaration.
   const resolveOverseerDirectiveRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
+  // AI Operations Auditor Phase AA11: same TDZ-safe ref-indirection pattern — the real
+  // resolveAuditorRecoveryRequest is declared later (it needs updateTeamState/resolveAiOperationsIncident),
+  // so it's read through a ref assigned right after its declaration.
+  const resolveAuditorRecoveryRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -18945,11 +18972,14 @@ function AustraliaGame() {
       ? () => resolveOverseerAdaptivePolicyRequestRef.current?.(next.id, 'approve')
       : next.requestKind === 'overseer_directive'
       ? () => resolveOverseerDirectiveRequestRef.current?.(next.id, 'approve')
+      : next.requestKind === 'operations_recovery'
+      ? () => resolveAuditorRecoveryRequestRef.current?.(next.id, 'approve')
       : () => resolveApprovalRequest(next.id, 'approve');
     const dialogTitle = next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds'
       : next.requestKind === 'governor_exception' ? 'Teammate requests a Governor exception'
       : next.requestKind === 'overseer_adaptive_policy' ? 'Adaptive Overseer recommends a policy change'
       : next.requestKind === 'overseer_directive' ? 'Strategic Command recommends a directive'
+      : next.requestKind === 'operations_recovery' ? 'AI Operations Auditor proposes a recovery action'
       : 'Teammate proposes an action';
     showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
   }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest, appendAiOperationsEvent, buildAiOperationsEventBase]);
@@ -22600,6 +22630,105 @@ function AustraliaGame() {
     });
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, updateTeamState]);
   resolveOverseerDirectiveRequestRef.current = resolveOverseerDirectiveRequest;
+
+  // AI Operations Auditor Phase AA11: builds the operations_recovery ApprovalRequest for one
+  // incident, mirroring buildOverseerDirectiveApprovalRequest's synthetic-decision shape exactly.
+  // Only the incident's FIRST recovery option is offered — this phase's recovery options are all
+  // levels 0-2 (UI-sync/workflow-resume/safe-fallback), never more than one meaningfully distinct
+  // choice per incident type, so a single approve/reject pair is sufficient (never a picker UI).
+  const buildAuditorRecoveryApprovalRequest = useCallback((incident: AiOperationsIncident, teamId: string): ApprovalRequest => {
+    const recovery = incident.recoveryOptions[0];
+    const syntheticDecision = { type: 'wait', description: incident.userSummary, data: {} } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_auditor_recovery_${incident.id}`,
+      actorId: incident.actorId,
+      teamId,
+      decision: syntheticDecision,
+      actionSummary: recovery ? `${incident.userSummary} Proposed fix: ${recovery.description}` : incident.userSummary,
+      targetLabel: 'AI Operations Auditor',
+      cost: null,
+      wager: null,
+      percentCashAtRisk: null,
+      expectedReward: null,
+      successProbability: recovery?.confidence ?? null,
+      minCashRemaining: null,
+      vaultEffect: 'Not applicable — this is an Auditor-proposed recovery, not a spending action.',
+      governorRuling: 'n/a',
+      requirementsSummary: incident.technicalDetails,
+      aiExplanation: incident.likelyCause,
+      fallbackAvailable: false,
+      actionsRemaining: 0,
+      categoryBucket: 'wait' as TeamModeActionCategory,
+      createdAtTurn: gameState.day,
+      status: 'pending',
+      requestKind: 'operations_recovery',
+      auditorIncidentId: incident.id,
+      auditorRecoveryActionId: recovery?.id
+    };
+  }, [gameState.day]);
+
+  // AI Operations Auditor Phase AA11: the one place a recovery action's description actually
+  // becomes a real, mechanical effect. Deliberately narrow: only 'ai_action_token_orphaned' and
+  // 'ai_sequence_step_stuck' get a genuinely safe, bounded, idempotent write this phase (invalidate
+  // a stale token / mark a stuck step 'skipped', both values this file's own data model already
+  // uses for exactly this meaning elsewhere). Every other incident type's approval is honored (the
+  // incident is still marked resolved) but produces no additional mechanical change — stated
+  // plainly as a scope limitation rather than a fabricated effect; those types have no safe,
+  // bounded write available to this function without reaching into machinery it has no business
+  // touching (e.g. faking a resumed turn session).
+  const applyAuditorRecoveryAction = useCallback((teamId: string, incident: AiOperationsIncident) => {
+    if (incident.type === 'ai_action_token_orphaned' && incident.relatedTokenId) {
+      const tokenId = incident.relatedTokenId;
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        actionTokens: prev.actionTokens.map(t => t.id === tokenId ? { ...t, status: 'invalidated' as ActionTokenStatus } : t)
+      }));
+      return;
+    }
+    if (incident.type === 'ai_sequence_step_stuck' && incident.relatedSequenceStepId) {
+      const stepId = incident.relatedSequenceStepId;
+      updateTeamState(teamId, prev => ({
+        ...prev,
+        sequences: prev.sequences.map(seq => ({
+          ...seq,
+          steps: seq.steps.map(step => step.id === stepId ? { ...step, status: 'skipped' as const } : step)
+        }))
+      }));
+    }
+  }, [updateTeamState]);
+
+  // AI Operations Auditor Phase AA11: resolves an operations_recovery request — mirrors
+  // resolveOverseerDirectiveRequest's dequeue/idempotency shape exactly. Approve applies the
+  // recovery (per applyAuditorRecoveryAction's own stated scope) and marks the incident 'resolved';
+  // reject marks it 'unresolved' and applies nothing. Both are terminal statuses, so either way the
+  // incident moves to incidentHistory via resolveAiOperationsIncident's own existing logic.
+  const resolveAuditorRecoveryRequest = useCallback((requestId: string, control: 'approve' | 'reject') => {
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== requestId));
+    if (confirmationDialog.data?.requestId === requestId) {
+      closeConfirmation();
+    }
+    const incidentId = request.auditorIncidentId;
+    if (!incidentId) return;
+    const incident = teamsByIdRef.current[request.teamId]?.auditor.incidents.find(i => i.id === incidentId);
+    if (control === 'approve' && incident) {
+      applyAuditorRecoveryAction(request.teamId, incident);
+    }
+    resolveAiOperationsIncident(request.teamId, incidentId, control === 'approve' ? 'resolved' : 'unresolved', gameState.day, gameState.turnCounter);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, applyAuditorRecoveryAction, resolveAiOperationsIncident, gameState.day, gameState.turnCounter]);
+  resolveAuditorRecoveryRequestRef.current = resolveAuditorRecoveryRequest;
+
+  // AI Operations Auditor Phase AA11: duplicate-request guard (mirrors buildApprovalRequest's own
+  // "reuse the existing entry" precedent) — a re-occurring incident that's already awaiting player
+  // approval must never enqueue a second, redundant request for the same incident id.
+  const enqueueAuditorRecoveryApprovalRequest = useCallback((teamId: string, incident: AiOperationsIncident) => {
+    if (pendingApprovalRequests.some(r => r.requestKind === 'operations_recovery' && r.auditorIncidentId === incident.id)) return;
+    setPendingApprovalRequests(prev => [...prev, buildAuditorRecoveryApprovalRequest(incident, teamId)]);
+  }, [pendingApprovalRequests, buildAuditorRecoveryApprovalRequest]);
+  enqueueAuditorRecoveryApprovalRequestRef.current = enqueueAuditorRecoveryApprovalRequest;
 
   // Team AI Overseer System Phase O4: manual controls for the HUD status card. All three reuse
   // updateTeamState exactly like O3's own revert logic — no new state machinery. Current metric
@@ -43309,6 +43438,45 @@ function AustraliaGame() {
               <div className="flex space-x-3">
                 <button onClick={() => resolveOverseerDirectiveRequestRef.current?.(approvalRequestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
                 <button onClick={() => resolveOverseerDirectiveRequestRef.current?.(approvalRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
+              </div>
+            );
+          })()}
+
+          {/* AI Operations Auditor Phase AA11: info panel for an operations_recovery request —
+              never rendered alongside the other panels above (mutually exclusive per requestKind).
+              Structurally distinct from ordinary gameplay-action approval: this is the Auditor
+              asking permission to touch OTHER systems' state on the player's behalf, so the panel
+              shows the incident's own diagnosis/proposed fix rather than a spending/wager summary. */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'operations_recovery') return null;
+            const team = teamsByIdRef.current[request.teamId];
+            const incident = team?.auditor.incidents.find(i => i.id === request.auditorIncidentId);
+            const recovery = incident?.recoveryOptions.find(r => r.id === request.auditorRecoveryActionId);
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Actor:</span><span className="font-bold text-right">{incident?.actorId ? getActorDisplayName(incident.actorId) : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>What was observed:</span><span className="font-bold text-right">{incident?.actualWorkflowState ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Proposed fix:</span><span className="font-bold text-right">{recovery?.description ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Recovery Level:</span><span className="font-bold">{recovery ? recovery.level : 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Risk:</span><span className="font-bold capitalize">{recovery?.risk ?? 'n/a'}</span></div>
+                <div className="flex justify-between"><span>Confidence:</span><span className="font-bold">{recovery ? `${Math.round(recovery.confidence * 100)}%` : 'n/a'}</span></div>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'operations_recovery' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const approvalRequestId = request.id;
+            return (
+              <div className="flex space-x-3">
+                <button onClick={() => resolveAuditorRecoveryRequestRef.current?.(approvalRequestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
+                <button onClick={() => resolveAuditorRecoveryRequestRef.current?.(approvalRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
               </div>
             );
           })()}
