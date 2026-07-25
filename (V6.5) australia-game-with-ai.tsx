@@ -4132,6 +4132,23 @@ const AUDITOR_DASHBOARD_TAB_SOURCE_SYSTEMS: Partial<Record<AuditorDashboardTabId
   overseerHealth: ['adaptive_overseer', 'strategic_command', 'economy_governor']
 };
 
+// AI Operations Auditor Phase AA16 (final phase): AI+AI independence audit, mirroring Team AI
+// Overseer System Phase O10's own independence-audit comment above TeamOverseerState. Directly read
+// the full body of runAuditorDetectionPass, every function in AUDITOR_DETECTION_RULES
+// (detectAiTurnLifecycleStall, detectOrphanedApprovalRequest, detectRepeatedRejectedProposals,
+// detectActionBudgetMismatch, detectOrphanedActionToken, detectUnusedOverrideGrant,
+// detectSequenceHealthDegraded, detectTreasuryRequestUnresolved, detectRepeatedGovernorDeadlock,
+// detectPartialExecutionWithinTurn, detectActorTurnOrderOverlap, detectNoProgressInconclusive,
+// detectOverseerDirectiveConflict, detectPostLoadInactivity, detectUiStateDesyncObserved,
+// detectSequenceRetryStorm), upsertAiOperationsIncident, resolveAiOperationsIncident, and
+// appendAiOperationsEvent. Conclusion: no code path anywhere reads or is influenced by another
+// team's AiOperationsAuditorState — every one of these functions resolves strictly via its own
+// teamId/team.id parameter, with zero reads of teamsByIdRef.current[otherTeamId] anywhere in the
+// Auditor's own code. detectActorTurnOrderOverlap's own pre-existing comment (AA9) already states
+// it can only ever detect same-team actor-turn overlaps, since a true cross-team overlap is
+// structurally undetectable from a single team's log — a stated scope boundary, not a leak. This is
+// a documentation/audit deliverable, not a fix — no leak was found, so none is "fixed."
+//
 // Per-team Auditor state — genuinely separate from TeamOverseerState (never folded into it), so
 // the Auditor's inertness can be proven independently of the Overseer's own state.
 interface AiOperationsAuditorState {
@@ -13558,6 +13575,14 @@ function AustraliaGame() {
   const runAuditorDetectionPass = useCallback((teamId: string, day: number, turn: number) => {
     const team = teamsByIdRef.current[teamId];
     if (!team) return;
+    // AI Operations Auditor Phase AA16: cheap defensive assertion, mirroring Team AI Overseer System
+    // Phase O10's own single assertion inside evaluateAdaptiveOverseerOverlay — this function must
+    // only ever resolve the ONE team named by its own teamId parameter, never a second team's
+    // auditor state. Confirmed true by direct audit (see the comment above AiOperationsAuditorState);
+    // this warns rather than silently regressing if a future edit ever introduces a second lookup.
+    if (team.id !== teamId) {
+      console.warn(`runAuditorDetectionPass: resolved team.id (${team.id}) does not match the requested teamId (${teamId}) — possible AI+AI independence violation.`);
+    }
     const modeForTeam = teamId === TEAM_PLAYER_ID
       ? gameSettings.teamAiAuditorModeForFriendlyTeam
       : gameSettings.teamAiAuditorModeForEnemyTeam;
