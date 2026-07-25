@@ -2885,6 +2885,12 @@ type TeamModeActionCategory = 'travel' | 'challenge' | 'sell' | 'craft' | 'buy_m
   | 'cashout_region' | 'sabotage' | 'support' | 'invest' | 'buy_equipment' | 'loan' | 'wait' | 'end_turn'
   // Team Treasury Phase T5: makes Treasury contribution/withdrawal selectable as Sequence steps.
   | 'contribute_treasury' | 'request_team_funds';
+// AB2: the closed vocabulary as a runtime array, for sanitizers/UI pickers that need to validate
+// or enumerate against it (mirrors every other "type + matching const array" pair in this file).
+const TEAM_MODE_ACTION_CATEGORIES: TeamModeActionCategory[] = [
+  'travel', 'challenge', 'sell', 'craft', 'buy_market', 'region_deposit', 'cashout_region', 'sabotage',
+  'support', 'invest', 'buy_equipment', 'loan', 'wait', 'end_turn', 'contribute_treasury', 'request_team_funds'
+];
 type SequenceStepFallbackAction = 'retry_next_action' | 'retry_next_turn' | 'skip_step' | 'jump_to_step'
   | 'use_fallback_action' | 'allow_normal_ai' | 'pause_sequence' | 'end_turn' | 'cancel_sequence';
 
@@ -6184,6 +6190,12 @@ interface AiSituationSnapshot {
 // AE-phase stages (Candidate Generation/Plan Construction) once the Planner is wired in.
 type AiPlannerGoalKind = 'survival' | 'available_cash' | 'net_worth' | 'crafting' | 'resource_acquisition'
   | 'regional_control' | 'teammate_support' | 'opponent_disruption' | 'endgame_preparation' | 'winning';
+// AB2: the closed vocabulary as a runtime array, for sanitizers/UI pickers validating a
+// player-configured goal-priority map against it.
+const AI_PLANNER_GOAL_KINDS: AiPlannerGoalKind[] = [
+  'survival', 'available_cash', 'net_worth', 'crafting', 'resource_acquisition',
+  'regional_control', 'teammate_support', 'opponent_disruption', 'endgame_preparation', 'winning'
+];
 
 interface AiPlannerGoalSelection {
   primary: AiPlannerGoalKind;
@@ -6363,6 +6375,30 @@ interface AiAlgorithmLastTestResult {
   outcomeSummary: string;
   passed: boolean;
 }
+// AB2: closed, non-arbitrary-code stage schemas for Situation Analysis / Goal Selection /
+// Candidate Generation. Each is an inclusion/priority/allow-list over already-existing, already-
+// computed data (AiSituationSnapshot's own fields, AiPlannerGoalKind's fixed vocabulary,
+// TeamModeActionCategory's fixed vocabulary) — never a place for arbitrary logic or code.
+const AI_ALGORITHM_SITUATION_INFO_SOURCES: AiAlgorithmSituationInfoSource[] = [
+  'finances', 'inventory', 'resource_prices', 'weather_events', 'treasury', 'teammates',
+  'opponents', 'regional_control', 'remaining_days', 'win_condition'
+];
+type AiAlgorithmSituationInfoSource = 'finances' | 'inventory' | 'resource_prices' | 'weather_events'
+  | 'treasury' | 'teammates' | 'opponents' | 'regional_control' | 'remaining_days' | 'win_condition';
+interface AiAlgorithmSituationAnalysisConfig {
+  informationSources: AiAlgorithmSituationInfoSource[];
+}
+interface AiAlgorithmGoalSelectionConfig {
+  // 0-100 weight per goal; only AiPlannerGoalKind's own fixed 10-value vocabulary is ever a valid
+  // key — never a free-text goal.
+  goalPriorities: Partial<Record<AiPlannerGoalKind, number>>;
+}
+interface AiAlgorithmCandidateGenerationConfig {
+  // Empty/absent means "no restriction" (every category getRankedTeamAiDecisions already
+  // produces stays eligible) — never an implicit deny-all.
+  allowedActionCategories: TeamModeActionCategory[];
+}
+
 interface AiAlgorithmConfig {
   configId: string;
   revision: number;
@@ -6374,6 +6410,12 @@ interface AiAlgorithmConfig {
   createdByPlayer: boolean;
   createdDay: number;
   active: boolean;
+  // AB2: the first three of the pipeline's stage configs. null = not yet configured (falls back
+  // to the built-in Planner's own AE5-AE6 defaults wherever these are consulted). AB3/AB4 add the
+  // remaining stage configs as further optional fields — never a breaking change to this interface.
+  situationAnalysisConfig: AiAlgorithmSituationAnalysisConfig | null;
+  goalSelectionConfig: AiAlgorithmGoalSelectionConfig | null;
+  candidateGenerationConfig: AiAlgorithmCandidateGenerationConfig | null;
 }
 
 // AB1: mirrors sanitizeTeamPlan's exact convention — hard-fail (null) on a missing/wrong-typed
@@ -6390,6 +6432,35 @@ const sanitizeAiAlgorithmLastTestResult = (value: unknown): AiAlgorithmLastTestR
   if (typeof source.passed !== 'boolean') return null;
   return { ranAtDay: Math.max(0, Math.floor(source.ranAtDay)), outcomeSummary: source.outcomeSummary, passed: source.passed };
 };
+// AB2: each stage config sanitizer follows the identical "hard-fail to null on the wrong shape,
+// filter array entries against the closed vocabulary, clamp numbers" convention as every other
+// sanitizer in this file — a malformed/legacy stage config becomes null (== "not yet configured",
+// the safe default), never a corrupt or partially-trusted object.
+const sanitizeAiAlgorithmSituationAnalysisConfig = (value: unknown): AiAlgorithmSituationAnalysisConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmSituationAnalysisConfig>;
+  if (!Array.isArray(source.informationSources)) return null;
+  return { informationSources: source.informationSources.filter((s): s is AiAlgorithmSituationInfoSource => AI_ALGORITHM_SITUATION_INFO_SOURCES.includes(s as AiAlgorithmSituationInfoSource)) };
+};
+const sanitizeAiAlgorithmGoalSelectionConfig = (value: unknown): AiAlgorithmGoalSelectionConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmGoalSelectionConfig>;
+  if (!source.goalPriorities || typeof source.goalPriorities !== 'object') return null;
+  const goalPriorities: Partial<Record<AiPlannerGoalKind, number>> = {};
+  (Object.keys(source.goalPriorities) as AiPlannerGoalKind[]).forEach(key => {
+    const rawValue = (source.goalPriorities as Record<string, unknown>)[key];
+    if (AI_PLANNER_GOAL_KINDS.includes(key) && typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+      goalPriorities[key] = Math.max(0, Math.min(100, Math.round(rawValue)));
+    }
+  });
+  return { goalPriorities };
+};
+const sanitizeAiAlgorithmCandidateGenerationConfig = (value: unknown): AiAlgorithmCandidateGenerationConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmCandidateGenerationConfig>;
+  if (!Array.isArray(source.allowedActionCategories)) return null;
+  return { allowedActionCategories: source.allowedActionCategories.filter((c): c is TeamModeActionCategory => TEAM_MODE_ACTION_CATEGORIES.includes(c as TeamModeActionCategory)) };
+};
 const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<AiAlgorithmConfig>;
@@ -6404,12 +6475,62 @@ const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => 
     lastTestResult: sanitizeAiAlgorithmLastTestResult(source.lastTestResult),
     createdByPlayer: typeof source.createdByPlayer === 'boolean' ? source.createdByPlayer : true,
     createdDay: typeof source.createdDay === 'number' && Number.isFinite(source.createdDay) ? Math.max(0, Math.floor(source.createdDay)) : 0,
-    active: typeof source.active === 'boolean' ? source.active : false
+    active: typeof source.active === 'boolean' ? source.active : false,
+    situationAnalysisConfig: sanitizeAiAlgorithmSituationAnalysisConfig(source.situationAnalysisConfig),
+    goalSelectionConfig: sanitizeAiAlgorithmGoalSelectionConfig(source.goalSelectionConfig),
+    candidateGenerationConfig: sanitizeAiAlgorithmCandidateGenerationConfig(source.candidateGenerationConfig)
   };
 };
 const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeAiAlgorithmConfig).filter((config): config is AiAlgorithmConfig => Boolean(config)).slice(-30);
+};
+
+// AB2: the three stage-evaluator functions, one per stage config. All three are pure, reuse
+// existing computed data rather than re-deriving anything, and are uncalled by any real
+// turn-execution path this phase — no custom-algorithm execution engine exists yet to invoke them
+// (that wiring, once AB6's CRUD gives players a way to create/activate a config, is later-phase
+// work, stated explicitly rather than silently assumed). Written now, reviewable now, exactly like
+// every "engine adapter written but uncalled" precedent (AE1's runClassicLayeredAiEngine, etc.).
+
+// Situation Analysis stage: an inclusion-only summary over AiSituationSnapshot's own fields — never
+// a second data-collection pass. `null`/empty config means "include everything," matching the
+// built-in Planner's own AE5 default.
+const summarizeAiAlgorithmSituation = (config: AiAlgorithmSituationAnalysisConfig | null, snapshot: AiSituationSnapshot): string => {
+  const sources = config?.informationSources?.length ? config.informationSources : AI_ALGORITHM_SITUATION_INFO_SOURCES;
+  const parts: string[] = [`Day ${snapshot.day}, ${snapshot.daysRemaining} days remaining.`];
+  if (sources.includes('finances')) parts.push(`$${Math.round(snapshot.spendableCash)} spendable, ${snapshot.economicPhase} phase.`);
+  if (sources.includes('inventory')) parts.push(`Inventory: ${snapshot.inventory.length ? snapshot.inventory.join(', ') : 'empty'}.`);
+  if (sources.includes('resource_prices')) parts.push(`Tracking ${Object.keys(snapshot.resourcePrices).length} resource prices.`);
+  if (sources.includes('weather_events')) parts.push(`Weather: ${snapshot.weather}, ${snapshot.activeEventCount} active event(s).`);
+  if (sources.includes('treasury') && snapshot.treasuryAvailable !== null) parts.push(`Treasury available: $${Math.round(snapshot.treasuryAvailable)}.`);
+  if (sources.includes('teammates')) parts.push(`${snapshot.teammateIds.length} teammate(s).`);
+  if (sources.includes('opponents')) parts.push(`${snapshot.opponentIds.length} opponent(s).`);
+  if (sources.includes('regional_control')) parts.push(`Regions controlled: ${snapshot.regionsControlled}.`);
+  if (sources.includes('win_condition')) parts.push(`${snapshot.winCondition}: ${Math.round(snapshot.ownMetricValue)} vs opponent ${Math.round(snapshot.opponentMetricValue)}.`);
+  return parts.join(' ');
+};
+
+// Goal Selection stage: when the player has configured explicit weights, primary = the
+// highest-weighted goal (ties broken by AI_PLANNER_GOAL_KINDS' own declared order), secondary =
+// every other nonzero-weighted goal (highest first). Falls back to the built-in Planner's own
+// selectAiPlannerGoals (AE5) — reused, never re-derived — whenever no weights are configured.
+const selectAiAlgorithmGoals = (config: AiAlgorithmGoalSelectionConfig | null, snapshot: AiSituationSnapshot): AiPlannerGoalSelection => {
+  const weighted = AI_PLANNER_GOAL_KINDS
+    .map(kind => ({ kind, weight: config?.goalPriorities?.[kind] || 0 }))
+    .filter(entry => entry.weight > 0)
+    .sort((a, b) => b.weight - a.weight);
+  if (weighted.length === 0) return selectAiPlannerGoals(snapshot);
+  return { primary: weighted[0].kind, secondary: weighted.slice(1).map(entry => entry.kind) };
+};
+
+// Candidate Generation stage: a thin allow-list filter over the SAME candidates
+// generatePlannerCandidates (AE6) already produced via getRankedTeamAiDecisions — never a second
+// candidate-generation pass. Empty/absent allowedActionCategories means "no restriction."
+const filterAiAlgorithmCandidates = (config: AiAlgorithmCandidateGenerationConfig | null, candidates: ScoredTeamAiDecision[]): ScoredTeamAiDecision[] => {
+  if (!config?.allowedActionCategories?.length) return candidates;
+  const allowed = new Set(config.allowedActionCategories);
+  return candidates.filter(candidate => allowed.has(candidate.type as TeamModeActionCategory));
 };
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
