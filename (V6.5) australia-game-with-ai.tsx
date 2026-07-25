@@ -18152,6 +18152,23 @@ function AustraliaGame() {
       isAdvancedLoansEnabledForActor
 	  ]);
 
+  // AE3: the one place a resolved AI decision engine actually gets consulted for solo Human-vs-AI
+  // decision selection. Only 'classic_layered' has a real implementation until AE5+ builds the
+  // End-to-End Planner (and AB+ builds the Algorithm Builder) — every other resolved id defensively
+  // falls back to Classic Layered AI (mirroring the roadmap's own "Classic Layered AI is the
+  // mandatory final fallback" design), so this can never produce a different decision than calling
+  // makeAiDecision directly does today. Byte-identical to pre-AE3 behavior in every case right now.
+  const resolveSoloAiDecisionViaEngine = useCallback((aiState, currentGameState, playerState) => {
+    const engineId = resolveAiDecisionEngineForActor('ai');
+    switch (engineId) {
+      case 'end_to_end_planner':
+        return makeAiDecision(aiState, currentGameState, playerState);
+      case 'classic_layered':
+      default:
+        return makeAiDecision(aiState, currentGameState, playerState);
+    }
+  }, [resolveAiDecisionEngineForActor, makeAiDecision]);
+
   // AI Turn Management
   const performAiTurn = useCallback(async () => {
     if (gameState.currentTurn !== 'ai' || gameState.isAiThinking) return;
@@ -18177,7 +18194,7 @@ function AustraliaGame() {
       const currentAiState = aiPlayerRef.current;
 
       // Make decision with fresh state
-      const decision = makeAiDecision(currentAiState, gameState, player);
+      const decision = resolveSoloAiDecisionViaEngine(currentAiState, gameState, player);
 
       if (decision.type === 'end_turn') {
         addNotification(`🤖 ${currentAiState.name} has no more actions to take`, 'ai', false);
@@ -18229,7 +18246,7 @@ function AustraliaGame() {
     setCurrentAiAction(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, aiPlayer, player, makeAiDecision, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, getActorOverridesRemaining, calculateActorOverrideCost, applyActorActionOverride]);
+  }, [gameState, aiPlayer, player, makeAiDecision, resolveSoloAiDecisionViaEngine, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, getActorOverridesRemaining, calculateActorOverrideCost, applyActorActionOverride]);
 
   // Auto-trigger AI turn
   useEffect(() => {
@@ -30356,6 +30373,25 @@ function AustraliaGame() {
     return best;
   }, [aiRandom, buildDecisionTraceFromCandidates, gameState.selectedMode, gameState.turnCounter, getActorState, getRankedTeamAiDecisions, getTeamDifficultyBehavior, recordDecisionTrace, updateActorState]);
 
+  // AE3: the one place a resolved AI decision engine actually gets consulted for team-mode
+  // decision selection — plugged in ONLY at the innermost fallback position, after Parallel
+  // Planning's round plan, Teammate Action Sequences, and Team Plans have all had their chance
+  // (those are more-specific existing commitments and must keep out-ranking any algorithm choice,
+  // per the roadmap's own "more specific commitment always wins" rule). Only 'classic_layered' has
+  // a real implementation until AE5+ builds the End-to-End Planner (and AB+ the Algorithm
+  // Builder) — every other resolved id defensively falls back to Classic Layered AI, so this can
+  // never produce a different decision than calling makeTeamAiDecision directly does today.
+  const resolveTeamAiDecisionViaEngine = useCallback((actorId: string): AIAction => {
+    const engineId = resolveAiDecisionEngineForActor(actorId);
+    switch (engineId) {
+      case 'end_to_end_planner':
+        return makeTeamAiDecision(actorId);
+      case 'classic_layered':
+      default:
+        return makeTeamAiDecision(actorId);
+    }
+  }, [resolveAiDecisionEngineForActor, makeTeamAiDecision]);
+
   const advanceToNextActorTurn = useCallback(() => {
     const order = Array.isArray(gameState.turnOrder) && gameState.turnOrder.length > 0 ? gameState.turnOrder : ['player', 'ai'];
     const currentIndex = Math.max(0, order.indexOf(gameState.currentActorId || order[0]));
@@ -31540,7 +31576,7 @@ function AustraliaGame() {
       const sequenceStepMatch = !plannedDecisionValid ? findExecutableSequenceStepDecision(actor.id) : null;
       const decision = plannedDecisionValid
         ? roundPlanEntry!.decision
-        : (sequenceStepMatch ? sequenceStepMatch.decision : (planStepMatch ? planStepMatch.decision : makeTeamAiDecision(actor.id)));
+        : (sequenceStepMatch ? sequenceStepMatch.decision : (planStepMatch ? planStepMatch.decision : resolveTeamAiDecisionViaEngine(actor.id)));
       if (decision.type === 'end_turn') {
         // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
         // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
@@ -31926,7 +31962,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, makeTeamAiDecision, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
