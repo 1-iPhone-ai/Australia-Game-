@@ -3655,6 +3655,209 @@ const detectRepeatedGovernorDeadlock: AiOperationsDetectionRule = (team, day, _t
 // proposals); AA7 appended 3 more (action-budget mismatch, orphaned token, unused Override grant);
 // AA8 appends 3 more (sequence health, Treasury operational failure, repeated Governor deadlock)
 // below; AA9+ appends further rules to this same array.
+// AI Operations Auditor Phase AA9: Rule 10 — within a single completed turn cycle (between an
+// AI_TURN_STARTED and its matching AI_TURN_FINISHED for the same actor), at least one action
+// committed AND at least one action failed — the turn made partial progress before something broke,
+// rather than either fully succeeding or never starting. Monitor-only: never touches execution.
+const detectPartialExecutionWithinTurn: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openStartByActor = new Map<string, AiOperationsEvent & { type: 'AI_TURN_STARTED' }>();
+  const committedSinceStartByActor = new Map<string, (AiOperationsEvent & { type: 'AI_ACTION_EXECUTION_COMMITTED' })[]>();
+  const failedSinceStartByActor = new Map<string, (AiOperationsEvent & { type: 'AI_ACTION_EXECUTION_FAILED' })[]>();
+  for (const event of team.auditor.eventLog) {
+    if (!event.actorId) continue;
+    if (event.type === 'AI_TURN_STARTED') {
+      openStartByActor.set(event.actorId, event);
+      committedSinceStartByActor.set(event.actorId, []);
+      failedSinceStartByActor.set(event.actorId, []);
+      continue;
+    }
+    if (event.type === 'AI_ACTION_EXECUTION_COMMITTED' && openStartByActor.has(event.actorId)) {
+      (committedSinceStartByActor.get(event.actorId) || []).push(event);
+      continue;
+    }
+    if (event.type === 'AI_ACTION_EXECUTION_FAILED' && openStartByActor.has(event.actorId)) {
+      (failedSinceStartByActor.get(event.actorId) || []).push(event);
+      continue;
+    }
+    if (event.type === 'AI_TURN_FINISHED') {
+      const started = openStartByActor.get(event.actorId);
+      const committed = committedSinceStartByActor.get(event.actorId) || [];
+      const failed = failedSinceStartByActor.get(event.actorId) || [];
+      openStartByActor.delete(event.actorId);
+      committedSinceStartByActor.delete(event.actorId);
+      failedSinceStartByActor.delete(event.actorId);
+      if (started && committed.length > 0 && failed.length > 0) {
+        return {
+          type: 'ai_partial_execution_within_turn',
+          category: 'action_execution',
+          severity: 'informational',
+          teamId: team.id,
+          actorId: event.actorId,
+          day,
+          turn: _turn,
+          expectedWorkflowState: 'a turn either fully executes its intended actions or fails cleanly before committing any of them',
+          actualWorkflowState: `${committed.length} action(s) committed and ${failed.length} action(s) failed within the same turn`,
+          evidence: [...committed.slice(-2), ...failed.slice(-2)],
+          likelyCause: 'A later action in the same turn (e.g. a bonus action after an Override, or a subsequent sequence step) failed after an earlier action in the same turn already committed.',
+          confidence: 0.35,
+          userSummary: 'A teammate’s turn partly succeeded and partly failed.',
+          technicalDetails: `Actor ${event.actorId}'s turn on day ${started.day} recorded ${committed.length} AI_ACTION_EXECUTION_COMMITTED and ${failed.length} AI_ACTION_EXECUTION_FAILED events before finishing.`,
+          recoveryOptions: [],
+          authorityRequired: 'monitor',
+          safeModeTriggered: false,
+          dedupSignature: `ai_partial_execution_within_turn:${event.actorId}:${started.day}`
+        };
+      }
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA9: Rule 11 — two actors on the SAME team both have an open turn
+// (AI_TURN_STARTED with no AI_TURN_FINISHED yet) simultaneously — a violation of the game's own
+// single-actor-at-a-time turn invariant. Honest limitation: this rule only sees one team's own
+// event log (per AiOperationsDetectionRule's signature), so it can only detect an overlap between
+// two actors on the SAME team; a true cross-team overlap is structurally undetectable from a
+// single team's log and is not claimed here. Monitor-only: never touches turn order.
+const detectActorTurnOrderOverlap: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openActorIds = new Set<string>();
+  const openStartByActor = new Map<string, AiOperationsEvent & { type: 'AI_TURN_STARTED' }>();
+  for (const event of team.auditor.eventLog) {
+    if (!event.actorId) continue;
+    if (event.type === 'AI_TURN_STARTED') {
+      if (openActorIds.size > 0 && !openActorIds.has(event.actorId)) {
+        const otherActorId = [...openActorIds][0];
+        const otherStarted = openStartByActor.get(otherActorId);
+        return {
+          type: 'ai_actor_turn_order_overlap',
+          category: 'parallel_execution',
+          severity: 'major',
+          teamId: team.id,
+          actorId: event.actorId,
+          day,
+          turn: _turn,
+          expectedWorkflowState: 'exactly one actor on this team has an open turn at any moment',
+          actualWorkflowState: `actor ${event.actorId} started a turn while actor ${otherActorId} still had an open turn from day ${otherStarted?.day ?? 'unknown'}`,
+          evidence: otherStarted ? [otherStarted, event] : [event],
+          likelyCause: 'Two actors on the same team appear to have been mid-turn at the same time, violating the single-actor-at-a-time turn invariant.',
+          confidence: 0.5,
+          userSummary: 'Two teammates appear to have had overlapping turns.',
+          technicalDetails: `Actor ${event.actorId} emitted AI_TURN_STARTED on day ${event.day} while actor ${otherActorId}'s turn (started day ${otherStarted?.day ?? 'unknown'}) had not yet emitted AI_TURN_FINISHED.`,
+          recoveryOptions: [],
+          authorityRequired: 'locked',
+          safeModeTriggered: false,
+          dedupSignature: `ai_actor_turn_order_overlap:${[event.actorId, otherActorId].sort().join(':')}`
+        };
+      }
+      openActorIds.add(event.actorId);
+      openStartByActor.set(event.actorId, event);
+    } else if (event.type === 'AI_TURN_FINISHED') {
+      openActorIds.delete(event.actorId);
+      openStartByActor.delete(event.actorId);
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA9: Rule 12 — an actor finished 3+ consecutive turns with
+// actionsUsedThisTurn === 0. Deliberately does NOT classify this as a bug: per the roadmap's own
+// "never override intentional waiting" requirement, this rule only fires when it can find no
+// corroborating explanation already surfaced elsewhere (no GOVERNOR_RESTRICTION_CLASSIFIED at
+// 'severely_restricted'/'governor_deadlock' and no orphaned-approval/Treasury-request signal for
+// this actor in the same window, both already covered by their own dedicated rules) — in which
+// case the honest classification is "insufficient evidence to distinguish a bug from intentional
+// strategic waiting," not a claim that something is actually wrong. Low confidence, informational
+// severity, by design. Monitor-only: never touches decision-making.
+const AA9_NO_PROGRESS_STREAK_THRESHOLD = 3;
+const detectNoProgressInconclusive: AiOperationsDetectionRule = (team, day, _turn) => {
+  const streakByActor = new Map<string, (AiOperationsEvent & { type: 'AI_TURN_FINISHED' })[]>();
+  const hasCorroboratingSignalByActor = new Map<string, boolean>();
+  for (const event of team.auditor.eventLog) {
+    if (!event.actorId) continue;
+    if (event.type === 'GOVERNOR_RESTRICTION_CLASSIFIED' && (event.level === 'severely_restricted' || event.level === 'governor_deadlock')) {
+      hasCorroboratingSignalByActor.set(event.actorId, true);
+    }
+    if (event.type === 'AI_APPROVAL_REQUEST_CREATED' || event.type === 'AI_APPROVAL_REQUEST_DISPLAYED' || event.type === 'TREASURY_FUNDING_REQUEST_RESOLVED') {
+      hasCorroboratingSignalByActor.set(event.actorId, true);
+    }
+    if (event.type !== 'AI_TURN_FINISHED') continue;
+    if (event.actionsUsedThisTurn === 0) {
+      const streak = streakByActor.get(event.actorId) || [];
+      streak.push(event);
+      streakByActor.set(event.actorId, streak);
+    } else {
+      streakByActor.delete(event.actorId);
+      hasCorroboratingSignalByActor.delete(event.actorId);
+    }
+  }
+  for (const [actorId, streak] of streakByActor) {
+    if (streak.length >= AA9_NO_PROGRESS_STREAK_THRESHOLD && !hasCorroboratingSignalByActor.get(actorId)) {
+      return {
+        type: 'ai_no_progress_inconclusive',
+        category: 'state_invariant',
+        severity: 'informational',
+        teamId: team.id,
+        actorId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'actionsUsedThisTurn > 0 at least occasionally, OR a corroborating restriction/approval/funding signal explaining the pause',
+        actualWorkflowState: `${streak.length} consecutive turns with actionsUsedThisTurn === 0 and no corroborating signal observed`,
+        evidence: streak.slice(-3),
+        likelyCause: 'Unknown — could be a genuine stall, or could be the AI deliberately choosing to wait (e.g. no action currently clears its own scoring bar). This event log alone cannot distinguish the two.',
+        confidence: 0.25,
+        userSummary: 'A teammate has taken no actions for several turns in a row, for an unclear reason.',
+        technicalDetails: `Actor ${actorId} has ${streak.length} consecutive AI_TURN_FINISHED{actionsUsedThisTurn:0} events with no corroborating GOVERNOR_RESTRICTION_CLASSIFIED/approval/Treasury-request event observed in the same window.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_no_progress_inconclusive:${actorId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA9: Rule 13 — 2+ OVERSEER_DIRECTIVE_ISSUED events for the same
+// actor on the same day — overlapping/conflicting Strategic Command guidance, since no directive
+// resolution/expiry event exists (per AA4's own ground truth, only ISSUED was ever wired), a
+// same-day re-issue is the only observable signal that a prior directive may not have had a chance
+// to run before being replaced. Monitor-only: never touches directive state.
+const detectOverseerDirectiveConflict: AiOperationsDetectionRule = (team, day, _turn) => {
+  const issuedTodayByActor = new Map<string, (AiOperationsEvent & { type: 'OVERSEER_DIRECTIVE_ISSUED' })[]>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type !== 'OVERSEER_DIRECTIVE_ISSUED' || !event.actorId || event.day !== day) continue;
+    const issued = issuedTodayByActor.get(event.actorId) || [];
+    issued.push(event);
+    issuedTodayByActor.set(event.actorId, issued);
+  }
+  for (const [actorId, issued] of issuedTodayByActor) {
+    if (issued.length >= 2) {
+      return {
+        type: 'ai_overseer_directive_conflict',
+        category: 'overseer',
+        severity: 'informational',
+        teamId: team.id,
+        actorId,
+        relatedDirectiveId: issued[issued.length - 1].directiveId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'at most one Strategic Command directive issued per actor per day',
+        actualWorkflowState: `${issued.length} directives issued for this actor on day ${day}`,
+        evidence: issued.slice(-3),
+        likelyCause: 'A new directive was generated for this actor before the previous one’s day-based expiry, replacing it.',
+        confidence: 0.35,
+        userSummary: 'A teammate received more than one Strategic Command directive on the same day.',
+        technicalDetails: `Actor ${actorId} received ${issued.length} OVERSEER_DIRECTIVE_ISSUED events on day ${day}: ${issued.map(e => e.directiveId).join(', ')}.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_overseer_directive_conflict:${actorId}:${day}`
+      };
+    }
+  }
+  return null;
+};
+
 const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   (_team, _day, _turn) => null,
   detectAiTurnLifecycleStall,
@@ -3665,7 +3868,11 @@ const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   detectUnusedOverrideGrant,
   detectSequenceHealthDegraded,
   detectTreasuryRequestUnresolved,
-  detectRepeatedGovernorDeadlock
+  detectRepeatedGovernorDeadlock,
+  detectPartialExecutionWithinTurn,
+  detectActorTurnOrderOverlap,
+  detectNoProgressInconclusive,
+  detectOverseerDirectiveConflict
 ];
 
 // AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
