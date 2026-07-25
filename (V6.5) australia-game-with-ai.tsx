@@ -4067,6 +4067,38 @@ const canApplyAutomaticRecovery = (
   return true;
 };
 
+// AI Operations Auditor Phase AA14: the compact status card's 11 distinct states. Safe Mode and
+// "escalated, needs review" are checked first regardless of mode (a live safety condition
+// overrides an otherwise-idle summary). Each state pairs a short text label with its own icon —
+// never a color-only signal, per the roadmap's own explicit accessibility requirement.
+const computeAuditorStatusCardState = (team: TeamState, modeForTeam: AiOperationsAuditorMode): { icon: string; label: string } => {
+  const { auditor } = team;
+  if (auditor.safeModeActive) return { icon: '🛑', label: 'Safe Mode active — automatic recovery suspended' };
+  const escalatedCount = auditor.incidents.filter(i => i.status === 'escalated').length;
+  if (escalatedCount > 0) return { icon: '⚠️', label: `${escalatedCount} incident(s) escalated — needs review` };
+  if (modeForTeam === 'off') return { icon: '⏸️', label: 'Off' };
+  if (modeForTeam === 'monitor') {
+    return auditor.incidents.length > 0
+      ? { icon: '👁️', label: `Monitoring — ${auditor.incidents.length} incident(s) detected` }
+      : { icon: '👁️', label: 'Monitoring — no incidents detected' };
+  }
+  if (modeForTeam === 'recommend') {
+    const actionableCount = auditor.incidents.filter(i => i.recoveryOptions.length > 0).length;
+    return actionableCount > 0
+      ? { icon: '💡', label: `Recommending — ${actionableCount} recovery suggestion(s)` }
+      : { icon: '💡', label: 'Recommending — no actionable incidents' };
+  }
+  if (modeForTeam === 'approval') {
+    return auditor.incidents.some(i => i.status === 'recovery_proposed')
+      ? { icon: '❓', label: 'Awaiting approval — a recovery request is pending' }
+      : { icon: '❓', label: 'Approval mode — no pending requests' };
+  }
+  // 'automatic'
+  return auditor.automaticRecoveryCountToday > 0
+    ? { icon: '⚙️', label: `Automatic — ${auditor.automaticRecoveryCountToday} recovery applied today` }
+    : { icon: '⚙️', label: 'Automatic — idle' };
+};
+
 // Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
 type AuditorDashboardTabId =
   | 'overview' | 'activeIncidents' | 'turnPipeline' | 'actionAccounting' | 'approvalHealth'
@@ -11517,6 +11549,10 @@ function AustraliaGame() {
   const [selectedDecisionActorId, setSelectedDecisionActorId] = useState<string>('ai');
   const [decisionTransparencyGroupView, setDecisionTransparencyGroupView] = useState<DecisionTransparencyGroupView>(DEFAULT_GAME_SETTINGS.decisionTransparencyDefaultGroupView);
   const [expandedHudDecisionActorId, setExpandedHudDecisionActorId] = useState<string | null>(null);
+  // AI Operations Auditor Phase AA14: which incident's "View" details are expanded in the compact
+  // status card — pure navigation state, never persisted, mirroring expandedHudDecisionActorId's
+  // own convention exactly.
+  const [expandedAuditorIncidentId, setExpandedAuditorIncidentId] = useState<string | null>(null);
   // Team AI Overseer System Phase O9: pure navigation state for the Overseer Dashboard panel —
   // never persisted (gameState/uiState/save data), mirroring selectedDecisionActorId's own convention.
   const [overseerDashboardTab, setOverseerDashboardTab] = useState<OverseerDashboardTabId>('overview');
@@ -22903,6 +22939,18 @@ function AustraliaGame() {
     resolveAiOperationsIncident(teamId, incident.id, verified ? 'resolved' : 'escalated', incident.day, incident.turn);
   }, [applyAuditorRecoveryAction, updateTeamState, resolveAiOperationsIncident]);
   applyAutomaticAuditorRecoveryRef.current = applyAutomaticAuditorRecovery;
+
+  // AI Operations Auditor Phase AA14: the "Apply" button on an incident notification card —
+  // reuses applyAuditorRecoveryAction verbatim (the same one AA11's approval-flow and AA12's
+  // automatic path both already use), for the monitor/recommend modes where no approval popup
+  // exists to apply through. Applies only the incident's first (and, per AA10's own design, only
+  // ever) recovery option.
+  const applyIncidentRecoveryManually = useCallback((teamId: string, incidentId: string) => {
+    const incident = teamsByIdRef.current[teamId]?.auditor.incidents.find(i => i.id === incidentId);
+    if (!incident || incident.recoveryOptions.length === 0) return;
+    applyAuditorRecoveryAction(teamId, incident);
+    resolveAiOperationsIncident(teamId, incidentId, 'resolved', gameState.day, gameState.turnCounter);
+  }, [applyAuditorRecoveryAction, resolveAiOperationsIncident, gameState.day, gameState.turnCounter]);
 
   // Team AI Overseer System Phase O4: manual controls for the HUD status card. All three reuse
   // updateTeamState exactly like O3's own revert logic — no new state machinery. Current metric
@@ -42055,6 +42103,84 @@ function AustraliaGame() {
 	                >
 	                  🧭 Open Overseer Dashboard
 	                </button>
+	              )}
+
+	              {/* AI Operations Auditor Phase AA14: compact status card, mirroring the O4 Overseer
+	                  card's exact shell. Each team's state comes from computeAuditorStatusCardState's
+	                  11-value table (icon+text, never color-only) plus per-actor health indicators
+	                  (also icon+text) for any actor with a live incident, plus a capped list of
+	                  incident notification cards with Apply/View/Ignore. */}
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiAuditorSystemEnabled && gameSettings.teamAiAuditorShowStatusCard && (
+	                <div className={`${themeStyles.border} border rounded-lg p-3 mt-4`}>
+	                  <div className="flex justify-between text-sm mb-2">
+	                    <span className="font-semibold">AI Operations Auditor</span>
+	                    <span>Runtime integrity monitor</span>
+	                  </div>
+	                  <div className="grid grid-cols-2 gap-2 text-xs">
+	                    {[TEAM_PLAYER_ID, TEAM_OPPONENT_ID].map(auditorTeamId => {
+	                      const auditorTeamState = teamsById[auditorTeamId];
+	                      if (!auditorTeamState) return null;
+	                      const teamLabel = auditorTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+	                      const auditorModeForTeam = auditorTeamId === TEAM_PLAYER_ID
+	                        ? gameSettings.teamAiAuditorModeForFriendlyTeam
+	                        : gameSettings.teamAiAuditorModeForEnemyTeam;
+	                      if (auditorModeForTeam === 'off') return null;
+	                      const statusState = computeAuditorStatusCardState(auditorTeamState, auditorModeForTeam);
+	                      const liveIncidents = auditorTeamState.auditor.incidents;
+	                      const actorHealthEntries = [...new Set(liveIncidents.map(i => i.actorId).filter((id): id is string => Boolean(id)))];
+	                      return (
+	                        <div key={auditorTeamId} className={`${auditorTeamId === TEAM_PLAYER_ID ? 'bg-blue-900' : 'bg-pink-900'} bg-opacity-40 rounded p-2`}>
+	                          <div className="font-semibold mb-1">{teamLabel}</div>
+	                          <div>{statusState.icon} {statusState.label}</div>
+	                          {actorHealthEntries.length > 0 && (
+	                            <div className="mt-1 space-y-0.5">
+	                              {actorHealthEntries.map(actorId => {
+	                                const actorIncidents = liveIncidents.filter(i => i.actorId === actorId);
+	                                const worst = actorIncidents.some(i => i.severity === 'critical') ? { icon: '🔴', text: 'critical' }
+	                                  : actorIncidents.some(i => i.severity === 'major') ? { icon: '🟠', text: 'major' }
+	                                  : actorIncidents.some(i => i.severity === 'warning') ? { icon: '🟡', text: 'warning' }
+	                                  : { icon: '🔵', text: 'informational' };
+	                                return (
+	                                  <div key={actorId} className="opacity-80">
+	                                    {worst.icon} {getActorDisplayName(actorId)}: {actorIncidents.length} incident(s), {worst.text}
+	                                  </div>
+	                                );
+	                              })}
+	                            </div>
+	                          )}
+	                          {liveIncidents.length > 0 && (
+	                            <div className="mt-2 max-h-40 overflow-y-auto space-y-1 border-t border-white/20 pt-1">
+	                              {liveIncidents.slice(-5).reverse().map(incident => (
+	                                <div key={incident.id} className="opacity-90">
+	                                  <div>{incident.userSummary}</div>
+	                                  <div className="flex gap-1 mt-0.5">
+	                                    {incident.recoveryOptions.length > 0 && (
+	                                      <button onClick={() => applyIncidentRecoveryManually(auditorTeamId, incident.id)} className={`${themeStyles.button} text-white px-2 py-0.5 rounded`}>Apply</button>
+	                                    )}
+	                                    <button
+	                                      onClick={() => setExpandedAuditorIncidentId(prev => prev === incident.id ? null : incident.id)}
+	                                      className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`}
+	                                    >
+	                                      View
+	                                    </button>
+	                                    <button onClick={() => resolveAiOperationsIncident(auditorTeamId, incident.id, 'ignored', gameState.day, gameState.turnCounter)} className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`}>Ignore</button>
+	                                  </div>
+	                                  {expandedAuditorIncidentId === incident.id && (
+	                                    <div className="mt-1 opacity-75 space-y-0.5">
+	                                      <div>{incident.technicalDetails}</div>
+	                                      <div>Likely cause: {incident.likelyCause}</div>
+	                                      <div>Confidence: {Math.round(incident.confidence * 100)}%</div>
+	                                    </div>
+	                                  )}
+	                                </div>
+	                              ))}
+	                            </div>
+	                          )}
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
 	              )}
 	            </div>
 	          )}
