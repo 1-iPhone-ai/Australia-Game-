@@ -6104,7 +6104,11 @@ type AiThinkingDepth = 'fast' | 'balanced' | 'deep';
 interface AiDecisionContext {
   actorId: string;
   teamId: string;
-  gameState: GameState;
+  // AE5 fix: 'GameState' was never a declared type anywhere in this file — a latent AE1 mistake
+  // that esbuild's transpile-only check couldn't catch. The real state-shape type is
+  // GameStateSnapshot (= typeof initialGameState); TypeScript's forward type-reference rules make
+  // referencing it here, before its own declaration further down the file, completely valid.
+  gameState: GameStateSnapshot;
   gameSettings: GameSettingsState;
   // Every engine must draw randomness from this exact closure (aiRandom) — never Math.random()
   // directly — to preserve gameSettings.aiDeterministic/aiDeterministicSeed reproducibility.
@@ -6133,6 +6137,84 @@ interface AiDecisionResult {
   usedFallback: boolean;
   fallbackReason?: string;
 }
+
+// AE5: the End-to-End Strategic Planner's Situation Analysis output — a pure, read-only snapshot
+// built fresh each call from already-existing accessors (never re-deriving any of their logic).
+// Declared now, produced by analyzeAiSituationForPlanner below, but NOT yet consumed by any real
+// turn-execution path — the Planner itself isn't selectable until AE8 wires Goal Selection/
+// Candidate Generation/Plan Construction/Utility Evaluation/Action Selection together.
+interface AiSituationSnapshot {
+  actorId: string;
+  teamId: string;
+  day: number;
+  daysRemaining: number;
+  winCondition: WinMetric;
+  economicPhase: EconomicPhase;
+  spendableCash: number;
+  protectedCash: number;
+  hasOutstandingLoans: boolean;
+  loanEligible: boolean;
+  inventory: string[];
+  missingResourcesForBestRecipe: string[];
+  resourcePrices: Record<string, number>;
+  weather: string;
+  activeEventCount: number;
+  treasuryAvailable: number | null;
+  teammateIds: string[];
+  opponentIds: string[];
+  ownMetricValue: number;
+  opponentMetricValue: number;
+  regionsControlled: number;
+}
+
+// AE5: the fixed goal vocabulary the spec requires — survival, available cash, net worth,
+// crafting, resource acquisition, regional control, teammate support, opponent disruption,
+// endgame preparation, winning. Declared now for selectAiPlannerGoals below; consumed by later
+// AE-phase stages (Candidate Generation/Plan Construction) once the Planner is wired in.
+type AiPlannerGoalKind = 'survival' | 'available_cash' | 'net_worth' | 'crafting' | 'resource_acquisition'
+  | 'regional_control' | 'teammate_support' | 'opponent_disruption' | 'endgame_preparation' | 'winning';
+
+interface AiPlannerGoalSelection {
+  primary: AiPlannerGoalKind;
+  secondary: AiPlannerGoalKind[];
+}
+
+// AE5: pure Goal Selection — operates only on an already-computed AiSituationSnapshot, no closures,
+// no side effects, matching this file's own computeEconomicPhase/computeDynamicReserve-style
+// "explicit params, no closures" convention for scoring/classification logic. Not yet called by
+// any real path.
+const selectAiPlannerGoals = (snapshot: AiSituationSnapshot): AiPlannerGoalSelection => {
+  const secondary: AiPlannerGoalKind[] = [];
+  let primary: AiPlannerGoalKind;
+
+  if (snapshot.economicPhase === 'survival') {
+    primary = 'survival';
+    if (snapshot.missingResourcesForBestRecipe.length === 0 && snapshot.inventory.length > 0) secondary.push('resource_acquisition');
+  } else if (snapshot.daysRemaining <= 3) {
+    primary = 'winning';
+    secondary.push('endgame_preparation');
+  } else if (snapshot.opponentMetricValue > snapshot.ownMetricValue * 1.25) {
+    primary = 'opponent_disruption';
+    secondary.push(snapshot.winCondition === 'regions' ? 'regional_control' : 'available_cash');
+  } else if (snapshot.winCondition === 'regions' && snapshot.regionsControlled === 0) {
+    primary = 'regional_control';
+  } else if (snapshot.missingResourcesForBestRecipe.length > 0) {
+    primary = 'resource_acquisition';
+    secondary.push('crafting');
+  } else if (snapshot.economicPhase === 'compounding') {
+    primary = 'net_worth';
+    secondary.push('crafting');
+  } else {
+    primary = 'available_cash';
+  }
+
+  // 'teammate_support' is only ever a secondary goal in this phase's rule set (never assigned to
+  // primary above), so no primary-collision guard is needed here.
+  if (snapshot.teammateIds.length > 0) secondary.push('teammate_support');
+  if (!secondary.includes('winning') && primary !== 'winning') secondary.push('winning');
+
+  return { primary, secondary };
+};
 
 // AE4 (Failure Protection): a generic operation-count ceiling any future planner/custom-algorithm
 // engine (AE5+/AB+) should consult and enforce internally to bound its own candidate-generation/
@@ -30433,6 +30515,62 @@ function AustraliaGame() {
     }
     return best;
   }, [aiRandom, buildDecisionTraceFromCandidates, gameState.selectedMode, gameState.turnCounter, getActorState, getRankedTeamAiDecisions, getTeamDifficultyBehavior, recordDecisionTrace, updateActorState]);
+
+  // AE5: the End-to-End Strategic Planner's Situation Analysis stage. Pure, read-only — reuses
+  // getActorSpendableCash/computeEconomicPhase/isEndgamePeriod/getTeamActors/
+  // getTreasuryAvailableAmount/getCompetitiveMetricValue/computeDirectiveRequiredResources/
+  // isAdvancedLoansEnabledForActor rather than re-deriving any of their logic. Works in both Team
+  // Mode and solo Human-vs-AI (teamId/teammateIds/opponentIds/treasuryAvailable degrade sensibly
+  // when Team Mode features aren't applicable). Declared now, uncalled by any real turn-execution
+  // path — the Planner isn't selectable until AE8 wires this together with Goal Selection/
+  // Candidate Generation/Plan Construction/Utility Evaluation/Action Selection.
+  const analyzeAiSituationForPlanner = useCallback((actorId: string): AiSituationSnapshot | null => {
+    const actor = getActorState(actorId);
+    if (!actor) return null;
+    const teamModeActive = isTeamModeSelection(gameState.selectedMode);
+    const teamId = actor.teamId || (actorId === 'player' ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID);
+    const team = teamsById[teamId];
+    const vaultActive = Boolean(gameSettings.teamCashVaultEnabled);
+    const spendableCash = getActorSpendableCash(actor, vaultActive);
+    const endgameActive = isEndgamePeriod(gameState.day, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+    const economicPhase = computeEconomicPhase(actor, spendableCash, gameSettings, endgameActive);
+    const isFriendlySide = actorId === 'player' || teamId === TEAM_PLAYER_ID;
+    const teammateIds = teamModeActive
+      ? getTeamActors(teamId).filter(a => a.id !== actorId).map(a => a.id)
+      : [];
+    const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    const opponentIds = teamModeActive
+      ? getTeamActors(opponentTeamId).map(a => a.id)
+      : [actorId === 'ai' ? 'player' : 'ai'];
+    const treasuryAvailable = (teamModeActive && gameSettings.teamTreasuryEnabled && team?.treasury)
+      ? getTreasuryAvailableAmount(team)
+      : null;
+    const ownMetricValue = getCompetitiveMetricValue(gameSettings.winCondition, { side: isFriendlySide ? 'player' : 'opponent', teamMode: teamModeActive });
+    const opponentMetricValue = getCompetitiveMetricValue(gameSettings.winCondition, { side: isFriendlySide ? 'opponent' : 'player', teamMode: teamModeActive });
+    return {
+      actorId,
+      teamId,
+      day: gameState.day,
+      daysRemaining: Math.max(0, gameSettings.totalDays - gameState.day),
+      winCondition: gameSettings.winCondition,
+      economicPhase,
+      spendableCash,
+      protectedCash: actor.protectedCash || 0,
+      hasOutstandingLoans: (actor.loans?.length || 0) > 0 || (actor.advancedLoans?.length || 0) > 0,
+      loanEligible: isAdvancedLoansEnabledForActor(actor),
+      inventory: actor.inventory || [],
+      missingResourcesForBestRecipe: computeDirectiveRequiredResources(actor),
+      resourcePrices: gameState.resourcePrices || {},
+      weather: gameState.weather || '',
+      activeEventCount: (gameState.activeEvents || []).length,
+      treasuryAvailable,
+      teammateIds,
+      opponentIds,
+      ownMetricValue,
+      opponentMetricValue,
+      regionsControlled: gameState.regionControlStats?.totalControlled?.[actorId] || 0
+    };
+  }, [getActorState, teamsById, gameSettings, gameState.day, gameState.selectedMode, gameState.resourcePrices, gameState.weather, gameState.activeEvents, gameState.regionControlStats, getTeamActors, getTreasuryAvailableAmount, getCompetitiveMetricValue, isAdvancedLoansEnabledForActor]);
 
   // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for team-mode
   // decision selection — plugged in ONLY at the innermost fallback position, after Parallel
