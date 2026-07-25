@@ -3519,12 +3519,142 @@ const detectUnusedOverrideGrant: AiOperationsDetectionRule = (team, day, _turn) 
   return null;
 };
 
+// AI Operations Auditor Phase AA8: Rule 7 — a SEQUENCE_STEP_TERMINATED { outcome: 'stuck' } event
+// exists in the log with no later SEQUENCE_STEP_TERMINATED for that same stepId (i.e. the step
+// never subsequently completed/was skipped by a fresh sequence run) — the game itself already
+// makes the "stuck" determination (findExecutableSequenceStepDecision's own retry-exhaustion
+// signature from AA4); this rule surfaces that already-computed fact as an incident rather than
+// re-deriving it. Monitor-only: never touches sequence state.
+const detectSequenceHealthDegraded: AiOperationsDetectionRule = (team, day, _turn) => {
+  const lastOutcomeByStepId = new Map<string, AiOperationsEvent & { type: 'SEQUENCE_STEP_TERMINATED' }>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type === 'SEQUENCE_STEP_TERMINATED') lastOutcomeByStepId.set(event.stepId, event);
+  }
+  for (const [stepId, terminated] of lastOutcomeByStepId) {
+    if (terminated.outcome === 'stuck') {
+      return {
+        type: 'ai_sequence_step_stuck',
+        category: 'sequence',
+        severity: 'warning',
+        teamId: team.id,
+        actorId: terminated.actorId,
+        relatedSequenceStepId: stepId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'the step eventually completes, is skipped, or a later run of the sequence produces a fresh outcome for this step',
+        actualWorkflowState: `step ${stepId} was marked 'stuck' on day ${terminated.day} with no later outcome observed for it since`,
+        evidence: [terminated],
+        likelyCause: 'The step exhausted its retry_next_action attempts (SEQUENCE_STEP_MAX_RETRIES) without ever executing successfully.',
+        confidence: 0.6,
+        userSummary: 'A teammate’s action sequence has a step that stopped making progress.',
+        technicalDetails: `Step ${stepId} (actor ${terminated.actorId ?? 'unknown'}) reached SEQUENCE_STEP_TERMINATED{outcome:'stuck'} on day ${terminated.day}; no later SEQUENCE_STEP_TERMINATED for this stepId has been observed.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_sequence_step_stuck:${stepId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA8: Rule 8 — a Treasury funding request was resolved 'approved' or
+// 'partially_approved' on an earlier day than today with no later TREASURY_FUNDING_REQUEST_RESOLVED
+// for that same requestId reaching 'fulfilled'/'rejected'/'cancelled'/'expired' — money was
+// earmarked for the request but the funded action's flow never closed out cleanly. Monitor-only:
+// never touches Treasury balances/requests.
+const AA8_TREASURY_OPEN_STATUSES = ['approved', 'partially_approved'];
+const detectTreasuryRequestUnresolved: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openByRequestId = new Map<string, AiOperationsEvent & { type: 'TREASURY_FUNDING_REQUEST_RESOLVED' }>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type !== 'TREASURY_FUNDING_REQUEST_RESOLVED') continue;
+    if (AA8_TREASURY_OPEN_STATUSES.includes(event.status)) {
+      openByRequestId.set(event.requestId, event);
+    } else {
+      openByRequestId.delete(event.requestId);
+    }
+  }
+  for (const [requestId, opened] of openByRequestId) {
+    if (opened.day < day) {
+      return {
+        type: 'ai_treasury_request_unresolved',
+        category: 'treasury',
+        severity: 'warning',
+        teamId: team.id,
+        actorId: opened.actorId,
+        relatedTreasuryRequestId: requestId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: `TREASURY_FUNDING_REQUEST_RESOLVED reaching 'fulfilled'/'rejected'/'cancelled'/'expired' within the same day the request was ${opened.status}`,
+        actualWorkflowState: `still '${opened.status}' since day ${opened.day}, never reached a terminal status`,
+        evidence: [opened],
+        likelyCause: 'The funded action never executed (or executed on a different code path than returnUnusedTreasuryFunds expects), so the request never reached a terminal Treasury status.',
+        confidence: 0.5,
+        userSummary: 'A Treasury funding request was approved but never resolved to completion.',
+        technicalDetails: `Request ${requestId} for actor ${opened.actorId ?? 'unknown'} was resolved '${opened.status}' on day ${opened.day}; no later TREASURY_FUNDING_REQUEST_RESOLVED for this requestId reaching a terminal status has been observed.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_treasury_request_unresolved:${requestId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA8: Rule 9 — an actor accumulated 2+ consecutive
+// GOVERNOR_RESTRICTION_CLASSIFIED { level: 'governor_deadlock' } events with no intervening
+// non-deadlock classification. Reuses classifyGovernorRestriction's own classification verbatim
+// (per the roadmap's stated intent) — this rule never reclassifies anything, it only surfaces a
+// repeated deadlock pattern the Governor's own classifier already computed. Monitor-only: never
+// touches Governor state or exceptions.
+const AA8_GOVERNOR_DEADLOCK_STREAK_THRESHOLD = 2;
+const detectRepeatedGovernorDeadlock: AiOperationsDetectionRule = (team, day, _turn) => {
+  const deadlockStreakByActor = new Map<string, (AiOperationsEvent & { type: 'GOVERNOR_RESTRICTION_CLASSIFIED' })[]>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type !== 'GOVERNOR_RESTRICTION_CLASSIFIED' || !event.actorId) continue;
+    if (event.level === 'governor_deadlock') {
+      const streak = deadlockStreakByActor.get(event.actorId) || [];
+      streak.push(event);
+      deadlockStreakByActor.set(event.actorId, streak);
+    } else {
+      deadlockStreakByActor.delete(event.actorId);
+    }
+  }
+  for (const [actorId, streak] of deadlockStreakByActor) {
+    if (streak.length >= AA8_GOVERNOR_DEADLOCK_STREAK_THRESHOLD) {
+      return {
+        type: 'ai_governor_deadlock_repeated',
+        category: 'economy_governor',
+        severity: 'major',
+        teamId: team.id,
+        actorId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'Governor restriction level returns to operational/restricted_but_operational/severely_restricted between deadlock turns',
+        actualWorkflowState: `${streak.length} consecutive 'governor_deadlock' classifications observed with no intervening non-deadlock turn`,
+        evidence: streak.slice(-3),
+        likelyCause: 'The actor has no legal, Governor-approved, Treasury-funded, or exception-covered action available across multiple consecutive turns.',
+        confidence: 0.6,
+        userSummary: 'A teammate has been stuck in a Governor deadlock for multiple turns in a row.',
+        technicalDetails: `Actor ${actorId} has ${streak.length} consecutive GOVERNOR_RESTRICTION_CLASSIFIED{level:'governor_deadlock'} events with no intervening non-deadlock classification.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_governor_deadlock_repeated:${actorId}`
+      };
+    }
+  }
+  return null;
+};
+
 // AI Operations Auditor Phase AA5: exactly one placeholder rule, always returns null — proves the
 // detection pipeline (candidate shape, dedup, create/occurrence-bump, status transition) type-checks
 // and is wired correctly before any real detection logic exists. Never fires during real play.
 // AA6 appended the first 3 real rules (turn-lifecycle stall, orphaned approval, repeated rejected
-// proposals); AA7 appends 3 more (action-budget mismatch, orphaned token, unused Override grant)
-// below; AA8+ appends further rules to this same array.
+// proposals); AA7 appended 3 more (action-budget mismatch, orphaned token, unused Override grant);
+// AA8 appends 3 more (sequence health, Treasury operational failure, repeated Governor deadlock)
+// below; AA9+ appends further rules to this same array.
 const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   (_team, _day, _turn) => null,
   detectAiTurnLifecycleStall,
@@ -3532,7 +3662,10 @@ const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   detectRepeatedRejectedProposals,
   detectActionBudgetMismatch,
   detectOrphanedActionToken,
-  detectUnusedOverrideGrant
+  detectUnusedOverrideGrant,
+  detectSequenceHealthDegraded,
+  detectTreasuryRequestUnresolved,
+  detectRepeatedGovernorDeadlock
 ];
 
 // AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
