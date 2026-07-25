@@ -3380,16 +3380,159 @@ const detectRepeatedRejectedProposals: AiOperationsDetectionRule = (team, day, _
   return null;
 };
 
+// AI Operations Auditor Phase AA7: Rule 4 — a completed turn cycle (AI_TURN_STARTED paired with
+// the next AI_TURN_FINISHED for the same actor) where actionsUsedThisTurn exceeds the turn's own
+// totalActionBudget — a structural accounting invariant violation (the turn engine should never
+// let an actor execute more actions than its own granted budget). Monitor-only: never touches
+// turn accounting.
+const detectActionBudgetMismatch: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openStartByActor = new Map<string, AiOperationsEvent & { type: 'AI_TURN_STARTED' }>();
+  for (const event of team.auditor.eventLog) {
+    if (!event.actorId) continue;
+    if (event.type === 'AI_TURN_STARTED') {
+      openStartByActor.set(event.actorId, event);
+      continue;
+    }
+    if (event.type === 'AI_TURN_FINISHED') {
+      const started = openStartByActor.get(event.actorId);
+      openStartByActor.delete(event.actorId);
+      if (started && event.actionsUsedThisTurn > started.totalActionBudget) {
+        return {
+          type: 'ai_action_budget_mismatch',
+          category: 'action_budget',
+          severity: 'warning',
+          teamId: team.id,
+          actorId: event.actorId,
+          day,
+          turn: _turn,
+          expectedWorkflowState: `actionsUsedThisTurn <= totalActionBudget (${started.totalActionBudget})`,
+          actualWorkflowState: `actionsUsedThisTurn was ${event.actionsUsedThisTurn}, exceeding the turn's own granted budget of ${started.totalActionBudget}`,
+          evidence: [started, event],
+          likelyCause: 'A bonus-action or override budget increase was applied without being reflected in the turn\'s recorded totalActionBudget, or the actor executed more actions than the turn engine granted.',
+          confidence: 0.55,
+          userSummary: 'A teammate appears to have taken more actions this turn than it should have been allowed.',
+          technicalDetails: `Actor ${event.actorId}'s turn on day ${started.day} started with totalActionBudget ${started.totalActionBudget} but finished with actionsUsedThisTurn ${event.actionsUsedThisTurn}.`,
+          recoveryOptions: [],
+          authorityRequired: 'locked',
+          safeModeTriggered: false,
+          dedupSignature: `ai_action_budget_mismatch:${event.actorId}`
+        };
+      }
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA7: Rule 5 — a token was minted on an earlier day than today with
+// no later AI_ACTION_TOKEN_CONSUMED or AI_ACTION_TOKEN_INVALIDATED for that same tokenId — the
+// token lifecycle never closed out. Monitor-only: never touches token state.
+const detectOrphanedActionToken: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openByTokenId = new Map<string, AiOperationsEvent & { type: 'AI_ACTION_TOKEN_MINTED' }>();
+  for (const event of team.auditor.eventLog) {
+    if (event.type === 'AI_ACTION_TOKEN_MINTED') {
+      openByTokenId.set(event.tokenId, event);
+    } else if (event.type === 'AI_ACTION_TOKEN_CONSUMED' || event.type === 'AI_ACTION_TOKEN_INVALIDATED') {
+      openByTokenId.delete(event.tokenId);
+    }
+  }
+  for (const [tokenId, minted] of openByTokenId) {
+    if (minted.day < day) {
+      return {
+        type: 'ai_action_token_orphaned',
+        category: 'action_token',
+        severity: 'informational',
+        teamId: team.id,
+        actorId: minted.actorId,
+        relatedTokenId: tokenId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'AI_ACTION_TOKEN_CONSUMED or AI_ACTION_TOKEN_INVALIDATED within the same day the token was minted',
+        actualWorkflowState: `still neither consumed nor invalidated since day ${minted.day}`,
+        evidence: [minted],
+        likelyCause: `A ${minted.source}-sourced token was minted but never redeemed or invalidated before the day advanced.`,
+        confidence: 0.45,
+        userSummary: 'A bonus action grant was never used or expired cleanly.',
+        technicalDetails: `Token ${tokenId} (source '${minted.source}') for actor ${minted.actorId ?? 'unknown'} was minted on day ${minted.day} with no AI_ACTION_TOKEN_CONSUMED/AI_ACTION_TOKEN_INVALIDATED observed since.`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_action_token_orphaned:${tokenId}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA7: Rule 6 — an Override was granted mid-turn (between an
+// AI_TURN_STARTED and its matching AI_TURN_FINISHED) but the turn finished with
+// actionsUsedThisTurn no greater than the turn's PRE-override totalActionBudget — i.e. none of the
+// bonus actions the Override paid for were ever actually used. This is the concrete "Override
+// purchased but not all actions used" mechanism described in the AA1 roadmap ground truth: only
+// one token is minted per Override purchase (mintActionToken is called once per grant), so bonus
+// actions beyond the first execute untracked by the token system — actionsUsedThisTurn vs. the
+// turn's starting budget is the only remaining signal that the grant went unused. Monitor-only:
+// never touches Override accounting.
+const detectUnusedOverrideGrant: AiOperationsDetectionRule = (team, day, _turn) => {
+  const openStartByActor = new Map<string, AiOperationsEvent & { type: 'AI_TURN_STARTED' }>();
+  const grantsSinceStartByActor = new Map<string, (AiOperationsEvent & { type: 'AI_OVERRIDE_GRANTED' })[]>();
+  for (const event of team.auditor.eventLog) {
+    if (!event.actorId) continue;
+    if (event.type === 'AI_TURN_STARTED') {
+      openStartByActor.set(event.actorId, event);
+      grantsSinceStartByActor.set(event.actorId, []);
+      continue;
+    }
+    if (event.type === 'AI_OVERRIDE_GRANTED' && openStartByActor.has(event.actorId)) {
+      (grantsSinceStartByActor.get(event.actorId) || []).push(event);
+      continue;
+    }
+    if (event.type === 'AI_TURN_FINISHED') {
+      const started = openStartByActor.get(event.actorId);
+      const grants = grantsSinceStartByActor.get(event.actorId) || [];
+      openStartByActor.delete(event.actorId);
+      grantsSinceStartByActor.delete(event.actorId);
+      if (started && grants.length > 0 && event.actionsUsedThisTurn <= started.totalActionBudget) {
+        return {
+          type: 'ai_override_grant_unused',
+          category: 'override',
+          severity: 'informational',
+          teamId: team.id,
+          actorId: event.actorId,
+          relatedOverrideGrantId: grants[grants.length - 1].grantId,
+          day,
+          turn: _turn,
+          expectedWorkflowState: `actionsUsedThisTurn exceeding the turn's pre-Override budget (${started.totalActionBudget}) after ${grants.length} Override grant(s)`,
+          actualWorkflowState: `actionsUsedThisTurn was ${event.actionsUsedThisTurn}, no greater than the pre-Override budget`,
+          evidence: [started, ...grants, event],
+          likelyCause: 'The Override was purchased but the actor\'s turn ended (or the remaining bonus actions failed) before any of the granted bonus actions actually executed.',
+          confidence: 0.4,
+          userSummary: 'A teammate paid for an action Override but did not use the extra actions it granted.',
+          technicalDetails: `Actor ${event.actorId} received ${grants.length} Override grant(s) this turn (day ${started.day}) but finished with actionsUsedThisTurn ${event.actionsUsedThisTurn}, not exceeding the pre-Override totalActionBudget of ${started.totalActionBudget}.`,
+          recoveryOptions: [],
+          authorityRequired: 'monitor',
+          safeModeTriggered: false,
+          dedupSignature: `ai_override_grant_unused:${event.actorId}`
+        };
+      }
+    }
+  }
+  return null;
+};
+
 // AI Operations Auditor Phase AA5: exactly one placeholder rule, always returns null — proves the
 // detection pipeline (candidate shape, dedup, create/occurrence-bump, status transition) type-checks
 // and is wired correctly before any real detection logic exists. Never fires during real play.
-// AA6 appends the first 3 real rules (turn-lifecycle stall, orphaned approval, repeated rejected
-// proposals) below; AA7+ appends further rules to this same array.
+// AA6 appended the first 3 real rules (turn-lifecycle stall, orphaned approval, repeated rejected
+// proposals); AA7 appends 3 more (action-budget mismatch, orphaned token, unused Override grant)
+// below; AA8+ appends further rules to this same array.
 const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   (_team, _day, _turn) => null,
   detectAiTurnLifecycleStall,
   detectOrphanedApprovalRequest,
-  detectRepeatedRejectedProposals
+  detectRepeatedRejectedProposals,
+  detectActionBudgetMismatch,
+  detectOrphanedActionToken,
+  detectUnusedOverrideGrant
 ];
 
 // AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
