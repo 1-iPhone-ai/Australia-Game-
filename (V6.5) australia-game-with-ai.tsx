@@ -5867,6 +5867,16 @@ type GameSettingsState = {
   // requirement), never a daily hysteresis re-check.
   teamAiAuditorSafeModeEnabled: boolean;
   teamAiAuditorSafeModeEscalatedIncidentThreshold: number;
+  // AE2 (AI Thinking & Algorithm System): per-side/opponent algorithm selection. All default
+  // 'classic_layered' — today's exact behavior, byte-identical until AE3 wires the resolver into
+  // any real turn-execution path. Applies to Team Mode (friendly/enemy) and solo Human vs AI
+  // (opponent) alike — this feature is not Team-Mode-only, unlike most teamAi* settings above.
+  aiAlgorithmForFriendlyTeam: AiDecisionEngineId;
+  aiAlgorithmForEnemyTeam: AiDecisionEngineId;
+  aiAlgorithmForOpponent: AiDecisionEngineId;
+  // Fast/Balanced/Deep thinking depth — reserved for the End-to-End Strategic Planner (AE7+:
+  // Balanced evaluates up to 2-step plans, Deep up to 3-step). Inert until then.
+  aiThinkingDepth: AiThinkingDepth;
 };
 
 type DontAskAgainPrefs = {
@@ -6081,6 +6091,11 @@ type TeamRoundPlan = Record<string, RoundPlannedDecision>;
 // custom Algorithm Builder config's own configId (Phase AB+) also satisfies this union structurally,
 // so no separate "is this a custom config id" check is ever needed at the type level.
 type AiDecisionEngineId = 'classic_layered' | 'end_to_end_planner' | string;
+
+// AE2: Fast/Balanced/Deep thinking depth for the future End-to-End Strategic Planner. Declared
+// now, consumed starting AE7 (Balanced = up to 2-step plans, Deep = up to 3-step) — inert until
+// then, since only Classic Layered AI (which ignores this field entirely) runs before AE5.
+type AiThinkingDepth = 'fast' | 'balanced' | 'deep';
 
 // Read-only game context handed to any decision engine (built-in or custom). An engine must never
 // mutate React/game state directly — it only ever returns an AiDecisionResult, which existing
@@ -7045,7 +7060,11 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAuditorAutomaticRecoveryMinConfidence: 0.5,
   teamAiAuditorAutomaticRecoveryMaxPerDay: 3,
   teamAiAuditorSafeModeEnabled: false,
-  teamAiAuditorSafeModeEscalatedIncidentThreshold: 2
+  teamAiAuditorSafeModeEscalatedIncidentThreshold: 2,
+  aiAlgorithmForFriendlyTeam: 'classic_layered',
+  aiAlgorithmForEnemyTeam: 'classic_layered',
+  aiAlgorithmForOpponent: 'classic_layered',
+  aiThinkingDepth: 'balanced'
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -7194,9 +7213,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'] },
-  // AE1: inert-display-only this phase — no real settings fields exist yet (nothing to select
-  // into until AE2 adds per-side algorithm-selection settings), so fieldKeys is empty.
-  { id: 'teamModeAi.aiThinkingAlgorithm', tab: 'teamModeAi', title: 'AI Thinking & Algorithm', tags: ['Team Mode', 'AI'], fieldKeys: [] },
+  { id: 'teamModeAi.aiThinkingAlgorithm', tab: 'teamModeAi', title: 'AI Thinking & Algorithm', tags: ['Team Mode', 'AI'], fieldKeys: ['aiAlgorithmForFriendlyTeam', 'aiAlgorithmForEnemyTeam', 'aiAlgorithmForOpponent', 'aiThinkingDepth'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -13260,7 +13277,23 @@ function AustraliaGame() {
 	      teamAiAuditorSafeModeEnabled: typeof settingsData.teamAiAuditorSafeModeEnabled === 'boolean'
 	        ? settingsData.teamAiAuditorSafeModeEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
-	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20)
+	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20),
+	      // AE2: only 'classic_layered'/'end_to_end_planner' are valid values this phase (custom
+	      // config ids don't exist until the Algorithm Builder ships) — anything else, including a
+	      // stale custom config id from a future build, falls back to 'classic_layered' rather than
+	      // trusting an unrecognized string.
+	      aiAlgorithmForFriendlyTeam: (settingsData.aiAlgorithmForFriendlyTeam === 'classic_layered' || settingsData.aiAlgorithmForFriendlyTeam === 'end_to_end_planner')
+	        ? settingsData.aiAlgorithmForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
+	      aiAlgorithmForEnemyTeam: (settingsData.aiAlgorithmForEnemyTeam === 'classic_layered' || settingsData.aiAlgorithmForEnemyTeam === 'end_to_end_planner')
+	        ? settingsData.aiAlgorithmForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
+	      aiAlgorithmForOpponent: (settingsData.aiAlgorithmForOpponent === 'classic_layered' || settingsData.aiAlgorithmForOpponent === 'end_to_end_planner')
+	        ? settingsData.aiAlgorithmForOpponent
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
+	      aiThinkingDepth: (settingsData.aiThinkingDepth === 'fast' || settingsData.aiThinkingDepth === 'balanced' || settingsData.aiThinkingDepth === 'deep')
+	        ? settingsData.aiThinkingDepth
+	        : DEFAULT_GAME_SETTINGS.aiThinkingDepth
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -13536,14 +13569,23 @@ function AustraliaGame() {
     return additionalActorsRef.current[actorId] || null;
   }, []);
 
-  // AE1 (AI Thinking & Algorithm System, foundations phase): always resolves to 'classic_layered'
-  // this phase — per-side/opponent selection logic arrives in AE2, but the signature is final now
-  // so AE2 only adds logic, never a signature change. Genuinely off-by-default-equivalent: no master
-  // toggle exists for algorithm selection itself, since Classic Layered AI IS today's exact
-  // behavior and IS the default. Uncalled by any real turn-execution code path this phase.
-  const resolveAiDecisionEngineForActor = useCallback((_actorId: string): AiDecisionEngineId => {
-    return 'classic_layered';
-  }, []);
+  // AE2: real per-side/opponent algorithm resolution, still uncalled by any real turn-execution
+  // code path — that wiring is AE3's job. Two guards, both load-bearing:
+  // 1. A human-controlled actor is never resolved to anything but Classic Layered AI (which for a
+  //    human actor is simply never consulted at all — this is defensive insurance, not a real gate,
+  //    since no code path ever asks "what algorithm controls this human" in the first place).
+  // 2. Outside the 3 supported modes (Human vs AI, Human+AI vs AI+AI, Team AI vs Team AI), always
+  //    resolves to Classic Layered AI regardless of what the settings say — Grand Tour/Single
+  //    Player/menus stay fully unaffected by this feature no matter how it's configured.
+  const resolveAiDecisionEngineForActor = useCallback((actorId: string): AiDecisionEngineId => {
+    const actor = getActorState(actorId);
+    if (!actor || actor.kind !== 'ai') return 'classic_layered';
+    if (!isAiAlgorithmFeatureActiveForMode(gameState.selectedMode)) return 'classic_layered';
+    if (isTeamModeSelection(gameState.selectedMode)) {
+      return actor.teamId === TEAM_PLAYER_ID ? gameSettings.aiAlgorithmForFriendlyTeam : gameSettings.aiAlgorithmForEnemyTeam;
+    }
+    return gameSettings.aiAlgorithmForOpponent;
+  }, [getActorState, gameState.selectedMode, gameSettings.aiAlgorithmForFriendlyTeam, gameSettings.aiAlgorithmForEnemyTeam, gameSettings.aiAlgorithmForOpponent]);
 
   // AE1: an explicit, named, zero-logic-change adapter for Classic Layered AI. Written now so its
   // shape can be reviewed before it's load-bearing; uncalled by any real code path this phase. Its
@@ -34362,7 +34404,11 @@ function AustraliaGame() {
       teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
       teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay,
       teamAiAuditorSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
-      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold
+      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold,
+      aiAlgorithmForFriendlyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
+      aiAlgorithmForEnemyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
+      aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
+      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -34551,7 +34597,11 @@ function AustraliaGame() {
       teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
       teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay,
       teamAiAuditorSafeModeEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
-      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold
+      teamAiAuditorSafeModeEscalatedIncidentThreshold: DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold,
+      aiAlgorithmForFriendlyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
+      aiAlgorithmForEnemyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
+      aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
+      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -38046,32 +38096,67 @@ function AustraliaGame() {
                 id="teamModeAi.aiThinkingAlgorithm"
                 tab="teamModeAi"
                 title="AI Thinking & Algorithm"
-                chips={['Team Mode only', 'AI only', 'Off by default']}
+                chips={['AI only', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
                 fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.aiThinkingAlgorithm')!.fieldKeys}
               >
-                {!gameSettings.teamCompetitiveAiEnabled ? (
-                  <div className="text-sm opacity-75">Competitive AI is off — AI Thinking & Algorithm selection has no effect.</div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="text-sm opacity-75">
-                      Lets you choose, per AI actor or side, between Classic Layered AI (today's
-                      exact behavior, and always the default), a built-in End-to-End Strategic
-                      Planner, or a custom algorithm you build yourself. Only active in Human vs AI,
-                      Human+AI vs AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand
-                      Tour, and menus. Real per-side selection, the Planner, and the Algorithm
-                      Builder are not built yet; every AI actor currently always uses Classic
-                      Layered AI.
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold text-sm">Friendly Team</div>
-                      <div className="text-sm opacity-75">Currently: Classic Layered AI</div>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold text-sm">Enemy Team</div>
-                      <div className="text-sm opacity-75">Currently: Classic Layered AI</div>
+                <div className="space-y-4">
+                  <div className="text-sm opacity-75">
+                    Lets you choose, per AI actor or side, between Classic Layered AI (today's exact
+                    behavior, and always the default), a built-in End-to-End Strategic Planner, or a
+                    custom algorithm you build yourself. Only active in Human vs AI, Human+AI vs
+                    AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand Tour, and menus.
+                    A human-controlled actor is never assigned an algorithm. The End-to-End Planner
+                    and the Algorithm Builder aren't built yet, so Classic Layered AI is the only
+                    functioning choice below.
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1 text-sm">Friendly Team AI (Team Mode)</label>
+                    <select
+                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                      value={gameSettings.aiAlgorithmForFriendlyTeam}
+                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: e.target.value as AiDecisionEngineId }))}
+                    >
+                      <option value="classic_layered">Classic Layered AI</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1 text-sm">Enemy Team AI (Team Mode)</label>
+                    <select
+                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                      value={gameSettings.aiAlgorithmForEnemyTeam}
+                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForEnemyTeam: e.target.value as AiDecisionEngineId }))}
+                    >
+                      <option value="classic_layered">Classic Layered AI</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1 text-sm">Opponent AI (Human vs AI)</label>
+                    <select
+                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
+                      value={gameSettings.aiAlgorithmForOpponent}
+                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForOpponent: e.target.value as AiDecisionEngineId }))}
+                    >
+                      <option value="classic_layered">Classic Layered AI</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1 text-sm">Thinking Depth</label>
+                    <div className="text-xs opacity-60 mb-2">Reserved for the End-to-End Strategic Planner — has no effect until that's built.</div>
+                    <div className="flex gap-2">
+                      {(['fast', 'balanced', 'deep'] as AiThinkingDepth[]).map(depth => (
+                        <button
+                          key={depth}
+                          onClick={() => setGameSettings(prev => ({ ...prev, aiThinkingDepth: depth }))}
+                          className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiThinkingDepth === depth ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {depth}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                )}
+                </div>
               </SettingsSection>
 
               <SettingsSection id="teamModeAi.overview" tab="teamModeAi" title="🧠 AI Systems Overview">
