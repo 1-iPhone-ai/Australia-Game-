@@ -6134,6 +6134,42 @@ interface AiDecisionResult {
   fallbackReason?: string;
 }
 
+// AE4 (Failure Protection): a generic operation-count ceiling any future planner/custom-algorithm
+// engine (AE5+/AB+) should consult and enforce internally to bound its own candidate-generation/
+// plan-evaluation work. Reserved now, unconsumed by Classic Layered AI (which has no operation-
+// counting concept) or by anything else this phase — declared with its final intended meaning so
+// later phases don't need a signature/contract change to start using it.
+const AI_DECISION_ENGINE_MAX_OPERATIONS = 500;
+
+// AE4: the one, final, guaranteed-safe decision when every engine (including the mandatory Classic
+// Layered AI fallback) has failed to produce anything usable — ends the turn rather than throwing,
+// looping, or leaving anything unresolved. Mirrors the exact shape of every other "no legal move"
+// decision already used throughout this file (e.g. makeAiDecision's own invalid-state handling).
+const AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION: AIAction = {
+  type: 'end_turn',
+  description: 'AI decision engine failure — ending turn safely',
+  data: null
+};
+
+// AE4: a minimal, cheap sanity check on whatever a decision engine returns — never a full
+// re-validation of game legality (Action Requirements/Approval/Governor/Vault/Treasury/Sequences/
+// cooldowns/game-over checks all still run, completely unchanged, on whatever decision comes out of
+// this). This only catches the specific failure modes the roadmap calls out: no decision at all, a
+// decision with no type, or an obviously corrupt numeric field (NaN/Infinity/negative) that no
+// legitimate engine should ever produce.
+const validateAiEngineDecision = (decision: AIAction | null | undefined): { valid: boolean; reason: string } => {
+  if (!decision || typeof decision.type !== 'string') return { valid: false, reason: 'missing or malformed decision' };
+  const wager = decision.data?.wager;
+  if (wager !== undefined && (typeof wager !== 'number' || !Number.isFinite(wager) || wager < 0)) {
+    return { valid: false, reason: 'invalid wager value' };
+  }
+  const cost = decision.data?.purchases?.[0]?.cost;
+  if (cost !== undefined && (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0)) {
+    return { valid: false, reason: 'invalid cost value' };
+  }
+  return { valid: true, reason: '' };
+};
+
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
   'ai_travel', 'ai_sabotage', 'ai_trade', 'ai_challenge',
   'resource_buy', 'resource_sell', 'crafting', 'market',
@@ -18152,21 +18188,46 @@ function AustraliaGame() {
       isAdvancedLoansEnabledForActor
 	  ]);
 
-  // AE3: the one place a resolved AI decision engine actually gets consulted for solo Human-vs-AI
-  // decision selection. Only 'classic_layered' has a real implementation until AE5+ builds the
-  // End-to-End Planner (and AB+ builds the Algorithm Builder) — every other resolved id defensively
-  // falls back to Classic Layered AI (mirroring the roadmap's own "Classic Layered AI is the
-  // mandatory final fallback" design), so this can never produce a different decision than calling
-  // makeAiDecision directly does today. Byte-identical to pre-AE3 behavior in every case right now.
+  // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for solo
+  // Human-vs-AI decision selection. Only 'classic_layered' has a real implementation until AE5+
+  // builds the End-to-End Planner (and AB+ builds the Algorithm Builder). AE4 (Failure Protection)
+  // adds a narrow try/catch scoped to just the engine call + a cheap sanity check on its result —
+  // never a re-validation of game legality, which every existing downstream chokepoint
+  // (executeAiAction and everything it calls) still performs completely unchanged. On any
+  // error/invalid result from a non-Classic engine, this mandatorily falls back to Classic Layered
+  // AI; if Classic itself is what failed (or the Classic fallback also fails), it returns the one
+  // guaranteed-safe end_turn decision rather than throwing, looping, or leaving the turn stuck.
+  // This function only ever returns ONE decision object — it never executes/tokens/approves/
+  // advances a turn itself — so the "never double-X" guarantees are provided by construction: the
+  // existing single call to executeAiAction downstream never runs more than once per decision here.
   const resolveSoloAiDecisionViaEngine = useCallback((aiState, currentGameState, playerState) => {
     const engineId = resolveAiDecisionEngineForActor('ai');
-    switch (engineId) {
-      case 'end_to_end_planner':
-        return makeAiDecision(aiState, currentGameState, playerState);
-      case 'classic_layered':
-      default:
-        return makeAiDecision(aiState, currentGameState, playerState);
+    const runSelectedEngine = () => {
+      switch (engineId) {
+        case 'end_to_end_planner':
+          // AE5+ replaces this branch with a real call into the built-in planner.
+          return makeAiDecision(aiState, currentGameState, playerState);
+        case 'classic_layered':
+        default:
+          return makeAiDecision(aiState, currentGameState, playerState);
+      }
+    };
+    let decision: AIAction | null = null;
+    try {
+      decision = runSelectedEngine();
+    } catch (error) {
+      console.error(`Solo AI decision engine '${engineId}' threw`, error);
     }
+    if (validateAiEngineDecision(decision).valid) return decision as AIAction;
+    if (engineId !== 'classic_layered') {
+      try {
+        const classicDecision = makeAiDecision(aiState, currentGameState, playerState);
+        if (validateAiEngineDecision(classicDecision).valid) return classicDecision;
+      } catch (classicError) {
+        console.error('Classic Layered AI fallback itself threw (solo mode)', classicError);
+      }
+    }
+    return AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION;
   }, [resolveAiDecisionEngineForActor, makeAiDecision]);
 
   // AI Turn Management
@@ -30373,23 +30434,52 @@ function AustraliaGame() {
     return best;
   }, [aiRandom, buildDecisionTraceFromCandidates, gameState.selectedMode, gameState.turnCounter, getActorState, getRankedTeamAiDecisions, getTeamDifficultyBehavior, recordDecisionTrace, updateActorState]);
 
-  // AE3: the one place a resolved AI decision engine actually gets consulted for team-mode
+  // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for team-mode
   // decision selection — plugged in ONLY at the innermost fallback position, after Parallel
   // Planning's round plan, Teammate Action Sequences, and Team Plans have all had their chance
   // (those are more-specific existing commitments and must keep out-ranking any algorithm choice,
   // per the roadmap's own "more specific commitment always wins" rule). Only 'classic_layered' has
   // a real implementation until AE5+ builds the End-to-End Planner (and AB+ the Algorithm
-  // Builder) — every other resolved id defensively falls back to Classic Layered AI, so this can
-  // never produce a different decision than calling makeTeamAiDecision directly does today.
+  // Builder). AE4 (Failure Protection) adds a narrow try/catch scoped to just the engine call + a
+  // cheap sanity check on its result — built on top of, never replacing, the ONE existing coarse
+  // try/catch already wrapping this whole function's main loop (which still guarantees
+  // finishTeamAiTurn fires exactly once even on a totally unexpected exception) and the existing
+  // ActiveAiTurnSession pause/resume guards, both completely untouched. On any error/invalid result
+  // from a non-Classic engine, this mandatorily falls back to Classic Layered AI; if Classic itself
+  // is what failed (or the Classic fallback also fails), it returns the one guaranteed-safe
+  // end_turn decision rather than throwing, looping, or leaving the turn stuck. This function only
+  // ever returns ONE decision object — it never executes/tokens/approves/advances a turn itself —
+  // so the "never double-X" guarantees hold by construction: every step after this (reservation
+  // claiming, AI Action Approval, token revalidation, Action Requirements, execution) runs exactly
+  // once per call, on whatever single decision comes back.
   const resolveTeamAiDecisionViaEngine = useCallback((actorId: string): AIAction => {
     const engineId = resolveAiDecisionEngineForActor(actorId);
-    switch (engineId) {
-      case 'end_to_end_planner':
-        return makeTeamAiDecision(actorId);
-      case 'classic_layered':
-      default:
-        return makeTeamAiDecision(actorId);
+    const runSelectedEngine = (): AIAction => {
+      switch (engineId) {
+        case 'end_to_end_planner':
+          // AE5+ replaces this branch with a real call into the built-in planner.
+          return makeTeamAiDecision(actorId);
+        case 'classic_layered':
+        default:
+          return makeTeamAiDecision(actorId);
+      }
+    };
+    let decision: AIAction | null = null;
+    try {
+      decision = runSelectedEngine();
+    } catch (error) {
+      console.error(`Team AI decision engine '${engineId}' threw for actor ${actorId}`, error);
     }
+    if (validateAiEngineDecision(decision).valid) return decision as AIAction;
+    if (engineId !== 'classic_layered') {
+      try {
+        const classicDecision = makeTeamAiDecision(actorId);
+        if (validateAiEngineDecision(classicDecision).valid) return classicDecision;
+      } catch (classicError) {
+        console.error(`Classic Layered AI fallback itself threw for actor ${actorId}`, classicError);
+      }
+    }
+    return AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION;
   }, [resolveAiDecisionEngineForActor, makeTeamAiDecision]);
 
   const advanceToNextActorTurn = useCallback(() => {
