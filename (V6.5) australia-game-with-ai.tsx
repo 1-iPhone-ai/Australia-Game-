@@ -2681,6 +2681,11 @@ interface TeamState {
   // AI Operations Auditor Phase AA1: genuinely separate per-team state from `overseer` above —
   // observes, never replaces, the existing AI systems. Inert until AA2+ wires real detection.
   auditor: AiOperationsAuditorState;
+  // AI Thinking/Algorithm Builder Phase AB1: the player-authored custom-algorithm library for this
+  // team, mirroring `sequences`' own precedent (a per-team array of independently-activatable
+  // player structures). Always [] this phase — no CRUD exists yet (AB6), no stage editors exist
+  // yet (AB2-AB4), so nothing anywhere can construct a real entry.
+  algorithmConfigs: AiAlgorithmConfig[];
 }
 
 // Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
@@ -5877,6 +5882,12 @@ type GameSettingsState = {
   // Fast/Balanced/Deep thinking depth — reserved for the End-to-End Strategic Planner (AE7+:
   // Balanced evaluates up to 2-step plans, Deep up to 3-step). Inert until then.
   aiThinkingDepth: AiThinkingDepth;
+  // AI Thinking/Algorithm Builder Phase AB1: master toggle, off by default — inert this phase
+  // since no config can be created yet (AB6). Default editor mode governs the starting
+  // editorMode of a newly-created config; inert until AB2+ builds a stage editor that varies its
+  // own field visibility by this value.
+  aiAlgorithmBuilderEnabled: boolean;
+  aiAlgorithmBuilderDefaultEditorMode: AiAlgorithmEditorMode;
 };
 
 type DontAskAgainPrefs = {
@@ -6334,6 +6345,71 @@ const validateAiEngineDecision = (decision: AIAction | null | undefined): { vali
     return { valid: false, reason: 'invalid cost value' };
   }
   return { valid: true, reason: '' };
+};
+
+// AB1 (AI Thinking/Algorithm Builder, foundations phase): a closed, non-arbitrary-code schema for
+// a player-authored custom decision algorithm. Declared now, uncalled by any real turn-execution
+// code path this phase — no code anywhere constructs a real AiAlgorithmConfig yet (no CRUD exists
+// until AB6, no stage editors exist until AB2-AB4). configId/revision are the two fields AE1's own
+// comment already anticipated ("A custom Algorithm Builder config's own configId (Phase AB+) also
+// satisfies this union structurally" / AiDecisionResult.configRevision); a config's own configId
+// slots into the existing AiDecisionEngineId union with zero type changes needed there.
+const AI_ALGORITHM_EDITOR_MODES: ('basic' | 'advanced' | 'expert')[] = ['basic', 'advanced', 'expert'];
+type AiAlgorithmEditorMode = 'basic' | 'advanced' | 'expert';
+const AI_ALGORITHM_VALIDATION_STATUSES: ('draft' | 'valid' | 'invalid')[] = ['draft', 'valid', 'invalid'];
+type AiAlgorithmValidationStatus = 'draft' | 'valid' | 'invalid';
+interface AiAlgorithmLastTestResult {
+  ranAtDay: number;
+  outcomeSummary: string;
+  passed: boolean;
+}
+interface AiAlgorithmConfig {
+  configId: string;
+  revision: number;
+  name: string;
+  description: string;
+  editorMode: AiAlgorithmEditorMode;
+  validationStatus: AiAlgorithmValidationStatus;
+  lastTestResult: AiAlgorithmLastTestResult | null;
+  createdByPlayer: boolean;
+  createdDay: number;
+  active: boolean;
+}
+
+// AB1: mirrors sanitizeTeamPlan's exact convention — hard-fail (null) on a missing/wrong-typed
+// required string id, every enum field validated against its own closed const array (defaulting
+// rather than trusting an unvalidated value), numeric fields clamped, nested object either fully
+// valid or dropped to null. Uncalled by any real code path until AB6 gives configs a real CRUD
+// surface — this phase only needs the sanitizer to exist so TeamState.algorithmConfigs round-trips
+// safely through save/load from day one, exactly like every other "types + sanitizer first" phase.
+const sanitizeAiAlgorithmLastTestResult = (value: unknown): AiAlgorithmLastTestResult | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmLastTestResult>;
+  if (typeof source.ranAtDay !== 'number' || !Number.isFinite(source.ranAtDay)) return null;
+  if (typeof source.outcomeSummary !== 'string') return null;
+  if (typeof source.passed !== 'boolean') return null;
+  return { ranAtDay: Math.max(0, Math.floor(source.ranAtDay)), outcomeSummary: source.outcomeSummary, passed: source.passed };
+};
+const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmConfig>;
+  if (typeof source.configId !== 'string' || typeof source.name !== 'string') return null;
+  return {
+    configId: source.configId,
+    revision: typeof source.revision === 'number' && Number.isFinite(source.revision) ? Math.max(0, Math.floor(source.revision)) : 0,
+    name: source.name,
+    description: typeof source.description === 'string' ? source.description : '',
+    editorMode: AI_ALGORITHM_EDITOR_MODES.includes(source.editorMode as AiAlgorithmEditorMode) ? (source.editorMode as AiAlgorithmEditorMode) : 'basic',
+    validationStatus: AI_ALGORITHM_VALIDATION_STATUSES.includes(source.validationStatus as AiAlgorithmValidationStatus) ? (source.validationStatus as AiAlgorithmValidationStatus) : 'draft',
+    lastTestResult: sanitizeAiAlgorithmLastTestResult(source.lastTestResult),
+    createdByPlayer: typeof source.createdByPlayer === 'boolean' ? source.createdByPlayer : true,
+    createdDay: typeof source.createdDay === 'number' && Number.isFinite(source.createdDay) ? Math.max(0, Math.floor(source.createdDay)) : 0,
+    active: typeof source.active === 'boolean' ? source.active : false
+  };
+};
+const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(sanitizeAiAlgorithmConfig).filter((config): config is AiAlgorithmConfig => Boolean(config)).slice(-30);
 };
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
@@ -7266,7 +7342,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiAlgorithmForFriendlyTeam: 'classic_layered',
   aiAlgorithmForEnemyTeam: 'classic_layered',
   aiAlgorithmForOpponent: 'classic_layered',
-  aiThinkingDepth: 'balanced'
+  aiThinkingDepth: 'balanced',
+  aiAlgorithmBuilderEnabled: false,
+  aiAlgorithmBuilderDefaultEditorMode: 'basic'
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -7416,6 +7494,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'] },
   { id: 'teamModeAi.aiThinkingAlgorithm', tab: 'teamModeAi', title: 'AI Thinking & Algorithm', tags: ['Team Mode', 'AI'], fieldKeys: ['aiAlgorithmForFriendlyTeam', 'aiAlgorithmForEnemyTeam', 'aiAlgorithmForOpponent', 'aiThinkingDepth'] },
+  { id: 'teamModeAi.algorithmBuilder', tab: 'teamModeAi', title: 'AI Thinking/Algorithm Builder', tags: ['Team Mode', 'AI', 'Off by default'], fieldKeys: ['aiAlgorithmBuilderEnabled', 'aiAlgorithmBuilderDefaultEditorMode'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -11169,7 +11248,8 @@ const createDefaultTeamState = (
   treasury: createDefaultTeamTreasuryState(id),
   governorExceptions: [],
   overseer: createDefaultTeamOverseerState(),
-  auditor: createDefaultAiOperationsAuditorState()
+  auditor: createDefaultAiOperationsAuditorState(),
+  algorithmConfigs: []
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -12836,7 +12916,11 @@ function AustraliaGame() {
               };
             })(),
             // AI Operations Auditor Phase AA1: genuinely separate from `overseer` above.
-            auditor: sanitizeAiOperationsAuditorState(teamData?.auditor)
+            auditor: sanitizeAiOperationsAuditorState(teamData?.auditor),
+            // AI Thinking/Algorithm Builder Phase AB1: always sanitizes to [] today (no code path
+            // this phase can ever have populated it), but wired now so a later phase's real
+            // configs round-trip safely without a save-format migration.
+            algorithmConfigs: sanitizeAiAlgorithmConfigs(teamData?.algorithmConfigs)
           };
           return acc;
         }, {})
@@ -13523,7 +13607,11 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
 	      aiThinkingDepth: (settingsData.aiThinkingDepth === 'fast' || settingsData.aiThinkingDepth === 'balanced' || settingsData.aiThinkingDepth === 'deep')
 	        ? settingsData.aiThinkingDepth
-	        : DEFAULT_GAME_SETTINGS.aiThinkingDepth
+	        : DEFAULT_GAME_SETTINGS.aiThinkingDepth,
+	      aiAlgorithmBuilderEnabled: typeof settingsData.aiAlgorithmBuilderEnabled === 'boolean' ? settingsData.aiAlgorithmBuilderEnabled : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
+	      aiAlgorithmBuilderDefaultEditorMode: AI_ALGORITHM_EDITOR_MODES.includes(settingsData.aiAlgorithmBuilderDefaultEditorMode)
+	        ? settingsData.aiAlgorithmBuilderDefaultEditorMode
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -34895,7 +34983,9 @@ function AustraliaGame() {
       aiAlgorithmForFriendlyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
       aiAlgorithmForEnemyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
       aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
-      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth
+      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
+      aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
+      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -35088,7 +35178,9 @@ function AustraliaGame() {
       aiAlgorithmForFriendlyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
       aiAlgorithmForEnemyTeam: DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
       aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
-      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth
+      aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
+      aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
+      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
@@ -38594,9 +38686,10 @@ function AustraliaGame() {
                     behavior, and always the default), a built-in End-to-End Strategic Planner, or a
                     custom algorithm you build yourself. Only active in Human vs AI, Human+AI vs
                     AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand Tour, and menus.
-                    A human-controlled actor is never assigned an algorithm. The Algorithm Builder
-                    isn't built yet, so custom algorithms aren't selectable below — only Classic
-                    Layered AI and the built-in End-to-End Strategic Planner are real choices.
+                    A human-controlled actor is never assigned an algorithm. The Algorithm Builder's
+                    own settings section (below) now exists, but it still can't produce a
+                    selectable config yet — only Classic Layered AI and the built-in End-to-End
+                    Strategic Planner are real choices here.
                   </div>
                   <div>
                     <label className="block font-semibold mb-1 text-sm">Friendly Team AI (Team Mode)</label>
@@ -38646,6 +38739,58 @@ function AustraliaGame() {
                       ))}
                     </div>
                   </div>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                id="teamModeAi.algorithmBuilder"
+                tab="teamModeAi"
+                title="AI Thinking/Algorithm Builder"
+                chips={['Team Mode', 'AI', 'Off by default']}
+                onReset={settingsResetHandlers.teamMode.fn}
+                resetLabel={settingsResetHandlers.teamMode.label}
+                fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'teamModeAi.algorithmBuilder')!.fieldKeys}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Enable AI Thinking/Algorithm Builder</div>
+                      <div className="text-sm opacity-75">
+                        A separate, optional system for building your own custom decision algorithms
+                        from safe, predefined building blocks — never arbitrary code. This is pure
+                        scaffolding right now: there's no way to actually create a config yet (the
+                        config editor, presets, and CRUD all arrive in later phases).
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderEnabled: !prev.aiAlgorithmBuilderEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiAlgorithmBuilderEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {gameSettings.aiAlgorithmBuilderEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.aiAlgorithmBuilderEnabled && (
+                    <>
+                      <div className="text-sm opacity-75">
+                        {(teamsById[TEAM_PLAYER_ID]?.algorithmConfigs?.length || 0) + (teamsById[TEAM_OPPONENT_ID]?.algorithmConfigs?.length || 0)} custom algorithms configured — the config editor arrives in a later phase.
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
+                        <div className="text-xs opacity-60 mb-2">Reserved for the future config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
+                        <div className="flex gap-2">
+                          {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
+                            <button
+                              key={mode}
+                              onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
+                              className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </SettingsSection>
 
