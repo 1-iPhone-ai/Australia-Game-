@@ -3254,6 +3254,18 @@ interface AiOperationsIncident {
 type AiOperationsIncidentCandidate = Omit<AiOperationsIncident, 'id' | 'status' | 'attempts' | 'relatedIncidentIds' | 'firstSeenDay' | 'lastSeenDay' | 'occurrenceCount'>;
 type AiOperationsDetectionRule = (team: TeamState, day: number, turn: number) => AiOperationsIncidentCandidate | null;
 
+// Post-ship review fix: a detection rule that loops multiple candidates (actors/requests/tokens)
+// must not stop at the first one that already has an active (non-terminal, still in
+// team.auditor.incidents) tracked incident — returning the same already-tracked candidate every
+// day both starves genuinely different candidates from ever being surfaced (e.g. actor B's stall
+// is never reported while actor A's stall stays open) and, for rules whose underlying condition is
+// a discrete already-completed historical fact rather than a still-ongoing one, needlessly
+// re-inflates occurrenceCount/lastSeenDay on a static fact via upsertAiOperationsIncident. Once an
+// incident resolves (moves out of team.auditor.incidents into incidentHistory), a genuinely new
+// occurrence of the same dedupSignature is free to be reported again.
+const isDedupSignatureActivelyTracked = (team: TeamState, dedupSignature: string): boolean =>
+  team.auditor.incidents.some(i => i.dedupSignature === dedupSignature);
+
 // AI Operations Auditor Phase AA6: Rule 1 — an actor's turn opened (AI_TURN_STARTED or
 // AI_TURN_PAUSED_FOR_APPROVAL) on an earlier day than today with no later AI_TURN_RESUMED/
 // AI_TURN_FINISHED for that same actor anywhere after it in the log — the turn never closed out
@@ -3265,7 +3277,7 @@ const detectAiTurnLifecycleStall: AiOperationsDetectionRule = (team, day, _turn)
     if (actorEvents.length === 0) continue;
     const last = actorEvents[actorEvents.length - 1];
     if ((last.type === 'AI_TURN_STARTED' || last.type === 'AI_TURN_PAUSED_FOR_APPROVAL') && last.day < day) {
-      return {
+      const candidate: AiOperationsIncidentCandidate = {
         type: 'ai_turn_lifecycle_stall',
         category: 'turn_lifecycle',
         severity: 'warning',
@@ -3285,6 +3297,8 @@ const detectAiTurnLifecycleStall: AiOperationsDetectionRule = (team, day, _turn)
         safeModeTriggered: false,
         dedupSignature: `ai_turn_lifecycle_stall:${actorId}`
       };
+      if (isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) continue;
+      return candidate;
     }
   }
   return null;
@@ -3305,7 +3319,7 @@ const detectOrphanedApprovalRequest: AiOperationsDetectionRule = (team, day, _tu
   }
   for (const [requestId, opened] of openByRequestId) {
     if (opened.day < day) {
-      return {
+      const candidate: AiOperationsIncidentCandidate = {
         type: 'ai_approval_request_orphaned',
         category: 'approval_flow',
         severity: 'warning',
@@ -3326,6 +3340,8 @@ const detectOrphanedApprovalRequest: AiOperationsDetectionRule = (team, day, _tu
         safeModeTriggered: false,
         dedupSignature: `ai_approval_request_orphaned:${requestId}`
       };
+      if (isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) continue;
+      return candidate;
     }
   }
   return null;
@@ -3355,7 +3371,7 @@ const detectRepeatedRejectedProposals: AiOperationsDetectionRule = (team, day, _
   }
   for (const [actorId, streak] of rejectionStreakByActor) {
     if (streak.length >= AA6_REPEATED_REJECTION_THRESHOLD) {
-      return {
+      const candidate: AiOperationsIncidentCandidate = {
         type: 'ai_repeated_rejected_proposals',
         category: 'action_proposal',
         severity: 'warning',
@@ -3375,6 +3391,8 @@ const detectRepeatedRejectedProposals: AiOperationsDetectionRule = (team, day, _
         safeModeTriggered: false,
         dedupSignature: `ai_repeated_rejected_proposals:${actorId}`
       };
+      if (isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) continue;
+      return candidate;
     }
   }
   return null;
@@ -3397,7 +3415,7 @@ const detectActionBudgetMismatch: AiOperationsDetectionRule = (team, day, _turn)
       const started = openStartByActor.get(event.actorId);
       openStartByActor.delete(event.actorId);
       if (started && event.actionsUsedThisTurn > started.totalActionBudget) {
-        return {
+        const candidate: AiOperationsIncidentCandidate = {
           type: 'ai_action_budget_mismatch',
           category: 'action_budget',
           severity: 'warning',
@@ -3417,6 +3435,7 @@ const detectActionBudgetMismatch: AiOperationsDetectionRule = (team, day, _turn)
           safeModeTriggered: false,
           dedupSignature: `ai_action_budget_mismatch:${event.actorId}`
         };
+        if (!isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) return candidate;
       }
     }
   }
@@ -3437,7 +3456,7 @@ const detectOrphanedActionToken: AiOperationsDetectionRule = (team, day, _turn) 
   }
   for (const [tokenId, minted] of openByTokenId) {
     if (minted.day < day) {
-      return {
+      const candidate: AiOperationsIncidentCandidate = {
         type: 'ai_action_token_orphaned',
         category: 'action_token',
         severity: 'informational',
@@ -3454,10 +3473,15 @@ const detectOrphanedActionToken: AiOperationsDetectionRule = (team, day, _turn) 
         userSummary: 'A bonus action grant was never used or expired cleanly.',
         technicalDetails: `Token ${tokenId} (source '${minted.source}') for actor ${minted.actorId ?? 'unknown'} was minted on day ${minted.day} with no AI_ACTION_TOKEN_CONSUMED/AI_ACTION_TOKEN_INVALIDATED observed since.`,
         recoveryOptions: [],
-        authorityRequired: 'monitor',
+        // Post-ship review fix: action_token is one of the "sensitive" categories that defaults to
+        // 'locked' in createDefaultAiOperationsAuditorState's categoryAuthority (never 'monitor') —
+        // this was previously copy-pasted from an earlier monitor-category rule without updating.
+        authorityRequired: 'locked',
         safeModeTriggered: false,
         dedupSignature: `ai_action_token_orphaned:${tokenId}`
       };
+      if (isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) continue;
+      return candidate;
     }
   }
   return null;
@@ -3492,7 +3516,7 @@ const detectUnusedOverrideGrant: AiOperationsDetectionRule = (team, day, _turn) 
       openStartByActor.delete(event.actorId);
       grantsSinceStartByActor.delete(event.actorId);
       if (started && grants.length > 0 && event.actionsUsedThisTurn <= started.totalActionBudget) {
-        return {
+        const candidate: AiOperationsIncidentCandidate = {
           type: 'ai_override_grant_unused',
           category: 'override',
           severity: 'informational',
@@ -3509,10 +3533,14 @@ const detectUnusedOverrideGrant: AiOperationsDetectionRule = (team, day, _turn) 
           userSummary: 'A teammate paid for an action Override but did not use the extra actions it granted.',
           technicalDetails: `Actor ${event.actorId} received ${grants.length} Override grant(s) this turn (day ${started.day}) but finished with actionsUsedThisTurn ${event.actionsUsedThisTurn}, not exceeding the pre-Override totalActionBudget of ${started.totalActionBudget}.`,
           recoveryOptions: [],
-          authorityRequired: 'monitor',
+          // Post-ship review fix: override is one of the "sensitive" categories that defaults to
+          // 'locked' in createDefaultAiOperationsAuditorState's categoryAuthority (never 'monitor') —
+          // this was previously copy-pasted from an earlier monitor-category rule without updating.
+          authorityRequired: 'locked',
           safeModeTriggered: false,
           dedupSignature: `ai_override_grant_unused:${event.actorId}`
         };
+        if (!isDedupSignatureActivelyTracked(team, candidate.dedupSignature)) return candidate;
       }
     }
   }
@@ -4059,6 +4087,13 @@ const canApplyAutomaticRecovery = (
   // incident detection and display are completely unaffected) until an explicit
   // resumeAuditorFromSafeMode call, never a daily re-check.
   if (team.auditor.safeModeActive) return false;
+  // Post-ship review fix: 'escalated' means a prior automatic-recovery attempt already ran and
+  // failed verification for this exact incident (see the call site that sets it). It's not a
+  // terminal status (AUDITOR_TERMINAL_INCIDENT_STATUSES doesn't include it, by design — an
+  // escalated incident stays visible/actionable), but automatic recovery must still never
+  // re-attempt it — otherwise a chronically-failing incident gets silently re-attempted once per
+  // day forever, contradicting the "attempted at most once, never looped" design.
+  if (incident.status === 'escalated') return false;
   if (team.auditor.categoryAuthority[incident.category] !== 'automatic') return false;
   if (!recovery.deterministic || !recovery.idempotent) return false;
   if (recovery.confidence < settings.teamAiAuditorAutomaticRecoveryMinConfidence) return false;
@@ -22917,6 +22952,14 @@ function AustraliaGame() {
     const incidentId = request.auditorIncidentId;
     if (!incidentId) return;
     const incident = teamsByIdRef.current[request.teamId]?.auditor.incidents.find(i => i.id === incidentId);
+    // Post-ship review fix: if this team's mode was switched to 'automatic' while this request sat
+    // unresolved, the automatic path may have already processed the same incident (marking it
+    // 'escalated' on verification failure, or moving it out of `incidents` entirely on success) by
+    // the time the player finally resolves the now-stale dialog. Re-applying the recovery here would
+    // silently mask a real automatic-recovery failure as 'resolved', and re-resolving an incident
+    // that's already terminal would double-count/duplicate resolveAiOperationsIncident's own
+    // history-move logic. Treat both as already handled — a stale Approve/Reject on them is a no-op.
+    if (incident && (incident.status === 'escalated' || AUDITOR_TERMINAL_INCIDENT_STATUSES.includes(incident.status))) return;
     if (control === 'approve' && incident) {
       applyAuditorRecoveryAction(request.teamId, incident);
     }
@@ -25789,7 +25832,10 @@ function AustraliaGame() {
                 appendTeamAiTraceNote(actorId, `Strategic Command recommends issuing directive: ${directive.objective} (${directive.horizon}) — awaiting manual review.`);
               }
               appendAiOperationsEvent(teamId, {
-                ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+                // Post-ship review fix: this is Strategic Command issuing a directive, not the
+                // Adaptive Overseer — sourceSystem must match so event-log grouping/filtering (e.g.
+                // the Auditor Dashboard's overseerHealth tab) buckets it correctly.
+                ...buildAiOperationsEventBase(teamId, actorId, 'strategic_command', true),
                 type: 'OVERSEER_DIRECTIVE_ISSUED',
                 directiveId: directive.id
               });
@@ -25808,7 +25854,10 @@ function AustraliaGame() {
               const approvalRequest = buildOverseerDirectiveApprovalRequest(awaitingDirective, teamId);
               setPendingApprovalRequests(prev => [...prev, approvalRequest]);
               appendAiOperationsEvent(teamId, {
-                ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+                // Post-ship review fix: this is Strategic Command issuing a directive, not the
+                // Adaptive Overseer — sourceSystem must match so event-log grouping/filtering (e.g.
+                // the Auditor Dashboard's overseerHealth tab) buckets it correctly.
+                ...buildAiOperationsEventBase(teamId, actorId, 'strategic_command', true),
                 type: 'OVERSEER_DIRECTIVE_ISSUED',
                 directiveId: directive.id
               });
@@ -25829,7 +25878,10 @@ function AustraliaGame() {
               appendTeamAiTraceNote(actorId, `Strategic Command issued directive: ${directive.objective} (${directive.horizon}, expires day ${directive.expiresDay}).`);
             }
             appendAiOperationsEvent(teamId, {
-              ...buildAiOperationsEventBase(teamId, actorId, 'adaptive_overseer', true),
+              // Post-ship review fix: this is Strategic Command issuing a directive, not the
+              // Adaptive Overseer — sourceSystem must match so event-log grouping/filtering (e.g.
+              // the Auditor Dashboard's overseerHealth tab) buckets it correctly.
+              ...buildAiOperationsEventBase(teamId, actorId, 'strategic_command', true),
               type: 'OVERSEER_DIRECTIVE_ISSUED',
               directiveId: directive.id
             });
@@ -30219,10 +30271,20 @@ function AustraliaGame() {
           status: 'expired'
         });
       });
-      appendAiOperationsEvent(exceptionCleanupActor.teamId, {
-        ...buildAiOperationsEventBase(exceptionCleanupActor.teamId, exceptionCleanupActor.id, 'turn_engine', true),
+    }
+    // Post-ship review fix: AI_TURN_FINISHED must fire whenever a turn that genuinely started
+    // (i.e. a session exists) finishes, not only when getActorState(actorId) still resolves — the
+    // rest of this function's cleanup/advanceToNextActorTurn() already runs unconditionally, so the
+    // turn closes out either way, and detectAiTurnLifecycleStall relies on this event's 1:1 pairing
+    // with AI_TURN_STARTED to avoid a false-positive stuck-turn incident. Falls back to the
+    // session's own captured teamId (set at turn start, independent of the actor still resolving)
+    // when the actor itself is no longer found.
+    const finishTurnTeamId = exceptionCleanupActor?.teamId ?? session?.teamId;
+    if (finishTurnTeamId) {
+      appendAiOperationsEvent(finishTurnTeamId, {
+        ...buildAiOperationsEventBase(finishTurnTeamId, exceptionCleanupActor?.id ?? actorId, 'turn_engine', true),
         type: 'AI_TURN_FINISHED',
-        actionsUsedThisTurn: exceptionCleanupActor.actionsUsedThisTurn || 0
+        actionsUsedThisTurn: exceptionCleanupActor?.actionsUsedThisTurn || 0
       });
     }
     addNotification(`🤖 ${getActorDisplayName(actorId)} ended their turn`, 'ai', false);
