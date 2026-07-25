@@ -3249,6 +3249,24 @@ interface AiOperationsIncident {
   occurrenceCount: number;
 }
 
+// AI Operations Auditor Phase AA5: exactly what a detection rule computes — the dedup/creation
+// pipeline (upsertAiOperationsIncident) fills in the remaining lifecycle-bookkeeping fields.
+type AiOperationsIncidentCandidate = Omit<AiOperationsIncident, 'id' | 'status' | 'attempts' | 'relatedIncidentIds' | 'firstSeenDay' | 'lastSeenDay' | 'occurrenceCount'>;
+type AiOperationsDetectionRule = (team: TeamState, day: number, turn: number) => AiOperationsIncidentCandidate | null;
+
+// AI Operations Auditor Phase AA5: exactly one placeholder rule, always returns null — proves the
+// detection pipeline (candidate shape, dedup, create/occurrence-bump, status transition) type-checks
+// and is wired correctly before any real detection logic exists. Never fires during real play.
+// AA6+ appends real rules to this same array.
+const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
+  (_team, _day, _turn) => null
+];
+
+// AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
+// to `incidentHistory` on transition, mirroring directiveHistory/overlayHistory's own
+// move-to-history-on-terminal-status convention.
+const AUDITOR_TERMINAL_INCIDENT_STATUSES: AiOperationsIncidentStatus[] = ['resolved', 'resolved_with_warning', 'unresolved', 'ignored', 'suppressed'];
+
 // Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
 type AuditorDashboardTabId =
   | 'overview' | 'activeIncidents' | 'turnPipeline' | 'actionAccounting' | 'approvalHealth'
@@ -12541,6 +12559,98 @@ function AustraliaGame() {
         return 'rejected';
     }
   }, []);
+
+  // AI Operations Auditor Phase AA5: dedup-by-signature/create/occurrence-merge pipeline. Never
+  // touches an existing incident's status/attempts/other lifecycle fields on a repeat occurrence —
+  // matching AA1's own "never replay old recoveries" conservative philosophy. Uncalled with a real
+  // candidate this phase (AUDITOR_DETECTION_RULES' one rule always returns null); verified directly
+  // rather than through gameplay.
+  const upsertAiOperationsIncident = useCallback((teamId: string, candidate: AiOperationsIncidentCandidate) => {
+    updateTeamState(teamId, prev => {
+      const existingIndex = prev.auditor.incidents.findIndex(i => i.dedupSignature === candidate.dedupSignature);
+      if (existingIndex !== -1) {
+        const existing = prev.auditor.incidents[existingIndex];
+        const updated: AiOperationsIncident = {
+          ...existing,
+          lastSeenDay: candidate.day,
+          occurrenceCount: existing.occurrenceCount + 1,
+          evidence: [...existing.evidence, ...candidate.evidence].slice(-20)
+        };
+        const incidents = [...prev.auditor.incidents];
+        incidents[existingIndex] = updated;
+        return { ...prev, auditor: { ...prev.auditor, incidents } };
+      }
+      const newIncident: AiOperationsIncident = {
+        ...candidate,
+        id: `aainc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        status: 'detected',
+        attempts: 0,
+        relatedIncidentIds: [],
+        firstSeenDay: candidate.day,
+        lastSeenDay: candidate.day,
+        occurrenceCount: 1
+      };
+      return {
+        ...prev,
+        auditor: {
+          ...prev.auditor,
+          incidents: [...prev.auditor.incidents, newIncident].slice(-30),
+          metrics: { ...prev.auditor.metrics, totalIncidentsDetected: prev.auditor.metrics.totalIncidentsDetected + 1 }
+        }
+      };
+    });
+  }, [updateTeamState]);
+
+  // AI Operations Auditor Phase AA5: the status-transition half of the lifecycle — moves an
+  // incident to incidentHistory on a terminal status, otherwise updates it in place. Built now per
+  // AA5's own stated scope, but genuinely uncalled this phase (no rule ever creates a real incident
+  // to resolve); verified directly rather than through gameplay.
+  const resolveAiOperationsIncident = useCallback((teamId: string, incidentId: string, status: AiOperationsIncidentStatus, day: number, turn: number) => {
+    updateTeamState(teamId, prev => {
+      const incident = prev.auditor.incidents.find(i => i.id === incidentId);
+      if (!incident) return prev;
+      const updatedIncident: AiOperationsIncident = { ...incident, status, resolutionDay: day, resolutionTurn: turn };
+      if (AUDITOR_TERMINAL_INCIDENT_STATUSES.includes(status)) {
+        return {
+          ...prev,
+          auditor: {
+            ...prev.auditor,
+            incidents: prev.auditor.incidents.filter(i => i.id !== incidentId),
+            incidentHistory: [...prev.auditor.incidentHistory, updatedIncident].slice(-30)
+          }
+        };
+      }
+      return {
+        ...prev,
+        auditor: {
+          ...prev.auditor,
+          incidents: prev.auditor.incidents.map(i => i.id === incidentId ? updatedIncident : i)
+        }
+      };
+    });
+  }, [updateTeamState]);
+
+  // AI Operations Auditor Phase AA5: per-team detection-pass entry point — no-ops (never calls
+  // upsertAiOperationsIncident/updateTeamState beyond the evaluation-timestamp bump) whenever the
+  // master toggle is off or this team's own mode is 'off', identical gating shape to
+  // appendAiOperationsEvent. Runs every rule in AUDITOR_DETECTION_RULES (currently exactly one,
+  // always null) and always updates lastEvaluationDay/lastEvaluationTurn.
+  const runAuditorDetectionPass = useCallback((teamId: string, day: number, turn: number) => {
+    const team = teamsByIdRef.current[teamId];
+    if (!team) return;
+    const modeForTeam = teamId === TEAM_PLAYER_ID
+      ? gameSettings.teamAiAuditorModeForFriendlyTeam
+      : gameSettings.teamAiAuditorModeForEnemyTeam;
+    if (!gameSettings.teamAiAuditorSystemEnabled || modeForTeam === 'off') return;
+    AUDITOR_DETECTION_RULES.forEach(rule => {
+      const candidate = rule(team, day, turn);
+      if (candidate) upsertAiOperationsIncident(teamId, candidate);
+    });
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      auditor: { ...prev.auditor, lastEvaluationDay: day, lastEvaluationTurn: turn }
+    }));
+  }, [gameSettings.teamAiAuditorSystemEnabled, gameSettings.teamAiAuditorModeForFriendlyTeam, gameSettings.teamAiAuditorModeForEnemyTeam, upsertAiOperationsIncident, updateTeamState]);
 
   const getActorDisplayName = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -24712,6 +24822,16 @@ function AustraliaGame() {
         });
       }
 
+      // AI Operations Auditor Phase AA5: final post-commit pass — the detection engine's pipeline
+      // (dedup/create/status-transition), wired but running exactly one placeholder rule that
+      // always returns null this phase. Never fires; only lastEvaluationDay/lastEvaluationTurn
+      // tick forward when the feature is explicitly enabled for a team.
+      if (gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiAuditorSystemEnabled) {
+        [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
+          runAuditorDetectionPass(teamId, newDay, projectedTurnCounter);
+        });
+      }
+
       if (!gameSettings.showDayTransition) {
         addNotification(`Market trend: ${newTrend}`, 'market', true);
         addNotification(`Weather: ${newWeather} - ${WEATHER_EFFECTS[newWeather]?.description || ''}`, 'info', true);
@@ -25110,7 +25230,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
