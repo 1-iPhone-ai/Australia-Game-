@@ -4034,6 +4034,34 @@ const buildRecoveryOptionsForIncident = (incidentType: string, mode: AiOperation
   }
 };
 
+// AI Operations Auditor Phase AA12: the full safeguard gate for Bounded Automatic Recovery —
+// every one of these must hold before an incident's recovery is ever applied without a human in
+// the loop: (1) the team's own mode is 'automatic'; (2) the incident's CATEGORY authority is also
+// 'automatic' (never inferred from the team mode alone — categoryAuthority defaults 'locked'/
+// 'monitor' per AA1's factory and has no Settings Hub control yet, so enabling the master toggle
+// or picking 'automatic' team mode alone can never auto-unlock any category); (3) the specific
+// recovery action is BOTH deterministic and idempotent (never a "maybe" action); (4) its confidence
+// clears the configured floor; (5) today's automatic-recovery count is still under the configured
+// per-day cap. In practice, of AA10's own recovery-option table, only 'ai_action_token_orphaned'
+// currently satisfies (3) — every other covered type's own recovery option is either
+// non-deterministic or non-idempotent by AA10's own honest design, so this gate structurally
+// excludes them regardless of category authority.
+const canApplyAutomaticRecovery = (
+  incident: AiOperationsIncident,
+  recovery: AiOperationsRecoveryAction,
+  team: TeamState,
+  modeForTeam: AiOperationsAuditorMode,
+  settings: GameSettingsState
+): boolean => {
+  if (modeForTeam !== 'automatic') return false;
+  if (team.auditor.categoryAuthority[incident.category] !== 'automatic') return false;
+  if (!recovery.deterministic || !recovery.idempotent) return false;
+  if (recovery.confidence < settings.teamAiAuditorAutomaticRecoveryMinConfidence) return false;
+  const todayCount = team.auditor.automaticRecoveryCountDay === incident.day ? team.auditor.automaticRecoveryCountToday : 0;
+  if (todayCount >= settings.teamAiAuditorAutomaticRecoveryMaxPerDay) return false;
+  return true;
+};
+
 // Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
 type AuditorDashboardTabId =
   | 'overview' | 'activeIncidents' | 'turnPipeline' | 'actionAccounting' | 'approvalHealth'
@@ -4059,6 +4087,11 @@ interface AiOperationsAuditorState {
   lastEvaluationDay: number;
   lastEvaluationTurn: number;
   proposalSignatureCounts: Record<string, number>;
+  // AI Operations Auditor Phase AA12: automatic-recovery daily-limit counter — reset whenever
+  // automaticRecoveryCountDay no longer matches the current day, mirroring
+  // TeamComboTrackingState.comboCountToday/comboCountDay's exact daily-reset shape.
+  automaticRecoveryCountToday: number;
+  automaticRecoveryCountDay: number;
 }
 
 const createDefaultAiOperationsAuditorState = (): AiOperationsAuditorState => ({
@@ -4084,7 +4117,9 @@ const createDefaultAiOperationsAuditorState = (): AiOperationsAuditorState => ({
   safeModeReason: '',
   lastEvaluationDay: 0,
   lastEvaluationTurn: 0,
-  proposalSignatureCounts: {}
+  proposalSignatureCounts: {},
+  automaticRecoveryCountToday: 0,
+  automaticRecoveryCountDay: 0
 });
 
 // Deliberately more conservative than every other sanitizer in this file: only `mode` is trusted
@@ -4114,7 +4149,9 @@ const sanitizeAiOperationsAuditorState = (value: unknown): AiOperationsAuditorSt
     safeModeReason: '',
     lastEvaluationDay: 0,
     lastEvaluationTurn: 0,
-    proposalSignatureCounts: {}
+    proposalSignatureCounts: {},
+    automaticRecoveryCountToday: 0,
+    automaticRecoveryCountDay: 0
   };
 };
 
@@ -5660,6 +5697,13 @@ type GameSettingsState = {
   teamAiAuditorModeForEnemyTeam: AiOperationsAuditorMode;
   teamAiAuditorShowStatusCard: boolean;
   teamAiAuditorDashboardEnabled: boolean;
+  // AI Operations Auditor Phase AA12: automatic-recovery safeguards. Both are only ever consulted
+  // when a team's own mode is 'automatic' AND the incident's category authority is 'automatic' —
+  // categoryAuthority defaults 'locked'/'monitor' per AA1's own factory and has no Settings Hub
+  // control yet (arrives with AA15's dashboard), so automatic recovery is provably inert by
+  // default even with these fields at their defaults.
+  teamAiAuditorAutomaticRecoveryMinConfidence: number;
+  teamAiAuditorAutomaticRecoveryMaxPerDay: number;
 };
 
 type DontAskAgainPrefs = {
@@ -6790,7 +6834,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   teamAiAuditorModeForFriendlyTeam: 'off',
   teamAiAuditorModeForEnemyTeam: 'off',
   teamAiAuditorShowStatusCard: false,
-  teamAiAuditorDashboardEnabled: false
+  teamAiAuditorDashboardEnabled: false,
+  teamAiAuditorAutomaticRecoveryMinConfidence: 0.5,
+  teamAiAuditorAutomaticRecoveryMaxPerDay: 3
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -6938,7 +6984,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.actionRequirements', tab: 'teamModeAi', title: 'Action Requirements', tags: ['Team Mode', 'AI'], fieldKeys: ['actionRequirementsEnabled', 'actionRequirementGroups', 'actionRequirementsTransparencyEnabled'] },
   { id: 'teamModeAi.treasury', tab: 'teamModeAi', title: 'Team Treasury', tags: ['Team Mode', 'AI'], fieldKeys: ['teamTreasuryEnabled', 'teamTreasuryEnabledForFriendlyTeam', 'teamTreasuryEnabledForEnemyTeam', 'teamTreasuryShowInUi', 'teamTreasuryShowTransactions', 'teamTreasuryAllowManualContributions', 'teamTreasuryAllowProtectedCashContribution', 'teamAiTreasuryContributionEnabled', 'treasuryAutomaticContributionEnabled', 'treasuryAutomaticContributionPolicy', 'teamTreasuryMaxAutoContributionPerActorPerDay', 'teamTreasuryMinPersonalCashRemaining', 'teamTreasuryMinContributionAmount', 'teamTreasuryContributionCooldownDays', 'teamTreasuryDisableContributionDuringRecovery', 'teamTreasuryReserve', 'teamTreasuryDynamicReserveEnabled', 'teamTreasuryAllowHumanFundingRequests', 'teamTreasuryAllowAiFundingRequests', 'teamTreasuryAllowRequestsAtZeroCash', 'teamTreasuryEmergencyOperatingTarget', 'teamTreasuryMaxWithdrawalPerRequest', 'teamTreasuryMaxWithdrawalPerActorPerDay', 'teamTreasuryRequireApprovalForFriendlyAiWithdrawals', 'teamTreasuryAllowPartialApproval', 'teamTreasuryRequireIntendedAction', 'teamTreasuryReturnUnusedRestrictedFunds', 'teamTreasuryRequestCooldownDays', 'teamAiTreasuryRequestsEnabled', 'countTeamTreasuryTowardVictory'] },
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
-  { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled'] },
+  { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
@@ -12978,7 +13024,9 @@ function AustraliaGame() {
 	        : DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
 	      teamAiAuditorDashboardEnabled: typeof settingsData.teamAiAuditorDashboardEnabled === 'boolean'
 	        ? settingsData.teamAiAuditorDashboardEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
+	      teamAiAuditorAutomaticRecoveryMinConfidence: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMinConfidence, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence, 0, 1),
+	      teamAiAuditorAutomaticRecoveryMaxPerDay: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMaxPerDay, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay, 0, 20)
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -13408,6 +13456,11 @@ function AustraliaGame() {
   // pendingApprovalRequests/setPendingApprovalRequests (F3 state, declared later), so it's read
   // through a ref assigned right after its own declaration.
   const enqueueAuditorRecoveryApprovalRequestRef = useRef<((teamId: string, incident: AiOperationsIncident) => void) | null>(null);
+  // AI Operations Auditor Phase AA12: same TDZ-safe ref-indirection pattern — the real
+  // applyAutomaticAuditorRecovery needs updateTeamState/applyAuditorRecoveryAction/
+  // resolveAiOperationsIncident (declared later), so it's read through a ref assigned right after
+  // its own declaration.
+  const applyAutomaticAuditorRecoveryRef = useRef<((teamId: string, incident: AiOperationsIncident, recovery: AiOperationsRecoveryAction) => void) | null>(null);
 
   // AI Operations Auditor Phase AA5: per-team detection-pass entry point — no-ops (never calls
   // upsertAiOperationsIncident/updateTeamState beyond the evaluation-timestamp bump) whenever the
@@ -13436,13 +13489,26 @@ function AustraliaGame() {
           const incident = teamsByIdRef.current[teamId]?.auditor.incidents.find(i => i.dedupSignature === candidateWithRecovery.dedupSignature);
           if (incident) enqueueAuditorRecoveryApprovalRequestRef.current?.(teamId, incident);
         }
+        // AI Operations Auditor Phase AA12: Bounded Automatic Recovery — when this team's mode is
+        // 'automatic', try the incident's first recovery option against the full safeguard gate
+        // (canApplyAutomaticRecovery). No human prompt at all on this path — that's the entire
+        // point of 'automatic' vs. 'approval' mode. Reads the freshly-committed team state for the
+        // same synchronous-updateTeamState reason documented above.
+        if (modeForTeam === 'automatic' && candidateWithRecovery.recoveryOptions.length > 0) {
+          const currentTeam = teamsByIdRef.current[teamId];
+          const incident = currentTeam?.auditor.incidents.find(i => i.dedupSignature === candidateWithRecovery.dedupSignature);
+          const recovery = incident?.recoveryOptions[0];
+          if (currentTeam && incident && recovery && canApplyAutomaticRecovery(incident, recovery, currentTeam, modeForTeam, gameSettings)) {
+            applyAutomaticAuditorRecoveryRef.current?.(teamId, incident, recovery);
+          }
+        }
       }
     });
     updateTeamState(teamId, prev => ({
       ...prev,
       auditor: { ...prev.auditor, lastEvaluationDay: day, lastEvaluationTurn: turn }
     }));
-  }, [gameSettings.teamAiAuditorSystemEnabled, gameSettings.teamAiAuditorModeForFriendlyTeam, gameSettings.teamAiAuditorModeForEnemyTeam, upsertAiOperationsIncident, updateTeamState]);
+  }, [gameSettings, upsertAiOperationsIncident, updateTeamState]);
 
   const getActorDisplayName = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -22729,6 +22795,61 @@ function AustraliaGame() {
     setPendingApprovalRequests(prev => [...prev, buildAuditorRecoveryApprovalRequest(incident, teamId)]);
   }, [pendingApprovalRequests, buildAuditorRecoveryApprovalRequest]);
   enqueueAuditorRecoveryApprovalRequestRef.current = enqueueAuditorRecoveryApprovalRequest;
+
+  // AI Operations Auditor Phase AA12: per-team, per-category runtime authority editor. Not yet
+  // exposed via any Settings Hub/dashboard control (that arrives with AA15's full dashboard) — a
+  // stated, honest scope limitation, matching AA1's own "declared now, given real meaning by a
+  // later phase" precedent. Built now so the mechanism exists and is directly verifiable; the safe
+  // 'locked'/'monitor' defaults mean automatic recovery is provably inert until a category is
+  // deliberately moved to 'automatic' through this function.
+  const setAuditorCategoryAuthority = useCallback((teamId: string, category: AiOperationsIncidentCategory, authority: AiOperationsCategoryAuthority) => {
+    updateTeamState(teamId, prev => ({
+      ...prev,
+      auditor: { ...prev.auditor, categoryAuthority: { ...prev.auditor.categoryAuthority, [category]: authority } }
+    }));
+  }, [updateTeamState]);
+
+  // AI Operations Auditor Phase AA12: applies one incident's recovery with NO human prompt (the
+  // caller has already passed it through canApplyAutomaticRecovery's full safeguard gate). Reuses
+  // applyAuditorRecoveryAction verbatim — never a second implementation of the mechanical effect.
+  // Mandatory post-recovery verification: re-reads the just-mutated team state and checks the one
+  // concrete invariant each covered incident type's fix is supposed to establish; on pass the
+  // incident resolves and totalRecoveriesSucceeded increments; on failure it escalates (status
+  // 'escalated', an existing AiOperationsIncidentStatus value) rather than silently retrying —
+  // automatic recovery for a given incident is attempted at most once (attempts is bumped either
+  // way), never looped.
+  const applyAutomaticAuditorRecovery = useCallback((teamId: string, incident: AiOperationsIncident, recovery: AiOperationsRecoveryAction) => {
+    applyAuditorRecoveryAction(teamId, incident);
+    const afterTeam = teamsByIdRef.current[teamId];
+    let verified = false;
+    if (incident.type === 'ai_action_token_orphaned' && incident.relatedTokenId) {
+      verified = afterTeam?.actionTokens.find(t => t.id === incident.relatedTokenId)?.status === 'invalidated';
+    } else if (incident.type === 'ai_sequence_step_stuck' && incident.relatedSequenceStepId) {
+      verified = (afterTeam?.sequences || []).some(seq => seq.steps.some(step => step.id === incident.relatedSequenceStepId && step.status === 'skipped'));
+    }
+    updateTeamState(teamId, prev => {
+      const current = prev.auditor.incidents.find(i => i.id === incident.id);
+      if (!current) return prev;
+      const todayCount = prev.auditor.automaticRecoveryCountDay === incident.day ? prev.auditor.automaticRecoveryCountToday : 0;
+      return {
+        ...prev,
+        auditor: {
+          ...prev.auditor,
+          incidents: prev.auditor.incidents.map(i => i.id === incident.id ? { ...i, attempts: i.attempts + 1, verificationStatus: verified ? 'passed' as const : 'failed' as const, selectedRecoveryId: recovery.id } : i),
+          metrics: {
+            ...prev.auditor.metrics,
+            totalRecoveriesAttempted: prev.auditor.metrics.totalRecoveriesAttempted + 1,
+            totalRecoveriesSucceeded: prev.auditor.metrics.totalRecoveriesSucceeded + (verified ? 1 : 0),
+            totalRecoveriesFailed: prev.auditor.metrics.totalRecoveriesFailed + (verified ? 0 : 1)
+          },
+          automaticRecoveryCountDay: incident.day,
+          automaticRecoveryCountToday: todayCount + 1
+        }
+      };
+    });
+    resolveAiOperationsIncident(teamId, incident.id, verified ? 'resolved' : 'escalated', incident.day, incident.turn);
+  }, [applyAuditorRecoveryAction, updateTeamState, resolveAiOperationsIncident]);
+  applyAutomaticAuditorRecoveryRef.current = applyAutomaticAuditorRecovery;
 
   // Team AI Overseer System Phase O4: manual controls for the HUD status card. All three reuse
   // updateTeamState exactly like O3's own revert logic — no new state machinery. Current metric
@@ -33887,7 +34008,9 @@ function AustraliaGame() {
       teamAiAuditorModeForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
       teamAiAuditorModeForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
       teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
-      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
+      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
+      teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
+      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay
     }));
 
     const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
@@ -34072,7 +34195,9 @@ function AustraliaGame() {
       teamAiAuditorModeForFriendlyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
       teamAiAuditorModeForEnemyTeam: DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
       teamAiAuditorShowStatusCard: DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
-      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled
+      teamAiAuditorDashboardEnabled: DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
+      teamAiAuditorAutomaticRecoveryMinConfidence: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence,
+      teamAiAuditorAutomaticRecoveryMaxPerDay: DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay
     }));
 
     const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
