@@ -8523,11 +8523,33 @@ const isCompetitiveModeSelection = (mode: GameModeSelection | string | null | un
   return mode === 'ai' || mode === 'grand_tour' || isTeamModeSelection(mode);
 };
 
-// AE1: mode-gating helper for the new AI Thinking & Algorithm system, mirroring
-// shouldShowDecisionTransparencyForMode's shape. Deliberately its own explicit mode list rather
-// than reusing isCompetitiveModeSelection (which folds in Grand Tour) — the spec requires this
-// feature active ONLY in Human vs AI, Human+AI vs AI+AI, and Team AI vs Team AI, excluding Grand
-// Tour, Single Player, and menus.
+// AE10 (closing verification/acceptance pass — the AI Thinking & Algorithm System's Shared AI
+// Engine sub-track, AE1-AE10, is complete as of this comment): re-confirmed directly against the
+// current code, not by re-deriving from scratch, that all three supported modes and all excluded
+// modes behave as designed:
+//   - Human vs AI ('ai'): performAiTurn -> resolveSoloAiDecisionViaEngine('ai') ->
+//     resolveAiDecisionEngineForActor('ai') -> isAiAlgorithmFeatureActiveForMode('ai') === true ->
+//     resolves to gameSettings.aiAlgorithmForOpponent (Classic Layered AI or the End-to-End
+//     Planner), always funneling through the AE4 try/validate/fallback-to-Classic/safe-fallback
+//     chain before returning.
+//   - Human+AI vs AI+AI / Team AI vs Team AI ('team_human_ai_vs_ai_ai' / 'team_ai_vs_ai'):
+//     performTeamAiTurn's decision-selection ternary -> resolveTeamAiDecisionViaEngine(actorId), the
+//     innermost fallback AFTER Parallel Planning's round plan, Teammate Action Sequences, and Team
+//     Plans have all had first refusal (the "more specific commitment always wins" rule from AE3 is
+//     untouched by AE6-AE9) -> the same resolveAiDecisionEngineForActor/isAiAlgorithmFeatureActiveForMode
+//     gate, resolving per-side via aiAlgorithmForFriendlyTeam/aiAlgorithmForEnemyTeam, through the
+//     identical AE4 fallback chain.
+//   - Single Player / Grand Tour / menus ('single' / 'grand_tour'): isAiAlgorithmFeatureActiveForMode
+//     returns false for both, so resolveAiDecisionEngineForActor always returns 'classic_layered'
+//     regardless of any setting — the whole feature is structurally inert there, confirmed by this
+//     mode list being the literal complement of GameModeSelection's 5 values.
+//   - Human-actor guard: resolveAiDecisionEngineForActor's `actor.kind !== 'ai'` check is the first
+//     line of the function and is shared by every call site above — no code path anywhere calls it
+//     with a human actorId in the first place (the human always acts via direct UI input, never
+//     through a decision-engine resolver), so this is confirmed belt-and-suspenders insurance, not
+//     a load-bearing gate with an actual counter-example.
+// Mode-gating helper mirrors shouldShowDecisionTransparencyForMode's shape (deliberately its own
+// explicit mode list rather than reusing isCompetitiveModeSelection, which folds in Grand Tour).
 const isAiAlgorithmFeatureActiveForMode = (mode: GameModeSelection | string | null | undefined) => {
   return mode === 'ai' || mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
 };
