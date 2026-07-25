@@ -3858,6 +3858,119 @@ const detectOverseerDirectiveConflict: AiOperationsDetectionRule = (team, day, _
   return null;
 };
 
+// AI Operations Auditor Phase AA10: Rule 14 — a LOAD_COMPLETED event exists with no later
+// AI_TURN_STARTED/AI_TURN_FINISHED for any actor on this team, and at least a full day has passed
+// since the load. Honest limitation, stated plainly: this is a low-confidence, informational-only
+// signal — it could just as easily mean this team's turn simply hasn't come up yet as it could mean
+// something is genuinely stuck post-load, and the event log alone cannot distinguish the two.
+// Nothing in the codebase currently emits SAVE_COMPLETED/LOAD_COMPLETED (both events carry zero
+// payload fields, by design, per AA1's own declared-but-unwired scaffolding) — this rule is wired
+// and will fire the moment a future phase adds real save/load emission, but is provably a no-op
+// today, mirroring AA5's own placeholder-rule precedent. Monitor-only: never touches save/load.
+const detectPostLoadInactivity: AiOperationsDetectionRule = (team, day, _turn) => {
+  let lastLoad: (AiOperationsEvent & { type: 'LOAD_COMPLETED' }) | null = null;
+  let sawTurnActivitySinceLoad = false;
+  for (const event of team.auditor.eventLog) {
+    if (event.type === 'LOAD_COMPLETED') {
+      lastLoad = event;
+      sawTurnActivitySinceLoad = false;
+      continue;
+    }
+    if (lastLoad && (event.type === 'AI_TURN_STARTED' || event.type === 'AI_TURN_FINISHED') && team.actorIds.includes(event.actorId || '')) {
+      sawTurnActivitySinceLoad = true;
+    }
+  }
+  if (lastLoad && !sawTurnActivitySinceLoad && lastLoad.day < day) {
+    return {
+      type: 'ai_post_load_inactivity',
+      category: 'save_load',
+      severity: 'informational',
+      teamId: team.id,
+      actorId: null,
+      day,
+      turn: _turn,
+      expectedWorkflowState: 'normal turn activity resumes for this team within the day the game was loaded',
+      actualWorkflowState: `no AI_TURN_STARTED/AI_TURN_FINISHED observed for any actor on this team since the load on day ${lastLoad.day}`,
+      evidence: [lastLoad],
+      likelyCause: 'Unknown — could indicate stalled state after a load, or could simply mean this team\'s turn has not come up yet. This event log alone cannot distinguish the two.',
+      confidence: 0.2,
+      userSummary: 'No teammate on this team has taken a turn since the game was loaded.',
+      technicalDetails: `Team ${team.id} last loaded on day ${lastLoad.day}; no AI_TURN_STARTED/AI_TURN_FINISHED for any of its actors (${team.actorIds.join(', ')}) has been observed since.`,
+      recoveryOptions: [],
+      authorityRequired: 'monitor',
+      safeModeTriggered: false,
+      dedupSignature: `ai_post_load_inactivity:${team.id}:${lastLoad.day}`
+    };
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA10: Rule 15 — surfaces any UI_STATE_DESYNC_OBSERVED event as an
+// incident. Honest limitation: nothing in the codebase currently emits this event (declared in AA1
+// as scaffolding, never wired by any phase) — this rule is wired and will surface a real desync
+// report the moment a future phase adds a producer, but is provably a no-op today. Monitor-only:
+// never touches UI/render state.
+const detectUiStateDesyncObserved: AiOperationsDetectionRule = (team, day, _turn) => {
+  for (const event of team.auditor.eventLog) {
+    if (event.type === 'UI_STATE_DESYNC_OBSERVED') {
+      return {
+        type: 'ai_ui_state_desync_observed',
+        category: 'ui_synchronization',
+        severity: 'warning',
+        teamId: team.id,
+        actorId: event.actorId,
+        day,
+        turn: _turn,
+        expectedWorkflowState: 'displayed UI state matches underlying game state',
+        actualWorkflowState: event.description,
+        evidence: [event],
+        likelyCause: 'A UI-facing value was observed to disagree with the underlying game state it is meant to reflect.',
+        confidence: 0.5,
+        userSummary: 'Something displayed on screen may not match the game\'s actual state.',
+        technicalDetails: `UI_STATE_DESYNC_OBSERVED on day ${event.day}: ${event.description}`,
+        recoveryOptions: [],
+        authorityRequired: 'monitor',
+        safeModeTriggered: false,
+        dedupSignature: `ai_ui_state_desync_observed:${event.id}`
+      };
+    }
+  }
+  return null;
+};
+
+// AI Operations Auditor Phase AA10: Rule 16 — 5+ SEQUENCE_STEP_RETRY_INCREMENTED events across the
+// whole team within the current day — a systemic retry-storm signal, distinct from AA8's
+// per-step "reached 'stuck'" rule (this fires on the volume of retries building up, even for steps
+// that haven't reached SEQUENCE_STEP_MAX_RETRIES individually, and even across multiple different
+// steps/actors). Monitor-only: never touches sequence retry counters.
+const AA10_RETRY_STORM_THRESHOLD = 5;
+const detectSequenceRetryStorm: AiOperationsDetectionRule = (team, day, _turn) => {
+  const todaysRetries = team.auditor.eventLog.filter(e => e.type === 'SEQUENCE_STEP_RETRY_INCREMENTED' && e.day === day) as (AiOperationsEvent & { type: 'SEQUENCE_STEP_RETRY_INCREMENTED' })[];
+  if (todaysRetries.length >= AA10_RETRY_STORM_THRESHOLD) {
+    return {
+      type: 'ai_sequence_retry_storm',
+      category: 'sequence',
+      severity: 'warning',
+      teamId: team.id,
+      actorId: null,
+      day,
+      turn: _turn,
+      expectedWorkflowState: 'sequence steps retry occasionally, not repeatedly across the whole team in a single day',
+      actualWorkflowState: `${todaysRetries.length} SEQUENCE_STEP_RETRY_INCREMENTED events observed today`,
+      evidence: todaysRetries.slice(-5),
+      likelyCause: 'Multiple sequence steps (possibly across different actors) are repeatedly failing their eligibility/candidate check and retrying, rather than completing or falling back.',
+      confidence: 0.45,
+      userSummary: 'This team\'s teammate sequences are retrying unusually often today.',
+      technicalDetails: `Team ${team.id} recorded ${todaysRetries.length} SEQUENCE_STEP_RETRY_INCREMENTED events on day ${day} across steps: ${[...new Set(todaysRetries.map(e => e.stepId))].join(', ')}.`,
+      recoveryOptions: [],
+      authorityRequired: 'monitor',
+      safeModeTriggered: false,
+      dedupSignature: `ai_sequence_retry_storm:${team.id}:${day}`
+    };
+  }
+  return null;
+};
+
 const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   (_team, _day, _turn) => null,
   detectAiTurnLifecycleStall,
@@ -3872,13 +3985,54 @@ const AUDITOR_DETECTION_RULES: AiOperationsDetectionRule[] = [
   detectPartialExecutionWithinTurn,
   detectActorTurnOrderOverlap,
   detectNoProgressInconclusive,
-  detectOverseerDirectiveConflict
+  detectOverseerDirectiveConflict,
+  detectPostLoadInactivity,
+  detectUiStateDesyncObserved,
+  detectSequenceRetryStorm
 ];
 
 // AI Operations Auditor Phase AA5: statuses that move an incident from the live `incidents` array
 // to `incidentHistory` on transition, mirroring directiveHistory/overlayHistory's own
 // move-to-history-on-terminal-status convention.
 const AUDITOR_TERMINAL_INCIDENT_STATUSES: AiOperationsIncidentStatus[] = ['resolved', 'resolved_with_warning', 'unresolved', 'ignored', 'suppressed'];
+
+// AI Operations Auditor Phase AA10: the first phase where a team's mode being 'recommend' or
+// higher (vs. 'monitor') actually changes behavior — it populates recoveryOptions with real,
+// levels-0-2-only AiOperationsRecoveryAction objects (UI-sync / workflow-resume / safe-fallback),
+// presented for the player to read but never auto-applied by this phase (applying one is AA11's
+// approval-flow job, AA12's automatic-recovery job). Deliberately narrow: only 5 of the ~19
+// incident types detected so far get real recovery options this phase — the ones where a genuinely
+// safe, deterministic, levels-0-2 suggestion exists. Every other incident type's recoveryOptions
+// stays [] regardless of mode, a stated scope limitation rather than a fabricated suggestion.
+const buildRecoveryOptionsForIncident = (incidentType: string, mode: AiOperationsAuditorMode): AiOperationsRecoveryAction[] => {
+  if (mode === 'off' || mode === 'monitor') return [];
+  switch (incidentType) {
+    case 'ai_turn_lifecycle_stall':
+      return [
+        { id: `aarec_${incidentType}_L0`, level: 0, description: 'Refresh the turn indicator/HUD status for this actor.', risk: 'low', confidence: 0.6, deterministic: true, idempotent: true },
+        { id: `aarec_${incidentType}_L1`, level: 1, description: 'Re-check whether this actor\'s turn can now finish, and resume it if so.', risk: 'low', confidence: 0.4, deterministic: false, idempotent: true }
+      ];
+    case 'ai_approval_request_orphaned':
+      return [
+        { id: `aarec_${incidentType}_L0`, level: 0, description: 'Refresh the approval queue display.', risk: 'low', confidence: 0.6, deterministic: true, idempotent: true },
+        { id: `aarec_${incidentType}_L1`, level: 1, description: 'Re-display this approval request so it can be resolved.', risk: 'low', confidence: 0.45, deterministic: false, idempotent: false }
+      ];
+    case 'ai_sequence_step_stuck':
+      return [
+        { id: `aarec_${incidentType}_L2`, level: 2, description: 'Treat the stuck step as skipped and let the sequence continue.', risk: 'medium', confidence: 0.4, deterministic: true, idempotent: false }
+      ];
+    case 'ai_action_token_orphaned':
+      return [
+        { id: `aarec_${incidentType}_L2`, level: 2, description: 'Invalidate the orphaned token so it stops blocking future redemption checks.', risk: 'low', confidence: 0.5, deterministic: true, idempotent: true }
+      ];
+    case 'ai_sequence_retry_storm':
+      return [
+        { id: `aarec_${incidentType}_L2`, level: 2, description: 'Cap further retries for today\'s affected steps rather than letting them keep thrashing.', risk: 'medium', confidence: 0.35, deterministic: true, idempotent: false }
+      ];
+    default:
+      return [];
+  }
+};
 
 // Dashboard tab scaffolding, mirroring OverseerDashboardTabId's naming convention — unused until AA15.
 type AuditorDashboardTabId =
@@ -13196,7 +13350,7 @@ function AustraliaGame() {
       const newIncident: AiOperationsIncident = {
         ...candidate,
         id: `aainc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        status: 'detected',
+        status: candidate.recoveryOptions.length > 0 ? 'recovery_proposed' : 'detected',
         attempts: 0,
         relatedIncidentIds: [],
         firstSeenDay: candidate.day,
@@ -13257,7 +13411,9 @@ function AustraliaGame() {
     if (!gameSettings.teamAiAuditorSystemEnabled || modeForTeam === 'off') return;
     AUDITOR_DETECTION_RULES.forEach(rule => {
       const candidate = rule(team, day, turn);
-      if (candidate) upsertAiOperationsIncident(teamId, candidate);
+      if (candidate) {
+        upsertAiOperationsIncident(teamId, { ...candidate, recoveryOptions: buildRecoveryOptionsForIncident(candidate.type, modeForTeam) });
+      }
     });
     updateTeamState(teamId, prev => ({
       ...prev,
