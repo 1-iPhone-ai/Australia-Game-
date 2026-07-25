@@ -6216,6 +6216,90 @@ const selectAiPlannerGoals = (snapshot: AiSituationSnapshot): AiPlannerGoalSelec
   return { primary, secondary };
 };
 
+// AE6: Outcome Prediction — a lightweight, per-candidate expected/worst-case estimate. Pure,
+// operates only on the candidate's own already-computed fields (score/data), never re-derives the
+// underlying probability/EV math that already lives in getRankedTeamAiDecisions/
+// calculateActorChallengeSuccessChance.
+interface AiCandidateOutcomePrediction {
+  expectedOutcome: string;
+  worstCaseOutcome: string;
+}
+const predictAiCandidateOutcome = (candidate: ScoredTeamAiDecision): AiCandidateOutcomePrediction => {
+  const wager = candidate.data?.wager;
+  const successChance = candidate.data?.successChance;
+  if (typeof wager === 'number' && typeof successChance === 'number') {
+    return {
+      expectedOutcome: `${candidate.type}: ${Math.round(successChance * 100)}% chance of succeeding, risking $${wager}.`,
+      worstCaseOutcome: `${candidate.type}: fails, losing the $${wager} wagered.`
+    };
+  }
+  const cost = candidate.data?.purchases?.[0]?.cost;
+  if (typeof cost === 'number') {
+    return {
+      expectedOutcome: `${candidate.type}: spends $${cost}, expected to be net-positive over time.`,
+      worstCaseOutcome: `${candidate.type}: spends $${cost} with no immediate measurable return.`
+    };
+  }
+  return {
+    expectedOutcome: `${candidate.type}: proceeds as intended.`,
+    worstCaseOutcome: `${candidate.type}: produces no measurable benefit this turn.`
+  };
+};
+
+// AE7: Plan Construction — Balanced evaluates up to 2-step plans, Deep up to 3-step (Fast stays
+// single-step, matching "only the first step executes immediately" already being true for a
+// 1-step plan). Pure: takes an already-ranked candidate list (from Candidate Generation, which
+// itself reuses getRankedTeamAiDecisions directly) and picks a short, non-repeating sequence —
+// never re-scores or re-ranks anything itself. Skips 'end_turn'/'think' (a plan step should be a
+// genuine action) and never repeats the same (type, region/target) pair twice in one plan.
+const constructAiPlan = (candidates: ScoredTeamAiDecision[], depth: AiThinkingDepth): ScoredTeamAiDecision[] => {
+  if (candidates.length === 0) return [];
+  const maxSteps = depth === 'deep' ? 3 : depth === 'balanced' ? 2 : 1;
+  const plan: ScoredTeamAiDecision[] = [];
+  const seenSignatures = new Set<string>();
+  for (const candidate of candidates) {
+    if (plan.length >= maxSteps) break;
+    if (candidate.type === 'end_turn' || candidate.type === 'think') continue;
+    const signature = `${candidate.type}:${candidate.data?.region || candidate.data?.targetActorId || ''}`;
+    if (seenSignatures.has(signature)) continue;
+    seenSignatures.add(signature);
+    plan.push(candidate);
+  }
+  if (plan.length === 0) plan.push(candidates[0]);
+  return plan;
+};
+
+// AE7: ONE centralized Utility Evaluation function scoring a whole plan — explicitly NOT a second
+// modifier chain layered on top of Classic's own scoring stack. Each step's existing `.score`
+// (already the output of the one, unified Classic scoring chain every candidate carries) is summed
+// as-is; the only addition here is one flat, bounded per-step bonus when a step's category
+// plausibly serves the selected primary/secondary goals — never a per-system multiplier chain.
+const evaluateAiPlanUtility = (plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): number => {
+  const goalCategoryMap: Partial<Record<AiPlannerGoalKind, string[]>> = {
+    crafting: ['craft'],
+    resource_acquisition: ['craft', 'buy_market'],
+    regional_control: ['region_deposit', 'travel'],
+    teammate_support: ['give_cash', 'give_resource'],
+    opponent_disruption: ['sabotage'],
+    available_cash: ['sell', 'challenge'],
+    net_worth: ['invest', 'buy_equipment'],
+    survival: ['sell', 'challenge']
+  };
+  const relevantCategories = new Set<string>([
+    ...(goalCategoryMap[goals.primary] || []),
+    ...goals.secondary.flatMap(g => goalCategoryMap[g] || [])
+  ]);
+  return plan.reduce((total, step) => total + (step.score || 0) + (relevantCategories.has(step.type) ? 20 : 0), 0);
+};
+
+// AE8: Explanation output — a short, human-readable sentence naming the selected action and the
+// goal it serves, plus a plan-length note when the step is part of a multi-step plan. Pure, no
+// closures.
+const explainAiPlannerDecision = (selected: ScoredTeamAiDecision, plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): string => {
+  const planNote = plan.length > 1 ? ` (step 1 of a ${plan.length}-step plan)` : '';
+  return `Chose ${selected.type} to pursue ${goals.primary.replace(/_/g, ' ')}${planNote}.`;
+};
+
 // AE4 (Failure Protection): a generic operation-count ceiling any future planner/custom-algorithm
 // engine (AE5+/AB+) should consult and enforce internally to bound its own candidate-generation/
 // plan-evaluation work. Reserved now, unconsumed by Classic Layered AI (which has no operation-
@@ -11986,6 +12070,12 @@ function AustraliaGame() {
   // is left as the sole visibility mechanism for lending.
   const overrideEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string; cost: number; policy: TeamAiOverridePolicy | FriendlyAiOverridePolicy | null }) | null>(null);
   const bankDrawEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
+  // AE8: ref-indirection for the same reason overrideEligibilityRef/bankDrawEligibilityRef exist —
+  // resolveSoloAiDecisionViaEngine is declared here, well before runEndToEndStrategicPlannerEngine's
+  // real declaration further down the component; a direct reference (or a dependency-array entry)
+  // would throw "Cannot access before initialization" the instant this component renders. Assigned
+  // right after the real function's own declaration.
+  const runEndToEndStrategicPlannerEngineRef = useRef<((actorId: string) => AiDecisionResult) | null>(null);
   const regionDepositsRef = useRef<RegionDeposits>(sanitizeRegionDeposits(initialGameState.regionDeposits));
   const regionControlHistoryRef = useRef<RegionControlStats['controlHistory']>(initialGameState.regionControlStats.controlHistory || []);
   const proposalsRef = useRef<Proposal[]>(initialGameState.proposals || []);
@@ -18286,9 +18376,14 @@ function AustraliaGame() {
     const engineId = resolveAiDecisionEngineForActor('ai');
     const runSelectedEngine = () => {
       switch (engineId) {
-        case 'end_to_end_planner':
-          // AE5+ replaces this branch with a real call into the built-in planner.
-          return makeAiDecision(aiState, currentGameState, playerState);
+        case 'end_to_end_planner': {
+          // AE8: the built-in End-to-End Strategic Planner. Uses the ref-indirection pattern
+          // (runEndToEndStrategicPlannerEngineRef) since this function is declared well before
+          // the real planner function further down the component. A null/no-action result falls
+          // straight through to Classic Layered AI, matching the mandatory-fallback design.
+          const plannerResult = runEndToEndStrategicPlannerEngineRef.current?.('ai') || null;
+          return plannerResult?.selectedAction || makeAiDecision(aiState, currentGameState, playerState);
+        }
         case 'classic_layered':
         default:
           return makeAiDecision(aiState, currentGameState, playerState);
@@ -30572,6 +30667,108 @@ function AustraliaGame() {
     };
   }, [getActorState, teamsById, gameSettings, gameState.day, gameState.selectedMode, gameState.resourcePrices, gameState.weather, gameState.activeEvents, gameState.regionControlStats, getTeamActors, getTreasuryAvailableAmount, getCompetitiveMetricValue, isAdvancedLoansEnabledForActor]);
 
+  // AE6: Candidate Generation — reuses getRankedTeamAiDecisions directly, exactly as the roadmap
+  // requires ("must be called, never reimplemented"). This is the ~1,500-line function that
+  // already bakes in every Governor/reservation/settings-gated legal-candidate eligibility check;
+  // the Planner must never re-derive legal candidates from scratch.
+  const generatePlannerCandidates = useCallback((actorId: string): ScoredTeamAiDecision[] => {
+    return getRankedTeamAiDecisions(actorId);
+  }, [getRankedTeamAiDecisions]);
+
+  // AE9: per-actor, day-scoped storage for a constructed multi-step plan's remaining steps. A
+  // deliberately lightweight, non-persisted ref — never saved/loaded, never the full TeamPlan/
+  // Sequence data model — since the Planner recomputes fresh once per day anyway and this feature
+  // isn't yet reachable from any real turn-execution path. Cleared whenever a later step fails
+  // revalidation (abandoned) or a new day begins (day-scoped staleness guard).
+  const aiPlannerActivePlanRef = useRef<Record<string, { steps: ScoredTeamAiDecision[]; day: number; stepIndex: number }>>({});
+
+  // AE8: the complete End-to-End Strategic Planner pipeline — Situation Analysis -> Goal Selection
+  // -> Candidate Generation (reused, never reimplemented) -> Outcome Prediction -> Plan
+  // Construction -> ONE centralized Utility Evaluation -> Action Selection -> Explanation ->
+  // pre-execution revalidation. AE9 adds: only the first step of a freshly-built plan executes
+  // immediately; every later step is revalidated against freshly regenerated candidates before use
+  // and is abandoned (never forced through) if it's no longer legal. This is what makes
+  // 'end_to_end_planner' a genuinely selectable engine — its result is consumed by
+  // resolveTeamAiDecisionViaEngine/resolveSoloAiDecisionViaEngine below.
+  const runEndToEndStrategicPlannerEngine = useCallback((actorId: string): AiDecisionResult => {
+    // AE9: consult any already-in-progress plan for this actor before building a fresh one.
+    const stored = aiPlannerActivePlanRef.current[actorId];
+    if (stored && stored.day === gameState.day && stored.stepIndex < stored.steps.length) {
+      const nextStep = stored.steps[stored.stepIndex];
+      const freshCandidates = generatePlannerCandidates(actorId);
+      const stillLegal = freshCandidates.some(c => c.type === nextStep.type
+        && (c.data?.region || null) === (nextStep.data?.region || null)
+        && (c.data?.targetActorId || null) === (nextStep.data?.targetActorId || null));
+      if (stillLegal) {
+        aiPlannerActivePlanRef.current[actorId] = { ...stored, stepIndex: stored.stepIndex + 1 };
+        const outcome = predictAiCandidateOutcome(nextStep);
+        return {
+          engineId: 'end_to_end_planner',
+          selectedAction: nextStep,
+          plan: stored.steps,
+          explanation: `Continuing plan: step ${stored.stepIndex + 1} of ${stored.steps.length} (${nextStep.type}).`,
+          expectedOutcome: outcome.expectedOutcome,
+          worstCaseOutcome: outcome.worstCaseOutcome,
+          usedFallback: false
+        };
+      }
+      // Later step no longer legal — abandon the rest of the plan rather than forcing it through;
+      // fall through to build a fresh plan from scratch this same call.
+      delete aiPlannerActivePlanRef.current[actorId];
+    }
+
+    const snapshot = analyzeAiSituationForPlanner(actorId);
+    if (!snapshot) {
+      return { engineId: 'end_to_end_planner', selectedAction: null, usedFallback: true, fallbackReason: 'no situation snapshot available' };
+    }
+    const goals = selectAiPlannerGoals(snapshot);
+    const candidates = generatePlannerCandidates(actorId);
+    if (candidates.length === 0) {
+      return {
+        engineId: 'end_to_end_planner',
+        selectedAction: null,
+        primaryGoal: goals.primary,
+        secondaryGoals: goals.secondary,
+        usedFallback: true,
+        fallbackReason: 'no legal candidates'
+      };
+    }
+    const plan = constructAiPlan(candidates, gameSettings.aiThinkingDepth);
+    const utility = evaluateAiPlanUtility(plan, goals);
+    const selected = plan[0] || candidates[0];
+    // Pre-execution revalidation: confirm the chosen first step still appears among freshly
+    // regenerated candidates before treating it as final.
+    const freshCandidates = generatePlannerCandidates(actorId);
+    const stillLegal = freshCandidates.some(c => c.type === selected.type
+      && (c.data?.region || null) === (selected.data?.region || null)
+      && (c.data?.targetActorId || null) === (selected.data?.targetActorId || null));
+    const finalAction = stillLegal ? selected : (freshCandidates[0] || null);
+
+    if (plan.length > 1) {
+      aiPlannerActivePlanRef.current[actorId] = { steps: plan, day: gameState.day, stepIndex: 1 };
+    } else {
+      delete aiPlannerActivePlanRef.current[actorId];
+    }
+
+    const outcome = finalAction ? predictAiCandidateOutcome(finalAction) : { expectedOutcome: '', worstCaseOutcome: '' };
+    return {
+      engineId: 'end_to_end_planner',
+      selectedAction: finalAction,
+      plan: plan.length > 1 ? plan : undefined,
+      situationSummary: `Day ${snapshot.day}, ${snapshot.daysRemaining} days remaining, ${snapshot.economicPhase} phase, $${Math.round(snapshot.spendableCash)} spendable.`,
+      primaryGoal: goals.primary,
+      secondaryGoals: goals.secondary,
+      utility,
+      confidence: finalAction ? Math.min(1, Math.max(0, (finalAction.score || 0) / 200)) : 0,
+      expectedOutcome: outcome.expectedOutcome,
+      worstCaseOutcome: outcome.worstCaseOutcome,
+      alternatives: candidates.slice(1, 4),
+      explanation: finalAction ? explainAiPlannerDecision(finalAction, plan, goals) : 'No legal action available.',
+      usedFallback: !stillLegal
+    };
+  }, [analyzeAiSituationForPlanner, generatePlannerCandidates, gameSettings.aiThinkingDepth, gameState.day]);
+  runEndToEndStrategicPlannerEngineRef.current = runEndToEndStrategicPlannerEngine;
+
   // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for team-mode
   // decision selection — plugged in ONLY at the innermost fallback position, after Parallel
   // Planning's round plan, Teammate Action Sequences, and Team Plans have all had their chance
@@ -30594,9 +30791,13 @@ function AustraliaGame() {
     const engineId = resolveAiDecisionEngineForActor(actorId);
     const runSelectedEngine = (): AIAction => {
       switch (engineId) {
-        case 'end_to_end_planner':
-          // AE5+ replaces this branch with a real call into the built-in planner.
-          return makeTeamAiDecision(actorId);
+        case 'end_to_end_planner': {
+          // AE8: the built-in End-to-End Strategic Planner, wired live for the first time. A
+          // null/no-action result falls straight through to Classic Layered AI, matching the
+          // mandatory-fallback design already established in AE4.
+          const plannerResult = runEndToEndStrategicPlannerEngine(actorId);
+          return plannerResult.selectedAction || makeTeamAiDecision(actorId);
+        }
         case 'classic_layered':
         default:
           return makeTeamAiDecision(actorId);
@@ -30618,7 +30819,7 @@ function AustraliaGame() {
       }
     }
     return AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION;
-  }, [resolveAiDecisionEngineForActor, makeTeamAiDecision]);
+  }, [resolveAiDecisionEngineForActor, makeTeamAiDecision, runEndToEndStrategicPlannerEngine]);
 
   const advanceToNextActorTurn = useCallback(() => {
     const order = Array.isArray(gameState.turnOrder) && gameState.turnOrder.length > 0 ? gameState.turnOrder : ['player', 'ai'];
@@ -38371,9 +38572,9 @@ function AustraliaGame() {
                     behavior, and always the default), a built-in End-to-End Strategic Planner, or a
                     custom algorithm you build yourself. Only active in Human vs AI, Human+AI vs
                     AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand Tour, and menus.
-                    A human-controlled actor is never assigned an algorithm. The End-to-End Planner
-                    and the Algorithm Builder aren't built yet, so Classic Layered AI is the only
-                    functioning choice below.
+                    A human-controlled actor is never assigned an algorithm. The Algorithm Builder
+                    isn't built yet, so custom algorithms aren't selectable below — only Classic
+                    Layered AI and the built-in End-to-End Strategic Planner are real choices.
                   </div>
                   <div>
                     <label className="block font-semibold mb-1 text-sm">Friendly Team AI (Team Mode)</label>
@@ -38383,6 +38584,7 @@ function AustraliaGame() {
                       onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
+                      <option value="end_to_end_planner">End-to-End Strategic Planner</option>
                     </select>
                   </div>
                   <div>
@@ -38393,6 +38595,7 @@ function AustraliaGame() {
                       onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForEnemyTeam: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
+                      <option value="end_to_end_planner">End-to-End Strategic Planner</option>
                     </select>
                   </div>
                   <div>
@@ -38403,11 +38606,12 @@ function AustraliaGame() {
                       onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForOpponent: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
+                      <option value="end_to_end_planner">End-to-End Strategic Planner</option>
                     </select>
                   </div>
                   <div>
                     <label className="block font-semibold mb-1 text-sm">Thinking Depth</label>
-                    <div className="text-xs opacity-60 mb-2">Reserved for the End-to-End Strategic Planner — has no effect until that's built.</div>
+                    <div className="text-xs opacity-60 mb-2">Controls how many plan steps the End-to-End Strategic Planner constructs (Fast: 1, Balanced: up to 2, Deep: up to 3). Only the first step ever executes immediately — later steps are always revalidated before use.</div>
                     <div className="flex gap-2">
                       {(['fast', 'balanced', 'deep'] as AiThinkingDepth[]).map(depth => (
                         <button
