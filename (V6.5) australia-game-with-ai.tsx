@@ -1344,7 +1344,45 @@ const V69_CHANGELOG = [
   "Sequences support wager/spending limits, conditions, fallback behavior, and repeats",
   "Sequence Interrupts and phase-based automatic sequence switching",
   "10 named sequence templates, plus manual live controls (pause/skip/cancel/yield)",
-  "All new systems are off by default and Team Mode-only"
+  "All new systems are off by default and Team Mode-only",
+  "V6.9.1 bugfix round: fixed Edit & Approve/Approve Lower Wager silently applying $0, duplicate/double-click approval resolution, and stuck or orphaned approval dialogs"
+];
+const V610_CHANGELOG = [
+  "V6.10 - Team Treasury",
+  "A shared per-team cash pool, kept fully separate from any actor's personal money",
+  "Manual and automatic contributions, with per-actor daily caps and a minimum-cash-remaining floor",
+  "Funding requests — emergency cash, funding for a specific action, or a custom amount — with human or AI approval and partial approval",
+  "Detects and explains when the Team Economy Governor is restricting an actor's spending",
+  "Bounded, temporary Governor exceptions for actors stuck under sustained restriction",
+  "Treasury contribution/withdrawal available as steps inside Teammate Action Sequences",
+  "Optional: count the shared Treasury balance toward your team's win-condition total",
+  "Off by default and Team Mode-only"
+];
+const V611_CHANGELOG = [
+  "V6.11 - Advanced Team AI Upgrade",
+  "Ratcheting Cash Vault: protects an AI actor's savings from ever being voluntarily spent, with automatic milestone-based locking",
+  "Team Economy Governor: phase-aware financial discipline (Survival/Accumulation/Compounding/Endgame) with bankroll-aware wagering",
+  "Teammate Performance Sync 2.0: biases decisions using actual realized outcomes and recent per-actor category expertise, not just heuristics",
+  "Guaranteed Recovery Protocol: a deterministic fallback (sell, ask for support, or a safe challenge) for an actor stuck without a good option",
+  "Parallel Planning: batches every AI actor's first decision of a round for better team coordination, always re-validated against live state",
+  "Off by default and Team Mode-only"
+];
+const V612_CHANGELOG = [
+  "V6.12 - Team AI Overseer System",
+  "Strategic Command AI: team-level directives that bias — never bypass — which already-legal action an actor picks",
+  "4 authority modes per module: Shadow (log only), Advisory (manual apply), Approval (review queue), Autonomous (applies immediately)",
+  "Adaptive Team AI Overseer: temporarily adjusts how permissively a team's AI behaves based on comeback/lead detection",
+  "Shared status card and a full Overseer Dashboard, with user-settable locks and a Safe Mode",
+  "Off by default and Team Mode-only"
+];
+const V613_CHANGELOG = [
+  "V6.13 - AI Operations Auditor",
+  "A separate system that watches the AI turn engine for operational bugs and stuck states — never strategic decisions",
+  "Never replaces or bypasses Strategic Command AI, the Adaptive Overseer, the Economy Governor, Treasury, Overrides, Sequences, Requirements, or Approval",
+  "16+ detection rules covering stuck turns, orphaned approvals/tokens, stuck sequences, unresolved Treasury requests, retry storms, and more",
+  "Per-team modes: Monitor Only, Recommend Recovery, Recovery Approval, and Bounded Automatic Recovery, each with its own dedicated Safe Mode",
+  "Compact status card plus a full 10-tab Auditor Dashboard for reviewing and acting on incidents",
+  "Off by default and Team Mode-only"
 ];
 
 const ACTION_GROUPS = {
@@ -33273,6 +33311,16 @@ function AustraliaGame() {
     }));
   }, []);
 
+  // Post-ship bugfix: the Settings Hub's scrollable content container is never remounted on tab
+  // switch (by design, since a6b6e38's own fix), so a stale scrollTop carried over from a longer
+  // tab (e.g. Team Mode AI) gets clamped by the browser to a shorter tab's (e.g. Interface) much
+  // smaller scrollHeight, landing at the very bottom. Reset scroll only on an actual tab change —
+  // never on ordinary settings toggles/slider edits — so this can't reintroduce that earlier bug.
+  const settingsScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    settingsScrollRef.current?.scrollTo({ top: 0 });
+  }, [uiState.settingsActiveTab]);
+
   const settingsSearchMatchedIds = useMemo(() => {
     const q = uiState.settingsSearchQuery.trim().toLowerCase();
     if (!q) return null;
@@ -34606,7 +34654,7 @@ function AustraliaGame() {
             </div>
 
           {/* Scrollable Content */}
-          <div className={`p-6 pt-4 ${themeStyles.scrollbar}`} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div ref={settingsScrollRef} className={`p-6 pt-4 ${themeStyles.scrollbar}`} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {settingsSearchMatchedIds !== null && settingsSearchMatchedIds.size === 0 && (
               <div className="text-sm opacity-75 mb-4">No settings match "{uiState.settingsSearchQuery}".</div>
             )}
@@ -34729,11 +34777,43 @@ function AustraliaGame() {
                 </div>
               </SettingsSection>
               <SettingsSection id="interface.changelog" tab="interface" title="What's New" chips={['UX only']}>
-                <div className="text-sm font-semibold mb-1">{V69_CHANGELOG[0]}</div>
+                <div className="text-sm font-semibold mb-1">{V613_CHANGELOG[0]}</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
-                  {V69_CHANGELOG.slice(1).map(item => (
+                  {V613_CHANGELOG.slice(1).map(item => (
                     <div key={item}>- {item}</div>
                   ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.12</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V612_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.11</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V611_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.10</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V610_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-current border-opacity-10">
+                  <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.9</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-60">
+                    {V69_CHANGELOG.slice(1).map(item => (
+                      <div key={item}>- {item}</div>
+                    ))}
+                  </div>
                 </div>
                 <div className="mt-3 pt-3 border-t border-current border-opacity-10">
                   <div className="text-xs font-semibold opacity-75 mb-2">Earlier: V6.7.0</div>
@@ -37793,6 +37873,7 @@ function AustraliaGame() {
                           <select
                             value={gameSettings.teamAiAuditorModeForFriendlyTeam}
                             onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForFriendlyTeam: e.target.value as AiOperationsAuditorMode }))}
+                            className={`${themeStyles.select} rounded px-3 py-2`}
                           >
                             <option value="off">Off</option>
                             <option value="monitor">Monitor Only</option>
@@ -37806,6 +37887,7 @@ function AustraliaGame() {
                           <select
                             value={gameSettings.teamAiAuditorModeForEnemyTeam}
                             onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForEnemyTeam: e.target.value as AiOperationsAuditorMode }))}
+                            className={`${themeStyles.select} rounded px-3 py-2`}
                           >
                             <option value="off">Off</option>
                             <option value="monitor">Monitor Only</option>
