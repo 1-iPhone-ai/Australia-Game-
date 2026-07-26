@@ -39816,10 +39816,10 @@ function AustraliaGame() {
                     // parametrized renderRequirementGroupEditor). Every write already produces exactly
                     // the shape sanitizeAiAlgorithmConfig's existing per-stage sanitizers accept — no
                     // sanitizer changes needed.
-                    const updateAiAlgorithmStageConfig = <K extends keyof AiAlgorithmConfig>(configId: string, stageKey: K, updater: (prev: AiAlgorithmConfig[K]) => AiAlgorithmConfig[K]) => {
+                    const updateAiAlgorithmStageConfig = (configId: string, stageKey: keyof AiAlgorithmConfig, updater: (prev: any) => any) => {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({
                         ...prev,
-                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, [stageKey]: updater(c[stageKey]) } : c)
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, [stageKey]: updater((c as any)[stageKey]) } : c)
                       }));
                     };
                     const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
