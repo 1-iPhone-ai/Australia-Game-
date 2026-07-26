@@ -39411,6 +39411,102 @@ function AustraliaGame() {
                       const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, active: false, createdDay: gameState.day, revision: 0 };
                       updateTeamState(TEAM_OPPONENT_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) }));
                     };
+                    // AB8: export a single config as a plain JSON download, mirroring downloadSaveFile's
+                    // exact Blob+anchor+revoke pattern used elsewhere in this file for save exports.
+                    const exportAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
+                      const config = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      if (!config) return;
+                      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = `${(config.name || 'algorithm_config').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.json`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      setTimeout(() => URL.revokeObjectURL(url), 0);
+                    };
+                    // AB8: import — full sanitize-on-import via the existing sanitizeAiAlgorithmConfig
+                    // (the exact same discipline sanitizeTeamPlan established: reject rather than trust
+                    // an unvalidated shape). A fresh configId/createdDay are always assigned and the
+                    // config NEVER auto-activates regardless of what active flag the file itself carried.
+                    const importAiAlgorithmConfigFileToPlayerTeam = (file: File) => {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        let sanitized: AiAlgorithmConfig | null = null;
+                        try {
+                          sanitized = sanitizeAiAlgorithmConfig(JSON.parse(String(reader.result)));
+                        } catch {
+                          sanitized = null;
+                        }
+                        if (!sanitized) {
+                          addNotification('Import failed: not a valid Algorithm Builder config file.', 'error');
+                          return;
+                        }
+                        const imported: AiAlgorithmConfig = {
+                          ...sanitized,
+                          configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                          createdByPlayer: true,
+                          createdDay: gameState.day,
+                          active: false,
+                          revision: 0
+                        };
+                        updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, imported].slice(-30) }));
+                        addNotification(`Imported algorithm config "${imported.name}".`, 'success');
+                      };
+                      reader.readAsText(file);
+                    };
+                    // AB9: Algorithm Testing Workspace — evaluates a config against the CURRENT live
+                    // situation snapshot for the friendly AI teammate, calling the exact same AB-track
+                    // pure evaluators the (still nonexistent) execution engine will eventually call,
+                    // never executing anything. Scoped to "test against current state" only this
+                    // phase — testing against a saved scenario or a built-in example scenario is
+                    // explicitly deferred (no scenario-storage concept exists anywhere to reuse yet).
+                    // Result is persisted onto the config's own already-declared (AB1) lastTestResult
+                    // field, exactly the field it was reserved for.
+                    const runAiAlgorithmConfigTestInPlayerTeam = (configId: string) => {
+                      const config = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      if (!config) return;
+                      const actorId = ALLY_AI_ID;
+                      const snapshot = analyzeAiSituationForPlanner(actorId);
+                      if (!snapshot) {
+                        addNotification('Testing Workspace: no live situation snapshot available — start or load a Team Mode match first.', 'warning');
+                        return;
+                      }
+                      const goals = selectAiAlgorithmGoals(config.goalSelectionConfig, snapshot);
+                      const rawCandidates = generatePlannerCandidates(actorId);
+                      const filtered = filterAiAlgorithmCandidates(config.candidateGenerationConfig, rawCandidates);
+                      const plan = constructAiAlgorithmPlan(config.planConstructionConfig, filtered);
+                      const utility = evaluateAiAlgorithmPlanUtility(config.utilityEvaluationConfig, plan, goals);
+                      const selected = selectAiAlgorithmAction(config.actionSelectionConfig, plan);
+                      const outcome = selected ? predictAiAlgorithmCandidateOutcome(config.outcomePredictionConfig, selected) : null;
+                      const explanation = selected
+                        ? explainAiAlgorithmDecision(config.explanationOutputConfig, selected, plan, goals)
+                        : 'No candidate survived Candidate Generation/Plan Construction — this config would take no action right now.';
+                      const classicTop = rawCandidates[0] || null;
+                      const comparisonNote = classicTop
+                        ? (selected && selected.type === classicTop.type
+                          ? `Matches what Classic Layered AI would choose (${classicTop.type}).`
+                          : `Differs from Classic Layered AI, which would choose ${classicTop.type} (score ${Math.round(classicTop.score || 0)}).`)
+                        : 'Classic Layered AI has no legal candidate either right now.';
+                      const outcomeSummary = [
+                        `Situation: ${summarizeAiAlgorithmSituation(config.situationAnalysisConfig, snapshot)}`,
+                        `Goals: primary ${goals.primary}${goals.secondary.length ? `, secondary ${goals.secondary.join(', ')}` : ''}.`,
+                        `Candidates: ${rawCandidates.length} generated, ${filtered.length} survived filtering, ${plan.length}-step plan constructed.`,
+                        `Utility score: ${Math.round(utility)}.`,
+                        `Selected action: ${selected ? selected.type : 'none'}.`,
+                        outcome ? outcome.riskNote : '',
+                        explanation,
+                        comparisonNote
+                      ].filter(Boolean).join(' ');
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({
+                        ...prev,
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? {
+                          ...c,
+                          lastTestResult: { ranAtDay: gameState.day, outcomeSummary, passed: Boolean(selected) }
+                        } : c)
+                      }));
+                    };
                     const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
                     return (
                       <>
@@ -39427,6 +39523,18 @@ function AustraliaGame() {
                                 + {template.label}
                               </button>
                             ))}
+                            <input
+                              type="file"
+                              accept="application/json"
+                              id="ab-import-config-file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) importAiAlgorithmConfigFileToPlayerTeam(file);
+                                e.target.value = '';
+                              }}
+                            />
+                            <label htmlFor="ab-import-config-file" className={`px-3 py-1.5 rounded text-sm font-semibold cursor-pointer ${themeStyles.buttonSecondary}`}>Import from File</label>
                           </div>
                           {playerAlgorithmConfigs.length === 0 && (
                             <div className="text-sm opacity-60">No custom algorithms yet — create a blank one or load a preset above.</div>
@@ -39455,6 +39563,8 @@ function AustraliaGame() {
                                 </button>
                                 <button onClick={() => duplicateAiAlgorithmConfigInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
                                 <button onClick={() => copyAiAlgorithmConfigToEnemyTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Copy to Enemy Team</button>
+                                <button onClick={() => exportAiAlgorithmConfigFromPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Export</button>
+                                <button onClick={() => runAiAlgorithmConfigTestInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Test</button>
                                 <button onClick={() => deleteAiAlgorithmConfigFromPlayerTeam(config.configId)} className="px-2 py-1 rounded text-xs bg-red-700 text-white">Delete</button>
                               </div>
                               {config.description && <div className="text-xs opacity-60">{config.description}</div>}
@@ -39466,6 +39576,14 @@ function AustraliaGame() {
                               {validation.errors.length === 0 && validation.warnings.length > 0 && (
                                 <div className="text-xs text-yellow-500 space-y-0.5">
                                   {validation.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                                </div>
+                              )}
+                              {config.lastTestResult && (
+                                <div className={`text-xs p-2 rounded ${themeStyles.border} border`}>
+                                  <div className="font-semibold mb-1">
+                                    Last test (Day {config.lastTestResult.ranAtDay}): {config.lastTestResult.passed ? '✓ selected an action' : '✗ selected no action'}
+                                  </div>
+                                  <div className="opacity-75">{config.lastTestResult.outcomeSummary}</div>
                                 </div>
                               )}
                             </div>
