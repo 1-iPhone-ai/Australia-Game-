@@ -2499,6 +2499,10 @@ interface AiDecisionCandidateTrace {
 }
 
 interface AiDecisionTrace {
+  // PI1: the AI Action Pipeline Inspector's join key — generated once per built trace so a
+  // PipelineTraceRecord (below) can be cross-referenced back to the exact decision that produced it.
+  // Optional for save/load compatibility with traces recorded before this field existed.
+  decisionId?: string;
   actorId: string;
   teamId: string;
   mode: GameModeSelection | string | null | undefined;
@@ -2686,6 +2690,69 @@ interface TeamState {
   // player structures). Always [] this phase — no CRUD exists yet (AB6), no stage editors exist
   // yet (AB2-AB4), so nothing anywhere can construct a real entry.
   algorithmConfigs: AiAlgorithmConfig[];
+  // PI1: the AI Action Pipeline Inspector's own per-team, capped history — genuinely separate from
+  // decisionState.historyByActor (which only ever keeps the LATEST/a capped recent trace per actor,
+  // and has no cross-system field), the Game Activity Ledger (which records facts, never a
+  // stage-by-stage pipeline breakdown), and the AI Operations Auditor (which detects problems, not
+  // decision flow). Inert (never populated) until aiPipelineInspectorEnabled is on.
+  pipelineTraces: PipelineTraceRecord[];
+}
+
+// PI1: the 11-stage pipeline the AI Action Pipeline Inspector traces one decision through, in
+// order — matches the user's own spec exactly: Algorithm -> Strategy -> Sequence -> Requirements
+// -> Cash Vault -> Economy Governor -> Treasury -> Overseer -> Approval -> Execution -> Auditor.
+type PipelineStageId =
+  | 'algorithm' | 'strategy' | 'sequence' | 'requirements' | 'cash_vault' | 'economy_governor'
+  | 'treasury' | 'overseer' | 'approval' | 'execution' | 'auditor';
+const PIPELINE_STAGE_ORDER: PipelineStageId[] = [
+  'algorithm', 'strategy', 'sequence', 'requirements', 'cash_vault', 'economy_governor',
+  'treasury', 'overseer', 'approval', 'execution', 'auditor'
+];
+const PIPELINE_STAGE_LABELS: Record<PipelineStageId, string> = {
+  algorithm: 'Algorithm', strategy: 'Strategic Command', sequence: 'Sequence', requirements: 'Requirements',
+  cash_vault: 'Cash Vault', economy_governor: 'Economy Governor', treasury: 'Treasury', overseer: 'Overseer',
+  approval: 'Approval', execution: 'Execution', auditor: 'Auditor'
+};
+// PI1: a stage's outcome for this one decision — 'inactive' means the stage's own system was off/
+// not applicable for this decision (never fabricated as 'passed'), 'skipped' means the system was
+// on but this decision never reached it (e.g. rejected earlier in the chain).
+type PipelineStageStatus = 'passed' | 'modified' | 'blocked' | 'skipped' | 'inactive';
+interface PipelineStageRecord {
+  stageId: PipelineStageId;
+  status: PipelineStageStatus;
+  summary: string;
+  // PI1: cross-references back into the already-shipped per-system record this stage's outcome
+  // came from (a TeamGovernorException id, an ApprovalRequest id, an AiOperationsIncident id, a
+  // TreasuryFundingRequest id, etc.) — reuses whatever id that system already mints, never a new one.
+  relatedId?: string;
+  timestamp: number;
+}
+// PI1: post-execution state-delta capture, per the roadmap's own explicit scope — money/inventory-
+// count/region/win-condition-metric before vs. after this one decision's execution. Optional/absent
+// until the 'execution' stage actually runs (a decision that never executes has no delta to report).
+interface PostExecutionStateDelta {
+  moneyBefore: number;
+  moneyAfter: number;
+  inventoryCountBefore: number;
+  inventoryCountAfter: number;
+  regionBefore: string;
+  regionAfter: string;
+  winMetricBefore: number;
+  winMetricAfter: number;
+}
+interface PipelineTraceRecord {
+  decisionId: string;
+  actorId: string;
+  teamId: string;
+  day: number;
+  turn: number;
+  // PI1: reuses the Game Activity Ledger's own correlationChainId convention (GL4/GL9) rather than
+  // inventing a second correlation mechanism — the same id a settings_change/decision/approval/
+  // treasury Ledger event for this same decision would carry, when one exists.
+  correlationChainId?: string;
+  stages: PipelineStageRecord[];
+  stateDelta?: PostExecutionStateDelta;
+  timestamp: number;
 }
 
 // Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
@@ -5564,6 +5631,10 @@ type GameSettingsState = {
   // GL11: pause/resume recording — must never pause gameplay itself, only whether new events are
   // appended; checked by the same appendGameActivityLedgerEvent guard as the master toggle.
   gameActivityLedgerRecordingPaused: boolean;
+  // PI1: master toggle for the AI Action Pipeline Inspector — a purely observational trace of one
+  // AI decision through the 11-stage pipeline (Algorithm -> ... -> Auditor), never altering any
+  // decision. Off by default; inert (pipelineTraces stays []) until turned on.
+  aiPipelineInspectorEnabled: boolean;
   // V5.0 gameplay settings
   winCondition: WinMetric;
   winConditionTieBreakers: WinMetric[];
@@ -6639,6 +6710,62 @@ const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
   return value.map(sanitizeAiAlgorithmConfig).filter((config): config is AiAlgorithmConfig => Boolean(config)).slice(-30);
 };
 
+// PI1: mirrors sanitizeAiAlgorithmConfig's defensive-normalize style — hard-fail (null) on a
+// missing/wrong-typed required id, closed-union checks for stageId/status, numeric fields
+// re-checked with typeof/isFinite, capped array lengths.
+const PIPELINE_STAGE_STATUSES: PipelineStageStatus[] = ['passed', 'modified', 'blocked', 'skipped', 'inactive'];
+const sanitizePipelineStageRecord = (value: unknown): PipelineStageRecord | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<PipelineStageRecord>;
+  if (!PIPELINE_STAGE_ORDER.includes(source.stageId as PipelineStageId)) return null;
+  if (!PIPELINE_STAGE_STATUSES.includes(source.status as PipelineStageStatus)) return null;
+  return {
+    stageId: source.stageId as PipelineStageId,
+    status: source.status as PipelineStageStatus,
+    summary: typeof source.summary === 'string' ? source.summary : '',
+    relatedId: typeof source.relatedId === 'string' ? source.relatedId : undefined,
+    timestamp: typeof source.timestamp === 'number' && Number.isFinite(source.timestamp) ? source.timestamp : Date.now()
+  };
+};
+const sanitizePostExecutionStateDelta = (value: unknown): PostExecutionStateDelta | undefined => {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Partial<PostExecutionStateDelta>;
+  const numOrZero = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? n : 0;
+  return {
+    moneyBefore: numOrZero(source.moneyBefore),
+    moneyAfter: numOrZero(source.moneyAfter),
+    inventoryCountBefore: numOrZero(source.inventoryCountBefore),
+    inventoryCountAfter: numOrZero(source.inventoryCountAfter),
+    regionBefore: typeof source.regionBefore === 'string' ? source.regionBefore : '',
+    regionAfter: typeof source.regionAfter === 'string' ? source.regionAfter : '',
+    winMetricBefore: numOrZero(source.winMetricBefore),
+    winMetricAfter: numOrZero(source.winMetricAfter)
+  };
+};
+const sanitizePipelineTraceRecord = (value: unknown): PipelineTraceRecord | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<PipelineTraceRecord>;
+  if (typeof source.decisionId !== 'string' || typeof source.actorId !== 'string' || typeof source.teamId !== 'string') return null;
+  return {
+    decisionId: source.decisionId,
+    actorId: source.actorId,
+    teamId: source.teamId,
+    day: typeof source.day === 'number' && Number.isFinite(source.day) ? Math.max(0, Math.floor(source.day)) : 0,
+    turn: typeof source.turn === 'number' && Number.isFinite(source.turn) ? Math.max(0, Math.floor(source.turn)) : 0,
+    correlationChainId: typeof source.correlationChainId === 'string' ? source.correlationChainId : undefined,
+    stages: Array.isArray(source.stages)
+      ? source.stages.map(sanitizePipelineStageRecord).filter((s): s is PipelineStageRecord => Boolean(s)).slice(0, PIPELINE_STAGE_ORDER.length)
+      : [],
+    stateDelta: sanitizePostExecutionStateDelta(source.stateDelta),
+    timestamp: typeof source.timestamp === 'number' && Number.isFinite(source.timestamp) ? source.timestamp : Date.now()
+  };
+};
+const PIPELINE_TRACES_MAX = 200;
+const sanitizePipelineTraceRecords = (value: unknown): PipelineTraceRecord[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(sanitizePipelineTraceRecord).filter((r): r is PipelineTraceRecord => Boolean(r)).slice(-PIPELINE_TRACES_MAX);
+};
+
 // AB5: the 9 named starting presets, mirroring SEQUENCE_TEMPLATES/instantiateSequenceTemplate's
 // exact precedent (Phase F5) — a flat, id-keyed Record of non-player-authored definitions, plus a
 // pure instantiateX(id) that stamps out a fresh runtime object (new configId, createdByPlayer:
@@ -7699,6 +7826,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   gameActivityLedgerMaxEvents: 500, // GL11: matches GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING; a literal here (not a reference) since DEFAULT_GAME_SETTINGS is declared before that constant to avoid a TDZ error
   gameActivityLedgerRetentionPolicy: 'keep_recent',
   gameActivityLedgerRecordingPaused: false,
+  aiPipelineInspectorEnabled: false,
   // V5.0 settings
   winCondition: 'money',
   winConditionTieBreakers: [...DEFAULT_WIN_CONDITION_TIEBREAKERS],
@@ -8017,6 +8145,11 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     description: 'An optional, append-only history of match activity — decisions, actions, approvals, Treasury requests, setting changes, and Auditor incidents — genuinely separate from Decision Transparency and the AI Operations Auditor. Pure scaffolding right now: nothing is recorded yet.',
     tags: ['Advanced', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
   },
+  aiPipelineInspectorEnabled: {
+    key: 'aiPipelineInspectorEnabled', tab: 'advancedSystems', label: 'AI Action Pipeline Inspector',
+    description: 'A purely observational trace of one AI decision through the 11-stage pipeline (Algorithm, Strategy, Sequence, Requirements, Cash Vault, Economy Governor, Treasury, Overseer, Approval, Execution, Auditor). Never alters a decision — this phase records the stage schema and a post-execution money/inventory/region/win-metric before-after snapshot; a full stage-by-stage viewer arrives in a later phase.',
+    tags: ['Advanced', 'AI', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+  },
   advancedLoansEnabled: {
     key: 'advancedLoansEnabled', tab: 'economy', label: 'Advanced Loans',
     description: 'Four-tiered loan system with credit scores, refinancing, and loan events.',
@@ -8102,6 +8235,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
   { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused'] },
+  { id: 'advancedSystems.aiPipelineInspector', tab: 'advancedSystems', title: 'AI Action Pipeline Inspector', tags: ['Advanced', 'AI', 'Off by default'], fieldKeys: ['aiPipelineInspectorEnabled'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -11699,6 +11833,7 @@ const sanitizeDecisionTrace = (value: unknown): AiDecisionTrace | null => {
   const source = value as Partial<AiDecisionTrace>;
   if (typeof source.actorId !== 'string' || typeof source.teamId !== 'string') return null;
   return {
+    decisionId: typeof source.decisionId === 'string' ? source.decisionId : undefined,
     actorId: source.actorId,
     teamId: source.teamId,
     mode: source.mode === 'ai' || source.mode === 'grand_tour' || source.mode === 'team_human_ai_vs_ai_ai' || source.mode === 'team_ai_vs_ai' ? source.mode : 'ai',
@@ -11851,7 +11986,8 @@ const createDefaultTeamState = (
   governorExceptions: [],
   overseer: createDefaultTeamOverseerState(),
   auditor: createDefaultAiOperationsAuditorState(),
-  algorithmConfigs: []
+  algorithmConfigs: [],
+  pipelineTraces: []
 });
 
 const getTeamMessageExpiry = (type: TeamMessageType) => {
@@ -12974,6 +13110,9 @@ function AustraliaGame() {
   // ranking passes. Its existing toast-only transparency (teamAiActionLendingTransparencyEnabled)
   // is left as the sole visibility mechanism for lending.
   const overrideEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string; cost: number; policy: TeamAiOverridePolicy | FriendlyAiOverridePolicy | null }) | null>(null);
+  // PI1: ref-indirection for getCompetitiveMetricValue, declared later in the component — same
+  // TDZ-avoidance pattern as overrideEligibilityRef above.
+  const getCompetitiveMetricValueRef = useRef<((metric: WinMetric, options: any) => number) | null>(null);
   const bankDrawEligibilityRef = useRef<((actorId: string, decision: ScoredTeamAiDecision | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
   // AE8: ref-indirection for the same reason overrideEligibilityRef/bankDrawEligibilityRef exist —
   // resolveSoloAiDecisionViaEngine is declared here, well before runEndToEndStrategicPlannerEngine's
@@ -13844,7 +13983,9 @@ function AustraliaGame() {
             // AI Thinking/Algorithm Builder Phase AB1: always sanitizes to [] today (no code path
             // this phase can ever have populated it), but wired now so a later phase's real
             // configs round-trip safely without a save-format migration.
-            algorithmConfigs: sanitizeAiAlgorithmConfigs(teamData?.algorithmConfigs)
+            algorithmConfigs: sanitizeAiAlgorithmConfigs(teamData?.algorithmConfigs),
+            // PI1: AI Action Pipeline Inspector history — inert (always []) until aiPipelineInspectorEnabled.
+            pipelineTraces: sanitizePipelineTraceRecords(teamData?.pipelineTraces)
           };
           return acc;
         }, {})
@@ -14026,6 +14167,7 @@ function AustraliaGame() {
           : DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
         gameActivityLedgerRetentionPolicy: ['keep_recent', 'keep_critical'].includes(settingsData.gameActivityLedgerRetentionPolicy) ? settingsData.gameActivityLedgerRetentionPolicy : DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
         gameActivityLedgerRecordingPaused: typeof settingsData.gameActivityLedgerRecordingPaused === 'boolean' ? settingsData.gameActivityLedgerRecordingPaused : DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
+        aiPipelineInspectorEnabled: typeof settingsData.aiPipelineInspectorEnabled === 'boolean' ? settingsData.aiPipelineInspectorEnabled : DEFAULT_GAME_SETTINGS.aiPipelineInspectorEnabled,
         uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
         simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
         disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
@@ -14878,6 +15020,93 @@ function AustraliaGame() {
       return updated;
     });
   }, []);
+
+  // PI1: the ONE sanctioned way to append/update a pipeline stage record, mirroring
+  // appendGameActivityLedgerEvent's own no-op-when-off guard shape. Upserts by decisionId — a
+  // decision may pass through several stages over the course of one turn, each call adding/
+  // replacing just that one stage's entry rather than re-recording the whole trace every time.
+  const appendPipelineStageRecord = useCallback((
+    decisionId: string,
+    teamId: string,
+    actorId: string,
+    day: number,
+    turn: number,
+    stageId: PipelineStageId,
+    status: PipelineStageStatus,
+    summary: string,
+    relatedId?: string,
+    correlationChainId?: string
+  ) => {
+    if (!gameSettings.aiPipelineInspectorEnabled) return;
+    const stageRecord: PipelineStageRecord = { stageId, status, summary, relatedId, timestamp: Date.now() };
+    updateTeamState(teamId, prev => {
+      const existingIndex = prev.pipelineTraces.findIndex(t => t.decisionId === decisionId);
+      if (existingIndex === -1) {
+        const newRecord: PipelineTraceRecord = {
+          decisionId, actorId, teamId, day, turn, correlationChainId,
+          stages: [stageRecord], timestamp: Date.now()
+        };
+        return { ...prev, pipelineTraces: [...prev.pipelineTraces, newRecord].slice(-PIPELINE_TRACES_MAX) };
+      }
+      const existing = prev.pipelineTraces[existingIndex];
+      const nextStages = [...existing.stages.filter(s => s.stageId !== stageId), stageRecord];
+      const updatedRecord: PipelineTraceRecord = {
+        ...existing,
+        correlationChainId: correlationChainId || existing.correlationChainId,
+        stages: nextStages
+      };
+      const nextTraces = [...prev.pipelineTraces];
+      nextTraces[existingIndex] = updatedRecord;
+      return { ...prev, pipelineTraces: nextTraces };
+    });
+  }, [gameSettings.aiPipelineInspectorEnabled, updateTeamState]);
+
+  // PI1: captures the post-execution state delta (money/inventory/region/win-metric before vs.
+  // after) onto the matching pipelineTraces record and appends the 'execution' stage in one call —
+  // `before` must be resolved by the caller BEFORE the action actually executes (never inside a
+  // setState updater), matching this file's own established state-updater-purity discipline.
+  const capturePipelineExecutionDelta = useCallback((
+    decisionId: string,
+    teamId: string,
+    actorId: string,
+    day: number,
+    turn: number,
+    before: { money: number; inventoryCount: number; region: string; winMetric: number },
+    status: PipelineStageStatus,
+    summary: string
+  ) => {
+    if (!gameSettings.aiPipelineInspectorEnabled) return;
+    const actorAfter = getActorState(actorId);
+    const stateDelta: PostExecutionStateDelta = {
+      moneyBefore: before.money,
+      moneyAfter: actorAfter?.money ?? before.money,
+      inventoryCountBefore: before.inventoryCount,
+      inventoryCountAfter: actorAfter?.inventory?.length ?? before.inventoryCount,
+      regionBefore: before.region,
+      regionAfter: actorAfter?.currentRegion ?? before.region,
+      winMetricBefore: before.winMetric,
+      // PI1: getCompetitiveMetricValue is declared later in the component (TDZ) — resolved via a
+      // ref assigned right after its own declaration, mirroring this file's established
+      // ref-indirection pattern (e.g. O3's getEffectiveGameSettingsForTeamRef).
+      winMetricAfter: getCompetitiveMetricValueRef.current ? getCompetitiveMetricValueRef.current(gameSettings.winCondition, { teamId }) : before.winMetric
+    };
+    const stageRecord: PipelineStageRecord = { stageId: 'execution', status, summary, timestamp: Date.now() };
+    updateTeamState(teamId, prev => {
+      const existingIndex = prev.pipelineTraces.findIndex(t => t.decisionId === decisionId);
+      if (existingIndex === -1) {
+        const newRecord: PipelineTraceRecord = {
+          decisionId, actorId, teamId, day, turn, stages: [stageRecord], stateDelta, timestamp: Date.now()
+        };
+        return { ...prev, pipelineTraces: [...prev.pipelineTraces, newRecord].slice(-PIPELINE_TRACES_MAX) };
+      }
+      const existing = prev.pipelineTraces[existingIndex];
+      const nextStages = [...existing.stages.filter(s => s.stageId !== 'execution'), stageRecord];
+      const updatedRecord: PipelineTraceRecord = { ...existing, stages: nextStages, stateDelta };
+      const nextTraces = [...prev.pipelineTraces];
+      nextTraces[existingIndex] = updatedRecord;
+      return { ...prev, pipelineTraces: nextTraces };
+    });
+  }, [gameSettings.aiPipelineInspectorEnabled, gameSettings.winCondition, getActorState, updateTeamState]);
 
   // AI Operations Auditor Phase AA2: common event envelope, so every emission call site (this
   // phase's 7, and every later phase's) produces a consistent shape instead of hand-rolling
@@ -21423,6 +21652,7 @@ function AustraliaGame() {
     if (metric === 'netWorth') return Math.max(0, computeNetWorth(soloActor) - soloProtectedDeduction);
     return options.side === 'player' ? playerControlledRegions : aiControlledRegions;
   }, [aiControlledRegions, aiPlayer, computeNetWorth, computeTeamMoney, computeTeamNetWorth, gameSettings.countTeamTreasuryTowardVictory, gameSettings.teamCashVaultEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teamTreasuryEnabled, gameSettings.vaultCountProtectedCashTowardVictory, getTeamActors, isTeamMode, player, playerControlledRegions, teamsById]);
+  getCompetitiveMetricValueRef.current = getCompetitiveMetricValue;
 
   const compareCompetitiveSides = useCallback((primaryMetric: WinMetric, options?: {
     teamMode?: boolean;
@@ -22008,6 +22238,7 @@ function AustraliaGame() {
     });
 
     const trace: AiDecisionTrace = {
+      decisionId: `decision_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       actorId: options.actor.id,
       teamId: options.actor.teamId,
       mode: options.mode,
@@ -33188,6 +33419,16 @@ function AustraliaGame() {
         actionType: decision.type,
         summary: `${getActorDisplayName(actor.id)} selected ${decision.type}` + (plannedDecisionValid ? ' (parallel-planned)' : sequenceStepMatch ? ' (sequence)' : planStepMatch ? ' (team plan)' : ' (live ranking)') + '.'
       });
+      // PI1: mints the join key for this one decision's pipeline trace and records the first
+      // ('algorithm') stage — the source label mirrors the GL10 Ledger event just above, reusing
+      // the same classification rather than inventing a second one. No-op (appendPipelineStageRecord's
+      // own guard) whenever aiPipelineInspectorEnabled is off.
+      const pipelineDecisionId = `pldec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      appendPipelineStageRecord(
+        pipelineDecisionId, actor.teamId, actor.id, gameState.day, gameState.turnCounter,
+        'algorithm', 'passed',
+        `Selected ${decision.type}` + (plannedDecisionValid ? ' (parallel-planned)' : sequenceStepMatch ? ' (sequence)' : planStepMatch ? ' (team plan)' : ' (live ranking)') + '.'
+      );
       if (decision.type === 'end_turn') {
         // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
         // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
@@ -33374,7 +33615,23 @@ function AustraliaGame() {
       if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
         requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actor.id, `Soft requirement not met: ${v} (action proceeded).`));
       }
+      // PI1: `before` must be resolved BEFORE execution runs (never inside a setState updater) —
+      // matching this file's own established state-updater-purity discipline.
+      const pipelineExecutionBefore = gameSettings.aiPipelineInspectorEnabled ? {
+        money: actor.money,
+        inventoryCount: actor.inventory?.length || 0,
+        region: actor.currentRegion,
+        winMetric: getCompetitiveMetricValueRef.current ? getCompetitiveMetricValueRef.current(gameSettings.winCondition, { teamId: actor.teamId }) : 0
+      } : null;
       const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actor.id, decision) : false;
+      if (pipelineExecutionBefore) {
+        capturePipelineExecutionDelta(
+          pipelineDecisionId, actor.teamId, actor.id, gameState.day, gameState.turnCounter,
+          pipelineExecutionBefore,
+          success ? 'passed' : 'blocked',
+          success ? `${decision.type} executed successfully.` : `${decision.type} did not execute.`
+        );
+      }
       if (!success) {
         if (!revalidated) {
           lastFailedOverrideActionRef.current[actor.id] = buildOverrideDecisionSignature(decision as ScoredTeamAiDecision);
@@ -33573,7 +33830,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -36346,7 +36603,8 @@ function AustraliaGame() {
       gameActivityLedgerIncludeInSaveFile: DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
       gameActivityLedgerMaxEvents: DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
       gameActivityLedgerRetentionPolicy: DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
-      gameActivityLedgerRecordingPaused: DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused
+      gameActivityLedgerRecordingPaused: DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
+      aiPipelineInspectorEnabled: DEFAULT_GAME_SETTINGS.aiPipelineInspectorEnabled
     })); recordSettingsSectionResetEvent('Advanced Systems Settings', 'section_reset'); };
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
@@ -40984,6 +41242,35 @@ function AustraliaGame() {
                         </button>
                       </div>
                     </>
+                  )}
+                </div>
+              </SettingsSection>
+              <SettingsSection id="advancedSystems.aiPipelineInspector" tab="advancedSystems" title="🔬 AI Action Pipeline Inspector" chips={getAutoChipsForField('aiPipelineInspectorEnabled', SETTINGS_HUB_FIELD_META.aiPipelineInspectorEnabled)} description={SETTINGS_HUB_FIELD_META.aiPipelineInspectorEnabled.description} onReset={settingsResetHandlers.advancedSystems.fn} resetLabel={settingsResetHandlers.advancedSystems.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'advancedSystems.aiPipelineInspector')!.fieldKeys}>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Enable AI Action Pipeline Inspector</div>
+                      <div className="text-sm opacity-75">
+                        A separate, optional, purely observational trace of one AI decision through
+                        Algorithm → Strategy → Sequence → Requirements → Cash Vault → Economy Governor
+                        → Treasury → Overseer → Approval → Execution → Auditor. Never alters any
+                        decision. This phase records the stage schema and a post-execution money/
+                        inventory/region/win-metric snapshot for the Algorithm and Execution stages —
+                        a full stage-by-stage viewer with the remaining 9 stages wired in arrives in
+                        a later phase.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🔬 AI Action Pipeline Inspector", prev => ({ ...prev, aiPipelineInspectorEnabled: !prev.aiPipelineInspectorEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.aiPipelineInspectorEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {gameSettings.aiPipelineInspectorEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.aiPipelineInspectorEnabled && (
+                    <div className="text-sm opacity-75">
+                      {(teamsById[TEAM_PLAYER_ID]?.pipelineTraces.length || 0) + (teamsById[TEAM_OPPONENT_ID]?.pipelineTraces.length || 0)} decision traces recorded this match.
+                    </div>
                   )}
                 </div>
               </SettingsSection>
