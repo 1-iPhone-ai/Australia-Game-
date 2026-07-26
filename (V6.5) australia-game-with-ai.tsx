@@ -11994,6 +11994,36 @@ type GameActivityLedgerEventCategory = 'action' | 'decision' | 'approval' | 'tre
 const GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES: GameActivityLedgerEventCategory[] = [
   'action', 'decision', 'approval', 'treasury', 'settings_change', 'auditor_incident', 'plan', 'config', 'match_lifecycle'
 ];
+// GL9: the enumerated set of "why did this setting change" sources, exactly as specified — used
+// by updateGameSetting (below) so every settings_change ledger event can distinguish a direct
+// player edit from a preset/reset/import/migration/automation/replay/game-system/dependency/
+// auditor/developer-driven change, without inventing a second, parallel classification scheme.
+type SettingsChangeSource =
+  | 'direct_player_change' | 'preset' | 'section_reset' | 'full_reset'
+  | 'imported_configuration' | 'save_file_migration' | 'automation' | 'replay'
+  | 'automatic_game_system' | 'dependency_correction' | 'auditor_recovery' | 'developer_diagnostic';
+const SETTINGS_CHANGE_SOURCES: SettingsChangeSource[] = [
+  'direct_player_change', 'preset', 'section_reset', 'full_reset', 'imported_configuration',
+  'save_file_migration', 'automation', 'replay', 'automatic_game_system', 'dependency_correction',
+  'auditor_recovery', 'developer_diagnostic'
+];
+// GL9: the metadata bag passed to updateGameSetting for a single settings_change event. Fields
+// that are cheap and always worth keeping (source, section, correlation/parent linkage) are
+// stored as top-level GameActivityLedgerEvent fields below; the heavier per-change payload
+// (previous/new value, cascade list, gate/immediacy flags) rides inside the event's existing
+// diagnostics bag, which GL3 already gates to the 'developer' detail tier only.
+interface SettingChangeMetadata {
+  settingLabel: string;
+  section: string;
+  source: SettingsChangeSource;
+  relatedActorId?: string;
+  relatedTeamId?: string;
+  parentEventId?: string;
+  correlationChainId?: string;
+  effectiveImmediately?: boolean;
+  inactiveDueToGate?: string;
+  cascadedSettingKeys?: string[];
+}
 interface GameActivityLedgerEvent {
   id: string;
   matchId: string;
@@ -12010,6 +12040,10 @@ interface GameActivityLedgerEvent {
   approvalRequestId?: string;
   treasuryRequestId?: string;
   settingKey?: string;
+  // GL9: which of the SettingsChangeSource enum values produced this settings_change event —
+  // cheap, closed-union, always kept regardless of detail level (unlike the heavier diagnostics
+  // payload) since it's the primary filter dimension the Ledger Dashboard needs for these events.
+  source?: SettingsChangeSource;
   auditorIncidentId?: string;
   parentEventId?: string;
   correlationChainId?: string;
@@ -12050,6 +12084,7 @@ const sanitizeGameActivityLedgerEvent = (value: unknown): GameActivityLedgerEven
     approvalRequestId: typeof source.approvalRequestId === 'string' ? source.approvalRequestId : undefined,
     treasuryRequestId: typeof source.treasuryRequestId === 'string' ? source.treasuryRequestId : undefined,
     settingKey: typeof source.settingKey === 'string' ? source.settingKey : undefined,
+    source: SETTINGS_CHANGE_SOURCES.includes(source.source as SettingsChangeSource) ? (source.source as SettingsChangeSource) : undefined,
     auditorIncidentId: typeof source.auditorIncidentId === 'string' ? source.auditorIncidentId : undefined,
     parentEventId: typeof source.parentEventId === 'string' ? source.parentEventId : undefined,
     correlationChainId: typeof source.correlationChainId === 'string' ? source.correlationChainId : undefined,
@@ -13065,6 +13100,55 @@ function AustraliaGame() {
     };
     dispatchGameState({ type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT', payload: event });
   }, [gameSettings.gameActivityLedgerEnabled, gameSettings.gameActivityLedgerDetailLevel, gameState.gameActivityLedger?.matchId, gameState.day, gameState.turnCounter]);
+
+  // GL9: the new, sole recommended entry point for changing a single GameSettingsState field
+  // going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
+  // Deliberately NOT a generic function (no `<K extends ...>`), matching this file's own
+  // standing rule against bare-type-parameter TSX generics (the exact construct that broke the
+  // Sucrase-based external preview earlier this session) — `key`/`value` are typed via
+  // `keyof GameSettingsState`/`unknown`, with the single, already-established `as GameSettingsState`
+  // cast at the one assignment site. This does not replace the ~300+ existing raw
+  // `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
+  // migrated call sites should call, proven here at the reset handlers, preset application, and
+  // one representative Settings Hub tab.
+  const updateGameSetting = useCallback((
+    key: keyof GameSettingsState,
+    value: unknown,
+    metadata: SettingChangeMetadata
+  ): void => {
+    const previousValue = (gameSettings as Record<string, unknown>)[key as string];
+    if (previousValue === value) return;
+    setGameSettings(prev => ({ ...prev, [key]: value }) as GameSettingsState);
+    appendGameActivityLedgerEvent('settings_change', {
+      settingKey: String(key),
+      source: metadata.source,
+      correlationChainId: metadata.correlationChainId,
+      parentEventId: metadata.parentEventId,
+      summary: `${metadata.settingLabel} changed (${metadata.section}) via ${metadata.source.replace(/_/g, ' ')}.`,
+      diagnostics: {
+        previousValue,
+        newValue: value,
+        section: metadata.section,
+        effectiveImmediately: metadata.effectiveImmediately !== false,
+        inactiveDueToGate: metadata.inactiveDueToGate,
+        cascadedSettingKeys: metadata.cascadedSettingKeys,
+        relatedActorId: metadata.relatedActorId,
+        relatedTeamId: metadata.relatedTeamId
+      }
+    });
+  }, [gameSettings, setGameSettings, appendGameActivityLedgerEvent]);
+
+  // GL9: one correlated settings_change ledger event per bulk section/full reset — mirrors GL4's
+  // existing per-preset-apply convention (one shared correlationChainId per bulk operation)
+  // rather than emitting one event per individual field the reset touches, since a reset handler
+  // is one player-initiated bulk action, not many independent field edits.
+  const recordSettingsSectionResetEvent = useCallback((sectionLabel: string, source: SettingsChangeSource) => {
+    appendGameActivityLedgerEvent('settings_change', {
+      source,
+      correlationChainId: `reset_${sectionLabel.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`,
+      summary: `${sectionLabel} reset to defaults.`
+    });
+  }, [appendGameActivityLedgerEvent]);
 
   const setDirectiveStrengthState = useCallback((
     strength: DirectiveStrength,
@@ -14547,6 +14631,7 @@ function AustraliaGame() {
         // exactly the "bulk-preset correlation grouping" case the roadmap calls out — so all
         // `changedSettingsCount` field changes from one preset share a single correlationChainId.
         appendGameActivityLedgerEvent('settings_change', {
+          source: 'preset',
           correlationChainId: `preset_${presetId}_${Date.now()}`,
           summary: `Applied "${preset.label}" preset — ${totalChanges} ${totalChanges === 1 ? 'setting' : 'settings'} changed.`
         });
@@ -35574,7 +35659,7 @@ function AustraliaGame() {
       };
     };
 
-    const resetGameplaySettings = () => setGameSettings(prev => ({
+    const resetGameplaySettings = () => { setGameSettings(prev => ({
       ...prev,
       actionLimitsEnabled: DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
       maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
@@ -35593,9 +35678,9 @@ function AustraliaGame() {
       aiSabotagePriority: DEFAULT_GAME_SETTINGS.aiSabotagePriority,
       aiInvestmentPriority: DEFAULT_GAME_SETTINGS.aiInvestmentPriority,
       aiEquipmentPurchasePriority: DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority
-    }));
+    })); recordSettingsSectionResetEvent('Gameplay Settings', 'section_reset'); };
 
-    const resetAiSettings = () => setGameSettings(prev => ({
+    const resetAiSettings = () => { setGameSettings(prev => ({
       ...prev,
       aiUsesMarketModifiers: DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
       aiSpecialAbilitiesEnabled: DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
@@ -35640,9 +35725,9 @@ function AustraliaGame() {
       adaptiveAiRubberBandingStrength: DEFAULT_GAME_SETTINGS.adaptiveAiRubberBandingStrength,
       adaptiveAiShowDecisionTransparency: DEFAULT_GAME_SETTINGS.adaptiveAiShowDecisionTransparency,
       adaptiveAiShowActiveModifiers: DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers
-    }));
+    })); recordSettingsSectionResetEvent('AI Settings', 'section_reset'); };
 
-    const resetTeamModeSettings = () => setGameSettings(prev => ({
+    const resetTeamModeSettings = () => { setGameSettings(prev => ({
       ...prev,
       teamModeAiSystemsEnabled: DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
       teamModeAiSystemProfile: DEFAULT_GAME_SETTINGS.teamModeAiSystemProfile,
@@ -35852,9 +35937,9 @@ function AustraliaGame() {
       aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
       aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
-    }));
+    })); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
 
-    const restoreClassicV66CompetitiveAi = () => setGameSettings(prev => ({
+    const restoreClassicV66CompetitiveAi = () => { setGameSettings(prev => ({
       ...prev,
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
@@ -36047,9 +36132,9 @@ function AustraliaGame() {
       aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
       aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
-    }));
+    })); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
 
-    const resetAiStrategyLabSettings = () => setGameSettings(prev => ({
+    const resetAiStrategyLabSettings = () => { setGameSettings(prev => ({
       ...prev,
       aiStrategyLabEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
       aiStrategyLabScope: DEFAULT_GAME_SETTINGS.aiStrategyLabScope,
@@ -36063,9 +36148,9 @@ function AustraliaGame() {
       playerTeammateAiPreset: DEFAULT_GAME_SETTINGS.playerTeammateAiPreset,
       opponentAiPreset: DEFAULT_GAME_SETTINGS.opponentAiPreset,
       aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
-    }));
+    })); recordSettingsSectionResetEvent('AI Strategy Lab Settings', 'section_reset'); };
 
-    const resetEconomySettings = () => setGameSettings(prev => ({
+    const resetEconomySettings = () => { setGameSettings(prev => ({
       ...prev,
       winCondition: DEFAULT_GAME_SETTINGS.winCondition,
       winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
@@ -36086,9 +36171,9 @@ function AustraliaGame() {
       aiLoanRepaymentPriority: DEFAULT_GAME_SETTINGS.aiLoanRepaymentPriority,
       aiLoanRefinancingWeight: DEFAULT_GAME_SETTINGS.aiLoanRefinancingWeight,
       aiLoanEmergencyOnly: DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly
-    }));
+    })); recordSettingsSectionResetEvent('Economy Settings', 'section_reset'); };
 
-    const resetInterfaceSettings = () => setGameSettings(prev => ({
+    const resetInterfaceSettings = () => { setGameSettings(prev => ({
       ...prev,
       uxAssistPackEnabled: DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
       simplifiedActionBarEnabled: DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
@@ -36099,9 +36184,9 @@ function AustraliaGame() {
       groupedInventoryCardsEnabled: DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
       notificationSettings: createDefaultNotificationSettings(),
       notificationClearShortcut: DEFAULT_GAME_SETTINGS.notificationClearShortcut
-    }));
+    })); recordSettingsSectionResetEvent('Interface Settings', 'section_reset'); };
 
-    const resetAdvancedSystemsSettings = () => setGameSettings(prev => ({
+    const resetAdvancedSystemsSettings = () => { setGameSettings(prev => ({
       ...prev,
       settingPriorityMode: DEFAULT_GAME_SETTINGS.settingPriorityMode,
       maxConcurrentHighInfluenceSettings: DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings,
@@ -36138,7 +36223,7 @@ function AustraliaGame() {
       gameActivityLedgerEnabled: DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
       gameActivityLedgerDetailLevel: DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
       gameActivityLedgerIncludeInSaveFile: DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile
-    }));
+    })); recordSettingsSectionResetEvent('Advanced Systems Settings', 'section_reset'); };
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
       gameplay: { label: 'Reset Gameplay Settings', fn: resetGameplaySettings },
@@ -36432,7 +36517,7 @@ function AustraliaGame() {
                           </div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, [row.key]: !Boolean(prev[row.key]) } as GameSettingsState))}
+                          onClick={() => updateGameSetting(row.key, !active, { settingLabel: row.label, section: 'Interface → UX Assist Features', source: 'direct_player_change' })}
                           className={`px-4 py-2 rounded font-semibold ${active ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {active ? 'ON' : 'OFF'}
@@ -36444,10 +36529,11 @@ function AustraliaGame() {
                     <label className="block font-semibold mb-2">Team Mode AI System Profile</label>
                     <select
                       value={gameSettings.teamModeAiSystemProfile}
-                      onChange={(e) => setGameSettings(prev => ({
-                        ...prev,
-                        teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(e.target.value)
-                      }))}
+                      onChange={(e) => updateGameSetting(
+                        'teamModeAiSystemProfile',
+                        normalizeTeamModeAiSystemProfile(e.target.value),
+                        { settingLabel: 'Team Mode AI System Profile', section: 'Interface → UX Assist Features', source: 'direct_player_change' }
+                      )}
                       className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                     >
                       {TEAM_MODE_AI_SYSTEM_PROFILE_OPTIONS.map(profile => (
