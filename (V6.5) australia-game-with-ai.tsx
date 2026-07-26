@@ -12922,6 +12922,9 @@ interface ReplayFile {
   checkpoints: ReplayCheckpoint[];
   finalResult: ReplayFinalResult | null;
   checksum: string;
+  // RP5: set only on a match started via "Branch From Replay" — the source replay's matchId.
+  // Optional so every pre-RP5 recording (and every non-branched match) is unaffected.
+  branchedFromMatchId?: string;
 }
 
 // Deterministic, dependency-free FNV-1a-style hash — genuinely new (no checksum/hash utility existed
@@ -12974,7 +12977,10 @@ const migrateReplayFile = (raw: unknown): ReplayFile | null => {
   };
   const expectedChecksum = computeReplayChecksum(candidate);
   if (typeof data.checksum !== 'string' || data.checksum !== expectedChecksum) return null; // corruption detection
-  return { ...candidate, checksum: expectedChecksum };
+  // RP5: branchedFromMatchId is metadata only (never part of the checksum's protected fields,
+  // matching how gameVersion/createdAt/initialConfig already sit outside the checksum), so it's
+  // passed through after verification rather than added to `candidate` above.
+  return { ...candidate, checksum: expectedChecksum, branchedFromMatchId: typeof data.branchedFromMatchId === 'string' ? data.branchedFromMatchId : undefined };
 };
 
 // RP4: structural classification — per the user's explicit scope decision (Structural classification
@@ -13007,6 +13013,62 @@ const classifyReplayFileIntegrity = (file: ReplayFile): ReplayIntegrityReportEnt
     }
     return { checkpointId: cp.id, status: 'exact_match', note: 'Sequence and relatedId (if any) both resolve within this file.' };
   });
+};
+
+// RP5: branch-vs-original comparison. Honest scope note: ReplayFinalResult only ever stores
+// {winnerTeamId, winnerActorId, reason, day, turn} — no per-team final money/net-worth/region-
+// control values are recorded anywhere in a ReplayFile (the 'match_result' ReplayEventCategory is
+// declared but has zero real emission call sites, matching the file's own established pattern of
+// declaring a schema-stable value before it's populated — same as 'ai_execution'). So this function
+// can only honestly diff what a ReplayFile actually records: the winner, match length, a rough
+// action-count proxy (ai_decision + ai_execution event counts), and a type-frequency comparison of
+// ai_decision events. It never fabricates money/net-worth/region-control deltas — moneyNetWorthNote
+// states this limitation plainly instead.
+interface ReplayComparisonResult {
+  winnerChanged: boolean;
+  originalWinnerLabel: string;
+  branchWinnerLabel: string;
+  matchLengthDeltaDays: number | null;
+  totalActionsDelta: number;
+  majorDecisionDifferences: string[];
+  moneyNetWorthNote: string;
+}
+const compareReplayFinalResults = (original: ReplayFile, branch: ReplayFile): ReplayComparisonResult => {
+  const winnerLabel = (file: ReplayFile) => file.finalResult
+    ? (file.finalResult.winnerTeamId || file.finalResult.winnerActorId || 'n/a')
+    : 'match not finished';
+  const originalWinnerLabel = winnerLabel(original);
+  const branchWinnerLabel = winnerLabel(branch);
+  const matchLengthDeltaDays = (original.finalResult && branch.finalResult)
+    ? branch.finalResult.day - original.finalResult.day
+    : null;
+  const countActionEvents = (file: ReplayFile) => file.events.filter(ev => ev.category === 'ai_decision' || ev.category === 'ai_execution').length;
+  const totalActionsDelta = countActionEvents(branch) - countActionEvents(original);
+  const countByChosenType = (file: ReplayFile): Record<string, number> => file.events
+    .filter(ev => ev.category === 'ai_decision')
+    .reduce((acc, ev) => {
+      const type = String((ev.payload as { chosenAction?: unknown })?.chosenAction ?? 'unknown');
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+  const originalCounts = countByChosenType(original);
+  const branchCounts = countByChosenType(branch);
+  const allTypes = new Set([...Object.keys(originalCounts), ...Object.keys(branchCounts)]);
+  const majorDecisionDifferences: string[] = [];
+  allTypes.forEach(type => {
+    const o = originalCounts[type] || 0;
+    const b = branchCounts[type] || 0;
+    if (o !== b) majorDecisionDifferences.push(`${type}: original ${o}, branch ${b}`);
+  });
+  return {
+    winnerChanged: originalWinnerLabel !== branchWinnerLabel,
+    originalWinnerLabel,
+    branchWinnerLabel,
+    matchLengthDeltaDays,
+    totalActionsDelta,
+    majorDecisionDifferences,
+    moneyNetWorthNote: 'Money/net-worth/region-control deltas are not shown — ReplayFinalResult never records per-team final values, so they cannot be honestly diffed from replay data alone.'
+  };
 };
 
 interface LoadPreviewState {
@@ -13135,6 +13197,10 @@ function AustraliaGame() {
   // be populated synchronously inside initializeGameMode itself, since team-mode actors/teams are
   // assembled there via React state setters, not available as one already-built local object).
   const pendingReplayStartRef = useRef(false);
+  // RP5: set by startBranchFromReplay right before pendingReplayStartRef, so the recording-init
+  // effect below can stamp the new recording's branchedFromMatchId — cleared immediately after
+  // that effect consumes it, so an ordinary (non-branch) new match never picks up a stale value.
+  const pendingReplayBranchSourceMatchIdRef = useRef<string | null>(null);
   // RP4: edge-detection refs for the lead-change/endgame-start checkpoint triggers — no existing
   // "did the leader change"/"did endgame just start" tracking exists anywhere else in the file
   // (both opponentLead and isEndgamePeriod/computeEndgameAccelerationState are recomputed fresh
@@ -13260,6 +13326,15 @@ function AustraliaGame() {
   const [replayPlaybackIndex, setReplayPlaybackIndex] = useState(0);
   const [replayPlaybackPlaying, setReplayPlaybackPlaying] = useState(false);
   const [replayShowReasoning, setReplayShowReasoning] = useState(true);
+  // RP5: "Branch From Replay" confirm-step state — which source ('day1'/'live_state') the player
+  // is currently confirming, never persisted, mirroring every other dashboard's confirm-then-act
+  // pattern (e.g. F5's sequence-activation warn-and-confirm flow).
+  const [replayBranchConfirming, setReplayBranchConfirming] = useState<'day1' | 'live_state' | null>(null);
+  // RP5: second, independent file-picker pair for "Compare to another replay" — deliberately not
+  // reusing replayFileInputRef/loadedReplayFile, since the primary loaded file must stay open while
+  // a second one is loaded purely for comparison.
+  const [compareReplayFile, setCompareReplayFile] = useState<ReplayFile | null>(null);
+  const compareReplayFileInputRef = useRef<HTMLInputElement | null>(null);
   // RP4: Timeline tab auto-advance — a plain setInterval, cleared on pause/unmount/file-close, never
   // running when the dashboard/Timeline tab isn't open or a file isn't loaded.
   useEffect(() => {
@@ -13477,12 +13552,15 @@ function AustraliaGame() {
   useEffect(() => {
     if (!pendingReplayStartRef.current) return;
     pendingReplayStartRef.current = false;
+    const branchSourceMatchId = pendingReplayBranchSourceMatchIdRef.current;
+    pendingReplayBranchSourceMatchIdRef.current = null;
     const matchId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     replayRecordingRef.current = {
       schemaVersion: REPLAY_SCHEMA_VERSION,
       gameVersion: GAME_VERSION,
       matchId,
       createdAt: Date.now(),
+      branchedFromMatchId: branchSourceMatchId || undefined,
       initialConfig: {
         gameSettings,
         actorsById,
@@ -13985,6 +14063,37 @@ function AustraliaGame() {
     } catch (error) {
       console.error('Replay load failed', error);
       addNotification('Failed to load replay file. Please try again.', 'error');
+    }
+  }, [addNotification]);
+
+  // RP5: parallel second-file-picker for "Compare to another replay" — deliberately mirrors
+  // handleReplayFileChange/openReplayLoadDialog's exact shape rather than generalizing both into
+  // one parametrized pair, since the two pickers set genuinely different state (loadedReplayFile
+  // vs. compareReplayFile) and reuse would only save a few lines at the cost of a less direct read.
+  const openCompareReplayLoadDialog = useCallback(() => {
+    if (compareReplayFileInputRef.current) {
+      compareReplayFileInputRef.current.value = '';
+      compareReplayFileInputRef.current.click();
+    } else {
+      addNotification('Compare-replay load input not ready. Please try again.', 'error');
+    }
+  }, [addNotification]);
+  const handleCompareReplayFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const replay = migrateReplayFile(parsed);
+      if (!replay) {
+        addNotification('Invalid, corrupted, or unsupported-version replay file.', 'error');
+        return;
+      }
+      setCompareReplayFile(replay);
+      addNotification(`Comparison replay loaded: ${replay.matchId}.`, 'success');
+    } catch (error) {
+      console.error('Compare-replay load failed', error);
+      addNotification('Failed to load comparison replay file. Please try again.', 'error');
     }
   }, [addNotification]);
 
@@ -20759,6 +20868,67 @@ function AustraliaGame() {
 	      );
 	    }
 	  }, [addNotification, closeConfirmation, closeLoadPreview, dispatchGameState, dispatchPlayer, setAiActionQueue, setAiPlayer, setCurrentAiAction, setDontAskAgain, setGameSettings, setNotifications, setPersonalRecords, uiState.selectedCharacter, uiState.theme, updateUiState]);
+
+  // RP5: "Branch From Replay" — per the user's own explicit scope decision, this is NOT true
+  // mid-match forking (no re-simulation engine exists to reconstruct an arbitrary historical
+  // checkpoint's live state, and this component holds exactly one live match in memory, confirmed
+  // by the single useReducer/useState/RNG-ref set — no multi-instance architecture to run an
+  // original and a branch concurrently). A "branch" always ends the current match and starts a
+  // brand-new one, seeded from either the loaded replay's Day-1 initialConfig (fully
+  // reconstructable) or the currently-live match's own actual state (only when isLiveMatch).
+  // Reuses applyLoadedState's existing hydration pipeline wholesale rather than re-deriving it —
+  // this function's only job is to assemble a valid SaveGameData-shaped object from replay data.
+  const startBranchFromReplay = useCallback((
+    sourceFile: ReplayFile,
+    source: 'day1' | 'live_state',
+    overrides: Partial<GameSettingsState>
+  ) => {
+    pendingReplayBranchSourceMatchIdRef.current = sourceFile.matchId;
+    pendingReplayStartRef.current = true;
+    if (source === 'live_state') {
+      const isLiveMatch = gameState.gameActivityLedger?.matchId === sourceFile.matchId;
+      if (!isLiveMatch) {
+        addNotification('Cannot branch from live state: this replay is not the currently active match.', 'error', true, 'system');
+        pendingReplayBranchSourceMatchIdRef.current = null;
+        pendingReplayStartRef.current = false;
+        return;
+      }
+      const liveData = buildSaveData(`Branch from live state (${sourceFile.matchId})`);
+      applyLoadedState({ ...liveData, gameSettings: { ...liveData.gameSettings, ...overrides } });
+      addNotification('Branched from the current live match state.', 'success', true, 'system');
+      return;
+    }
+    // source === 'day1': rebuild a fresh SaveGameData-shaped object entirely from the replay's
+    // own ReplayInitialConfigSnapshot — this is the one checkpoint a replay file can faithfully
+    // reconstruct (every later checkpoint only stores a summary, not full state, per RP4's own
+    // structural-classification scope-down).
+    const config = sourceFile.initialConfig;
+    const day1Data: SaveGameData = {
+      metadata: { timestamp: Date.now(), gameVersion: GAME_VERSION, saveDescription: `Branch from ${sourceFile.matchId} (Day 1)` },
+      player: (config.actorsById.player || config.actorsById.ai) as unknown as PlayerStateSnapshot,
+      aiPlayer: (config.actorsById.ai || config.actorsById.player) as unknown as PlayerStateSnapshot,
+      actorsById: config.actorsById,
+      teamsById: config.teamsById,
+      gameState: {
+        ...initialGameState,
+        selectedMode: config.selectedMode,
+        aiDifficulty: config.aiDifficulty
+      } as GameStateSnapshot,
+      gameSettings: { ...config.gameSettings, ...overrides },
+      notifications: [],
+      personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
+      dontAskAgain: { ...DEFAULT_DONT_ASK },
+      uiPreferences: { theme: uiState.theme },
+      aiRuntime: {
+        queue: [],
+        currentAction: null,
+        rngState: normalizeAiSeed(config.aiSeed),
+        worldRngState: normalizeAiSeed(config.worldSeed)
+      }
+    };
+    applyLoadedState(day1Data);
+    addNotification(`Branched from ${sourceFile.matchId}'s Day 1 configuration.`, 'success', true, 'system');
+  }, [addNotification, applyLoadedState, buildSaveData, gameState.gameActivityLedger, uiState.theme]);
 
   const confirmLoadGame = useCallback(() => {
     if (!loadPreview.data) {
@@ -48938,6 +49108,93 @@ function AustraliaGame() {
                   </div>
                 </div>
                 <div className="text-xs opacity-60">{loadedReplayFile.events.length} events, {loadedReplayFile.checkpoints.length} checkpoints recorded.</div>
+
+                {/* RP5: Branch From Replay — restart-from-config only, per the user's own explicit
+                    scope decision (no re-simulation engine exists to reconstruct an arbitrary
+                    mid-match checkpoint, and this game holds exactly one live match in memory).
+                    "Take control"/"replace algorithm"/"edit sequence"/etc. are honestly reachable
+                    only as pre-branch Settings Hub edits, applied via the overrides param below. */}
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-1">Branch From Replay</div>
+                  <div className="opacity-75 mb-2">
+                    Starts a brand-new match, ending the current one. Not a mid-match fork — no re-simulation engine exists to reconstruct an arbitrary historical checkpoint, so only Day 1 (this file's exact starting configuration) or the current live match's own state can be branched from. Edit Settings Hub fields (algorithm, sequences, any toggle) before confirming to have the new match start with those changes applied.
+                  </div>
+                  {loadedReplayFile.branchedFromMatchId && (
+                    <div className="text-xs opacity-60 mb-2">This match was itself branched from {loadedReplayFile.branchedFromMatchId}.</div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setReplayBranchConfirming('day1')}
+                      className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                    >
+                      Branch from Day 1
+                    </button>
+                    {isLiveMatch && (
+                      <button
+                        onClick={() => setReplayBranchConfirming('live_state')}
+                        className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                      >
+                        Branch from current live state
+                      </button>
+                    )}
+                  </div>
+                  {replayBranchConfirming && (
+                    <div className={`${themeStyles.border} border-2 rounded p-2 mt-2 text-xs`}>
+                      <div className="mb-2">
+                        Confirm: this will end the current match and start a new one from {replayBranchConfirming === 'day1' ? "this file's Day 1 configuration" : 'the current live match state'}. Any Settings Hub edits already made will be applied to the new match. This cannot be undone.
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { startBranchFromReplay(loadedReplayFile, replayBranchConfirming, {}); setReplayBranchConfirming(null); close(); }}
+                          className={`${themeStyles.success} text-white px-3 py-1 rounded text-xs font-semibold`}
+                        >
+                          Confirm Branch
+                        </button>
+                        <button
+                          onClick={() => setReplayBranchConfirming(null)}
+                          className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-xs font-semibold`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* RP5: branch-vs-original comparison — loads a second, independent replay file and
+                    diffs it against the currently-loaded one via compareReplayFinalResults. */}
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-1">Compare to another replay</div>
+                  {!compareReplayFile ? (
+                    <button onClick={openCompareReplayLoadDialog} className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}>
+                      Load a replay file to compare
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="opacity-75">Comparing against {compareReplayFile.matchId}</span>
+                        <button onClick={() => setCompareReplayFile(null)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Clear</button>
+                      </div>
+                      {(() => {
+                        const comparison = compareReplayFinalResults(loadedReplayFile, compareReplayFile);
+                        return (
+                          <div className={`${themeStyles.border} border rounded p-2 text-xs space-y-1`}>
+                            <div>Winner: {comparison.originalWinnerLabel} → {comparison.branchWinnerLabel} {comparison.winnerChanged ? '(changed)' : '(unchanged)'}</div>
+                            <div>Match length delta: {comparison.matchLengthDeltaDays === null ? 'n/a (one or both matches unfinished)' : `${comparison.matchLengthDeltaDays >= 0 ? '+' : ''}${comparison.matchLengthDeltaDays} days`}</div>
+                            <div>Total AI action events delta: {comparison.totalActionsDelta >= 0 ? '+' : ''}{comparison.totalActionsDelta}</div>
+                            {comparison.majorDecisionDifferences.length > 0 && (
+                              <div>
+                                <div className="font-semibold">Major decision differences</div>
+                                {comparison.majorDecisionDifferences.map((line, i) => <div key={i}>{line}</div>)}
+                              </div>
+                            )}
+                            <div className="opacity-60">{comparison.moneyNetWorthNote}</div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             {replayDashboardTab === 'timeline' && (
@@ -49770,6 +50027,13 @@ function AustraliaGame() {
         accept="application/json"
         ref={replayFileInputRef}
         onChange={handleReplayFileChange}
+        className="hidden"
+      />
+      <input
+        type="file"
+        accept="application/json"
+        ref={compareReplayFileInputRef}
+        onChange={handleCompareReplayFileChange}
         className="hidden"
       />
     </div>
