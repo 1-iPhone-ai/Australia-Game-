@@ -6430,6 +6430,38 @@ interface AiAlgorithmUtilityEvaluationConfig {
   goalServedBonus: number;
 }
 
+// AB4: closed, non-arbitrary-code stage schemas for Action Selection / Replanning / Fallback
+// Behavior / Explanation Output — the final four stages, completing the 10-stage pipeline.
+const AI_ALGORITHM_ACTION_SELECTION_METHODS: AiAlgorithmActionSelectionMethod[] = ['highest_score', 'highest_utility'];
+type AiAlgorithmActionSelectionMethod = 'highest_score' | 'highest_utility';
+interface AiAlgorithmActionSelectionConfig {
+  // 'highest_score' picks the plan's first step as-is (matches the built-in Planner's AE8
+  // behavior); 'highest_utility' re-sorts the plan's own steps by their individual .score before
+  // picking the first — never a second scoring pass, purely a selection-order choice over
+  // already-computed scores.
+  method: AiAlgorithmActionSelectionMethod;
+}
+interface AiAlgorithmReplanningConfig {
+  // When true, the plan is rebuilt fresh every turn rather than continuing a stored multi-step
+  // plan (mirrors AE9's own per-actor continuation ref, just toggling whether it's consulted).
+  replanEveryTurn: boolean;
+}
+const AI_ALGORITHM_FALLBACK_POLICIES: AiAlgorithmFallbackPolicy[] = ['try_next_candidate', 'abandon_immediately'];
+type AiAlgorithmFallbackPolicy = 'try_next_candidate' | 'abandon_immediately';
+interface AiAlgorithmFallbackBehaviorConfig {
+  // What THIS config's own pipeline does when its selected candidate fails pre-execution
+  // revalidation (the same check AE9 already performs) — 'try_next_candidate' walks the
+  // already-generated candidate list for the next legal one; 'abandon_immediately' hands off to
+  // the mandatory AE4 fallback chain (custom -> Planner -> Classic) right away. Neither ever
+  // bypasses that mandatory chain — this only decides how much a config tries on its own first.
+  onInvalidCandidate: AiAlgorithmFallbackPolicy;
+}
+const AI_ALGORITHM_EXPLANATION_DETAIL_LEVELS: AiAlgorithmExplanationDetailLevel[] = ['brief', 'standard', 'verbose'];
+type AiAlgorithmExplanationDetailLevel = 'brief' | 'standard' | 'verbose';
+interface AiAlgorithmExplanationOutputConfig {
+  detailLevel: AiAlgorithmExplanationDetailLevel;
+}
+
 interface AiAlgorithmConfig {
   configId: string;
   revision: number;
@@ -6452,6 +6484,12 @@ interface AiAlgorithmConfig {
   outcomePredictionConfig: AiAlgorithmOutcomePredictionConfig | null;
   planConstructionConfig: AiAlgorithmPlanConstructionConfig | null;
   utilityEvaluationConfig: AiAlgorithmUtilityEvaluationConfig | null;
+  // AB4: the final four stage configs, completing all 10 pipeline stages. Same
+  // null-means-not-yet-configured convention as every other stage config on this interface.
+  actionSelectionConfig: AiAlgorithmActionSelectionConfig | null;
+  replanningConfig: AiAlgorithmReplanningConfig | null;
+  fallbackBehaviorConfig: AiAlgorithmFallbackBehaviorConfig | null;
+  explanationOutputConfig: AiAlgorithmExplanationOutputConfig | null;
 }
 
 // AB1: mirrors sanitizeTeamPlan's exact convention — hard-fail (null) on a missing/wrong-typed
@@ -6522,6 +6560,31 @@ const sanitizeAiAlgorithmUtilityEvaluationConfig = (value: unknown): AiAlgorithm
   if (typeof source.goalServedBonus !== 'number' || !Number.isFinite(source.goalServedBonus)) return null;
   return { goalServedBonus: Math.max(0, Math.min(100, Math.round(source.goalServedBonus))) };
 };
+// AB4: the final four stage-config sanitizers, same convention.
+const sanitizeAiAlgorithmActionSelectionConfig = (value: unknown): AiAlgorithmActionSelectionConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmActionSelectionConfig>;
+  if (!AI_ALGORITHM_ACTION_SELECTION_METHODS.includes(source.method as AiAlgorithmActionSelectionMethod)) return null;
+  return { method: source.method as AiAlgorithmActionSelectionMethod };
+};
+const sanitizeAiAlgorithmReplanningConfig = (value: unknown): AiAlgorithmReplanningConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmReplanningConfig>;
+  if (typeof source.replanEveryTurn !== 'boolean') return null;
+  return { replanEveryTurn: source.replanEveryTurn };
+};
+const sanitizeAiAlgorithmFallbackBehaviorConfig = (value: unknown): AiAlgorithmFallbackBehaviorConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmFallbackBehaviorConfig>;
+  if (!AI_ALGORITHM_FALLBACK_POLICIES.includes(source.onInvalidCandidate as AiAlgorithmFallbackPolicy)) return null;
+  return { onInvalidCandidate: source.onInvalidCandidate as AiAlgorithmFallbackPolicy };
+};
+const sanitizeAiAlgorithmExplanationOutputConfig = (value: unknown): AiAlgorithmExplanationOutputConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmExplanationOutputConfig>;
+  if (!AI_ALGORITHM_EXPLANATION_DETAIL_LEVELS.includes(source.detailLevel as AiAlgorithmExplanationDetailLevel)) return null;
+  return { detailLevel: source.detailLevel as AiAlgorithmExplanationDetailLevel };
+};
 const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<AiAlgorithmConfig>;
@@ -6542,7 +6605,11 @@ const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => 
     candidateGenerationConfig: sanitizeAiAlgorithmCandidateGenerationConfig(source.candidateGenerationConfig),
     outcomePredictionConfig: sanitizeAiAlgorithmOutcomePredictionConfig(source.outcomePredictionConfig),
     planConstructionConfig: sanitizeAiAlgorithmPlanConstructionConfig(source.planConstructionConfig),
-    utilityEvaluationConfig: sanitizeAiAlgorithmUtilityEvaluationConfig(source.utilityEvaluationConfig)
+    utilityEvaluationConfig: sanitizeAiAlgorithmUtilityEvaluationConfig(source.utilityEvaluationConfig),
+    actionSelectionConfig: sanitizeAiAlgorithmActionSelectionConfig(source.actionSelectionConfig),
+    replanningConfig: sanitizeAiAlgorithmReplanningConfig(source.replanningConfig),
+    fallbackBehaviorConfig: sanitizeAiAlgorithmFallbackBehaviorConfig(source.fallbackBehaviorConfig),
+    explanationOutputConfig: sanitizeAiAlgorithmExplanationOutputConfig(source.explanationOutputConfig)
   };
 };
 const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
@@ -6636,6 +6703,52 @@ const evaluateAiAlgorithmPlanUtility = (config: AiAlgorithmUtilityEvaluationConf
     ...goals.secondary.flatMap(g => AI_PLANNER_GOAL_CATEGORY_MAP[g] || [])
   ]);
   return plan.reduce((total, step) => total + (step.score || 0) + (relevantCategories.has(step.type) ? bonus : 0), 0);
+};
+
+// AB4: the final four pure stage-evaluator functions, completing the 10-stage pipeline. Same
+// "uncalled by any real turn-execution path this phase" status as AB2/AB3's — no custom-algorithm
+// execution engine exists yet to invoke any of these.
+
+// Action Selection stage: 'highest_score' takes the plan's own first step as-is (the built-in
+// Planner's own AE8 behavior); 'highest_utility' re-sorts the SAME plan's steps by their already-
+// computed .score before picking the first — a selection-order choice over existing scores, never
+// a second scoring pass.
+const selectAiAlgorithmAction = (config: AiAlgorithmActionSelectionConfig | null, plan: ScoredTeamAiDecision[]): ScoredTeamAiDecision | null => {
+  if (plan.length === 0) return null;
+  if (config?.method === 'highest_utility') {
+    return [...plan].sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+  }
+  return plan[0];
+};
+
+// Replanning stage: a pure yes/no over whether to discard an in-progress multi-step plan and
+// build fresh this turn — the actual continuation/discard mechanics reuse AE9's own
+// aiPlannerActivePlanRef machinery once this is wired into a real execution engine; this function
+// only answers the policy question.
+const shouldReplanAiAlgorithm = (config: AiAlgorithmReplanningConfig | null): boolean => {
+  return Boolean(config?.replanEveryTurn);
+};
+
+// Fallback Behavior stage: given the already-generated candidate list and the one that just
+// failed pre-execution revalidation (the same check AE9 already performs), either walk the list
+// for the next legal candidate or signal "abandon" so the caller hands off to the mandatory AE4
+// fallback chain (custom -> Planner -> Classic) immediately. Never itself bypasses that chain.
+const resolveAiAlgorithmFallbackCandidate = (config: AiAlgorithmFallbackBehaviorConfig | null, candidates: ScoredTeamAiDecision[], invalidCandidate: ScoredTeamAiDecision): ScoredTeamAiDecision | null => {
+  if ((config?.onInvalidCandidate || 'try_next_candidate') === 'abandon_immediately') return null;
+  const nextIndex = candidates.indexOf(invalidCandidate) + 1;
+  return candidates[nextIndex] || null;
+};
+
+// Explanation Output stage: reuses explainAiPlannerDecision (AE8) verbatim for the standard
+// sentence, only varying how much is appended around it — never a second explanation generator.
+const explainAiAlgorithmDecision = (config: AiAlgorithmExplanationOutputConfig | null, selected: ScoredTeamAiDecision, plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): string => {
+  const base = explainAiPlannerDecision(selected, plan, goals);
+  const detailLevel = config?.detailLevel || 'standard';
+  if (detailLevel === 'brief') return `Chose ${selected.type}.`;
+  if (detailLevel === 'verbose') {
+    return `${base} Secondary goals considered: ${goals.secondary.length ? goals.secondary.join(', ') : 'none'}. Score: ${Math.round(selected.score || 0)}.`;
+  }
+  return base;
 };
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
