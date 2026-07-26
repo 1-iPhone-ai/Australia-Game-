@@ -6430,6 +6430,38 @@ interface AiAlgorithmUtilityEvaluationConfig {
   goalServedBonus: number;
 }
 
+// AB4: closed, non-arbitrary-code stage schemas for Action Selection / Replanning / Fallback
+// Behavior / Explanation Output — the final four stages, completing the 10-stage pipeline.
+const AI_ALGORITHM_ACTION_SELECTION_METHODS: AiAlgorithmActionSelectionMethod[] = ['highest_score', 'highest_utility'];
+type AiAlgorithmActionSelectionMethod = 'highest_score' | 'highest_utility';
+interface AiAlgorithmActionSelectionConfig {
+  // 'highest_score' picks the plan's first step as-is (matches the built-in Planner's AE8
+  // behavior); 'highest_utility' re-sorts the plan's own steps by their individual .score before
+  // picking the first — never a second scoring pass, purely a selection-order choice over
+  // already-computed scores.
+  method: AiAlgorithmActionSelectionMethod;
+}
+interface AiAlgorithmReplanningConfig {
+  // When true, the plan is rebuilt fresh every turn rather than continuing a stored multi-step
+  // plan (mirrors AE9's own per-actor continuation ref, just toggling whether it's consulted).
+  replanEveryTurn: boolean;
+}
+const AI_ALGORITHM_FALLBACK_POLICIES: AiAlgorithmFallbackPolicy[] = ['try_next_candidate', 'abandon_immediately'];
+type AiAlgorithmFallbackPolicy = 'try_next_candidate' | 'abandon_immediately';
+interface AiAlgorithmFallbackBehaviorConfig {
+  // What THIS config's own pipeline does when its selected candidate fails pre-execution
+  // revalidation (the same check AE9 already performs) — 'try_next_candidate' walks the
+  // already-generated candidate list for the next legal one; 'abandon_immediately' hands off to
+  // the mandatory AE4 fallback chain (custom -> Planner -> Classic) right away. Neither ever
+  // bypasses that mandatory chain — this only decides how much a config tries on its own first.
+  onInvalidCandidate: AiAlgorithmFallbackPolicy;
+}
+const AI_ALGORITHM_EXPLANATION_DETAIL_LEVELS: AiAlgorithmExplanationDetailLevel[] = ['brief', 'standard', 'verbose'];
+type AiAlgorithmExplanationDetailLevel = 'brief' | 'standard' | 'verbose';
+interface AiAlgorithmExplanationOutputConfig {
+  detailLevel: AiAlgorithmExplanationDetailLevel;
+}
+
 interface AiAlgorithmConfig {
   configId: string;
   revision: number;
@@ -6452,6 +6484,12 @@ interface AiAlgorithmConfig {
   outcomePredictionConfig: AiAlgorithmOutcomePredictionConfig | null;
   planConstructionConfig: AiAlgorithmPlanConstructionConfig | null;
   utilityEvaluationConfig: AiAlgorithmUtilityEvaluationConfig | null;
+  // AB4: the final four stage configs, completing all 10 pipeline stages. Same
+  // null-means-not-yet-configured convention as every other stage config on this interface.
+  actionSelectionConfig: AiAlgorithmActionSelectionConfig | null;
+  replanningConfig: AiAlgorithmReplanningConfig | null;
+  fallbackBehaviorConfig: AiAlgorithmFallbackBehaviorConfig | null;
+  explanationOutputConfig: AiAlgorithmExplanationOutputConfig | null;
 }
 
 // AB1: mirrors sanitizeTeamPlan's exact convention — hard-fail (null) on a missing/wrong-typed
@@ -6522,6 +6560,31 @@ const sanitizeAiAlgorithmUtilityEvaluationConfig = (value: unknown): AiAlgorithm
   if (typeof source.goalServedBonus !== 'number' || !Number.isFinite(source.goalServedBonus)) return null;
   return { goalServedBonus: Math.max(0, Math.min(100, Math.round(source.goalServedBonus))) };
 };
+// AB4: the final four stage-config sanitizers, same convention.
+const sanitizeAiAlgorithmActionSelectionConfig = (value: unknown): AiAlgorithmActionSelectionConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmActionSelectionConfig>;
+  if (!AI_ALGORITHM_ACTION_SELECTION_METHODS.includes(source.method as AiAlgorithmActionSelectionMethod)) return null;
+  return { method: source.method as AiAlgorithmActionSelectionMethod };
+};
+const sanitizeAiAlgorithmReplanningConfig = (value: unknown): AiAlgorithmReplanningConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmReplanningConfig>;
+  if (typeof source.replanEveryTurn !== 'boolean') return null;
+  return { replanEveryTurn: source.replanEveryTurn };
+};
+const sanitizeAiAlgorithmFallbackBehaviorConfig = (value: unknown): AiAlgorithmFallbackBehaviorConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmFallbackBehaviorConfig>;
+  if (!AI_ALGORITHM_FALLBACK_POLICIES.includes(source.onInvalidCandidate as AiAlgorithmFallbackPolicy)) return null;
+  return { onInvalidCandidate: source.onInvalidCandidate as AiAlgorithmFallbackPolicy };
+};
+const sanitizeAiAlgorithmExplanationOutputConfig = (value: unknown): AiAlgorithmExplanationOutputConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmExplanationOutputConfig>;
+  if (!AI_ALGORITHM_EXPLANATION_DETAIL_LEVELS.includes(source.detailLevel as AiAlgorithmExplanationDetailLevel)) return null;
+  return { detailLevel: source.detailLevel as AiAlgorithmExplanationDetailLevel };
+};
 const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<AiAlgorithmConfig>;
@@ -6542,12 +6605,243 @@ const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => 
     candidateGenerationConfig: sanitizeAiAlgorithmCandidateGenerationConfig(source.candidateGenerationConfig),
     outcomePredictionConfig: sanitizeAiAlgorithmOutcomePredictionConfig(source.outcomePredictionConfig),
     planConstructionConfig: sanitizeAiAlgorithmPlanConstructionConfig(source.planConstructionConfig),
-    utilityEvaluationConfig: sanitizeAiAlgorithmUtilityEvaluationConfig(source.utilityEvaluationConfig)
+    utilityEvaluationConfig: sanitizeAiAlgorithmUtilityEvaluationConfig(source.utilityEvaluationConfig),
+    actionSelectionConfig: sanitizeAiAlgorithmActionSelectionConfig(source.actionSelectionConfig),
+    replanningConfig: sanitizeAiAlgorithmReplanningConfig(source.replanningConfig),
+    fallbackBehaviorConfig: sanitizeAiAlgorithmFallbackBehaviorConfig(source.fallbackBehaviorConfig),
+    explanationOutputConfig: sanitizeAiAlgorithmExplanationOutputConfig(source.explanationOutputConfig)
   };
 };
 const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
   if (!Array.isArray(value)) return [];
   return value.map(sanitizeAiAlgorithmConfig).filter((config): config is AiAlgorithmConfig => Boolean(config)).slice(-30);
+};
+
+// AB5: the 9 named starting presets, mirroring SEQUENCE_TEMPLATES/instantiateSequenceTemplate's
+// exact precedent (Phase F5) — a flat, id-keyed Record of non-player-authored definitions, plus a
+// pure instantiateX(id) that stamps out a fresh runtime object (new configId, createdByPlayer:
+// false, active: false) and returns null for an unrecognized id. Uncalled by any real UI yet (no
+// CRUD exists until AB6) — written now so the definitions themselves are reviewable.
+interface AiAlgorithmTemplateDefinition {
+  label: string;
+  description: string;
+  editorMode: AiAlgorithmEditorMode;
+  situationAnalysisConfig: AiAlgorithmSituationAnalysisConfig | null;
+  goalSelectionConfig: AiAlgorithmGoalSelectionConfig | null;
+  candidateGenerationConfig: AiAlgorithmCandidateGenerationConfig | null;
+  outcomePredictionConfig: AiAlgorithmOutcomePredictionConfig | null;
+  planConstructionConfig: AiAlgorithmPlanConstructionConfig | null;
+  utilityEvaluationConfig: AiAlgorithmUtilityEvaluationConfig | null;
+  actionSelectionConfig: AiAlgorithmActionSelectionConfig | null;
+  replanningConfig: AiAlgorithmReplanningConfig | null;
+  fallbackBehaviorConfig: AiAlgorithmFallbackBehaviorConfig | null;
+  explanationOutputConfig: AiAlgorithmExplanationOutputConfig | null;
+}
+const AI_ALGORITHM_TEMPLATES: Record<string, AiAlgorithmTemplateDefinition> = {
+  balanced_planner: {
+    label: 'Balanced Planner',
+    description: 'An even mix of survival, cash, and net worth goals with no single-category bias — a reasonable general-purpose starting point.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { survival: 40, available_cash: 40, net_worth: 40 } },
+    candidateGenerationConfig: null,
+    outcomePredictionConfig: { riskBehavior: 'balanced' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 20 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  aggressive_competitor: {
+    label: 'Aggressive Competitor',
+    description: 'Prioritizes winning and disrupting the opponent, tolerates higher risk, and plans multiple steps ahead.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { winning: 80, opponent_disruption: 60 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sabotage', 'challenge', 'travel', 'region_deposit'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 30 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'verbose' }
+  },
+  financial_survivor: {
+    label: 'Financial Survivor',
+    description: 'Prioritizes staying solvent above all else — conservative risk, cash-generating actions only, short planning horizon.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['finances', 'treasury'] },
+    goalSelectionConfig: { goalPriorities: { survival: 90, available_cash: 50 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sell', 'challenge', 'support', 'request_team_funds'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'fast', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 15 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  long_term_investor: {
+    label: 'Long-Term Investor',
+    description: 'Prioritizes growing net worth through investments and equipment, plans deep, and avoids reckless risk.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { net_worth: 90, resource_acquisition: 30 } },
+    candidateGenerationConfig: { allowedActionCategories: ['invest', 'buy_equipment', 'craft', 'buy_market'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  challenge_specialist: {
+    label: 'Challenge Specialist',
+    description: 'Focuses almost entirely on taking challenges for cash, tolerating higher risk for a higher expected payoff.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { available_cash: 80, survival: 30 } },
+    candidateGenerationConfig: { allowedActionCategories: ['challenge'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 20 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  regional_controller: {
+    label: 'Regional Controller',
+    description: 'Prioritizes gaining and holding regional control, favoring deposits and travel toward contested regions.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['regional_control', 'opponents'] },
+    goalSelectionConfig: { goalPriorities: { regional_control: 90 } },
+    candidateGenerationConfig: { allowedActionCategories: ['region_deposit', 'travel', 'cashout_region'] },
+    outcomePredictionConfig: { riskBehavior: 'balanced' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  team_support_planner: {
+    label: 'Team Support Planner',
+    description: 'Prioritizes helping teammates over its own individual gains — transfers, contributions, and coordination.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['teammates', 'treasury'] },
+    goalSelectionConfig: { goalPriorities: { teammate_support: 90, survival: 20 } },
+    candidateGenerationConfig: { allowedActionCategories: ['support', 'contribute_treasury'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  endgame_finisher: {
+    label: 'Endgame Finisher',
+    description: 'Prioritizes converting holdings into whatever the win condition needs as the game nears its end, with a deep, aggressive plan.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['remaining_days', 'win_condition'] },
+    goalSelectionConfig: { goalPriorities: { winning: 90, endgame_preparation: 70 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sell', 'cashout_region', 'challenge'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 30 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'verbose' }
+  },
+  experimental_template: {
+    label: 'Experimental Template',
+    description: 'A blank starting point with every stage left unconfigured — falls back to the built-in Planner\'s own defaults everywhere until you customize it.',
+    editorMode: 'expert',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: null,
+    candidateGenerationConfig: null,
+    outcomePredictionConfig: null,
+    planConstructionConfig: null,
+    utilityEvaluationConfig: null,
+    actionSelectionConfig: null,
+    replanningConfig: null,
+    fallbackBehaviorConfig: null,
+    explanationOutputConfig: null
+  }
+};
+const instantiateAiAlgorithmTemplate = (templateId: string, day: number): AiAlgorithmConfig | null => {
+  const template = AI_ALGORITHM_TEMPLATES[templateId];
+  if (!template) return null;
+  return {
+    configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    revision: 0,
+    name: template.label,
+    description: template.description,
+    editorMode: template.editorMode,
+    validationStatus: 'draft',
+    lastTestResult: null,
+    createdByPlayer: false,
+    createdDay: Math.max(0, Math.floor(day)),
+    active: false,
+    situationAnalysisConfig: template.situationAnalysisConfig,
+    goalSelectionConfig: template.goalSelectionConfig,
+    candidateGenerationConfig: template.candidateGenerationConfig,
+    outcomePredictionConfig: template.outcomePredictionConfig,
+    planConstructionConfig: template.planConstructionConfig,
+    utilityEvaluationConfig: template.utilityEvaluationConfig,
+    actionSelectionConfig: template.actionSelectionConfig,
+    replanningConfig: template.replanningConfig,
+    fallbackBehaviorConfig: template.fallbackBehaviorConfig,
+    explanationOutputConfig: template.explanationOutputConfig
+  };
+};
+
+// AB7: safe-activation validation gate. Pure, reuses the exact same closed vocabularies the
+// sanitizers already validate against (AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED, AI_PLANNER_GOAL_KINDS,
+// TEAM_MODE_ACTION_CATEGORIES, AI_ALGORITHM_SITUATION_INFO_SOURCES) rather than inventing a second
+// set of bounds. Errors block activation; warnings are informational only. Since this schema has no
+// stage-to-stage jump/reference pointers (unlike Sequences' fallbackJumpToStepId), there is nothing
+// structurally capable of forming a cycle — "circular-stage detection" is a stated non-issue for this
+// schema shape, not silently skipped.
+interface AiAlgorithmValidationResult { errors: string[]; warnings: string[]; }
+const validateAiAlgorithmConfig = (config: AiAlgorithmConfig): AiAlgorithmValidationResult => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!config.name || !config.name.trim()) errors.push('Config must have a name.');
+  if (config.situationAnalysisConfig?.informationSources?.some(s => !AI_ALGORITHM_SITUATION_INFO_SOURCES.includes(s))) {
+    errors.push('Situation Analysis references an unsupported information source.');
+  }
+  if (config.goalSelectionConfig?.goalPriorities) {
+    const unknownGoals = Object.keys(config.goalSelectionConfig.goalPriorities).filter(k => !AI_PLANNER_GOAL_KINDS.includes(k as AiPlannerGoalKind));
+    if (unknownGoals.length > 0) errors.push('Goal Selection references an unsupported goal kind.');
+  }
+  if (config.candidateGenerationConfig?.allowedActionCategories?.some(c => !TEAM_MODE_ACTION_CATEGORIES.includes(c))) {
+    errors.push('Candidate Generation references an unsupported action category.');
+  }
+  if (config.planConstructionConfig) {
+    const cap = config.planConstructionConfig.maxCandidatesConsidered;
+    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap < 1 || cap > AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED) {
+      errors.push(`Plan Construction's max candidates considered must be between 1 and ${AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED}.`);
+    }
+  }
+  if (config.utilityEvaluationConfig) {
+    const bonus = config.utilityEvaluationConfig.goalServedBonus;
+    if (typeof bonus !== 'number' || !Number.isFinite(bonus) || bonus < 0 || bonus > 100) {
+      errors.push("Utility Evaluation's goal-served bonus must be between 0 and 100.");
+    }
+  }
+  const allStagesNull = !config.situationAnalysisConfig && !config.goalSelectionConfig && !config.candidateGenerationConfig
+    && !config.outcomePredictionConfig && !config.planConstructionConfig && !config.utilityEvaluationConfig
+    && !config.actionSelectionConfig && !config.replanningConfig && !config.fallbackBehaviorConfig && !config.explanationOutputConfig;
+  if (allStagesNull) {
+    warnings.push('No stages are configured yet — this algorithm will fall back to the built-in Planner at every stage.');
+  }
+  return { errors, warnings };
 };
 
 // AB2: the three stage-evaluator functions, one per stage config. All three are pure, reuse
@@ -6636,6 +6930,52 @@ const evaluateAiAlgorithmPlanUtility = (config: AiAlgorithmUtilityEvaluationConf
     ...goals.secondary.flatMap(g => AI_PLANNER_GOAL_CATEGORY_MAP[g] || [])
   ]);
   return plan.reduce((total, step) => total + (step.score || 0) + (relevantCategories.has(step.type) ? bonus : 0), 0);
+};
+
+// AB4: the final four pure stage-evaluator functions, completing the 10-stage pipeline. Same
+// "uncalled by any real turn-execution path this phase" status as AB2/AB3's — no custom-algorithm
+// execution engine exists yet to invoke any of these.
+
+// Action Selection stage: 'highest_score' takes the plan's own first step as-is (the built-in
+// Planner's own AE8 behavior); 'highest_utility' re-sorts the SAME plan's steps by their already-
+// computed .score before picking the first — a selection-order choice over existing scores, never
+// a second scoring pass.
+const selectAiAlgorithmAction = (config: AiAlgorithmActionSelectionConfig | null, plan: ScoredTeamAiDecision[]): ScoredTeamAiDecision | null => {
+  if (plan.length === 0) return null;
+  if (config?.method === 'highest_utility') {
+    return [...plan].sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+  }
+  return plan[0];
+};
+
+// Replanning stage: a pure yes/no over whether to discard an in-progress multi-step plan and
+// build fresh this turn — the actual continuation/discard mechanics reuse AE9's own
+// aiPlannerActivePlanRef machinery once this is wired into a real execution engine; this function
+// only answers the policy question.
+const shouldReplanAiAlgorithm = (config: AiAlgorithmReplanningConfig | null): boolean => {
+  return Boolean(config?.replanEveryTurn);
+};
+
+// Fallback Behavior stage: given the already-generated candidate list and the one that just
+// failed pre-execution revalidation (the same check AE9 already performs), either walk the list
+// for the next legal candidate or signal "abandon" so the caller hands off to the mandatory AE4
+// fallback chain (custom -> Planner -> Classic) immediately. Never itself bypasses that chain.
+const resolveAiAlgorithmFallbackCandidate = (config: AiAlgorithmFallbackBehaviorConfig | null, candidates: ScoredTeamAiDecision[], invalidCandidate: ScoredTeamAiDecision): ScoredTeamAiDecision | null => {
+  if ((config?.onInvalidCandidate || 'try_next_candidate') === 'abandon_immediately') return null;
+  const nextIndex = candidates.indexOf(invalidCandidate) + 1;
+  return candidates[nextIndex] || null;
+};
+
+// Explanation Output stage: reuses explainAiPlannerDecision (AE8) verbatim for the standard
+// sentence, only varying how much is appended around it — never a second explanation generator.
+const explainAiAlgorithmDecision = (config: AiAlgorithmExplanationOutputConfig | null, selected: ScoredTeamAiDecision, plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): string => {
+  const base = explainAiPlannerDecision(selected, plan, goals);
+  const detailLevel = config?.detailLevel || 'standard';
+  if (detailLevel === 'brief') return `Chose ${selected.type}.`;
+  if (detailLevel === 'verbose') {
+    return `${base} Secondary goals considered: ${goals.secondary.length ? goals.secondary.join(', ') : 'none'}. Score: ${Math.round(selected.score || 0)}.`;
+  }
+  return base;
 };
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
@@ -38983,9 +39323,11 @@ function AustraliaGame() {
                       <div className="font-semibold">Enable AI Thinking/Algorithm Builder</div>
                       <div className="text-sm opacity-75">
                         A separate, optional system for building your own custom decision algorithms
-                        from safe, predefined building blocks — never arbitrary code. This is pure
-                        scaffolding right now: there's no way to actually create a config yet (the
-                        config editor, presets, and CRUD all arrive in later phases).
+                        from safe, predefined building blocks — never arbitrary code. You can create,
+                        duplicate, rename, activate, and delete configs below; the individual per-stage
+                        content editors (Situation Analysis, Goal Selection, etc.) and safe-activation
+                        validation arrive in a later phase — for now, activating a config only points
+                        the Friendly Team AI selection (above) at it.
                       </div>
                     </div>
                     <button
@@ -38995,28 +39337,159 @@ function AustraliaGame() {
                       {gameSettings.aiAlgorithmBuilderEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
-                  {gameSettings.aiAlgorithmBuilderEnabled && (
-                    <>
-                      <div className="text-sm opacity-75">
-                        {(teamsById[TEAM_PLAYER_ID]?.algorithmConfigs?.length || 0) + (teamsById[TEAM_OPPONENT_ID]?.algorithmConfigs?.length || 0)} custom algorithms configured — the config editor arrives in a later phase.
-                      </div>
-                      <div>
-                        <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
-                        <div className="text-xs opacity-60 mb-2">Reserved for the future config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
-                        <div className="flex gap-2">
-                          {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
-                            <button
-                              key={mode}
-                              onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
-                              className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
-                            >
-                              {mode}
-                            </button>
-                          ))}
+                  {gameSettings.aiAlgorithmBuilderEnabled && (() => {
+                    // AB6: Algorithm Builder CRUD helpers — scoped-down but real UI, mirroring
+                    // updateSequenceInPlayerTeam/removeSequenceFromPlayerTeam/duplicateSequenceInPlayerTeam's
+                    // (Phase F4/F5) own local-function, TEAM_PLAYER_ID-scoped precedent — the player only
+                    // ever authors their OWN team's configs, exactly like Sequences are only ever authored
+                    // for TEAM_PLAYER_ID. "Copy to Enemy Team" is the one operation reaching into
+                    // TEAM_OPPONENT_ID's own library, satisfying the "copy between friendly/enemy" verb.
+                    const createAiAlgorithmConfigInPlayerTeam = () => {
+                      const newConfig: AiAlgorithmConfig = {
+                        configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        revision: 0,
+                        name: 'New Algorithm',
+                        description: '',
+                        editorMode: gameSettings.aiAlgorithmBuilderDefaultEditorMode,
+                        validationStatus: 'draft',
+                        lastTestResult: null,
+                        createdByPlayer: true,
+                        createdDay: gameState.day,
+                        active: false,
+                        situationAnalysisConfig: null,
+                        goalSelectionConfig: null,
+                        candidateGenerationConfig: null,
+                        outcomePredictionConfig: null,
+                        planConstructionConfig: null,
+                        utilityEvaluationConfig: null,
+                        actionSelectionConfig: null,
+                        replanningConfig: null,
+                        fallbackBehaviorConfig: null,
+                        explanationOutputConfig: null
+                      };
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, newConfig].slice(-30) }));
+                    };
+                    const createAiAlgorithmConfigFromTemplateInPlayerTeam = (templateId: string) => {
+                      const config = instantiateAiAlgorithmTemplate(templateId, gameState.day);
+                      if (!config) return;
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, config].slice(-30) }));
+                    };
+                    const duplicateAiAlgorithmConfigInPlayerTeam = (configId: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => {
+                        const source = prev.algorithmConfigs.find(c => c.configId === configId);
+                        if (!source) return prev;
+                        const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: `${source.name} (copy)`, active: false, createdByPlayer: true, createdDay: gameState.day, revision: 0 };
+                        return { ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) };
+                      });
+                    };
+                    const renameAiAlgorithmConfigInPlayerTeam = (configId: string, name: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, name } : c) }));
+                    };
+                    const deleteAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.filter(c => c.configId !== configId) }));
+                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
+                    };
+                    // AB7: real safe-activation gate — a config may only activate after
+                    // validateAiAlgorithmConfig reports zero errors. The Activate button itself is
+                    // already disabled in this case (defense in depth, not the only guard), mirroring
+                    // how F5's validateSequenceForActivation blocks Sequences' own active toggle.
+                    const toggleAiAlgorithmConfigActiveInPlayerTeam = (configId: string) => {
+                      const willActivate = gameSettings.aiAlgorithmForFriendlyTeam !== configId;
+                      if (willActivate) {
+                        const target = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                        if (!target || validateAiAlgorithmConfig(target).errors.length > 0) return;
+                      }
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({
+                        ...prev,
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate, validationStatus: willActivate ? 'valid' : c.validationStatus } : (willActivate ? { ...c, active: false } : c))
+                      }));
+                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
+                    };
+                    const copyAiAlgorithmConfigToEnemyTeam = (configId: string) => {
+                      const source = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      if (!source) return;
+                      const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, active: false, createdDay: gameState.day, revision: 0 };
+                      updateTeamState(TEAM_OPPONENT_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) }));
+                    };
+                    const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
+                    return (
+                      <>
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={createAiAlgorithmConfigInPlayerTeam} className={`px-3 py-1.5 rounded text-sm font-semibold ${themeStyles.buttonSecondary}`}>+ Create Blank</button>
+                            {Object.entries(AI_ALGORITHM_TEMPLATES).map(([templateId, template]) => (
+                              <button
+                                key={templateId}
+                                onClick={() => createAiAlgorithmConfigFromTemplateInPlayerTeam(templateId)}
+                                className={`px-3 py-1.5 rounded text-sm font-semibold ${themeStyles.buttonSecondary}`}
+                                title={template.description}
+                              >
+                                + {template.label}
+                              </button>
+                            ))}
+                          </div>
+                          {playerAlgorithmConfigs.length === 0 && (
+                            <div className="text-sm opacity-60">No custom algorithms yet — create a blank one or load a preset above.</div>
+                          )}
+                          {playerAlgorithmConfigs.map(config => {
+                            const validation = validateAiAlgorithmConfig(config);
+                            const isActive = gameSettings.aiAlgorithmForFriendlyTeam === config.configId;
+                            const canActivate = isActive || validation.errors.length === 0;
+                            return (
+                            <div key={config.configId} className={`p-3 rounded border ${themeStyles.border} space-y-2`}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <input
+                                  type="text"
+                                  value={config.name}
+                                  onChange={(e) => renameAiAlgorithmConfigInPlayerTeam(config.configId, e.target.value)}
+                                  className={`${themeStyles.select} rounded px-2 py-1 text-sm font-semibold flex-1 min-w-[8rem]`}
+                                />
+                                <span className="text-xs opacity-60 capitalize">{validation.errors.length > 0 ? 'invalid' : config.validationStatus}</span>
+                                <button
+                                  onClick={() => canActivate && toggleAiAlgorithmConfigActiveInPlayerTeam(config.configId)}
+                                  disabled={!canActivate}
+                                  title={!canActivate ? validation.errors.join(' ') : undefined}
+                                  className={`px-3 py-1 rounded text-xs font-semibold ${isActive ? `${themeStyles.success} text-white` : canActivate ? themeStyles.buttonSecondary : `${themeStyles.buttonSecondary} opacity-40 cursor-not-allowed`}`}
+                                >
+                                  {isActive ? 'ACTIVE' : canActivate ? 'Activate' : 'Blocked'}
+                                </button>
+                                <button onClick={() => duplicateAiAlgorithmConfigInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
+                                <button onClick={() => copyAiAlgorithmConfigToEnemyTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Copy to Enemy Team</button>
+                                <button onClick={() => deleteAiAlgorithmConfigFromPlayerTeam(config.configId)} className="px-2 py-1 rounded text-xs bg-red-700 text-white">Delete</button>
+                              </div>
+                              {config.description && <div className="text-xs opacity-60">{config.description}</div>}
+                              {validation.errors.length > 0 && (
+                                <div className="text-xs text-red-500 space-y-0.5">
+                                  {validation.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+                                </div>
+                              )}
+                              {validation.errors.length === 0 && validation.warnings.length > 0 && (
+                                <div className="text-xs text-yellow-500 space-y-0.5">
+                                  {validation.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                                </div>
+                              )}
+                            </div>
+                            );
+                          })}
                         </div>
-                      </div>
-                    </>
-                  )}
+                        <div>
+                          <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
+                          <div className="text-xs opacity-60 mb-2">Reserved for the future per-stage config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
+                          <div className="flex gap-2">
+                            {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
+                              <button
+                                key={mode}
+                                onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
+                                className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </SettingsSection>
 
