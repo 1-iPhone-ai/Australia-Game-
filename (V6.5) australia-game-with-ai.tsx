@@ -12993,6 +12993,13 @@ function AustraliaGame() {
   const [ledgerDashboardSortOrder, setLedgerDashboardSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [ledgerDashboardViewMode, setLedgerDashboardViewMode] = useState<'compact' | 'detailed'>('detailed');
   const [ledgerDashboardClearConfirming, setLedgerDashboardClearConfirming] = useState(false);
+
+  // PI2: pure navigation state for the AI Action Pipeline Inspector dashboard — never persisted,
+  // mirrors auditorDashboardTab/selectedDecisionActorId's own "component-local, not gameState"
+  // convention. showAiPipelineInspector mirrors showOverseerDashboard's own boolean-open pattern.
+  const [showAiPipelineInspector, setShowAiPipelineInspector] = useState(false);
+  const [pipelineInspectorSelectedDecisionId, setPipelineInspectorSelectedDecisionId] = useState<string | null>(null);
+  const [pipelineInspectorTeamFilter, setPipelineInspectorTeamFilter] = useState<string>('all');
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -33413,17 +33420,28 @@ function AustraliaGame() {
       // no-op when the Ledger is off (appendGameActivityLedgerEvent's own existing guard), and
       // the direct precedent this session's Pipeline Inspector track (PI1+) will later extend
       // with per-stage detail; this phase only records that a decision was made and its source.
+      // PI2: reuse the trace Decision Transparency already built for this actor's current decision
+      // (rather than minting a second, unrelated id) so the Inspector can cross-reference back to
+      // the trace's own candidates/scoreStages/alternativeActions. Falls back to a fresh id only if
+      // no current trace exists yet for this actor (defensive — should not happen mid-turn for a
+      // 'kind === ai' actor, since the ranking pass that builds the trace always runs first).
+      const pipelineDecisionId = latestDecisionTraceByActor[actor.id]?.currentTrace?.decisionId
+        || `pldec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // PI2: GameActivityLedgerEvent already has a decisionId field (declared in GL1, unused by
+      // any emission site until now) — reusing it here rather than adding a new field lets the
+      // Ledger Dashboard's "View Pipeline" link (added below) match this event straight back to
+      // its PipelineTraceRecord via the same id.
       appendGameActivityLedgerEvent('decision', {
         teamId: actor.teamId,
         actorId: actor.id,
         actionType: decision.type,
+        decisionId: pipelineDecisionId,
         summary: `${getActorDisplayName(actor.id)} selected ${decision.type}` + (plannedDecisionValid ? ' (parallel-planned)' : sequenceStepMatch ? ' (sequence)' : planStepMatch ? ' (team plan)' : ' (live ranking)') + '.'
       });
-      // PI1: mints the join key for this one decision's pipeline trace and records the first
-      // ('algorithm') stage — the source label mirrors the GL10 Ledger event just above, reusing
-      // the same classification rather than inventing a second one. No-op (appendPipelineStageRecord's
-      // own guard) whenever aiPipelineInspectorEnabled is off.
-      const pipelineDecisionId = `pldec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      // PI1: records the first ('algorithm') stage for this decision's pipeline trace — the source
+      // label mirrors the GL10 Ledger event just above, reusing the same classification rather than
+      // inventing a second one. No-op (appendPipelineStageRecord's own guard) whenever
+      // aiPipelineInspectorEnabled is off.
       appendPipelineStageRecord(
         pipelineDecisionId, actor.teamId, actor.id, gameState.day, gameState.turnCounter,
         'algorithm', 'passed',
@@ -33830,7 +33848,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled, latestDecisionTraceByActor]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -34887,9 +34905,32 @@ function AustraliaGame() {
             </span>
           )}
         </div>
+        {gameSettings.aiPipelineInspectorEnabled && (
+          <div
+            role="button"
+            tabIndex={0}
+            className="text-[10px] underline opacity-80 mt-2 inline-block"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPipelineInspectorSelectedDecisionId(card.trace?.decisionId || null);
+              setPipelineInspectorTeamFilter(card.actor.teamId || 'all');
+              setShowAiPipelineInspector(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation();
+                setPipelineInspectorSelectedDecisionId(card.trace?.decisionId || null);
+                setPipelineInspectorTeamFilter(card.actor.teamId || 'all');
+                setShowAiPipelineInspector(true);
+              }
+            }}
+          >
+            View Pipeline
+          </div>
+        )}
       </button>
     );
-  }, [expandedHudDecisionActorId, getActorRelationshipText, themeStyles]);
+  }, [expandedHudDecisionActorId, getActorRelationshipText, themeStyles, gameSettings.aiPipelineInspectorEnabled]);
 
   const renderDecisionTransparencyActorCard = useCallback((card: typeof transparencyAiCards[number], options?: {
     forceExpandedTimeline?: boolean;
@@ -45226,6 +45267,18 @@ function AustraliaGame() {
 	                  🛠️ Open Auditor Dashboard
 	                </button>
 	              )}
+	              {isTeamMode && gameSettings.teamCompetitiveAiEnabled && gameSettings.aiPipelineInspectorEnabled && (
+	                <button
+	                  onClick={() => {
+	                    setPipelineInspectorSelectedDecisionId(null);
+	                    setPipelineInspectorTeamFilter('all');
+	                    setShowAiPipelineInspector(true);
+	                  }}
+	                  className={`${themeStyles.buttonSecondary} px-3 py-2 rounded mt-4 text-sm w-full`}
+	                >
+	                  🔬 Pipeline Inspector
+	                </button>
+	              )}
 	            </div>
 	          )}
 
@@ -45345,6 +45398,7 @@ function AustraliaGame() {
         {renderOverseerDashboard()}
         {renderAuditorDashboard()}
         {renderGameActivityLedgerDashboard()}
+        {renderAiActionPipelineInspector()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -47738,7 +47792,24 @@ function AustraliaGame() {
                           <div>Event ID: {ev.id}</div>
                           {ev.actorId && <div>Actor: {getActorDisplayName(ev.actorId)} ({ev.actorId})</div>}
                           {ev.teamId && <div>Team: {ev.teamId}</div>}
-                          {ev.decisionId && <div>Decision ID: {ev.decisionId}</div>}
+                          {ev.decisionId && (
+                            <div>
+                              Decision ID: {ev.decisionId}
+                              {gameSettings.aiPipelineInspectorEnabled && (
+                                <button
+                                  className="underline ml-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPipelineInspectorSelectedDecisionId(ev.decisionId!);
+                                    setPipelineInspectorTeamFilter(ev.teamId || 'all');
+                                    setShowAiPipelineInspector(true);
+                                  }}
+                                >
+                                  View Pipeline
+                                </button>
+                              )}
+                            </div>
+                          )}
                           {ev.planId && <div>Plan ID: {ev.planId}</div>}
                           {ev.configId && <div>Config ID: {ev.configId}{typeof ev.configRevision === 'number' ? ` (rev ${ev.configRevision})` : ''}</div>}
                           {ev.approvalRequestId && <div>Approval Request ID: {ev.approvalRequestId}</div>}
@@ -47769,6 +47840,187 @@ function AustraliaGame() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // PI2: the AI Action Pipeline Inspector — a purely observational, two-pane dashboard tracing
+  // one AI decision through PIPELINE_STAGE_ORDER's 11 stages. Reads gameState/teamsByIdRef only;
+  // never writes pipelineTraces or historyByActor, matching Governing Decision 2 of the PI2 plan.
+  const renderAiActionPipelineInspector = () => {
+    if (!showAiPipelineInspector) return null;
+    if (!gameSettings.aiPipelineInspectorEnabled) return null;
+    const close = () => setShowAiPipelineInspector(false);
+    const teamIds = pipelineInspectorTeamFilter === 'all' ? [TEAM_PLAYER_ID, TEAM_OPPONENT_ID] : [pipelineInspectorTeamFilter];
+    const allTraces = teamIds.flatMap(teamId => (teamsByIdRef.current[teamId]?.pipelineTraces || []));
+    const sortedTraces = allTraces.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
+    const getTraceStatus = (trace: PipelineTraceRecord): 'blocked' | 'modified' | 'passed' => {
+      if (trace.stages.some(s => s.status === 'blocked')) return 'blocked';
+      if (trace.stages.some(s => s.status === 'modified')) return 'modified';
+      return 'passed';
+    };
+    const statusBadgeClass: Record<'blocked' | 'modified' | 'passed', string> = {
+      blocked: themeStyles.badgeWarning,
+      modified: themeStyles.badgeWarning,
+      passed: themeStyles.badgeSuccess
+    };
+    const selectedTrace = (pipelineInspectorSelectedDecisionId
+      ? sortedTraces.find(t => t.decisionId === pipelineInspectorSelectedDecisionId)
+      : null) || sortedTraces[0] || null;
+    // PI2 GD5: cross-reference the ranking/score-change breakdown via the shared decisionId,
+    // falling back to lastByActor's own currentTrace/lastTrace chain (mirrors selectedDecisionTrace's
+    // own fallback), and finally an honest "no longer available" message.
+    const crossReferencedTrace: AiDecisionTrace | null = selectedTrace ? (
+      (gameState.decisionState?.historyByActor?.[selectedTrace.actorId] || []).find(t => t.decisionId === selectedTrace.decisionId)
+      || (latestDecisionTraceByActor[selectedTrace.actorId]?.currentTrace?.decisionId === selectedTrace.decisionId
+        ? latestDecisionTraceByActor[selectedTrace.actorId]?.currentTrace : null)
+      || (latestDecisionTraceByActor[selectedTrace.actorId]?.lastTrace?.decisionId === selectedTrace.decisionId
+        ? latestDecisionTraceByActor[selectedTrace.actorId]?.lastTrace : null)
+      || null
+    ) : null;
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">🔬 AI Action Pipeline Inspector</h3>
+                <div className="text-sm opacity-75">
+                  Traces one AI decision through Algorithm → Strategy → Sequence → Requirements → Cash Vault →
+                  Economy Governor → Treasury → Overseer → Approval → Execution → Auditor. Observational only —
+                  never changes a decision.
+                </div>
+              </div>
+              <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {(['all', TEAM_PLAYER_ID, TEAM_OPPONENT_ID] as const).map(teamId => (
+                <button
+                  key={teamId}
+                  onClick={() => setPipelineInspectorTeamFilter(teamId)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${pipelineInspectorTeamFilter === teamId ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {teamId === 'all' ? 'All Teams' : teamId === TEAM_PLAYER_ID ? 'Your Team' : 'Opponent Team'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5 flex flex-col md:flex-row gap-4">
+            <div className="md:w-2/5 flex flex-col gap-2 overflow-y-auto max-h-[70vh]">
+              {sortedTraces.length === 0 && (
+                <div className="text-sm opacity-60 p-3">No pipeline traces recorded yet for this filter.</div>
+              )}
+              {sortedTraces.map(trace => {
+                const status = getTraceStatus(trace);
+                const algorithmStage = trace.stages.find(s => s.stageId === 'algorithm');
+                const isSelected = selectedTrace?.decisionId === trace.decisionId;
+                return (
+                  <button
+                    key={trace.decisionId}
+                    onClick={() => setPipelineInspectorSelectedDecisionId(trace.decisionId)}
+                    className={`${themeStyles.border} border rounded-lg p-3 text-left text-sm ${isSelected ? 'ring-2 ring-sky-400/70' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{getActorDisplayName(trace.actorId)}</span>
+                      <span className={`${statusBadgeClass[status]} px-2 py-0.5 rounded text-[10px] font-semibold uppercase`}>{status}</span>
+                    </div>
+                    <div className="text-xs opacity-75 mt-1 line-clamp-2">{algorithmStage?.summary || 'No algorithm stage recorded.'}</div>
+                    <div className="text-[10px] opacity-60 mt-1">Day {trace.day}, Turn {trace.turn}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="md:w-3/5 overflow-y-auto max-h-[70vh]">
+              {!selectedTrace ? (
+                <div className="text-sm opacity-60 p-3">Select a decision from the list to see its stage-by-stage breakdown.</div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="font-bold">{getActorDisplayName(selectedTrace.actorId)} — Day {selectedTrace.day}, Turn {selectedTrace.turn}</div>
+                    <div className="text-xs opacity-60">Decision ID: {selectedTrace.decisionId}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold mb-2">Stage-by-stage breakdown</div>
+                    <div className="space-y-2">
+                      {PIPELINE_STAGE_ORDER.map(stageId => {
+                        const stage = selectedTrace.stages.find(s => s.stageId === stageId);
+                        return (
+                          <div key={stageId} className={`${themeStyles.border} border rounded p-2`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold">{PIPELINE_STAGE_LABELS[stageId]}</span>
+                              <span className={`${stage ? (statusBadgeClass[stage.status as 'blocked' | 'modified' | 'passed'] || themeStyles.badge) : themeStyles.buttonSecondary} px-2 py-0.5 rounded text-[10px] font-semibold uppercase`}>
+                                {stage?.status || 'inactive'}
+                              </span>
+                            </div>
+                            <div className="text-xs opacity-75 mt-1">
+                              {stage?.summary || 'Not reached / system inactive for this decision.'}
+                            </div>
+                            {stage?.relatedId && <div className="text-[10px] opacity-60 mt-1">Related ID: {stage.relatedId}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {selectedTrace.stateDelta && (
+                    <div>
+                      <div className="text-sm font-semibold mb-2">Post-execution state delta</div>
+                      <div className={`${themeStyles.border} border rounded p-2 text-xs grid grid-cols-2 gap-1`}>
+                        <div>Money: ${selectedTrace.stateDelta.moneyBefore} → ${selectedTrace.stateDelta.moneyAfter}</div>
+                        <div>Inventory: {selectedTrace.stateDelta.inventoryCountBefore} → {selectedTrace.stateDelta.inventoryCountAfter}</div>
+                        <div>Region: {selectedTrace.stateDelta.regionBefore || 'n/a'} → {selectedTrace.stateDelta.regionAfter || 'n/a'}</div>
+                        <div>Win metric: {selectedTrace.stateDelta.winMetricBefore.toFixed(0)} → {selectedTrace.stateDelta.winMetricAfter.toFixed(0)}</div>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-sm font-semibold mb-2">Ranking &amp; score-change breakdown</div>
+                    {!crossReferencedTrace ? (
+                      <div className="text-xs opacity-60">Detailed scoring no longer available for this decision (evicted from the capped decision history).</div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div>
+                          <div className="text-xs font-semibold opacity-75 mb-1">Original ranking (candidates considered)</div>
+                          <div className="space-y-1">
+                            {crossReferencedTrace.candidates.map((c, i) => (
+                              <div key={i} className={`${themeStyles.border} border rounded px-2 py-1 text-xs flex items-center justify-between gap-2`}>
+                                <span>{c.type}: {c.description}</span>
+                                <span className="opacity-60">{c.rawScore.toFixed(0)} → {c.adjustedScore.toFixed(0)}</span>
+                              </div>
+                            ))}
+                            {crossReferencedTrace.candidates.length === 0 && <div className="text-xs opacity-60">No candidate breakdown recorded.</div>}
+                          </div>
+                        </div>
+                        {crossReferencedTrace.alternativeActions.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold opacity-75 mb-1">Not chosen</div>
+                            <div className="text-xs opacity-75">{crossReferencedTrace.alternativeActions.join(', ')}</div>
+                          </div>
+                        )}
+                        {(crossReferencedTrace.scoreStages || []).length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold opacity-75 mb-1">Score-stage deltas</div>
+                            <div className="space-y-1">
+                              {(crossReferencedTrace.scoreStages || []).map((stage, i) => (
+                                <div key={i} className={`${themeStyles.border} border rounded px-2 py-1 text-xs flex items-center justify-between gap-2`}>
+                                  <span>{stage.label}</span>
+                                  <span className="opacity-60">{stage.delta >= 0 ? '+' : ''}{stage.delta.toFixed(0)} ({stage.reason})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
