@@ -1880,6 +1880,11 @@ type ActorKind = 'human' | 'ai';
 type WinMetric = 'money' | 'netWorth' | 'regions';
 type DirectiveStrength = 'low' | 'standard' | 'high' | 'priority';
 type DirectiveStrengthSource = 'default' | 'manual';
+// RP1: 'random' (default) keeps every gameplay-affecting Math.random() call on the human/world
+// side exactly as it is today; 'deterministic' routes those same calls through a seeded LCG
+// (worldRandom, mirroring aiRandom's own algorithm) so a match becomes reproducible for the
+// later AI Replay/Deterministic Simulation System phases.
+type WorldRngMode = 'random' | 'deterministic';
 type TeamModeAiSystemProfile =
   | 'classic'
   | 'cooperative'
@@ -5512,6 +5517,13 @@ type GameSettingsState = {
   directiveStrength: DirectiveStrength;
   aiDeterministic: boolean;
   aiDeterministicSeed: number;
+  // RP1: world/human-side RNG mode, independent of aiDeterministic (which only ever gated the
+  // AI decision path). 'random' (default) keeps every gameplay-affecting Math.random() call
+  // exactly as today; 'deterministic' routes those same calls through a seeded LCG (the same
+  // algorithm aiRandom already uses) so the AI Replay/Deterministic Simulation System's later
+  // phases can record and faithfully reproduce a match.
+  worldRngMode: WorldRngMode;
+  worldRngSeed: number;
   aiEngineVersion: string;
   aiFairnessLevel: number;
   aiPersonalityVariance: number;
@@ -7723,6 +7735,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   directiveStrength: 'standard',
   aiDeterministic: false,
   aiDeterministicSeed: 1337,
+  worldRngMode: 'random',
+  worldRngSeed: 1337,
   aiEngineVersion: 'strategic_director_v1',
   aiFairnessLevel: 0.75,
   aiPersonalityVariance: 0.25,
@@ -9588,6 +9602,12 @@ const formatPercentShareValue = (value: number, total: number) => {
 const normalizeDirectiveStrength = (strength: unknown): DirectiveStrength => {
   if (strength === 'low' || strength === 'high' || strength === 'priority') return strength;
   return 'standard';
+};
+
+// RP1: mirrors normalizeDirectiveStrength's exact shape for the new 2-way world RNG mode.
+const normalizeWorldRngMode = (mode: unknown): WorldRngMode => {
+  if (mode === 'deterministic') return 'deterministic';
+  return 'random';
 };
 
 const formatDirectiveStrengthLabel = (strength: DirectiveStrength | string | null | undefined) => {
@@ -12788,6 +12808,7 @@ interface SaveGameData {
     queue: AIAction[];
     currentAction: AIAction | null;
     rngState: number;
+    worldRngState: number;
   };
 }
 
@@ -12904,6 +12925,10 @@ function AustraliaGame() {
   const [aiActiveSpecialAbility, setAiActiveSpecialAbility] = useState<string | null>(null);
   const aiRngStateRef = useRef<number>(DEFAULT_GAME_SETTINGS.aiDeterministicSeed);
   const aiRngSeedRef = useRef<number>(DEFAULT_GAME_SETTINGS.aiDeterministicSeed);
+  // RP1: mirrors aiRngStateRef/aiRngSeedRef exactly, but for the human/world-side seeded RNG
+  // (worldRandom below) rather than the AI decision path.
+  const worldRngStateRef = useRef<number>(DEFAULT_GAME_SETTINGS.worldRngSeed);
+  const worldRngSeedRef = useRef<number>(DEFAULT_GAME_SETTINGS.worldRngSeed);
   const aiActiveSpecialAbilityRef = useRef<string | null>(null);
 
   // Game Settings State
@@ -13181,6 +13206,16 @@ function AustraliaGame() {
       aiRngSeedRef.current = gameSettings.aiDeterministicSeed;
     }
   }, [gameSettings.aiDeterministic, gameSettings.aiDeterministicSeed]);
+
+  // RP1: mirrors the aiRandom reseed effect above, but for worldRngMode/worldRngSeed.
+  useEffect(() => {
+    if (gameSettings.worldRngMode !== 'deterministic') return;
+    const normalizedSeed = normalizeAiSeed(gameSettings.worldRngSeed);
+    if (!worldRngStateRef.current || worldRngSeedRef.current !== gameSettings.worldRngSeed) {
+      worldRngStateRef.current = normalizedSeed;
+      worldRngSeedRef.current = gameSettings.worldRngSeed;
+    }
+  }, [gameSettings.worldRngMode, gameSettings.worldRngSeed]);
 
   const actorsById = useMemo<Record<string, ActorState>>(() => ({
     player: player as ActorState,
@@ -13570,7 +13605,10 @@ function AustraliaGame() {
       aiRuntime: {
         queue: aiActionQueue,
         currentAction: currentAiAction,
-        rngState: aiRngStateRef.current
+        rngState: aiRngStateRef.current,
+        // RP1: persist the world-side RNG state alongside the AI's, so a deterministic match
+        // resumes from exactly where it left off after a save/reload.
+        worldRngState: worldRngStateRef.current
       }
     };
   }, [actorsById, aiActionQueue, aiPlayer, currentAiAction, dontAskAgain, gameSettings, gameState, notifications, personalRecords, player, saveDescription, teamsById, uiState.theme]);
@@ -14082,6 +14120,12 @@ function AustraliaGame() {
           ? settingsData.aiDeterministicSeed
 	          : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
 	      ),
+      worldRngMode: normalizeWorldRngMode(settingsData.worldRngMode),
+      worldRngSeed: normalizeAiSeed(
+        typeof settingsData.worldRngSeed === 'number'
+          ? settingsData.worldRngSeed
+          : DEFAULT_GAME_SETTINGS.worldRngSeed
+      ),
       aiEngineVersion: typeof settingsData.aiEngineVersion === 'string' && settingsData.aiEngineVersion.trim()
         ? settingsData.aiEngineVersion
         : DEFAULT_GAME_SETTINGS.aiEngineVersion,
@@ -14740,6 +14784,13 @@ function AustraliaGame() {
             typeof settingsData.aiDeterministicSeed === 'number'
               ? settingsData.aiDeterministicSeed
               : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
+          ),
+      worldRngState: typeof raw.aiRuntime?.worldRngState === 'number'
+        ? raw.aiRuntime.worldRngState
+        : normalizeAiSeed(
+            typeof settingsData.worldRngSeed === 'number'
+              ? settingsData.worldRngSeed
+              : DEFAULT_GAME_SETTINGS.worldRngSeed
           )
     };
 
@@ -16974,6 +17025,32 @@ function AustraliaGame() {
     aiRngStateRef.current = nextState;
     return nextState / AI_RNG_MODULUS;
   }, [gameSettings.aiDeterministic, gameSettings.aiDeterministicSeed]);
+
+  // RP1: the human/world-side counterpart to aiRandom — every gameplay-affecting Math.random()
+  // call outside the AI decision path (challenge/craft/loan rolls, resource yields, market
+  // movement, weather/seasonal/event triggers, comeback events, character selection) should call
+  // this instead of Math.random() directly. Reuses the exact same LCG algorithm/constants as
+  // aiRandom (never a second RNG implementation) and mirrors its mode-gated/corruption-fallback
+  // shape exactly, so that with worldRngMode at its 'random' default this is byte-identical to
+  // calling Math.random() directly.
+  const worldRandom = useCallback(() => {
+    if (gameSettings.worldRngMode !== 'deterministic') {
+      return Math.random();
+    }
+    let state = worldRngStateRef.current;
+    if (!state || !isFinite(state) || state <= 0 || state >= AI_RNG_MODULUS) {
+      state = normalizeAiSeed(gameSettings.worldRngSeed);
+    }
+    const nextState = Number(
+      (BigInt(state) * BigInt(AI_RNG_MULTIPLIER)) % BigInt(AI_RNG_MODULUS)
+    );
+    if (!isFinite(nextState) || nextState <= 0 || nextState >= AI_RNG_MODULUS) {
+      worldRngStateRef.current = normalizeAiSeed(Date.now());
+      return Math.random();
+    }
+    worldRngStateRef.current = nextState;
+    return nextState / AI_RNG_MODULUS;
+  }, [gameSettings.worldRngMode, gameSettings.worldRngSeed]);
 
   // =========================================
   // NET WORTH & UNDERDOG HELPERS
@@ -19941,17 +20018,17 @@ function AustraliaGame() {
     const selected: typeof CHARACTERS = [] as any;
 
     while (selected.length < count && availableIndexes.length > 0) {
-      const nextIndex = Math.floor(Math.random() * availableIndexes.length);
+      const nextIndex = Math.floor(worldRandom() * availableIndexes.length);
       const chosen = availableIndexes.splice(nextIndex, 1)[0];
       selected.push(CHARACTERS[chosen]);
     }
 
     while (selected.length < count) {
-      selected.push(CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)]);
+      selected.push(CHARACTERS[Math.floor(worldRandom() * CHARACTERS.length)]);
     }
 
     return selected;
-  }, []);
+  }, [worldRandom]);
 
   const initializeGameMode = useCallback((mode: GameModeSelection, difficulty: keyof typeof AI_DIFFICULTY_PROFILES = 'medium') => {
     if (aiTurnTimeoutRef.current) {
@@ -20078,6 +20155,8 @@ function AustraliaGame() {
     setExpandedHudDecisionActorId(null);
     aiRngSeedRef.current = gameSettings.aiDeterministicSeed;
     aiRngStateRef.current = normalizeAiSeed(gameSettings.aiDeterministicSeed);
+    worldRngSeedRef.current = gameSettings.worldRngSeed;
+    worldRngStateRef.current = normalizeAiSeed(gameSettings.worldRngSeed);
     updateUiState({
       showCampaignSelect: false,
       showNegotiationCenter: false,
@@ -20238,6 +20317,10 @@ function AustraliaGame() {
     aiRngStateRef.current = typeof data.aiRuntime?.rngState === 'number'
       ? data.aiRuntime.rngState
       : normalizeAiSeed(data.gameSettings.aiDeterministicSeed);
+    worldRngSeedRef.current = data.gameSettings.worldRngSeed;
+    worldRngStateRef.current = typeof data.aiRuntime?.worldRngState === 'number'
+      ? data.aiRuntime.worldRngState
+      : normalizeAiSeed(data.gameSettings.worldRngSeed);
     const selectedCharacterIndex = CHARACTERS.findIndex(char => char.name === data.player.character.name);
 	    updateUiState({
 	      theme: data.uiPreferences?.theme || uiState.theme,
@@ -22426,13 +22509,13 @@ function AustraliaGame() {
   const incrementAction = useCallback(() => {
     // Efficiency Expert mastery: 30% chance to not consume action
     if (player.masteryUnlocks.includes("Efficiency Expert")) {
-      if (Math.random() < 0.3) {
+      if (worldRandom() < 0.3) {
         addNotification('⚡ Efficiency Expert! Action performed instantly!', 'success');
         return; // Don't increment action
       }
     }
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
-  }, [player.masteryUnlocks, addNotification]);
+  }, [player.masteryUnlocks, addNotification, worldRandom]);
 
   const getControllerDisplayName = useCallback((playerId: string | null) => {
     if (playerId === 'player') return player.name || 'Player';
@@ -22735,7 +22818,7 @@ function AustraliaGame() {
     const maxPendingByAi = gameSettings.winCondition === 'regions' && behindInRegions ? 2 : gameSettings.winCondition === 'netWorth' ? 2 : 1;
     const pendingByAi = (proposalsRef.current || []).filter(proposal => proposal.status === 'pending' && proposal.from === 'ai').length;
     if (pendingByAi >= maxPendingByAi) return null;
-    if (Math.random() > style.proposalVolume) return null;
+    if (worldRandom() > style.proposalVolume) return null;
 
     const candidateRegions = Object.keys(REGIONS)
       .map(regionCode => {
@@ -22803,7 +22886,7 @@ function AustraliaGame() {
       timestamp: Date.now(),
       aiReasoning: `${aiState.name || 'AI'} proposes to secure ${REGIONS[best.regionCode]?.name || best.regionCode} (${style.label} style, ${gameSettings.winCondition === 'regions' ? 'regions focus' : gameSettings.winCondition === 'netWorth' ? 'net worth focus' : 'cash focus'}).`
     } as Proposal;
-  }, [createProposalId, estimateRegionValue, gameSettings.winCondition, gameState.selectedMode, getAiNegotiationStyle]);
+  }, [createProposalId, estimateRegionValue, gameSettings.winCondition, gameState.selectedMode, getAiNegotiationStyle, worldRandom]);
 
   const completeProposal = useCallback((
     proposal: Proposal,
@@ -25723,7 +25806,7 @@ function AustraliaGame() {
         // Collect resources (if inventory not full)
         const regionResources = REGIONAL_RESOURCES[region] || [];
         if (regionResources.length > 0) {
-          const collectedResource = regionResources[Math.floor(Math.random() * regionResources.length)];
+          const collectedResource = regionResources[Math.floor(worldRandom() * regionResources.length)];
 
           if (player.inventory.length < MAX_INVENTORY) {
             dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
@@ -25745,7 +25828,7 @@ function AustraliaGame() {
       confirmTravel,
       { region, cost }
     );
-  }, [player, gameSettings.sabotageEnabled, calculateTravelCost, addNotification, showConfirmation, incrementAction]);
+  }, [player, gameSettings.sabotageEnabled, calculateTravelCost, addNotification, showConfirmation, incrementAction, worldRandom]);
 
   // Calculate dynamic max wager based on difficulty and level
   const calculateMaxWager = useCallback((challenge) => {
@@ -25760,7 +25843,7 @@ function AustraliaGame() {
     if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) return;
 
     const doubleReward = gameState.lastChallengeReward * 2;
-    const success = Math.random() < 0.5; // 50/50 chance
+    const success = worldRandom() < 0.5; // 50/50 chance
 
     if (success) {
       dispatchPlayer({ type: 'UPDATE_MONEY', payload: gameState.lastChallengeReward }); // Add the extra amount
@@ -25773,7 +25856,7 @@ function AustraliaGame() {
 
     dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
     updateUiState({ showDoubleOrNothing: false });
-  }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords]);
+  }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, worldRandom]);
 
   const takeChallenge = useCallback((challenge, wager) => {
     let successChance = calculateSuccessChance(challenge);
@@ -25796,7 +25879,7 @@ function AustraliaGame() {
         return;
       }
 
-      const success = Math.random() < successChance;
+      const success = worldRandom() < successChance;
 
       if (success) {
         let reward = Math.floor(wager * challenge.reward);
@@ -25974,7 +26057,7 @@ function AustraliaGame() {
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings.equipmentShopEnabled, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress]);
+  }, [player, gameSettings.equipmentShopEnabled, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, worldRandom]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -26301,17 +26384,17 @@ function AustraliaGame() {
     }
 
     // Roll for success
-    const success = Math.random() < successChance;
+    const success = worldRandom() < successChance;
 
     if (success) {
       // Add crafted item to inventory
       newInventory.push(recipe.output);
 
       // Explorer bonus: chance to get materials back
-      if (craftingBonus?.effect?.bonusMaterialChance && Math.random() < craftingBonus.effect.bonusMaterialChance) {
+      if (craftingBonus?.effect?.bonusMaterialChance && worldRandom() < craftingBonus.effect.bonusMaterialChance) {
         // Return one random material
         const materials = Object.keys(recipe.inputs);
-        const bonusMaterial = materials[Math.floor(Math.random() * materials.length)];
+        const bonusMaterial = materials[Math.floor(worldRandom() * materials.length)];
         newInventory.push(bonusMaterial);
         addNotification(`Crafted ${recipe.output}! Explorer bonus: got ${bonusMaterial} back.`, 'success', true);
       } else {
@@ -26336,7 +26419,7 @@ function AustraliaGame() {
     } else {
       addNotification(`Tourist bonus: No action cost for tourism crafting!`, 'info');
     }
-  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction]);
+  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction, worldRandom]);
 
   const useSabotage = useCallback((sabotageId: string, targetActorId?: string) => {
     if (!gameSettings.sabotageEnabled || !isCompetitiveMode || gameState.currentTurn !== 'player') return;
@@ -26391,7 +26474,7 @@ function AustraliaGame() {
 
       Object.keys(RESOURCE_CATEGORIES).forEach(resource => {
         const currentPrice = currentPrices[resource] || 100;
-        let variance = Math.random() * 100 - 50; // Base variance: -50 to +50
+        let variance = worldRandom() * 100 - 50; // Base variance: -50 to +50
 
         // Apply market trend bias
         switch (gameState.marketTrend) {
@@ -26448,7 +26531,7 @@ function AustraliaGame() {
     } else {
       confirmEndTurn();
     }
-  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
+  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords, worldRandom]);
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
@@ -26668,23 +26751,23 @@ function AustraliaGame() {
       }
 
       const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Stormy"];
-      const newWeather = weatherOptions[Math.floor(Math.random() * weatherOptions.length)];
+      const newWeather = weatherOptions[Math.floor(worldRandom() * weatherOptions.length)];
       dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
       const trends = ["rising", "falling", "stable", "volatile"];
-      const newTrend = trends[Math.floor(Math.random() * trends.length)];
+      const newTrend = trends[Math.floor(worldRandom() * trends.length)];
       dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
 
       const updatedEvents = gameState.activeEvents
         .map(event => ({ ...event, remainingDays: event.remainingDays - 1 }))
         .filter(event => event.remainingDays > 0);
 
-      if (Math.random() < 0.2 && updatedEvents.length < 3) {
+      if (worldRandom() < 0.2 && updatedEvents.length < 3) {
         const availableEvents = REGIONAL_EVENTS.filter(
           e => !updatedEvents.some(active => active.id === e.id)
         );
         if (availableEvents.length > 0) {
-          const newEvent = availableEvents[Math.floor(Math.random() * availableEvents.length)];
+          const newEvent = availableEvents[Math.floor(worldRandom() * availableEvents.length)];
           updatedEvents.push({ ...newEvent, remainingDays: newEvent.duration });
           addNotification(`Event: ${newEvent.name} in ${REGIONS[newEvent.region]?.name || newEvent.region}!`, 'event', true);
         }
@@ -26953,11 +27036,11 @@ function AustraliaGame() {
       const aiBehind = gameSettings.winCondition === 'regions'
         ? projectedOpponentTeamRegions < projectedPlayerTeamRegions
         : projectedPrimaryOpponentValue < projectedPrimaryPlayerValue * 0.5;
-      if (playerBehind && Math.random() < COMEBACK_EVENT_CHANCE) {
+      if (playerBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
         projectedPlayer.money += 300;
         projectedActors.player = projectedPlayer;
         addNotification('Investor Interest! Backers toss your team $300 to fight back.', 'money', true);
-      } else if (aiBehind && Math.random() < COMEBACK_EVENT_CHANCE) {
+      } else if (aiBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
         projectedAi.money += 300;
         projectedActors.ai = projectedAi;
         addNotification(`🤖 Investor Interest! ${projectedAi.name} received $300 to catch up.`, 'ai', true);
@@ -27881,12 +27964,12 @@ function AustraliaGame() {
 
     // Update weather
     const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Stormy"];
-    const newWeather = weatherOptions[Math.floor(Math.random() * weatherOptions.length)];
+    const newWeather = weatherOptions[Math.floor(worldRandom() * weatherOptions.length)];
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
     // Market trend
     const trends = ["rising", "falling", "stable", "volatile"];
-    const newTrend = trends[Math.floor(Math.random() * trends.length)];
+    const newTrend = trends[Math.floor(worldRandom() * trends.length)];
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
 
     // Process active events - decrease remaining days and remove expired ones
@@ -27895,12 +27978,12 @@ function AustraliaGame() {
       .filter(event => event.remainingDays > 0);
 
     // Chance to spawn new event (20% chance per day)
-    if (Math.random() < 0.2 && updatedEvents.length < 3) {
+    if (worldRandom() < 0.2 && updatedEvents.length < 3) {
       const availableEvents = REGIONAL_EVENTS.filter(
         e => !updatedEvents.some(active => active.id === e.id)
       );
       if (availableEvents.length > 0) {
-        const newEvent = availableEvents[Math.floor(Math.random() * availableEvents.length)];
+        const newEvent = availableEvents[Math.floor(worldRandom() * availableEvents.length)];
         const activeEvent = { ...newEvent, remainingDays: newEvent.duration };
         updatedEvents.push(activeEvent);
         addNotification(`Event: ${newEvent.name} in ${REGIONS[newEvent.region]?.name || newEvent.region}!`, 'event', true);
@@ -27992,10 +28075,10 @@ function AustraliaGame() {
       const playerBehind = updatedPlayerWorth < updatedAiWorth * 0.5;
       const aiBehind = updatedAiWorth < updatedPlayerWorth * 0.5;
 
-      if (playerBehind && Math.random() < COMEBACK_EVENT_CHANCE) {
+      if (playerBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
         projectedPlayer.money += 300;
         addNotification('Investor Interest! Backers toss you $300 to fight back.', 'money', true);
-      } else if (aiBehind && Math.random() < COMEBACK_EVENT_CHANCE) {
+      } else if (aiBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
         projectedAi.money += 300;
         addNotification(`🤖 Investor Interest! ${projectedAi.name} received $300 to catch up.`, 'ai', true);
       }
@@ -28197,7 +28280,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass]);
+	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -36115,6 +36198,8 @@ function AustraliaGame() {
       directiveStrength: DEFAULT_GAME_SETTINGS.directiveStrength,
       aiDeterministic: DEFAULT_GAME_SETTINGS.aiDeterministic,
       aiDeterministicSeed: DEFAULT_GAME_SETTINGS.aiDeterministicSeed,
+      worldRngMode: DEFAULT_GAME_SETTINGS.worldRngMode,
+      worldRngSeed: DEFAULT_GAME_SETTINGS.worldRngSeed,
       aiEngineVersion: DEFAULT_GAME_SETTINGS.aiEngineVersion,
       aiFairnessLevel: DEFAULT_GAME_SETTINGS.aiFairnessLevel,
       aiPersonalityVariance: DEFAULT_GAME_SETTINGS.aiPersonalityVariance,
@@ -37444,6 +37529,44 @@ function AustraliaGame() {
                       disabled={!gameSettings.aiDeterministic}
                     />
                     <div className="text-xs opacity-75 mt-1">Used when deterministic AI is enabled</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold mb-2">Random and Deterministic (World Events)</div>
+                    <div className="text-sm opacity-75 mb-2">
+                      Controls challenge/craft/loan rolls, resource yields, market movement, weather, and
+                      random events — everything outside the AI's own decision-making above. "Random"
+                      (default) plays exactly like today. "Deterministic" replays identically from the
+                      same seed, for the AI Replay/Deterministic Simulation System.
+                    </div>
+                    <div className={`grid grid-cols-2 gap-2 ${themeStyles.border} border rounded-lg p-2`}>
+                      {(['random', 'deterministic'] as WorldRngMode[]).map(mode => {
+                        const isActive = gameSettings.worldRngMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, worldRngMode: mode }))}
+                            className={`px-3 py-2 rounded font-semibold transition-colors ${
+                              isActive ? `${themeStyles.button} text-white` : themeStyles.buttonSecondary
+                            }`}
+                          >
+                            {mode === 'random' ? 'Random' : 'Deterministic'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-2">World RNG Seed</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="2147483646"
+                      value={gameSettings.worldRngSeed}
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, worldRngSeed: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))}
+                      className="w-full"
+                      disabled={gameSettings.worldRngMode !== 'deterministic'}
+                    />
+                    <div className="text-xs opacity-75 mt-1">Used when World RNG mode is Deterministic</div>
                   </div>
                 </div>
               </SettingsSection>
