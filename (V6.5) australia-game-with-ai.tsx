@@ -4274,6 +4274,25 @@ const AUDITOR_DASHBOARD_TAB_LABELS: Record<AuditorDashboardTabId, string> = {
   incidentTimeline: 'Incident Timeline',
   settings: 'Settings'
 };
+
+// RP4: tab order/labels for the Replay Dashboard (renderReplayViewer upgraded from a flat viewer
+// into a tabbed dashboard), mirroring AUDITOR_DASHBOARD_TAB_ORDER/_LABELS's own const-pair convention.
+type ReplayDashboardTabId = 'overview' | 'timeline' | 'checkpoints' | 'settings';
+const REPLAY_DASHBOARD_TAB_ORDER: ReplayDashboardTabId[] = ['overview', 'timeline', 'checkpoints', 'settings'];
+const REPLAY_DASHBOARD_TAB_LABELS: Record<ReplayDashboardTabId, string> = {
+  overview: 'Overview',
+  timeline: 'Timeline',
+  checkpoints: 'Checkpoints',
+  settings: 'Settings'
+};
+// RP3-era checkpoints have no kind field at all — treat any missing kind as 'day', never discard.
+const resolveCheckpointKind = (cp: ReplayCheckpoint): ReplayCheckpointKind => cp.kind || 'day';
+const REPLAY_CHECKPOINT_KIND_LABELS: Record<ReplayCheckpointKind, string> = {
+  day: 'Day', match_start: 'Match Start', match_end: 'Match End', pre_risky_action: 'Pre-Risky Action',
+  lead_change: 'Lead Change', endgame_start: 'Endgame Start', approval: 'Approval', treasury: 'Treasury',
+  auditor_incident: 'Auditor Incident'
+};
+
 // AI Operations Auditor Phase AA15: source-system groupings for the 6 shared event-log-filtering
 // tabs (turnPipeline/actionAccounting/approvalHealth/sequenceHealth/treasuryHealth/overseerHealth) —
 // each tab is the SAME generic renderer parameterized by which AiOperationsSourceSystem values it
@@ -12858,12 +12877,21 @@ interface ReplayEvent {
   timestamp: number;
 }
 
+// RP4: checkpoint substance — real kind/relatedId/expectedState fields, replacing the RP3-era bare
+// stub. kind defaults to 'day' for any pre-RP4 checkpoint that lacks it (see resolveCheckpointKind
+// in the Replay Dashboard below) — old RP3 recordings remain fully valid, never discarded.
+type ReplayCheckpointKind = 'day' | 'match_start' | 'match_end' | 'pre_risky_action' | 'lead_change'
+  | 'endgame_start' | 'approval' | 'treasury' | 'auditor_incident';
+
 interface ReplayCheckpoint {
   id: string;
   sequence: number;
   day: number;
   turn: number;
   label: string;
+  kind?: ReplayCheckpointKind;
+  relatedId?: string;
+  expectedState?: { moneyByTeam: Record<string, number>; day: number; turn: number };
 }
 
 interface ReplayInitialConfigSnapshot {
@@ -12947,6 +12975,38 @@ const migrateReplayFile = (raw: unknown): ReplayFile | null => {
   const expectedChecksum = computeReplayChecksum(candidate);
   if (typeof data.checksum !== 'string' || data.checksum !== expectedChecksum) return null; // corruption detection
   return { ...candidate, checksum: expectedChecksum };
+};
+
+// RP4: structural classification — per the user's explicit scope decision (Structural classification
+// only), this checks a loaded replay file's own internal consistency (checksum already verified by
+// migrateReplayFile before this ever runs; here we check per-checkpoint sequence-range/referential
+// integrity), never a comparison against a fresh re-simulated run. True behavioral divergence
+// (equivalent/diverged/recovered) requires a headless re-simulation engine that does not exist in
+// this codebase and was never built in RP1-3 — ReplayDivergenceStatus stays a 5-value union for
+// forward schema stability, but only 'exact_match'/'unsupported' are ever produced here.
+type ReplayDivergenceStatus = 'exact_match' | 'equivalent' | 'diverged' | 'recovered' | 'unsupported';
+interface ReplayIntegrityReportEntry {
+  checkpointId: string;
+  status: ReplayDivergenceStatus;
+  note: string;
+}
+const classifyReplayFileIntegrity = (file: ReplayFile): ReplayIntegrityReportEntry[] => {
+  const eventSequences = new Set(file.events.map(ev => ev.sequence));
+  const checkpointIds = new Set(file.checkpoints.map(cp => cp.id));
+  return file.checkpoints.map(cp => {
+    if (cp.sequence < 0 || cp.sequence > file.events.length) {
+      return { checkpointId: cp.id, status: 'unsupported', note: `Sequence ${cp.sequence} is out of range for this file's ${file.events.length} recorded events.` };
+    }
+    if (cp.sequence > 0 && file.events.length > 0 && !eventSequences.has(cp.sequence) && !eventSequences.has(cp.sequence - 1)) {
+      // A checkpoint's sequence marks "after event N" — tolerate a small gap from event pruning,
+      // but a sequence that matches nothing nearby in the recorded stream is a real inconsistency.
+      return { checkpointId: cp.id, status: 'unsupported', note: `Sequence ${cp.sequence} does not correspond to any nearby recorded event.` };
+    }
+    if (cp.relatedId && !checkpointIds.has(cp.relatedId) && !file.events.some(ev => ev.decisionId === cp.relatedId)) {
+      return { checkpointId: cp.id, status: 'unsupported', note: `relatedId "${cp.relatedId}" was not found anywhere else in this file.` };
+    }
+    return { checkpointId: cp.id, status: 'exact_match', note: 'Sequence and relatedId (if any) both resolve within this file.' };
+  });
 };
 
 interface LoadPreviewState {
@@ -13075,6 +13135,16 @@ function AustraliaGame() {
   // be populated synchronously inside initializeGameMode itself, since team-mode actors/teams are
   // assembled there via React state setters, not available as one already-built local object).
   const pendingReplayStartRef = useRef(false);
+  // RP4: edge-detection refs for the lead-change/endgame-start checkpoint triggers — no existing
+  // "did the leader change"/"did endgame just start" tracking exists anywhere else in the file
+  // (both opponentLead and isEndgamePeriod/computeEndgameAccelerationState are recomputed fresh
+  // every call), so these two small refs are the only new tracking state RP4 needs. Read/written
+  // only when replay recording is on; keyed by teamId so both teams are tracked independently.
+  const replayLastLeaderRef = useRef<string | null>(null);
+  const replayEndgameActiveRef = useRef<boolean>(false);
+  // RP4: per-actor-per-day guard so the pre-risky-action checkpoint fires at most once per actor
+  // per day, never once per turn/candidate.
+  const replayPreRiskyActionLoggedRef = useRef<Record<string, number>>({});
   const aiActiveSpecialAbilityRef = useRef<string | null>(null);
 
   // Game Settings State
@@ -13184,6 +13254,28 @@ function AustraliaGame() {
   const [replayViewerCategoryFilter, setReplayViewerCategoryFilter] = useState<'all' | 'ai_only'>('all');
   const [replayViewerFromSequence, setReplayViewerFromSequence] = useState<number | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
+  // RP4: Replay Dashboard tab state (renderReplayViewer upgraded to a tabbed dashboard), same
+  // component-local/never-persisted convention as every other dashboard's own tab state.
+  const [replayDashboardTab, setReplayDashboardTab] = useState<ReplayDashboardTabId>('overview');
+  const [replayPlaybackIndex, setReplayPlaybackIndex] = useState(0);
+  const [replayPlaybackPlaying, setReplayPlaybackPlaying] = useState(false);
+  const [replayShowReasoning, setReplayShowReasoning] = useState(true);
+  // RP4: Timeline tab auto-advance — a plain setInterval, cleared on pause/unmount/file-close, never
+  // running when the dashboard/Timeline tab isn't open or a file isn't loaded.
+  useEffect(() => {
+    if (!replayPlaybackPlaying || !showReplayViewer || !loadedReplayFile) return;
+    const interval = setInterval(() => {
+      setReplayPlaybackIndex(prev => {
+        const next = prev + 1;
+        if (next >= loadedReplayFile.events.length) {
+          setReplayPlaybackPlaying(false);
+          return prev;
+        }
+        return next;
+      });
+    }, 800);
+    return () => clearInterval(interval);
+  }, [replayPlaybackPlaying, showReplayViewer, loadedReplayFile]);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -13409,7 +13501,8 @@ function AustraliaGame() {
         sequence: 0,
         day: gameState.day,
         turn: gameState.turnCounter,
-        label: 'Match start'
+        label: 'Match start',
+        kind: 'match_start'
       }],
       finalResult: null,
       checksum: ''
@@ -13846,7 +13939,8 @@ function AustraliaGame() {
       sequence: recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0,
       day: finalResult.day,
       turn: finalResult.turn,
-      label: 'Match end'
+      label: 'Match end',
+      kind: 'match_end'
     };
     const finalized: Omit<ReplayFile, 'checksum'> = {
       ...recording,
@@ -15505,6 +15599,23 @@ function AustraliaGame() {
     // cheaply distinguish which without restructuring the functional updater below, so both are
     // recorded the same way; a stated, honest simplification).
     appendGameActivityLedgerEvent('auditor_incident', { teamId, actorId: candidate.actorId, summary: `Auditor incident (${candidate.dedupSignature}) recorded.` });
+    // RP4: auditor-incident checkpoint — constructed inline (appendReplayCheckpoint is declared
+    // later in this component; calling it from this earlier function would be a TDZ hazard).
+    // Emitted once per upsert call (new incident or occurrence bump), matching the ledger event's
+    // own stated simplification just above rather than restructuring the functional updater below.
+    if (gameSettings.aiReplayRecordingEnabled && replayRecordingRef.current) {
+      const recording = replayRecordingRef.current;
+      const lastSeq = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
+      recording.checkpoints = [...recording.checkpoints, {
+        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        sequence: lastSeq,
+        day: gameState.day,
+        turn: gameState.turnCounter,
+        label: `Auditor incident recorded (${candidate.dedupSignature})`,
+        kind: 'auditor_incident',
+        relatedId: candidate.dedupSignature
+      }].slice(-200);
+    }
     updateTeamState(teamId, prev => {
       const existingIndex = prev.auditor.incidents.findIndex(i => i.dedupSignature === candidate.dedupSignature);
       if (existingIndex !== -1) {
@@ -21118,6 +21229,22 @@ function AustraliaGame() {
     // request was ever raised in the first place, closing the "approval request/edit/decision"
     // coverage gap the roadmap calls out.
     appendGameActivityLedgerEvent('approval', { teamId: actor.teamId, actorId: actor.id, approvalRequestId: newRequestId, actionType: decision.type, summary: `${getActorDisplayName(actor.id)}'s ${decision.type} action requires approval.` });
+    // RP4: approval-creation checkpoint — constructed inline (not via appendReplayCheckpoint, which
+    // is declared later in this component and would be a TDZ hazard referenced from this earlier
+    // function), mirroring the established Match-start/Match-end inline-construction pattern.
+    if (gameSettings.aiReplayRecordingEnabled && replayRecordingRef.current) {
+      const recording = replayRecordingRef.current;
+      const lastSeq = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
+      recording.checkpoints = [...recording.checkpoints, {
+        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        sequence: lastSeq,
+        day: gameState.day,
+        turn: gameState.turnCounter,
+        label: `Approval requested: ${decision.description || decision.type}`,
+        kind: 'approval',
+        relatedId: newRequestId
+      }].slice(-200);
+    }
     return {
       id: newRequestId,
       actorId: actor.id,
@@ -22354,7 +22481,11 @@ function AustraliaGame() {
   // the Replay Viewer below. Only day/match-start/match-end anchors this phase; the richer anchor
   // kinds the roadmap names (lead-change/approval/treasury/auditor-incident/endgame-start) are
   // RP4's job, which already owns real checkpoint substance and divergence classification.
-  const appendReplayCheckpoint = useCallback((label: string) => {
+  const appendReplayCheckpoint = useCallback((label: string, options?: {
+    kind?: ReplayCheckpointKind;
+    relatedId?: string;
+    expectedState?: { moneyByTeam: Record<string, number>; day: number; turn: number };
+  }) => {
     const recording = replayRecordingRef.current;
     if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
     const lastSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
@@ -22363,7 +22494,10 @@ function AustraliaGame() {
       sequence: lastSequence,
       day: gameState.day,
       turn: gameState.turnCounter,
-      label
+      label,
+      kind: options?.kind ?? 'day',
+      relatedId: options?.relatedId,
+      expectedState: options?.expectedState
     };
     recording.checkpoints = [...recording.checkpoints, checkpoint].slice(-200);
   }, [gameSettings.aiReplayRecordingEnabled, gameState.day, gameState.turnCounter]);
@@ -24543,8 +24677,11 @@ function AustraliaGame() {
         pendingFundingRequestIds: [...prev.treasury.pendingFundingRequestIds, request.id]
       }
     }));
+    // RP4: treasury-request checkpoint — appendReplayCheckpoint is already declared earlier in
+    // this component (module order), so it's called directly here, no ref-indirection needed.
+    appendReplayCheckpoint(`Treasury funding requested: ${request.reason}`, { kind: 'treasury', relatedId: request.id });
     return request;
-  }, [gameSettings, gameState.day, gameState.turnCounter, getActorState, updateTeamState]);
+  }, [gameSettings, gameState.day, gameState.turnCounter, getActorState, updateTeamState, appendReplayCheckpoint]);
 
   // Team Treasury Phase T2 (GD1/GD2): constructs an ApprovalRequest-shaped object with
   // requestKind: 'treasury_withdrawal', reusing the SAME pendingApprovalRequests queue/dialog/
@@ -28203,6 +28340,27 @@ function AustraliaGame() {
       appendReplayEvent('day_transition', { summary: `Day ${newDay} begins (team mode)` });
       appendReplayCheckpoint(`Day ${newDay}`);
 
+      // RP4: lead-change checkpoint — once per day, reusing compareCompetitiveMetricValues (the
+      // same function already used to decide the match winner) rather than a new comparison. Only
+      // fires on an actual flip, never on a day where the leader is unchanged or the game is tied.
+      if (gameSettings.aiReplayRecordingEnabled) {
+        const primaryMetric = gameSettings.winCondition;
+        const leadMetricValues = { [primaryMetric]: { player: getCompetitiveMetricValue(primaryMetric, { side: 'player', teamMode: true }), ai: getCompetitiveMetricValue(primaryMetric, { side: 'opponent', teamMode: true }) } } as Record<WinMetric, { player: number; ai: number }>;
+        const leadComparison = compareCompetitiveMetricValues(primaryMetric, leadMetricValues);
+        const currentLeaderId = leadComparison.playerValue === leadComparison.aiValue ? null : (leadComparison.playerWon ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID);
+        if (currentLeaderId !== null && currentLeaderId !== replayLastLeaderRef.current) {
+          appendReplayCheckpoint(`Lead change: ${currentLeaderId === TEAM_PLAYER_ID ? 'your team' : 'the opposing team'} now leads`, { kind: 'lead_change' });
+        }
+        replayLastLeaderRef.current = currentLeaderId;
+
+        // RP4: endgame-start checkpoint — once per match, on the false→true edge only.
+        const endgameActiveForReplay = isEndgamePeriod(newDay, gameSettings.totalDays, gameSettings.teamAiEndgameStartPercent);
+        if (endgameActiveForReplay && !replayEndgameActiveRef.current) {
+          appendReplayCheckpoint(`Day ${newDay}: endgame begins`, { kind: 'endgame_start' });
+        }
+        replayEndgameActiveRef.current = endgameActiveForReplay;
+      }
+
       if (gameSettings.adaptiveAiEnabled) {
         [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
           const previousPhase = previousTeams[teamId]?.adaptiveState?.phase || 'normal';
@@ -28640,7 +28798,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint]);
+	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint, getCompetitiveMetricValue]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -33052,6 +33210,15 @@ function AustraliaGame() {
             && needsApproval(actor, decision, policy, gameSettings, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost })
             && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
           if (needsPlayerApproval) {
+            // RP4: pre-risky-action checkpoint — reuses the already-computed high-risk/approval
+            // signal (needsApproval) rather than a new heuristic, capped once per actor per day.
+            if (gameSettings.aiReplayRecordingEnabled) {
+              const riskyDayKey = `${actorId}_${gameState.day}`;
+              if (replayPreRiskyActionLoggedRef.current[riskyDayKey] !== gameState.day) {
+                replayPreRiskyActionLoggedRef.current[riskyDayKey] = gameState.day;
+                appendReplayCheckpoint(`Pre-risky action: ${decision.description || decision.type}`, { kind: 'pre_risky_action' });
+              }
+            }
             const nextRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken);
             // V6.9.1 bugfix (Bug 8): opening the dialog is now owned entirely by the dedicated
             // approval-queue-processor effect below, which reacts to pendingApprovalRequests/
@@ -33121,7 +33288,7 @@ function AustraliaGame() {
       console.error(`AI Action Approval resume for ${actorId} failed unexpectedly`, error);
       finishTeamAiTurn(actorId);
     }
-  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase]);
+  }, [addNotification, appendTeamAiTraceNote, buildApprovalRequest, checkRoleFulfillment, confirmationDialog.isOpen, detectComboBonus, executeTeamAiAction, evaluateActionRequirements, finishTeamAiTurn, gameSettings, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, refreshTeamLiquidityLedger, resolveApprovalRequest, showConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase, appendReplayCheckpoint]);
   resumeAfterApprovalResolutionRef.current = resumeAfterApprovalResolution;
 
   // Bugfix (post-PR-#60): the friendly 'ask_first' override policy used to execute exactly one
@@ -33172,6 +33339,14 @@ function AustraliaGame() {
           && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory)
           && !alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
         if (bonusNeedsPlayerApproval) {
+          // RP4: pre-risky-action checkpoint (bonus-loop path), same once-per-actor-per-day cap.
+          if (gameSettings.aiReplayRecordingEnabled) {
+            const riskyDayKey = `${actorId}_${gameState.day}`;
+            if (replayPreRiskyActionLoggedRef.current[riskyDayKey] !== gameState.day) {
+              replayPreRiskyActionLoggedRef.current[riskyDayKey] = gameState.day;
+              appendReplayCheckpoint(`Pre-risky action: ${decision.description || decision.type}`, { kind: 'pre_risky_action' });
+            }
+          }
           const bonusApprovalRequest = buildApprovalRequest(actorForAction, decision, null, budget - i);
           // V6.9.1 bugfix (Bug 8): opening owned by the approval-queue-processor effect, not an
           // inline check here.
@@ -33266,7 +33441,7 @@ function AustraliaGame() {
     } finally {
       finishTeamAiTurn(actorId);
     }
-  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings, gameSettings.actionRequirementsTransparencyEnabled, buildApprovalRequest, resolveApprovalRequest, waitForApprovalResolution, confirmationDialog.isOpen, showConfirmation, addNotification]);
+  }, [checkRoleFulfillment, detectComboBonus, executeTeamAiAction, finishTeamAiTurn, gameState.day, getActorActionBudget, getActorState, getRankedTeamAiDecisions, isReservationHardBlocked, redeemActionToken, evaluateActionRequirements, appendTeamAiTraceNote, gameSettings, gameSettings.actionRequirementsTransparencyEnabled, buildApprovalRequest, resolveApprovalRequest, waitForApprovalResolution, confirmationDialog.isOpen, showConfirmation, addNotification, appendReplayCheckpoint]);
 
   // V6.8 Phase D: Guaranteed Recovery Protocol — a deterministic (not competitively-scored) action
   // for an actor already flagged inEconomicRecovery (the shared Phase C hysteresis flag). Tries
@@ -34043,6 +34218,14 @@ function AustraliaGame() {
         })
         && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
       if (needsPlayerApproval) {
+        // RP4: pre-risky-action checkpoint (main-loop path), same once-per-actor-per-day cap.
+        if (gameSettings.aiReplayRecordingEnabled) {
+          const riskyDayKey = `${actor.id}_${gameState.day}`;
+          if (replayPreRiskyActionLoggedRef.current[riskyDayKey] !== gameState.day) {
+            replayPreRiskyActionLoggedRef.current[riskyDayKey] = gameState.day;
+            appendReplayCheckpoint(`Pre-risky action: ${decision.description || decision.type}`, { kind: 'pre_risky_action' });
+          }
+        }
         const approvalRequest = buildApprovalRequest(actor, decision, null, actionBudget - actionsTaken,
           isSequenceSourcedDecision && sequenceStepMatch ? { sequenceId: sequenceStepMatch.sequenceId, stepId: sequenceStepMatch.stepId } : undefined);
         // V6.9.1 bugfix (Bug 8): opening owned by the approval-queue-processor effect, not an
@@ -34296,7 +34479,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled, latestDecisionTraceByActor]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled, latestDecisionTraceByActor, appendReplayCheckpoint]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -45972,7 +46155,7 @@ function AustraliaGame() {
         {renderAuditorDashboard()}
         {renderGameActivityLedgerDashboard()}
         {renderAiActionPipelineInspector()}
-        {renderReplayViewer()}
+        {renderReplayDashboard()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -48679,17 +48862,25 @@ function AustraliaGame() {
     );
   };
 
-  // RP3: Full Match Reconstruction mode's concrete shape this phase — a read-only viewer that
-  // reconstructs a loaded replay file's full recorded narrative (initial config, checkpoint
-  // anchors, event stream) for inspection. Never mutates live game state; never re-simulates.
-  // Real re-simulation/divergence-detection against a fresh run is RP4's job.
-  const renderReplayViewer = () => {
+  // RP4: upgraded from RP3's flat Replay Viewer into a tabbed Replay Dashboard, mirroring
+  // renderAuditorDashboard's shell (tab-order/label consts + component-local tab state + one
+  // scrollable content area). Still fully read-only — never mutates live game state, never
+  // re-simulates. Structural integrity classification only (see classifyReplayFileIntegrity's own
+  // comment) — true behavioral divergence detection stays deferred pending a real re-simulator.
+  const renderReplayDashboard = () => {
     if (!showReplayViewer || !loadedReplayFile) return null;
     const close = () => setShowReplayViewer(false);
     const AI_ONLY_CATEGORIES: ReplayEventCategory[] = ['ai_decision', 'ai_execution'];
     const filteredEvents = loadedReplayFile.events
       .filter(ev => replayViewerCategoryFilter === 'all' || AI_ONLY_CATEGORIES.includes(ev.category))
       .filter(ev => replayViewerFromSequence === null || ev.sequence >= replayViewerFromSequence);
+    const integrityReport = classifyReplayFileIntegrity(loadedReplayFile);
+    const integrityCounts = integrityReport.reduce((acc, entry) => {
+      acc[entry.status] = (acc[entry.status] || 0) + 1;
+      return acc;
+    }, {} as Record<ReplayDivergenceStatus, number>);
+    const isLiveMatch = Boolean(gameState.gameActivityLedger && gameState.gameActivityLedger.matchId === loadedReplayFile.matchId);
+    const playbackEvent = filteredEvents[Math.min(replayPlaybackIndex, Math.max(0, filteredEvents.length - 1))] || null;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
         <div
@@ -48700,7 +48891,7 @@ function AustraliaGame() {
           <div className={`p-5 border-b ${themeStyles.border}`}>
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-bold">🎬 Replay Viewer</h3>
+                <h3 className="text-2xl font-bold">🎬 Replay Dashboard</h3>
                 <div className="text-sm opacity-75">
                   Match {loadedReplayFile.matchId} — game v{loadedReplayFile.gameVersion}, mode{' '}
                   {loadedReplayFile.initialConfig.selectedMode}, seed (AI {loadedReplayFile.initialConfig.aiSeed} /
@@ -48713,66 +48904,205 @@ function AustraliaGame() {
               <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
             </div>
             <div className="flex flex-wrap gap-2 mt-4">
-              {(['all', 'ai_only'] as const).map(filter => (
+              {REPLAY_DASHBOARD_TAB_ORDER.map(tab => (
                 <button
-                  key={filter}
-                  onClick={() => setReplayViewerCategoryFilter(filter)}
-                  className={`px-3 py-1.5 rounded text-sm font-semibold ${replayViewerCategoryFilter === filter ? themeStyles.button : themeStyles.buttonSecondary}`}
+                  key={tab}
+                  onClick={() => setReplayDashboardTab(tab)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${replayDashboardTab === tab ? themeStyles.button : themeStyles.buttonSecondary}`}
                 >
-                  {filter === 'all' ? 'All Events' : 'AI-Only Replay'}
+                  {REPLAY_DASHBOARD_TAB_LABELS[tab]}
                 </button>
               ))}
-              {replayViewerFromSequence !== null && (
-                <button
-                  onClick={() => setReplayViewerFromSequence(null)}
-                  className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
-                >
-                  Clear checkpoint filter
-                </button>
-              )}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div>
-              <div className="font-semibold mb-2">Checkpoints (Replay From Checkpoint)</div>
-              <div className="flex flex-wrap gap-2">
-                {loadedReplayFile.checkpoints.map(cp => (
+            {replayDashboardTab === 'overview' && (
+              <div className="space-y-4">
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-1">Initial configuration</div>
+                  <div className="opacity-75">Mode: {loadedReplayFile.initialConfig.selectedMode}, AI difficulty: {loadedReplayFile.initialConfig.aiDifficulty}, AI seed: {loadedReplayFile.initialConfig.aiSeed}, world seed: {loadedReplayFile.initialConfig.worldSeed}.</div>
+                </div>
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-1">Final result</div>
+                  <div className="opacity-75">
+                    {loadedReplayFile.finalResult
+                      ? `${loadedReplayFile.finalResult.reason} — day ${loadedReplayFile.finalResult.day}, turn ${loadedReplayFile.finalResult.turn}.`
+                      : 'Match still in progress when this file was exported (no final result recorded).'}
+                  </div>
+                </div>
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-1">Structural integrity summary</div>
+                  <div className="opacity-75">
+                    {integrityReport.length} checkpoint{integrityReport.length === 1 ? '' : 's'} checked — {integrityCounts.exact_match || 0} exact match, {integrityCounts.unsupported || 0} unsupported.
+                    {' '}Checksum/schema/duplicate-event checks already ran when this file loaded (via migrateReplayFile); this is a further, per-checkpoint referential-consistency check only — never a comparison against a fresh re-simulated run (no re-simulation engine exists in this codebase).
+                  </div>
+                </div>
+                <div className="text-xs opacity-60">{loadedReplayFile.events.length} events, {loadedReplayFile.checkpoints.length} checkpoints recorded.</div>
+              </div>
+            )}
+            {replayDashboardTab === 'timeline' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {(['all', 'ai_only'] as const).map(filter => (
+                    <button
+                      key={filter}
+                      onClick={() => setReplayViewerCategoryFilter(filter)}
+                      className={`px-3 py-1.5 rounded text-sm font-semibold ${replayViewerCategoryFilter === filter ? themeStyles.button : themeStyles.buttonSecondary}`}
+                    >
+                      {filter === 'all' ? 'All Events' : 'AI-Only Replay'}
+                    </button>
+                  ))}
+                  {replayViewerFromSequence !== null && (
+                    <button onClick={() => setReplayViewerFromSequence(null)} className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}>
+                      Clear checkpoint filter
+                    </button>
+                  )}
+                  <span className="mx-2 opacity-40">|</span>
                   <button
-                    key={cp.id}
-                    onClick={() => setReplayViewerFromSequence(cp.sequence)}
-                    className={`px-3 py-1.5 rounded text-sm ${replayViewerFromSequence === cp.sequence ? themeStyles.button : themeStyles.buttonSecondary}`}
+                    onClick={() => { setReplayPlaybackPlaying(false); setReplayPlaybackIndex(i => Math.max(0, i - 1)); }}
+                    disabled={replayPlaybackIndex <= 0}
+                    className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
                   >
-                    {cp.label} (Day {cp.day})
+                    ⏮ Prev
                   </button>
-                ))}
+                  <button
+                    onClick={() => setReplayPlaybackPlaying(p => !p)}
+                    className={`${replayPlaybackPlaying ? themeStyles.success : themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold ${replayPlaybackPlaying ? 'text-white' : ''}`}
+                  >
+                    {replayPlaybackPlaying ? '⏸ Pause' : '▶ Play'}
+                  </button>
+                  <button
+                    onClick={() => { setReplayPlaybackPlaying(false); setReplayPlaybackIndex(i => Math.min(filteredEvents.length - 1, i + 1)); }}
+                    disabled={replayPlaybackIndex >= filteredEvents.length - 1}
+                    className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
+                  >
+                    Next ⏭
+                  </button>
+                  <button
+                    onClick={() => setReplayShowReasoning(v => !v)}
+                    className={`${replayShowReasoning ? themeStyles.button : themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                  >
+                    {replayShowReasoning ? 'Hide reasoning' : 'Show reasoning'}
+                  </button>
+                </div>
+                {playbackEvent && (
+                  <div className={`${themeStyles.border} border-2 rounded-lg p-3 text-sm`}>
+                    <div className="text-xs opacity-60 mb-1">Playback position {replayPlaybackIndex + 1} of {filteredEvents.length}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{playbackEvent.category}</span>
+                      <span className="opacity-60">Day {playbackEvent.day}, Turn {playbackEvent.turn}</span>
+                    </div>
+                    <div className="opacity-90 mt-1">{playbackEvent.summary}</div>
+                  </div>
+                )}
+                <div>
+                  <div className="font-semibold mb-2">Event Stream ({filteredEvents.length} of {loadedReplayFile.events.length})</div>
+                  <div className="space-y-2">
+                    {filteredEvents.map(ev => (
+                      <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{ev.category}</span>
+                          <span className="opacity-60">Day {ev.day}, Turn {ev.turn}</span>
+                        </div>
+                        <div className="opacity-90 mt-1">{ev.summary}</div>
+                        {(ev.actorId || ev.teamId) && (
+                          <div className="text-xs opacity-60 mt-1">
+                            {ev.actorId && <>Actor: {ev.actorId} </>}
+                            {ev.teamId && <>Team: {ev.teamId}</>}
+                          </div>
+                        )}
+                        {replayShowReasoning && ev.category === 'ai_decision' && (ev.payload?.chosenAction || ev.payload?.reasons) && (
+                          <div className="text-xs opacity-70 mt-1 border-t pt-1">
+                            {ev.payload?.chosenAction !== undefined && <div>Chosen action: {JSON.stringify(ev.payload.chosenAction)}</div>}
+                            {Array.isArray(ev.payload?.reasons) && (ev.payload!.reasons as string[]).length > 0 && (
+                              <div>Reasons: {(ev.payload!.reasons as string[]).join(', ')}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {filteredEvents.length === 0 && (
+                      <div className="text-sm opacity-60">No events match the current filter.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {replayDashboardTab === 'checkpoints' && (
+              <div className="space-y-2">
+                <div className="font-semibold mb-2">Checkpoints (Replay From Checkpoint)</div>
+                {loadedReplayFile.checkpoints.map(cp => {
+                  const integrityEntry = integrityReport.find(entry => entry.checkpointId === cp.id);
+                  return (
+                    <div key={cp.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <button
+                          onClick={() => { setReplayViewerFromSequence(cp.sequence); setReplayDashboardTab('timeline'); }}
+                          className="font-semibold underline text-left"
+                        >
+                          {cp.label} (Day {cp.day})
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className={`${themeStyles.badge} px-2 py-0.5 rounded text-[10px] font-semibold uppercase`}>{REPLAY_CHECKPOINT_KIND_LABELS[resolveCheckpointKind(cp)]}</span>
+                          {integrityEntry && (
+                            <span className={`${integrityEntry.status === 'exact_match' ? themeStyles.success : themeStyles.error} px-2 py-0.5 rounded text-[10px] font-semibold uppercase text-white`}>
+                              {integrityEntry.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {cp.expectedState && (
+                        <div className="text-xs opacity-70 mt-1">
+                          Expected state — day {cp.expectedState.day}, turn {cp.expectedState.turn}, money by team: {Object.entries(cp.expectedState.moneyByTeam).map(([teamId, amount]) => `${teamId}: $${amount}`).join(', ')}
+                        </div>
+                      )}
+                      {cp.relatedId && (
+                        isLiveMatch ? (
+                          <div className="text-xs mt-1">
+                            <span className="opacity-60">Related ID: </span>
+                            <span>{cp.relatedId}</span>
+                          </div>
+                        ) : (
+                          <div className="text-xs opacity-60 mt-1">Related ID: {cp.relatedId} (plain text only — this replay's match is not the currently live match, so there is nothing to link to).</div>
+                        )
+                      )}
+                      {integrityEntry && integrityEntry.status !== 'exact_match' && (
+                        <div className="text-xs opacity-60 mt-1">{integrityEntry.note}</div>
+                      )}
+                    </div>
+                  );
+                })}
                 {loadedReplayFile.checkpoints.length === 0 && (
                   <div className="text-sm opacity-60">No checkpoints recorded.</div>
                 )}
               </div>
-            </div>
-            <div>
-              <div className="font-semibold mb-2">Event Stream ({filteredEvents.length} of {loadedReplayFile.events.length})</div>
-              <div className="space-y-2">
-                {filteredEvents.map(ev => (
-                  <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">{ev.category}</span>
-                      <span className="opacity-60">Day {ev.day}, Turn {ev.turn}</span>
-                    </div>
-                    <div className="opacity-90 mt-1">{ev.summary}</div>
-                    {(ev.actorId || ev.teamId) && (
-                      <div className="text-xs opacity-60 mt-1">
-                        {ev.actorId && <>Actor: {ev.actorId} </>}
-                        {ev.teamId && <>Team: {ev.teamId}</>}
-                      </div>
-                    )}
+            )}
+            {replayDashboardTab === 'settings' && (
+              <div className="space-y-4">
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-2">Reconstruction Policy (read-only here — configured in Settings → AI Difficulty)</div>
+                  <div className="flex flex-wrap gap-2">
+                    {REPLAY_POLICIES.map(policy => (
+                      <span key={policy} className={`px-3 py-1.5 rounded text-sm font-semibold ${gameSettings.aiReplayPolicy === policy ? themeStyles.button : themeStyles.buttonSecondary}`}>
+                        {policy.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
+                      </span>
+                    ))}
                   </div>
-                ))}
-                {filteredEvents.length === 0 && (
-                  <div className="text-sm opacity-60">No events match the current filter.</div>
-                )}
+                  <div className="text-xs opacity-60 mt-2">Has no effect yet — reserved for a future real reconstruction/divergence-handling pass.</div>
+                </div>
+                <div className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                  <div className="font-semibold mb-2">Structural integrity report — full per-checkpoint notes</div>
+                  <div className="space-y-1">
+                    {integrityReport.map(entry => (
+                      <div key={entry.checkpointId} className="text-xs">
+                        <span className={`font-semibold ${entry.status === 'exact_match' ? '' : 'opacity-90'}`}>{entry.status}</span>: {entry.note}
+                      </div>
+                    ))}
+                    {integrityReport.length === 0 && <div className="text-xs opacity-60">No checkpoints to report on.</div>}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
