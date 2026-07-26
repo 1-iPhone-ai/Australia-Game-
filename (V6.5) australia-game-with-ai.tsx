@@ -39280,9 +39280,11 @@ function AustraliaGame() {
                       <div className="font-semibold">Enable AI Thinking/Algorithm Builder</div>
                       <div className="text-sm opacity-75">
                         A separate, optional system for building your own custom decision algorithms
-                        from safe, predefined building blocks — never arbitrary code. This is pure
-                        scaffolding right now: there's no way to actually create a config yet (the
-                        config editor, presets, and CRUD all arrive in later phases).
+                        from safe, predefined building blocks — never arbitrary code. You can create,
+                        duplicate, rename, activate, and delete configs below; the individual per-stage
+                        content editors (Situation Analysis, Goal Selection, etc.) and safe-activation
+                        validation arrive in a later phase — for now, activating a config only points
+                        the Friendly Team AI selection (above) at it.
                       </div>
                     </div>
                     <button
@@ -39292,28 +39294,138 @@ function AustraliaGame() {
                       {gameSettings.aiAlgorithmBuilderEnabled ? 'ON' : 'OFF'}
                     </button>
                   </div>
-                  {gameSettings.aiAlgorithmBuilderEnabled && (
-                    <>
-                      <div className="text-sm opacity-75">
-                        {(teamsById[TEAM_PLAYER_ID]?.algorithmConfigs?.length || 0) + (teamsById[TEAM_OPPONENT_ID]?.algorithmConfigs?.length || 0)} custom algorithms configured — the config editor arrives in a later phase.
-                      </div>
-                      <div>
-                        <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
-                        <div className="text-xs opacity-60 mb-2">Reserved for the future config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
-                        <div className="flex gap-2">
-                          {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
-                            <button
-                              key={mode}
-                              onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
-                              className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
-                            >
-                              {mode}
-                            </button>
+                  {gameSettings.aiAlgorithmBuilderEnabled && (() => {
+                    // AB6: Algorithm Builder CRUD helpers — scoped-down but real UI, mirroring
+                    // updateSequenceInPlayerTeam/removeSequenceFromPlayerTeam/duplicateSequenceInPlayerTeam's
+                    // (Phase F4/F5) own local-function, TEAM_PLAYER_ID-scoped precedent — the player only
+                    // ever authors their OWN team's configs, exactly like Sequences are only ever authored
+                    // for TEAM_PLAYER_ID. "Copy to Enemy Team" is the one operation reaching into
+                    // TEAM_OPPONENT_ID's own library, satisfying the "copy between friendly/enemy" verb.
+                    const createAiAlgorithmConfigInPlayerTeam = () => {
+                      const newConfig: AiAlgorithmConfig = {
+                        configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        revision: 0,
+                        name: 'New Algorithm',
+                        description: '',
+                        editorMode: gameSettings.aiAlgorithmBuilderDefaultEditorMode,
+                        validationStatus: 'draft',
+                        lastTestResult: null,
+                        createdByPlayer: true,
+                        createdDay: gameState.day,
+                        active: false,
+                        situationAnalysisConfig: null,
+                        goalSelectionConfig: null,
+                        candidateGenerationConfig: null,
+                        outcomePredictionConfig: null,
+                        planConstructionConfig: null,
+                        utilityEvaluationConfig: null,
+                        actionSelectionConfig: null,
+                        replanningConfig: null,
+                        fallbackBehaviorConfig: null,
+                        explanationOutputConfig: null
+                      };
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, newConfig].slice(-30) }));
+                    };
+                    const createAiAlgorithmConfigFromTemplateInPlayerTeam = (templateId: string) => {
+                      const config = instantiateAiAlgorithmTemplate(templateId, gameState.day);
+                      if (!config) return;
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, config].slice(-30) }));
+                    };
+                    const duplicateAiAlgorithmConfigInPlayerTeam = (configId: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => {
+                        const source = prev.algorithmConfigs.find(c => c.configId === configId);
+                        if (!source) return prev;
+                        const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: `${source.name} (copy)`, active: false, createdByPlayer: true, createdDay: gameState.day, revision: 0 };
+                        return { ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) };
+                      });
+                    };
+                    const renameAiAlgorithmConfigInPlayerTeam = (configId: string, name: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, name } : c) }));
+                    };
+                    const deleteAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.filter(c => c.configId !== configId) }));
+                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
+                    };
+                    // AB7 adds a real validation gate here (activation blocked until a config passes);
+                    // this phase ships the raw toggle + settings wiring only, matching how F4 shipped
+                    // Sequences' own basic active toggle before F5's validateSequenceForActivation
+                    // added real blocking.
+                    const toggleAiAlgorithmConfigActiveInPlayerTeam = (configId: string) => {
+                      const willActivate = gameSettings.aiAlgorithmForFriendlyTeam !== configId;
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({
+                        ...prev,
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate } : (willActivate ? { ...c, active: false } : c))
+                      }));
+                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
+                    };
+                    const copyAiAlgorithmConfigToEnemyTeam = (configId: string) => {
+                      const source = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      if (!source) return;
+                      const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, active: false, createdDay: gameState.day, revision: 0 };
+                      updateTeamState(TEAM_OPPONENT_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) }));
+                    };
+                    const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
+                    return (
+                      <>
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            <button onClick={createAiAlgorithmConfigInPlayerTeam} className={`px-3 py-1.5 rounded text-sm font-semibold ${themeStyles.buttonSecondary}`}>+ Create Blank</button>
+                            {Object.entries(AI_ALGORITHM_TEMPLATES).map(([templateId, template]) => (
+                              <button
+                                key={templateId}
+                                onClick={() => createAiAlgorithmConfigFromTemplateInPlayerTeam(templateId)}
+                                className={`px-3 py-1.5 rounded text-sm font-semibold ${themeStyles.buttonSecondary}`}
+                                title={template.description}
+                              >
+                                + {template.label}
+                              </button>
+                            ))}
+                          </div>
+                          {playerAlgorithmConfigs.length === 0 && (
+                            <div className="text-sm opacity-60">No custom algorithms yet — create a blank one or load a preset above.</div>
+                          )}
+                          {playerAlgorithmConfigs.map(config => (
+                            <div key={config.configId} className={`p-3 rounded border ${themeStyles.border} space-y-2`}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <input
+                                  type="text"
+                                  value={config.name}
+                                  onChange={(e) => renameAiAlgorithmConfigInPlayerTeam(config.configId, e.target.value)}
+                                  className={`${themeStyles.select} rounded px-2 py-1 text-sm font-semibold flex-1 min-w-[8rem]`}
+                                />
+                                <span className="text-xs opacity-60 capitalize">{config.validationStatus}</span>
+                                <button
+                                  onClick={() => toggleAiAlgorithmConfigActiveInPlayerTeam(config.configId)}
+                                  className={`px-3 py-1 rounded text-xs font-semibold ${gameSettings.aiAlgorithmForFriendlyTeam === config.configId ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                >
+                                  {gameSettings.aiAlgorithmForFriendlyTeam === config.configId ? 'ACTIVE' : 'Activate'}
+                                </button>
+                                <button onClick={() => duplicateAiAlgorithmConfigInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
+                                <button onClick={() => copyAiAlgorithmConfigToEnemyTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Copy to Enemy Team</button>
+                                <button onClick={() => deleteAiAlgorithmConfigFromPlayerTeam(config.configId)} className="px-2 py-1 rounded text-xs bg-red-700 text-white">Delete</button>
+                              </div>
+                              {config.description && <div className="text-xs opacity-60">{config.description}</div>}
+                            </div>
                           ))}
                         </div>
-                      </div>
-                    </>
-                  )}
+                        <div>
+                          <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
+                          <div className="text-xs opacity-60 mb-2">Reserved for the future per-stage config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
+                          <div className="flex gap-2">
+                            {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
+                              <button
+                                key={mode}
+                                onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
+                                className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </SettingsSection>
 
