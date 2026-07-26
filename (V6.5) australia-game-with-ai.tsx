@@ -13150,6 +13150,37 @@ function AustraliaGame() {
     });
   }, [appendGameActivityLedgerEvent]);
 
+  // GL10: the migration target for every remaining raw setGameSettings(...) call site inside the
+  // Settings Hub. Each call site was mechanically rewritten from
+  // `setGameSettings(prev => ({...}))` to `trackedSetGameSettings("direct_player_change", "<section
+  // title>", prev => ({...}))` — the updater function itself is completely untouched, only the
+  // wrapper and its two new leading arguments changed. `updater` is invoked once, synchronously,
+  // against the currently-rendered gameSettings (never inside the setGameSettings updater itself,
+  // since React setState updaters must stay pure/side-effect-free — the same reasoning
+  // updateGameSetting above already follows) so the diff below is reliable. Emits one
+  // settings_change event per field that actually changed, rather than per call site, since a
+  // single onChange can legitimately touch more than one field at once (e.g. applying a Team
+  // Brain preset).
+  const trackedSetGameSettings = useCallback((
+    source: SettingsChangeSource,
+    section: string,
+    updater: (prev: GameSettingsState) => GameSettingsState
+  ): void => {
+    const next = updater(gameSettings);
+    setGameSettings(next);
+    if (next === gameSettings) return;
+    (Object.keys(next) as Array<keyof GameSettingsState>).forEach(key => {
+      if (next[key] !== gameSettings[key]) {
+        appendGameActivityLedgerEvent('settings_change', {
+          settingKey: String(key),
+          source,
+          summary: `${String(key)} changed (${section}) via ${source.replace(/_/g, ' ')}.`,
+          diagnostics: { previousValue: gameSettings[key], newValue: next[key], section }
+        });
+      }
+    });
+  }, [gameSettings, setGameSettings, appendGameActivityLedgerEvent]);
+
   const setDirectiveStrengthState = useCallback((
     strength: DirectiveStrength,
     source: DirectiveStrengthSource
@@ -35584,7 +35615,7 @@ function AustraliaGame() {
       factorId: AiEvaluationFactorId,
       updates: Partial<Pick<AiEvaluationFactorSetting, 'enabled' | 'weight'>>
     ) => {
-      setGameSettings(prev => {
+      trackedSetGameSettings("direct_player_change", "Settings Hub", prev => {
         const range = getAiStrategyLabWeightRange(prev);
         return {
           ...prev,
@@ -35602,7 +35633,7 @@ function AustraliaGame() {
       });
     };
     const applyAiStrategyLabPresetToSettings = (preset: AiStrategyLabPreset) => {
-      setGameSettings(prev => ({
+      trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
         ...prev,
         aiStrategyLabPreset: preset,
         aiEvaluationFactors: applyAiStrategyLabPresetV63(prev.aiEvaluationFactors, preset, prev)
@@ -35621,7 +35652,7 @@ function AustraliaGame() {
     const teamBrainSliderRange = getTeamBrainSliderRangeV63(gameSettings);
     const applyTeamBrainModeToSettings = (mode: TeamBrainModeV63) => {
       const normalizedMode = normalizeTeamBrainModeV63(mode);
-      setGameSettings(prev => ({
+      trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
         ...prev,
         teamBrainModeV63: normalizedMode,
         ...getTeamBrainPresetSettingsV63(normalizedMode)
@@ -35640,7 +35671,7 @@ function AustraliaGame() {
       key: 'teamBrainTeammateSupportBias' | 'teamBrainOpponentPressureBias' | 'teamBrainTravelDiscipline' | 'teamBrainRiskScaling',
       value: number
     ) => {
-      setGameSettings(prev => {
+      trackedSetGameSettings("direct_player_change", "Settings Hub", prev => {
         const range = getTeamBrainSliderRangeV63(prev);
         return {
           ...prev,
@@ -35659,7 +35690,7 @@ function AustraliaGame() {
       };
     };
 
-    const resetGameplaySettings = () => { setGameSettings(prev => ({
+    const resetGameplaySettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       actionLimitsEnabled: DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
       maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
@@ -35680,7 +35711,7 @@ function AustraliaGame() {
       aiEquipmentPurchasePriority: DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority
     })); recordSettingsSectionResetEvent('Gameplay Settings', 'section_reset'); };
 
-    const resetAiSettings = () => { setGameSettings(prev => ({
+    const resetAiSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       aiUsesMarketModifiers: DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
       aiSpecialAbilitiesEnabled: DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
@@ -35727,7 +35758,7 @@ function AustraliaGame() {
       adaptiveAiShowActiveModifiers: DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers
     })); recordSettingsSectionResetEvent('AI Settings', 'section_reset'); };
 
-    const resetTeamModeSettings = () => { setGameSettings(prev => ({
+    const resetTeamModeSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       teamModeAiSystemsEnabled: DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
       teamModeAiSystemProfile: DEFAULT_GAME_SETTINGS.teamModeAiSystemProfile,
@@ -35939,7 +35970,7 @@ function AustraliaGame() {
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
     })); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
 
-    const restoreClassicV66CompetitiveAi = () => { setGameSettings(prev => ({
+    const restoreClassicV66CompetitiveAi = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
@@ -36134,7 +36165,7 @@ function AustraliaGame() {
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
     })); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
 
-    const resetAiStrategyLabSettings = () => { setGameSettings(prev => ({
+    const resetAiStrategyLabSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       aiStrategyLabEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
       aiStrategyLabScope: DEFAULT_GAME_SETTINGS.aiStrategyLabScope,
@@ -36150,7 +36181,7 @@ function AustraliaGame() {
       aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
     })); recordSettingsSectionResetEvent('AI Strategy Lab Settings', 'section_reset'); };
 
-    const resetEconomySettings = () => { setGameSettings(prev => ({
+    const resetEconomySettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       winCondition: DEFAULT_GAME_SETTINGS.winCondition,
       winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
@@ -36173,7 +36204,7 @@ function AustraliaGame() {
       aiLoanEmergencyOnly: DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly
     })); recordSettingsSectionResetEvent('Economy Settings', 'section_reset'); };
 
-    const resetInterfaceSettings = () => { setGameSettings(prev => ({
+    const resetInterfaceSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       uxAssistPackEnabled: DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
       simplifiedActionBarEnabled: DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
@@ -36186,7 +36217,7 @@ function AustraliaGame() {
       notificationClearShortcut: DEFAULT_GAME_SETTINGS.notificationClearShortcut
     })); recordSettingsSectionResetEvent('Interface Settings', 'section_reset'); };
 
-    const resetAdvancedSystemsSettings = () => { setGameSettings(prev => ({
+    const resetAdvancedSystemsSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
       ...prev,
       settingPriorityMode: DEFAULT_GAME_SETTINGS.settingPriorityMode,
       maxConcurrentHighInfluenceSettings: DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings,
@@ -36345,13 +36376,13 @@ function AustraliaGame() {
                 </div>
                 <div>
                   <label className="block font-semibold mb-1">Game Length: {gameSettings.totalDays} days</label>
-                  <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
+                  <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
                 </div>
                 <div>
                   <label className="block font-semibold mb-1">Win Condition</label>
                   <select
                     value={gameSettings.winCondition}
-                    onChange={(e) => setGameSettings(prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
                     className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                   >
                     <option value="money">Most Money</option>
@@ -36362,7 +36393,7 @@ function AustraliaGame() {
                 <div className="flex items-center justify-between">
                   <div className="font-semibold">Action Limits</div>
                   <button
-                    onClick={() => setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }))}
+                    onClick={() => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }))}
                     className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                   >
                     {gameSettings.actionLimitsEnabled ? 'ON' : 'OFF'}
@@ -36371,7 +36402,7 @@ function AustraliaGame() {
                 <div className="flex items-center justify-between">
                   <div className="font-semibold">UX Assist Pack</div>
                   <button
-                    onClick={() => setGameSettings(prev => ({ ...prev, uxAssistPackEnabled: !prev.uxAssistPackEnabled }))}
+                    onClick={() => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, uxAssistPackEnabled: !prev.uxAssistPackEnabled }))}
                     className={`px-4 py-2 rounded font-semibold ${gameSettings.uxAssistPackEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                   >
                     {gameSettings.uxAssistPackEnabled ? 'ON' : 'OFF'}
@@ -36381,7 +36412,7 @@ function AustraliaGame() {
                   <label className="block font-semibold mb-1">Team Mode AI Profile</label>
                   <select
                     value={gameSettings.teamModeAiSystemProfile}
-                    onChange={(e) => setGameSettings(prev => ({ ...prev, teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(e.target.value) }))}
+                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Quick Setup", prev => ({ ...prev, teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(e.target.value) }))}
                     className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                   >
                     {TEAM_MODE_AI_SYSTEM_PROFILE_OPTIONS.map(profile => (
@@ -36548,17 +36579,17 @@ function AustraliaGame() {
                 <div className="space-y-4">
                   <div>
                     <label className="block font-semibold mb-2">Total Days: {gameSettings.totalDays}</label>
-                    <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => setGameSettings(prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
+                    <input type="range" min="10" max="100" value={gameSettings.totalDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, totalDays: parseInt(e.target.value) }))} className="w-full" />
                     <div className="text-xs opacity-75 mt-1">Currently: Day {gameState.day} of {gameSettings.totalDays}</div>
                   </div>
                   <div>
                     <label className="block font-semibold mb-2">Player Actions Per Day: {gameSettings.playerActionsPerDay}</label>
-                    <input type="range" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, playerActionsPerDay: parseInt(e.target.value), maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                    <input type="range" min="1" max="10" value={gameSettings.playerActionsPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, playerActionsPerDay: parseInt(e.target.value), maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
                     <div className="text-xs opacity-75 mt-1">Current: {player.actionsUsedThisTurn} / {gameSettings.playerActionsPerDay}</div>
                   </div>
                   <div>
                     <label className="block font-semibold mb-2">AI Actions Per Day: {gameSettings.aiActionsPerDay}</label>
-                    <input type="range" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionsPerDay: parseInt(e.target.value), aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
+                    <input type="range" min="1" max="10" value={gameSettings.aiActionsPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, aiActionsPerDay: parseInt(e.target.value), aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
@@ -36566,7 +36597,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Display summary between days</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🎮 Core Gameplay", prev => ({ ...prev, showDayTransition: !prev.showDayTransition }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.showDayTransition ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.showDayTransition ? 'ON' : 'OFF'}
@@ -36580,7 +36611,7 @@ function AustraliaGame() {
 	                    <label className="block font-semibold mb-2">Victory Goal</label>
 	                    <select
 	                      value={gameSettings.winCondition}
-	                      onChange={(e) => setGameSettings(prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
+	                      onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({ ...prev, winCondition: normalizeWinMetric(e.target.value) }))}
 	                      className={`${themeStyles.select} rounded px-3 py-2 w-full`}
 	                    >
 	                      <option value="money">Most Money</option>
@@ -36626,7 +36657,7 @@ function AustraliaGame() {
 	                      <div className="text-sm opacity-75">Return 50% of your deposit and release control</div>
 	                    </div>
 	                    <button
-	                      onClick={() => setGameSettings(prev => ({ ...prev, allowCashOut: !prev.allowCashOut }))}
+	                      onClick={() => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({ ...prev, allowCashOut: !prev.allowCashOut }))}
 	                      className={`px-4 py-2 rounded font-semibold ${gameSettings.allowCashOut ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
 	                    >
 	                      {gameSettings.allowCashOut ? 'ON' : 'OFF'}
@@ -36638,7 +36669,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">OFF by default. Disables new deposit bidding and uses proposal-based region control.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, negotiationMode: !prev.negotiationMode }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({ ...prev, negotiationMode: !prev.negotiationMode }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.negotiationMode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.negotiationMode ? 'ON' : 'OFF'}
@@ -36662,7 +36693,7 @@ function AustraliaGame() {
                             max="1500"
                             step="50"
                             value={gameSettings.negotiationOptions.autoAcceptCashUnder}
-                            onChange={(e) => setGameSettings(prev => ({
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                               ...prev,
                               negotiationOptions: {
                                 ...prev.negotiationOptions,
@@ -36677,7 +36708,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.autoCompleteReadyTasks}
-                              onChange={(e) => setGameSettings(prev => ({
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                                 ...prev,
                                 negotiationOptions: {
                                   ...prev.negotiationOptions,
@@ -36691,7 +36722,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.confirmExpensiveTasks}
-                              onChange={(e) => setGameSettings(prev => ({
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                                 ...prev,
                                 negotiationOptions: {
                                   ...prev.negotiationOptions,
@@ -36705,7 +36736,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.suggestCounterOffers}
-                              onChange={(e) => setGameSettings(prev => ({
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                                 ...prev,
                                 negotiationOptions: {
                                   ...prev.negotiationOptions,
@@ -36719,7 +36750,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={gameSettings.negotiationOptions.confirmCancelProposal}
-                              onChange={(e) => setGameSettings(prev => ({
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                                 ...prev,
                                 negotiationOptions: {
                                   ...prev.negotiationOptions,
@@ -36737,7 +36768,7 @@ function AustraliaGame() {
                             min="0"
                             max="15"
                             value={gameSettings.negotiationOptions.proposalExpirationTurns}
-                            onChange={(e) => setGameSettings(prev => ({
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "🏁 Win Condition & Cash-Out", prev => ({
                               ...prev,
                               negotiationOptions: {
                                 ...prev.negotiationOptions,
@@ -36761,7 +36792,7 @@ function AustraliaGame() {
                     </div>
                     <button
                       onClick={() => {
-                        setGameSettings(prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }));
+                        trackedSetGameSettings("direct_player_change", "⏱️ Action Limits", prev => ({ ...prev, actionLimitsEnabled: !prev.actionLimitsEnabled }));
                       }}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.actionLimitsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
@@ -36770,12 +36801,12 @@ function AustraliaGame() {
                   </div>
                   <div>
                     <label className="block font-semibold mb-2">Max Actions (Human): {gameSettings.maxActionsPerTurn}</label>
-                    <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                    <input type="range" min="1" max="10" value={gameSettings.maxActionsPerTurn} onChange={(e) => trackedSetGameSettings("direct_player_change", "⏱️ Action Limits", prev => ({ ...prev, maxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
                     <div className="text-xs opacity-75 mt-1">Use "Player Actions Per Day" above to adjust</div>
                   </div>
                   <div>
                     <label className="block font-semibold mb-2">Max Actions (AI): {gameSettings.aiMaxActionsPerTurn}</label>
-                    <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => setGameSettings(prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
+                    <input type="range" min="1" max="10" value={gameSettings.aiMaxActionsPerTurn} onChange={(e) => trackedSetGameSettings("direct_player_change", "⏱️ Action Limits", prev => ({ ...prev, aiMaxActionsPerTurn: parseInt(e.target.value) }))} className="w-full" disabled />
                     <div className="text-xs opacity-75 mt-1">Use "AI Actions Per Day" above to adjust</div>
                   </div>
                 </div>
@@ -36788,7 +36819,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Pay to exceed limit</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, allowActionOverride: !prev.allowActionOverride }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "💸 Action Override", prev => ({ ...prev, allowActionOverride: !prev.allowActionOverride }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.allowActionOverride ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.allowActionOverride ? 'ON' : 'OFF'}
@@ -36796,7 +36827,7 @@ function AustraliaGame() {
                   </div>
                   <div>
                     <label className="block font-semibold mb-2">Override Base Cost: ${gameSettings.overrideCost}</label>
-                    <input type="range" min="100" max="5000" step="100" value={gameSettings.overrideCost} onChange={(e) => setGameSettings(prev => ({ ...prev, overrideCost: parseInt(e.target.value) }))} className="w-full" />
+                    <input type="range" min="100" max="5000" step="100" value={gameSettings.overrideCost} onChange={(e) => trackedSetGameSettings("direct_player_change", "💸 Action Override", prev => ({ ...prev, overrideCost: parseInt(e.target.value) }))} className="w-full" />
                     <div className="text-xs opacity-75 mt-1">
                       Cost doubles with each override, scales with net worth, cap {OVERRIDE_DAILY_CAP} overrides/day.
                     </div>
@@ -36811,7 +36842,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Scale max wager based on challenge difficulty (default: fixed $50-500)</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, dynamicWagerEnabled: !prev.dynamicWagerEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🎰 Challenge Rules", prev => ({ ...prev, dynamicWagerEnabled: !prev.dynamicWagerEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.dynamicWagerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.dynamicWagerEnabled ? 'ON' : 'OFF'}
@@ -36823,7 +36854,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">After winning, risk reward for double payout</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, doubleOrNothingEnabled: !prev.doubleOrNothingEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🎰 Challenge Rules", prev => ({ ...prev, doubleOrNothingEnabled: !prev.doubleOrNothingEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.doubleOrNothingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.doubleOrNothingEnabled ? 'ON' : 'OFF'}
@@ -36839,7 +36870,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Buy properties for daily passive income</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, investmentsEnabled: !prev.investmentsEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "Gameplay Expansions", prev => ({ ...prev, investmentsEnabled: !prev.investmentsEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.investmentsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.investmentsEnabled ? 'ON' : 'OFF'}
@@ -36851,7 +36882,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Buy gear with travel, XP, and challenge bonuses</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, equipmentShopEnabled: !prev.equipmentShopEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "Gameplay Expansions", prev => ({ ...prev, equipmentShopEnabled: !prev.equipmentShopEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.equipmentShopEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.equipmentShopEnabled ? 'ON' : 'OFF'}
@@ -36863,7 +36894,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Spend money to debuff your opponent</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, sabotageEnabled: !prev.sabotageEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "Gameplay Expansions", prev => ({ ...prev, sabotageEnabled: !prev.sabotageEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.sabotageEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.sabotageEnabled ? 'ON' : 'OFF'}
@@ -36879,7 +36910,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Apply weather, season, events, and pricing modifiers</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiUsesMarketModifiers: !prev.aiUsesMarketModifiers }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiUsesMarketModifiers: !prev.aiUsesMarketModifiers }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiUsesMarketModifiers ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiUsesMarketModifiers ? 'ON' : 'OFF'}
@@ -36891,7 +36922,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Enable simplified but stronger AI abilities</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiSpecialAbilitiesEnabled: !prev.aiSpecialAbilitiesEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiSpecialAbilitiesEnabled: !prev.aiSpecialAbilitiesEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiSpecialAbilitiesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiSpecialAbilitiesEnabled ? 'ON' : 'OFF'}
@@ -36903,7 +36934,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">AI sales change supply and demand</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiAffectsEconomy: !prev.aiAffectsEconomy }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiAffectsEconomy: !prev.aiAffectsEconomy }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiAffectsEconomy ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiAffectsEconomy ? 'ON' : 'OFF'}
@@ -36915,7 +36946,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Feature 1: money mode hoards more cash, regions mode spends more on control</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiWinConditionSpendingEnabled: !prev.aiWinConditionSpendingEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiWinConditionSpendingEnabled: !prev.aiWinConditionSpendingEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiWinConditionSpendingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiWinConditionSpendingEnabled ? 'ON' : 'OFF'}
@@ -36927,7 +36958,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Feature 3: stronger region defense, takeovers, and anti-hoard spending in region mode</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiRegionsMajorityRushEnabled: !prev.aiRegionsMajorityRushEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiRegionsMajorityRushEnabled: !prev.aiRegionsMajorityRushEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiRegionsMajorityRushEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiRegionsMajorityRushEnabled ? 'ON' : 'OFF'}
@@ -36939,7 +36970,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Team modes only. Affects every AI-controlled actor who currently has a teammate, including opponent-team AIs, by syncing them to that teammate’s recent performance and pressure.</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, teammatePerformanceSyncEnabled: !prev.teammatePerformanceSyncEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, teammatePerformanceSyncEnabled: !prev.teammatePerformanceSyncEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.teammatePerformanceSyncEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.teammatePerformanceSyncEnabled ? 'ON' : 'OFF'}
@@ -36998,7 +37029,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Use a seeded RNG for AI decisions</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiDeterministic: !prev.aiDeterministic }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiDeterministic: !prev.aiDeterministic }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiDeterministic ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiDeterministic ? 'ON' : 'OFF'}
@@ -37011,7 +37042,7 @@ function AustraliaGame() {
                       min="1"
                       max="2147483646"
                       value={gameSettings.aiDeterministicSeed}
-                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiDeterministicSeed: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))}
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiDeterministicSeed: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))}
                       className="w-full"
                       disabled={!gameSettings.aiDeterministic}
                     />
@@ -37028,7 +37059,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Optional scoring overlay for Standard Human VS AI and Team Mode.</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiStrategyLabEnabled: !prev.aiStrategyLabEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "AI Strategy Lab", prev => ({ ...prev, aiStrategyLabEnabled: !prev.aiStrategyLabEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiStrategyLabEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiStrategyLabEnabled ? 'ON' : 'OFF'}
@@ -37040,7 +37071,7 @@ function AustraliaGame() {
                       <div className="font-semibold mb-1">Applies To</div>
                       <select
                         value={gameSettings.aiStrategyLabScope}
-                        onChange={(e) => setGameSettings(prev => ({
+                        onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Strategy Lab", prev => ({
                           ...prev,
                           aiStrategyLabScope: normalizeAiStrategyLabScope(e.target.value)
                         }))}
@@ -37088,7 +37119,7 @@ function AustraliaGame() {
                           type="checkbox"
                           checked={Boolean(gameSettings[toggle.key])}
                           disabled={toggle.key === 'aiStrategyLabExtremeModeEnabled' && !gameSettings.aiStrategyLabSafeRangesEnabled}
-                          onChange={(e) => setGameSettings(prev => {
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Strategy Lab", prev => {
                             const nextSettings = {
                               ...prev,
                               [toggle.key]: e.target.checked
@@ -37115,7 +37146,7 @@ function AustraliaGame() {
                         <div className="font-semibold mb-1">Your AI Teammate Preset</div>
                         <select
                           value={gameSettings.playerTeammateAiPreset}
-                          onChange={(e) => setGameSettings(prev => ({
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Strategy Lab", prev => ({
                             ...prev,
                             playerTeammateAiPreset: normalizeAiStrategyLabPreset(e.target.value, DEFAULT_GAME_SETTINGS.playerTeammateAiPreset)
                           }))}
@@ -37130,7 +37161,7 @@ function AustraliaGame() {
                         <div className="font-semibold mb-1">Opponent AI Preset</div>
                         <select
                           value={gameSettings.opponentAiPreset}
-                          onChange={(e) => setGameSettings(prev => ({
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Strategy Lab", prev => ({
                             ...prev,
                             opponentAiPreset: normalizeAiStrategyLabPreset(e.target.value, DEFAULT_GAME_SETTINGS.opponentAiPreset)
                           }))}
@@ -37286,7 +37317,7 @@ function AustraliaGame() {
                               type="checkbox"
                               checked={Boolean(gameSettings[toggle.key])}
                               disabled={!gameSettings.teamBrainV63Enabled}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
                             />
                             <span>{Boolean(gameSettings[toggle.key]) ? 'ON' : 'OFF'} {toggle.label}</span>
                           </label>
@@ -37346,7 +37377,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Coordinated, harder Team Mode AI opponents and teammates.</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamCompetitiveAiEnabled: !prev.teamCompetitiveAiEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCompetitiveAiEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.teamCompetitiveAiEnabled ? 'ON' : 'OFF'}
@@ -37367,7 +37398,7 @@ function AustraliaGame() {
                     <label className="block font-semibold mb-2">Team Mode Difficulty</label>
                     <select
                       value={gameSettings.teamModeAiDifficultyPreset}
-                      onChange={(e) => setGameSettings(prev => ({
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                         ...prev,
                         ...applyTeamModeAiDifficultyPresetV67(normalizeTeamModeAiDifficultyPreset(e.target.value))
                       }))}
@@ -37396,7 +37427,7 @@ function AustraliaGame() {
                         <label className="block font-semibold mb-2">Friendly Teammate AI</label>
                         <select
                           value={gameSettings.friendlyTeamAiPreset}
-                          onChange={(e) => setGameSettings(prev => ({
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                             ...prev,
                             friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(e.target.value)
                           }))}
@@ -37411,7 +37442,7 @@ function AustraliaGame() {
                         <label className="block font-semibold mb-2">Enemy Team AI</label>
                         <select
                           value={gameSettings.enemyTeamAiPreset}
-                          onChange={(e) => setGameSettings(prev => ({
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                             ...prev,
                             enemyTeamAiPreset: normalizeEnemyTeamAiPreset(e.target.value)
                           }))}
@@ -37451,7 +37482,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets Competitive AI actors buy extra actions, the same way human players already can.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionOverridesEnabled: !prev.teamAiActionOverridesEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionOverridesEnabled: !prev.teamAiActionOverridesEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionOverridesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiActionOverridesEnabled ? 'ON' : 'OFF'}
@@ -37465,7 +37496,7 @@ function AustraliaGame() {
                             <label className="block font-semibold mb-2">Enemy Team Override Policy</label>
                             <select
                               value={gameSettings.teamAiOverridePolicy}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverridePolicy: normalizeTeamAiOverridePolicy(e.target.value) }))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverridePolicy: normalizeTeamAiOverridePolicy(e.target.value) }))}
                               className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                             >
                               {TEAM_AI_OVERRIDE_POLICY_OPTIONS.map(policy => (
@@ -37477,7 +37508,7 @@ function AustraliaGame() {
                             <label className="block font-semibold mb-2">Friendly Teammate Override Policy</label>
                             <select
                               value={gameSettings.friendlyAiOverridePolicy}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(e.target.value) }))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(e.target.value) }))}
                               className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                             >
                               {FRIENDLY_AI_OVERRIDE_POLICY_OPTIONS.map(policy => (
@@ -37492,23 +37523,23 @@ function AustraliaGame() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Max Overrides Per Actor Per Day: {gameSettings.teamAiOverrideMaxPerActorPerDay}</label>
-                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP} value={gameSettings.teamAiOverrideMaxPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMaxPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP} value={gameSettings.teamAiOverrideMaxPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverrideMaxPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Max Overrides Per Team Per Day: {gameSettings.teamAiOverrideMaxPerTeamPerDay}</label>
-                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP * 2} value={gameSettings.teamAiOverrideMaxPerTeamPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMaxPerTeamPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="1" max={OVERRIDE_DAILY_CAP * 2} value={gameSettings.teamAiOverrideMaxPerTeamPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverrideMaxPerTeamPerDay: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Cost Multiplier: {gameSettings.teamAiOverrideBaseCostMultiplier.toFixed(1)}x</label>
-                                <input type="range" min="0.5" max="3.0" step="0.1" value={gameSettings.teamAiOverrideBaseCostMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideBaseCostMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0.5" max="3.0" step="0.1" value={gameSettings.teamAiOverrideBaseCostMultiplier} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverrideBaseCostMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Decision Score: {gameSettings.teamAiOverrideMinimumDecisionScore}</label>
-                                <input type="range" min="0" max="400" step="10" value={gameSettings.teamAiOverrideMinimumDecisionScore} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMinimumDecisionScore: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="400" step="10" value={gameSettings.teamAiOverrideMinimumDecisionScore} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverrideMinimumDecisionScore: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Cash Reserve: ${gameSettings.teamAiOverrideMinimumCashReserve}</label>
-                                <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiOverrideMinimumCashReserve} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverrideMinimumCashReserve: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiOverrideMinimumCashReserve} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverrideMinimumCashReserve: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
@@ -37521,7 +37552,7 @@ function AustraliaGame() {
                                   <input
                                     type="checkbox"
                                     checked={Boolean(gameSettings[toggle.key])}
-                                    onChange={(e) => setGameSettings(prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
+                                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
                                   />
                                   <span>{Boolean(gameSettings[toggle.key]) ? '☑' : '☐'} {toggle.label}</span>
                                 </label>
@@ -37554,7 +37585,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets teammates pool a few bonus actions each day so whoever needs one most can draw it, free of charge.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamActionBankEnabled: !prev.teamActionBankEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankEnabled: !prev.teamActionBankEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamActionBankEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamActionBankEnabled ? 'ON' : 'OFF'}
@@ -37567,7 +37598,7 @@ function AustraliaGame() {
                           <label className="block font-semibold mb-2">Distribution Mode</label>
                           <select
                             value={gameSettings.teamActionBankDistributionMode}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(e.target.value) }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(e.target.value) }))}
                             className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                           >
                             {TEAM_ACTION_BANK_DISTRIBUTION_MODE_OPTIONS.map(mode => (
@@ -37581,15 +37612,15 @@ function AustraliaGame() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Bonus Actions Per Day: {gameSettings.teamActionBankBonusActionsPerDay}</label>
-                                <input type="range" min="0" max="10" value={gameSettings.teamActionBankBonusActionsPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankBonusActionsPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="10" value={gameSettings.teamActionBankBonusActionsPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankBonusActionsPerDay: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Reserve (kept unless urgent): {gameSettings.teamActionBankReserveActions}</label>
-                                <input type="range" min="0" max="5" value={gameSettings.teamActionBankReserveActions} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankReserveActions: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="5" value={gameSettings.teamActionBankReserveActions} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankReserveActions: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Max Draws Per Actor Per Day: {gameSettings.teamActionBankMaxDrawsPerActorPerDay}</label>
-                                <input type="range" min="1" max="5" value={gameSettings.teamActionBankMaxDrawsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankMaxDrawsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="1" max="5" value={gameSettings.teamActionBankMaxDrawsPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankMaxDrawsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
@@ -37597,7 +37628,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamActionBankTransparencyEnabled)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamActionBankTransparencyEnabled: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamActionBankTransparencyEnabled: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamActionBankTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                               </label>
@@ -37629,7 +37660,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets a teammate hand an unused action to another teammate who has a clearly better use for it.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionLendingEnabled: !prev.teamAiActionLendingEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionLendingEnabled: !prev.teamAiActionLendingEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionLendingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiActionLendingEnabled ? 'ON' : 'OFF'}
@@ -37641,15 +37672,15 @@ function AustraliaGame() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="block font-semibold mb-2">Max Lent Per Actor Per Day: {gameSettings.teamAiMaxLentActionsPerActorPerDay}</label>
-                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxLentActionsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMaxLentActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxLentActionsPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiMaxLentActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Max Received Per Actor Per Day: {gameSettings.teamAiMaxReceivedActionsPerActorPerDay}</label>
-                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxReceivedActionsPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMaxReceivedActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="3" value={gameSettings.teamAiMaxReceivedActionsPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiMaxReceivedActionsPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Minimum Value Gain: {gameSettings.teamAiActionLendingMinimumValueGain}</label>
-                            <input type="range" min="0" max="200" step="5" value={gameSettings.teamAiActionLendingMinimumValueGain} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingMinimumValueGain: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="0" max="200" step="5" value={gameSettings.teamAiActionLendingMinimumValueGain} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionLendingMinimumValueGain: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
@@ -37657,7 +37688,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={Boolean(gameSettings.teamAiActionLendingRequiresCommittedPlan)}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingRequiresCommittedPlan: e.target.checked }))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionLendingRequiresCommittedPlan: e.target.checked }))}
                             />
                             <span>{gameSettings.teamAiActionLendingRequiresCommittedPlan ? '☑' : '☐'} Requires Team Objective Match</span>
                           </label>
@@ -37665,7 +37696,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={Boolean(gameSettings.teamAiActionLendingTransparencyEnabled)}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionLendingTransparencyEnabled: e.target.checked }))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionLendingTransparencyEnabled: e.target.checked }))}
                             />
                             <span>{gameSettings.teamAiActionLendingTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                           </label>
@@ -37695,7 +37726,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets a team commit to a persistent, multi-step plan across several turns instead of only reacting one action at a time.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiPlanCommitmentEnabled: !prev.teamAiPlanCommitmentEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanCommitmentEnabled: !prev.teamAiPlanCommitmentEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiPlanCommitmentEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiPlanCommitmentEnabled ? 'ON' : 'OFF'}
@@ -37707,19 +37738,19 @@ function AustraliaGame() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="block font-semibold mb-2">Commitment Strength: {gameSettings.teamAiPlanCommitmentStrength}</label>
-                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanCommitmentStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanCommitmentStrength: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanCommitmentStrength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanCommitmentStrength: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Maximum Duration (days): {gameSettings.teamAiPlanMaximumDurationDays}</label>
-                            <input type="range" min="1" max="14" value={gameSettings.teamAiPlanMaximumDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanMaximumDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="14" value={gameSettings.teamAiPlanMaximumDurationDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanMaximumDurationDays: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Reevaluation Frequency (days): {gameSettings.teamAiPlanReevaluationFrequency}</label>
-                            <input type="range" min="1" max="5" value={gameSettings.teamAiPlanReevaluationFrequency} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="5" value={gameSettings.teamAiPlanReevaluationFrequency} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Interruption Sensitivity: {gameSettings.teamAiPlanInterruptionSensitivity}</label>
-                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanInterruptionSensitivity} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanInterruptionSensitivity: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiPlanInterruptionSensitivity} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanInterruptionSensitivity: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
@@ -37727,7 +37758,7 @@ function AustraliaGame() {
                             <input
                               type="checkbox"
                               checked={Boolean(gameSettings.teamAiPlanTransparencyEnabled)}
-                              onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPlanTransparencyEnabled: e.target.checked }))}
+                              onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPlanTransparencyEnabled: e.target.checked }))}
                             />
                             <span>{gameSettings.teamAiPlanTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                           </label>
@@ -37757,7 +37788,7 @@ function AustraliaGame() {
                         {(['low', 'balanced', 'strict'] as TeamAiReservationStrictness[]).map(level => (
                           <button
                             key={level}
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiReservationStrictness: level }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiReservationStrictness: level }))}
                             className={`px-3 py-2 rounded font-semibold capitalize flex-1 ${gameSettings.teamAiReservationStrictness === level ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {level}
@@ -37773,7 +37804,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.friendlyAiRespectPlayerReservations)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiRespectPlayerReservations: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, friendlyAiRespectPlayerReservations: e.target.checked }))}
                           />
                           <span>{gameSettings.friendlyAiRespectPlayerReservations ? '☑' : '☐'} Friendly AI Respects Your Reservations</span>
                         </label>
@@ -37781,7 +37812,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.friendlyAiMayRequestReservedResource)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, friendlyAiMayRequestReservedResource: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, friendlyAiMayRequestReservedResource: e.target.checked }))}
                           />
                           <span>{gameSettings.friendlyAiMayRequestReservedResource ? '☑' : '☐'} Friendly AI May Request Instead of Block</span>
                         </label>
@@ -37789,7 +37820,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiReservationTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiReservationTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiReservationTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiReservationTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                         </label>
@@ -37818,7 +37849,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets enemy AI focus sabotage and pressure on the most strategically dangerous opposing actor, instead of always the human player.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingEnabled: !prev.teamAiThreatTargetingEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiThreatTargetingEnabled: !prev.teamAiThreatTargetingEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiThreatTargetingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiThreatTargetingEnabled ? 'ON' : 'OFF'}
@@ -37830,22 +37861,22 @@ function AustraliaGame() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="block font-semibold mb-2">Strength: {gameSettings.teamAiThreatTargetingStrength}</label>
-                            <input type="range" min="0" max="100" value={gameSettings.teamAiThreatTargetingStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingStrength: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="0" max="100" value={gameSettings.teamAiThreatTargetingStrength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiThreatTargetingStrength: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Reevaluation Frequency (turns): {gameSettings.teamAiThreatReevaluationFrequency}</label>
-                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatReevaluationFrequency} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatReevaluationFrequency} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiThreatReevaluationFrequency: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Focus Duration (turns): {gameSettings.teamAiThreatFocusDuration}</label>
-                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatFocusDuration} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatFocusDuration: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiThreatFocusDuration} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiThreatFocusDuration: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer text-sm">
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiMayTargetFriendlyAiTeammate)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiMayTargetFriendlyAiTeammate: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiMayTargetFriendlyAiTeammate: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiMayTargetFriendlyAiTeammate ? '☑' : '☐'} Enemy AI May Target Your Friendly AI Teammate</span>
                         </label>
@@ -37853,7 +37884,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiThreatTargetingTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiThreatTargetingTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiThreatTargetingTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiThreatTargetingTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                         </label>
@@ -37883,7 +37914,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Shifts Competitive AI decision-making toward decisively pursuing the active win condition in the final stretch of the match.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiEndgameAccelerationEnabled: !prev.teamAiEndgameAccelerationEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameAccelerationEnabled: !prev.teamAiEndgameAccelerationEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEndgameAccelerationEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiEndgameAccelerationEnabled ? 'ON' : 'OFF'}
@@ -37896,7 +37927,7 @@ function AustraliaGame() {
                         <input
                           type="range" min="50" max="95"
                           value={Math.round(gameSettings.teamAiEndgameStartPercent * 100)}
-                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameStartPercent: parseInt(e.target.value) / 100 }))}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameStartPercent: parseInt(e.target.value) / 100 }))}
                           className="w-full"
                         />
                         <div className="text-sm opacity-75 mt-1">Endgame mode begins once this percentage of the match's total days has elapsed.</div>
@@ -37907,15 +37938,15 @@ function AustraliaGame() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block font-semibold mb-2">Aggression Multiplier: {gameSettings.teamAiEndgameAggressionMultiplier.toFixed(1)}x</label>
-                          <input type="range" min="1" max="3" step="0.1" value={gameSettings.teamAiEndgameAggressionMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="1" max="3" step="0.1" value={gameSettings.teamAiEndgameAggressionMultiplier} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Override Bias: {Math.round(gameSettings.teamAiEndgameOverrideBias * 100)}%</label>
-                          <input type="range" min="0" max="50" value={Math.round(gameSettings.teamAiEndgameOverrideBias * 100)} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
+                          <input type="range" min="0" max="50" value={Math.round(gameSettings.teamAiEndgameOverrideBias * 100)} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Cash Conversion Strength: {gameSettings.teamAiEndgameCashConversionStrength}</label>
-                          <input type="range" min="0" max="100" value={gameSettings.teamAiEndgameCashConversionStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameCashConversionStrength: parseInt(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="100" value={gameSettings.teamAiEndgameCashConversionStrength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameCashConversionStrength: parseInt(e.target.value) }))} className="w-full" />
                         </div>
                       </div>
                     )}
@@ -37924,7 +37955,7 @@ function AustraliaGame() {
                         <input
                           type="checkbox"
                           checked={Boolean(gameSettings.teamAiEndgameAccelerationTransparencyEnabled)}
-                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEndgameAccelerationTransparencyEnabled: e.target.checked }))}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEndgameAccelerationTransparencyEnabled: e.target.checked }))}
                         />
                         <span>{gameSettings.teamAiEndgameAccelerationTransparencyEnabled ? '☑' : '☐'} Show in Transparency</span>
                       </label>
@@ -37952,7 +37983,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Lets a team declare an emergency (financial crisis, losing region control, or falling behind late-game) and take one decisive, always-notified action to recover.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsEnabled: !prev.teamAiEmergencyActionsEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionsEnabled: !prev.teamAiEmergencyActionsEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiEmergencyActionsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiEmergencyActionsEnabled ? 'ON' : 'OFF'}
@@ -37964,24 +37995,24 @@ function AustraliaGame() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="block font-semibold mb-2">Cooldown (days): {gameSettings.teamAiEmergencyActionCooldownDays}</label>
-                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionCooldownDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionCooldownDays: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionCooldownDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionCooldownDays: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Uses Per Game (per action): {gameSettings.teamAiEmergencyActionsPerGame}</label>
-                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionsPerGame} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsPerGame: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="10" value={gameSettings.teamAiEmergencyActionsPerGame} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionsPerGame: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                         </div>
                         {uiState.settingsViewMode === 'advanced' && (
                           <>
                             <div>
                               <label className="block font-semibold mb-2">Strength: {gameSettings.teamAiEmergencyActionStrength}</label>
-                              <input type="range" min="0" max="100" value={gameSettings.teamAiEmergencyActionStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionStrength: parseInt(e.target.value) }))} className="w-full" />
+                              <input type="range" min="0" max="100" value={gameSettings.teamAiEmergencyActionStrength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionStrength: parseInt(e.target.value) }))} className="w-full" />
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer text-sm">
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamAiEmergencyActionsForFriendlyTeam)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsForFriendlyTeam: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionsForFriendlyTeam: e.target.checked }))}
                               />
                               <span>{gameSettings.teamAiEmergencyActionsForFriendlyTeam ? '☑' : '☐'} Your Friendly AI Team May Declare Emergencies</span>
                             </label>
@@ -37989,7 +38020,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamAiEmergencyActionsForEnemyTeam)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsForEnemyTeam: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionsForEnemyTeam: e.target.checked }))}
                               />
                               <span>{gameSettings.teamAiEmergencyActionsForEnemyTeam ? '☑' : '☐'} Enemy AI Team May Declare Emergencies</span>
                             </label>
@@ -37997,7 +38028,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamAiEmergencyActionsTransparencyEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiEmergencyActionsTransparencyEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiEmergencyActionsTransparencyEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teamAiEmergencyActionsTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency (in addition to the always-on notification)</span>
                             </label>
@@ -38029,7 +38060,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">A team-wide meter earned through good coordinated play (completed plans, useful support, crafting, region control) that can be spent on small tactical boosts.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamInitiativeEnabled: !prev.teamInitiativeEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeEnabled: !prev.teamInitiativeEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamInitiativeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamInitiativeEnabled ? 'ON' : 'OFF'}
@@ -38041,18 +38072,18 @@ function AustraliaGame() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="block font-semibold mb-2">Maximum: {gameSettings.teamInitiativeMaximum}</label>
-                            <input type="range" min="20" max="500" step="10" value={gameSettings.teamInitiativeMaximum} onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeMaximum: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="20" max="500" step="10" value={gameSettings.teamInitiativeMaximum} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeMaximum: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                           <div>
                             <label className="block font-semibold mb-2">Gain Multiplier: {gameSettings.teamInitiativeGainMultiplier.toFixed(1)}x</label>
-                            <input type="range" min="0" max="3" step="0.1" value={gameSettings.teamInitiativeGainMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeGainMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                            <input type="range" min="0" max="3" step="0.1" value={gameSettings.teamInitiativeGainMultiplier} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeGainMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                           </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer text-sm">
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamInitiativeDecayEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeDecayEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeDecayEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamInitiativeDecayEnabled ? '☑' : '☐'} Decay Unused Initiative Daily</span>
                         </label>
@@ -38060,7 +38091,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamInitiativeVisibleToPlayer)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeVisibleToPlayer: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeVisibleToPlayer: e.target.checked }))}
                           />
                           <span>{gameSettings.teamInitiativeVisibleToPlayer ? '☑' : '☐'} Show Team Initiative Meter in HUD</span>
                         </label>
@@ -38068,7 +38099,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamInitiativeTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamInitiativeTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamInitiativeTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamInitiativeTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency</span>
                         </label>
@@ -38098,7 +38129,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Rewards teammates for chaining complementary actions together (e.g. sharing a resource right before it's crafted) with a small score bonus and Team Initiative.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamComboBonusesEnabled: !prev.teamComboBonusesEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamComboBonusesEnabled: !prev.teamComboBonusesEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamComboBonusesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamComboBonusesEnabled ? 'ON' : 'OFF'}
@@ -38109,11 +38140,11 @@ function AustraliaGame() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block font-semibold mb-2">Strength: {gameSettings.teamComboBonusStrength}</label>
-                          <input type="range" min="0" max="100" value={gameSettings.teamComboBonusStrength} onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboBonusStrength: parseInt(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="100" value={gameSettings.teamComboBonusStrength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamComboBonusStrength: parseInt(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Combo Window (actions): {gameSettings.teamComboWindowActions}</label>
-                          <input type="range" min="2" max="6" value={gameSettings.teamComboWindowActions} onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboWindowActions: parseInt(e.target.value) }))} className="w-full" />
+                          <input type="range" min="2" max="6" value={gameSettings.teamComboWindowActions} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamComboWindowActions: parseInt(e.target.value) }))} className="w-full" />
                         </div>
                       </div>
                     )}
@@ -38122,7 +38153,7 @@ function AustraliaGame() {
                         <input
                           type="checkbox"
                           checked={Boolean(gameSettings.teamComboBonusesTransparencyEnabled)}
-                          onChange={(e) => setGameSettings(prev => ({ ...prev, teamComboBonusesTransparencyEnabled: e.target.checked }))}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamComboBonusesTransparencyEnabled: e.target.checked }))}
                         />
                         <span>{gameSettings.teamComboBonusesTransparencyEnabled ? '☑' : '☐'} Show in Decision Transparency</span>
                       </label>
@@ -38151,7 +38182,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Gives each Team Mode AI actor protected savings that count toward total wealth but can never be voluntarily spent, so a run of bad luck can't erase everything they've built up.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamCashVaultEnabled: !prev.teamCashVaultEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamCashVaultEnabled: !prev.teamCashVaultEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamCashVaultEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamCashVaultEnabled ? 'ON' : 'OFF'}
@@ -38166,7 +38197,7 @@ function AustraliaGame() {
                             <div className="text-xs opacity-75">When on, crossing a cash milestone automatically locks a portion into the Vault. When off, cash is only ever protected if a future system explicitly locks it.</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, automaticCashLockingEnabled: !prev.automaticCashLockingEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, automaticCashLockingEnabled: !prev.automaticCashLockingEnabled }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.automaticCashLockingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.automaticCashLockingEnabled ? 'ON' : 'OFF'}
@@ -38181,7 +38212,7 @@ function AustraliaGame() {
                                 {(['spending_reserve', 'secure_vault', 'absolute_lock'] as VaultProtectionMode[]).map(mode => (
                                   <button
                                     key={mode}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, vaultProtectionMode: mode }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultProtectionMode: mode }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.vaultProtectionMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {mode.replace(/_/g, ' ')}
@@ -38193,22 +38224,22 @@ function AustraliaGame() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Lock Percentage: {gameSettings.vaultLockPercentage}%</label>
-                                <input type="range" min="0" max="100" value={gameSettings.vaultLockPercentage} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultLockPercentage: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="100" value={gameSettings.vaultLockPercentage} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultLockPercentage: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Milestone Size: {gameSettings.vaultMilestoneSizeMultiplier.toFixed(2)}x</label>
-                                <input type="range" min="0.25" max="4" step="0.25" value={gameSettings.vaultMilestoneSizeMultiplier} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultMilestoneSizeMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0.25" max="4" step="0.25" value={gameSettings.vaultMilestoneSizeMultiplier} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultMilestoneSizeMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Working Cash: ${gameSettings.vaultMinimumWorkingCash}</label>
-                                <input type="range" min="0" max="5000" step="50" value={gameSettings.vaultMinimumWorkingCash} onChange={(e) => setGameSettings(prev => ({ ...prev, vaultMinimumWorkingCash: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.vaultMinimumWorkingCash} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultMinimumWorkingCash: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer text-sm">
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.vaultCountProtectedCashTowardVictory)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, vaultCountProtectedCashTowardVictory: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultCountProtectedCashTowardVictory: e.target.checked }))}
                               />
                               <span>{gameSettings.vaultCountProtectedCashTowardVictory ? '☑' : '☐'} Protected Cash Counts Toward Victory</span>
                             </label>
@@ -38216,7 +38247,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.vaultTransparencyEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, vaultTransparencyEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, vaultTransparencyEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.vaultTransparencyEnabled ? '☑' : '☐'} Show in Transparency (HUD meter + lock notifications)</span>
                             </label>
@@ -38248,7 +38279,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Gives each Team Mode AI actor phase-aware financial discipline (Survival/Accumulation/Compounding/Endgame), replacing the fixed challenge wager formula with bankroll-aware wagering and adding a shared spending-approval gate before risky spending.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamEconomyGovernorEnabled: !prev.teamEconomyGovernorEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamEconomyGovernorEnabled: !prev.teamEconomyGovernorEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamEconomyGovernorEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamEconomyGovernorEnabled ? 'ON' : 'OFF'}
@@ -38262,22 +38293,22 @@ function AustraliaGame() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Cash Floor: ${gameSettings.economyCashFloor}</label>
-                                <input type="range" min="0" max="5000" step="50" value={gameSettings.economyCashFloor} onChange={(e) => setGameSettings(prev => ({ ...prev, economyCashFloor: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.economyCashFloor} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyCashFloor: parseInt(e.target.value) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Spendable cash below this triggers Survival phase (the shared recovery flag).</div>
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Recovery Target: ${gameSettings.economyRecoveryTarget}</label>
-                                <input type="range" min="0" max="20000" step="100" value={gameSettings.economyRecoveryTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoveryTarget: Math.max(prev.economyCashFloor, parseInt(e.target.value)) }))} className="w-full" />
+                                <input type="range" min="0" max="20000" step="100" value={gameSettings.economyRecoveryTarget} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyRecoveryTarget: Math.max(prev.economyCashFloor, parseInt(e.target.value)) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Spendable cash must reach this (never lower than the Cash Floor) to exit Survival phase.</div>
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Challenge Probability: {Math.round(gameSettings.economyMinimumChallengeProbability * 100)}%</label>
-                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyMinimumChallengeProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, economyMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyMinimumChallengeProbability} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Challenges below this success chance are skipped entirely, never under-wagered.</div>
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Recovery Spending Cap: {Math.round(gameSettings.economyRecoverySpendingCap * 100)}%</label>
-                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyRecoverySpendingCap} onChange={(e) => setGameSettings(prev => ({ ...prev, economyRecoverySpendingCap: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.economyRecoverySpendingCap} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyRecoverySpendingCap: parseFloat(e.target.value) }))} className="w-full" />
                               </div>
                             </div>
                             <div>
@@ -38286,7 +38317,7 @@ function AustraliaGame() {
                                 {(['low', 'balanced', 'high'] as EconomyReserveStrength[]).map(strength => (
                                   <button
                                     key={strength}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, economyReserveStrength: strength }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyReserveStrength: strength }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.economyReserveStrength === strength ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {strength}
@@ -38300,7 +38331,7 @@ function AustraliaGame() {
                                 {(['low', 'balanced', 'strict'] as EconomySpendingApprovalStrictness[]).map(strictness => (
                                   <button
                                     key={strictness}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, economySpendingApprovalStrictness: strictness }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economySpendingApprovalStrictness: strictness }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.economySpendingApprovalStrictness === strictness ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {strictness}
@@ -38312,7 +38343,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.economyEndgameCashConversionEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, economyEndgameCashConversionEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyEndgameCashConversionEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.economyEndgameCashConversionEnabled ? '☑' : '☐'} Endgame Cash-Conversion Nudge</span>
                             </label>
@@ -38320,7 +38351,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.economyGovernorTransparencyEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, economyGovernorTransparencyEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, economyGovernorTransparencyEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.economyGovernorTransparencyEnabled ? '☑' : '☐'} Show in Transparency (phase notifications + Decision Transparency reasons)</span>
                             </label>
@@ -38330,7 +38361,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamAiGovernorRestrictionDetectionEnabled)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorRestrictionDetectionEnabled: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorRestrictionDetectionEnabled: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamAiGovernorRestrictionDetectionEnabled ? '☑' : '☐'} Enable Restriction Detection (classifies a turn as operational / restricted / severely restricted / deadlock — never changes what the Governor allows, only explains it)</span>
                               </label>
@@ -38338,7 +38369,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamAiGovernorRestrictionTransparencyEnabled)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorRestrictionTransparencyEnabled: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorRestrictionTransparencyEnabled: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamAiGovernorRestrictionTransparencyEnabled ? '☑' : '☐'} Show Restriction Explanations in Decision Transparency</span>
                               </label>
@@ -38350,7 +38381,7 @@ function AustraliaGame() {
                                   <div className="text-xs opacity-75">A bounded, 12-tier fallback search (sell → craft → Treasury request → teammate support → safe challenge → travel → liquidate → emergency action → loan → Governor exception → wait) tried before a severely-restricted or deadlocked actor is ever allowed to just wait. Every tier reuses an already-shipped mechanism — never a new execution path.</div>
                                 </div>
                                 <button
-                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiProductiveRecoveryLadderEnabled: !prev.teamAiProductiveRecoveryLadderEnabled }))}
+                                  onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiProductiveRecoveryLadderEnabled: !prev.teamAiProductiveRecoveryLadderEnabled }))}
                                   className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiProductiveRecoveryLadderEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                 >
                                   {gameSettings.teamAiProductiveRecoveryLadderEnabled ? 'ON' : 'OFF'}
@@ -38362,7 +38393,7 @@ function AustraliaGame() {
                                     <input
                                       type="checkbox"
                                       checked={Boolean(gameSettings.teamAiGovernorAutomaticExceptionsEnabled)}
-                                      onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorAutomaticExceptionsEnabled: e.target.checked }))}
+                                      onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorAutomaticExceptionsEnabled: e.target.checked }))}
                                     />
                                     <span>{gameSettings.teamAiGovernorAutomaticExceptionsEnabled ? '☑' : '☐'} Allow Automatic Safe Exceptions (off by default — auto-grants a bounded, single-action exception with no human/AI review, only when every threshold below passes)</span>
                                   </label>
@@ -38370,23 +38401,23 @@ function AustraliaGame() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-1">
                                       <div>
                                         <label className="block font-semibold mb-2 text-sm">Consecutive Restricted Turns: {gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold}</label>
-                                        <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionConsecutiveTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
+                                        <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorExceptionConsecutiveTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
                                       </div>
                                       <div>
                                         <label className="block font-semibold mb-2 text-sm">Max Reserve Breach: ${gameSettings.teamAiGovernorExceptionMaxReserveBreach}</label>
-                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxReserveBreach} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMaxReserveBreach: parseInt(e.target.value) }))} className="w-full" />
+                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxReserveBreach} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorExceptionMaxReserveBreach: parseInt(e.target.value) }))} className="w-full" />
                                       </div>
                                       <div>
                                         <label className="block font-semibold mb-2 text-sm">Min Success Probability: {Math.round(gameSettings.teamAiGovernorExceptionMinProbability * 100)}%</label>
-                                        <input type="range" min="0" max="1" step="0.05" value={gameSettings.teamAiGovernorExceptionMinProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMinProbability: parseFloat(e.target.value) }))} className="w-full" />
+                                        <input type="range" min="0" max="1" step="0.05" value={gameSettings.teamAiGovernorExceptionMinProbability} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorExceptionMinProbability: parseFloat(e.target.value) }))} className="w-full" />
                                       </div>
                                       <div>
                                         <label className="block font-semibold mb-2 text-sm">Min EV Ratio: {gameSettings.teamAiGovernorExceptionMinEvRatio.toFixed(1)}x</label>
-                                        <input type="range" min="0.5" max="3" step="0.1" value={gameSettings.teamAiGovernorExceptionMinEvRatio} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMinEvRatio: parseFloat(e.target.value) }))} className="w-full" />
+                                        <input type="range" min="0.5" max="3" step="0.1" value={gameSettings.teamAiGovernorExceptionMinEvRatio} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorExceptionMinEvRatio: parseFloat(e.target.value) }))} className="w-full" />
                                       </div>
                                       <div>
                                         <label className="block font-semibold mb-2 text-sm">Max Cost: ${gameSettings.teamAiGovernorExceptionMaxCost}</label>
-                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxCost} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiGovernorExceptionMaxCost: parseInt(e.target.value) }))} className="w-full" />
+                                        <input type="range" min="0" max="2000" step="50" value={gameSettings.teamAiGovernorExceptionMaxCost} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiGovernorExceptionMaxCost: parseInt(e.target.value) }))} className="w-full" />
                                       </div>
                                     </div>
                                   )}
@@ -38421,7 +38452,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">A stronger, mutually-exclusive alternative to Teammate Performance Sync: tracks actual realized net-worth outcomes instead of heuristic scores, learns which decision types have recently worked for each actor, rewards category-specific challenge expertise, and can add a Guaranteed Recovery Protocol. Turning this on makes the classic Teammate Performance Sync inert.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2Enabled: !prev.teammatePerformanceSync2Enabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2Enabled: !prev.teammatePerformanceSync2Enabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teammatePerformanceSync2Enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teammatePerformanceSync2Enabled ? 'ON' : 'OFF'}
@@ -38434,13 +38465,13 @@ function AustraliaGame() {
                           <>
                             <div>
                               <label className="block font-semibold mb-2">Sync Strength: {gameSettings.teammatePerformanceSync2Strength.toFixed(1)}x</label>
-                              <input type="range" min="0" max="2" step="0.1" value={gameSettings.teammatePerformanceSync2Strength} onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2Strength: parseFloat(e.target.value) }))} className="w-full" />
+                              <input type="range" min="0" max="2" step="0.1" value={gameSettings.teammatePerformanceSync2Strength} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2Strength: parseFloat(e.target.value) }))} className="w-full" />
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer text-sm">
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teammatePerformanceSync2StrategyLearningEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2StrategyLearningEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2StrategyLearningEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teammatePerformanceSync2StrategyLearningEnabled ? '☑' : '☐'} Strategy Learning</span>
                             </label>
@@ -38448,14 +38479,14 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled ? '☑' : '☐'} Category-Specific Challenge Expertise</span>
                             </label>
                             {gameSettings.teammatePerformanceSync2ChallengeExpertiseEnabled && (
                               <div>
                                 <label className="block font-semibold mb-2">Expertise Max Bonus: +{Math.round(gameSettings.teammatePerformanceSync2ChallengeExpertiseMaxBonus * 100)}%</label>
-                                <input type="range" min="0" max="0.2" step="0.01" value={gameSettings.teammatePerformanceSync2ChallengeExpertiseMaxBonus} onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseMaxBonus: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="0.2" step="0.01" value={gameSettings.teammatePerformanceSync2ChallengeExpertiseMaxBonus} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2ChallengeExpertiseMaxBonus: parseFloat(e.target.value) }))} className="w-full" />
                               </div>
                             )}
                             <div className="flex items-center justify-between gap-3">
@@ -38464,7 +38495,7 @@ function AustraliaGame() {
                                 <div className="text-xs opacity-75">When a Team Mode AI actor is in the shared recovery state (Survival phase), deterministically liquidates inventory, requests teammate support, or attempts a safe challenge — instead of competing for the win with other decisions and possibly doing nothing.</div>
                               </div>
                               <button
-                                onClick={() => setGameSettings(prev => ({ ...prev, guaranteedRecoveryProtocolEnabled: !prev.guaranteedRecoveryProtocolEnabled }))}
+                                onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, guaranteedRecoveryProtocolEnabled: !prev.guaranteedRecoveryProtocolEnabled }))}
                                 className={`px-4 py-2 rounded font-semibold ${gameSettings.guaranteedRecoveryProtocolEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                               >
                                 {gameSettings.guaranteedRecoveryProtocolEnabled ? 'ON' : 'OFF'}
@@ -38473,14 +38504,14 @@ function AustraliaGame() {
                             {gameSettings.guaranteedRecoveryProtocolEnabled && (
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Challenge Probability (Tier 3): {Math.round(gameSettings.guaranteedRecoveryMinimumChallengeProbability * 100)}%</label>
-                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.guaranteedRecoveryMinimumChallengeProbability} onChange={(e) => setGameSettings(prev => ({ ...prev, guaranteedRecoveryMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="1" step="0.05" value={gameSettings.guaranteedRecoveryMinimumChallengeProbability} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, guaranteedRecoveryMinimumChallengeProbability: parseFloat(e.target.value) }))} className="w-full" />
                               </div>
                             )}
                             <label className="flex items-center gap-2 cursor-pointer text-sm">
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teammatePerformanceSync2TransparencyEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teammatePerformanceSync2TransparencyEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teammatePerformanceSync2TransparencyEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teammatePerformanceSync2TransparencyEnabled ? '☑' : '☐'} Show in Transparency (Recovery Protocol notifications + Decision Transparency reasons)</span>
                             </label>
@@ -38512,7 +38543,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Batch-plans every AI actor's first decision of the round off one shared, frozen snapshot, with team and match-wide coordination, before any of them execute. JavaScript has no true concurrency — execution still proceeds sequentially, exactly as today, with each planned decision re-validated against live state immediately before it's used, falling back to today's ordinary live decision-making whenever the plan is stale or invalid.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, parallelAiPlanningEnabled: !prev.parallelAiPlanningEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, parallelAiPlanningEnabled: !prev.parallelAiPlanningEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.parallelAiPlanningEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.parallelAiPlanningEnabled ? 'ON' : 'OFF'}
@@ -38529,7 +38560,7 @@ function AustraliaGame() {
                                 {(['low', 'balanced', 'strict'] as TeamAiReservationStrictness[]).map(strictness => (
                                   <button
                                     key={strictness}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, parallelAiPlanningCoordinationStrictness: strictness }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, parallelAiPlanningCoordinationStrictness: strictness }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.parallelAiPlanningCoordinationStrictness === strictness ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {strictness}
@@ -38542,7 +38573,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.parallelAiPlanningSabotageCoordinationEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, parallelAiPlanningSabotageCoordinationEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, parallelAiPlanningSabotageCoordinationEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.parallelAiPlanningSabotageCoordinationEnabled ? '☑' : '☐'} Cross-Team Sabotage Coordination</span>
                             </label>
@@ -38550,7 +38581,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.parallelAiPlanningTransparencyEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, parallelAiPlanningTransparencyEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, parallelAiPlanningTransparencyEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.parallelAiPlanningTransparencyEnabled ? '☑' : '☐'} Show in Transparency (coordination + plan-consumption reasons)</span>
                             </label>
@@ -38582,7 +38613,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Build ordered (Strict), adaptive, or prioritized action plans and assign one to your AI teammate, with per-step targets, wager/spending limits, conditions, fallback behavior, repeats, interrupts, phase-based switching, and named templates. Shared-team (multi-actor) sequences are not offered — this game's fixed team roster gives the player's own team only one assignable AI teammate, so there is no second actor to coordinate a shared sequence with.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiActionSequencesEnabled: !prev.teamAiActionSequencesEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionSequencesEnabled: !prev.teamAiActionSequencesEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiActionSequencesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiActionSequencesEnabled ? 'ON' : 'OFF'}
@@ -38594,7 +38625,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiActionSequencesTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiActionSequencesTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiActionSequencesTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiActionSequencesTransparencyEnabled ? '☑' : '☐'} Show in Transparency (soft-condition + fallback notes)</span>
                         </label>
@@ -38602,7 +38633,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiSequenceInterruptsEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiSequenceInterruptsEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiSequenceInterruptsEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiSequenceInterruptsEnabled ? '☑' : '☐'} Enable Sequence Interrupts (per-sequence, edited below)</span>
                         </label>
@@ -38610,7 +38641,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiPhaseSequenceSwitchingEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiPhaseSequenceSwitchingEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiPhaseSequenceSwitchingEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiPhaseSequenceSwitchingEnabled ? '☑' : '☐'} Enable Phase-Based Sequence Switching (per-teammate, edited below)</span>
                         </label>
@@ -38672,7 +38703,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Requires an AI teammate to propose an action — target, cost, wager, expected reward, and reason — and wait for your approval before it executes, with configurable rejection behavior and optional automatic-approval rules.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalEnabled: !prev.aiActionApprovalEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalEnabled: !prev.aiActionApprovalEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.aiActionApprovalEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.aiActionApprovalEnabled ? 'ON' : 'OFF'}
@@ -38684,7 +38715,7 @@ function AustraliaGame() {
                           <label className="block font-semibold mb-2">Approval Mode</label>
                           <select
                             value={gameSettings.aiActionApprovalMode}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalMode: e.target.value as ApprovalMode }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalMode: e.target.value as ApprovalMode }))}
                             className="px-2 py-1 rounded w-full"
                           >
                             <option value="approve_every_action">Approve Every Action</option>
@@ -38706,7 +38737,7 @@ function AustraliaGame() {
                                   <input
                                     type="checkbox"
                                     checked={gameSettings.aiActionApprovalSelectedTypes.includes(t)}
-                                    onChange={(e) => setGameSettings(prev => ({
+                                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                                       ...prev,
                                       aiActionApprovalSelectedTypes: e.target.checked
                                         ? [...prev.aiActionApprovalSelectedTypes, t]
@@ -38724,13 +38755,13 @@ function AustraliaGame() {
                             <label className="block font-semibold mb-2">High-Risk Thresholds (any one breach triggers approval)</label>
                             <div className="flex flex-wrap gap-3 text-xs">
                               <label className="flex items-center gap-1">Wager ≥ $
-                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.wagerMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, wagerMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
+                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.wagerMin} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, wagerMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
                               </label>
                               <label className="flex items-center gap-1">Cost ≥ $
-                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.costMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, costMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
+                                <input type="number" value={gameSettings.aiActionApprovalHighRiskThresholds.costMin} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, costMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-20" />
                               </label>
                               <label className="flex items-center gap-1">% Cash At Risk ≥
-                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalHighRiskThresholds.percentCashAtRiskMin} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, percentCashAtRiskMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-16" />
+                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalHighRiskThresholds.percentCashAtRiskMin} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalHighRiskThresholds: { ...prev.aiActionApprovalHighRiskThresholds, percentCashAtRiskMin: parseFloat(e.target.value) || 0 } }))} className="px-2 py-1 rounded w-16" />
                               </label>
                             </div>
                           </div>
@@ -38745,7 +38776,7 @@ function AustraliaGame() {
                                     type="text"
                                     placeholder="actor id"
                                     value={override.actorId}
-                                    onChange={(e) => setGameSettings(prev => ({
+                                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                                       ...prev,
                                       aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.map((o, i) => i === idx ? { ...o, actorId: e.target.value } : o)
                                     }))}
@@ -38753,7 +38784,7 @@ function AustraliaGame() {
                                   />
                                   <select
                                     value={override.mode}
-                                    onChange={(e) => setGameSettings(prev => ({
+                                    onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                                       ...prev,
                                       aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.map((o, i) => i === idx ? { ...o, mode: e.target.value as ApprovalMode } : o)
                                     }))}
@@ -38765,7 +38796,7 @@ function AustraliaGame() {
                                     <option value="approve_sequence_actions_only">Approve Sequence Actions Only</option>
                                   </select>
                                   <button
-                                    onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.filter((_, i) => i !== idx) }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalTeammateOverrides: prev.aiActionApprovalTeammateOverrides.filter((_, i) => i !== idx) }))}
                                     className={`px-2 py-1 rounded ${themeStyles.buttonSecondary}`}
                                   >
                                     Remove
@@ -38774,7 +38805,7 @@ function AustraliaGame() {
                               ))}
                             </div>
                             <button
-                              onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalTeammateOverrides: [...prev.aiActionApprovalTeammateOverrides, { actorId: '', mode: 'approve_every_action' }] }))}
+                              onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalTeammateOverrides: [...prev.aiActionApprovalTeammateOverrides, { actorId: '', mode: 'approve_every_action' }] }))}
                               className={`mt-2 px-3 py-1 rounded text-xs font-semibold ${themeStyles.buttonSecondary}`}
                             >
                               + Add Teammate Override
@@ -38786,7 +38817,7 @@ function AustraliaGame() {
                           <label className="block font-semibold mb-2">On Rejection</label>
                           <select
                             value={gameSettings.aiActionApprovalRejectionOutcome}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalRejectionOutcome: e.target.value as ApprovalRejectionOutcome }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalRejectionOutcome: e.target.value as ApprovalRejectionOutcome }))}
                             className="px-2 py-1 rounded w-full"
                           >
                             <option value="propose_again">Propose Again</option>
@@ -38802,7 +38833,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.aiActionApprovalTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.aiActionApprovalTransparencyEnabled ? '☑' : '☐'} Show in Transparency (auto-resolution notes)</span>
                         </label>
@@ -38813,7 +38844,7 @@ function AustraliaGame() {
                               <div className="text-xs opacity-60">Off by default — a separate opt-in from Approval itself. Auto-resolved actions never appear in the visible queue.</div>
                             </div>
                             <button
-                              onClick={() => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRulesEnabled: !prev.aiActionApprovalAutoRulesEnabled }))}
+                              onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRulesEnabled: !prev.aiActionApprovalAutoRulesEnabled }))}
                               className={`px-4 py-2 rounded font-semibold ${gameSettings.aiActionApprovalAutoRulesEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                             >
                               {gameSettings.aiActionApprovalAutoRulesEnabled ? 'ON' : 'OFF'}
@@ -38822,39 +38853,39 @@ function AustraliaGame() {
                           {gameSettings.aiActionApprovalAutoRulesEnabled && (
                             <div className="mt-3 space-y-2 text-xs">
                               <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, enabled: e.target.checked } } }))} />
                                 <span>Auto-approve wager below $</span>
-                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveWagerBelow.threshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveWagerBelow: { ...prev.aiActionApprovalAutoRules.autoApproveWagerBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
                               </div>
                               <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveLeavesMinReserve.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveLeavesMinReserve: { enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveLeavesMinReserve.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveLeavesMinReserve: { enabled: e.target.checked } } }))} />
                                 Auto-approve actions that leave the Economy Governor's minimum reserve intact
                               </label>
                               <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, enabled: e.target.checked } } }))} />
                                 <span>Auto-approve challenges with success probability ≥</span>
-                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-16" />
+                                <input type="number" step="0.05" min="0" max="1" value={gameSettings.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove.threshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSuccessProbabilityAbove: { ...prev.aiActionApprovalAutoRules.autoApproveSuccessProbabilityAbove, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-16" />
                               </div>
                               <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, enabled: e.target.checked } } }))} />
                                 <span>Auto-approve travel below $</span>
-                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveTravelCostBelow.threshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveTravelCostBelow: { ...prev.aiActionApprovalAutoRules.autoApproveTravelCostBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
                               </div>
                               <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, enabled: e.target.checked } } }))} />
                                 <span>Auto-approve teammate support below $</span>
-                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.threshold} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
+                                <input type="number" value={gameSettings.aiActionApprovalAutoRules.autoApproveSupportBelow.threshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoApproveSupportBelow: { ...prev.aiActionApprovalAutoRules.autoApproveSupportBelow, threshold: parseFloat(e.target.value) || 0 } } }))} className="px-2 py-1 rounded w-20" />
                               </div>
                               <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectLoans.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectLoans: { enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectLoans.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectLoans: { enabled: e.target.checked } } }))} />
                                 Auto-reject loans
                               </label>
                               <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectSabotage.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectSabotage: { enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectSabotage.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectSabotage: { enabled: e.target.checked } } }))} />
                                 Auto-reject sabotage
                               </label>
                               <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectRecoverySpending.enabled} onChange={(e) => setGameSettings(prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectRecoverySpending: { enabled: e.target.checked } } }))} />
+                                <input type="checkbox" checked={gameSettings.aiActionApprovalAutoRules.autoRejectRecoverySpending.enabled} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiActionApprovalAutoRules: { ...prev.aiActionApprovalAutoRules, autoRejectRecoverySpending: { enabled: e.target.checked } } }))} />
                                 Auto-reject recovery-phase spending (investments/equipment while in economic recovery)
                               </label>
                             </div>
@@ -38885,7 +38916,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Sets hard and soft permission rules (cash thresholds, wager ranges, success-probability minimums, region/inventory conditions, and more) that every normal AI action must clear before it can execute — a final gate layered alongside the existing Cash Vault and Economy Governor checks. Hard requirements can never be bypassed; soft requirements are logged (never blocked) until AI Action Approval exists to offer an exception.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, actionRequirementsEnabled: !prev.actionRequirementsEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, actionRequirementsEnabled: !prev.actionRequirementsEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.actionRequirementsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.actionRequirementsEnabled ? 'ON' : 'OFF'}
@@ -38897,7 +38928,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.actionRequirementsTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, actionRequirementsTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, actionRequirementsTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.actionRequirementsTransparencyEnabled ? '☑' : '☐'} Show in Transparency (soft-violation notes)</span>
                         </label>
@@ -38905,14 +38936,14 @@ function AustraliaGame() {
                           {(gameSettings.actionRequirementGroups || []).map((group, idx) => renderRequirementGroupEditor(
                             group, [idx], 1,
                             gameSettings.actionRequirementGroups || [],
-                            (updater) => setGameSettings(prev => ({ ...prev, actionRequirementGroups: updater(prev.actionRequirementGroups || []) }))
+                            (updater) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, actionRequirementGroups: updater(prev.actionRequirementGroups || []) }))
                           ))}
                           {(gameSettings.actionRequirementGroups || []).length === 0 && (
                             <div className="text-xs opacity-60">No requirement groups configured yet — add one below.</div>
                           )}
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, actionRequirementGroups: [...(prev.actionRequirementGroups || []), createNewRequirementGroup()] }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, actionRequirementGroups: [...(prev.actionRequirementGroups || []), createNewRequirementGroup()] }))}
                           className={`px-3 py-2 rounded font-semibold text-sm ${themeStyles.buttonSecondary}`}
                         >
                           + Add Requirement Group
@@ -38943,7 +38974,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Gives each team a shared cash pool, entirely separate from every actor's own personal cash — a contribution moves money, it never duplicates it. Foundations only this phase: manual/automatic contributions and a team reserve. Funding requests, Governor-restriction transparency, and Governor exceptions arrive in later updates.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamTreasuryEnabled: !prev.teamTreasuryEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryEnabled: !prev.teamTreasuryEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamTreasuryEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamTreasuryEnabled ? 'ON' : 'OFF'}
@@ -38956,7 +38987,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamTreasuryEnabledForFriendlyTeam)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryEnabledForFriendlyTeam: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryEnabledForFriendlyTeam: e.target.checked }))}
                           />
                           <span>{gameSettings.teamTreasuryEnabledForFriendlyTeam ? '☑' : '☐'} Enable for Friendly Team</span>
                         </label>
@@ -38964,7 +38995,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamTreasuryEnabledForEnemyTeam)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryEnabledForEnemyTeam: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryEnabledForEnemyTeam: e.target.checked }))}
                           />
                           <span>{gameSettings.teamTreasuryEnabledForEnemyTeam ? '☑' : '☐'} Enable for Enemy Team</span>
                         </label>
@@ -38975,7 +39006,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryShowInUi)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryShowInUi: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryShowInUi: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryShowInUi ? '☑' : '☐'} Show Treasury in Team UI</span>
                             </label>
@@ -38983,7 +39014,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryShowTransactions)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryShowTransactions: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryShowTransactions: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryShowTransactions ? '☑' : '☐'} Show Transaction History</span>
                             </label>
@@ -38991,7 +39022,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryAllowManualContributions)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowManualContributions: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryAllowManualContributions: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryAllowManualContributions ? '☑' : '☐'} Allow Manual Contributions (human player)</span>
                             </label>
@@ -38999,7 +39030,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryAllowProtectedCashContribution)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowProtectedCashContribution: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryAllowProtectedCashContribution: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryAllowProtectedCashContribution ? '☑' : '☐'} Allow Protected Cash in Contributions (Cash Vault emergency override)</span>
                             </label>
@@ -39007,7 +39038,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamAiTreasuryContributionEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiTreasuryContributionEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiTreasuryContributionEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teamAiTreasuryContributionEnabled ? '☑' : '☐'} Allow AI Contributions (only from safely-excess cash, never during recovery)</span>
                             </label>
@@ -39015,7 +39046,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.treasuryAutomaticContributionEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
                                   ...prev,
                                   treasuryAutomaticContributionEnabled: e.target.checked,
                                   treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, enabled: e.target.checked }
@@ -39027,46 +39058,46 @@ function AustraliaGame() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-4">
                                 <div>
                                   <label className="block font-semibold mb-2">% of Challenge Winnings: {Math.round(gameSettings.treasuryAutomaticContributionPolicy.percentageOfChallengeWinnings * 100)}%</label>
-                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfChallengeWinnings} onChange={(e) => setGameSettings(prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfChallengeWinnings: parseFloat(e.target.value) } }))} className="w-full" />
+                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfChallengeWinnings} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfChallengeWinnings: parseFloat(e.target.value) } }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">% of Resource Sale Revenue: {Math.round(gameSettings.treasuryAutomaticContributionPolicy.percentageOfResourceSaleRevenue * 100)}%</label>
-                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfResourceSaleRevenue} onChange={(e) => setGameSettings(prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfResourceSaleRevenue: parseFloat(e.target.value) } }))} className="w-full" />
+                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfResourceSaleRevenue} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfResourceSaleRevenue: parseFloat(e.target.value) } }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">% of Investment Income: {Math.round(gameSettings.treasuryAutomaticContributionPolicy.percentageOfInvestmentIncome * 100)}%</label>
-                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfInvestmentIncome} onChange={(e) => setGameSettings(prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfInvestmentIncome: parseFloat(e.target.value) } }))} className="w-full" />
+                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfInvestmentIncome} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfInvestmentIncome: parseFloat(e.target.value) } }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">% of Other Positive Income: {Math.round(gameSettings.treasuryAutomaticContributionPolicy.percentageOfOtherPositiveIncome * 100)}%</label>
-                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfOtherPositiveIncome} onChange={(e) => setGameSettings(prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfOtherPositiveIncome: parseFloat(e.target.value) } }))} className="w-full" />
+                                  <input type="range" min="0" max="1" step="0.05" value={gameSettings.treasuryAutomaticContributionPolicy.percentageOfOtherPositiveIncome} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, percentageOfOtherPositiveIncome: parseFloat(e.target.value) } }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">Fixed Daily Contribution: ${gameSettings.treasuryAutomaticContributionPolicy.fixedDailyContribution}</label>
-                                  <input type="range" min="0" max="500" step="10" value={gameSettings.treasuryAutomaticContributionPolicy.fixedDailyContribution} onChange={(e) => setGameSettings(prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, fixedDailyContribution: parseInt(e.target.value) } }))} className="w-full" />
+                                  <input type="range" min="0" max="500" step="10" value={gameSettings.treasuryAutomaticContributionPolicy.fixedDailyContribution} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, treasuryAutomaticContributionPolicy: { ...prev.treasuryAutomaticContributionPolicy, fixedDailyContribution: parseInt(e.target.value) } }))} className="w-full" />
                                 </div>
                               </div>
                             )}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Max Automatic Contribution / Actor / Day: ${gameSettings.teamTreasuryMaxAutoContributionPerActorPerDay}</label>
-                                <input type="range" min="0" max="2000" step="50" value={gameSettings.teamTreasuryMaxAutoContributionPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMaxAutoContributionPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="2000" step="50" value={gameSettings.teamTreasuryMaxAutoContributionPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryMaxAutoContributionPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Personal Cash Remaining: ${gameSettings.teamTreasuryMinPersonalCashRemaining}</label>
-                                <input type="range" min="0" max="1000" step="10" value={gameSettings.teamTreasuryMinPersonalCashRemaining} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMinPersonalCashRemaining: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="1000" step="10" value={gameSettings.teamTreasuryMinPersonalCashRemaining} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryMinPersonalCashRemaining: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Contribution Amount: ${gameSettings.teamTreasuryMinContributionAmount}</label>
-                                <input type="range" min="0" max="200" step="5" value={gameSettings.teamTreasuryMinContributionAmount} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMinContributionAmount: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="200" step="5" value={gameSettings.teamTreasuryMinContributionAmount} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryMinContributionAmount: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Contribution Cooldown: {gameSettings.teamTreasuryContributionCooldownDays} day(s)</label>
-                                <input type="range" min="0" max="10" step="1" value={gameSettings.teamTreasuryContributionCooldownDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryContributionCooldownDays: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="10" step="1" value={gameSettings.teamTreasuryContributionCooldownDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryContributionCooldownDays: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Team Reserve: ${gameSettings.teamTreasuryReserve}</label>
-                                <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryReserve} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryReserve: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryReserve} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryReserve: parseInt(e.target.value) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Cash the treasury should keep in reserve for emergencies.</div>
                               </div>
                             </div>
@@ -39074,7 +39105,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryDisableContributionDuringRecovery)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryDisableContributionDuringRecovery: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryDisableContributionDuringRecovery: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryDisableContributionDuringRecovery ? '☑' : '☐'} No Contributions While in Economic Recovery</span>
                             </label>
@@ -39082,7 +39113,7 @@ function AustraliaGame() {
                               <input
                                 type="checkbox"
                                 checked={Boolean(gameSettings.teamTreasuryDynamicReserveEnabled)}
-                                onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryDynamicReserveEnabled: e.target.checked }))}
+                                onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryDynamicReserveEnabled: e.target.checked }))}
                               />
                               <span>{gameSettings.teamTreasuryDynamicReserveEnabled ? '☑' : '☐'} Dynamic Reserve (scales with teammate count, day progress, recovery-actor count, and endgame state — otherwise fixed)</span>
                             </label>
@@ -39093,7 +39124,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryAllowHumanFundingRequests)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowHumanFundingRequests: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryAllowHumanFundingRequests: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryAllowHumanFundingRequests ? '☑' : '☐'} Allow Human Funding Requests</span>
                               </label>
@@ -39101,7 +39132,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamAiTreasuryRequestsEnabled)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiTreasuryRequestsEnabled: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiTreasuryRequestsEnabled: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamAiTreasuryRequestsEnabled ? '☑' : '☐'} Allow AI Teammate Funding Requests</span>
                               </label>
@@ -39109,7 +39140,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.countTeamTreasuryTowardVictory)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, countTeamTreasuryTowardVictory: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, countTeamTreasuryTowardVictory: e.target.checked }))}
                                 />
                                 <span>{gameSettings.countTeamTreasuryTowardVictory ? '☑' : '☐'} Treasury Balance Counts Toward Victory</span>
                               </label>
@@ -39117,7 +39148,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryAllowRequestsAtZeroCash)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowRequestsAtZeroCash: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryAllowRequestsAtZeroCash: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryAllowRequestsAtZeroCash ? '☑' : '☐'} Guarantee Requests Are Reachable at $0</span>
                               </label>
@@ -39125,7 +39156,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequireApprovalForFriendlyAiWithdrawals: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryRequireApprovalForFriendlyAiWithdrawals: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals ? '☑' : '☐'} Require Player Approval for Friendly Withdrawals</span>
                               </label>
@@ -39133,7 +39164,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryAllowPartialApproval)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryAllowPartialApproval: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryAllowPartialApproval: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryAllowPartialApproval ? '☑' : '☐'} Allow Partial Approval</span>
                               </label>
@@ -39141,7 +39172,7 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryRequireIntendedAction)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequireIntendedAction: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryRequireIntendedAction: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryRequireIntendedAction ? '☑' : '☐'} Require an Intended Action for "Fund a Specific Action" Requests</span>
                               </label>
@@ -39149,26 +39180,26 @@ function AustraliaGame() {
                                 <input
                                   type="checkbox"
                                   checked={Boolean(gameSettings.teamTreasuryReturnUnusedRestrictedFunds)}
-                                  onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryReturnUnusedRestrictedFunds: e.target.checked }))}
+                                  onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryReturnUnusedRestrictedFunds: e.target.checked }))}
                                 />
                                 <span>{gameSettings.teamTreasuryReturnUnusedRestrictedFunds ? '☑' : '☐'} Auto-Return Unused Restricted-Purpose Funds</span>
                               </label>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                                 <div>
                                   <label className="block font-semibold mb-2">Emergency Operating Target: ${gameSettings.teamTreasuryEmergencyOperatingTarget}</label>
-                                  <input type="range" min="0" max="1000" step="25" value={gameSettings.teamTreasuryEmergencyOperatingTarget} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryEmergencyOperatingTarget: parseInt(e.target.value) }))} className="w-full" />
+                                  <input type="range" min="0" max="1000" step="25" value={gameSettings.teamTreasuryEmergencyOperatingTarget} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryEmergencyOperatingTarget: parseInt(e.target.value) }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">Max Withdrawal / Request: ${gameSettings.teamTreasuryMaxWithdrawalPerRequest}</label>
-                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerRequest} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMaxWithdrawalPerRequest: parseInt(e.target.value) }))} className="w-full" />
+                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerRequest} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryMaxWithdrawalPerRequest: parseInt(e.target.value) }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">Max Withdrawal / Actor / Day: ${gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay}</label>
-                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryMaxWithdrawalPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
+                                  <input type="range" min="0" max="5000" step="50" value={gameSettings.teamTreasuryMaxWithdrawalPerActorPerDay} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryMaxWithdrawalPerActorPerDay: parseInt(e.target.value) }))} className="w-full" />
                                 </div>
                                 <div>
                                   <label className="block font-semibold mb-2">Request Cooldown: {gameSettings.teamTreasuryRequestCooldownDays} day(s)</label>
-                                  <input type="range" min="0" max="10" step="1" value={gameSettings.teamTreasuryRequestCooldownDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamTreasuryRequestCooldownDays: parseInt(e.target.value) }))} className="w-full" />
+                                  <input type="range" min="0" max="10" step="1" value={gameSettings.teamTreasuryRequestCooldownDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamTreasuryRequestCooldownDays: parseInt(e.target.value) }))} className="w-full" />
                                 </div>
                               </div>
                             </div>
@@ -39250,7 +39281,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Master switch for two independent modules — Strategic Command AI (coordinates what the team should do) and Adaptive Team AI Overseer (temporarily adjusts how permissively the team behaves). Both stay fully inert while this is off, regardless of their own toggles below.</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiOverseerSystemEnabled: !prev.teamAiOverseerSystemEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverseerSystemEnabled: !prev.teamAiOverseerSystemEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiOverseerSystemEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiOverseerSystemEnabled ? 'ON' : 'OFF'}
@@ -39265,7 +39296,7 @@ function AustraliaGame() {
                             <div className="text-sm opacity-75">Coordinates team objectives, actor assignments, and resource allocation. Never changes AI policy settings.</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabled: !prev.teamAiStrategicCommandEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandEnabled: !prev.teamAiStrategicCommandEnabled }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiStrategicCommandEnabled ? 'ON' : 'OFF'}
@@ -39278,7 +39309,7 @@ function AustraliaGame() {
                               {OVERSEER_AUTHORITY_MODES.filter(mode => mode !== 'off').map(mode => (
                                 <button
                                   key={mode}
-                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandAuthorityMode: mode }))}
+                                  onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandAuthorityMode: mode }))}
                                   className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiStrategicCommandAuthorityMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                 >
                                   {mode}
@@ -39296,7 +39327,7 @@ function AustraliaGame() {
                                 <div className="text-xs opacity-60">Whether directives are ever generated for your own team's AI actor.</div>
                               </div>
                               <button
-                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabledForFriendlyTeam: !prev.teamAiStrategicCommandEnabledForFriendlyTeam }))}
+                                onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandEnabledForFriendlyTeam: !prev.teamAiStrategicCommandEnabledForFriendlyTeam }))}
                                 className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                               >
                                 {gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam ? 'ON' : 'OFF'}
@@ -39308,7 +39339,7 @@ function AustraliaGame() {
                                 <div className="text-xs opacity-60">Whether directives are ever generated for the opposing team's AI actors.</div>
                               </div>
                               <button
-                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandEnabledForEnemyTeam: !prev.teamAiStrategicCommandEnabledForEnemyTeam }))}
+                                onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandEnabledForEnemyTeam: !prev.teamAiStrategicCommandEnabledForEnemyTeam }))}
                                 className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandEnabledForEnemyTeam ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                               >
                                 {gameSettings.teamAiStrategicCommandEnabledForEnemyTeam ? 'ON' : 'OFF'}
@@ -39320,7 +39351,7 @@ function AustraliaGame() {
                                 <div className="text-xs opacity-60">Gates the Treasury funding-request delegation and the Override eligibility bias. Turning this off restores directive generation and scoring bias to their pre-intervention (O6-era) behavior — a directive's spending cap is treated as unbounded, no directive-scoped Treasury requests fire, and Override eligibility never gets a directive-aware discount.</div>
                               </div>
                               <button
-                                onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandInterventionsEnabled: !prev.teamAiStrategicCommandInterventionsEnabled }))}
+                                onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandInterventionsEnabled: !prev.teamAiStrategicCommandInterventionsEnabled }))}
                                 className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiStrategicCommandInterventionsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                               >
                                 {gameSettings.teamAiStrategicCommandInterventionsEnabled ? 'ON' : 'OFF'}
@@ -39332,27 +39363,27 @@ function AustraliaGame() {
                           <div className="space-y-3">
                             <div>
                               <label className="block font-semibold mb-2">Short-Term Directive Duration: {gameSettings.teamAiStrategicCommandDirectiveDurationDays} day(s)</label>
-                              <input type="range" min="1" max="30" step="1" value={gameSettings.teamAiStrategicCommandDirectiveDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                              <input type="range" min="1" max="30" step="1" value={gameSettings.teamAiStrategicCommandDirectiveDurationDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandDirectiveDurationDays: parseInt(e.target.value) }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">How long a 'short_term'-horizon directive stays live before expiring. 'Immediate' directives always expire the next day; 'endgame' directives run to (a capped) game end.</div>
                             </div>
                             <div>
                               <label className="block font-semibold mb-2">Directive Score Bias: +{gameSettings.teamAiStrategicCommandDirectiveScoreBias}</label>
-                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandDirectiveScoreBias} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandDirectiveScoreBias: parseInt(e.target.value) }))} className="w-full" />
+                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandDirectiveScoreBias} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandDirectiveScoreBias: parseInt(e.target.value) }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">Score bonus applied to a candidate action whose type matches an actor's ACTIVE directive's allowed categories — additive only, never bypasses any gate.</div>
                             </div>
                             <div>
                               <label className="block font-semibold mb-2">Max Spending: {gameSettings.teamAiStrategicCommandMaxSpendingPercent}% of spendable cash</label>
-                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandMaxSpendingPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandMaxSpendingPercent: parseInt(e.target.value) }))} className="w-full" />
+                              <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiStrategicCommandMaxSpendingPercent} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandMaxSpendingPercent: parseInt(e.target.value) }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">A directive's own spending cap, computed at creation time. A candidate over this cap never gets the Strategic Command score bonus (it can still be chosen on its own merits).</div>
                             </div>
                             <div>
                               <label className="block font-semibold mb-2">Treasury Allocation Cap: ${gameSettings.teamAiStrategicCommandTreasuryAllocationCap}</label>
-                              <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiStrategicCommandTreasuryAllocationCap} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandTreasuryAllocationCap: parseInt(e.target.value) }))} className="w-full" />
+                              <input type="range" min="0" max="5000" step="50" value={gameSettings.teamAiStrategicCommandTreasuryAllocationCap} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandTreasuryAllocationCap: parseInt(e.target.value) }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">Maximum a directive-scoped Team Treasury funding request may ask for (requires Team Treasury enabled).</div>
                             </div>
                             <div>
                               <label className="block font-semibold mb-2">Override Bias: {Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)}%</label>
-                              <input type="range" min="0" max="50" step="1" value={Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
+                              <input type="range" min="0" max="50" step="1" value={Math.round(gameSettings.teamAiStrategicCommandOverrideBias * 100)} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandOverrideBias: parseInt(e.target.value) / 100 }))} className="w-full" />
                               <div className="text-xs opacity-60 mt-1">Lowers the Override eligibility score threshold when an actor's active directive can't otherwise be pursued (requires AI Action Overrides enabled) — composes with Endgame Acceleration's own Override Bias.</div>
                             </div>
                             <div>
@@ -39361,7 +39392,7 @@ function AustraliaGame() {
                                 {OVERSEER_PERSONALITY_IDS.map(personality => (
                                   <button
                                     key={personality}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, teamAiStrategicCommandPersonality: personality }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiStrategicCommandPersonality: personality }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiStrategicCommandPersonality === personality ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {personality}
@@ -39379,7 +39410,7 @@ function AustraliaGame() {
                             <div className="text-sm opacity-75">Temporarily adjusts permitted AI policy settings based on match performance. Never assigns exact actor objectives.</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerEnabled: !prev.teamAiAdaptiveOverseerEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerEnabled: !prev.teamAiAdaptiveOverseerEnabled }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiAdaptiveOverseerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiAdaptiveOverseerEnabled ? 'ON' : 'OFF'}
@@ -39392,7 +39423,7 @@ function AustraliaGame() {
                               {OVERSEER_AUTHORITY_MODES.filter(mode => mode !== 'off').map(mode => (
                                 <button
                                   key={mode}
-                                  onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerAuthorityMode: mode }))}
+                                  onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerAuthorityMode: mode }))}
                                   className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiAdaptiveOverseerAuthorityMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                 >
                                   {mode}
@@ -39408,28 +39439,28 @@ function AustraliaGame() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <label className="block font-semibold mb-2">Comeback Mode — Enter: {gameSettings.teamAiAdaptiveOverseerComebackEnterPercent}% behind</label>
-                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackEnterPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerComebackEnterPercent: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackEnterPercent} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerComebackEnterPercent: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Comeback Mode — Exit: {gameSettings.teamAiAdaptiveOverseerComebackExitPercent}% behind</label>
-                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackExitPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerComebackExitPercent: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerComebackExitPercent} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerComebackExitPercent: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Protect the Lead — Enter: {gameSettings.teamAiAdaptiveOverseerProtectLeadEnterPercent}% ahead</label>
-                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadEnterPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadEnterPercent: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadEnterPercent} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadEnterPercent: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Protect the Lead — Exit: {gameSettings.teamAiAdaptiveOverseerProtectLeadExitPercent}% ahead</label>
-                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadExitPercent} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadExitPercent: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="100" step="1" value={gameSettings.teamAiAdaptiveOverseerProtectLeadExitPercent} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerProtectLeadExitPercent: parseInt(e.target.value) }))} className="w-full" />
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Recovery Mode — Restricted Turns Threshold: {gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold}</label>
-                                <input type="range" min="1" max="20" step="1" value={gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="1" max="20" step="1" value={gameSettings.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: parseInt(e.target.value) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">An actor at or above this many consecutive Governor-restricted turns counts as a Recovery signal.</div>
                               </div>
                               <div>
                                 <label className="block font-semibold mb-2">Minimum Strategy Duration: {gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays} day(s)</label>
-                                <input type="range" min="0" max="30" step="1" value={gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerMinimumStrategyDurationDays: parseInt(e.target.value) }))} className="w-full" />
+                                <input type="range" min="0" max="30" step="1" value={gameSettings.teamAiAdaptiveOverseerMinimumStrategyDurationDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerMinimumStrategyDurationDays: parseInt(e.target.value) }))} className="w-full" />
                                 <div className="text-xs opacity-60 mt-1">Prevents strategy oscillation — a non-Recovery mode change must wait this long since the last change. Recovery Mode can pre-empt immediately (spec's stated emergency exception).</div>
                               </div>
                             </div>
@@ -39439,7 +39470,7 @@ function AustraliaGame() {
                                 {OVERSEER_PERSONALITY_IDS.map(personality => (
                                   <button
                                     key={personality}
-                                    onClick={() => setGameSettings(prev => ({ ...prev, teamAiAdaptiveOverseerPersonality: personality }))}
+                                    onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAdaptiveOverseerPersonality: personality }))}
                                     className={`px-3 py-2 rounded font-semibold capitalize flex-1 text-xs ${gameSettings.teamAiAdaptiveOverseerPersonality === personality ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                                   >
                                     {personality}
@@ -39455,7 +39486,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiOverseerShowStatusCard)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverseerShowStatusCard: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverseerShowStatusCard: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiOverseerShowStatusCard ? '☑' : '☐'} Show Overseer Status Card (added in a later update)</span>
                         </label>
@@ -39463,7 +39494,7 @@ function AustraliaGame() {
                           <input
                             type="checkbox"
                             checked={Boolean(gameSettings.teamAiOverseerTransparencyEnabled)}
-                            onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiOverseerTransparencyEnabled: e.target.checked }))}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiOverseerTransparencyEnabled: e.target.checked }))}
                           />
                           <span>{gameSettings.teamAiOverseerTransparencyEnabled ? '☑' : '☐'} Show Overseer Reasoning (confidence, evidence, added in a later update)</span>
                         </label>
@@ -39473,7 +39504,7 @@ function AustraliaGame() {
                             <div className="text-xs opacity-60">When a team has this many teammates simultaneously Governor-restricted for consecutive turns, Safe Mode activates for that team — reusing the same gates as a full user lock (new overlay/directive creation stops; already-live entries are untouched). Auto-clears once the count drops back below the threshold.</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiSafeModeEnabled: !prev.teamAiSafeModeEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiSafeModeEnabled: !prev.teamAiSafeModeEnabled }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiSafeModeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiSafeModeEnabled ? 'ON' : 'OFF'}
@@ -39482,7 +39513,7 @@ function AustraliaGame() {
                         {gameSettings.teamAiSafeModeEnabled && (
                           <div>
                             <label className="block font-semibold mb-2">Safe Mode Restricted-Actor Threshold: {gameSettings.teamAiSafeModeRestrictedActorThreshold}</label>
-                            <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiSafeModeRestrictedActorThreshold} onChange={(e) => setGameSettings(prev => ({ ...prev, teamAiSafeModeRestrictedActorThreshold: parseInt(e.target.value) }))} className="w-full" />
+                            <input type="range" min="1" max="10" step="1" value={gameSettings.teamAiSafeModeRestrictedActorThreshold} onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiSafeModeRestrictedActorThreshold: parseInt(e.target.value) }))} className="w-full" />
                           </div>
                         )}
                         <div className="text-xs opacity-60">Strategic Command AI still has no effect yet. The Adaptive Overseer now runs shadow-only diagnostics daily (labeling each team's current strategy mode and logging why), but does not yet change any AI policy setting or decision — that overlay logic ships in a later update.</div>
@@ -39517,7 +39548,7 @@ function AustraliaGame() {
                         </div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorSystemEnabled: !prev.teamAiAuditorSystemEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorSystemEnabled: !prev.teamAiAuditorSystemEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.teamAiAuditorSystemEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.teamAiAuditorSystemEnabled ? 'ON' : 'OFF'}
@@ -39534,7 +39565,7 @@ function AustraliaGame() {
                           <div className="font-medium">Friendly Team Mode</div>
                           <select
                             value={gameSettings.teamAiAuditorModeForFriendlyTeam}
-                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForFriendlyTeam: e.target.value as AiOperationsAuditorMode }))}
+                            onChange={e => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorModeForFriendlyTeam: e.target.value as AiOperationsAuditorMode }))}
                             className={`${themeStyles.select} rounded px-3 py-2`}
                           >
                             <option value="off">Off</option>
@@ -39548,7 +39579,7 @@ function AustraliaGame() {
                           <div className="font-medium">Enemy Team Mode</div>
                           <select
                             value={gameSettings.teamAiAuditorModeForEnemyTeam}
-                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorModeForEnemyTeam: e.target.value as AiOperationsAuditorMode }))}
+                            onChange={e => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorModeForEnemyTeam: e.target.value as AiOperationsAuditorMode }))}
                             className={`${themeStyles.select} rounded px-3 py-2`}
                           >
                             <option value="off">Off</option>
@@ -39561,7 +39592,7 @@ function AustraliaGame() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-medium">Show Status Card</div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorShowStatusCard: !prev.teamAiAuditorShowStatusCard }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorShowStatusCard: !prev.teamAiAuditorShowStatusCard }))}
                             className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorShowStatusCard ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiAuditorShowStatusCard ? 'ON' : 'OFF'}
@@ -39570,7 +39601,7 @@ function AustraliaGame() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-medium">Enable Full Dashboard</div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorDashboardEnabled: !prev.teamAiAuditorDashboardEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorDashboardEnabled: !prev.teamAiAuditorDashboardEnabled }))}
                             className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorDashboardEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiAuditorDashboardEnabled ? 'ON' : 'OFF'}
@@ -39579,7 +39610,7 @@ function AustraliaGame() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-medium">Safe Mode</div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, teamAiAuditorSafeModeEnabled: !prev.teamAiAuditorSafeModeEnabled }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorSafeModeEnabled: !prev.teamAiAuditorSafeModeEnabled }))}
                             className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.teamAiAuditorSafeModeEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.teamAiAuditorSafeModeEnabled ? 'ON' : 'OFF'}
@@ -39594,7 +39625,7 @@ function AustraliaGame() {
                               max="20"
                               step="1"
                               value={gameSettings.teamAiAuditorSafeModeEscalatedIncidentThreshold}
-                              onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorSafeModeEscalatedIncidentThreshold: parseInt(e.target.value, 10) }))}
+                              onChange={e => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorSafeModeEscalatedIncidentThreshold: parseInt(e.target.value, 10) }))}
                             />
                           </div>
                         )}
@@ -39606,7 +39637,7 @@ function AustraliaGame() {
                             max="1"
                             step="0.05"
                             value={gameSettings.teamAiAuditorAutomaticRecoveryMinConfidence}
-                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMinConfidence: parseFloat(e.target.value) }))}
+                            onChange={e => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMinConfidence: parseFloat(e.target.value) }))}
                           />
                         </div>
                         <div className="flex items-center justify-between gap-3">
@@ -39617,7 +39648,7 @@ function AustraliaGame() {
                             max="20"
                             step="1"
                             value={gameSettings.teamAiAuditorAutomaticRecoveryMaxPerDay}
-                            onChange={e => setGameSettings(prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMaxPerDay: parseInt(e.target.value, 10) }))}
+                            onChange={e => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, teamAiAuditorAutomaticRecoveryMaxPerDay: parseInt(e.target.value, 10) }))}
                           />
                         </div>
                       </div>
@@ -39651,7 +39682,7 @@ function AustraliaGame() {
                     <select
                       className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                       value={gameSettings.aiAlgorithmForFriendlyTeam}
-                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: e.target.value as AiDecisionEngineId }))}
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForFriendlyTeam: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
                       <option value="end_to_end_planner">End-to-End Strategic Planner</option>
@@ -39662,7 +39693,7 @@ function AustraliaGame() {
                     <select
                       className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                       value={gameSettings.aiAlgorithmForEnemyTeam}
-                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForEnemyTeam: e.target.value as AiDecisionEngineId }))}
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForEnemyTeam: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
                       <option value="end_to_end_planner">End-to-End Strategic Planner</option>
@@ -39673,7 +39704,7 @@ function AustraliaGame() {
                     <select
                       className={`${themeStyles.select} rounded px-3 py-2 w-full`}
                       value={gameSettings.aiAlgorithmForOpponent}
-                      onChange={(e) => setGameSettings(prev => ({ ...prev, aiAlgorithmForOpponent: e.target.value as AiDecisionEngineId }))}
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForOpponent: e.target.value as AiDecisionEngineId }))}
                     >
                       <option value="classic_layered">Classic Layered AI</option>
                       <option value="end_to_end_planner">End-to-End Strategic Planner</option>
@@ -39686,7 +39717,7 @@ function AustraliaGame() {
                       {(['fast', 'balanced', 'deep'] as AiThinkingDepth[]).map(depth => (
                         <button
                           key={depth}
-                          onClick={() => setGameSettings(prev => ({ ...prev, aiThinkingDepth: depth }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiThinkingDepth: depth }))}
                           className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiThinkingDepth === depth ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {depth}
@@ -39720,7 +39751,7 @@ function AustraliaGame() {
                       </div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderEnabled: !prev.aiAlgorithmBuilderEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmBuilderEnabled: !prev.aiAlgorithmBuilderEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.aiAlgorithmBuilderEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.aiAlgorithmBuilderEnabled ? 'ON' : 'OFF'}
@@ -39776,7 +39807,7 @@ function AustraliaGame() {
                     };
                     const deleteAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.filter(c => c.configId !== configId) }));
-                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
+                      trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
                     };
                     // AB7: real safe-activation gate — a config may only activate after
                     // validateAiAlgorithmConfig reports zero errors. The Activate button itself is
@@ -39792,7 +39823,7 @@ function AustraliaGame() {
                         ...prev,
                         algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate, validationStatus: willActivate ? 'valid' : c.validationStatus } : (willActivate ? { ...c, active: false } : c))
                       }));
-                      setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
+                      trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
                     };
                     const copyAiAlgorithmConfigToEnemyTeam = (configId: string) => {
                       const source = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
@@ -40186,7 +40217,7 @@ function AustraliaGame() {
                             {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
                               <button
                                 key={mode}
-                                onClick={() => setGameSettings(prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
+                                onClick={() => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmBuilderDefaultEditorMode: mode }))}
                                 className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.aiAlgorithmBuilderDefaultEditorMode === mode ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                               >
                                 {mode}
@@ -40225,7 +40256,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Four-tiered loan system with credit scores</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, advancedLoansEnabled: !prev.advancedLoansEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, advancedLoansEnabled: !prev.advancedLoansEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.advancedLoansEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.advancedLoansEnabled ? 'ON' : 'OFF'}
@@ -40241,7 +40272,7 @@ function AustraliaGame() {
                         <div className="font-semibold mb-1">Who Can Use Advanced Loans?</div>
                         <select
                           value={gameSettings.advancedLoansAccessMode}
-                          onChange={(e) => setGameSettings(prev => ({
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({
                             ...prev,
                             advancedLoansAccessMode: normalizeAdvancedLoansAccessMode(e.target.value)
                           }))}
@@ -40261,7 +40292,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">Track creditworthiness and adjust rates</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, creditScoreEnabled: !prev.creditScoreEnabled }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, creditScoreEnabled: !prev.creditScoreEnabled }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.creditScoreEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.creditScoreEnabled ? 'ON' : 'OFF'}
@@ -40273,7 +40304,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">Random special loan opportunities</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, loanEventsEnabled: !prev.loanEventsEnabled }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, loanEventsEnabled: !prev.loanEventsEnabled }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.loanEventsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.loanEventsEnabled ? 'ON' : 'OFF'}
@@ -40285,7 +40316,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">Pay off loans early for 50% interest discount</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, earlyRepaymentEnabled: !prev.earlyRepaymentEnabled }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, earlyRepaymentEnabled: !prev.earlyRepaymentEnabled }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.earlyRepaymentEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.earlyRepaymentEnabled ? 'ON' : 'OFF'}
@@ -40298,24 +40329,24 @@ function AustraliaGame() {
                       <>
                       <div>
                         <label className="block font-semibold mb-2">Max Simultaneous Loans: {gameSettings.maxSimultaneousLoans}</label>
-                        <input type="range" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(e) => setGameSettings(prev => ({ ...prev, maxSimultaneousLoans: parseInt(e.target.value) }))} className="w-full" />
+                        <input type="range" min="1" max="5" value={gameSettings.maxSimultaneousLoans} onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, maxSimultaneousLoans: parseInt(e.target.value) }))} className="w-full" />
                       </div>
                       <div>
                         <label className="block font-semibold mb-2">Interest Rate: {((gameSettings.interestAccrualRate || 1.0) * 100).toFixed(0)}%</label>
-                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate || 1.0} onChange={(e) => setGameSettings(prev => ({ ...prev, interestAccrualRate: parseFloat(e.target.value) }))} className="w-full" />
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.interestAccrualRate || 1.0} onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, interestAccrualRate: parseFloat(e.target.value) }))} className="w-full" />
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block font-semibold mb-2">AI Loan Risk Weight: {(gameSettings.aiLoanRiskWeight || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRiskWeight || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, aiLoanRiskWeight: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only'} />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRiskWeight || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRiskWeight: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only'} />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">AI Repayment Priority: {(gameSettings.aiLoanRepaymentPriority || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRepaymentPriority || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, aiLoanRepaymentPriority: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only'} />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRepaymentPriority || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRepaymentPriority: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only'} />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">AI Refinancing Weight: {(gameSettings.aiLoanRefinancingWeight || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRefinancingWeight || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, aiLoanRefinancingWeight: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only' || !gameSettings.loanRefinancingEnabled} />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.aiLoanRefinancingWeight || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanRefinancingWeight: parseFloat(e.target.value) }))} className="w-full" disabled={gameSettings.advancedLoansAccessMode === 'player_only' || !gameSettings.loanRefinancingEnabled} />
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
@@ -40323,7 +40354,7 @@ function AustraliaGame() {
                             <div className="text-sm opacity-75">Restrict AI borrowing to survival or comeback pressure</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, aiLoanEmergencyOnly: !prev.aiLoanEmergencyOnly }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "🏦 Advanced Loans", prev => ({ ...prev, aiLoanEmergencyOnly: !prev.aiLoanEmergencyOnly }))}
                             disabled={gameSettings.advancedLoansAccessMode === 'player_only'}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.aiLoanEmergencyOnly ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary} disabled:opacity-50`}
                           >
@@ -40348,7 +40379,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">AI gets more aggressive when falling behind</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiEnabled: !prev.adaptiveAiEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiEnabled: !prev.adaptiveAiEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.adaptiveAiEnabled ? 'ON' : 'OFF'}
@@ -40362,7 +40393,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">AI learns and adapts to your playstyle</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiPatternLearning: !prev.adaptiveAiPatternLearning }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiPatternLearning: !prev.adaptiveAiPatternLearning }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiPatternLearning ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiPatternLearning ? 'ON' : 'OFF'}
@@ -40374,7 +40405,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">AI gets stat boosts when far behind</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiRubberBanding: !prev.adaptiveAiRubberBanding }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiRubberBanding: !prev.adaptiveAiRubberBanding }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiRubberBanding ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiRubberBanding ? 'ON' : 'OFF'}
@@ -40386,7 +40417,7 @@ function AustraliaGame() {
                           <div className="text-sm opacity-75">Show AI messages when in comeback mode</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiTauntsEnabled: !prev.adaptiveAiTauntsEnabled }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiTauntsEnabled: !prev.adaptiveAiTauntsEnabled }))}
                           className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiTauntsEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.adaptiveAiTauntsEnabled ? 'ON' : 'OFF'}
@@ -40399,12 +40430,12 @@ function AustraliaGame() {
                       <>
                       <div>
                         <label className="block font-semibold mb-2">Consecutive Days Required: {gameSettings.adaptiveAiConsecutiveDays}</label>
-                        <input type="range" min="1" max="7" value={gameSettings.adaptiveAiConsecutiveDays} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiConsecutiveDays: parseInt(e.target.value) }))} className="w-full" />
+                        <input type="range" min="1" max="7" value={gameSettings.adaptiveAiConsecutiveDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiConsecutiveDays: parseInt(e.target.value) }))} className="w-full" />
                         <div className="text-xs opacity-75 mt-1">Days AI must be behind before escalating</div>
                       </div>
                       <div>
                         <label className="block font-semibold mb-2">Aggression Multiplier: {(gameSettings.adaptiveAiAggressionMultiplier || 1.0).toFixed(1)}x</label>
-                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.adaptiveAiAggressionMultiplier || 1.0} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
+                        <input type="range" min="0.5" max="2.0" step="0.1" value={gameSettings.adaptiveAiAggressionMultiplier || 1.0} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiAggressionMultiplier: parseFloat(e.target.value) }))} className="w-full" />
                       </div>
                       <div>
                         <div className="font-semibold mb-2">Affects Modes</div>
@@ -40424,7 +40455,7 @@ function AustraliaGame() {
                                     const nextModes = e.target.checked
                                       ? Array.from(new Set([...gameSettings.adaptiveAiAffectedModes, option.value]))
                                       : gameSettings.adaptiveAiAffectedModes.filter(mode => mode !== option.value);
-                                    setGameSettings(prev => ({
+                                    trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({
                                       ...prev,
                                       adaptiveAiAffectedModes: nextModes.length > 0 ? nextModes : [...DEFAULT_GAME_SETTINGS.adaptiveAiAffectedModes]
                                     }));
@@ -40439,35 +40470,35 @@ function AustraliaGame() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block font-semibold mb-2">Team Comeback Strength: {(gameSettings.adaptiveAiTeamComebackStrength || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiTeamComebackStrength || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiTeamComebackStrength: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiTeamComebackStrength || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiTeamComebackStrength: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Trigger Sensitivity: {(gameSettings.adaptiveAiTriggerSensitivity || 1).toFixed(1)}x</label>
-                          <input type="range" min="0.5" max="2" step="0.1" value={gameSettings.adaptiveAiTriggerSensitivity || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiTriggerSensitivity: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0.5" max="2" step="0.1" value={gameSettings.adaptiveAiTriggerSensitivity || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiTriggerSensitivity: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Support Focus: {(gameSettings.adaptiveAiSupportFocus || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiSupportFocus || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiSupportFocus: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiSupportFocus || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiSupportFocus: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Risk Bias: {(gameSettings.adaptiveAiRiskBias || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiRiskBias || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiRiskBias: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiRiskBias || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiRiskBias: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Economy Recovery Bias: {(gameSettings.adaptiveAiEconomyRecoveryBias || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiEconomyRecoveryBias || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiEconomyRecoveryBias: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiEconomyRecoveryBias || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiEconomyRecoveryBias: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Disruption Bias: {(gameSettings.adaptiveAiDisruptionBias || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiDisruptionBias || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiDisruptionBias: parseFloat(e.target.value) }))} className="w-full" />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiDisruptionBias || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiDisruptionBias: parseFloat(e.target.value) }))} className="w-full" />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Pattern Memory Strength: {(gameSettings.adaptiveAiPatternMemoryStrength || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiPatternMemoryStrength || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiPatternMemoryStrength: parseFloat(e.target.value) }))} className="w-full" disabled={!gameSettings.adaptiveAiPatternLearning} />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiPatternMemoryStrength || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiPatternMemoryStrength: parseFloat(e.target.value) }))} className="w-full" disabled={!gameSettings.adaptiveAiPatternLearning} />
                         </div>
                         <div>
                           <label className="block font-semibold mb-2">Rubber-Banding Strength: {(gameSettings.adaptiveAiRubberBandingStrength || 1).toFixed(1)}x</label>
-                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiRubberBandingStrength || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, adaptiveAiRubberBandingStrength: parseFloat(e.target.value) }))} className="w-full" disabled={!gameSettings.adaptiveAiRubberBanding} />
+                          <input type="range" min="0" max="2" step="0.1" value={gameSettings.adaptiveAiRubberBandingStrength || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiRubberBandingStrength: parseFloat(e.target.value) }))} className="w-full" disabled={!gameSettings.adaptiveAiRubberBanding} />
                         </div>
                       </div>
                       </>
@@ -40479,7 +40510,7 @@ function AustraliaGame() {
                             <div className="text-sm opacity-75">Expose adaptive modifiers inside AI decision traces</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiShowDecisionTransparency: !prev.adaptiveAiShowDecisionTransparency }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiShowDecisionTransparency: !prev.adaptiveAiShowDecisionTransparency }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowDecisionTransparency ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.adaptiveAiShowDecisionTransparency ? 'ON' : 'OFF'}
@@ -40491,7 +40522,7 @@ function AustraliaGame() {
                             <div className="text-sm opacity-75">Display live comeback modifiers in the HUD and dashboard</div>
                           </div>
                           <button
-                            onClick={() => setGameSettings(prev => ({ ...prev, adaptiveAiShowActiveModifiers: !prev.adaptiveAiShowActiveModifiers }))}
+                            onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiShowActiveModifiers: !prev.adaptiveAiShowActiveModifiers }))}
                             className={`px-4 py-2 rounded font-semibold ${gameSettings.adaptiveAiShowActiveModifiers ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                           >
                             {gameSettings.adaptiveAiShowActiveModifiers ? 'ON' : 'OFF'}
@@ -40509,7 +40540,7 @@ function AustraliaGame() {
                     <div className="font-semibold mb-1">Setting Priority Mode</div>
                     <select
                       value={gameSettings.settingPriorityMode}
-                      onChange={(e) => setGameSettings(prev => ({
+                      onChange={(e) => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({
                         ...prev,
                         settingPriorityMode: normalizePriorityMode(e.target.value)
                       }))}
@@ -40526,11 +40557,11 @@ function AustraliaGame() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-semibold mb-2">Max Concurrent High-Influence Settings: {gameSettings.maxConcurrentHighInfluenceSettings}</label>
-                      <input type="range" min="1" max="8" value={gameSettings.maxConcurrentHighInfluenceSettings} onChange={(e) => setGameSettings(prev => ({ ...prev, maxConcurrentHighInfluenceSettings: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="1" max="8" value={gameSettings.maxConcurrentHighInfluenceSettings} onChange={(e) => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({ ...prev, maxConcurrentHighInfluenceSettings: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Conflict Resolution Strength: {(gameSettings.conflictResolutionStrength || 1).toFixed(1)}x</label>
-                      <input type="range" min="0" max="2" step="0.1" value={gameSettings.conflictResolutionStrength || 1} onChange={(e) => setGameSettings(prev => ({ ...prev, conflictResolutionStrength: parseFloat(e.target.value) }))} className="w-full" />
+                      <input type="range" min="0" max="2" step="0.1" value={gameSettings.conflictResolutionStrength || 1} onChange={(e) => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({ ...prev, conflictResolutionStrength: parseFloat(e.target.value) }))} className="w-full" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -40540,7 +40571,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Reduce weaker pressures when stronger systems are active</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, deprioritizeLowImpactSettings: !prev.deprioritizeLowImpactSettings }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({ ...prev, deprioritizeLowImpactSettings: !prev.deprioritizeLowImpactSettings }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.deprioritizeLowImpactSettings ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.deprioritizeLowImpactSettings ? 'ON' : 'OFF'}
@@ -40552,7 +40583,7 @@ function AustraliaGame() {
                         <div className="text-sm opacity-75">Show which domains were promoted or reduced</div>
                       </div>
                       <button
-                        onClick={() => setGameSettings(prev => ({ ...prev, priorityTransparencyEnabled: !prev.priorityTransparencyEnabled }))}
+                        onClick={() => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({ ...prev, priorityTransparencyEnabled: !prev.priorityTransparencyEnabled }))}
                         className={`px-4 py-2 rounded font-semibold ${gameSettings.priorityTransparencyEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                       >
                         {gameSettings.priorityTransparencyEnabled ? 'ON' : 'OFF'}
@@ -40573,7 +40604,7 @@ function AustraliaGame() {
                             min="0"
                             max="100"
                             value={Math.round(gameSettings.manualPriorityWeights[domain as PriorityDomain] || 0)}
-                            onChange={(e) => setGameSettings(prev => ({
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "🎛️ Priority Resolution", prev => ({
                               ...prev,
                               manualPriorityWeights: {
                                 ...prev.manualPriorityWeights,
@@ -40597,7 +40628,7 @@ function AustraliaGame() {
                       <div className="text-sm opacity-75">Track current AI priorities, alternatives, and setting contributions</div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, decisionTransparencyEnabled: !prev.decisionTransparencyEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyEnabled: !prev.decisionTransparencyEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.decisionTransparencyEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.decisionTransparencyEnabled ? 'ON' : 'OFF'}
@@ -40613,7 +40644,7 @@ function AustraliaGame() {
                       <div className="font-semibold mb-1">Visibility Scope</div>
                       <select
                         value={gameSettings.decisionTransparencyVisibilityScope}
-                        onChange={(e) => setGameSettings(prev => ({
+                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({
                           ...prev,
                           decisionTransparencyVisibilityScope: normalizeDecisionTransparencyVisibilityScope(e.target.value)
                         }))}
@@ -40629,7 +40660,7 @@ function AustraliaGame() {
                       <div className="font-semibold mb-1">View Mode</div>
                       <select
                         value={gameSettings.decisionTransparencyViewMode}
-                        onChange={(e) => setGameSettings(prev => ({
+                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({
                           ...prev,
                           decisionTransparencyViewMode: normalizeDecisionTransparencyViewMode(e.target.value)
                         }))}
@@ -40653,7 +40684,7 @@ function AustraliaGame() {
                         <input
                           type="checkbox"
                           checked={Boolean((gameSettings as any)[toggle.key])}
-                          onChange={(e) => setGameSettings(prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
                         />
                         <span>{Boolean((gameSettings as any)[toggle.key]) ? '☑' : '☐'} {toggle.label}</span>
                       </label>
@@ -40667,19 +40698,19 @@ function AustraliaGame() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-semibold mb-2">Max History Retained: {gameSettings.decisionTransparencyMaxHistoryRetained}</label>
-                      <input type="range" min="5" max="120" value={gameSettings.decisionTransparencyMaxHistoryRetained} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyMaxHistoryRetained: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="5" max="120" value={gameSettings.decisionTransparencyMaxHistoryRetained} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyMaxHistoryRetained: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Detail Level: {gameSettings.decisionTransparencyDetailLevel}</label>
-                      <input type="range" min="1" max="100" value={gameSettings.decisionTransparencyDetailLevel} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyDetailLevel: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="1" max="100" value={gameSettings.decisionTransparencyDetailLevel} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyDetailLevel: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Explanation Depth: {gameSettings.decisionTransparencyExplanationDepth}</label>
-                      <input type="range" min="1" max="100" value={gameSettings.decisionTransparencyExplanationDepth} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyExplanationDepth: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="1" max="100" value={gameSettings.decisionTransparencyExplanationDepth} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyExplanationDepth: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Timeline Length: {gameSettings.decisionTransparencyTimelineLength}</label>
-                      <input type="range" min="5" max="120" value={gameSettings.decisionTransparencyTimelineLength} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyTimelineLength: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="5" max="120" value={gameSettings.decisionTransparencyTimelineLength} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyTimelineLength: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -40696,7 +40727,7 @@ function AustraliaGame() {
                         <input
                           type="checkbox"
                           checked={Boolean((gameSettings as any)[toggle.key])}
-                          onChange={(e) => setGameSettings(prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, [toggle.key]: e.target.checked } as GameSettingsState))}
                         />
                         <span>{Boolean((gameSettings as any)[toggle.key]) ? '☑' : '☐'} {toggle.label}</span>
                       </label>
@@ -40709,7 +40740,7 @@ function AustraliaGame() {
                         value={gameSettings.decisionTransparencyDefaultGroupView}
                         onChange={(e) => {
                           const nextValue = normalizeDecisionTransparencyGroupView(e.target.value);
-                          setGameSettings(prev => ({ ...prev, decisionTransparencyDefaultGroupView: nextValue }));
+                          trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyDefaultGroupView: nextValue }));
                           setDecisionTransparencyGroupView(nextValue);
                         }}
                         className={`${themeStyles.select} rounded px-3 py-2 w-full`}
@@ -40723,15 +40754,15 @@ function AustraliaGame() {
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Max Visible AI Cards: {gameSettings.decisionTransparencyMaxVisibleAiCards}</label>
-                      <input type="range" min="1" max="8" value={gameSettings.decisionTransparencyMaxVisibleAiCards} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyMaxVisibleAiCards: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="1" max="8" value={gameSettings.decisionTransparencyMaxVisibleAiCards} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyMaxVisibleAiCards: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Per-AI Timeline Density: {gameSettings.decisionTransparencyPerAiTimelineDensity}</label>
-                      <input type="range" min="1" max="6" value={gameSettings.decisionTransparencyPerAiTimelineDensity} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyPerAiTimelineDensity: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="1" max="6" value={gameSettings.decisionTransparencyPerAiTimelineDensity} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyPerAiTimelineDensity: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                     <div>
                       <label className="block font-semibold mb-2">Per-AI Timeline Length: {gameSettings.decisionTransparencyPerAiTimelineLength}</label>
-                      <input type="range" min="4" max="30" value={gameSettings.decisionTransparencyPerAiTimelineLength} onChange={(e) => setGameSettings(prev => ({ ...prev, decisionTransparencyPerAiTimelineLength: parseInt(e.target.value) }))} className="w-full" />
+                      <input type="range" min="4" max="30" value={gameSettings.decisionTransparencyPerAiTimelineLength} onChange={(e) => trackedSetGameSettings("direct_player_change", "🔍 Decision Transparency", prev => ({ ...prev, decisionTransparencyPerAiTimelineLength: parseInt(e.target.value) }))} className="w-full" />
                     </div>
                   </div>
                   </>
@@ -40757,7 +40788,7 @@ function AustraliaGame() {
                       </div>
                     </div>
                     <button
-                      onClick={() => setGameSettings(prev => ({ ...prev, gameActivityLedgerEnabled: !prev.gameActivityLedgerEnabled }))}
+                      onClick={() => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerEnabled: !prev.gameActivityLedgerEnabled }))}
                       className={`px-4 py-2 rounded font-semibold ${gameSettings.gameActivityLedgerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
                       {gameSettings.gameActivityLedgerEnabled ? 'ON' : 'OFF'}
@@ -40781,7 +40812,7 @@ function AustraliaGame() {
                           {(['standard', 'detailed', 'developer'] as const).map(level => (
                             <button
                               key={level}
-                              onClick={() => setGameSettings(prev => ({ ...prev, gameActivityLedgerDetailLevel: level }))}
+                              onClick={() => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerDetailLevel: level }))}
                               className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${gameSettings.gameActivityLedgerDetailLevel === level ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                             >
                               {level}
@@ -40795,7 +40826,7 @@ function AustraliaGame() {
                           <div className="text-xs opacity-60">Off by default — when off, a save file's recorded events are stripped before writing to disk (the live in-session ledger and this match's Dashboard/Export are unaffected).</div>
                         </div>
                         <button
-                          onClick={() => setGameSettings(prev => ({ ...prev, gameActivityLedgerIncludeInSaveFile: !prev.gameActivityLedgerIncludeInSaveFile }))}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerIncludeInSaveFile: !prev.gameActivityLedgerIncludeInSaveFile }))}
                           className={`px-3 py-1.5 rounded text-sm font-semibold ${gameSettings.gameActivityLedgerIncludeInSaveFile ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                         >
                           {gameSettings.gameActivityLedgerIncludeInSaveFile ? 'ON' : 'OFF'}
@@ -40814,7 +40845,7 @@ function AustraliaGame() {
 	                      {(['nano', 'small', 'medium', 'large', 'custom'] as Array<NotificationSettings['size']>).map(sizeOption => (
 	                        <button
 	                          key={sizeOption}
-	                          onClick={() => setGameSettings(prev => ({
+	                          onClick={() => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                            ...prev,
 	                            notificationSettings: { ...prev.notificationSettings, size: sizeOption }
 	                          }))}
@@ -40836,7 +40867,7 @@ function AustraliaGame() {
 	                          min="80"
 	                          max="150"
 	                          value={Math.round(gameSettings.notificationSettings.customSize || 100)}
-	                          onChange={(e) => setGameSettings(prev => ({
+	                          onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                            ...prev,
 	                            notificationSettings: {
 	                              ...prev.notificationSettings,
@@ -40854,7 +40885,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Position</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.position}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -40875,7 +40906,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Clear Shortcut</div>
 	                      <select
 	                        value={gameSettings.notificationClearShortcut}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationClearShortcut: e.target.value as NotificationClearShortcut
 	                        }))}
@@ -40893,7 +40924,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Animation</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.animation}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -40911,7 +40942,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Animation Speed</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.animationSpeed}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -40951,7 +40982,7 @@ function AustraliaGame() {
 	                              value={currentValue}
 	                              onChange={(e) => {
 	                                const selectedValue = Number(e.target.value);
-	                                setGameSettings(prev => {
+	                                trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => {
 	                                  const updated = {
 	                                    ...prev.notificationSettings,
 	                                    autoDismiss: { ...prev.notificationSettings.autoDismiss }
@@ -40997,7 +41028,7 @@ function AustraliaGame() {
 	                              checked={checked}
 	                              onChange={(e) => {
 	                                const nextChecked = e.target.checked;
-	                                setGameSettings(prev => {
+	                                trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => {
 	                                  const updated = {
 	                                    ...prev.notificationSettings,
 	                                    typeFilters: { ...prev.notificationSettings.typeFilters }
@@ -41024,7 +41055,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Opacity</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.opacity}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -41043,7 +41074,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Max Visible</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.maxVisible}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -41065,7 +41096,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Stack Behavior</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.stackOrder}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -41082,7 +41113,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Border Style</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.borderStyle}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -41100,7 +41131,7 @@ function AustraliaGame() {
 	                      <div className="font-semibold mb-1">Shadow</div>
 	                      <select
 	                        value={gameSettings.notificationSettings.shadow}
-	                        onChange={(e) => setGameSettings(prev => ({
+	                        onChange={(e) => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: {
 	                            ...prev.notificationSettings,
@@ -41160,7 +41191,7 @@ function AustraliaGame() {
 	                        Test Notification
 	                      </button>
 	                      <button
-	                        onClick={() => setGameSettings(prev => ({
+	                        onClick={() => trackedSetGameSettings("direct_player_change", "🔔 Notification Settings", prev => ({
 	                          ...prev,
 	                          notificationSettings: createDefaultNotificationSettings(),
 	                          notificationClearShortcut: 'ctrl+shift+c'
