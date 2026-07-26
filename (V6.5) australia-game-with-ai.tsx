@@ -46385,7 +46385,7 @@ function AustraliaGame() {
     const close = () => updateUiState({ showOverseerDashboard: false });
     const dashboardTeam = teamsById[dashboardTeamId];
     const overseer = dashboardTeam?.overseer;
-    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team');
     const dashboardTeamActors = getTeamActors(dashboardTeamId);
     const dashboardAiActors = dashboardTeamActors.filter(a => a.kind === 'ai');
     const effectiveSettings = getEffectiveGameSettingsForTeam(dashboardTeamId);
@@ -46412,7 +46412,7 @@ function AustraliaGame() {
                   onClick={() => setDashboardTeamId(tId)}
                   className={`px-3 py-1.5 rounded text-sm font-semibold ${dashboardTeamId === tId ? themeStyles.button : themeStyles.buttonSecondary}`}
                 >
-                  {tId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team')}
+                  {tId === TEAM_PLAYER_ID ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team')}
                 </button>
               ))}
             </div>
@@ -46733,7 +46733,7 @@ function AustraliaGame() {
     const close = () => updateUiState({ showAuditorDashboard: false });
     const dashboardTeam = teamsById[dashboardTeamId];
     const auditor = dashboardTeam?.auditor;
-    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team');
+    const teamLabel = dashboardTeamId === TEAM_PLAYER_ID ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team');
     const modeForDashboardTeam = dashboardTeamId === TEAM_PLAYER_ID ? gameSettings.teamAiAuditorModeForFriendlyTeam : gameSettings.teamAiAuditorModeForEnemyTeam;
 
     return (
@@ -46758,7 +46758,7 @@ function AustraliaGame() {
                   onClick={() => setDashboardTeamId(tId)}
                   className={`px-3 py-1.5 rounded text-sm font-semibold ${dashboardTeamId === tId ? themeStyles.button : themeStyles.buttonSecondary}`}
                 >
-                  {tId === TEAM_PLAYER_ID ? (playerTeam?.name || 'Your Team') : (opponentTeam?.name || 'AI Team')}
+                  {tId === TEAM_PLAYER_ID ? (teamsById[TEAM_PLAYER_ID]?.name || 'Your Team') : (teamsById[TEAM_OPPONENT_ID]?.name || 'AI Team')}
                 </button>
               ))}
             </div>
