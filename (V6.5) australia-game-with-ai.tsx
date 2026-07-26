@@ -5529,6 +5529,8 @@ type GameSettingsState = {
   // transient (a component ref, never part of save data), mirroring RP1's teamRoundPlanRef precedent.
   aiReplayRecordingEnabled: boolean;
   aiReplayMaxEvents: number;
+  // RP3: reserved for the future real reconstruction pass (RP4); see ReplayPolicy's own comment.
+  aiReplayPolicy: ReplayPolicy;
   aiEngineVersion: string;
   aiFairnessLevel: number;
   aiPersonalityVariance: number;
@@ -7744,6 +7746,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   worldRngSeed: 1337,
   aiReplayRecordingEnabled: false,
   aiReplayMaxEvents: 2000,
+  aiReplayPolicy: 'strict',
   aiEngineVersion: 'strategic_director_v1',
   aiFairnessLevel: 0.75,
   aiPersonalityVariance: 0.25,
@@ -8223,7 +8226,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
   { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled'] },
   { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority'] },
-  { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents'] },
+  { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiReplayPolicy'] },
   { id: 'aiStrategyLab.main', tab: 'aiStrategyLab', title: 'Strategy Lab Presets', tags: ['AI', 'Advanced'], fieldKeys: ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset'] },
   { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
@@ -9615,6 +9618,11 @@ const normalizeDirectiveStrength = (strength: unknown): DirectiveStrength => {
 const normalizeWorldRngMode = (mode: unknown): WorldRngMode => {
   if (mode === 'deterministic') return 'deterministic';
   return 'random';
+};
+
+// RP3: mirrors normalizeWorldRngMode's exact shape for the new 4-way replay policy.
+const normalizeReplayPolicy = (policy: unknown): ReplayPolicy => {
+  return REPLAY_POLICIES.includes(policy as ReplayPolicy) ? (policy as ReplayPolicy) : 'strict';
 };
 
 const formatDirectiveStrengthLabel = (strength: DirectiveStrength | string | null | undefined) => {
@@ -12827,6 +12835,13 @@ interface SaveGameData {
 // are later phases — ReplayCheckpoint below is an anchor-point stub only, populated for real in RP4.
 const REPLAY_SCHEMA_VERSION = 1;
 
+// RP3: how a future real reconstruction pass (RP4's job — checkpoint substance/divergence
+// classification) should behave when a recorded event no longer reproduces exactly, e.g. after a
+// game-logic change. Declared and settings-wired now so this phase's Replay Viewer can offer the
+// control; the reconstruction pass itself that would actually consult this is RP4's work.
+type ReplayPolicy = 'strict' | 'skip_invalid' | 'adaptive_fallback' | 'force_reconstruction';
+const REPLAY_POLICIES: ReplayPolicy[] = ['strict', 'skip_invalid', 'adaptive_fallback', 'force_reconstruction'];
+
 type ReplayEventCategory = 'ai_decision' | 'ai_execution' | 'day_transition' | 'match_result';
 
 interface ReplayEvent {
@@ -13161,6 +13176,14 @@ function AustraliaGame() {
   const [pipelineInspectorActorFilter, setPipelineInspectorActorFilter] = useState<string>('all');
   const [pipelineInspectorStatusFilter, setPipelineInspectorStatusFilter] = useState<'all' | 'blocked' | 'modified' | 'passed'>('all');
   const [pipelineInspectorCopyConfirming, setPipelineInspectorCopyConfirming] = useState(false);
+  // RP3: Replay Viewer — component-local, never persisted, mirroring every prior dashboard's
+  // "UI navigation state is not gameState" convention. loadedReplayFile is the currently-inspected
+  // file (loaded from disk via migrateReplayFile, never the live in-progress recording).
+  const [showReplayViewer, setShowReplayViewer] = useState(false);
+  const [loadedReplayFile, setLoadedReplayFile] = useState<ReplayFile | null>(null);
+  const [replayViewerCategoryFilter, setReplayViewerCategoryFilter] = useState<'all' | 'ai_only'>('all');
+  const [replayViewerFromSequence, setReplayViewerFromSequence] = useState<number | null>(null);
+  const replayFileInputRef = useRef<HTMLInputElement | null>(null);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -13378,7 +13401,16 @@ function AustraliaGame() {
         worldSeed: worldRngSeedRef.current
       },
       events: [],
-      checkpoints: [],
+      // RP3: seed with a "Match start" anchor directly (rather than calling appendReplayCheckpoint,
+      // which is declared later in this component and would be a TDZ hazard in this effect's own
+      // dependency array) so the Replay Viewer's checkpoint jump list always has a first entry.
+      checkpoints: [{
+        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        sequence: 0,
+        day: gameState.day,
+        turn: gameState.turnCounter,
+        label: 'Match start'
+      }],
       finalResult: null,
       checksum: ''
     };
@@ -13807,12 +13839,60 @@ function AustraliaGame() {
   const finalizeReplayRecording = useCallback((finalResult: ReplayFinalResult) => {
     const recording = replayRecordingRef.current;
     if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
-    const finalized: Omit<ReplayFile, 'checksum'> = { ...recording, finalResult };
+    // RP3: appended inline (not via appendReplayCheckpoint, which is declared later in this
+    // component and would be a TDZ hazard here) — the final "Match end" anchor.
+    const matchEndCheckpoint: ReplayCheckpoint = {
+      id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      sequence: recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0,
+      day: finalResult.day,
+      turn: finalResult.turn,
+      label: 'Match end'
+    };
+    const finalized: Omit<ReplayFile, 'checksum'> = {
+      ...recording,
+      checkpoints: [...recording.checkpoints, matchEndCheckpoint],
+      finalResult
+    };
     const checksum = computeReplayChecksum(finalized);
     const completed: ReplayFile = { ...finalized, checksum };
     replayRecordingRef.current = completed;
     downloadReplayFile(completed);
   }, [downloadReplayFile, gameSettings.aiReplayRecordingEnabled]);
+
+  // RP3: opens the file picker for loading a replay file into the read-only Replay Viewer.
+  const openReplayLoadDialog = useCallback(() => {
+    if (replayFileInputRef.current) {
+      replayFileInputRef.current.value = '';
+      replayFileInputRef.current.click();
+    } else {
+      addNotification('Replay load input not ready. Please try again.', 'error');
+    }
+  }, [addNotification]);
+
+  // RP3: loads and validates a replay file via migrateReplayFile (never validateSaveData — a
+  // replay has its own schema/lifecycle) and opens the Replay Viewer on success. Read-only: never
+  // touches live game state, gameState, or any actor/team.
+  const handleReplayFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const replay = migrateReplayFile(parsed);
+      if (!replay) {
+        addNotification('Invalid, corrupted, or unsupported-version replay file.', 'error');
+        return;
+      }
+      setLoadedReplayFile(replay);
+      setReplayViewerCategoryFilter('all');
+      setReplayViewerFromSequence(null);
+      setShowReplayViewer(true);
+      addNotification(`Replay loaded: ${replay.events.length} events, ${replay.checkpoints.length} checkpoints.`, 'success');
+    } catch (error) {
+      console.error('Replay load failed', error);
+      addNotification('Failed to load replay file. Please try again.', 'error');
+    }
+  }, [addNotification]);
 
   const handleSaveGame = useCallback((descriptionOverride?: string) => {
     if (gameState.gameMode === 'menu') {
@@ -14318,6 +14398,7 @@ function AustraliaGame() {
         ? settingsData.aiReplayRecordingEnabled
         : DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
       aiReplayMaxEvents: clampSettingNumber(settingsData.aiReplayMaxEvents, DEFAULT_GAME_SETTINGS.aiReplayMaxEvents, 100, 10000),
+      aiReplayPolicy: normalizeReplayPolicy(settingsData.aiReplayPolicy),
       aiEngineVersion: typeof settingsData.aiEngineVersion === 'string' && settingsData.aiEngineVersion.trim()
         ? settingsData.aiEngineVersion
         : DEFAULT_GAME_SETTINGS.aiEngineVersion,
@@ -22269,6 +22350,24 @@ function AustraliaGame() {
     recording.events = [...recording.events, event].slice(-Math.max(100, gameSettings.aiReplayMaxEvents));
   }, [gameSettings.aiReplayRecordingEnabled, gameSettings.aiReplayMaxEvents, gameState.day, gameState.turnCounter]);
 
+  // RP3: real, if simple, day-anchor checkpoints — a genuine "Replay From Checkpoint" jump list in
+  // the Replay Viewer below. Only day/match-start/match-end anchors this phase; the richer anchor
+  // kinds the roadmap names (lead-change/approval/treasury/auditor-incident/endgame-start) are
+  // RP4's job, which already owns real checkpoint substance and divergence classification.
+  const appendReplayCheckpoint = useCallback((label: string) => {
+    const recording = replayRecordingRef.current;
+    if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
+    const lastSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
+    const checkpoint: ReplayCheckpoint = {
+      id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      sequence: lastSequence,
+      day: gameState.day,
+      turn: gameState.turnCounter,
+      label
+    };
+    recording.checkpoints = [...recording.checkpoints, checkpoint].slice(-200);
+  }, [gameSettings.aiReplayRecordingEnabled, gameState.day, gameState.turnCounter]);
+
   const recordDecisionTrace = useCallback((trace: AiDecisionTrace) => {
     // RP2: replay recording captures every AI decision regardless of whether the player has the
     // Decision Transparency UI itself enabled — recording and displaying are independent concerns.
@@ -28102,6 +28201,7 @@ function AustraliaGame() {
         : null;
 
       appendReplayEvent('day_transition', { summary: `Day ${newDay} begins (team mode)` });
+      appendReplayCheckpoint(`Day ${newDay}`);
 
       if (gameSettings.adaptiveAiEnabled) {
         [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
@@ -28504,6 +28604,7 @@ function AustraliaGame() {
     }
 
     appendReplayEvent('day_transition', { summary: `Day ${newDay} begins` });
+    appendReplayCheckpoint(`Day ${newDay}`);
 
 	    // Check for game end - use configurable totalDays
 	    if (newDay >= gameSettings.totalDays) {
@@ -28539,7 +28640,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent]);
+	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -36461,6 +36562,7 @@ function AustraliaGame() {
       worldRngSeed: DEFAULT_GAME_SETTINGS.worldRngSeed,
       aiReplayRecordingEnabled: DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
       aiReplayMaxEvents: DEFAULT_GAME_SETTINGS.aiReplayMaxEvents,
+      aiReplayPolicy: DEFAULT_GAME_SETTINGS.aiReplayPolicy,
       aiEngineVersion: DEFAULT_GAME_SETTINGS.aiEngineVersion,
       aiFairnessLevel: DEFAULT_GAME_SETTINGS.aiFairnessLevel,
       aiPersonalityVariance: DEFAULT_GAME_SETTINGS.aiPersonalityVariance,
@@ -37875,6 +37977,41 @@ function AustraliaGame() {
                         </button>
                       </div>
                     )}
+                  </div>
+                  <div>
+                    <div className="font-semibold mb-2">Reconstruction Policy</div>
+                    <div className="text-sm opacity-75 mb-2">
+                      Reserved for the real reconstruction/divergence-handling pass (a later phase) —
+                      has no effect yet. Determines how a future replay-reconstruction run should
+                      handle an event that no longer reproduces exactly.
+                    </div>
+                    <div className={`grid grid-cols-2 gap-2 ${themeStyles.border} border rounded-lg p-2`}>
+                      {REPLAY_POLICIES.map(policy => (
+                        <button
+                          key={policy}
+                          onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiReplayPolicy: policy }))}
+                          className={`px-3 py-2 rounded font-semibold text-sm transition-colors ${
+                            gameSettings.aiReplayPolicy === policy ? `${themeStyles.button} text-white` : themeStyles.buttonSecondary
+                          }`}
+                        >
+                          {policy.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-semibold mb-2">Replay Viewer</div>
+                    <div className="text-sm opacity-75 mb-2">
+                      Load a previously exported replay file to inspect its full recorded event
+                      stream and checkpoints (Full Match Reconstruction mode) — read-only, never
+                      affects the current game.
+                    </div>
+                    <button
+                      onClick={openReplayLoadDialog}
+                      className={`${themeStyles.buttonSecondary} px-4 py-2 rounded font-semibold w-full`}
+                    >
+                      Load & View Replay File
+                    </button>
                   </div>
                 </div>
               </SettingsSection>
@@ -45835,6 +45972,7 @@ function AustraliaGame() {
         {renderAuditorDashboard()}
         {renderGameActivityLedgerDashboard()}
         {renderAiActionPipelineInspector()}
+        {renderReplayViewer()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -48541,6 +48679,106 @@ function AustraliaGame() {
     );
   };
 
+  // RP3: Full Match Reconstruction mode's concrete shape this phase — a read-only viewer that
+  // reconstructs a loaded replay file's full recorded narrative (initial config, checkpoint
+  // anchors, event stream) for inspection. Never mutates live game state; never re-simulates.
+  // Real re-simulation/divergence-detection against a fresh run is RP4's job.
+  const renderReplayViewer = () => {
+    if (!showReplayViewer || !loadedReplayFile) return null;
+    const close = () => setShowReplayViewer(false);
+    const AI_ONLY_CATEGORIES: ReplayEventCategory[] = ['ai_decision', 'ai_execution'];
+    const filteredEvents = loadedReplayFile.events
+      .filter(ev => replayViewerCategoryFilter === 'all' || AI_ONLY_CATEGORIES.includes(ev.category))
+      .filter(ev => replayViewerFromSequence === null || ev.sequence >= replayViewerFromSequence);
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">🎬 Replay Viewer</h3>
+                <div className="text-sm opacity-75">
+                  Match {loadedReplayFile.matchId} — game v{loadedReplayFile.gameVersion}, mode{' '}
+                  {loadedReplayFile.initialConfig.selectedMode}, seed (AI {loadedReplayFile.initialConfig.aiSeed} /
+                  world {loadedReplayFile.initialConfig.worldSeed}). Read-only — never affects the live game.
+                  {loadedReplayFile.finalResult && (
+                    <> Result: {loadedReplayFile.finalResult.reason} (day {loadedReplayFile.finalResult.day}).</>
+                  )}
+                </div>
+              </div>
+              <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {(['all', 'ai_only'] as const).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setReplayViewerCategoryFilter(filter)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold ${replayViewerCategoryFilter === filter ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {filter === 'all' ? 'All Events' : 'AI-Only Replay'}
+                </button>
+              ))}
+              {replayViewerFromSequence !== null && (
+                <button
+                  onClick={() => setReplayViewerFromSequence(null)}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                >
+                  Clear checkpoint filter
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div>
+              <div className="font-semibold mb-2">Checkpoints (Replay From Checkpoint)</div>
+              <div className="flex flex-wrap gap-2">
+                {loadedReplayFile.checkpoints.map(cp => (
+                  <button
+                    key={cp.id}
+                    onClick={() => setReplayViewerFromSequence(cp.sequence)}
+                    className={`px-3 py-1.5 rounded text-sm ${replayViewerFromSequence === cp.sequence ? themeStyles.button : themeStyles.buttonSecondary}`}
+                  >
+                    {cp.label} (Day {cp.day})
+                  </button>
+                ))}
+                {loadedReplayFile.checkpoints.length === 0 && (
+                  <div className="text-sm opacity-60">No checkpoints recorded.</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="font-semibold mb-2">Event Stream ({filteredEvents.length} of {loadedReplayFile.events.length})</div>
+              <div className="space-y-2">
+                {filteredEvents.map(ev => (
+                  <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{ev.category}</span>
+                      <span className="opacity-60">Day {ev.day}, Turn {ev.turn}</span>
+                    </div>
+                    <div className="opacity-90 mt-1">{ev.summary}</div>
+                    {(ev.actorId || ev.teamId) && (
+                      <div className="text-xs opacity-60 mt-1">
+                        {ev.actorId && <>Actor: {ev.actorId} </>}
+                        {ev.teamId && <>Team: {ev.teamId}</>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {filteredEvents.length === 0 && (
+                  <div className="text-sm opacity-60">No events match the current filter.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderNegotiationCenter = () => {
     if (!uiState.showNegotiationCenter) return null;
 
@@ -49195,6 +49433,13 @@ function AustraliaGame() {
         accept="application/json"
         ref={fileInputRef}
         onChange={handleLoadFileChange}
+        className="hidden"
+      />
+      <input
+        type="file"
+        accept="application/json"
+        ref={replayFileInputRef}
+        onChange={handleReplayFileChange}
         className="hidden"
       />
     </div>
