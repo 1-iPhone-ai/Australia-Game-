@@ -6617,6 +6617,190 @@ const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
   return value.map(sanitizeAiAlgorithmConfig).filter((config): config is AiAlgorithmConfig => Boolean(config)).slice(-30);
 };
 
+// AB5: the 9 named starting presets, mirroring SEQUENCE_TEMPLATES/instantiateSequenceTemplate's
+// exact precedent (Phase F5) — a flat, id-keyed Record of non-player-authored definitions, plus a
+// pure instantiateX(id) that stamps out a fresh runtime object (new configId, createdByPlayer:
+// false, active: false) and returns null for an unrecognized id. Uncalled by any real UI yet (no
+// CRUD exists until AB6) — written now so the definitions themselves are reviewable.
+interface AiAlgorithmTemplateDefinition {
+  label: string;
+  description: string;
+  editorMode: AiAlgorithmEditorMode;
+  situationAnalysisConfig: AiAlgorithmSituationAnalysisConfig | null;
+  goalSelectionConfig: AiAlgorithmGoalSelectionConfig | null;
+  candidateGenerationConfig: AiAlgorithmCandidateGenerationConfig | null;
+  outcomePredictionConfig: AiAlgorithmOutcomePredictionConfig | null;
+  planConstructionConfig: AiAlgorithmPlanConstructionConfig | null;
+  utilityEvaluationConfig: AiAlgorithmUtilityEvaluationConfig | null;
+  actionSelectionConfig: AiAlgorithmActionSelectionConfig | null;
+  replanningConfig: AiAlgorithmReplanningConfig | null;
+  fallbackBehaviorConfig: AiAlgorithmFallbackBehaviorConfig | null;
+  explanationOutputConfig: AiAlgorithmExplanationOutputConfig | null;
+}
+const AI_ALGORITHM_TEMPLATES: Record<string, AiAlgorithmTemplateDefinition> = {
+  balanced_planner: {
+    label: 'Balanced Planner',
+    description: 'An even mix of survival, cash, and net worth goals with no single-category bias — a reasonable general-purpose starting point.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { survival: 40, available_cash: 40, net_worth: 40 } },
+    candidateGenerationConfig: null,
+    outcomePredictionConfig: { riskBehavior: 'balanced' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 20 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  aggressive_competitor: {
+    label: 'Aggressive Competitor',
+    description: 'Prioritizes winning and disrupting the opponent, tolerates higher risk, and plans multiple steps ahead.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { winning: 80, opponent_disruption: 60 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sabotage', 'challenge', 'travel', 'region_deposit'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 30 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'verbose' }
+  },
+  financial_survivor: {
+    label: 'Financial Survivor',
+    description: 'Prioritizes staying solvent above all else — conservative risk, cash-generating actions only, short planning horizon.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['finances', 'treasury'] },
+    goalSelectionConfig: { goalPriorities: { survival: 90, available_cash: 50 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sell', 'challenge', 'support', 'request_team_funds'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'fast', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 15 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  long_term_investor: {
+    label: 'Long-Term Investor',
+    description: 'Prioritizes growing net worth through investments and equipment, plans deep, and avoids reckless risk.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { net_worth: 90, resource_acquisition: 30 } },
+    candidateGenerationConfig: { allowedActionCategories: ['invest', 'buy_equipment', 'craft', 'buy_market'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  challenge_specialist: {
+    label: 'Challenge Specialist',
+    description: 'Focuses almost entirely on taking challenges for cash, tolerating higher risk for a higher expected payoff.',
+    editorMode: 'basic',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: { goalPriorities: { available_cash: 80, survival: 30 } },
+    candidateGenerationConfig: { allowedActionCategories: ['challenge'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 20 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  regional_controller: {
+    label: 'Regional Controller',
+    description: 'Prioritizes gaining and holding regional control, favoring deposits and travel toward contested regions.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['regional_control', 'opponents'] },
+    goalSelectionConfig: { goalPriorities: { regional_control: 90 } },
+    candidateGenerationConfig: { allowedActionCategories: ['region_deposit', 'travel', 'cashout_region'] },
+    outcomePredictionConfig: { riskBehavior: 'balanced' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  team_support_planner: {
+    label: 'Team Support Planner',
+    description: 'Prioritizes helping teammates over its own individual gains — transfers, contributions, and coordination.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['teammates', 'treasury'] },
+    goalSelectionConfig: { goalPriorities: { teammate_support: 90, survival: 20 } },
+    candidateGenerationConfig: { allowedActionCategories: ['support', 'contribute_treasury'] },
+    outcomePredictionConfig: { riskBehavior: 'conservative' },
+    planConstructionConfig: { planningDepth: 'balanced', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 25 },
+    actionSelectionConfig: { method: 'highest_score' },
+    replanningConfig: { replanEveryTurn: false },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'standard' }
+  },
+  endgame_finisher: {
+    label: 'Endgame Finisher',
+    description: 'Prioritizes converting holdings into whatever the win condition needs as the game nears its end, with a deep, aggressive plan.',
+    editorMode: 'basic',
+    situationAnalysisConfig: { informationSources: ['remaining_days', 'win_condition'] },
+    goalSelectionConfig: { goalPriorities: { winning: 90, endgame_preparation: 70 } },
+    candidateGenerationConfig: { allowedActionCategories: ['sell', 'cashout_region', 'challenge'] },
+    outcomePredictionConfig: { riskBehavior: 'aggressive' },
+    planConstructionConfig: { planningDepth: 'deep', maxCandidatesConsidered: 0 },
+    utilityEvaluationConfig: { goalServedBonus: 30 },
+    actionSelectionConfig: { method: 'highest_utility' },
+    replanningConfig: { replanEveryTurn: true },
+    fallbackBehaviorConfig: { onInvalidCandidate: 'try_next_candidate' },
+    explanationOutputConfig: { detailLevel: 'verbose' }
+  },
+  experimental_template: {
+    label: 'Experimental Template',
+    description: 'A blank starting point with every stage left unconfigured — falls back to the built-in Planner\'s own defaults everywhere until you customize it.',
+    editorMode: 'expert',
+    situationAnalysisConfig: null,
+    goalSelectionConfig: null,
+    candidateGenerationConfig: null,
+    outcomePredictionConfig: null,
+    planConstructionConfig: null,
+    utilityEvaluationConfig: null,
+    actionSelectionConfig: null,
+    replanningConfig: null,
+    fallbackBehaviorConfig: null,
+    explanationOutputConfig: null
+  }
+};
+const instantiateAiAlgorithmTemplate = (templateId: string, day: number): AiAlgorithmConfig | null => {
+  const template = AI_ALGORITHM_TEMPLATES[templateId];
+  if (!template) return null;
+  return {
+    configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    revision: 0,
+    name: template.label,
+    description: template.description,
+    editorMode: template.editorMode,
+    validationStatus: 'draft',
+    lastTestResult: null,
+    createdByPlayer: false,
+    createdDay: Math.max(0, Math.floor(day)),
+    active: false,
+    situationAnalysisConfig: template.situationAnalysisConfig,
+    goalSelectionConfig: template.goalSelectionConfig,
+    candidateGenerationConfig: template.candidateGenerationConfig,
+    outcomePredictionConfig: template.outcomePredictionConfig,
+    planConstructionConfig: template.planConstructionConfig,
+    utilityEvaluationConfig: template.utilityEvaluationConfig,
+    actionSelectionConfig: template.actionSelectionConfig,
+    replanningConfig: template.replanningConfig,
+    fallbackBehaviorConfig: template.fallbackBehaviorConfig,
+    explanationOutputConfig: template.explanationOutputConfig
+  };
+};
+
 // AB2: the three stage-evaluator functions, one per stage config. All three are pure, reuse
 // existing computed data rather than re-deriving anything, and are uncalled by any real
 // turn-execution path this phase — no custom-algorithm execution engine exists yet to invoke them
