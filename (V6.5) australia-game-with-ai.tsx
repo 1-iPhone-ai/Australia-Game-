@@ -20443,6 +20443,11 @@ function AustraliaGame() {
       requestId: newRequestId,
       requestKind: 'ai_action'
     });
+    // GL10: request-creation coverage — the only prior Ledger 'approval' emission was at
+    // resolution time (the decision outcome); this is the first time the Ledger records that a
+    // request was ever raised in the first place, closing the "approval request/edit/decision"
+    // coverage gap the roadmap calls out.
+    appendGameActivityLedgerEvent('approval', { teamId: actor.teamId, actorId: actor.id, approvalRequestId: newRequestId, actionType: decision.type, summary: `${getActorDisplayName(actor.id)}'s ${decision.type} action requires approval.` });
     return {
       id: newRequestId,
       actorId: actor.id,
@@ -20471,7 +20476,7 @@ function AustraliaGame() {
       status: 'pending',
       requestKind: 'ai_action'
     };
-  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName, appendAiOperationsEvent, buildAiOperationsEventBase]);
+  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent]);
 
   // Promise-based resume gate used only by runApprovedOverrideBonusActions's for loop, which
   // cannot abandon-and-return the way performTeamAiTurn's while loop does — its own try/finally
@@ -23638,8 +23643,12 @@ function AustraliaGame() {
       }
     }));
     addNotification(`${getActorDisplayName(actorId)} contributed $${amount} to the Team Treasury.`, actor.kind === 'human' ? 'success' : 'ai', false, 'system');
+    // GL10: manual/AI Treasury contribution coverage — the prior Treasury emissions only covered
+    // funding-request approve/reject; this is the first Ledger record of money actually flowing
+    // INTO the Treasury.
+    appendGameActivityLedgerEvent('treasury', { teamId: actor.teamId, actorId, treasuryRequestId: transaction.id, summary: transaction.reason });
     return true;
-  }, [addNotification, deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState]);
+  }, [addNotification, deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState, appendGameActivityLedgerEvent]);
 
   // Team Treasury Phase T1 (GD4): what a single AI actor could safely contribute today, computed
   // by chaining only already-existing, already-trusted numbers (Cash Vault's spendable-cash
@@ -31316,6 +31325,7 @@ function AustraliaGame() {
   // (arrays can't self-enforce uniqueness) — deactivates any other sequence already assigned to
   // this actor before activating the requested one.
   const activateSequenceForActor = useCallback((teamId: string, sequenceId: string, actorId: string) => {
+    const sequenceName = teamsByIdRef.current[teamId]?.sequences?.find(s => s.id === sequenceId)?.name;
     updateTeamState(teamId, prev => ({
       ...prev,
       sequences: (prev.sequences || []).map(seq => {
@@ -31324,7 +31334,12 @@ function AustraliaGame() {
         return seq;
       })
     }));
-  }, [updateTeamState]);
+    // GL10: Sequence lifecycle event — reuses the existing 'plan' category (Sequences and Team
+    // Plans are both player/system-directed multi-step structures; a dedicated category isn't
+    // introduced here, matching this phase's "expand coverage using the existing category set"
+    // scope, with genuinely new categories left to GL11's schema-expansion work).
+    appendGameActivityLedgerEvent('plan', { teamId, actorId, planId: sequenceId, summary: `Activated Sequence "${sequenceName || sequenceId}" for ${getActorDisplayName(actorId)}.` });
+  }, [updateTeamState, appendGameActivityLedgerEvent, getActorDisplayName]);
 
   // V6.9 Phase F4: the shared 3-mode evaluator, mirroring findExecutableTeamPlanStepDecision's
   // precedent shape exactly. Sequences out-rank the goal-directed TeamPlan system for the same
@@ -33098,6 +33113,16 @@ function AustraliaGame() {
       const decision = plannedDecisionValid
         ? roundPlanEntry!.decision
         : (sequenceStepMatch ? sequenceStepMatch.decision : (planStepMatch ? planStepMatch.decision : resolveTeamAiDecisionViaEngine(actor.id)));
+      // GL10: one 'decision' Ledger event per action-selection attempt (not per candidate) — a
+      // no-op when the Ledger is off (appendGameActivityLedgerEvent's own existing guard), and
+      // the direct precedent this session's Pipeline Inspector track (PI1+) will later extend
+      // with per-stage detail; this phase only records that a decision was made and its source.
+      appendGameActivityLedgerEvent('decision', {
+        teamId: actor.teamId,
+        actorId: actor.id,
+        actionType: decision.type,
+        summary: `${getActorDisplayName(actor.id)} selected ${decision.type}` + (plannedDecisionValid ? ' (parallel-planned)' : sequenceStepMatch ? ' (sequence)' : planStepMatch ? ' (team plan)' : ' (live ranking)') + '.'
+      });
       if (decision.type === 'end_turn') {
         // V6.7 Phase 2c: donor-side lending trigger. Only reachable when the actor has no good
         // next decision (this branch), which is structurally exclusive with the bank-draw/paid-
@@ -33483,7 +33508,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -39795,19 +39820,30 @@ function AustraliaGame() {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, config].slice(-30) }));
                     };
                     const duplicateAiAlgorithmConfigInPlayerTeam = (configId: string) => {
+                      // GL10: source is resolved here (before the pure updateTeamState updater
+                      // runs) rather than inside it, so appendGameActivityLedgerEvent — itself a
+                      // state-dispatching call — is never invoked from inside a React setState
+                      // updater, matching the same discipline trackedSetGameSettings follows.
+                      const sourceConfig = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      if (!sourceConfig) return;
+                      const newConfigId = `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                      const newName = `${sourceConfig.name} (copy)`;
                       updateTeamState(TEAM_PLAYER_ID, prev => {
                         const source = prev.algorithmConfigs.find(c => c.configId === configId);
                         if (!source) return prev;
-                        const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: `${source.name} (copy)`, active: false, createdByPlayer: true, createdDay: gameState.day, revision: 0 };
+                        const copy: AiAlgorithmConfig = { ...source, configId: newConfigId, name: newName, active: false, createdByPlayer: true, createdDay: gameState.day, revision: 0 };
                         return { ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) };
                       });
+                      appendGameActivityLedgerEvent('config', { teamId: TEAM_PLAYER_ID, configId: newConfigId, configRevision: 0, summary: `Duplicated Algorithm Builder config "${sourceConfig.name}" as "${newName}".` });
                     };
                     const renameAiAlgorithmConfigInPlayerTeam = (configId: string, name: string) => {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, name } : c) }));
                     };
                     const deleteAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
+                      const deletedConfig = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
                       updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.filter(c => c.configId !== configId) }));
                       trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
+                      if (deletedConfig) appendGameActivityLedgerEvent('config', { teamId: TEAM_PLAYER_ID, configId, summary: `Deleted Algorithm Builder config "${deletedConfig.name}".` });
                     };
                     // AB7: real safe-activation gate — a config may only activate after
                     // validateAiAlgorithmConfig reports zero errors. The Activate button itself is
@@ -39824,6 +39860,8 @@ function AustraliaGame() {
                         algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate, validationStatus: willActivate ? 'valid' : c.validationStatus } : (willActivate ? { ...c, active: false } : c))
                       }));
                       trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
+                      const toggledConfig = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                      appendGameActivityLedgerEvent('config', { teamId: TEAM_PLAYER_ID, configId, summary: `${willActivate ? 'Activated' : 'Deactivated'} Algorithm Builder config "${toggledConfig?.name || configId}".` });
                     };
                     const copyAiAlgorithmConfigToEnemyTeam = (configId: string) => {
                       const source = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
