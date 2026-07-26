@@ -6836,8 +6836,10 @@ const validateAiAlgorithmConfig = (config: AiAlgorithmConfig): AiAlgorithmValida
   }
   if (config.planConstructionConfig) {
     const cap = config.planConstructionConfig.maxCandidatesConsidered;
-    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap < 1 || cap > AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED) {
-      errors.push(`Plan Construction's max candidates considered must be between 1 and ${AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED}.`);
+    // 0 is the documented "consider every candidate" sentinel (see constructAiAlgorithmPlan),
+    // so the valid range is {0} union [1, AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED], not just [1, N].
+    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap < 0 || cap > AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED) {
+      errors.push(`Plan Construction's max candidates considered must be 0 (unlimited) or between 1 and ${AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED}.`);
     }
   }
   if (config.utilityEvaluationConfig) {
@@ -6860,7 +6862,7 @@ const validateAiAlgorithmConfig = (config: AiAlgorithmConfig): AiAlgorithmValida
 // turn-execution path this phase — no custom-algorithm execution engine exists yet to invoke them
 // (that wiring, once AB6's CRUD gives players a way to create/activate a config, is later-phase
 // work, stated explicitly rather than silently assumed). Written now, reviewable now, exactly like
-// every "engine adapter written but uncalled" precedent (AE1's runClassicLayeredAiEngine, etc.).
+// every "engine adapter written but uncalled" precedent used earlier in the AE track.
 
 // Situation Analysis stage: an inclusion-only summary over AiSituationSnapshot's own fields — never
 // a second data-collection pass. `null`/empty config means "include everything," matching the
@@ -12765,6 +12767,9 @@ function AustraliaGame() {
   const [ledgerDashboardSearch, setLedgerDashboardSearch] = useState('');
   const [ledgerDashboardCorrelationFilter, setLedgerDashboardCorrelationFilter] = useState<string | null>(null);
   const [ledgerDashboardExpandedEventId, setLedgerDashboardExpandedEventId] = useState<string | null>(null);
+  // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
+  // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
+  const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
 
   // Special ability state tracking
   const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
@@ -14339,17 +14344,19 @@ function AustraliaGame() {
 	        ? settingsData.teamAiAuditorSafeModeEnabled
 	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
 	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20),
-	      // AE2: only 'classic_layered'/'end_to_end_planner' are valid values this phase (custom
-	      // config ids don't exist until the Algorithm Builder ships) — anything else, including a
-	      // stale custom config id from a future build, falls back to 'classic_layered' rather than
-	      // trusting an unrecognized string.
-	      aiAlgorithmForFriendlyTeam: (settingsData.aiAlgorithmForFriendlyTeam === 'classic_layered' || settingsData.aiAlgorithmForFriendlyTeam === 'end_to_end_planner')
+	      // Accepts 'classic_layered'/'end_to_end_planner', or any string starting with 'algo_' — the
+	      // exact prefix every real Algorithm Builder AiAlgorithmConfig.configId is minted with (see
+	      // createAiAlgorithmConfigInPlayerTeam and its sibling CRUD functions). A stale/deleted
+	      // configId that no longer matches any real config is already handled safely downstream:
+	      // runCustomAiAlgorithmEngine returns usedFallback:true when the config isn't found, so the
+	      // mandatory Classic fallback still applies. Anything else falls back to 'classic_layered'.
+	      aiAlgorithmForFriendlyTeam: (settingsData.aiAlgorithmForFriendlyTeam === 'classic_layered' || settingsData.aiAlgorithmForFriendlyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForFriendlyTeam === 'string' && settingsData.aiAlgorithmForFriendlyTeam.startsWith('algo_')))
 	        ? settingsData.aiAlgorithmForFriendlyTeam
 	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
-	      aiAlgorithmForEnemyTeam: (settingsData.aiAlgorithmForEnemyTeam === 'classic_layered' || settingsData.aiAlgorithmForEnemyTeam === 'end_to_end_planner')
+	      aiAlgorithmForEnemyTeam: (settingsData.aiAlgorithmForEnemyTeam === 'classic_layered' || settingsData.aiAlgorithmForEnemyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForEnemyTeam === 'string' && settingsData.aiAlgorithmForEnemyTeam.startsWith('algo_')))
 	        ? settingsData.aiAlgorithmForEnemyTeam
 	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
-	      aiAlgorithmForOpponent: (settingsData.aiAlgorithmForOpponent === 'classic_layered' || settingsData.aiAlgorithmForOpponent === 'end_to_end_planner')
+	      aiAlgorithmForOpponent: (settingsData.aiAlgorithmForOpponent === 'classic_layered' || settingsData.aiAlgorithmForOpponent === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForOpponent === 'string' && settingsData.aiAlgorithmForOpponent.startsWith('algo_')))
 	        ? settingsData.aiAlgorithmForOpponent
 	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
 	      aiThinkingDepth: (settingsData.aiThinkingDepth === 'fast' || settingsData.aiThinkingDepth === 'balanced' || settingsData.aiThinkingDepth === 'deep')
@@ -14662,19 +14669,6 @@ function AustraliaGame() {
     }
     return gameSettings.aiAlgorithmForOpponent;
   }, [getActorState, gameState.selectedMode, gameSettings.aiAlgorithmForFriendlyTeam, gameSettings.aiAlgorithmForEnemyTeam, gameSettings.aiAlgorithmForOpponent]);
-
-  // AE1: an explicit, named, zero-logic-change adapter for Classic Layered AI. Written now so its
-  // shape can be reviewed before it's load-bearing; uncalled by any real code path this phase. Its
-  // eventual (AE3+) job is to wrap the existing makeAiDecision/getRankedTeamAiDecisions call and
-  // repackage the already-existing return value into this shape — never altering the underlying
-  // scoring/selection logic itself.
-  const runClassicLayeredAiEngine = useCallback((_context: AiDecisionContext): AiDecisionResult => {
-    return {
-      engineId: 'classic_layered',
-      selectedAction: null,
-      usedFallback: false
-    };
-  }, []);
 
   const updateActorState = useCallback((actorId: string, updater: (prev: ActorState) => ActorState) => {
     if (actorId === 'player') {
@@ -31686,18 +31680,36 @@ function AustraliaGame() {
     if (validateAiAlgorithmConfig(config).errors.length > 0) {
       return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'custom algorithm config failed validation' };
     }
+    // AI_DECISION_ENGINE_MAX_OPERATIONS enforcement: a local counter incremented once per discrete
+    // pipeline stage actually executed (never per-candidate — that's separately bounded by
+    // AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED). Aborts to the mandatory fallback chain if exceeded,
+    // exactly as if this config had returned no valid action. Under any config this schema can
+    // currently express the real op count is nowhere near the 500 ceiling — this is a safety net,
+    // not something expected to change behavior during normal play.
+    let opCount = 0;
+    const nextOp = (): boolean => {
+      opCount += 1;
+      return opCount <= AI_DECISION_ENGINE_MAX_OPERATIONS;
+    };
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const snapshot = analyzeAiSituationForPlanner(actorId);
     if (!snapshot) {
       return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'no situation snapshot available' };
     }
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const goals = selectAiAlgorithmGoals(config.goalSelectionConfig, snapshot);
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const rawCandidates = generatePlannerCandidates(actorId);
     if (rawCandidates.length === 0) {
       return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'no legal candidates' };
     }
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const filtered = filterAiAlgorithmCandidates(config.candidateGenerationConfig, rawCandidates);
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const plan = constructAiAlgorithmPlan(config.planConstructionConfig, filtered);
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const utility = evaluateAiAlgorithmPlanUtility(config.utilityEvaluationConfig, plan, goals);
+    if (!nextOp()) return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, utility, usedFallback: true, fallbackReason: 'operation count limit exceeded' };
     const selected = selectAiAlgorithmAction(config.actionSelectionConfig, plan);
     // Pre-execution revalidation, mirroring the Planner's own AE9 discipline: confirm the chosen
     // action still appears among freshly regenerated candidates; on staleness, try the config's
@@ -39543,10 +39555,10 @@ function AustraliaGame() {
                     behavior, and always the default), a built-in End-to-End Strategic Planner, or a
                     custom algorithm you build yourself. Only active in Human vs AI, Human+AI vs
                     AI+AI, and Team AI vs Team AI — inactive in Single Player, Grand Tour, and menus.
-                    A human-controlled actor is never assigned an algorithm. The Algorithm Builder's
-                    own settings section (below) now exists, but it still can't produce a
-                    selectable config yet — only Classic Layered AI and the built-in End-to-End
-                    Strategic Planner are real choices here.
+                    A human-controlled actor is never assigned an algorithm. These two dropdowns only
+                    ever offer Classic Layered AI and the built-in Planner — a custom algorithm from
+                    the Algorithm Builder section below is selected via that config's own Activate
+                    button, which shows "ACTIVE" once it's the side's current algorithm.
                   </div>
                   <div>
                     <label className="block font-semibold mb-1 text-sm">Friendly Team AI (Team Mode)</label>
@@ -39798,6 +39810,18 @@ function AustraliaGame() {
                         } : c)
                       }));
                     };
+                    // Verification-pass fix: the per-stage config editor — one generic mutator
+                    // reused by all 10 stage forms below, rather than 10 bespoke functions (matches
+                    // this file's own established preference for reuse over duplication, e.g. F4-5's
+                    // parametrized renderRequirementGroupEditor). Every write already produces exactly
+                    // the shape sanitizeAiAlgorithmConfig's existing per-stage sanitizers accept — no
+                    // sanitizer changes needed.
+                    const updateAiAlgorithmStageConfig = <K extends keyof AiAlgorithmConfig>(configId: string, stageKey: K, updater: (prev: AiAlgorithmConfig[K]) => AiAlgorithmConfig[K]) => {
+                      updateTeamState(TEAM_PLAYER_ID, prev => ({
+                        ...prev,
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, [stageKey]: updater(c[stageKey]) } : c)
+                      }));
+                    };
                     const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
                     return (
                       <>
@@ -39852,6 +39876,12 @@ function AustraliaGame() {
                                 >
                                   {isActive ? 'ACTIVE' : canActivate ? 'Activate' : 'Blocked'}
                                 </button>
+                                <button
+                                  onClick={() => setAlgorithmConfigExpandedStagesId(prev => prev === config.configId ? null : config.configId)}
+                                  className={`px-2 py-1 rounded text-xs ${algorithmConfigExpandedStagesId === config.configId ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                >
+                                  {algorithmConfigExpandedStagesId === config.configId ? 'Hide Stages' : 'Edit Stages'}
+                                </button>
                                 <button onClick={() => duplicateAiAlgorithmConfigInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
                                 <button onClick={() => copyAiAlgorithmConfigToEnemyTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Copy to Enemy Team</button>
                                 <button onClick={() => exportAiAlgorithmConfigFromPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Export</button>
@@ -39877,13 +39907,195 @@ function AustraliaGame() {
                                   <div className="opacity-75">{config.lastTestResult.outcomeSummary}</div>
                                 </div>
                               )}
+                              {algorithmConfigExpandedStagesId === config.configId && (
+                                <div className={`p-3 rounded border ${themeStyles.border} space-y-4 text-sm`}>
+                                  <div>
+                                    <div className="font-semibold mb-1">Situation Analysis</div>
+                                    <div className="text-xs opacity-60 mb-1">Which information sources are included in this config's situation summary. None checked = include everything.</div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {AI_ALGORITHM_SITUATION_INFO_SOURCES.map(source => {
+                                        const checked = (config.situationAnalysisConfig?.informationSources || []).includes(source);
+                                        return (
+                                          <label key={source} className="flex items-center gap-1 text-xs">
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={() => updateAiAlgorithmStageConfig(config.configId, 'situationAnalysisConfig', prevStage => {
+                                                const current = prevStage?.informationSources || [];
+                                                return { informationSources: checked ? current.filter(s => s !== source) : [...current, source] };
+                                              })}
+                                            />
+                                            {source.replace(/_/g, ' ')}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Goal Selection</div>
+                                    <div className="text-xs opacity-60 mb-1">0-100 priority per goal kind.</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                      {AI_PLANNER_GOAL_KINDS.map(kind => (
+                                        <label key={kind} className="flex items-center gap-1 text-xs">
+                                          <span className="flex-1">{kind.replace(/_/g, ' ')}</span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            value={config.goalSelectionConfig?.goalPriorities?.[kind] ?? 0}
+                                            onChange={(e) => {
+                                              const val = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                              updateAiAlgorithmStageConfig(config.configId, 'goalSelectionConfig', prevStage => ({
+                                                goalPriorities: { ...(prevStage?.goalPriorities || {}), [kind]: val }
+                                              }));
+                                            }}
+                                            className={`${themeStyles.select} rounded px-1 py-0.5 text-xs w-14`}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Candidate Generation</div>
+                                    <div className="text-xs opacity-60 mb-1">Which action categories are allowed. None checked = no restriction (every category stays eligible).</div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {TEAM_MODE_ACTION_CATEGORIES.map(category => {
+                                        const checked = (config.candidateGenerationConfig?.allowedActionCategories || []).includes(category);
+                                        return (
+                                          <label key={category} className="flex items-center gap-1 text-xs">
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={() => updateAiAlgorithmStageConfig(config.configId, 'candidateGenerationConfig', prevStage => {
+                                                const current = prevStage?.allowedActionCategories || [];
+                                                return { allowedActionCategories: checked ? current.filter(c => c !== category) : [...current, category] };
+                                              })}
+                                            />
+                                            {category.replace(/_/g, ' ')}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Outcome Prediction</div>
+                                    <div className="flex gap-2">
+                                      {AI_ALGORITHM_RISK_BEHAVIORS.map(behavior => (
+                                        <button
+                                          key={behavior}
+                                          onClick={() => updateAiAlgorithmStageConfig(config.configId, 'outcomePredictionConfig', () => ({ riskBehavior: behavior }))}
+                                          className={`px-2 py-1 rounded text-xs capitalize ${config.outcomePredictionConfig?.riskBehavior === behavior ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                        >
+                                          {behavior}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Plan Construction</div>
+                                    <div className="flex gap-2 mb-2">
+                                      {(['fast', 'balanced', 'deep'] as AiThinkingDepth[]).map(depth => (
+                                        <button
+                                          key={depth}
+                                          onClick={() => updateAiAlgorithmStageConfig(config.configId, 'planConstructionConfig', prevStage => ({ planningDepth: depth, maxCandidatesConsidered: prevStage?.maxCandidatesConsidered ?? 0 }))}
+                                          className={`px-2 py-1 rounded text-xs capitalize ${config.planConstructionConfig?.planningDepth === depth ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                        >
+                                          {depth}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <label className="flex items-center gap-2 text-xs">
+                                      <span>Max candidates considered (0 = consider every candidate)</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED}
+                                        value={config.planConstructionConfig?.maxCandidatesConsidered ?? 0}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, Math.min(AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED, Math.round(Number(e.target.value) || 0)));
+                                          updateAiAlgorithmStageConfig(config.configId, 'planConstructionConfig', prevStage => ({ planningDepth: prevStage?.planningDepth ?? 'balanced', maxCandidatesConsidered: val }));
+                                        }}
+                                        className={`${themeStyles.select} rounded px-1 py-0.5 text-xs w-16`}
+                                      />
+                                    </label>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Utility Evaluation</div>
+                                    <label className="flex items-center gap-2 text-xs">
+                                      <span>Goal-served bonus (0-100)</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        value={config.utilityEvaluationConfig?.goalServedBonus ?? 20}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                          updateAiAlgorithmStageConfig(config.configId, 'utilityEvaluationConfig', () => ({ goalServedBonus: val }));
+                                        }}
+                                        className={`${themeStyles.select} rounded px-1 py-0.5 text-xs w-16`}
+                                      />
+                                    </label>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Action Selection</div>
+                                    <div className="flex gap-2">
+                                      {AI_ALGORITHM_ACTION_SELECTION_METHODS.map(method => (
+                                        <button
+                                          key={method}
+                                          onClick={() => updateAiAlgorithmStageConfig(config.configId, 'actionSelectionConfig', () => ({ method }))}
+                                          className={`px-2 py-1 rounded text-xs ${config.actionSelectionConfig?.method === method ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                        >
+                                          {method.replace(/_/g, ' ')}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <div className="font-semibold">Replanning</div>
+                                    <button
+                                      onClick={() => updateAiAlgorithmStageConfig(config.configId, 'replanningConfig', prevStage => ({ replanEveryTurn: !(prevStage?.replanEveryTurn ?? false) }))}
+                                      className={`px-2 py-1 rounded text-xs ${(config.replanningConfig?.replanEveryTurn ?? false) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                    >
+                                      {(config.replanningConfig?.replanEveryTurn ?? false) ? 'Replan every turn: ON' : 'Replan every turn: OFF'}
+                                    </button>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Fallback Behavior</div>
+                                    <div className="flex gap-2">
+                                      {AI_ALGORITHM_FALLBACK_POLICIES.map(policy => (
+                                        <button
+                                          key={policy}
+                                          onClick={() => updateAiAlgorithmStageConfig(config.configId, 'fallbackBehaviorConfig', () => ({ onInvalidCandidate: policy }))}
+                                          className={`px-2 py-1 rounded text-xs ${config.fallbackBehaviorConfig?.onInvalidCandidate === policy ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                        >
+                                          {policy.replace(/_/g, ' ')}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold mb-1">Explanation Output</div>
+                                    <div className="flex gap-2">
+                                      {AI_ALGORITHM_EXPLANATION_DETAIL_LEVELS.map(level => (
+                                        <button
+                                          key={level}
+                                          onClick={() => updateAiAlgorithmStageConfig(config.configId, 'explanationOutputConfig', () => ({ detailLevel: level }))}
+                                          className={`px-2 py-1 rounded text-xs capitalize ${config.explanationOutputConfig?.detailLevel === level ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                        >
+                                          {level}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             );
                           })}
                         </div>
                         <div>
                           <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
-                          <div className="text-xs opacity-60 mb-2">Reserved for the future per-stage config editor — has no effect until that's built. Governs the starting detail level of a newly-created config.</div>
+                          <div className="text-xs opacity-60 mb-2">Governs the starting detail level of a newly-created config. Use each config's own "Edit Stages" button above to author its 10 stage configs.</div>
                           <div className="flex gap-2">
                             {(['basic', 'advanced', 'expert'] as AiAlgorithmEditorMode[]).map(mode => (
                               <button
