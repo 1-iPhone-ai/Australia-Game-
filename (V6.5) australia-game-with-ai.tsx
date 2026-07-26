@@ -5542,6 +5542,10 @@ type GameSettingsState = {
   decisionTransparencyMaxVisibleAiCards: number;
   decisionTransparencyPerAiTimelineDensity: number;
   decisionTransparencyPerAiTimelineLength: number;
+  // GL1: Game Activity Ledger — a genuinely separate, optional, disabled-by-default, append-only
+  // history of match activity, distinct from Decision Transparency above and the AI Operations
+  // Auditor's own eventLog. Master toggle only this phase; nothing emits events yet (GL2's job).
+  gameActivityLedgerEnabled: boolean;
   // V5.0 gameplay settings
   winCondition: WinMetric;
   winConditionTieBreakers: WinMetric[];
@@ -7669,6 +7673,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   decisionTransparencyMaxVisibleAiCards: 4,
   decisionTransparencyPerAiTimelineDensity: 1,
   decisionTransparencyPerAiTimelineLength: 15,
+  gameActivityLedgerEnabled: false,
   // V5.0 settings
   winCondition: 'money',
   winConditionTieBreakers: [...DEFAULT_WIN_CONDITION_TIEBREAKERS],
@@ -7982,6 +7987,11 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     description: 'Shows why AI made decisions, including scoring and setting contributions.',
     tags: ['UX', 'Advanced'], advancedOnly: false, chips: ['UX only', 'Advanced']
   },
+  gameActivityLedgerEnabled: {
+    key: 'gameActivityLedgerEnabled', tab: 'advancedSystems', label: 'Game Activity Ledger',
+    description: 'An optional, append-only history of match activity — decisions, actions, approvals, Treasury requests, setting changes, and Auditor incidents — genuinely separate from Decision Transparency and the AI Operations Auditor. Pure scaffolding right now: nothing is recorded yet.',
+    tags: ['Advanced', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+  },
   advancedLoansEnabled: {
     key: 'advancedLoansEnabled', tab: 'economy', label: 'Advanced Loans',
     description: 'Four-tiered loan system with credit scores, refinancing, and loan events.',
@@ -8066,6 +8076,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
   { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
+  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -11958,6 +11969,91 @@ const createDefaultDecisionState = (): DecisionState => ({
   historyByActor: {}
 });
 
+// GL1: Game Activity Ledger — Foundations. A genuinely separate, optional, disabled-by-default,
+// append-only, ID-linked history of match activity, distinct from the AI Operations Auditor's own
+// eventLog (which detects operational problems) and from Decision Transparency's own per-actor
+// trace history above (which only ever keeps the LATEST/a capped recent history per actor, not a
+// full cross-referenced timeline). Modeled after AiOperationsEvent's own discriminated-fields
+// shape, but genuinely new structure: one flat event record carrying every ID a later phase might
+// need to cross-reference (decision/action/plan/config/approval/treasury-request/setting-change/
+// auditor-incident/parent-event/correlation-chain), rather than a closed per-type union — GL1's own
+// scope is schema + bounded storage only, so no emission call sites exist yet (GL2's job).
+type GameActivityLedgerEventCategory = 'action' | 'decision' | 'approval' | 'treasury'
+  | 'settings_change' | 'auditor_incident' | 'plan' | 'config' | 'match_lifecycle';
+const GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES: GameActivityLedgerEventCategory[] = [
+  'action', 'decision', 'approval', 'treasury', 'settings_change', 'auditor_incident', 'plan', 'config', 'match_lifecycle'
+];
+interface GameActivityLedgerEvent {
+  id: string;
+  matchId: string;
+  category: GameActivityLedgerEventCategory;
+  day: number;
+  turn: number;
+  teamId: string | null;
+  actorId: string | null;
+  decisionId?: string;
+  actionType?: string;
+  planId?: string;
+  configId?: string;
+  configRevision?: number;
+  approvalRequestId?: string;
+  treasuryRequestId?: string;
+  settingKey?: string;
+  auditorIncidentId?: string;
+  parentEventId?: string;
+  correlationChainId?: string;
+  summary: string;
+  timestamp: number;
+}
+interface GameActivityLedgerState {
+  matchId: string;
+  events: GameActivityLedgerEvent[];
+}
+const GAME_ACTIVITY_LEDGER_MAX_EVENTS = 500;
+const createDefaultGameActivityLedgerState = (): GameActivityLedgerState => ({
+  matchId: `match_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  events: []
+});
+const sanitizeGameActivityLedgerEvent = (value: unknown): GameActivityLedgerEvent | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<GameActivityLedgerEvent>;
+  if (typeof source.id !== 'string' || typeof source.matchId !== 'string' || typeof source.summary !== 'string') return null;
+  if (!GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES.includes(source.category as GameActivityLedgerEventCategory)) return null;
+  return {
+    id: source.id,
+    matchId: source.matchId,
+    category: source.category as GameActivityLedgerEventCategory,
+    day: typeof source.day === 'number' && Number.isFinite(source.day) ? Math.max(0, Math.floor(source.day)) : 0,
+    turn: typeof source.turn === 'number' && Number.isFinite(source.turn) ? Math.max(0, Math.floor(source.turn)) : 0,
+    teamId: typeof source.teamId === 'string' ? source.teamId : null,
+    actorId: typeof source.actorId === 'string' ? source.actorId : null,
+    decisionId: typeof source.decisionId === 'string' ? source.decisionId : undefined,
+    actionType: typeof source.actionType === 'string' ? source.actionType : undefined,
+    planId: typeof source.planId === 'string' ? source.planId : undefined,
+    configId: typeof source.configId === 'string' ? source.configId : undefined,
+    configRevision: typeof source.configRevision === 'number' ? source.configRevision : undefined,
+    approvalRequestId: typeof source.approvalRequestId === 'string' ? source.approvalRequestId : undefined,
+    treasuryRequestId: typeof source.treasuryRequestId === 'string' ? source.treasuryRequestId : undefined,
+    settingKey: typeof source.settingKey === 'string' ? source.settingKey : undefined,
+    auditorIncidentId: typeof source.auditorIncidentId === 'string' ? source.auditorIncidentId : undefined,
+    parentEventId: typeof source.parentEventId === 'string' ? source.parentEventId : undefined,
+    correlationChainId: typeof source.correlationChainId === 'string' ? source.correlationChainId : undefined,
+    summary: source.summary,
+    timestamp: typeof source.timestamp === 'number' && Number.isFinite(source.timestamp) ? source.timestamp : Date.now()
+  };
+};
+const sanitizeGameActivityLedgerState = (value: unknown): GameActivityLedgerState => {
+  const defaults = createDefaultGameActivityLedgerState();
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Partial<GameActivityLedgerState>;
+  return {
+    matchId: typeof source.matchId === 'string' ? source.matchId : defaults.matchId,
+    events: Array.isArray(source.events)
+      ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS)
+      : []
+  };
+};
+
 function playerReducer(state, action) {
   switch (action.type) {
     case 'UPDATE_MONEY':
@@ -12132,7 +12228,8 @@ const initialGameState = {
   negotiationStats: createDefaultNegotiationStats(),
   challengeCompletions: [] as ChallengeCompletionLogEntry[],
   grandTourState: createDefaultGrandTourState(),
-  decisionState: createDefaultDecisionState()
+  decisionState: createDefaultDecisionState(),
+  gameActivityLedger: createDefaultGameActivityLedgerState()
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -12392,6 +12489,28 @@ function gameStateReducer(state, action) {
             ...(existingState.historyByActor || {}),
             [trace.actorId]: [...existingHistory, trace].slice(-historyCap)
           }
+        }
+      };
+    }
+    case 'SET_GAME_ACTIVITY_LEDGER_STATE':
+      return {
+        ...state,
+        gameActivityLedger: action.payload
+          ? { ...createDefaultGameActivityLedgerState(), ...action.payload }
+          : state.gameActivityLedger
+      };
+    // GL1: the append operation is declared now, alongside the state's own type/factory/sanitizer,
+    // for schema stability — mirroring RECORD_DECISION_TRACE's own precedent — but has zero real
+    // call sites this phase. Event emission across the game's existing systems is GL2's job.
+    case 'RECORD_GAME_ACTIVITY_LEDGER_EVENT': {
+      const event = action.payload as GameActivityLedgerEvent | undefined;
+      if (!event || typeof event.id !== 'string') return state;
+      const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingState,
+          events: [...existingState.events, event].slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS)
         }
       };
     }
@@ -13413,7 +13532,8 @@ function AustraliaGame() {
             .slice(-1000)
         : [],
       grandTourState: normalizeGrandTourState(stateData.grandTourState),
-      decisionState: sanitizeDecisionState(stateData.decisionState)
+      decisionState: sanitizeDecisionState(stateData.decisionState),
+      gameActivityLedger: sanitizeGameActivityLedgerState(stateData.gameActivityLedger)
 	    };
 
     const sanitizedActorsById = typeof raw.actorsById === 'object' && raw.actorsById !== null
@@ -13664,6 +13784,7 @@ function AustraliaGame() {
         decisionTransparencyMaxVisibleAiCards: clampSettingNumber(settingsData.decisionTransparencyMaxVisibleAiCards, DEFAULT_GAME_SETTINGS.decisionTransparencyMaxVisibleAiCards, 1, 8),
         decisionTransparencyPerAiTimelineDensity: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineDensity, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity, 1, 6),
         decisionTransparencyPerAiTimelineLength: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength, 4, 30),
+        gameActivityLedgerEnabled: typeof settingsData.gameActivityLedgerEnabled === 'boolean' ? settingsData.gameActivityLedgerEnabled : DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
         uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
         simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
         disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
@@ -19570,6 +19691,7 @@ function AustraliaGame() {
       challengeCompletions: Array.isArray(data.gameState.challengeCompletions) ? data.gameState.challengeCompletions : [],
       grandTourState: normalizeGrandTourState(data.gameState.grandTourState),
       decisionState: sanitizeDecisionState(data.gameState.decisionState),
+      gameActivityLedger: sanitizeGameActivityLedgerState(data.gameState.gameActivityLedger),
       currentActorId: data.gameState.currentActorId || 'player',
       turnOrder: Array.isArray(data.gameState.turnOrder) ? data.gameState.turnOrder : initialGameState.turnOrder,
       turnCounter: typeof data.gameState.turnCounter === 'number' ? data.gameState.turnCounter : 0,
@@ -35913,7 +36035,8 @@ function AustraliaGame() {
       decisionTransparencyShowUnaffectedAis: DEFAULT_GAME_SETTINGS.decisionTransparencyShowUnaffectedAis,
       decisionTransparencyMaxVisibleAiCards: DEFAULT_GAME_SETTINGS.decisionTransparencyMaxVisibleAiCards,
       decisionTransparencyPerAiTimelineDensity: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity,
-      decisionTransparencyPerAiTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength
+      decisionTransparencyPerAiTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength,
+      gameActivityLedgerEnabled: DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled
     }));
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
@@ -40228,6 +40351,34 @@ function AustraliaGame() {
                   )}
                   {renderSettingMetadataCard('decision_transparency')}
                   </>
+                  )}
+                </div>
+              </SettingsSection>
+              <SettingsSection id="advancedSystems.gameActivityLedger" tab="advancedSystems" title="📜 Game Activity Ledger" chips={getAutoChipsForField('gameActivityLedgerEnabled', SETTINGS_HUB_FIELD_META.gameActivityLedgerEnabled)} description={SETTINGS_HUB_FIELD_META.gameActivityLedgerEnabled.description} onReset={settingsResetHandlers.advancedSystems.fn} resetLabel={settingsResetHandlers.advancedSystems.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'advancedSystems.gameActivityLedger')!.fieldKeys}>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Enable Game Activity Ledger</div>
+                      <div className="text-sm opacity-75">
+                        A separate, optional, append-only history of match activity — genuinely
+                        distinct from Decision Transparency above (which shows only the LATEST/a
+                        capped recent history per actor) and the AI Operations Auditor (which
+                        detects operational problems, never just records facts). Pure scaffolding
+                        right now: nothing is recorded yet — event emission across the game's
+                        existing systems arrives in a later phase.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setGameSettings(prev => ({ ...prev, gameActivityLedgerEnabled: !prev.gameActivityLedgerEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.gameActivityLedgerEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {gameSettings.gameActivityLedgerEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.gameActivityLedgerEnabled && (
+                    <div className="text-sm opacity-75">
+                      {gameState.gameActivityLedger?.events.length || 0} events recorded this match — the event emission and dashboard arrive in a later phase.
+                    </div>
                   )}
                 </div>
               </SettingsSection>
