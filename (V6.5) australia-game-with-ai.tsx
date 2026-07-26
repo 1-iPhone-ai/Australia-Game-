@@ -12744,6 +12744,10 @@ function AustraliaGame() {
   // would throw "Cannot access before initialization" the instant this component renders. Assigned
   // right after the real function's own declaration.
   const runEndToEndStrategicPlannerEngineRef = useRef<((actorId: string) => AiDecisionResult) | null>(null);
+  // AB-Exec: same ref-indirection reason as runEndToEndStrategicPlannerEngineRef above —
+  // resolveSoloAiDecisionViaEngine needs to consult the custom-Algorithm-Builder-config engine,
+  // but that function (runCustomAiAlgorithmEngine) isn't declared until later in the component.
+  const runCustomAiAlgorithmEngineRef = useRef<((actorId: string, configId: string) => AiDecisionResult) | null>(null);
   const regionDepositsRef = useRef<RegionDeposits>(sanitizeRegionDeposits(initialGameState.regionDeposits));
   const regionControlHistoryRef = useRef<RegionControlStats['controlHistory']>(initialGameState.regionControlStats.controlHistory || []);
   const proposalsRef = useRef<Proposal[]>(initialGameState.proposals || []);
@@ -19061,8 +19065,16 @@ function AustraliaGame() {
           return plannerResult?.selectedAction || makeAiDecision(aiState, currentGameState, playerState);
         }
         case 'classic_layered':
-        default:
           return makeAiDecision(aiState, currentGameState, playerState);
+        default: {
+          // AB-Exec: any engineId that isn't one of the two built-in engines is a custom
+          // AiAlgorithmConfig id (per AE1's own forward-looking comment — a config's own configId
+          // satisfies AiDecisionEngineId structurally). Same ref-indirection as the Planner branch
+          // above, since runCustomAiAlgorithmEngine is declared later in the component. Falls
+          // through to Classic whenever the config can't be found/used.
+          const customResult = runCustomAiAlgorithmEngineRef.current?.('ai', engineId) || null;
+          return customResult?.selectedAction || makeAiDecision(aiState, currentGameState, playerState);
+        }
       }
     };
     let decision: AIAction | null = null;
@@ -31445,6 +31457,67 @@ function AustraliaGame() {
   }, [analyzeAiSituationForPlanner, generatePlannerCandidates, gameSettings.aiThinkingDepth, gameState.day]);
   runEndToEndStrategicPlannerEngineRef.current = runEndToEndStrategicPlannerEngine;
 
+  // AB-Exec: the real execution engine for a custom Algorithm Builder config — the piece AB1-AB10
+  // deliberately left unbuilt (activating a config only ever wrote the settings field; nothing
+  // ever executed it). Reuses the exact same AB2-AB4 pure evaluators the Testing Workspace (AB9)
+  // already calls, plus AB7's own validateAiAlgorithmConfig as a live safety gate — an invalid
+  // config is treated exactly like a missing one (falls through to Classic, never partially runs).
+  // Mirrors runEndToEndStrategicPlannerEngine's shape (situation -> goals -> candidates -> filter
+  // -> plan -> utility -> select -> pre-execution revalidation -> explain) but does not persist a
+  // multi-step plan across calls the way AE9 does for the Planner — a stated, honest scope limit;
+  // every call recomputes fresh, which is simpler and still fully correct, just not optimized for
+  // a multi-step plan's later steps.
+  const runCustomAiAlgorithmEngine = useCallback((actorId: string, configId: string): AiDecisionResult => {
+    const actor = getActorState(actorId);
+    const teamId = actor?.teamId || (actorId === 'player' ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID);
+    const config = teamsById[teamId]?.algorithmConfigs.find(c => c.configId === configId);
+    if (!config) {
+      return { engineId: configId, selectedAction: null, usedFallback: true, fallbackReason: 'custom algorithm config not found' };
+    }
+    if (validateAiAlgorithmConfig(config).errors.length > 0) {
+      return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'custom algorithm config failed validation' };
+    }
+    const snapshot = analyzeAiSituationForPlanner(actorId);
+    if (!snapshot) {
+      return { engineId: configId, configRevision: config.revision, selectedAction: null, usedFallback: true, fallbackReason: 'no situation snapshot available' };
+    }
+    const goals = selectAiAlgorithmGoals(config.goalSelectionConfig, snapshot);
+    const rawCandidates = generatePlannerCandidates(actorId);
+    if (rawCandidates.length === 0) {
+      return { engineId: configId, configRevision: config.revision, selectedAction: null, primaryGoal: goals.primary, secondaryGoals: goals.secondary, usedFallback: true, fallbackReason: 'no legal candidates' };
+    }
+    const filtered = filterAiAlgorithmCandidates(config.candidateGenerationConfig, rawCandidates);
+    const plan = constructAiAlgorithmPlan(config.planConstructionConfig, filtered);
+    const utility = evaluateAiAlgorithmPlanUtility(config.utilityEvaluationConfig, plan, goals);
+    const selected = selectAiAlgorithmAction(config.actionSelectionConfig, plan);
+    // Pre-execution revalidation, mirroring the Planner's own AE9 discipline: confirm the chosen
+    // action still appears among freshly regenerated candidates; on staleness, try the config's
+    // own configured fallback policy (AB4's fallbackBehaviorConfig) before giving up.
+    const freshCandidates = generatePlannerCandidates(actorId);
+    const isStillLegal = (candidate: ScoredTeamAiDecision | null): boolean => !!candidate && freshCandidates.some(c => c.type === candidate.type
+      && (c.data?.region || null) === (candidate.data?.region || null)
+      && (c.data?.targetActorId || null) === (candidate.data?.targetActorId || null));
+    const finalAction = (!selected || isStillLegal(selected)) ? selected : resolveAiAlgorithmFallbackCandidate(config.fallbackBehaviorConfig, freshCandidates, selected);
+    const outcome = finalAction ? predictAiAlgorithmCandidateOutcome(config.outcomePredictionConfig, finalAction) : null;
+    return {
+      engineId: configId,
+      configRevision: config.revision,
+      selectedAction: finalAction,
+      plan: plan.length > 1 ? plan : undefined,
+      situationSummary: summarizeAiAlgorithmSituation(config.situationAnalysisConfig, snapshot),
+      primaryGoal: goals.primary,
+      secondaryGoals: goals.secondary,
+      utility,
+      confidence: finalAction ? Math.min(1, Math.max(0, (finalAction.score || 0) / 200)) : 0,
+      expectedOutcome: outcome?.expectedOutcome || '',
+      worstCaseOutcome: outcome?.worstCaseOutcome || '',
+      alternatives: filtered.slice(1, 4),
+      explanation: finalAction ? explainAiAlgorithmDecision(config.explanationOutputConfig, finalAction, plan, goals) : 'No legal action available for this custom algorithm.',
+      usedFallback: !finalAction || (!!selected && finalAction !== selected)
+    };
+  }, [getActorState, teamsById, analyzeAiSituationForPlanner, generatePlannerCandidates]);
+  runCustomAiAlgorithmEngineRef.current = runCustomAiAlgorithmEngine;
+
   // AE3/AE4: the one place a resolved AI decision engine actually gets consulted for team-mode
   // decision selection — plugged in ONLY at the innermost fallback position, after Parallel
   // Planning's round plan, Teammate Action Sequences, and Team Plans have all had their chance
@@ -31475,8 +31548,14 @@ function AustraliaGame() {
           return plannerResult.selectedAction || makeTeamAiDecision(actorId);
         }
         case 'classic_layered':
-        default:
           return makeTeamAiDecision(actorId);
+        default: {
+          // AB-Exec: any engineId that isn't one of the two built-in engines is a custom
+          // AiAlgorithmConfig id (per AE1's own forward-looking comment). Falls through to
+          // Classic whenever the config can't be found/used — mirrors the Planner branch above.
+          const customResult = runCustomAiAlgorithmEngine(actorId, engineId);
+          return customResult.selectedAction || makeTeamAiDecision(actorId);
+        }
       }
     };
     let decision: AIAction | null = null;
@@ -31495,7 +31574,7 @@ function AustraliaGame() {
       }
     }
     return AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION;
-  }, [resolveAiDecisionEngineForActor, makeTeamAiDecision, runEndToEndStrategicPlannerEngine]);
+  }, [resolveAiDecisionEngineForActor, makeTeamAiDecision, runEndToEndStrategicPlannerEngine, runCustomAiAlgorithmEngine]);
 
   const advanceToNextActorTurn = useCallback(() => {
     const order = Array.isArray(gameState.turnOrder) && gameState.turnOrder.length > 0 ? gameState.turnOrder : ['player', 'ai'];
