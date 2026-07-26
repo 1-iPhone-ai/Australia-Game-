@@ -6292,25 +6292,30 @@ const constructAiPlan = (candidates: ScoredTeamAiDecision[], depth: AiThinkingDe
   return plan;
 };
 
+// AE7/AB3: the one shared goal -> relevant-action-category lookup, extracted (pure, behavior-
+// preserving refactor) so both the built-in Planner's own fixed-bonus utility evaluator (below)
+// and AB3's player-configurable-bonus evaluator read from the identical table — never two
+// diverging copies of "which categories serve which goal."
+const AI_PLANNER_GOAL_CATEGORY_MAP: Partial<Record<AiPlannerGoalKind, string[]>> = {
+  crafting: ['craft'],
+  resource_acquisition: ['craft', 'buy_market'],
+  regional_control: ['region_deposit', 'travel'],
+  teammate_support: ['give_cash', 'give_resource'],
+  opponent_disruption: ['sabotage'],
+  available_cash: ['sell', 'challenge'],
+  net_worth: ['invest', 'buy_equipment'],
+  survival: ['sell', 'challenge']
+};
+
 // AE7: ONE centralized Utility Evaluation function scoring a whole plan — explicitly NOT a second
 // modifier chain layered on top of Classic's own scoring stack. Each step's existing `.score`
 // (already the output of the one, unified Classic scoring chain every candidate carries) is summed
 // as-is; the only addition here is one flat, bounded per-step bonus when a step's category
 // plausibly serves the selected primary/secondary goals — never a per-system multiplier chain.
 const evaluateAiPlanUtility = (plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): number => {
-  const goalCategoryMap: Partial<Record<AiPlannerGoalKind, string[]>> = {
-    crafting: ['craft'],
-    resource_acquisition: ['craft', 'buy_market'],
-    regional_control: ['region_deposit', 'travel'],
-    teammate_support: ['give_cash', 'give_resource'],
-    opponent_disruption: ['sabotage'],
-    available_cash: ['sell', 'challenge'],
-    net_worth: ['invest', 'buy_equipment'],
-    survival: ['sell', 'challenge']
-  };
   const relevantCategories = new Set<string>([
-    ...(goalCategoryMap[goals.primary] || []),
-    ...goals.secondary.flatMap(g => goalCategoryMap[g] || [])
+    ...(AI_PLANNER_GOAL_CATEGORY_MAP[goals.primary] || []),
+    ...goals.secondary.flatMap(g => AI_PLANNER_GOAL_CATEGORY_MAP[g] || [])
   ]);
   return plan.reduce((total, step) => total + (step.score || 0) + (relevantCategories.has(step.type) ? 20 : 0), 0);
 };
@@ -6399,6 +6404,32 @@ interface AiAlgorithmCandidateGenerationConfig {
   allowedActionCategories: TeamModeActionCategory[];
 }
 
+// AB3: closed, non-arbitrary-code stage schemas for Outcome Prediction / Plan Construction /
+// Utility Evaluation. Each parameterizes an already-existing pure function (AE6's
+// predictAiCandidateOutcome, AE7's constructAiPlan/evaluateAiPlanUtility) — never a place for
+// arbitrary logic.
+const AI_ALGORITHM_RISK_BEHAVIORS: AiAlgorithmRiskBehavior[] = ['conservative', 'balanced', 'aggressive'];
+type AiAlgorithmRiskBehavior = 'conservative' | 'balanced' | 'aggressive';
+interface AiAlgorithmOutcomePredictionConfig {
+  riskBehavior: AiAlgorithmRiskBehavior;
+}
+// AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED bounds maxCandidatesConsidered so a config can never ask
+// for unbounded work — the same "reserve a bounded ceiling now" spirit as AE4's
+// AI_DECISION_ENGINE_MAX_OPERATIONS.
+const AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED = 50;
+interface AiAlgorithmPlanConstructionConfig {
+  planningDepth: AiThinkingDepth;
+  // 0/absent means "consider every candidate Candidate Generation produced" — clamped to
+  // AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED regardless of what's configured.
+  maxCandidatesConsidered: number;
+}
+interface AiAlgorithmUtilityEvaluationConfig {
+  // 0-100, replaces the built-in Planner's own fixed +20 per-step goal-served bonus (AE7) —
+  // the built-in Planner itself is untouched and stays hardcoded at 20; this only lets a custom
+  // config tune its OWN utility evaluation's bonus magnitude.
+  goalServedBonus: number;
+}
+
 interface AiAlgorithmConfig {
   configId: string;
   revision: number;
@@ -6416,6 +6447,11 @@ interface AiAlgorithmConfig {
   situationAnalysisConfig: AiAlgorithmSituationAnalysisConfig | null;
   goalSelectionConfig: AiAlgorithmGoalSelectionConfig | null;
   candidateGenerationConfig: AiAlgorithmCandidateGenerationConfig | null;
+  // AB3: the next three stage configs. Same null-means-not-yet-configured convention. AB4 adds
+  // the final stage configs (Action Selection/Replanning/Fallback Behavior/Explanation Output).
+  outcomePredictionConfig: AiAlgorithmOutcomePredictionConfig | null;
+  planConstructionConfig: AiAlgorithmPlanConstructionConfig | null;
+  utilityEvaluationConfig: AiAlgorithmUtilityEvaluationConfig | null;
 }
 
 // AB1: mirrors sanitizeTeamPlan's exact convention — hard-fail (null) on a missing/wrong-typed
@@ -6461,6 +6497,31 @@ const sanitizeAiAlgorithmCandidateGenerationConfig = (value: unknown): AiAlgorit
   if (!Array.isArray(source.allowedActionCategories)) return null;
   return { allowedActionCategories: source.allowedActionCategories.filter((c): c is TeamModeActionCategory => TEAM_MODE_ACTION_CATEGORIES.includes(c as TeamModeActionCategory)) };
 };
+// AB3: three more stage-config sanitizers, same "hard-fail to null, validate enums against a
+// closed array, clamp numbers" convention.
+const sanitizeAiAlgorithmOutcomePredictionConfig = (value: unknown): AiAlgorithmOutcomePredictionConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmOutcomePredictionConfig>;
+  if (!AI_ALGORITHM_RISK_BEHAVIORS.includes(source.riskBehavior as AiAlgorithmRiskBehavior)) return null;
+  return { riskBehavior: source.riskBehavior as AiAlgorithmRiskBehavior };
+};
+const sanitizeAiAlgorithmPlanConstructionConfig = (value: unknown): AiAlgorithmPlanConstructionConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmPlanConstructionConfig>;
+  if (source.planningDepth !== 'fast' && source.planningDepth !== 'balanced' && source.planningDepth !== 'deep') return null;
+  return {
+    planningDepth: source.planningDepth,
+    maxCandidatesConsidered: typeof source.maxCandidatesConsidered === 'number' && Number.isFinite(source.maxCandidatesConsidered)
+      ? Math.max(0, Math.min(AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED, Math.floor(source.maxCandidatesConsidered)))
+      : 0
+  };
+};
+const sanitizeAiAlgorithmUtilityEvaluationConfig = (value: unknown): AiAlgorithmUtilityEvaluationConfig | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<AiAlgorithmUtilityEvaluationConfig>;
+  if (typeof source.goalServedBonus !== 'number' || !Number.isFinite(source.goalServedBonus)) return null;
+  return { goalServedBonus: Math.max(0, Math.min(100, Math.round(source.goalServedBonus))) };
+};
 const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<AiAlgorithmConfig>;
@@ -6478,7 +6539,10 @@ const sanitizeAiAlgorithmConfig = (value: unknown): AiAlgorithmConfig | null => 
     active: typeof source.active === 'boolean' ? source.active : false,
     situationAnalysisConfig: sanitizeAiAlgorithmSituationAnalysisConfig(source.situationAnalysisConfig),
     goalSelectionConfig: sanitizeAiAlgorithmGoalSelectionConfig(source.goalSelectionConfig),
-    candidateGenerationConfig: sanitizeAiAlgorithmCandidateGenerationConfig(source.candidateGenerationConfig)
+    candidateGenerationConfig: sanitizeAiAlgorithmCandidateGenerationConfig(source.candidateGenerationConfig),
+    outcomePredictionConfig: sanitizeAiAlgorithmOutcomePredictionConfig(source.outcomePredictionConfig),
+    planConstructionConfig: sanitizeAiAlgorithmPlanConstructionConfig(source.planConstructionConfig),
+    utilityEvaluationConfig: sanitizeAiAlgorithmUtilityEvaluationConfig(source.utilityEvaluationConfig)
   };
 };
 const sanitizeAiAlgorithmConfigs = (value: unknown): AiAlgorithmConfig[] => {
@@ -6531,6 +6595,47 @@ const filterAiAlgorithmCandidates = (config: AiAlgorithmCandidateGenerationConfi
   if (!config?.allowedActionCategories?.length) return candidates;
   const allowed = new Set(config.allowedActionCategories);
   return candidates.filter(candidate => allowed.has(candidate.type as TeamModeActionCategory));
+};
+
+// AB3: three more pure stage-evaluator functions, same "uncalled by any real turn-execution path
+// this phase" status as AB2's — each parameterizes an already-existing AE6/AE7 pure function
+// rather than re-deriving its logic.
+
+// Outcome Prediction stage: reuses predictAiCandidateOutcome (AE6) verbatim for the actual
+// expected/worst-case text, adding only an interpretive risk note driven by the configured
+// behavior — never a second probability/EV calculation.
+const predictAiAlgorithmCandidateOutcome = (config: AiAlgorithmOutcomePredictionConfig | null, candidate: ScoredTeamAiDecision): AiCandidateOutcomePrediction & { riskNote: string } => {
+  const base = predictAiCandidateOutcome(candidate);
+  const behavior = config?.riskBehavior || 'balanced';
+  const riskNote = behavior === 'conservative'
+    ? `Conservative: weighs the worst case (${base.worstCaseOutcome}) heavily before proceeding.`
+    : behavior === 'aggressive'
+    ? `Aggressive: favors the expected upside (${base.expectedOutcome}) even if the worst case is costly.`
+    : `Balanced: weighs expected and worst-case outcomes evenly.`;
+  return { ...base, riskNote };
+};
+
+// Plan Construction stage: reuses constructAiPlan (AE7) verbatim, only parameterizing its depth
+// input and, per maxCandidatesConsidered, truncating the candidate list BEFORE handing it to
+// constructAiPlan — never re-implementing plan-building logic.
+const constructAiAlgorithmPlan = (config: AiAlgorithmPlanConstructionConfig | null, candidates: ScoredTeamAiDecision[]): ScoredTeamAiDecision[] => {
+  const depth = config?.planningDepth || 'balanced';
+  const limit = config?.maxCandidatesConsidered && config.maxCandidatesConsidered > 0
+    ? Math.min(config.maxCandidatesConsidered, AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED)
+    : candidates.length;
+  return constructAiPlan(candidates.slice(0, limit), depth);
+};
+
+// Utility Evaluation stage: identical shape to evaluateAiPlanUtility (AE7), reading the SAME
+// shared AI_PLANNER_GOAL_CATEGORY_MAP — the only difference is a player-configurable bonus
+// magnitude in place of the built-in Planner's own fixed +20 (which stays untouched).
+const evaluateAiAlgorithmPlanUtility = (config: AiAlgorithmUtilityEvaluationConfig | null, plan: ScoredTeamAiDecision[], goals: AiPlannerGoalSelection): number => {
+  const bonus = typeof config?.goalServedBonus === 'number' ? Math.max(0, Math.min(100, config.goalServedBonus)) : 20;
+  const relevantCategories = new Set<string>([
+    ...(AI_PLANNER_GOAL_CATEGORY_MAP[goals.primary] || []),
+    ...goals.secondary.flatMap(g => AI_PLANNER_GOAL_CATEGORY_MAP[g] || [])
+  ]);
+  return plan.reduce((total, step) => total + (step.score || 0) + (relevantCategories.has(step.type) ? bonus : 0), 0);
 };
 
 const NOTIFICATION_TYPES_ALL: NotificationType[] = [
