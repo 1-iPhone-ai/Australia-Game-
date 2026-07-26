@@ -13000,6 +13000,11 @@ function AustraliaGame() {
   const [showAiPipelineInspector, setShowAiPipelineInspector] = useState(false);
   const [pipelineInspectorSelectedDecisionId, setPipelineInspectorSelectedDecisionId] = useState<string | null>(null);
   const [pipelineInspectorTeamFilter, setPipelineInspectorTeamFilter] = useState<string>('all');
+  // PI3: additional filters (actor/status) + copy-diagnostic-summary confirmation flash — all
+  // component-local, never persisted, matching the PI2 filter state's own convention.
+  const [pipelineInspectorActorFilter, setPipelineInspectorActorFilter] = useState<string>('all');
+  const [pipelineInspectorStatusFilter, setPipelineInspectorStatusFilter] = useState<'all' | 'blocked' | 'modified' | 'passed'>('all');
+  const [pipelineInspectorCopyConfirming, setPipelineInspectorCopyConfirming] = useState(false);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -47855,12 +47860,17 @@ function AustraliaGame() {
     const close = () => setShowAiPipelineInspector(false);
     const teamIds = pipelineInspectorTeamFilter === 'all' ? [TEAM_PLAYER_ID, TEAM_OPPONENT_ID] : [pipelineInspectorTeamFilter];
     const allTraces = teamIds.flatMap(teamId => (teamsByIdRef.current[teamId]?.pipelineTraces || []));
-    const sortedTraces = allTraces.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
     const getTraceStatus = (trace: PipelineTraceRecord): 'blocked' | 'modified' | 'passed' => {
       if (trace.stages.some(s => s.status === 'blocked')) return 'blocked';
       if (trace.stages.some(s => s.status === 'modified')) return 'modified';
       return 'passed';
     };
+    // PI3: known actor ids present in the (team-filtered) trace set, for the new actor filter dropdown.
+    const knownActorIds = Array.from(new Set(allTraces.map(t => t.actorId))).sort();
+    const sortedTraces = allTraces
+      .filter(t => pipelineInspectorActorFilter === 'all' || t.actorId === pipelineInspectorActorFilter)
+      .filter(t => pipelineInspectorStatusFilter === 'all' || getTraceStatus(t) === pipelineInspectorStatusFilter)
+      .slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
     const statusBadgeClass: Record<'blocked' | 'modified' | 'passed', string> = {
       blocked: themeStyles.badgeWarning,
       modified: themeStyles.badgeWarning,
@@ -47880,6 +47890,35 @@ function AustraliaGame() {
         ? latestDecisionTraceByActor[selectedTrace.actorId]?.lastTrace : null)
       || null
     ) : null;
+    // PI3: copyable diagnostic summary — a plain JSON export of the selected trace plus its
+    // cross-referenced ranking data, for the player to paste elsewhere (bug reports, discussion).
+    // Never mutates anything; purely reads already-computed values.
+    const copyPipelineDiagnosticSummary = () => {
+      if (!selectedTrace) return;
+      const payload = {
+        decisionId: selectedTrace.decisionId,
+        actorId: selectedTrace.actorId,
+        actorDisplayName: getActorDisplayName(selectedTrace.actorId),
+        teamId: selectedTrace.teamId,
+        day: selectedTrace.day,
+        turn: selectedTrace.turn,
+        status: getTraceStatus(selectedTrace),
+        stages: selectedTrace.stages,
+        stateDelta: selectedTrace.stateDelta || null,
+        crossReferencedRanking: crossReferencedTrace ? {
+          candidates: crossReferencedTrace.candidates,
+          alternativeActions: crossReferencedTrace.alternativeActions,
+          scoreStages: crossReferencedTrace.scoreStages || []
+        } : null
+      };
+      const text = JSON.stringify(payload, null, 2);
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setPipelineInspectorCopyConfirming(true);
+          setTimeout(() => setPipelineInspectorCopyConfirming(false), 1500);
+        }).catch(() => {});
+      }
+    };
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
         <div
@@ -47909,6 +47948,35 @@ function AustraliaGame() {
                   {teamId === 'all' ? 'All Teams' : teamId === TEAM_PLAYER_ID ? 'Your Team' : 'Opponent Team'}
                 </button>
               ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <select
+                value={pipelineInspectorActorFilter}
+                onChange={(e) => setPipelineInspectorActorFilter(e.target.value)}
+                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
+              >
+                <option value="all">All Actors</option>
+                {knownActorIds.map(actorId => (
+                  <option key={actorId} value={actorId}>{getActorDisplayName(actorId)}</option>
+                ))}
+              </select>
+              <select
+                value={pipelineInspectorStatusFilter}
+                onChange={(e) => setPipelineInspectorStatusFilter(e.target.value as typeof pipelineInspectorStatusFilter)}
+                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
+              >
+                <option value="all">All Results</option>
+                <option value="passed">Passed</option>
+                <option value="modified">Modified</option>
+                <option value="blocked">Blocked</option>
+              </select>
+              <button
+                onClick={copyPipelineDiagnosticSummary}
+                disabled={!selectedTrace}
+                className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
+              >
+                {pipelineInspectorCopyConfirming ? 'Copied!' : 'Copy Diagnostic Summary'}
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-5 flex flex-col md:flex-row gap-4">
@@ -47961,7 +48029,22 @@ function AustraliaGame() {
                             <div className="text-xs opacity-75 mt-1">
                               {stage?.summary || 'Not reached / system inactive for this decision.'}
                             </div>
-                            {stage?.relatedId && <div className="text-[10px] opacity-60 mt-1">Related ID: {stage.relatedId}</div>}
+                            {stage?.relatedId && (
+                              <div className="text-[10px] opacity-60 mt-1 flex items-center gap-2">
+                                <span>Related ID: {stage.relatedId}</span>
+                                {stageId === 'auditor' && gameSettings.teamAiAuditorSystemEnabled && gameSettings.teamAiAuditorDashboardEnabled && (
+                                  <button
+                                    className="underline"
+                                    onClick={() => {
+                                      updateUiState({ showAuditorDashboard: true });
+                                      setAuditorDashboardTab('activeIncidents');
+                                    }}
+                                  >
+                                    Open in Auditor Dashboard
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
