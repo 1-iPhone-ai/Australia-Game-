@@ -5553,6 +5553,17 @@ type GameSettingsState = {
   // stripped to [] at save time (matchId/other fields untouched); the live in-session ledger is
   // never affected, only what gets written to disk.
   gameActivityLedgerIncludeInSaveFile: boolean;
+  // GL11: configurable retention — replaces the hardcoded 500-event cap with a player-adjustable
+  // target (still hard-ceilinged at GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING at the one append
+  // chokepoint, so this can only ever shrink the live cap, never grow past the safety ceiling).
+  gameActivityLedgerMaxEvents: number;
+  // GL11: 'keep_recent' trims strictly by age (old behavior, unchanged default); 'keep_critical'
+  // prioritizes retaining auditor_incident/approval/treasury/config events over routine
+  // action/decision noise when the cap is reached.
+  gameActivityLedgerRetentionPolicy: 'keep_recent' | 'keep_critical';
+  // GL11: pause/resume recording — must never pause gameplay itself, only whether new events are
+  // appended; checked by the same appendGameActivityLedgerEvent guard as the master toggle.
+  gameActivityLedgerRecordingPaused: boolean;
   // V5.0 gameplay settings
   winCondition: WinMetric;
   winConditionTieBreakers: WinMetric[];
@@ -7685,6 +7696,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   gameActivityLedgerEnabled: false,
   gameActivityLedgerDetailLevel: 'standard',
   gameActivityLedgerIncludeInSaveFile: false,
+  gameActivityLedgerMaxEvents: 500, // GL11: matches GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING; a literal here (not a reference) since DEFAULT_GAME_SETTINGS is declared before that constant to avoid a TDZ error
+  gameActivityLedgerRetentionPolicy: 'keep_recent',
+  gameActivityLedgerRecordingPaused: false,
   // V5.0 settings
   winCondition: 'money',
   winConditionTieBreakers: [...DEFAULT_WIN_CONDITION_TIEBREAKERS],
@@ -8087,7 +8101,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
   { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
-  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile'] },
+  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -12058,7 +12072,36 @@ interface GameActivityLedgerState {
   matchId: string;
   events: GameActivityLedgerEvent[];
 }
-const GAME_ACTIVITY_LEDGER_MAX_EVENTS = 500;
+// GL11: renamed from GAME_ACTIVITY_LEDGER_MAX_EVENTS — now a load-time defensive ceiling only
+// (used solely by the sanitizer below); the live, player-configurable cap is
+// gameSettings.gameActivityLedgerMaxEvents, always clamped to this ceiling at the one append
+// chokepoint (see trimGameActivityLedgerEvents / the RECORD_GAME_ACTIVITY_LEDGER_EVENT reducer case).
+const GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING = 500;
+// GL11: categories preserved first when trimming under the 'keep_critical' retention policy —
+// routine action/decision noise is dropped before any of these once the cap is reached.
+const GAME_ACTIVITY_LEDGER_CRITICAL_CATEGORIES: GameActivityLedgerEventCategory[] = [
+  'auditor_incident', 'approval', 'treasury', 'config'
+];
+// GL11: the one function that ever shrinks the live event array to its configured cap. 'keep_recent'
+// is a plain slice (byte-identical to GL1-GL10's own behavior). 'keep_critical' partitions into
+// critical vs. routine, keeps every critical event it can within budget, fills any remaining budget
+// with the most recent routine events, then re-sorts by timestamp to restore chronological order —
+// never reorders/duplicates/drops a critical event merely because routine events exist alongside it.
+const trimGameActivityLedgerEvents = (
+  events: GameActivityLedgerEvent[],
+  maxEvents: number,
+  policy: 'keep_recent' | 'keep_critical'
+): GameActivityLedgerEvent[] => {
+  const cap = Math.max(0, Math.min(maxEvents, GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING));
+  if (events.length <= cap) return events;
+  if (policy === 'keep_recent') return events.slice(-cap);
+  const critical = events.filter(e => GAME_ACTIVITY_LEDGER_CRITICAL_CATEGORIES.includes(e.category));
+  const routine = events.filter(e => !GAME_ACTIVITY_LEDGER_CRITICAL_CATEGORIES.includes(e.category));
+  const keptCritical = critical.slice(-cap);
+  const remainingBudget = Math.max(0, cap - keptCritical.length);
+  const keptRoutine = remainingBudget > 0 ? routine.slice(-remainingBudget) : [];
+  return [...keptCritical, ...keptRoutine].sort((a, b) => a.timestamp - b.timestamp);
+};
 const createDefaultGameActivityLedgerState = (): GameActivityLedgerState => ({
   matchId: `match_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
   events: []
@@ -12100,7 +12143,7 @@ const sanitizeGameActivityLedgerState = (value: unknown): GameActivityLedgerStat
   return {
     matchId: typeof source.matchId === 'string' ? source.matchId : defaults.matchId,
     events: Array.isArray(source.events)
-      ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS)
+      ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING)
       : []
   };
 };
@@ -12554,14 +12597,20 @@ function gameStateReducer(state, action) {
     // for schema stability — mirroring RECORD_DECISION_TRACE's own precedent — but has zero real
     // call sites this phase. Event emission across the game's existing systems is GL2's job.
     case 'RECORD_GAME_ACTIVITY_LEDGER_EVENT': {
-      const event = action.payload as GameActivityLedgerEvent | undefined;
+      // GL11: maxEvents/retentionPolicy are threaded through the action payload (not read from a
+      // gameSettings closure, which this module-level reducer doesn't have access to) — the caller
+      // (appendGameActivityLedgerEvent) is responsible for supplying the player's configured values.
+      const payload = action.payload as { event?: GameActivityLedgerEvent; maxEvents?: number; retentionPolicy?: 'keep_recent' | 'keep_critical' } | undefined;
+      const event = payload?.event;
       if (!event || typeof event.id !== 'string') return state;
       const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const maxEvents = typeof payload?.maxEvents === 'number' ? payload.maxEvents : GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING;
+      const retentionPolicy = payload?.retentionPolicy === 'keep_critical' ? 'keep_critical' : 'keep_recent';
       return {
         ...state,
         gameActivityLedger: {
           ...existingState,
-          events: [...existingState.events, event].slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS)
+          events: trimGameActivityLedgerEvents([...existingState.events, event], maxEvents, retentionPolicy)
         }
       };
     }
@@ -12802,6 +12851,12 @@ function AustraliaGame() {
   const [ledgerDashboardSearch, setLedgerDashboardSearch] = useState('');
   const [ledgerDashboardCorrelationFilter, setLedgerDashboardCorrelationFilter] = useState<string | null>(null);
   const [ledgerDashboardExpandedEventId, setLedgerDashboardExpandedEventId] = useState<string | null>(null);
+  // GL11: additional dashboard-local filter/view/clear state — same never-persisted convention.
+  const [ledgerDashboardActorFilter, setLedgerDashboardActorFilter] = useState<string | 'all'>('all');
+  const [ledgerDashboardTeamFilter, setLedgerDashboardTeamFilter] = useState<string | 'all'>('all');
+  const [ledgerDashboardSortOrder, setLedgerDashboardSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [ledgerDashboardViewMode, setLedgerDashboardViewMode] = useState<'compact' | 'detailed'>('detailed');
+  const [ledgerDashboardClearConfirming, setLedgerDashboardClearConfirming] = useState(false);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -13083,7 +13138,9 @@ function AustraliaGame() {
     category: GameActivityLedgerEventCategory,
     fields: Partial<Omit<GameActivityLedgerEvent, 'id' | 'matchId' | 'category' | 'day' | 'turn' | 'timestamp' | 'diagnostics'>> & { diagnostics?: Record<string, unknown> }
   ) => {
-    if (!gameSettings.gameActivityLedgerEnabled) return;
+    // GL11: recordingPaused stops only new recording — never gameplay — checked here alongside
+    // the pre-existing master-toggle guard.
+    if (!gameSettings.gameActivityLedgerEnabled || gameSettings.gameActivityLedgerRecordingPaused) return;
     const { diagnostics, ...rest } = fields;
     const event: GameActivityLedgerEvent = {
       id: `glevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -13098,8 +13155,11 @@ function AustraliaGame() {
       ...rest,
       ...(gameSettings.gameActivityLedgerDetailLevel === 'developer' && diagnostics ? { diagnostics } : {})
     };
-    dispatchGameState({ type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT', payload: event });
-  }, [gameSettings.gameActivityLedgerEnabled, gameSettings.gameActivityLedgerDetailLevel, gameState.gameActivityLedger?.matchId, gameState.day, gameState.turnCounter]);
+    dispatchGameState({
+      type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT',
+      payload: { event, maxEvents: gameSettings.gameActivityLedgerMaxEvents, retentionPolicy: gameSettings.gameActivityLedgerRetentionPolicy }
+    });
+  }, [gameSettings.gameActivityLedgerEnabled, gameSettings.gameActivityLedgerRecordingPaused, gameSettings.gameActivityLedgerDetailLevel, gameSettings.gameActivityLedgerMaxEvents, gameSettings.gameActivityLedgerRetentionPolicy, gameState.gameActivityLedger?.matchId, gameState.day, gameState.turnCounter]);
 
   // GL9: the new, sole recommended entry point for changing a single GameSettingsState field
   // going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
@@ -13961,6 +14021,11 @@ function AustraliaGame() {
         gameActivityLedgerEnabled: typeof settingsData.gameActivityLedgerEnabled === 'boolean' ? settingsData.gameActivityLedgerEnabled : DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
         gameActivityLedgerDetailLevel: ['standard', 'detailed', 'developer'].includes(settingsData.gameActivityLedgerDetailLevel) ? settingsData.gameActivityLedgerDetailLevel : DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
         gameActivityLedgerIncludeInSaveFile: typeof settingsData.gameActivityLedgerIncludeInSaveFile === 'boolean' ? settingsData.gameActivityLedgerIncludeInSaveFile : DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
+        gameActivityLedgerMaxEvents: typeof settingsData.gameActivityLedgerMaxEvents === 'number' && Number.isFinite(settingsData.gameActivityLedgerMaxEvents)
+          ? Math.max(10, Math.min(GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING, Math.floor(settingsData.gameActivityLedgerMaxEvents)))
+          : DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
+        gameActivityLedgerRetentionPolicy: ['keep_recent', 'keep_critical'].includes(settingsData.gameActivityLedgerRetentionPolicy) ? settingsData.gameActivityLedgerRetentionPolicy : DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
+        gameActivityLedgerRecordingPaused: typeof settingsData.gameActivityLedgerRecordingPaused === 'boolean' ? settingsData.gameActivityLedgerRecordingPaused : DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
         uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
         simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
         disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
@@ -36278,7 +36343,10 @@ function AustraliaGame() {
       decisionTransparencyPerAiTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength,
       gameActivityLedgerEnabled: DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
       gameActivityLedgerDetailLevel: DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
-      gameActivityLedgerIncludeInSaveFile: DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile
+      gameActivityLedgerIncludeInSaveFile: DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
+      gameActivityLedgerMaxEvents: DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
+      gameActivityLedgerRetentionPolicy: DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
+      gameActivityLedgerRecordingPaused: DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused
     })); recordSettingsSectionResetEvent('Advanced Systems Settings', 'section_reset'); };
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
@@ -40835,13 +40903,58 @@ function AustraliaGame() {
                   {gameSettings.gameActivityLedgerEnabled && (
                     <>
                       <div className="text-sm opacity-75 flex items-center justify-between gap-3">
-                        <span>{gameState.gameActivityLedger?.events.length || 0} events recorded this match.</span>
+                        <span>
+                          {gameState.gameActivityLedger?.events.length || 0} / {gameSettings.gameActivityLedgerMaxEvents} events recorded this match.
+                          {(gameState.gameActivityLedger?.events.length || 0) >= gameSettings.gameActivityLedgerMaxEvents && (
+                            <span className="text-yellow-500 font-semibold"> Cap reached — oldest events are being trimmed.</span>
+                          )}
+                        </span>
                         <button
                           onClick={() => updateUiState({ showGameActivityLedgerDashboard: true })}
                           className={`${themeStyles.button} text-white px-3 py-1.5 rounded text-sm font-semibold`}
                         >
                           Open Ledger Dashboard
                         </button>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-sm">Recording Paused</div>
+                          <div className="text-xs opacity-60">Pauses only new Ledger recording — never pauses gameplay itself. Existing recorded events are untouched.</div>
+                        </div>
+                        <button
+                          onClick={() => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerRecordingPaused: !prev.gameActivityLedgerRecordingPaused }))}
+                          className={`px-3 py-1.5 rounded text-sm font-semibold ${gameSettings.gameActivityLedgerRecordingPaused ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {gameSettings.gameActivityLedgerRecordingPaused ? 'PAUSED' : 'RECORDING'}
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-1 text-sm">Max Recorded Events: {gameSettings.gameActivityLedgerMaxEvents}</label>
+                        <div className="text-xs opacity-60 mb-2">A player-adjustable target, always capped at a hard safety ceiling of {GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING}.</div>
+                        <input
+                          type="range"
+                          min={10}
+                          max={GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING}
+                          step={10}
+                          value={gameSettings.gameActivityLedgerMaxEvents}
+                          onChange={(e) => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerMaxEvents: Math.max(10, Math.min(GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING, Number(e.target.value))) }))}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-1 text-sm">Retention Policy</label>
+                        <div className="text-xs opacity-60 mb-2">Which events are trimmed first once the cap above is reached.</div>
+                        <div className="flex gap-2">
+                          {(['keep_recent', 'keep_critical'] as const).map(policy => (
+                            <button
+                              key={policy}
+                              onClick={() => trackedSetGameSettings("direct_player_change", "📜 Game Activity Ledger", prev => ({ ...prev, gameActivityLedgerRetentionPolicy: policy }))}
+                              className={`px-3 py-1.5 rounded text-sm font-semibold ${gameSettings.gameActivityLedgerRetentionPolicy === policy ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                            >
+                              {policy === 'keep_recent' ? 'Keep Recent' : 'Keep Critical'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="block font-semibold mb-1 text-sm">Detail Level</label>
@@ -47120,9 +47233,14 @@ function AustraliaGame() {
     const ledger = gameState.gameActivityLedger;
     const allEvents = ledger?.events || [];
     const searchLower = ledgerDashboardSearch.trim().toLowerCase();
+    // GL11: actor/team ids present in this match's history, for the new filter dropdowns.
+    const knownActorIds = Array.from(new Set(allEvents.map(ev => ev.actorId).filter((id): id is string => Boolean(id)))).sort();
+    const knownTeamIds = Array.from(new Set(allEvents.map(ev => ev.teamId).filter((id): id is string => Boolean(id)))).sort();
     const filteredEvents = allEvents.filter(ev => {
       if (ledgerDashboardCategoryFilter !== 'all' && ev.category !== ledgerDashboardCategoryFilter) return false;
       if (ledgerDashboardCorrelationFilter && ev.correlationChainId !== ledgerDashboardCorrelationFilter) return false;
+      if (ledgerDashboardActorFilter !== 'all' && ev.actorId !== ledgerDashboardActorFilter) return false;
+      if (ledgerDashboardTeamFilter !== 'all' && ev.teamId !== ledgerDashboardTeamFilter) return false;
       if (searchLower) {
         const haystack = [
           ev.summary, ev.category, ev.actionType, ev.settingKey, ev.actorId, ev.teamId,
@@ -47131,7 +47249,7 @@ function AustraliaGame() {
         if (!haystack.includes(searchLower)) return false;
       }
       return true;
-    }).slice().reverse();
+    }).slice().sort((a, b) => ledgerDashboardSortOrder === 'newest' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
 
     // GL6: export the currently-filtered event set as a plain JSON download, mirroring
     // exportAiAlgorithmConfigFromPlayerTeam's/downloadSaveFile's exact Blob+anchor+revoke pattern.
@@ -47139,7 +47257,7 @@ function AustraliaGame() {
       const payload = {
         matchId: ledger?.matchId || 'unknown_match',
         exportedAt: new Date().toISOString(),
-        filters: { category: ledgerDashboardCategoryFilter, search: ledgerDashboardSearch, correlationChainId: ledgerDashboardCorrelationFilter },
+        filters: { category: ledgerDashboardCategoryFilter, search: ledgerDashboardSearch, correlationChainId: ledgerDashboardCorrelationFilter, actorId: ledgerDashboardActorFilter, teamId: ledgerDashboardTeamFilter },
         eventCount: filteredEvents.length,
         events: filteredEvents
       };
@@ -47154,6 +47272,42 @@ function AustraliaGame() {
       setTimeout(() => URL.revokeObjectURL(url), 0);
     };
 
+    // GL11: CSV export of the currently-filtered event set — a flat, spreadsheet-friendly sibling
+    // to the JSON export above, covering the same fields, one row per event.
+    const exportGameActivityLedgerEventsCsv = () => {
+      const columns: (keyof GameActivityLedgerEvent)[] = [
+        'id', 'category', 'day', 'turn', 'teamId', 'actorId', 'actionType', 'decisionId', 'planId',
+        'configId', 'configRevision', 'approvalRequestId', 'treasuryRequestId', 'settingKey', 'source',
+        'auditorIncidentId', 'parentEventId', 'correlationChainId', 'summary', 'timestamp'
+      ];
+      const escapeCsvCell = (value: unknown): string => {
+        const str = value === undefined || value === null ? '' : String(value);
+        return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+      };
+      const rows = [columns.join(','), ...filteredEvents.map(ev => columns.map(col => escapeCsvCell((ev as any)[col])).join(','))];
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `game_activity_ledger_${gameState.day}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    };
+
+    // GL11: clear-with-confirmation — a two-click inline confirm (matching this file's own
+    // established inline-confirm convention elsewhere), never a silent single-click wipe. Clears
+    // only the event history; matchId and every other piece of game state are untouched.
+    const clearGameActivityLedgerEvents = () => {
+      if (!ledgerDashboardClearConfirming) {
+        setLedgerDashboardClearConfirming(true);
+        return;
+      }
+      dispatchGameState({ type: 'SET_GAME_ACTIVITY_LEDGER_STATE', payload: { matchId: ledger?.matchId || 'unknown_match', events: [] } });
+      setLedgerDashboardClearConfirming(false);
+    };
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
         <div
@@ -47165,7 +47319,12 @@ function AustraliaGame() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-bold">📜 Game Activity Ledger</h3>
-                <div className="text-sm opacity-75">Append-only, match-wide history of recorded activity — {allEvents.length} total events, {filteredEvents.length} shown.</div>
+                <div className="text-sm opacity-75">
+                  Append-only, match-wide history of recorded activity — {allEvents.length} / {gameSettings.gameActivityLedgerMaxEvents} total events, {filteredEvents.length} shown.
+                  {allEvents.length >= gameSettings.gameActivityLedgerMaxEvents && (
+                    <span className="text-yellow-500 font-semibold"> Cap reached — oldest events are being trimmed.</span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -47174,6 +47333,21 @@ function AustraliaGame() {
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm font-semibold disabled:opacity-40`}
                 >
                   Export JSON
+                </button>
+                <button
+                  onClick={exportGameActivityLedgerEventsCsv}
+                  disabled={filteredEvents.length === 0}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm font-semibold disabled:opacity-40`}
+                >
+                  Export CSV
+                </button>
+                <button
+                  onClick={clearGameActivityLedgerEvents}
+                  onBlur={() => setLedgerDashboardClearConfirming(false)}
+                  disabled={allEvents.length === 0}
+                  className={`px-3 py-1 rounded text-sm font-semibold disabled:opacity-40 ${ledgerDashboardClearConfirming ? 'bg-red-600 text-white' : themeStyles.buttonSecondary}`}
+                >
+                  {ledgerDashboardClearConfirming ? 'Confirm Clear?' : 'Clear Ledger'}
                 </button>
                 <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
               </div>
@@ -47212,6 +47386,36 @@ function AustraliaGame() {
                 </button>
               )}
             </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <select
+                value={ledgerDashboardActorFilter}
+                onChange={(e) => setLedgerDashboardActorFilter(e.target.value)}
+                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
+              >
+                <option value="all">All actors</option>
+                {knownActorIds.map(id => <option key={id} value={id}>{getActorDisplayName(id)}</option>)}
+              </select>
+              <select
+                value={ledgerDashboardTeamFilter}
+                onChange={(e) => setLedgerDashboardTeamFilter(e.target.value)}
+                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
+              >
+                <option value="all">All teams</option>
+                {knownTeamIds.map(id => <option key={id} value={id}>{id}</option>)}
+              </select>
+              <button
+                onClick={() => setLedgerDashboardSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+                className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+              >
+                Sort: {ledgerDashboardSortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+              </button>
+              <button
+                onClick={() => setLedgerDashboardViewMode(prev => prev === 'detailed' ? 'compact' : 'detailed')}
+                className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+              >
+                View: {ledgerDashboardViewMode === 'detailed' ? 'Detailed' : 'Compact'}
+              </button>
+            </div>
           </div>
 
           <div className={`flex-1 overflow-y-auto p-5 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
@@ -47220,19 +47424,26 @@ function AustraliaGame() {
             ) : filteredEvents.length === 0 ? (
               <div className="opacity-70 text-sm">No events match the current filters.</div>
             ) : (
-              <div className="space-y-2">
+              <div className={ledgerDashboardViewMode === 'compact' ? 'space-y-1' : 'space-y-2'}>
                 {filteredEvents.slice(0, 300).map(ev => {
                   const expanded = ledgerDashboardExpandedEventId === ev.id;
                   return (
-                    <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                    <div key={ev.id} className={`${themeStyles.border} border rounded-lg text-sm ${ledgerDashboardViewMode === 'compact' ? 'p-1.5' : 'p-3'}`}>
                       <div
                         className="flex items-center justify-between gap-3 cursor-pointer"
                         onClick={() => setLedgerDashboardExpandedEventId(expanded ? null : ev.id)}
                       >
-                        <div className="min-w-0">
-                          <div className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}{ev.actionType ? ` · ${ev.actionType}` : ''}</div>
-                          <div className="opacity-75 truncate">{ev.summary}</div>
-                        </div>
+                        {ledgerDashboardViewMode === 'compact' ? (
+                          <div className="min-w-0 truncate">
+                            <span className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}</span>
+                            <span className="opacity-75"> — {ev.summary}</span>
+                          </div>
+                        ) : (
+                          <div className="min-w-0">
+                            <div className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}{ev.actionType ? ` · ${ev.actionType}` : ''}</div>
+                            <div className="opacity-75 truncate">{ev.summary}</div>
+                          </div>
+                        )}
                         <div className="text-xs opacity-60 whitespace-nowrap">day {ev.day} · turn {ev.turn}</div>
                       </div>
                       {expanded && (
