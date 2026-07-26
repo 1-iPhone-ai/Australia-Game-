@@ -6801,6 +6801,49 @@ const instantiateAiAlgorithmTemplate = (templateId: string, day: number): AiAlgo
   };
 };
 
+// AB7: safe-activation validation gate. Pure, reuses the exact same closed vocabularies the
+// sanitizers already validate against (AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED, AI_PLANNER_GOAL_KINDS,
+// TEAM_MODE_ACTION_CATEGORIES, AI_ALGORITHM_SITUATION_INFO_SOURCES) rather than inventing a second
+// set of bounds. Errors block activation; warnings are informational only. Since this schema has no
+// stage-to-stage jump/reference pointers (unlike Sequences' fallbackJumpToStepId), there is nothing
+// structurally capable of forming a cycle — "circular-stage detection" is a stated non-issue for this
+// schema shape, not silently skipped.
+interface AiAlgorithmValidationResult { errors: string[]; warnings: string[]; }
+const validateAiAlgorithmConfig = (config: AiAlgorithmConfig): AiAlgorithmValidationResult => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!config.name || !config.name.trim()) errors.push('Config must have a name.');
+  if (config.situationAnalysisConfig?.informationSources?.some(s => !AI_ALGORITHM_SITUATION_INFO_SOURCES.includes(s))) {
+    errors.push('Situation Analysis references an unsupported information source.');
+  }
+  if (config.goalSelectionConfig?.goalPriorities) {
+    const unknownGoals = Object.keys(config.goalSelectionConfig.goalPriorities).filter(k => !AI_PLANNER_GOAL_KINDS.includes(k as AiPlannerGoalKind));
+    if (unknownGoals.length > 0) errors.push('Goal Selection references an unsupported goal kind.');
+  }
+  if (config.candidateGenerationConfig?.allowedActionCategories?.some(c => !TEAM_MODE_ACTION_CATEGORIES.includes(c))) {
+    errors.push('Candidate Generation references an unsupported action category.');
+  }
+  if (config.planConstructionConfig) {
+    const cap = config.planConstructionConfig.maxCandidatesConsidered;
+    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap < 1 || cap > AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED) {
+      errors.push(`Plan Construction's max candidates considered must be between 1 and ${AI_ALGORITHM_MAX_CANDIDATES_CONSIDERED}.`);
+    }
+  }
+  if (config.utilityEvaluationConfig) {
+    const bonus = config.utilityEvaluationConfig.goalServedBonus;
+    if (typeof bonus !== 'number' || !Number.isFinite(bonus) || bonus < 0 || bonus > 100) {
+      errors.push("Utility Evaluation's goal-served bonus must be between 0 and 100.");
+    }
+  }
+  const allStagesNull = !config.situationAnalysisConfig && !config.goalSelectionConfig && !config.candidateGenerationConfig
+    && !config.outcomePredictionConfig && !config.planConstructionConfig && !config.utilityEvaluationConfig
+    && !config.actionSelectionConfig && !config.replanningConfig && !config.fallbackBehaviorConfig && !config.explanationOutputConfig;
+  if (allStagesNull) {
+    warnings.push('No stages are configured yet — this algorithm will fall back to the built-in Planner at every stage.');
+  }
+  return { errors, warnings };
+};
+
 // AB2: the three stage-evaluator functions, one per stage config. All three are pure, reuse
 // existing computed data rather than re-deriving anything, and are uncalled by any real
 // turn-execution path this phase — no custom-algorithm execution engine exists yet to invoke them
@@ -39346,15 +39389,19 @@ function AustraliaGame() {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({ ...prev, algorithmConfigs: prev.algorithmConfigs.filter(c => c.configId !== configId) }));
                       setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: prev.aiAlgorithmForFriendlyTeam === configId ? 'classic_layered' : prev.aiAlgorithmForFriendlyTeam }));
                     };
-                    // AB7 adds a real validation gate here (activation blocked until a config passes);
-                    // this phase ships the raw toggle + settings wiring only, matching how F4 shipped
-                    // Sequences' own basic active toggle before F5's validateSequenceForActivation
-                    // added real blocking.
+                    // AB7: real safe-activation gate — a config may only activate after
+                    // validateAiAlgorithmConfig reports zero errors. The Activate button itself is
+                    // already disabled in this case (defense in depth, not the only guard), mirroring
+                    // how F5's validateSequenceForActivation blocks Sequences' own active toggle.
                     const toggleAiAlgorithmConfigActiveInPlayerTeam = (configId: string) => {
                       const willActivate = gameSettings.aiAlgorithmForFriendlyTeam !== configId;
+                      if (willActivate) {
+                        const target = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
+                        if (!target || validateAiAlgorithmConfig(target).errors.length > 0) return;
+                      }
                       updateTeamState(TEAM_PLAYER_ID, prev => ({
                         ...prev,
-                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate } : (willActivate ? { ...c, active: false } : c))
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, active: willActivate, validationStatus: willActivate ? 'valid' : c.validationStatus } : (willActivate ? { ...c, active: false } : c))
                       }));
                       setGameSettings(prev => ({ ...prev, aiAlgorithmForFriendlyTeam: willActivate ? configId : 'classic_layered' }));
                     };
@@ -39384,7 +39431,11 @@ function AustraliaGame() {
                           {playerAlgorithmConfigs.length === 0 && (
                             <div className="text-sm opacity-60">No custom algorithms yet — create a blank one or load a preset above.</div>
                           )}
-                          {playerAlgorithmConfigs.map(config => (
+                          {playerAlgorithmConfigs.map(config => {
+                            const validation = validateAiAlgorithmConfig(config);
+                            const isActive = gameSettings.aiAlgorithmForFriendlyTeam === config.configId;
+                            const canActivate = isActive || validation.errors.length === 0;
+                            return (
                             <div key={config.configId} className={`p-3 rounded border ${themeStyles.border} space-y-2`}>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <input
@@ -39393,20 +39444,33 @@ function AustraliaGame() {
                                   onChange={(e) => renameAiAlgorithmConfigInPlayerTeam(config.configId, e.target.value)}
                                   className={`${themeStyles.select} rounded px-2 py-1 text-sm font-semibold flex-1 min-w-[8rem]`}
                                 />
-                                <span className="text-xs opacity-60 capitalize">{config.validationStatus}</span>
+                                <span className="text-xs opacity-60 capitalize">{validation.errors.length > 0 ? 'invalid' : config.validationStatus}</span>
                                 <button
-                                  onClick={() => toggleAiAlgorithmConfigActiveInPlayerTeam(config.configId)}
-                                  className={`px-3 py-1 rounded text-xs font-semibold ${gameSettings.aiAlgorithmForFriendlyTeam === config.configId ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                                  onClick={() => canActivate && toggleAiAlgorithmConfigActiveInPlayerTeam(config.configId)}
+                                  disabled={!canActivate}
+                                  title={!canActivate ? validation.errors.join(' ') : undefined}
+                                  className={`px-3 py-1 rounded text-xs font-semibold ${isActive ? `${themeStyles.success} text-white` : canActivate ? themeStyles.buttonSecondary : `${themeStyles.buttonSecondary} opacity-40 cursor-not-allowed`}`}
                                 >
-                                  {gameSettings.aiAlgorithmForFriendlyTeam === config.configId ? 'ACTIVE' : 'Activate'}
+                                  {isActive ? 'ACTIVE' : canActivate ? 'Activate' : 'Blocked'}
                                 </button>
                                 <button onClick={() => duplicateAiAlgorithmConfigInPlayerTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Duplicate</button>
                                 <button onClick={() => copyAiAlgorithmConfigToEnemyTeam(config.configId)} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>Copy to Enemy Team</button>
                                 <button onClick={() => deleteAiAlgorithmConfigFromPlayerTeam(config.configId)} className="px-2 py-1 rounded text-xs bg-red-700 text-white">Delete</button>
                               </div>
                               {config.description && <div className="text-xs opacity-60">{config.description}</div>}
+                              {validation.errors.length > 0 && (
+                                <div className="text-xs text-red-500 space-y-0.5">
+                                  {validation.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+                                </div>
+                              )}
+                              {validation.errors.length === 0 && validation.warnings.length > 0 && (
+                                <div className="text-xs text-yellow-500 space-y-0.5">
+                                  {validation.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                                </div>
+                              )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         <div>
                           <label className="block font-semibold mb-1 text-sm">Default Editor Mode</label>
