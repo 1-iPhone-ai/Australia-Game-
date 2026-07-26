@@ -5524,6 +5524,11 @@ type GameSettingsState = {
   // phases can record and faithfully reproduce a match.
   worldRngMode: WorldRngMode;
   worldRngSeed: number;
+  // RP2: off by default. When on, records a versioned/checksummed replay file (see ReplayFile) for
+  // the current match — AI decisions, day transitions, and the final result. Recording state is
+  // transient (a component ref, never part of save data), mirroring RP1's teamRoundPlanRef precedent.
+  aiReplayRecordingEnabled: boolean;
+  aiReplayMaxEvents: number;
   aiEngineVersion: string;
   aiFairnessLevel: number;
   aiPersonalityVariance: number;
@@ -7737,6 +7742,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiDeterministicSeed: 1337,
   worldRngMode: 'random',
   worldRngSeed: 1337,
+  aiReplayRecordingEnabled: false,
+  aiReplayMaxEvents: 2000,
   aiEngineVersion: 'strategic_director_v1',
   aiFairnessLevel: 0.75,
   aiPersonalityVariance: 0.25,
@@ -8216,7 +8223,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.actionOverride', tab: 'gameplay', title: 'Action Override', tags: [], fieldKeys: ['allowActionOverride', 'overrideCost'] },
   { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled'] },
   { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority'] },
-  { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth'] },
+  { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents'] },
   { id: 'aiStrategyLab.main', tab: 'aiStrategyLab', title: 'Strategy Lab Presets', tags: ['AI', 'Advanced'], fieldKeys: ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset'] },
   { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
@@ -12812,6 +12819,121 @@ interface SaveGameData {
   };
 }
 
+// RP2: AI Replay and Deterministic Simulation System — versioned, checksummed replay file format.
+// Deliberately a separate schema from SaveGameData/validateSaveData (never reused) — a replay is an
+// append-only historical record of one match, not a resumable live-state snapshot, and needs its own
+// version-branching migrator per the approved roadmap. RP2 only builds the format + recording; actual
+// playback/reconstruction (RP3), checkpoint substance/divergence detection (RP4), and branching (RP5)
+// are later phases — ReplayCheckpoint below is an anchor-point stub only, populated for real in RP4.
+const REPLAY_SCHEMA_VERSION = 1;
+
+type ReplayEventCategory = 'ai_decision' | 'ai_execution' | 'day_transition' | 'match_result';
+
+interface ReplayEvent {
+  id: string;
+  sequence: number;
+  category: ReplayEventCategory;
+  day: number;
+  turn: number;
+  actorId: string | null;
+  teamId: string | null;
+  decisionId?: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  timestamp: number;
+}
+
+interface ReplayCheckpoint {
+  id: string;
+  sequence: number;
+  day: number;
+  turn: number;
+  label: string;
+}
+
+interface ReplayInitialConfigSnapshot {
+  gameSettings: GameSettingsState;
+  actorsById: Record<string, ActorState>;
+  teamsById: Record<string, TeamState>;
+  selectedMode: GameModeSelection;
+  aiDifficulty: string;
+  aiSeed: number;
+  worldSeed: number;
+}
+
+interface ReplayFinalResult {
+  winnerTeamId: string | null;
+  winnerActorId: string | null;
+  reason: string;
+  day: number;
+  turn: number;
+}
+
+interface ReplayFile {
+  schemaVersion: number;
+  gameVersion: string;
+  matchId: string;
+  createdAt: number;
+  initialConfig: ReplayInitialConfigSnapshot;
+  events: ReplayEvent[];
+  checkpoints: ReplayCheckpoint[];
+  finalResult: ReplayFinalResult | null;
+  checksum: string;
+}
+
+// Deterministic, dependency-free FNV-1a-style hash — genuinely new (no checksum/hash utility existed
+// anywhere in the file before this). Used only to detect accidental corruption/truncation of an
+// exported replay file, never as a security mechanism.
+const computeReplayChecksum = (file: Omit<ReplayFile, 'checksum'>): string => {
+  const serialized = JSON.stringify({
+    schemaVersion: file.schemaVersion,
+    matchId: file.matchId,
+    events: file.events,
+    checkpoints: file.checkpoints,
+    finalResult: file.finalResult
+  });
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < serialized.length; i += 1) {
+    hash ^= serialized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+// RP2's own migrator — deliberately NOT a reuse of validateSaveData, since a replay file has a
+// different lifecycle contract (append-only history, never re-hydrated into live game state this
+// phase) and needs real version-branching. Only schemaVersion 1 exists today; a future RP phase adds
+// real migration logic here rather than replacing this function.
+const migrateReplayFile = (raw: unknown): ReplayFile | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Partial<ReplayFile> & { schemaVersion?: unknown };
+  if (typeof data.schemaVersion !== 'number' || data.schemaVersion < 1) return null;
+  if (data.schemaVersion > REPLAY_SCHEMA_VERSION) return null; // future-version file, can't safely read
+  if (data.schemaVersion !== REPLAY_SCHEMA_VERSION) return null; // no migration path defined yet beyond v1
+  if (typeof data.matchId !== 'string' || !Array.isArray(data.events) || !Array.isArray(data.checkpoints)) return null;
+  const seenSequences = new Set<number>();
+  const dedupedEvents: ReplayEvent[] = [];
+  for (const ev of data.events) {
+    if (!ev || typeof (ev as ReplayEvent).sequence !== 'number') continue;
+    if (seenSequences.has((ev as ReplayEvent).sequence)) continue; // duplicate-event detection
+    seenSequences.add((ev as ReplayEvent).sequence);
+    dedupedEvents.push(ev as ReplayEvent);
+  }
+  const candidate: Omit<ReplayFile, 'checksum'> = {
+    schemaVersion: data.schemaVersion,
+    gameVersion: typeof data.gameVersion === 'string' ? data.gameVersion : 'unknown',
+    matchId: data.matchId,
+    createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+    initialConfig: data.initialConfig as ReplayInitialConfigSnapshot,
+    events: dedupedEvents,
+    checkpoints: data.checkpoints as ReplayCheckpoint[],
+    finalResult: (data.finalResult as ReplayFinalResult) || null
+  };
+  const expectedChecksum = computeReplayChecksum(candidate);
+  if (typeof data.checksum !== 'string' || data.checksum !== expectedChecksum) return null; // corruption detection
+  return { ...candidate, checksum: expectedChecksum };
+};
+
 interface LoadPreviewState {
   isOpen: boolean;
   data: SaveGameData | null;
@@ -12929,6 +13051,15 @@ function AustraliaGame() {
   // (worldRandom below) rather than the AI decision path.
   const worldRngStateRef = useRef<number>(DEFAULT_GAME_SETTINGS.worldRngSeed);
   const worldRngSeedRef = useRef<number>(DEFAULT_GAME_SETTINGS.worldRngSeed);
+  // RP2: the in-progress replay recording for the current match, if any. Deliberately transient
+  // (never part of SaveGameData/gameState), mirroring RP-track precedent (teamRoundPlanRef) for
+  // per-session working data that has no business surviving a save/reload boundary.
+  const replayRecordingRef = useRef<ReplayFile | null>(null);
+  // RP2: flipped true by initializeGameMode when recording should start for the new match; consumed
+  // by the effect below once actorsById/teamsById have recomputed with the fresh game's state (can't
+  // be populated synchronously inside initializeGameMode itself, since team-mode actors/teams are
+  // assembled there via React state setters, not available as one already-built local object).
+  const pendingReplayStartRef = useRef(false);
   const aiActiveSpecialAbilityRef = useRef<string | null>(null);
 
   // Game Settings State
@@ -13222,6 +13353,36 @@ function AustraliaGame() {
     ai: aiPlayer as ActorState,
     ...additionalActors
   }), [additionalActors, aiPlayer, player]);
+
+  // RP2: consumes the flag initializeGameMode sets, once actorsById/teamsById have recomputed for
+  // the freshly-started match. Builds a brand-new ReplayFile (fresh matchId, never reused across
+  // matches) with a full initial-config snapshot — the "seed"/"initial RNG state" fields read
+  // aiRngSeedRef/worldRngSeedRef's own committed values directly per this system's own established
+  // requirement, never a third RNG concept.
+  useEffect(() => {
+    if (!pendingReplayStartRef.current) return;
+    pendingReplayStartRef.current = false;
+    const matchId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    replayRecordingRef.current = {
+      schemaVersion: REPLAY_SCHEMA_VERSION,
+      gameVersion: GAME_VERSION,
+      matchId,
+      createdAt: Date.now(),
+      initialConfig: {
+        gameSettings,
+        actorsById,
+        teamsById,
+        selectedMode: gameState.selectedMode,
+        aiDifficulty: gameState.aiDifficulty,
+        aiSeed: aiRngSeedRef.current,
+        worldSeed: worldRngSeedRef.current
+      },
+      events: [],
+      checkpoints: [],
+      finalResult: null,
+      checksum: ''
+    };
+  }, [actorsById, teamsById, gameSettings, gameState.selectedMode, gameState.aiDifficulty]);
 
   const isTeamMode = useMemo(() => isTeamModeSelection(gameState.selectedMode), [gameState.selectedMode]);
   const isCompetitiveMode = useMemo(() => isCompetitiveModeSelection(gameState.selectedMode), [gameState.selectedMode]);
@@ -13625,6 +13786,33 @@ function AustraliaGame() {
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }, [generateSaveFileName]);
+
+  // RP2: mirrors downloadSaveFile's exact Blob+anchor download pattern for the replay file.
+  const downloadReplayFile = useCallback((file: ReplayFile) => {
+    const filename = `replay_${file.matchId}.json`;
+    const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, []);
+
+  // RP2: stamps the final match result onto the in-progress recording, computes its checksum (the
+  // one point a replay file becomes immutable/verifiable), and exports it. No-ops when recording
+  // was never turned on for this match.
+  const finalizeReplayRecording = useCallback((finalResult: ReplayFinalResult) => {
+    const recording = replayRecordingRef.current;
+    if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
+    const finalized: Omit<ReplayFile, 'checksum'> = { ...recording, finalResult };
+    const checksum = computeReplayChecksum(finalized);
+    const completed: ReplayFile = { ...finalized, checksum };
+    replayRecordingRef.current = completed;
+    downloadReplayFile(completed);
+  }, [downloadReplayFile, gameSettings.aiReplayRecordingEnabled]);
 
   const handleSaveGame = useCallback((descriptionOverride?: string) => {
     if (gameState.gameMode === 'menu') {
@@ -14126,6 +14314,10 @@ function AustraliaGame() {
           ? settingsData.worldRngSeed
           : DEFAULT_GAME_SETTINGS.worldRngSeed
       ),
+      aiReplayRecordingEnabled: typeof settingsData.aiReplayRecordingEnabled === 'boolean'
+        ? settingsData.aiReplayRecordingEnabled
+        : DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
+      aiReplayMaxEvents: clampSettingNumber(settingsData.aiReplayMaxEvents, DEFAULT_GAME_SETTINGS.aiReplayMaxEvents, 100, 10000),
       aiEngineVersion: typeof settingsData.aiEngineVersion === 'string' && settingsData.aiEngineVersion.trim()
         ? settingsData.aiEngineVersion
         : DEFAULT_GAME_SETTINGS.aiEngineVersion,
@@ -20157,6 +20349,14 @@ function AustraliaGame() {
     aiRngStateRef.current = normalizeAiSeed(gameSettings.aiDeterministicSeed);
     worldRngSeedRef.current = gameSettings.worldRngSeed;
     worldRngStateRef.current = normalizeAiSeed(gameSettings.worldRngSeed);
+    // RP2: mark that a fresh replay recording should start once this new match's actors/teams have
+    // committed (see pendingReplayStartRef/the effect that consumes it, near actorsById). A game
+    // started with recording off never accumulates a stale recording from a previous match.
+    if (gameSettings.aiReplayRecordingEnabled) {
+      pendingReplayStartRef.current = true;
+    } else {
+      replayRecordingRef.current = null;
+    }
     updateUiState({
       showCampaignSelect: false,
       showNegotiationCenter: false,
@@ -22037,7 +22237,48 @@ function AustraliaGame() {
     };
   }, [gameSettings, isAdvancedLoansEnabledForActor, isTeamMode, teamsById]);
 
+  // RP2: the one sanctioned way to append to the in-progress replay recording (see
+  // replayRecordingRef above). No-ops whenever recording is off or no match is currently being
+  // recorded. Capped at gameSettings.aiReplayMaxEvents, oldest-first pruning, matching this file's
+  // own established "one append function, cap at write time" convention (e.g.
+  // appendGameActivityLedgerEvent). Sequence numbers are monotonic and never reused even across a
+  // pruning trim, so migrateReplayFile's duplicate-detection stays meaningful.
+  const appendReplayEvent = useCallback((category: ReplayEventCategory, fields: {
+    actorId?: string | null;
+    teamId?: string | null;
+    decisionId?: string;
+    summary: string;
+    payload?: Record<string, unknown>;
+  }) => {
+    const recording = replayRecordingRef.current;
+    if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
+    const nextSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence + 1 : 0;
+    const event: ReplayEvent = {
+      id: `replayevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      sequence: nextSequence,
+      category,
+      day: gameState.day,
+      turn: gameState.turnCounter,
+      actorId: fields.actorId ?? null,
+      teamId: fields.teamId ?? null,
+      decisionId: fields.decisionId,
+      summary: fields.summary,
+      payload: fields.payload || {},
+      timestamp: Date.now()
+    };
+    recording.events = [...recording.events, event].slice(-Math.max(100, gameSettings.aiReplayMaxEvents));
+  }, [gameSettings.aiReplayRecordingEnabled, gameSettings.aiReplayMaxEvents, gameState.day, gameState.turnCounter]);
+
   const recordDecisionTrace = useCallback((trace: AiDecisionTrace) => {
+    // RP2: replay recording captures every AI decision regardless of whether the player has the
+    // Decision Transparency UI itself enabled — recording and displaying are independent concerns.
+    appendReplayEvent('ai_decision', {
+      actorId: trace.actorId,
+      teamId: trace.teamId,
+      decisionId: trace.decisionId,
+      summary: trace.chosenAction || trace.explanation || 'AI decision',
+      payload: { chosenAction: trace.chosenAction, reasons: trace.reasons, mode: trace.mode }
+    });
     if (!shouldShowDecisionTransparencyForMode() && !gameSettings.adaptiveAiShowDecisionTransparency) return;
     dispatchGameState({
       type: 'RECORD_DECISION_TRACE',
@@ -22046,7 +22287,7 @@ function AustraliaGame() {
         historyCap: gameSettings.decisionTransparencyMaxHistoryRetained
       }
     });
-  }, [dispatchGameState, gameSettings.adaptiveAiShowDecisionTransparency, gameSettings.decisionTransparencyMaxHistoryRetained, shouldShowDecisionTransparencyForMode]);
+  }, [appendReplayEvent, dispatchGameState, gameSettings.adaptiveAiShowDecisionTransparency, gameSettings.decisionTransparencyMaxHistoryRetained, shouldShowDecisionTransparencyForMode]);
 
   const latestDecisionTraceByActor = gameState.decisionState?.lastByActor || {};
 
@@ -27860,6 +28101,8 @@ function AustraliaGame() {
         ? (buildRoundAiPlanBatchRef.current?.(projectedActors, nextTeams) || null)
         : null;
 
+      appendReplayEvent('day_transition', { summary: `Day ${newDay} begins (team mode)` });
+
       if (gameSettings.adaptiveAiEnabled) {
         [TEAM_PLAYER_ID, TEAM_OPPONENT_ID].forEach(teamId => {
           const previousPhase = previousTeams[teamId]?.adaptiveState?.phase || 'normal';
@@ -27904,6 +28147,13 @@ function AustraliaGame() {
           true,
           'system'
         );
+        finalizeReplayRecording({
+          winnerTeamId: outcome.playerWon ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID,
+          winnerActorId: null,
+          reason: `${metricLabel}: ${winnerValue} vs ${loserValue}`,
+          day: newDay,
+          turn: projectedTurnCounter
+        });
       }
       return;
     }
@@ -28253,6 +28503,8 @@ function AustraliaGame() {
       addNotification(`Weather: ${newWeather} - ${WEATHER_EFFECTS[newWeather]?.description || ''}`, 'info', true);
     }
 
+    appendReplayEvent('day_transition', { summary: `Day ${newDay} begins` });
+
 	    // Check for game end - use configurable totalDays
 	    if (newDay >= gameSettings.totalDays) {
 	      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
@@ -28276,11 +28528,18 @@ function AustraliaGame() {
             true,
             'system'
           );
+          finalizeReplayRecording({
+            winnerTeamId: null,
+            winnerActorId: outcome.playerWon ? 'player' : 'ai',
+            reason: `${WIN_METRIC_LABELS[outcome.decidingMetric].toLowerCase()}: ${winnerValue} vs ${loserValue}`,
+            day: newDay,
+            turn: gameState.turnCounter
+          });
 	      } else {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass]);
+	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -36200,6 +36459,8 @@ function AustraliaGame() {
       aiDeterministicSeed: DEFAULT_GAME_SETTINGS.aiDeterministicSeed,
       worldRngMode: DEFAULT_GAME_SETTINGS.worldRngMode,
       worldRngSeed: DEFAULT_GAME_SETTINGS.worldRngSeed,
+      aiReplayRecordingEnabled: DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
+      aiReplayMaxEvents: DEFAULT_GAME_SETTINGS.aiReplayMaxEvents,
       aiEngineVersion: DEFAULT_GAME_SETTINGS.aiEngineVersion,
       aiFairnessLevel: DEFAULT_GAME_SETTINGS.aiFairnessLevel,
       aiPersonalityVariance: DEFAULT_GAME_SETTINGS.aiPersonalityVariance,
@@ -37567,6 +37828,53 @@ function AustraliaGame() {
                       disabled={gameSettings.worldRngMode !== 'deterministic'}
                     />
                     <div className="text-xs opacity-75 mt-1">Used when World RNG mode is Deterministic</div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">AI Replay Recording</div>
+                        <div className="text-sm opacity-75">
+                          Off by default. When on, records every AI decision, day transition, and the
+                          final result of this match into a versioned, checksummed replay file — the
+                          foundation for the AI Replay/Deterministic Simulation System's later phases.
+                          Nothing is played back yet; this phase only records and exports.
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiReplayRecordingEnabled: !prev.aiReplayRecordingEnabled }))}
+                        className={`px-4 py-2 rounded font-semibold ${gameSettings.aiReplayRecordingEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      >
+                        {gameSettings.aiReplayRecordingEnabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                    {gameSettings.aiReplayRecordingEnabled && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="block font-semibold mb-2">Max Recorded Events</label>
+                          <input
+                            type="number"
+                            min="100"
+                            max="10000"
+                            value={gameSettings.aiReplayMaxEvents}
+                            onChange={(e) => trackedSetGameSettings("direct_player_change", "AI Difficulty", prev => ({ ...prev, aiReplayMaxEvents: Math.max(100, Math.min(10000, Math.floor(Number(e.target.value) || 100))) }))}
+                            className="w-full"
+                          />
+                          <div className="text-xs opacity-75 mt-1">Oldest events are dropped once this cap is reached.</div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (!replayRecordingRef.current) {
+                              addNotification('No replay recording in progress — start or continue a match with recording on.', 'warning');
+                              return;
+                            }
+                            downloadReplayFile(replayRecordingRef.current);
+                          }}
+                          className={`${themeStyles.buttonSecondary} px-4 py-2 rounded font-semibold w-full`}
+                        >
+                          Export Current Replay
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </SettingsSection>
