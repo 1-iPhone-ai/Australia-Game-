@@ -5549,6 +5549,10 @@ type GameSettingsState = {
   // GL3: Standard/Detailed/Developer detail-level tiers — gates only the optional diagnostics
   // payload on a recorded event (every other field is always recorded regardless of tier).
   gameActivityLedgerDetailLevel: 'standard' | 'detailed' | 'developer';
+  // GL7: off by default — when false, a save file's own gameActivityLedger.events array is
+  // stripped to [] at save time (matchId/other fields untouched); the live in-session ledger is
+  // never affected, only what gets written to disk.
+  gameActivityLedgerIncludeInSaveFile: boolean;
   // V5.0 gameplay settings
   winCondition: WinMetric;
   winConditionTieBreakers: WinMetric[];
@@ -7678,6 +7682,7 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   decisionTransparencyPerAiTimelineLength: 15,
   gameActivityLedgerEnabled: false,
   gameActivityLedgerDetailLevel: 'standard',
+  gameActivityLedgerIncludeInSaveFile: false,
   // V5.0 settings
   winCondition: 'money',
   winConditionTieBreakers: [...DEFAULT_WIN_CONDITION_TIEBREAKERS],
@@ -8080,7 +8085,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
   { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
-  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel'] },
+  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -12712,6 +12717,7 @@ function AustraliaGame() {
     showNegotiationCenter: false,
     showOverseerDashboard: false,
     showAuditorDashboard: false,
+    showGameActivityLedgerDashboard: false,
     showEndGameModes: false,
     notificationFilter: 'all',
     quickActionsOpen: true,
@@ -12751,6 +12757,14 @@ function AustraliaGame() {
   // never persisted, mirrors overseerDashboardTab's own convention exactly. dashboardTeamId (above)
   // is shared/reused, no second team-selector state is needed.
   const [auditorDashboardTab, setAuditorDashboardTab] = useState<AuditorDashboardTabId>('overview');
+
+  // GL5: pure navigation/filter state for the Game Activity Ledger Dashboard — never persisted,
+  // mirrors auditorDashboardTab's own "component-local, not gameState" convention. The Ledger is
+  // match-wide (gameState-level, not per-team), so there's no team-selector state to mirror.
+  const [ledgerDashboardCategoryFilter, setLedgerDashboardCategoryFilter] = useState<GameActivityLedgerEventCategory | 'all'>('all');
+  const [ledgerDashboardSearch, setLedgerDashboardSearch] = useState('');
+  const [ledgerDashboardCorrelationFilter, setLedgerDashboardCorrelationFilter] = useState<string | null>(null);
+  const [ledgerDashboardExpandedEventId, setLedgerDashboardExpandedEventId] = useState<string | null>(null);
 
   // Special ability state tracking
   const [activeSpecialAbility, setActiveSpecialAbility] = useState<string | null>(null);
@@ -13197,7 +13211,12 @@ function AustraliaGame() {
       negotiationCenter: {
         ...createDefaultNegotiationCenterState(),
         draftProposal: gameState.negotiationCenter?.draftProposal || {}
-      }
+      },
+      // GL7: off by default — strips the written-to-disk events array only; the live in-session
+      // ledger (gameState.gameActivityLedger itself) is never touched by this.
+      gameActivityLedger: gameSettings.gameActivityLedgerIncludeInSaveFile
+        ? gameState.gameActivityLedger
+        : { ...(gameState.gameActivityLedger || createDefaultGameActivityLedgerState()), events: [] }
     };
     return {
       metadata: {
@@ -13821,6 +13840,7 @@ function AustraliaGame() {
         decisionTransparencyPerAiTimelineLength: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength, 4, 30),
         gameActivityLedgerEnabled: typeof settingsData.gameActivityLedgerEnabled === 'boolean' ? settingsData.gameActivityLedgerEnabled : DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
         gameActivityLedgerDetailLevel: ['standard', 'detailed', 'developer'].includes(settingsData.gameActivityLedgerDetailLevel) ? settingsData.gameActivityLedgerDetailLevel : DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
+        gameActivityLedgerIncludeInSaveFile: typeof settingsData.gameActivityLedgerIncludeInSaveFile === 'boolean' ? settingsData.gameActivityLedgerIncludeInSaveFile : DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
         uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
         simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
         disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
@@ -19467,6 +19487,7 @@ function AustraliaGame() {
             showNegotiationCenter: false,
 	            showOverseerDashboard: false,
 	            showAuditorDashboard: false,
+	            showGameActivityLedgerDashboard: false,
 	            showProgress: false,
 	            showHelp: false,
 	            showAiStats: false,
@@ -19646,6 +19667,7 @@ function AustraliaGame() {
       showNegotiationCenter: false,
       showOverseerDashboard: false,
       showAuditorDashboard: false,
+      showGameActivityLedgerDashboard: false,
       showNotifications: false,
       showProgress: false,
       showSettings: false,
@@ -19815,6 +19837,7 @@ function AustraliaGame() {
       showNegotiationCenter: false,
       showOverseerDashboard: false,
       showAuditorDashboard: false,
+      showGameActivityLedgerDashboard: false,
       showProgress: false,
 	      showHelp: false,
 	      showSettings: false,
@@ -36101,7 +36124,8 @@ function AustraliaGame() {
       decisionTransparencyPerAiTimelineDensity: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity,
       decisionTransparencyPerAiTimelineLength: DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength,
       gameActivityLedgerEnabled: DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
-      gameActivityLedgerDetailLevel: DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel
+      gameActivityLedgerDetailLevel: DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
+      gameActivityLedgerIncludeInSaveFile: DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile
     }));
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
@@ -40443,8 +40467,14 @@ function AustraliaGame() {
                   </div>
                   {gameSettings.gameActivityLedgerEnabled && (
                     <>
-                      <div className="text-sm opacity-75">
-                        {gameState.gameActivityLedger?.events.length || 0} events recorded this match — the dashboard/export arrive in a later phase.
+                      <div className="text-sm opacity-75 flex items-center justify-between gap-3">
+                        <span>{gameState.gameActivityLedger?.events.length || 0} events recorded this match.</span>
+                        <button
+                          onClick={() => updateUiState({ showGameActivityLedgerDashboard: true })}
+                          className={`${themeStyles.button} text-white px-3 py-1.5 rounded text-sm font-semibold`}
+                        >
+                          Open Ledger Dashboard
+                        </button>
                       </div>
                       <div>
                         <label className="block font-semibold mb-1 text-sm">Detail Level</label>
@@ -40460,6 +40490,18 @@ function AustraliaGame() {
                             </button>
                           ))}
                         </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-sm">Include in Save File</div>
+                          <div className="text-xs opacity-60">Off by default — when off, a save file's recorded events are stripped before writing to disk (the live in-session ledger and this match's Dashboard/Export are unaffected).</div>
+                        </div>
+                        <button
+                          onClick={() => setGameSettings(prev => ({ ...prev, gameActivityLedgerIncludeInSaveFile: !prev.gameActivityLedgerIncludeInSaveFile }))}
+                          className={`px-3 py-1.5 rounded text-sm font-semibold ${gameSettings.gameActivityLedgerIncludeInSaveFile ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {gameSettings.gameActivityLedgerIncludeInSaveFile ? 'ON' : 'OFF'}
+                        </button>
                       </div>
                     </>
                   )}
@@ -44535,6 +44577,7 @@ function AustraliaGame() {
         {renderNegotiationCenter()}
         {renderOverseerDashboard()}
         {renderAuditorDashboard()}
+        {renderGameActivityLedgerDashboard()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -46697,6 +46740,169 @@ function AustraliaGame() {
                   );
                 })()}
               </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGameActivityLedgerDashboard = () => {
+    if (!uiState.showGameActivityLedgerDashboard) return null;
+    const close = () => updateUiState({ showGameActivityLedgerDashboard: false });
+    const ledger = gameState.gameActivityLedger;
+    const allEvents = ledger?.events || [];
+    const searchLower = ledgerDashboardSearch.trim().toLowerCase();
+    const filteredEvents = allEvents.filter(ev => {
+      if (ledgerDashboardCategoryFilter !== 'all' && ev.category !== ledgerDashboardCategoryFilter) return false;
+      if (ledgerDashboardCorrelationFilter && ev.correlationChainId !== ledgerDashboardCorrelationFilter) return false;
+      if (searchLower) {
+        const haystack = [
+          ev.summary, ev.category, ev.actionType, ev.settingKey, ev.actorId, ev.teamId,
+          ev.decisionId, ev.planId, ev.configId, ev.approvalRequestId, ev.treasuryRequestId, ev.auditorIncidentId
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!haystack.includes(searchLower)) return false;
+      }
+      return true;
+    }).slice().reverse();
+
+    // GL6: export the currently-filtered event set as a plain JSON download, mirroring
+    // exportAiAlgorithmConfigFromPlayerTeam's/downloadSaveFile's exact Blob+anchor+revoke pattern.
+    const exportGameActivityLedgerEvents = () => {
+      const payload = {
+        matchId: ledger?.matchId || 'unknown_match',
+        exportedAt: new Date().toISOString(),
+        filters: { category: ledgerDashboardCategoryFilter, search: ledgerDashboardSearch, correlationChainId: ledgerDashboardCorrelationFilter },
+        eventCount: filteredEvents.length,
+        events: filteredEvents
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `game_activity_ledger_${gameState.day}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">📜 Game Activity Ledger</h3>
+                <div className="text-sm opacity-75">Append-only, match-wide history of recorded activity — {allEvents.length} total events, {filteredEvents.length} shown.</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportGameActivityLedgerEvents}
+                  disabled={filteredEvents.length === 0}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm font-semibold disabled:opacity-40`}
+                >
+                  Export JSON
+                </button>
+                <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <button
+                onClick={() => setLedgerDashboardCategoryFilter('all')}
+                className={`px-3 py-1.5 rounded text-sm font-semibold ${ledgerDashboardCategoryFilter === 'all' ? themeStyles.button : themeStyles.buttonSecondary}`}
+              >
+                All
+              </button>
+              {GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setLedgerDashboardCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${ledgerDashboardCategoryFilter === cat ? themeStyles.button : themeStyles.buttonSecondary}`}
+                >
+                  {cat.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <input
+                type="text"
+                value={ledgerDashboardSearch}
+                onChange={(e) => setLedgerDashboardSearch(e.target.value)}
+                placeholder="Search summary, actor, team, IDs..."
+                className={`${themeStyles.input} rounded px-3 py-1.5 text-sm flex-1 min-w-[200px]`}
+              />
+              {ledgerDashboardCorrelationFilter && (
+                <button
+                  onClick={() => setLedgerDashboardCorrelationFilter(null)}
+                  className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                >
+                  Clear correlation filter ({ledgerDashboardCorrelationFilter.slice(0, 12)}…) ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className={`flex-1 overflow-y-auto p-5 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
+            {!ledger ? (
+              <div className="opacity-70 text-sm">No Game Activity Ledger data for this match yet.</div>
+            ) : filteredEvents.length === 0 ? (
+              <div className="opacity-70 text-sm">No events match the current filters.</div>
+            ) : (
+              <div className="space-y-2">
+                {filteredEvents.slice(0, 300).map(ev => {
+                  const expanded = ledgerDashboardExpandedEventId === ev.id;
+                  return (
+                    <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                      <div
+                        className="flex items-center justify-between gap-3 cursor-pointer"
+                        onClick={() => setLedgerDashboardExpandedEventId(expanded ? null : ev.id)}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}{ev.actionType ? ` · ${ev.actionType}` : ''}</div>
+                          <div className="opacity-75 truncate">{ev.summary}</div>
+                        </div>
+                        <div className="text-xs opacity-60 whitespace-nowrap">day {ev.day} · turn {ev.turn}</div>
+                      </div>
+                      {expanded && (
+                        <div className="mt-2 pt-2 border-t border-opacity-20 text-xs opacity-80 space-y-1">
+                          <div>Event ID: {ev.id}</div>
+                          {ev.actorId && <div>Actor: {getActorDisplayName(ev.actorId)} ({ev.actorId})</div>}
+                          {ev.teamId && <div>Team: {ev.teamId}</div>}
+                          {ev.decisionId && <div>Decision ID: {ev.decisionId}</div>}
+                          {ev.planId && <div>Plan ID: {ev.planId}</div>}
+                          {ev.configId && <div>Config ID: {ev.configId}{typeof ev.configRevision === 'number' ? ` (rev ${ev.configRevision})` : ''}</div>}
+                          {ev.approvalRequestId && <div>Approval Request ID: {ev.approvalRequestId}</div>}
+                          {ev.treasuryRequestId && <div>Treasury Request ID: {ev.treasuryRequestId}</div>}
+                          {ev.settingKey && <div>Setting Key: {ev.settingKey}</div>}
+                          {ev.auditorIncidentId && <div>Auditor Incident ID: {ev.auditorIncidentId}</div>}
+                          {ev.parentEventId && <div>Parent Event ID: {ev.parentEventId}</div>}
+                          {ev.correlationChainId && (
+                            <div>
+                              Correlation Chain:{' '}
+                              <button
+                                className="underline"
+                                onClick={(e) => { e.stopPropagation(); setLedgerDashboardCorrelationFilter(ev.correlationChainId!); }}
+                              >
+                                {ev.correlationChainId}
+                              </button>
+                            </div>
+                          )}
+                          {ev.diagnostics && <div>Diagnostics: {JSON.stringify(ev.diagnostics)}</div>}
+                          <div>Recorded: {new Date(ev.timestamp).toLocaleString()}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {filteredEvents.length > 300 && (
+                  <div className="text-xs opacity-60 text-center pt-2">Showing the most recent 300 of {filteredEvents.length} matching events.</div>
+                )}
+              </div>
             )}
           </div>
         </div>
