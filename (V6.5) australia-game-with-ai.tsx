@@ -5341,6 +5341,107 @@ const createNewHumanAutomation = (createdDay: number): HumanAutomation => ({
   executionStats: { totalRuns: 0, totalSuccesses: 0, totalSkipped: 0, totalFailed: 0, lastRunDay: null, lastRunTurn: null, lastResultSummary: '', runsToday: 0, runsTodayDay: -1, consecutiveNoChangeCount: 0 }
 });
 
+// HA3: 10 named starting templates, mirroring SEQUENCE_TEMPLATES/instantiateSequenceTemplate's
+// exact "id-keyed const map + instantiate function, never self-activating" precedent (F5). All
+// built entirely from HA2's supported action set (travel/challenge/sell/craft/buy_market/
+// region_deposit/invest/buy_equipment) — the original spec's team/support-shaped template names
+// (Emergency Loan, Automatic Treasury Contribution, Support Low-Cash Teammate, End Turn When No
+// Useful Actions Remain) are explicitly out of scope, since HA2 deliberately excluded those action
+// categories as not meaningful for a standalone human automation. Stated here, not silently dropped.
+interface HumanAutomationTemplateDefinition {
+  label: string;
+  description: string;
+  trigger: HumanAutomationTrigger;
+  action: TeamModeActionCategory;
+  actionParameters: HumanAutomation['actionParameters'];
+}
+const HUMAN_AUTOMATION_TEMPLATES: Record<string, HumanAutomationTemplateDefinition> = {
+  auto_challenge_on_arrival: {
+    label: 'Auto Challenge on Arrival',
+    description: 'Takes an uncompleted challenge whenever you arrive in a region that has one.',
+    trigger: { type: 'arrived_in_region' },
+    action: 'challenge',
+    actionParameters: { wagerRule: { mode: 'percentage_of_cash', percentage: 0.1, minWager: MINIMUM_WAGER } }
+  },
+  auto_sell_at_target_price: {
+    label: 'Auto Sell at Target Price',
+    description: 'Sells a chosen resource once its market price reaches your target.',
+    trigger: { type: 'market_price_at_or_above', thresholdAmount: 200 },
+    action: 'sell',
+    actionParameters: {}
+  },
+  auto_craft_when_ready: {
+    label: 'Auto Craft When Ready',
+    description: 'Crafts a chosen recipe as soon as you have all the required ingredients.',
+    trigger: { type: 'recipe_craftable' },
+    action: 'craft',
+    actionParameters: {}
+  },
+  maintain_cash_reserve: {
+    label: 'Maintain Cash Reserve',
+    description: 'Sells a chosen resource whenever your cash drops below a threshold, to rebuild a reserve.',
+    trigger: { type: 'cash_below_threshold', thresholdAmount: 200 },
+    action: 'sell',
+    actionParameters: {}
+  },
+  buy_equipment_when_affordable: {
+    label: 'Buy Equipment When Affordable',
+    description: 'Buys a chosen piece of equipment once you have enough spare cash.',
+    trigger: { type: 'cash_above_threshold', thresholdAmount: 1000 },
+    action: 'buy_equipment',
+    actionParameters: {}
+  },
+  invest_surplus_cash: {
+    label: 'Invest Surplus Cash',
+    description: 'Invests in a chosen region once your cash is comfortably above a threshold.',
+    trigger: { type: 'cash_above_threshold', thresholdAmount: 1500 },
+    action: 'invest',
+    actionParameters: {}
+  },
+  stock_up_when_cheap: {
+    label: 'Stock Up When Cheap',
+    description: 'Buys a chosen resource from the market whenever its price drops to or below your target.',
+    trigger: { type: 'market_price_at_or_below', thresholdAmount: 50 },
+    action: 'buy_market',
+    actionParameters: { amount: 200 }
+  },
+  daily_challenge_routine: {
+    label: 'Daily Challenge Routine',
+    description: 'Takes an uncompleted challenge in your current region once per day.',
+    trigger: { type: 'day_start' },
+    action: 'challenge',
+    actionParameters: { wagerRule: { mode: 'percentage_of_cash', percentage: 0.08, minWager: MINIMUM_WAGER } }
+  },
+  deposit_surplus_in_region: {
+    label: 'Deposit Surplus in Region',
+    description: 'Deposits a fixed amount into a chosen region once your cash is above a threshold.',
+    trigger: { type: 'cash_above_threshold', thresholdAmount: 2000 },
+    action: 'region_deposit',
+    actionParameters: { amount: 200 }
+  },
+  collect_before_traveling: {
+    label: 'Collect Before Traveling',
+    description: 'Sells a chosen resource once you have accumulated enough of it, before it weighs down a trip.',
+    trigger: { type: 'resource_quantity_at_least', thresholdAmount: 5 },
+    action: 'sell',
+    actionParameters: {}
+  }
+};
+const HUMAN_AUTOMATION_TEMPLATE_IDS = Object.keys(HUMAN_AUTOMATION_TEMPLATES);
+
+const instantiateHumanAutomationTemplate = (templateId: string, createdDay: number): HumanAutomation | null => {
+  const template = HUMAN_AUTOMATION_TEMPLATES[templateId];
+  if (!template) return null;
+  return {
+    ...createNewHumanAutomation(createdDay),
+    name: template.label,
+    createdByPlayer: false,
+    trigger: { ...template.trigger },
+    action: template.action,
+    actionParameters: { ...template.actionParameters }
+  };
+};
+
 const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<HumanAutomation>;
@@ -13583,6 +13684,7 @@ function AustraliaGame() {
     showOverseerDashboard: false,
     showAuditorDashboard: false,
     showGameActivityLedgerDashboard: false,
+    showHumanAutomationDashboard: false,
     showEndGameModes: false,
     notificationFilter: 'all',
     quickActionsOpen: true,
@@ -13747,6 +13849,9 @@ function AustraliaGame() {
   // time we evaluated, independent of how many player turns happened that day).
   const lastAutomationTurnKeyRef = useRef<string>('');
   const lastAutomationDayRef = useRef<number>(-1);
+  // HA3: transient, never-persisted UI feedback for the "Test Against Current State" button —
+  // keyed by automation id, cleared on reload since it's purely a Dashboard display concern.
+  const [humanAutomationTestResults, setHumanAutomationTestResults] = useState<Record<string, string>>({});
   // HA2: CRUD, mirroring the thin updateTeamState-wrapper style already established for
   // TeammateSequence CRUD (F4), adapted to this feature's own genuinely-separate top-level array.
   const createHumanAutomation = useCallback(() => {
@@ -30160,6 +30265,34 @@ function AustraliaGame() {
     runHumanAutomationsForPlayer();
   }, [gameState.currentActorId, gameState.turnCounter, gameState.gameMode, gameSettings.humanAutomationEnabled, runHumanAutomationsForPlayer]);
 
+  // HA3 "Test Against Current State": evaluates one automation against the actual live game state
+  // — trigger, conditions, execution eligibility, and safety limits — and reports a plain-language
+  // result, WITHOUT ever calling executeTeamAiAction or mutating any state. Purely a read-only
+  // preview, reusing the exact same evaluator functions runHumanAutomationsForPlayer already calls,
+  // so "would this fire" here is provably the same answer the real turn-start evaluation would give.
+  const testHumanAutomationAgainstCurrentState = useCallback((automationId: string): string => {
+    const automation = humanAutomations.find(a => a.id === automationId);
+    if (!automation) return 'Automation not found.';
+    const actor = getActorState('player');
+    if (!actor || actor.kind !== 'human') return 'No human player actor available to test against.';
+    const eligibility = evaluateHumanAutomationExecutionEligibility(automation, gameState.day, gameState.turnCounter);
+    if (!eligibility.eligible) return `Would NOT run: ${eligibility.reason}`;
+    const isNewDay = lastAutomationDayRef.current !== gameState.day;
+    if (!evaluateHumanAutomationTrigger(automation.trigger, actor, gameState.resourcePrices, isNewDay)) {
+      return `Would NOT run: trigger condition ("${automation.trigger.type.replace(/_/g, ' ')}") is not currently true.`;
+    }
+    const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+    const built = buildHumanAutomationDecision(automation, actor, spendableCash, gameState.resourcePrices);
+    if (!built) return 'Would NOT run: could not construct a valid action from the configured parameters (e.g. no uncompleted challenge in the target region, or a required field is empty).';
+    const safety = checkHumanAutomationSafetyLimits(automation, actor.money, built.resolvedCost);
+    if (!safety.ok) return `Would NOT run: ${safety.reason}`;
+    if (automation.conditions) {
+      const gate = evaluateActionRequirements(actor, built.action, { cost: built.resolvedCost, wager: built.action.data?.wager }, [automation.conditions]);
+      if (!gate.approved) return `Would NOT run: configured conditions failed (${gate.reason}).`;
+    }
+    return `Would run now: ${built.action.description}${built.resolvedCost > 0 ? ` (cost/wager: $${built.resolvedCost})` : ''}.`;
+  }, [humanAutomations, getActorState, gameState.day, gameState.turnCounter, gameState.resourcePrices, gameSettings.teamCashVaultEnabled, evaluateActionRequirements]);
+
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
     if (!actor) return [] as TeamMessage[];
@@ -42818,13 +42951,38 @@ function AustraliaGame() {
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="text-sm opacity-75">{humanAutomations.length}/{HUMAN_AUTOMATION_MAX_COUNT} automations configured</div>
-                        <button
-                          onClick={createHumanAutomation}
-                          disabled={humanAutomations.length >= HUMAN_AUTOMATION_MAX_COUNT}
-                          className={`${themeStyles.button} text-white px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
-                        >
-                          + Add Automation
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateUiState({ showHumanAutomationDashboard: true })}
+                            className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
+                          >
+                            Open Dashboard
+                          </button>
+                          <button
+                            onClick={createHumanAutomation}
+                            disabled={humanAutomations.length >= HUMAN_AUTOMATION_MAX_COUNT}
+                            className={`${themeStyles.button} text-white px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
+                          >
+                            + Add Automation
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm font-semibold mt-2">Load Template (creates a disabled, unedited copy you can then customize)</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {(Object.entries(HUMAN_AUTOMATION_TEMPLATES) as Array<[string, HumanAutomationTemplateDefinition]>).map(([templateId, template]) => (
+                          <button
+                            key={templateId}
+                            title={template.description}
+                            disabled={humanAutomations.length >= HUMAN_AUTOMATION_MAX_COUNT}
+                            onClick={() => {
+                              const instantiated = instantiateHumanAutomationTemplate(templateId, gameState.day);
+                              if (instantiated) setHumanAutomations(prev => prev.length >= HUMAN_AUTOMATION_MAX_COUNT ? prev : [...prev, instantiated]);
+                            }}
+                            className={`${themeStyles.border} border rounded-lg p-2 text-left text-xs hover:scale-[1.01] transition disabled:opacity-40 ${themeStyles.buttonSecondary}`}
+                          >
+                            {template.label}
+                          </button>
+                        ))}
                       </div>
                       <div className="space-y-3">
                         {humanAutomations.map(automation => (
@@ -47127,6 +47285,7 @@ function AustraliaGame() {
         {renderGameActivityLedgerDashboard()}
         {renderAiActionPipelineInspector()}
         {renderReplayDashboard()}
+        {renderHumanAutomationDashboard()}
         {renderNotificationHistory()}
         
         {/* Travel Modal */}
@@ -49600,6 +49759,71 @@ function AustraliaGame() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // HA3: the Automation Dashboard — lists every configured automation with its status/stats and a
+  // "Test Against Current State" button (read-only, never executes/mutates — reuses
+  // testHumanAutomationAgainstCurrentState verbatim). Mirrors renderGameActivityLedgerDashboard's
+  // exact modal shell.
+  const renderHumanAutomationDashboard = () => {
+    if (!uiState.showHumanAutomationDashboard) return null;
+    const close = () => updateUiState({ showHumanAutomationDashboard: false });
+    const enabledCount = humanAutomations.filter(a => a.enabled).length;
+    const totalRuns = humanAutomations.reduce((sum, a) => sum + a.executionStats.totalRuns, 0);
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+        <div
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-4xl flex flex-col`}
+          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`p-5 border-b ${themeStyles.border}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold">🤖 Automation Dashboard</h3>
+                <div className="text-sm opacity-75">
+                  {humanAutomations.length} configured, {enabledCount} enabled, {totalRuns} total runs this match.
+                </div>
+              </div>
+              <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            {humanAutomations.length === 0 && (
+              <div className="text-sm opacity-60 italic">No automations configured yet — add one or load a template from Settings → Advanced Systems → Human Player Automation.</div>
+            )}
+            {humanAutomations.map(automation => (
+              <div key={automation.id} className={`${themeStyles.border} border rounded-lg p-3 space-y-2`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">{automation.name}</div>
+                  <span className={`px-2 py-0.5 rounded text-xs font-semibold ${automation.enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}>
+                    {automation.enabled ? 'ENABLED' : 'DISABLED'}
+                  </span>
+                </div>
+                <div className="text-xs opacity-75">
+                  Trigger: {automation.trigger.type.replace(/_/g, ' ')} → Action: {automation.action.replace(/_/g, ' ')} · Authority: {automation.authorityMode.replace(/_/g, ' ')} · Priority: {automation.priority}
+                </div>
+                <div className="text-xs opacity-60">
+                  {automation.executionStats.totalRuns} runs ({automation.executionStats.totalSuccesses} succeeded, {automation.executionStats.totalFailed} failed, {automation.executionStats.totalSkipped} skipped)
+                  {automation.executionStats.lastRunDay !== null && ` · last run Day ${automation.executionStats.lastRunDay}`}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setHumanAutomationTestResults(prev => ({ ...prev, [automation.id]: testHumanAutomationAgainstCurrentState(automation.id) }))}
+                    className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-xs font-semibold`}
+                  >
+                    Test Against Current State
+                  </button>
+                  {humanAutomationTestResults[automation.id] && (
+                    <div className="text-xs italic opacity-80">{humanAutomationTestResults[automation.id]}</div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
