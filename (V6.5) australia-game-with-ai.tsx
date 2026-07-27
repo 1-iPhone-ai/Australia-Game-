@@ -4773,7 +4773,7 @@ interface ApprovalRequest {
   // funding-request/withdrawal request, or (T4) a Governor exception proposal, all reusing this
   // same queue/dialog machinery (GD1/GD2) — never a second approval engine. Defaults 'ai_action'
   // at every existing construction site.
-  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy' | 'overseer_directive' | 'operations_recovery';
+  requestKind: 'ai_action' | 'treasury_withdrawal' | 'governor_exception' | 'overseer_adaptive_policy' | 'overseer_directive' | 'operations_recovery' | 'human_automation';
   treasuryRequestId?: string;
   // Team Treasury Phase T4: set only when requestKind === 'governor_exception'.
   governorExceptionId?: string;
@@ -4787,6 +4787,9 @@ interface ApprovalRequest {
   // touch OTHER systems' state on the player's behalf, never an ordinary gameplay-action proposal).
   auditorIncidentId?: string;
   auditorRecoveryActionId?: string;
+  // Human Player Automation Phase HA2: set only when requestKind === 'human_automation' — the
+  // automation this request is asking the player to confirm ('confirm_before_running' mode only).
+  humanAutomationId?: string;
 }
 
 // V6.9.1 bugfix: one authoritative, ref-backed source for an actor's in-progress turn state,
@@ -5271,6 +5274,11 @@ interface HumanAutomationExecutionStats {
   lastRunDay: number | null;
   lastRunTurn: number | null;
   lastResultSummary: string;
+  // HA2 additions: per-day run counting (maxRunsPerDay enforcement) and a consecutive-no-change
+  // counter (stopIfNoStateChangeCount enforcement) — both additive to the HA1 schema.
+  runsToday: number;
+  runsTodayDay: number;
+  consecutiveNoChangeCount: number;
 }
 interface HumanAutomation {
   id: string;
@@ -5284,6 +5292,8 @@ interface HumanAutomation {
     resource?: string;
     recipeId?: string;
     challengeId?: string;
+    itemId?: string;
+    amount?: number;
     wagerRule?: SequenceWagerRule;
     spendingRule?: SequenceSpendingRule;
   };
@@ -5306,6 +5316,30 @@ const HUMAN_AUTOMATION_TRIGGER_TYPES: HumanAutomationTriggerType[] = [
 ];
 const HUMAN_AUTOMATION_AUTHORITY_MODES: HumanAutomationAuthorityMode[] = ['confirm_before_running', 'notify_after_running', 'silent_autorun', 'disabled'];
 const HUMAN_AUTOMATION_MAX_COUNT = 20;
+// HA2: the reachable action set is deliberately scoped to single-actor actions with clear standalone
+// semantics — team/support-shaped categories (support, loan, sabotage, contribute_treasury,
+// request_team_funds, cashout_region, wait, end_turn) are excluded from the picker, stated plainly
+// rather than silently offered and then failing to build a valid decision for them.
+const HUMAN_AUTOMATION_ACTIONS: TeamModeActionCategory[] = ['travel', 'challenge', 'sell', 'craft', 'buy_market', 'region_deposit', 'invest', 'buy_equipment'];
+
+const createNewHumanAutomation = (createdDay: number): HumanAutomation => ({
+  id: `ha_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  name: 'New Automation',
+  enabled: false,
+  trigger: { type: 'manual_test_only' },
+  conditions: null,
+  action: 'sell',
+  actionParameters: {},
+  priority: 0,
+  authorityMode: 'confirm_before_running',
+  executionLimits: { maxRunsPerDay: 1, maxRunsTotal: null, cooldownTurns: 0 },
+  safetyLimits: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 3 },
+  fallbackBehavior: 'skip_step',
+  createdDay,
+  createdByPlayer: true,
+  lastEditedDay: createdDay,
+  executionStats: { totalRuns: 0, totalSuccesses: 0, totalSkipped: 0, totalFailed: 0, lastRunDay: null, lastRunTurn: null, lastResultSummary: '', runsToday: 0, runsTodayDay: -1, consecutiveNoChangeCount: 0 }
+});
 
 const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
   if (!value || typeof value !== 'object') return null;
@@ -5334,6 +5368,8 @@ const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
       resource: typeof paramsSource.resource === 'string' ? paramsSource.resource : undefined,
       recipeId: typeof paramsSource.recipeId === 'string' ? paramsSource.recipeId : undefined,
       challengeId: typeof paramsSource.challengeId === 'string' ? paramsSource.challengeId : undefined,
+      itemId: typeof paramsSource.itemId === 'string' ? paramsSource.itemId : undefined,
+      amount: typeof paramsSource.amount === 'number' && isFinite(paramsSource.amount) ? Math.max(0, paramsSource.amount) : undefined,
       wagerRule: (paramsSource.wagerRule && typeof paramsSource.wagerRule === 'object') ? paramsSource.wagerRule as SequenceWagerRule : undefined,
       spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { allowRecoverySpending: false, ...paramsSource.spendingRule as SequenceSpendingRule } : undefined
     },
@@ -5360,7 +5396,10 @@ const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
       totalFailed: typeof statsSource.totalFailed === 'number' && isFinite(statsSource.totalFailed) ? Math.max(0, statsSource.totalFailed) : 0,
       lastRunDay: typeof statsSource.lastRunDay === 'number' && isFinite(statsSource.lastRunDay) ? statsSource.lastRunDay : null,
       lastRunTurn: typeof statsSource.lastRunTurn === 'number' && isFinite(statsSource.lastRunTurn) ? statsSource.lastRunTurn : null,
-      lastResultSummary: typeof statsSource.lastResultSummary === 'string' ? statsSource.lastResultSummary : ''
+      lastResultSummary: typeof statsSource.lastResultSummary === 'string' ? statsSource.lastResultSummary : '',
+      runsToday: typeof statsSource.runsToday === 'number' && isFinite(statsSource.runsToday) ? Math.max(0, statsSource.runsToday) : 0,
+      runsTodayDay: typeof statsSource.runsTodayDay === 'number' && isFinite(statsSource.runsTodayDay) ? statsSource.runsTodayDay : -1,
+      consecutiveNoChangeCount: typeof statsSource.consecutiveNoChangeCount === 'number' && isFinite(statsSource.consecutiveNoChangeCount) ? Math.max(0, statsSource.consecutiveNoChangeCount) : 0
     }
   };
 };
@@ -5368,6 +5407,143 @@ const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
 const sanitizeHumanAutomations = (value: unknown): HumanAutomation[] => {
   if (!Array.isArray(value)) return [];
   return value.map(entry => sanitizeHumanAutomation(entry)).filter((a): a is HumanAutomation => Boolean(a)).slice(0, HUMAN_AUTOMATION_MAX_COUNT);
+};
+
+// HA2: pure, module-level trigger/eligibility/decision helpers — explicit params, no closures,
+// matching this file's own established convention for this class of logic (computeEconomicPhase,
+// evaluateEconomySpendingApproval, etc.). None of these ever mutate anything; they only decide
+// whether/what to run. The actual execution call (executeTeamAiAction) stays component-scope,
+// exactly like every other chokepoint in this file.
+
+const evaluateHumanAutomationTrigger = (
+  trigger: HumanAutomationTrigger,
+  actor: { money: number; inventory: string[]; currentRegion: string; completedThisSeason?: string[] },
+  resourcePrices: Record<string, number>,
+  isNewDayForActor: boolean
+): boolean => {
+  switch (trigger.type) {
+    case 'turn_start': return true;
+    case 'day_start': return isNewDayForActor;
+    case 'cash_below_threshold': return actor.money < (trigger.thresholdAmount ?? 0);
+    case 'cash_above_threshold': return actor.money > (trigger.thresholdAmount ?? 0);
+    case 'resource_quantity_at_least': return actor.inventory.filter(r => r === trigger.resource).length >= (trigger.thresholdAmount ?? 0);
+    case 'resource_quantity_at_most': return actor.inventory.filter(r => r === trigger.resource).length <= (trigger.thresholdAmount ?? 0);
+    case 'arrived_in_region': return Boolean(trigger.region) && actor.currentRegion === trigger.region;
+    case 'challenge_available_in_region': {
+      const region = trigger.region || actor.currentRegion;
+      const regionChallenges = (REGIONS as any)[region]?.challenges || [];
+      const completed = actor.completedThisSeason || [];
+      return regionChallenges.some((c: any) => !completed.includes(c.name));
+    }
+    case 'recipe_craftable': {
+      const recipe = CRAFTING_RECIPES.find(r => r.id === trigger.recipeId);
+      if (!recipe) return false;
+      return Object.entries(recipe.inputs).every(([resource, qty]) => actor.inventory.filter(r => r === resource).length >= (qty as number));
+    }
+    case 'market_price_at_or_below': {
+      const price = resourcePrices[trigger.resource || ''] ?? getResourceMarketPrice(trigger.resource || '');
+      return price <= (trigger.thresholdAmount ?? Infinity);
+    }
+    case 'market_price_at_or_above': {
+      const price = resourcePrices[trigger.resource || ''] ?? getResourceMarketPrice(trigger.resource || '');
+      return price >= (trigger.thresholdAmount ?? -Infinity);
+    }
+    case 'manual_test_only':
+    default:
+      // Never auto-fires — reserved for a future "Test Now" button (HA3's "Test Against Current
+      // State" mode), stated plainly rather than silently matching every turn.
+      return false;
+  }
+};
+
+const resolveHumanAutomationWager = (rule: SequenceWagerRule | undefined, spendableCash: number): number => {
+  let raw: number;
+  switch (rule?.mode) {
+    case 'fixed': raw = rule.fixedAmount ?? MINIMUM_WAGER; break;
+    case 'percentage_of_cash': raw = spendableCash * (rule.percentage ?? 0.1); break;
+    case 'target_profit': raw = rule.targetProfit ?? MINIMUM_WAGER; break;
+    default: raw = MINIMUM_WAGER;
+  }
+  return Math.max(rule?.minWager ?? MINIMUM_WAGER, Math.min(rule?.maxWager ?? spendableCash, raw, spendableCash));
+};
+
+const resolveHumanAutomationAmount = (rule: SequenceSpendingRule | undefined, spendableCash: number, fallback: number): number => {
+  const raw = rule?.costCapAbsolute ?? (rule?.costCapPercentage ? spendableCash * rule.costCapPercentage : fallback);
+  return Math.max(0, Math.min(raw, spendableCash));
+};
+
+// Builds the exact AIAction shape executeTeamAiAction's switch already expects for each of the
+// HUMAN_AUTOMATION_ACTIONS categories — never a new execution path, purely additive construction.
+// Returns null when the configured automation can't currently produce a valid, executable action
+// (e.g. no uncompleted challenge in the target region) rather than fabricating one.
+const buildHumanAutomationDecision = (
+  automation: HumanAutomation,
+  actor: { id: string; money: number; inventory: string[]; currentRegion: string; completedThisSeason?: string[] },
+  spendableCash: number,
+  resourcePrices: Record<string, number>
+): { action: AIAction; resolvedCost: number } | null => {
+  const params = automation.actionParameters;
+  switch (automation.action) {
+    case 'travel':
+      if (!params.region) return null;
+      return { action: { type: 'travel', description: `Automation: travel to ${params.region}`, data: { region: params.region } }, resolvedCost: 0 };
+    case 'challenge': {
+      const region = params.region || actor.currentRegion;
+      const regionChallenges = (REGIONS as any)[region]?.challenges || [];
+      const completed = actor.completedThisSeason || [];
+      const uncompleted = regionChallenges.filter((c: any) => !completed.includes(c.name));
+      const challenge = params.challengeId ? (uncompleted.find((c: any) => c.name === params.challengeId) || uncompleted[0]) : uncompleted[0];
+      if (!challenge) return null;
+      const wager = resolveHumanAutomationWager(params.wagerRule, spendableCash);
+      return { action: { type: 'challenge', description: `Automation: take ${challenge.name}`, data: { challenge, wager } }, resolvedCost: wager };
+    }
+    case 'sell':
+      if (!params.resource) return null;
+      return { action: { type: 'sell', description: `Automation: sell ${params.resource}`, data: { resource: params.resource } }, resolvedCost: 0 };
+    case 'craft':
+      if (!params.recipeId) return null;
+      return { action: { type: 'craft', description: `Automation: craft ${params.recipeId}`, data: { recipeId: params.recipeId } }, resolvedCost: 0 };
+    case 'buy_market': {
+      if (!params.resource) return null;
+      const price = resourcePrices[params.resource] ?? getResourceMarketPrice(params.resource);
+      const budget = resolveHumanAutomationAmount(params.spendingRule, spendableCash, params.amount ?? price);
+      const quantity = Math.max(1, Math.floor(budget / Math.max(1, price)));
+      return { action: { type: 'buy_market', description: `Automation: buy ${quantity}x ${params.resource}`, data: { purchases: [{ resource: params.resource, quantity }] } }, resolvedCost: quantity * price };
+    }
+    case 'region_deposit': {
+      const region = params.region || actor.currentRegion;
+      const amount = resolveHumanAutomationAmount(params.spendingRule, spendableCash, params.amount ?? 100);
+      if (amount <= 0) return null;
+      return { action: { type: 'region_deposit', description: `Automation: deposit $${amount} in ${region}`, data: { region, amount, reason: 'Human automation' } }, resolvedCost: amount };
+    }
+    case 'invest':
+      if (!params.region) return null;
+      return { action: { type: 'invest', description: `Automation: invest in ${params.region}`, data: { region: params.region } }, resolvedCost: 0 };
+    case 'buy_equipment':
+      if (!params.itemId) return null;
+      return { action: { type: 'buy_equipment', description: `Automation: buy equipment ${params.itemId}`, data: { itemId: params.itemId } }, resolvedCost: 0 };
+    default:
+      return null;
+  }
+};
+
+const evaluateHumanAutomationExecutionEligibility = (automation: HumanAutomation, currentDay: number, turnCounter: number): { eligible: boolean; reason: string } => {
+  if (!automation.enabled || automation.authorityMode === 'disabled') return { eligible: false, reason: 'Automation is disabled.' };
+  const stats = automation.executionStats;
+  const limits = automation.executionLimits;
+  if (limits.maxRunsTotal !== null && stats.totalRuns >= limits.maxRunsTotal) return { eligible: false, reason: 'Max total runs reached.' };
+  const runsToday = stats.runsTodayDay === currentDay ? stats.runsToday : 0;
+  if (runsToday >= limits.maxRunsPerDay) return { eligible: false, reason: 'Max runs per day reached.' };
+  if (limits.cooldownTurns > 0 && stats.lastRunTurn !== null && (turnCounter - stats.lastRunTurn) < limits.cooldownTurns) return { eligible: false, reason: 'Cooldown active.' };
+  if (stats.consecutiveNoChangeCount >= automation.safetyLimits.stopIfNoStateChangeCount) return { eligible: false, reason: 'Auto-suspended: repeated no-op runs.' };
+  return { eligible: true, reason: '' };
+};
+
+const checkHumanAutomationSafetyLimits = (automation: HumanAutomation, actorMoney: number, resolvedCost: number): { ok: boolean; reason: string } => {
+  const safety = automation.safetyLimits;
+  if (safety.maxCostPerRun !== null && resolvedCost > safety.maxCostPerRun) return { ok: false, reason: 'Exceeds configured max cost per run.' };
+  if (safety.minCashRemainingAfterRun !== null && (actorMoney - resolvedCost) < safety.minCashRemainingAfterRun) return { ok: false, reason: 'Would drop below the configured minimum cash reserve.' };
+  return { ok: true, reason: '' };
 };
 
 const ECONOMIC_PHASES: EconomicPhase[] = ['survival', 'accumulation', 'compounding', 'endgame'];
@@ -13565,6 +13741,40 @@ function AustraliaGame() {
   // Human Player Automation and Action Rules System, Phase HA1: pure scaffolding — no CRUD UI exists
   // yet, so this stays [] for every player regardless of the master toggle's state until HA2 ships.
   const [humanAutomations, setHumanAutomations] = useState<HumanAutomation[]>([]);
+  // HA2: lastAutomationTurnKeyRef guards against re-firing the automation loop more than once for
+  // the same player turn (the evaluation useEffect below); lastAutomationDayRef is a separate,
+  // longer-lived tracker purely for the 'day_start' trigger type (did the day change since the last
+  // time we evaluated, independent of how many player turns happened that day).
+  const lastAutomationTurnKeyRef = useRef<string>('');
+  const lastAutomationDayRef = useRef<number>(-1);
+  // HA2: CRUD, mirroring the thin updateTeamState-wrapper style already established for
+  // TeammateSequence CRUD (F4), adapted to this feature's own genuinely-separate top-level array.
+  const createHumanAutomation = useCallback(() => {
+    setHumanAutomations(prev => prev.length >= HUMAN_AUTOMATION_MAX_COUNT ? prev : [...prev, createNewHumanAutomation(gameState.day)]);
+  }, [gameState.day]);
+  const updateHumanAutomationById = useCallback((id: string, patch: Partial<HumanAutomation>) => {
+    setHumanAutomations(prev => prev.map(a => a.id === id ? { ...a, ...patch, lastEditedDay: gameState.day } : a));
+  }, [gameState.day]);
+  const removeHumanAutomationById = useCallback((id: string) => {
+    setHumanAutomations(prev => prev.filter(a => a.id !== id));
+  }, []);
+  const duplicateHumanAutomationById = useCallback((id: string) => {
+    setHumanAutomations(prev => {
+      if (prev.length >= HUMAN_AUTOMATION_MAX_COUNT) return prev;
+      const source = prev.find(a => a.id === id);
+      if (!source) return prev;
+      const copy: HumanAutomation = {
+        ...source,
+        id: `ha_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: `${source.name} (copy)`,
+        enabled: false,
+        createdDay: gameState.day,
+        lastEditedDay: gameState.day,
+        executionStats: { totalRuns: 0, totalSuccesses: 0, totalSkipped: 0, totalFailed: 0, lastRunDay: null, lastRunTurn: null, lastResultSummary: '', runsToday: 0, runsTodayDay: -1, consecutiveNoChangeCount: 0 }
+      };
+      return [...prev, copy];
+    });
+  }, [gameState.day]);
 
   const [saveDescription, setSaveDescription] = useState("");
   const [loadPreview, setLoadPreview] = useState<LoadPreviewState>({
@@ -21666,6 +21876,10 @@ function AustraliaGame() {
   // resolveAuditorRecoveryRequest is declared later (it needs updateTeamState/resolveAiOperationsIncident),
   // so it's read through a ref assigned right after its declaration.
   const resolveAuditorRecoveryRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
+  // Human Player Automation Phase HA2: same TDZ-safe ref-indirection pattern — the real
+  // resolveHumanAutomationApprovalRequest is declared much later (it needs executeTeamAiAction),
+  // so it's read through a ref assigned right after its declaration.
+  const resolveHumanAutomationApprovalRequestRef = useRef<((requestId: string, control: 'approve' | 'reject') => void) | null>(null);
   const resolveApprovalRequest = useCallback((
     requestId: string,
     control: ApprovalControlAction,
@@ -21768,12 +21982,15 @@ function AustraliaGame() {
       ? () => resolveOverseerDirectiveRequestRef.current?.(next.id, 'approve')
       : next.requestKind === 'operations_recovery'
       ? () => resolveAuditorRecoveryRequestRef.current?.(next.id, 'approve')
+      : next.requestKind === 'human_automation'
+      ? () => resolveHumanAutomationApprovalRequestRef.current?.(next.id, 'approve')
       : () => resolveApprovalRequest(next.id, 'approve');
     const dialogTitle = next.requestKind === 'treasury_withdrawal' ? 'Teammate requests Team Treasury funds'
       : next.requestKind === 'governor_exception' ? 'Teammate requests a Governor exception'
       : next.requestKind === 'overseer_adaptive_policy' ? 'Adaptive Overseer recommends a policy change'
       : next.requestKind === 'overseer_directive' ? 'Strategic Command recommends a directive'
       : next.requestKind === 'operations_recovery' ? 'AI Operations Auditor proposes a recovery action'
+      : next.requestKind === 'human_automation' ? 'Your automation wants to run'
       : 'Teammate proposes an action';
     showConfirmation('aiActionApprovalRequest', dialogTitle, next.actionSummary, 'Approve', onConfirmDefault, { requestId: next.id });
   }, [pendingApprovalRequests, confirmationDialog.isOpen, showConfirmation, resolveApprovalRequest, resolveTreasuryApprovalRequest, appendAiOperationsEvent, buildAiOperationsEventBase]);
@@ -29795,6 +30012,153 @@ function AustraliaGame() {
 
     return actionSucceeded;
   }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, getActorDisplayName]);
+
+  // Human Player Automation Phase HA2: shared execution-stats update, reused by both the immediate
+  // (notify_after_running/silent_autorun) execution path below and the confirm_before_running
+  // approval resolver — a single place that increments totalRuns/totalSuccesses/totalFailed/
+  // runsToday/consecutiveNoChangeCount, so the two call sites can never drift.
+  const applyHumanAutomationRunResult = useCallback((automationId: string, success: boolean, day: number, turn: number) => {
+    setHumanAutomations(prev => prev.map(a => {
+      if (a.id !== automationId) return a;
+      const stats = a.executionStats;
+      return {
+        ...a,
+        executionStats: {
+          ...stats,
+          totalRuns: stats.totalRuns + 1,
+          totalSuccesses: stats.totalSuccesses + (success ? 1 : 0),
+          totalFailed: stats.totalFailed + (success ? 0 : 1),
+          lastRunDay: day,
+          lastRunTurn: turn,
+          runsToday: (stats.runsTodayDay === day ? stats.runsToday : 0) + 1,
+          runsTodayDay: day,
+          consecutiveNoChangeCount: success ? 0 : stats.consecutiveNoChangeCount + 1,
+          lastResultSummary: success ? 'Ran successfully.' : 'Execution failed.'
+        }
+      };
+    }));
+  }, []);
+
+  // Mirrors buildOverseerDirectiveApprovalRequest's exact shape (Phase O6) — a human automation,
+  // like a directive/policy overlay, is a system-initiated proposal to preview and approve/reject,
+  // not a normal ranked-candidate AI decision, so it gets its own small synthetic-decision builder
+  // rather than reusing buildApprovalRequest (which expects a real ScoredTeamAiDecision).
+  const buildHumanAutomationApprovalRequest = useCallback((automation: HumanAutomation, action: AIAction, resolvedCost: number, actor: ActorState): ApprovalRequest => {
+    const syntheticDecision = { ...action, score: 0, plan: undefined } as unknown as ScoredTeamAiDecision;
+    return {
+      id: `approval_automation_${automation.id}_${Date.now()}`,
+      actorId: actor.id,
+      teamId: actor.teamId || TEAM_PLAYER_ID,
+      decision: syntheticDecision,
+      actionSummary: action.description || automation.name,
+      targetLabel: automation.name,
+      cost: resolvedCost > 0 ? resolvedCost : null,
+      wager: action.type === 'challenge' ? (action.data?.wager ?? null) : null,
+      percentCashAtRisk: resolvedCost > 0 ? resolvedCost / Math.max(1, actor.money) : null,
+      expectedReward: null,
+      successProbability: null,
+      minCashRemaining: resolvedCost > 0 ? actor.money - resolvedCost : null,
+      vaultEffect: 'n/a',
+      governorRuling: 'n/a',
+      requirementsSummary: `Trigger: ${automation.trigger.type}. Priority ${automation.priority}.`,
+      aiExplanation: `Your automation "${automation.name}" wants to run this action.`,
+      fallbackAvailable: false,
+      actionsRemaining: 0,
+      categoryBucket: automation.action,
+      createdAtTurn: gameState.turnCounter,
+      status: 'pending',
+      requestKind: 'human_automation',
+      humanAutomationId: automation.id
+    };
+  }, [gameState.turnCounter]);
+
+  // Resolves a 'confirm_before_running' automation's approval request — mirrors
+  // resolveOverseerDirectiveRequest's exact dequeue/idempotency shape (resolvedApprovalRequestIdsRef
+  // guard, filter from the queue, close the dialog if it's the one currently open).
+  const resolveHumanAutomationApprovalRequest = useCallback((requestId: string, control: 'approve' | 'reject') => {
+    if (resolvedApprovalRequestIdsRef.current.has(requestId)) return;
+    const request = pendingApprovalRequests.find(r => r.id === requestId);
+    if (!request || request.status === 'resolved' || request.status === 'cancelled') return;
+    resolvedApprovalRequestIdsRef.current.add(requestId);
+    setPendingApprovalRequests(prev => prev.filter(r => r.id !== requestId));
+    if (confirmationDialog.data?.requestId === requestId) closeConfirmation();
+    const automationId = request.humanAutomationId;
+    if (!automationId) return;
+    if (control === 'reject') {
+      setHumanAutomations(prev => prev.map(a => a.id === automationId ? { ...a, executionStats: { ...a.executionStats, totalSkipped: a.executionStats.totalSkipped + 1, lastResultSummary: 'Skipped: player rejected.' } } : a));
+      if (gameSettings.humanAutomationTransparencyEnabled) addNotification(`Automation "${request.targetLabel}" skipped: you rejected the proposed action.`, 'info', false, 'system');
+      return;
+    }
+    executeTeamAiAction(request.actorId, request.decision as unknown as AIAction).then(success => {
+      applyHumanAutomationRunResult(automationId, success, gameState.day, gameState.turnCounter);
+      if (gameSettings.humanAutomationTransparencyEnabled) {
+        addNotification(success ? `Automation "${request.targetLabel}" ran successfully.` : `Automation "${request.targetLabel}" failed to run.`, success ? 'success' : 'error', false, 'system');
+      }
+    });
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, executeTeamAiAction, applyHumanAutomationRunResult, gameSettings.humanAutomationTransparencyEnabled, gameState.day, gameState.turnCounter, addNotification]);
+  resolveHumanAutomationApprovalRequestRef.current = resolveHumanAutomationApprovalRequest;
+
+  // The turn-start orchestrator: evaluates every enabled automation (highest priority first),
+  // running at most ONE automation per player-turn evaluation — a deliberate, stated scope bound
+  // (mutual-exclusion groups / multi-automation chaining within one turn are HA3's job) that also
+  // keeps this bounded and terminating by construction. Never bypasses evaluateActionRequirements
+  // when conditions are configured, and never calls executeTeamAiAction directly for
+  // 'confirm_before_running' — that path always goes through the approval queue instead.
+  const runHumanAutomationsForPlayer = useCallback(() => {
+    if (!gameSettings.humanAutomationEnabled) return;
+    const actor = getActorState('player');
+    if (!actor || actor.kind !== 'human') return;
+    const isNewDay = lastAutomationDayRef.current !== gameState.day;
+    lastAutomationDayRef.current = gameState.day;
+    const candidates = [...humanAutomations].filter(a => a.enabled && a.authorityMode !== 'disabled').sort((a, b) => b.priority - a.priority);
+    for (const automation of candidates) {
+      const eligibility = evaluateHumanAutomationExecutionEligibility(automation, gameState.day, gameState.turnCounter);
+      if (!eligibility.eligible) continue;
+      if (!evaluateHumanAutomationTrigger(automation.trigger, actor, gameState.resourcePrices, isNewDay)) continue;
+      const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
+      const built = buildHumanAutomationDecision(automation, actor, spendableCash, gameState.resourcePrices);
+      if (!built) continue;
+      const safety = checkHumanAutomationSafetyLimits(automation, actor.money, built.resolvedCost);
+      if (!safety.ok) continue;
+      // Conditions gate — reuses evaluateActionRequirements/evaluateRequirementGroupTree verbatim
+      // via overrideGroups, which (per its own usingOverride branch) evaluates regardless of the
+      // teamCompetitiveAiEnabled/actionRequirementsEnabled settings, so this works for solo players.
+      if (automation.conditions) {
+        const gate = evaluateActionRequirements(actor, built.action, { cost: built.resolvedCost, wager: built.action.data?.wager }, [automation.conditions]);
+        if (!gate.approved) continue;
+      }
+      if (automation.authorityMode === 'confirm_before_running') {
+        const request = buildHumanAutomationApprovalRequest(automation, built.action, built.resolvedCost, actor);
+        setPendingApprovalRequests(prev => [...prev, request]);
+        return;
+      }
+      const isNotify = automation.authorityMode === 'notify_after_running';
+      const automationName = automation.name;
+      const automationId = automation.id;
+      executeTeamAiAction(actor.id, built.action).then(success => {
+        applyHumanAutomationRunResult(automationId, success, gameState.day, gameState.turnCounter);
+        if (isNotify) {
+          addNotification(success ? `Automation "${automationName}" ran: ${built.action.description}` : `Automation "${automationName}" failed to run.`, success ? 'success' : 'error', false, 'system');
+        } else if (gameSettings.humanAutomationTransparencyEnabled) {
+          addNotification(`Automation "${automationName}" ran silently: ${built.action.description}`, 'info', false, 'system');
+        }
+      });
+      return;
+    }
+  }, [gameSettings.humanAutomationEnabled, gameSettings.teamCashVaultEnabled, gameSettings.humanAutomationTransparencyEnabled, getActorState, gameState.day, gameState.turnCounter, gameState.resourcePrices, humanAutomations, evaluateActionRequirements, buildHumanAutomationApprovalRequest, executeTeamAiAction, applyHumanAutomationRunResult, addNotification]);
+
+  // Fires once per player turn (guarded by lastAutomationTurnKeyRef), in every game mode — unlike
+  // the AI turn effect above, this is deliberately NOT gated on isTeamMode, since Human Automation
+  // applies to the human player regardless of mode.
+  useEffect(() => {
+    if (!gameSettings.humanAutomationEnabled) return;
+    if (gameState.gameMode !== 'game') return;
+    if (gameState.currentActorId !== 'player') return;
+    const key = `player:${gameState.turnCounter}`;
+    if (lastAutomationTurnKeyRef.current === key) return;
+    lastAutomationTurnKeyRef.current = key;
+    runHumanAutomationsForPlayer();
+  }, [gameState.currentActorId, gameState.turnCounter, gameState.gameMode, gameSettings.humanAutomationEnabled, runHumanAutomationsForPlayer]);
 
   const getActorActiveTeamMessages = useCallback((actorId: string) => {
     const actor = getActorState(actorId);
@@ -42422,13 +42786,13 @@ function AustraliaGame() {
                     <div>
                       <div className="font-semibold">Enable Human Player Automation</div>
                       <div className="text-sm opacity-75">
-                        A separate, optional system for the human player's own turn — lets you author
-                        rules that automatically perform an action when a chosen trigger and condition
-                        are met (e.g. "when arriving in a region, if a challenge is available, take
-                        it"). Deliberately separate from AI Teammate Action Sequences: this is for your
-                        own actions, in every game mode, not a Team-Mode AI feature. Pure scaffolding
-                        right now — no automation can be created yet; the rule editor and Automation
-                        Dashboard arrive in a later phase.
+                        A separate, optional system for the human player's own turn — author rules
+                        that automatically perform an action when a chosen trigger is met, evaluated
+                        once at the start of each of your turns. Deliberately separate from AI
+                        Teammate Action Sequences: this is for your own actions, in every game mode,
+                        not a Team-Mode AI feature. At most one automation runs per turn (the
+                        highest-priority eligible one) — the full Automation Dashboard, "Test Against
+                        Current State" mode, and starter templates arrive in a later phase.
                       </div>
                     </div>
                     <button
@@ -42440,13 +42804,10 @@ function AustraliaGame() {
                   </div>
                   {gameSettings.humanAutomationEnabled && (
                     <>
-                      <div className="text-sm opacity-75">
-                        {humanAutomations.length} automation{humanAutomations.length === 1 ? '' : 's'} configured — the Automation Dashboard and rule editor arrive in a later phase.
-                      </div>
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-semibold text-sm">Transparency</div>
-                          <div className="text-xs opacity-75">Notes when an automation fires (inert until a real execution loop exists).</div>
+                          <div className="text-xs opacity-75">Notification whenever an automation runs (silent_autorun stays quiet regardless).</div>
                         </div>
                         <button
                           onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Human Player Automation", prev => ({ ...prev, humanAutomationTransparencyEnabled: !prev.humanAutomationTransparencyEnabled }))}
@@ -42454,6 +42815,228 @@ function AustraliaGame() {
                         >
                           {gameSettings.humanAutomationTransparencyEnabled ? 'ON' : 'OFF'}
                         </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm opacity-75">{humanAutomations.length}/{HUMAN_AUTOMATION_MAX_COUNT} automations configured</div>
+                        <button
+                          onClick={createHumanAutomation}
+                          disabled={humanAutomations.length >= HUMAN_AUTOMATION_MAX_COUNT}
+                          className={`${themeStyles.button} text-white px-3 py-1.5 rounded text-sm font-semibold disabled:opacity-40`}
+                        >
+                          + Add Automation
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {humanAutomations.map(automation => (
+                          <div key={automation.id} className={`${themeStyles.border} border rounded-lg p-3 space-y-2`}>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={automation.name}
+                                onChange={e => updateHumanAutomationById(automation.id, { name: e.target.value })}
+                                className={`${themeStyles.select} rounded px-2 py-1 text-sm flex-1`}
+                              />
+                              <button
+                                onClick={() => updateHumanAutomationById(automation.id, { enabled: !automation.enabled })}
+                                className={`px-2 py-1 rounded text-xs font-semibold ${automation.enabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                              >
+                                {automation.enabled ? 'ON' : 'OFF'}
+                              </button>
+                              <button onClick={() => duplicateHumanAutomationById(automation.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Duplicate</button>
+                              <button onClick={() => removeHumanAutomationById(automation.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs text-red-400`}>Delete</button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                              <div>
+                                <div className="opacity-60 mb-1">Trigger</div>
+                                <select
+                                  value={automation.trigger.type}
+                                  onChange={e => updateHumanAutomationById(automation.id, { trigger: { ...automation.trigger, type: e.target.value as HumanAutomationTriggerType } })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                >
+                                  {HUMAN_AUTOMATION_TRIGGER_TYPES.map(t => (<option key={t} value={t}>{t.replace(/_/g, ' ')}</option>))}
+                                </select>
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Action</div>
+                                <select
+                                  value={automation.action}
+                                  onChange={e => updateHumanAutomationById(automation.id, { action: e.target.value as TeamModeActionCategory })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                >
+                                  {HUMAN_AUTOMATION_ACTIONS.map(a => (<option key={a} value={a}>{a.replace(/_/g, ' ')}</option>))}
+                                </select>
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Authority Mode</div>
+                                <select
+                                  value={automation.authorityMode}
+                                  onChange={e => updateHumanAutomationById(automation.id, { authorityMode: e.target.value as HumanAutomationAuthorityMode })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                >
+                                  {HUMAN_AUTOMATION_AUTHORITY_MODES.map(m => (<option key={m} value={m}>{m.replace(/_/g, ' ')}</option>))}
+                                </select>
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Priority</div>
+                                <input
+                                  type="number"
+                                  value={automation.priority}
+                                  onChange={e => updateHumanAutomationById(automation.id, { priority: Number(e.target.value) || 0 })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                              {(automation.trigger.type === 'cash_below_threshold' || automation.trigger.type === 'cash_above_threshold' || automation.trigger.type === 'market_price_at_or_below' || automation.trigger.type === 'market_price_at_or_above' || automation.trigger.type === 'resource_quantity_at_least' || automation.trigger.type === 'resource_quantity_at_most') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Threshold</div>
+                                  <input
+                                    type="number"
+                                    value={automation.trigger.thresholdAmount ?? 0}
+                                    onChange={e => updateHumanAutomationById(automation.id, { trigger: { ...automation.trigger, thresholdAmount: Number(e.target.value) || 0 } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {(automation.trigger.type === 'resource_quantity_at_least' || automation.trigger.type === 'resource_quantity_at_most' || automation.trigger.type === 'market_price_at_or_below' || automation.trigger.type === 'market_price_at_or_above') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Trigger Resource</div>
+                                  <input
+                                    type="text"
+                                    value={automation.trigger.resource ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { trigger: { ...automation.trigger, resource: e.target.value } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                    placeholder="e.g. Wool"
+                                  />
+                                </div>
+                              )}
+                              {(automation.trigger.type === 'arrived_in_region' || automation.trigger.type === 'challenge_available_in_region') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Trigger Region</div>
+                                  <input
+                                    type="text"
+                                    value={automation.trigger.region ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { trigger: { ...automation.trigger, region: e.target.value.toUpperCase() } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                    placeholder="e.g. QLD"
+                                  />
+                                </div>
+                              )}
+                              {automation.trigger.type === 'recipe_craftable' && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Trigger Recipe ID</div>
+                                  <input
+                                    type="text"
+                                    value={automation.trigger.recipeId ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { trigger: { ...automation.trigger, recipeId: e.target.value } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {(automation.action === 'travel' || automation.action === 'invest' || automation.action === 'region_deposit') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Action Region</div>
+                                  <input
+                                    type="text"
+                                    value={automation.actionParameters.region ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { actionParameters: { ...automation.actionParameters, region: e.target.value.toUpperCase() } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {(automation.action === 'sell' || automation.action === 'buy_market') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Action Resource</div>
+                                  <input
+                                    type="text"
+                                    value={automation.actionParameters.resource ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { actionParameters: { ...automation.actionParameters, resource: e.target.value } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {automation.action === 'craft' && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Recipe ID</div>
+                                  <input
+                                    type="text"
+                                    value={automation.actionParameters.recipeId ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { actionParameters: { ...automation.actionParameters, recipeId: e.target.value } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {automation.action === 'buy_equipment' && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Item ID</div>
+                                  <input
+                                    type="text"
+                                    value={automation.actionParameters.itemId ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { actionParameters: { ...automation.actionParameters, itemId: e.target.value } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              {(automation.action === 'challenge' || automation.action === 'buy_market' || automation.action === 'region_deposit') && (
+                                <div>
+                                  <div className="opacity-60 mb-1">Amount / Wager Cap</div>
+                                  <input
+                                    type="number"
+                                    value={automation.actionParameters.amount ?? ''}
+                                    onChange={e => updateHumanAutomationById(automation.id, { actionParameters: { ...automation.actionParameters, amount: Number(e.target.value) || 0 } })}
+                                    className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                  />
+                                </div>
+                              )}
+                              <div>
+                                <div className="opacity-60 mb-1">Max Runs/Day</div>
+                                <input
+                                  type="number"
+                                  value={automation.executionLimits.maxRunsPerDay}
+                                  onChange={e => updateHumanAutomationById(automation.id, { executionLimits: { ...automation.executionLimits, maxRunsPerDay: Math.max(0, Number(e.target.value) || 0) } })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                />
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Cooldown (turns)</div>
+                                <input
+                                  type="number"
+                                  value={automation.executionLimits.cooldownTurns}
+                                  onChange={e => updateHumanAutomationById(automation.id, { executionLimits: { ...automation.executionLimits, cooldownTurns: Math.max(0, Number(e.target.value) || 0) } })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                />
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Max Cost/Run</div>
+                                <input
+                                  type="number"
+                                  value={automation.safetyLimits.maxCostPerRun ?? ''}
+                                  placeholder="none"
+                                  onChange={e => updateHumanAutomationById(automation.id, { safetyLimits: { ...automation.safetyLimits, maxCostPerRun: e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0) } })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                />
+                              </div>
+                              <div>
+                                <div className="opacity-60 mb-1">Min Cash After</div>
+                                <input
+                                  type="number"
+                                  value={automation.safetyLimits.minCashRemainingAfterRun ?? ''}
+                                  placeholder="none"
+                                  onChange={e => updateHumanAutomationById(automation.id, { safetyLimits: { ...automation.safetyLimits, minCashRemainingAfterRun: e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0) } })}
+                                  className={`${themeStyles.select} rounded px-2 py-1 w-full`}
+                                />
+                              </div>
+                            </div>
+                            {automation.executionStats.lastResultSummary && (
+                              <div className="text-xs opacity-60">
+                                Last run: Day {automation.executionStats.lastRunDay ?? 'n/a'} — {automation.executionStats.lastResultSummary} ({automation.executionStats.totalSuccesses}/{automation.executionStats.totalRuns} succeeded, {automation.executionStats.totalSkipped} skipped)
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {humanAutomations.length === 0 && (
+                          <div className="text-sm opacity-60 italic">No automations yet — click "+ Add Automation" to create one.</div>
+                        )}
                       </div>
                     </>
                   )}
@@ -48034,7 +48617,39 @@ function AustraliaGame() {
             );
           })()}
 
-          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_directive') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
+          {/* Human Player Automation Phase HA2: info panel + 2-button approve/reject for a
+              confirm_before_running automation request — mirrors the operations_recovery panel's
+              shape exactly (simple, mutually exclusive per requestKind). */}
+          {confirmationDialog.data && confirmationDialog.type === 'aiActionApprovalRequest' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data.requestId);
+            if (!request || request.requestKind !== 'human_automation') return null;
+            const otherPendingCount = pendingApprovalRequests.length - 1;
+            return (
+              <div className={`${themeStyles.border} border rounded p-3 mb-4 text-sm space-y-1`}>
+                {otherPendingCount > 0 && (
+                  <div className="text-xs opacity-60 mb-2">+{otherPendingCount} more request(s) awaiting approval — resolve this one to see the next.</div>
+                )}
+                <div className="flex justify-between"><span>Automation:</span><span className="font-bold text-right">{request.targetLabel}</span></div>
+                <div className="flex justify-between"><span>Action:</span><span className="font-bold text-right">{request.actionSummary}</span></div>
+                {request.cost !== null && (<div className="flex justify-between"><span>Cost/Wager:</span><span className="font-bold">${request.cost}</span></div>)}
+                {request.minCashRemaining !== null && (<div className="flex justify-between"><span>Cash remaining after:</span><span className="font-bold">${request.minCashRemaining}</span></div>)}
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'human_automation' && (() => {
+            const request = pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId);
+            if (!request) return null;
+            const approvalRequestId = request.id;
+            return (
+              <div className="flex space-x-3">
+                <button onClick={() => resolveHumanAutomationApprovalRequestRef.current?.(approvalRequestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
+                <button onClick={() => resolveHumanAutomationApprovalRequestRef.current?.(approvalRequestId, 'reject')} className={`${themeStyles.buttonSecondary} px-6 py-2 rounded-lg flex-1`}>Reject</button>
+              </div>
+            );
+          })()}
+
+          {confirmationDialog.type === 'aiActionApprovalRequest' && (pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'treasury_withdrawal' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'governor_exception' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_adaptive_policy' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'overseer_directive' || pendingApprovalRequests.find(r => r.id === confirmationDialog.data?.requestId)?.requestKind === 'human_automation') ? null : confirmationDialog.type === 'aiActionApprovalRequest' ? (
             <div className="space-y-2">
               <div className="flex space-x-3">
                 <button onClick={() => resolveApprovalRequest(confirmationDialog.data.requestId, 'approve')} className={`${themeStyles.button} text-white px-6 py-2 rounded-lg flex-1 font-bold`}>Approve</button>
