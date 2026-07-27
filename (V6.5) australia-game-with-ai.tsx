@@ -13787,12 +13787,21 @@ function AustraliaGame() {
   const compareReplayFileInputRef = useRef<HTMLInputElement | null>(null);
   // RP4: Timeline tab auto-advance — a plain setInterval, cleared on pause/unmount/file-close, never
   // running when the dashboard/Timeline tab isn't open or a file isn't loaded.
+  // Bug/polish pass: the stop condition must bound against the same filtered event count the
+  // Timeline tab actually renders (replayViewerCategoryFilter/replayViewerFromSequence), not the
+  // full unfiltered loadedReplayFile.events.length — otherwise, with a filter active, this kept
+  // incrementing replayPlaybackIndex past the end of what's visible, desyncing the "Playback
+  // position N of M" caption and never actually stopping Play at the filtered list's real end.
   useEffect(() => {
     if (!replayPlaybackPlaying || !showReplayViewer || !loadedReplayFile) return;
+    const filteredLength = loadedReplayFile.events
+      .filter(ev => replayViewerCategoryFilter === 'all' || (['ai_decision', 'ai_execution'] as ReplayEventCategory[]).includes(ev.category))
+      .filter(ev => replayViewerFromSequence === null || ev.sequence >= replayViewerFromSequence)
+      .length;
     const interval = setInterval(() => {
       setReplayPlaybackIndex(prev => {
         const next = prev + 1;
-        if (next >= loadedReplayFile.events.length) {
+        if (next >= filteredLength) {
           setReplayPlaybackPlaying(false);
           return prev;
         }
@@ -13800,7 +13809,7 @@ function AustraliaGame() {
       });
     }, 800);
     return () => clearInterval(interval);
-  }, [replayPlaybackPlaying, showReplayViewer, loadedReplayFile]);
+  }, [replayPlaybackPlaying, showReplayViewer, loadedReplayFile, replayViewerCategoryFilter, replayViewerFromSequence]);
   // Algorithm Builder: which single config's per-stage editor panel is expanded, mirroring the
   // single-focus expand pattern already used by ledgerDashboardExpandedEventId above.
   const [algorithmConfigExpandedStagesId, setAlgorithmConfigExpandedStagesId] = useState<string | null>(null);
@@ -21396,7 +21405,12 @@ function AustraliaGame() {
     pendingReplayBranchSourceMatchIdRef.current = sourceFile.matchId;
     pendingReplayStartRef.current = true;
     if (source === 'live_state') {
-      const isLiveMatch = gameState.gameActivityLedger?.matchId === sourceFile.matchId;
+      // Bug/polish pass: gameActivityLedger.matchId and a ReplayFile's own matchId are minted
+      // independently (different prefixes, different call sites) and can never be equal — the
+      // correct "is this file the one currently being recorded" signal is the live recording's
+      // own matchId, held in replayRecordingRef (the same id-minting call site loadedReplayFile
+      // itself came from, if this file is indeed that recording).
+      const isLiveMatch = replayRecordingRef.current?.matchId === sourceFile.matchId;
       if (!isLiveMatch) {
         addNotification('Cannot branch from live state: this replay is not the currently active match.', 'error', true, 'system');
         pendingReplayBranchSourceMatchIdRef.current = null;
@@ -30255,7 +30269,11 @@ function AustraliaGame() {
       const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
       const built = buildHumanAutomationDecision(automation, actor, spendableCash, gameState.resourcePrices);
       if (!built) continue;
-      const safety = checkHumanAutomationSafetyLimits(automation, actor.money, built.resolvedCost);
+      // Bug/polish pass: check against the same Cash-Vault-aware spendableCash already used to
+      // build the decision, not raw actor.money — otherwise minCashRemainingAfterRun is checked
+      // against a number that ignores protected Vault cash, weakening the one safety floor this
+      // check exists to enforce.
+      const safety = checkHumanAutomationSafetyLimits(automation, spendableCash, built.resolvedCost);
       if (!safety.ok) continue;
       // Conditions gate — reuses evaluateActionRequirements/evaluateRequirementGroupTree verbatim
       // via overrideGroups, which (per its own usingOverride branch) evaluates regardless of the
@@ -30322,7 +30340,7 @@ function AustraliaGame() {
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
     const built = buildHumanAutomationDecision(automation, actor, spendableCash, gameState.resourcePrices);
     if (!built) return 'Would NOT run: could not construct a valid action from the configured parameters (e.g. no uncompleted challenge in the target region, or a required field is empty).';
-    const safety = checkHumanAutomationSafetyLimits(automation, actor.money, built.resolvedCost);
+    const safety = checkHumanAutomationSafetyLimits(automation, spendableCash, built.resolvedCost);
     if (!safety.ok) return `Would NOT run: ${safety.reason}`;
     if (automation.conditions) {
       const gate = evaluateActionRequirements(actor, built.action, { cost: built.resolvedCost, wager: built.action.data?.wager }, [automation.conditions]);
@@ -37585,7 +37603,7 @@ function AustraliaGame() {
       };
     };
 
-    const resetGameplaySettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetGameplaySettings = () => { setGameSettings(prev => ({
       ...prev,
       actionLimitsEnabled: DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
       maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
@@ -37606,7 +37624,7 @@ function AustraliaGame() {
       aiEquipmentPurchasePriority: DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority
     })); recordSettingsSectionResetEvent('Gameplay Settings', 'section_reset'); };
 
-    const resetAiSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetAiSettings = () => { setGameSettings(prev => ({
       ...prev,
       aiUsesMarketModifiers: DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
       aiSpecialAbilitiesEnabled: DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
@@ -37658,7 +37676,7 @@ function AustraliaGame() {
       adaptiveAiShowActiveModifiers: DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers
     })); recordSettingsSectionResetEvent('AI Settings', 'section_reset'); };
 
-    const resetTeamModeSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetTeamModeSettings = () => { setGameSettings(prev => ({
       ...prev,
       teamModeAiSystemsEnabled: DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
       teamModeAiSystemProfile: DEFAULT_GAME_SETTINGS.teamModeAiSystemProfile,
@@ -37872,7 +37890,7 @@ function AustraliaGame() {
 	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
     })); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
 
-    const restoreClassicV66CompetitiveAi = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const restoreClassicV66CompetitiveAi = () => { setGameSettings(prev => ({
       ...prev,
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
@@ -38069,7 +38087,7 @@ function AustraliaGame() {
 	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
     })); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
 
-    const resetAiStrategyLabSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetAiStrategyLabSettings = () => { setGameSettings(prev => ({
       ...prev,
       aiStrategyLabEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
       aiStrategyLabScope: DEFAULT_GAME_SETTINGS.aiStrategyLabScope,
@@ -38085,7 +38103,7 @@ function AustraliaGame() {
       aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
     })); recordSettingsSectionResetEvent('AI Strategy Lab Settings', 'section_reset'); };
 
-    const resetEconomySettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetEconomySettings = () => { setGameSettings(prev => ({
       ...prev,
       winCondition: DEFAULT_GAME_SETTINGS.winCondition,
       winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
@@ -38108,7 +38126,7 @@ function AustraliaGame() {
       aiLoanEmergencyOnly: DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly
     })); recordSettingsSectionResetEvent('Economy Settings', 'section_reset'); };
 
-    const resetInterfaceSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetInterfaceSettings = () => { setGameSettings(prev => ({
       ...prev,
       uxAssistPackEnabled: DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
       simplifiedActionBarEnabled: DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
@@ -38121,7 +38139,7 @@ function AustraliaGame() {
       notificationClearShortcut: DEFAULT_GAME_SETTINGS.notificationClearShortcut
     })); recordSettingsSectionResetEvent('Interface Settings', 'section_reset'); };
 
-    const resetAdvancedSystemsSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
+    const resetAdvancedSystemsSettings = () => { setGameSettings(prev => ({
       ...prev,
       settingPriorityMode: DEFAULT_GAME_SETTINGS.settingPriorityMode,
       maxConcurrentHighInfluenceSettings: DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings,
@@ -49580,7 +49598,7 @@ function AustraliaGame() {
       ];
       const escapeCsvCell = (value: unknown): string => {
         const str = value === undefined || value === null ? '' : String(value);
-        return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+        return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
       };
       const rows = [columns.join(','), ...filteredEvents.map(ev => columns.map(col => escapeCsvCell((ev as any)[col])).join(','))];
       const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
@@ -49793,7 +49811,7 @@ function AustraliaGame() {
                   );
                 })}
                 {filteredEvents.length > 300 && (
-                  <div className="text-xs opacity-60 text-center pt-2">Showing the most recent 300 of {filteredEvents.length} matching events.</div>
+                  <div className="text-xs opacity-60 text-center pt-2">Showing the {ledgerDashboardSortOrder === 'newest' ? 'most recent' : 'oldest'} 300 of {filteredEvents.length} matching events.</div>
                 )}
               </div>
             )}
@@ -50144,7 +50162,10 @@ function AustraliaGame() {
       acc[entry.status] = (acc[entry.status] || 0) + 1;
       return acc;
     }, {} as Record<ReplayDivergenceStatus, number>);
-    const isLiveMatch = Boolean(gameState.gameActivityLedger && gameState.gameActivityLedger.matchId === loadedReplayFile.matchId);
+    // Bug/polish pass: see the matching fix in startBranchFromReplay — replayRecordingRef.current's
+    // own matchId (not gameActivityLedger.matchId, a different, never-equal id namespace) is the
+    // correct "is this the currently-recording match" signal.
+    const isLiveMatch = Boolean(replayRecordingRef.current && replayRecordingRef.current.matchId === loadedReplayFile.matchId);
     const playbackEvent = filteredEvents[Math.min(replayPlaybackIndex, Math.max(0, filteredEvents.length - 1))] || null;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
