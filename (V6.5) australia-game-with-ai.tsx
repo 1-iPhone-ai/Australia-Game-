@@ -5227,6 +5227,149 @@ const sanitizeTeammateSequences = (value: unknown): TeammateSequence[] => {
   return value.map(entry => sanitizeTeammateSequence(entry)).filter((s): s is TeammateSequence => Boolean(s));
 };
 
+// Human Player Automation and Action Rules System, Phase HA1: pure schema/scaffolding, matching this
+// project's own established "types + inert toggle first, real wiring later" discipline for the first
+// phase of every major track (AA1/O1/AB1/F1/GL1). No automation ever executes and none can even be
+// created this phase (no CRUD UI exists yet) — HA2 wires real trigger detection + the mandatory
+// evaluateActionRequirements/needsApproval gate-call chokepoint + the *ForActor execution dispatch;
+// HA3 builds the Automation Dashboard/10 templates/Test-Against-Current-State mode. Deliberately
+// separate storage from TeammateSequence (this is for the human player specifically, in every game
+// mode, never Team-Mode-AI-scoped) — reuses RequirementGroup/SequenceWagerRule/SequenceSpendingRule/
+// SequenceStepFallbackAction/TeamModeActionCategory directly rather than inventing parallel types.
+type HumanAutomationTriggerType =
+  | 'turn_start' | 'day_start'
+  | 'cash_below_threshold' | 'cash_above_threshold'
+  | 'resource_quantity_at_least' | 'resource_quantity_at_most'
+  | 'arrived_in_region' | 'challenge_available_in_region'
+  | 'recipe_craftable' | 'market_price_at_or_below' | 'market_price_at_or_above'
+  | 'manual_test_only';
+interface HumanAutomationTrigger {
+  type: HumanAutomationTriggerType;
+  region?: string;
+  resource?: string;
+  thresholdAmount?: number;
+  recipeId?: string;
+}
+// Deliberately distinct from OverseerAuthorityMode — this gates whether an already-conditions-satisfied
+// automation actually executes without a popup, not whether an AI recommendation is shown at all.
+type HumanAutomationAuthorityMode = 'confirm_before_running' | 'notify_after_running' | 'silent_autorun' | 'disabled';
+interface HumanAutomationExecutionLimits {
+  maxRunsPerDay: number;
+  maxRunsTotal: number | null;
+  cooldownTurns: number;
+}
+interface HumanAutomationSafetyLimits {
+  maxCostPerRun: number | null;
+  minCashRemainingAfterRun: number | null;
+  stopIfNoStateChangeCount: number;
+}
+interface HumanAutomationExecutionStats {
+  totalRuns: number;
+  totalSuccesses: number;
+  totalSkipped: number;
+  totalFailed: number;
+  lastRunDay: number | null;
+  lastRunTurn: number | null;
+  lastResultSummary: string;
+}
+interface HumanAutomation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger: HumanAutomationTrigger;
+  conditions: RequirementGroup | null;
+  action: TeamModeActionCategory;
+  actionParameters: {
+    region?: string;
+    resource?: string;
+    recipeId?: string;
+    challengeId?: string;
+    wagerRule?: SequenceWagerRule;
+    spendingRule?: SequenceSpendingRule;
+  };
+  priority: number;
+  authorityMode: HumanAutomationAuthorityMode;
+  executionLimits: HumanAutomationExecutionLimits;
+  safetyLimits: HumanAutomationSafetyLimits;
+  fallbackBehavior: SequenceStepFallbackAction;
+  createdDay: number;
+  createdByPlayer: boolean;
+  lastEditedDay: number;
+  executionStats: HumanAutomationExecutionStats;
+}
+
+const HUMAN_AUTOMATION_TRIGGER_TYPES: HumanAutomationTriggerType[] = [
+  'turn_start', 'day_start', 'cash_below_threshold', 'cash_above_threshold',
+  'resource_quantity_at_least', 'resource_quantity_at_most', 'arrived_in_region',
+  'challenge_available_in_region', 'recipe_craftable', 'market_price_at_or_below',
+  'market_price_at_or_above', 'manual_test_only'
+];
+const HUMAN_AUTOMATION_AUTHORITY_MODES: HumanAutomationAuthorityMode[] = ['confirm_before_running', 'notify_after_running', 'silent_autorun', 'disabled'];
+const HUMAN_AUTOMATION_MAX_COUNT = 20;
+
+const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Partial<HumanAutomation>;
+  if (typeof source.id !== 'string' || typeof source.name !== 'string') return null;
+  const triggerSource = (source.trigger && typeof source.trigger === 'object') ? source.trigger as Partial<HumanAutomationTrigger> : {};
+  const limitsSource = (source.executionLimits && typeof source.executionLimits === 'object') ? source.executionLimits as Partial<HumanAutomationExecutionLimits> : {};
+  const safetySource = (source.safetyLimits && typeof source.safetyLimits === 'object') ? source.safetyLimits as Partial<HumanAutomationSafetyLimits> : {};
+  const statsSource = (source.executionStats && typeof source.executionStats === 'object') ? source.executionStats as Partial<HumanAutomationExecutionStats> : {};
+  const paramsSource = (source.actionParameters && typeof source.actionParameters === 'object') ? source.actionParameters as Partial<HumanAutomation['actionParameters']> : {};
+  return {
+    id: source.id,
+    name: source.name,
+    enabled: Boolean(source.enabled),
+    trigger: {
+      type: HUMAN_AUTOMATION_TRIGGER_TYPES.includes(triggerSource.type as HumanAutomationTriggerType) ? triggerSource.type as HumanAutomationTriggerType : 'manual_test_only',
+      region: typeof triggerSource.region === 'string' ? triggerSource.region : undefined,
+      resource: typeof triggerSource.resource === 'string' ? triggerSource.resource : undefined,
+      thresholdAmount: typeof triggerSource.thresholdAmount === 'number' && isFinite(triggerSource.thresholdAmount) ? triggerSource.thresholdAmount : undefined,
+      recipeId: typeof triggerSource.recipeId === 'string' ? triggerSource.recipeId : undefined
+    },
+    conditions: source.conditions ? sanitizeRequirementGroup(source.conditions) : null,
+    action: typeof source.action === 'string' ? source.action as TeamModeActionCategory : 'wait',
+    actionParameters: {
+      region: typeof paramsSource.region === 'string' ? paramsSource.region : undefined,
+      resource: typeof paramsSource.resource === 'string' ? paramsSource.resource : undefined,
+      recipeId: typeof paramsSource.recipeId === 'string' ? paramsSource.recipeId : undefined,
+      challengeId: typeof paramsSource.challengeId === 'string' ? paramsSource.challengeId : undefined,
+      wagerRule: (paramsSource.wagerRule && typeof paramsSource.wagerRule === 'object') ? paramsSource.wagerRule as SequenceWagerRule : undefined,
+      spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { allowRecoverySpending: false, ...paramsSource.spendingRule as SequenceSpendingRule } : undefined
+    },
+    priority: typeof source.priority === 'number' && isFinite(source.priority) ? source.priority : 0,
+    authorityMode: HUMAN_AUTOMATION_AUTHORITY_MODES.includes(source.authorityMode as HumanAutomationAuthorityMode) ? source.authorityMode as HumanAutomationAuthorityMode : 'confirm_before_running',
+    executionLimits: {
+      maxRunsPerDay: typeof limitsSource.maxRunsPerDay === 'number' && isFinite(limitsSource.maxRunsPerDay) ? Math.max(0, limitsSource.maxRunsPerDay) : 1,
+      maxRunsTotal: typeof limitsSource.maxRunsTotal === 'number' && isFinite(limitsSource.maxRunsTotal) ? Math.max(0, limitsSource.maxRunsTotal) : null,
+      cooldownTurns: typeof limitsSource.cooldownTurns === 'number' && isFinite(limitsSource.cooldownTurns) ? Math.max(0, limitsSource.cooldownTurns) : 0
+    },
+    safetyLimits: {
+      maxCostPerRun: typeof safetySource.maxCostPerRun === 'number' && isFinite(safetySource.maxCostPerRun) ? Math.max(0, safetySource.maxCostPerRun) : null,
+      minCashRemainingAfterRun: typeof safetySource.minCashRemainingAfterRun === 'number' && isFinite(safetySource.minCashRemainingAfterRun) ? Math.max(0, safetySource.minCashRemainingAfterRun) : null,
+      stopIfNoStateChangeCount: typeof safetySource.stopIfNoStateChangeCount === 'number' && isFinite(safetySource.stopIfNoStateChangeCount) ? Math.max(0, safetySource.stopIfNoStateChangeCount) : 3
+    },
+    fallbackBehavior: SEQUENCE_STEP_FALLBACK_ACTIONS.includes(source.fallbackBehavior as SequenceStepFallbackAction) ? source.fallbackBehavior as SequenceStepFallbackAction : 'skip_step',
+    createdDay: typeof source.createdDay === 'number' && isFinite(source.createdDay) ? Math.max(0, source.createdDay) : 0,
+    createdByPlayer: source.createdByPlayer !== false,
+    lastEditedDay: typeof source.lastEditedDay === 'number' && isFinite(source.lastEditedDay) ? Math.max(0, source.lastEditedDay) : 0,
+    executionStats: {
+      totalRuns: typeof statsSource.totalRuns === 'number' && isFinite(statsSource.totalRuns) ? Math.max(0, statsSource.totalRuns) : 0,
+      totalSuccesses: typeof statsSource.totalSuccesses === 'number' && isFinite(statsSource.totalSuccesses) ? Math.max(0, statsSource.totalSuccesses) : 0,
+      totalSkipped: typeof statsSource.totalSkipped === 'number' && isFinite(statsSource.totalSkipped) ? Math.max(0, statsSource.totalSkipped) : 0,
+      totalFailed: typeof statsSource.totalFailed === 'number' && isFinite(statsSource.totalFailed) ? Math.max(0, statsSource.totalFailed) : 0,
+      lastRunDay: typeof statsSource.lastRunDay === 'number' && isFinite(statsSource.lastRunDay) ? statsSource.lastRunDay : null,
+      lastRunTurn: typeof statsSource.lastRunTurn === 'number' && isFinite(statsSource.lastRunTurn) ? statsSource.lastRunTurn : null,
+      lastResultSummary: typeof statsSource.lastResultSummary === 'string' ? statsSource.lastResultSummary : ''
+    }
+  };
+};
+
+const sanitizeHumanAutomations = (value: unknown): HumanAutomation[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map(entry => sanitizeHumanAutomation(entry)).filter((a): a is HumanAutomation => Boolean(a)).slice(0, HUMAN_AUTOMATION_MAX_COUNT);
+};
+
 const ECONOMIC_PHASES: EconomicPhase[] = ['survival', 'accumulation', 'compounding', 'endgame'];
 
 const sanitizePhaseSequenceAssignment = (value: unknown): PhaseSequenceAssignment | null => {
@@ -6025,6 +6168,11 @@ type GameSettingsState = {
   // own field visibility by this value.
   aiAlgorithmBuilderEnabled: boolean;
   aiAlgorithmBuilderDefaultEditorMode: AiAlgorithmEditorMode;
+  // Human Player Automation and Action Rules System, Phase HA1: master toggle, off by default —
+  // pure scaffolding this phase, inert since no automation can be created yet (HA2 builds CRUD).
+  // Deliberately not Team-Mode-scoped: applies to the human player in every game mode.
+  humanAutomationEnabled: boolean;
+  humanAutomationTransparencyEnabled: boolean;
 };
 
 type DontAskAgainPrefs = {
@@ -8111,7 +8259,9 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiAlgorithmForOpponent: 'classic_layered',
   aiThinkingDepth: 'balanced',
   aiAlgorithmBuilderEnabled: false,
-  aiAlgorithmBuilderDefaultEditorMode: 'basic'
+  aiAlgorithmBuilderDefaultEditorMode: 'basic',
+  humanAutomationEnabled: false,
+  humanAutomationTransparencyEnabled: true
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -8192,6 +8342,11 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
     key: 'aiPipelineInspectorEnabled', tab: 'advancedSystems', label: 'AI Action Pipeline Inspector',
     description: 'A purely observational trace of one AI decision through the 11-stage pipeline (Algorithm, Strategy, Sequence, Requirements, Cash Vault, Economy Governor, Treasury, Overseer, Approval, Execution, Auditor). Never alters a decision — this phase records the stage schema and a post-execution money/inventory/region/win-metric before-after snapshot; a full stage-by-stage viewer arrives in a later phase.',
     tags: ['Advanced', 'AI', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+  },
+  humanAutomationEnabled: {
+    key: 'humanAutomationEnabled', tab: 'advancedSystems', label: 'Human Player Automation',
+    description: 'Lets the human player author rules that automatically perform an action on their own turn when a chosen trigger and condition are met — deliberately separate from AI Teammate Action Sequences. Pure scaffolding right now: no automation can be created yet.',
+    tags: ['Advanced', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
   },
   advancedLoansEnabled: {
     key: 'advancedLoansEnabled', tab: 'economy', label: 'Advanced Loans',
@@ -8279,6 +8434,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
   { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused'] },
   { id: 'advancedSystems.aiPipelineInspector', tab: 'advancedSystems', title: 'AI Action Pipeline Inspector', tags: ['Advanced', 'AI', 'Off by default'], fieldKeys: ['aiPipelineInspectorEnabled'] },
+  { id: 'advancedSystems.humanAutomation', tab: 'advancedSystems', title: 'Human Player Automation', tags: ['Advanced', 'Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -12835,6 +12991,10 @@ interface SaveGameData {
   notifications: Notification[];
   personalRecords: PersonalRecord;
   dontAskAgain: DontAskAgainPrefs;
+  // Human Player Automation and Action Rules System, Phase HA1: a genuinely new, separate top-level
+  // namespace — never nested under any TeamState/ActorState — since Human Automation applies to the
+  // human player in every game mode, not just Team-Mode AI-vs-AI scenarios like TeammateSequence.
+  humanAutomations: HumanAutomation[];
   uiPreferences: {
     theme: GameTheme;
   };
@@ -13402,6 +13562,9 @@ function AustraliaGame() {
 
   // Don't ask again preferences
   const [dontAskAgain, setDontAskAgain] = useState<DontAskAgainPrefs>({ ...DEFAULT_DONT_ASK });
+  // Human Player Automation and Action Rules System, Phase HA1: pure scaffolding — no CRUD UI exists
+  // yet, so this stays [] for every player regardless of the master toggle's state until HA2 ships.
+  const [humanAutomations, setHumanAutomations] = useState<HumanAutomation[]>([]);
 
   const [saveDescription, setSaveDescription] = useState("");
   const [loadPreview, setLoadPreview] = useState<LoadPreviewState>({
@@ -13963,6 +14126,7 @@ function AustraliaGame() {
       notifications,
       personalRecords,
       dontAskAgain,
+      humanAutomations,
       uiPreferences: {
         theme: uiState.theme
       },
@@ -13975,7 +14139,7 @@ function AustraliaGame() {
         worldRngState: worldRngStateRef.current
       }
     };
-  }, [actorsById, aiActionQueue, aiPlayer, currentAiAction, dontAskAgain, gameSettings, gameState, notifications, personalRecords, player, saveDescription, teamsById, uiState.theme]);
+  }, [actorsById, aiActionQueue, aiPlayer, currentAiAction, dontAskAgain, gameSettings, gameState, humanAutomations, notifications, personalRecords, player, saveDescription, teamsById, uiState.theme]);
 
   const downloadSaveFile = useCallback((data: SaveGameData) => {
     const filename = generateSaveFileName(data);
@@ -15219,7 +15383,9 @@ function AustraliaGame() {
 	      aiAlgorithmBuilderEnabled: typeof settingsData.aiAlgorithmBuilderEnabled === 'boolean' ? settingsData.aiAlgorithmBuilderEnabled : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
 	      aiAlgorithmBuilderDefaultEditorMode: AI_ALGORITHM_EDITOR_MODES.includes(settingsData.aiAlgorithmBuilderDefaultEditorMode)
 	        ? settingsData.aiAlgorithmBuilderDefaultEditorMode
-	        : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
+	      humanAutomationEnabled: typeof settingsData.humanAutomationEnabled === 'boolean' ? settingsData.humanAutomationEnabled : DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
+	      humanAutomationTransparencyEnabled: typeof settingsData.humanAutomationTransparencyEnabled === 'boolean' ? settingsData.humanAutomationTransparencyEnabled : DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
 	    };
 
 	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
@@ -15250,6 +15416,8 @@ function AustraliaGame() {
       challenge: Boolean(raw.dontAskAgain?.challenge),
       endDay: Boolean(raw.dontAskAgain?.endDay)
     };
+
+    const sanitizedHumanAutomations: HumanAutomation[] = sanitizeHumanAutomations(raw.humanAutomations);
 
     const sanitizedRuntime = {
       queue: Array.isArray(raw.aiRuntime?.queue) ? raw.aiRuntime.queue : [],
@@ -15291,6 +15459,7 @@ function AustraliaGame() {
       notifications: sanitizedNotifications,
       personalRecords: sanitizedPersonalRecords,
       dontAskAgain: sanitizedDontAskAgain,
+      humanAutomations: sanitizedHumanAutomations,
       uiPreferences,
       aiRuntime: sanitizedRuntime
     };
@@ -20811,6 +20980,7 @@ function AustraliaGame() {
     setNotifications(data.notifications || []);
     setPersonalRecords(data.personalRecords || { ...DEFAULT_PERSONAL_RECORDS });
     setDontAskAgain(data.dontAskAgain || { ...DEFAULT_DONT_ASK });
+    setHumanAutomations(data.humanAutomations || []);
     setAiActionQueue(data.aiRuntime?.queue || []);
     setCurrentAiAction(data.aiRuntime?.currentAction || null);
     setAiActiveSpecialAbility(null);
@@ -20918,6 +21088,7 @@ function AustraliaGame() {
       notifications: [],
       personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
       dontAskAgain: { ...DEFAULT_DONT_ASK },
+      humanAutomations: [],
       uiPreferences: { theme: uiState.theme },
       aiRuntime: {
         queue: [],
@@ -37161,7 +37332,9 @@ function AustraliaGame() {
       aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
       aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
       aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
-      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
+      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
+	      humanAutomationEnabled: DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
+	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
     })); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
 
     const restoreClassicV66CompetitiveAi = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
@@ -37356,7 +37529,9 @@ function AustraliaGame() {
       aiAlgorithmForOpponent: DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
       aiThinkingDepth: DEFAULT_GAME_SETTINGS.aiThinkingDepth,
       aiAlgorithmBuilderEnabled: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
-      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode
+      aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
+	      humanAutomationEnabled: DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
+	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
     })); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
 
     const resetAiStrategyLabSettings = () => { trackedSetGameSettings("direct_player_change", "Settings Hub", prev => ({
@@ -42238,6 +42413,49 @@ function AustraliaGame() {
                     <div className="text-sm opacity-75">
                       {(teamsById[TEAM_PLAYER_ID]?.pipelineTraces.length || 0) + (teamsById[TEAM_OPPONENT_ID]?.pipelineTraces.length || 0)} decision traces recorded this match.
                     </div>
+                  )}
+                </div>
+              </SettingsSection>
+              <SettingsSection id="advancedSystems.humanAutomation" tab="advancedSystems" title="🤖 Human Player Automation" chips={getAutoChipsForField('humanAutomationEnabled', SETTINGS_HUB_FIELD_META.humanAutomationEnabled)} description={SETTINGS_HUB_FIELD_META.humanAutomationEnabled.description} onReset={settingsResetHandlers.advancedSystems.fn} resetLabel={settingsResetHandlers.advancedSystems.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'advancedSystems.humanAutomation')!.fieldKeys}>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Enable Human Player Automation</div>
+                      <div className="text-sm opacity-75">
+                        A separate, optional system for the human player's own turn — lets you author
+                        rules that automatically perform an action when a chosen trigger and condition
+                        are met (e.g. "when arriving in a region, if a challenge is available, take
+                        it"). Deliberately separate from AI Teammate Action Sequences: this is for your
+                        own actions, in every game mode, not a Team-Mode AI feature. Pure scaffolding
+                        right now — no automation can be created yet; the rule editor and Automation
+                        Dashboard arrive in a later phase.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Human Player Automation", prev => ({ ...prev, humanAutomationEnabled: !prev.humanAutomationEnabled }))}
+                      className={`px-4 py-2 rounded font-semibold ${gameSettings.humanAutomationEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {gameSettings.humanAutomationEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {gameSettings.humanAutomationEnabled && (
+                    <>
+                      <div className="text-sm opacity-75">
+                        {humanAutomations.length} automation{humanAutomations.length === 1 ? '' : 's'} configured — the Automation Dashboard and rule editor arrive in a later phase.
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-sm">Transparency</div>
+                          <div className="text-xs opacity-75">Notes when an automation fires (inert until a real execution loop exists).</div>
+                        </div>
+                        <button
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Human Player Automation", prev => ({ ...prev, humanAutomationTransparencyEnabled: !prev.humanAutomationTransparencyEnabled }))}
+                          className={`px-3 py-1 rounded text-sm font-semibold ${gameSettings.humanAutomationTransparencyEnabled ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {gameSettings.humanAutomationTransparencyEnabled ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               </SettingsSection>
