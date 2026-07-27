@@ -13849,6 +13849,15 @@ function AustraliaGame() {
   // time we evaluated, independent of how many player turns happened that day).
   const lastAutomationTurnKeyRef = useRef<string>('');
   const lastAutomationDayRef = useRef<number>(-1);
+  // Bug/polish pass (post-HA3): every other executeTeamAiAction caller in this file awaits it
+  // inside an async turn-loop that's itself guarded by isAiThinking (set true at turn start,
+  // cleared only once the whole sequence finishes) — that flag, not the await itself, is what
+  // actually prevents the player/other code from acting mid-turn. Human Automation's own
+  // execution (fire-and-forget .then(), both below and in resolveHumanAutomationApprovalRequest)
+  // had no equivalent guard, and executeTeamAiAction has a genuine ~120-450ms internal delay
+  // (setTimeout-based pacing), so the player could click End Turn while an automation's action
+  // was still resolving. This ref is that guard, checked by handleEndTurn.
+  const humanAutomationExecutingRef = useRef<boolean>(false);
   // HA3: transient, never-persisted UI feedback for the "Test Against Current State" button —
   // keyed by automation id, cleared on reload since it's purely a Dashboard display concern.
   const [humanAutomationTestResults, setHumanAutomationTestResults] = useState<Record<string, string>>({});
@@ -27598,7 +27607,10 @@ function AustraliaGame() {
   }, [failedChallengeData, player.specialAbilityUses, addNotification, takeChallenge]);
 
   const handleEndTurn = useCallback(() => {
-    if (gameState.currentTurn !== 'player') return;
+    // Bug/polish pass (post-HA3): no-op while a Human Automation action is still resolving
+    // (executeTeamAiAction has a real ~120-450ms internal delay) — otherwise the turn could
+    // advance to the AI before the automation's own mutation/notification has landed.
+    if (gameState.currentTurn !== 'player' || humanAutomationExecutingRef.current) return;
 
     const confirmEndTurn = () => {
       // Reset special ability
@@ -30194,12 +30206,13 @@ function AustraliaGame() {
       if (gameSettings.humanAutomationTransparencyEnabled) addNotification(`Automation "${request.targetLabel}" skipped: you rejected the proposed action.`, 'info', false, 'system');
       return;
     }
+    humanAutomationExecutingRef.current = true;
     executeTeamAiAction(request.actorId, request.decision as unknown as AIAction).then(success => {
       applyHumanAutomationRunResult(automationId, success, gameState.day, gameState.turnCounter);
       if (gameSettings.humanAutomationTransparencyEnabled) {
         addNotification(success ? `Automation "${request.targetLabel}" ran successfully.` : `Automation "${request.targetLabel}" failed to run.`, success ? 'success' : 'error', false, 'system');
       }
-    });
+    }).finally(() => { humanAutomationExecutingRef.current = false; });
   }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, executeTeamAiAction, applyHumanAutomationRunResult, gameSettings.humanAutomationTransparencyEnabled, gameState.day, gameState.turnCounter, addNotification]);
   resolveHumanAutomationApprovalRequestRef.current = resolveHumanAutomationApprovalRequest;
 
@@ -30233,6 +30246,11 @@ function AustraliaGame() {
         if (!gate.approved) continue;
       }
       if (automation.authorityMode === 'confirm_before_running') {
+        // Bug/polish pass (post-HA3): skip if this automation already has an unresolved
+        // confirm_before_running request sitting in the queue (e.g. dismissed without resolving,
+        // or a higher-priority request took over the dialog on an earlier turn) — mirrors
+        // buildApprovalRequest's own established dedup precedent, never a new mechanism.
+        if (pendingApprovalRequests.some(r => r.requestKind === 'human_automation' && r.humanAutomationId === automation.id)) continue;
         const request = buildHumanAutomationApprovalRequest(automation, built.action, built.resolvedCost, actor);
         setPendingApprovalRequests(prev => [...prev, request]);
         return;
@@ -30240,6 +30258,7 @@ function AustraliaGame() {
       const isNotify = automation.authorityMode === 'notify_after_running';
       const automationName = automation.name;
       const automationId = automation.id;
+      humanAutomationExecutingRef.current = true;
       executeTeamAiAction(actor.id, built.action).then(success => {
         applyHumanAutomationRunResult(automationId, success, gameState.day, gameState.turnCounter);
         if (isNotify) {
@@ -30247,10 +30266,10 @@ function AustraliaGame() {
         } else if (gameSettings.humanAutomationTransparencyEnabled) {
           addNotification(`Automation "${automationName}" ran silently: ${built.action.description}`, 'info', false, 'system');
         }
-      });
+      }).finally(() => { humanAutomationExecutingRef.current = false; });
       return;
     }
-  }, [gameSettings.humanAutomationEnabled, gameSettings.teamCashVaultEnabled, gameSettings.humanAutomationTransparencyEnabled, getActorState, gameState.day, gameState.turnCounter, gameState.resourcePrices, humanAutomations, evaluateActionRequirements, buildHumanAutomationApprovalRequest, executeTeamAiAction, applyHumanAutomationRunResult, addNotification]);
+  }, [gameSettings.humanAutomationEnabled, gameSettings.teamCashVaultEnabled, gameSettings.humanAutomationTransparencyEnabled, getActorState, gameState.day, gameState.turnCounter, gameState.resourcePrices, humanAutomations, evaluateActionRequirements, buildHumanAutomationApprovalRequest, executeTeamAiAction, applyHumanAutomationRunResult, addNotification, pendingApprovalRequests]);
 
   // Fires once per player turn (guarded by lastAutomationTurnKeyRef), in every game mode — unlike
   // the AI turn effect above, this is deliberately NOT gated on isTeamMode, since Human Automation
