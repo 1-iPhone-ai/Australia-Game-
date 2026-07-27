@@ -519,6 +519,9 @@ const getEquipmentEffects = (equipment: string[] = []) => {
 
   effects.travelDiscount = Math.min(0.5, effects.travelDiscount);
   effects.xpBonus = Math.min(0.5, effects.xpBonus);
+  Object.keys(effects.challengeBonus).forEach(type => {
+    effects.challengeBonus[type] = Math.min(0.5, effects.challengeBonus[type]);
+  });
   return effects;
 };
 
@@ -608,7 +611,7 @@ const calculateCreditScore = (player: any, gameState: any): number => {
   const completedChallenges = player.challengesCompleted?.length || 0;
   if (completedChallenges > 0) {
     const completionRate = completedChallenges / totalChallenges;
-    score += Math.floor(completionRate * 10);
+    score += Math.min(10, Math.floor(completionRate * 10));
   }
 
   // Clamp to 0-100
@@ -12817,9 +12820,9 @@ function playerReducer(state, action) {
     case 'RESET_ACTIONS':
       return { ...state, actionsUsedThisTurn: 0 };
     case 'USE_ACTION_OVERRIDE':
-      return { 
-        ...state, 
-        money: state.money - action.payload,
+      return {
+        ...state,
+        money: Math.max(0, state.money - action.payload),
         actionsUsedThisTurn: 0,
         overridesUsedToday: (state.overridesUsedToday || 0) + 1,
         overrideFatigue: (state.overrideFatigue || 0) + (state.overridesUsedToday === 0 ? 0 : state.overridesUsedToday === 1 ? 0.03 : 0.05)
@@ -12835,22 +12838,31 @@ function playerReducer(state, action) {
         : true;
       const equipmentEffects = applyEquipment ? getEquipmentEffects(state.equipment || []) : { xpBonus: 0 };
       const xpGain = Math.floor(rawGain * (1 + (equipmentEffects.xpBonus || 0)));
-      const newXp = state.xp + xpGain;
-      const xpForNextLevel = state.level * 100;
-      if (newXp >= xpForNextLevel) {
-        return {
-          ...state,
-          xp: newXp - xpForNextLevel,
-          level: state.level + 1,
-          stats: {
-            strength: state.stats.strength + 1,
-            charisma: state.stats.charisma + 1,
-            luck: state.stats.luck + 1,
-            intelligence: state.stats.intelligence + 1
-          }
-        };
+      // Bugfix (fast-skim pass): loop instead of a single if, so a large enough XP grant
+      // correctly cascades through multiple level-ups in one dispatch instead of leaving the
+      // player "overfull" (xp still exceeding the new, larger threshold) until the next gain.
+      let remainingXp = state.xp + xpGain;
+      let newLevel = state.level;
+      let levelsGained = 0;
+      while (remainingXp >= newLevel * 100) {
+        remainingXp -= newLevel * 100;
+        newLevel += 1;
+        levelsGained += 1;
       }
-      return { ...state, xp: newXp };
+      if (levelsGained === 0) {
+        return { ...state, xp: remainingXp };
+      }
+      return {
+        ...state,
+        xp: remainingXp,
+        level: newLevel,
+        stats: {
+          strength: state.stats.strength + levelsGained,
+          charisma: state.stats.charisma + levelsGained,
+          luck: state.stats.luck + levelsGained,
+          intelligence: state.stats.intelligence + levelsGained
+        }
+      };
     case 'USE_SPECIAL_ABILITY':
       return { ...state, specialAbilityUses: state.specialAbilityUses - 1 };
     case 'RESET_SPECIAL_ABILITY':
@@ -20498,7 +20510,11 @@ function AustraliaGame() {
 
       case 'special_ability':
         const ability = actionData.ability;
-        if (!gameSettings.aiSpecialAbilitiesEnabled) return true; // Changed from return to return true
+        // Bugfix (fast-skim pass): break (not return true) so the disabled-feature path still
+        // reaches the shared actionsUsedThisTurn/INCREMENT_ACTIONS bookkeeping below, matching
+        // every other case in this switch — returning early here skipped it while still
+        // reporting success.
+        if (!gameSettings.aiSpecialAbilitiesEnabled) break;
 
         // Use the special ability
         updateAiPlayerState(prev => ({
@@ -26609,7 +26625,10 @@ function AustraliaGame() {
 
     // Cash: re-check against the actor's CURRENT money, not the value captured when the
     // decision was originally scored (it may be stale by the time this executes).
-    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount;
+    // Bugfix (fast-skim pass): a 'challenge' decision stores its stake in data.wager, not
+    // cost/price/amount — without this, a token-sourced challenge's cash re-check was always
+    // skipped, so it would consume the token instead of correctly invalidating it.
+    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount ?? decision.data?.wager;
     if (typeof cashCost === 'number' && cashCost > 0 && actor.money < cashCost) {
       return invalidate('insufficient_cash_at_execution');
     }
@@ -30773,12 +30792,11 @@ function AustraliaGame() {
     );
     const teamPrimaryMetricValue = getPrimaryMetricValue(teamSummary);
     const opponentPrimaryMetricValue = getPrimaryMetricValue(opponentSummary);
-    const teamBehindOnPrimaryMetric = opponentPrimaryMetricValue > 0
-      ? teamPrimaryMetricValue < opponentPrimaryMetricValue
-      : teamPrimaryMetricValue < opponentPrimaryMetricValue;
-    const teamAheadOnPrimaryMetric = opponentPrimaryMetricValue > 0
-      ? teamPrimaryMetricValue > opponentPrimaryMetricValue
-      : teamPrimaryMetricValue > opponentPrimaryMetricValue;
+    // Bugfix (fast-skim pass): both branches of the original ternary were identical (a no-op
+    // condition on opponentPrimaryMetricValue), collapsed to the plain comparison — behavior-
+    // preserving, since both branches always evaluated to the same expression.
+    const teamBehindOnPrimaryMetric = teamPrimaryMetricValue < opponentPrimaryMetricValue;
+    const teamAheadOnPrimaryMetric = teamPrimaryMetricValue > opponentPrimaryMetricValue;
     const bestMoneyRegion = Object.keys(REGIONS).reduce((bestRegion, regionCode) => {
       const travelCost = regionCode === actor.currentRegion ? 0 : calculateActorTravelCost(actor.currentRegion, regionCode, actor);
       const averageResourceValue = ((REGIONAL_RESOURCES[regionCode] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[regionCode] || []).length || 1);
@@ -32204,7 +32222,8 @@ function AustraliaGame() {
     const actor = getActorState(actorId);
     if (!actor) return false;
 
-    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount;
+    // Bugfix (fast-skim pass): same wager gap as redeemActionToken's own cashCost fallback.
+    const cashCost = decision.data?.cost ?? decision.data?.price ?? decision.data?.amount ?? decision.data?.wager;
     if (typeof cashCost === 'number' && cashCost > 0 && actor.money < cashCost) return false;
 
     const requiredResource = decision.data?.resource;
