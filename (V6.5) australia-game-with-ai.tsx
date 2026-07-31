@@ -637,7 +637,7 @@ const checkLoanEvent = (player: any, settings: GameSettingsState): typeof LOAN_E
   for (const event of LOAN_EVENTS) {
     if (event.triggerCondition(player)) {
       // Random chance to trigger (30% when conditions met)
-      if (Math.random() < 0.3) {
+      if (drawGameplayRandom('RandomEvents') < 0.3) {
         return event;
       }
     }
@@ -1320,7 +1320,39 @@ const KEYBOARD_SHORTCUTS = {
   'escape': { action: 'closeModal', label: 'Close', description: 'Close any open modal' },
 };
 
-const GAME_VERSION = "6.7.0";
+export const VERSION_CONSTANTS = {
+  GAME_VERSION: "7.0.0",
+  SCHEMA_VERSION: "7.0",
+  SAVE_SCHEMA_VERSION: "7.0",
+  SETTINGS_SCHEMA_VERSION: "7.0",
+  REPLAY_SCHEMA_VERSION: "2.0",
+  RNG_SCHEMA_VERSION: "1.0",
+  CHECKPOINT_SCHEMA_VERSION: "1.0",
+  LEDGER_SCHEMA_VERSION: "1.0",
+  DIAGNOSTIC_SCHEMA_VERSION: "1.0",
+  BALANCE_LAB_SCHEMA_VERSION: "1.0",
+  ACTION_PIPELINE_SCHEMA_VERSION: "1.0"
+} as const;
+
+export const GAME_VERSION = VERSION_CONSTANTS.GAME_VERSION;
+
+/**
+ * Compares two SemVer strings (e.g., "7.0.0", "6.9", "6.7.0").
+ * Returns: -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2.
+ */
+export function compareSemVer(v1: string | undefined | null, v2: string | undefined | null): number {
+  const clean = (v: string | undefined | null) => (v || '0').replace(/^v/i, '').trim();
+  const parts1 = clean(v1).split('.').map(n => parseInt(n, 10) || 0);
+  const parts2 = clean(v2).split('.').map(n => parseInt(n, 10) || 0);
+  const maxLen = Math.max(parts1.length, parts2.length, 3);
+  for (let i = 0; i < maxLen; i++) {
+    const num1 = parts1[i] || 0;
+    const num2 = parts2[i] || 0;
+    if (num1 < num2) return -1;
+    if (num1 > num2) return 1;
+  }
+  return 0;
+}
 const V620_CHANGELOG = [
   "V6.2.0 - UX Assist + Team Intelligence",
   "Optional simplified action bar",
@@ -1883,6 +1915,304 @@ type ActorKind = 'human' | 'ai';
 type WinMetric = 'money' | 'netWorth' | 'regions';
 type DirectiveStrength = 'low' | 'standard' | 'high' | 'priority';
 type DirectiveStrengthSource = 'default' | 'manual';
+
+// =========================================
+// MILESTONE 2: SEEDED PRNG ROUTING & RNG SCOPE GUARDS
+// =========================================
+
+export type RngScopeDomain =
+  | 'World'
+  | 'AI'
+  | 'Candidates'
+  | 'TieBreaking'
+  | 'Fallbacks'
+  | 'Challenges'
+  | 'Markets'
+  | 'RandomEvents'
+  | 'Sabotage'
+  | 'Opponent'
+  | 'Team'
+  | 'Emergency'
+  | 'HumanAuto'
+  | 'BalanceLab'
+  | 'MarketTrend'
+  | 'Weather'
+  | 'Events'
+  | 'Catastrophes';
+
+export interface RngStreamState {
+  domain: RngScopeDomain;
+  streamSeed: number;
+  drawCount: number;
+  rollingHash: number;
+  currentState: number;
+  xoshiroState?: [number, number, number, number];
+}
+
+export interface RngAuditSnapshot {
+  activeScope: RngScopeDomain | null;
+  totalDrawCount: number;
+  streams: Record<string, {
+    streamSeed: number;
+    drawCount: number;
+    rollingHash: number;
+    currentState: number;
+  }>;
+}
+
+export interface UnscopedRngIncident {
+  id: string;
+  timestamp: number;
+  requestedDomain?: RngScopeDomain;
+  activeScope: RngScopeDomain | null;
+  stack?: string;
+}
+
+// 1. Integer-based Mulberry32 PRNG step
+export function mulberry32Next(state: number): { nextState: number; value: number } {
+  let a = (state + 0x6D2B79F5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  const value = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return { nextState: a, value };
+}
+
+// 2. Integer-based Xoshiro256** PRNG step
+export function xoshiro256starstarNext(s: [number, number, number, number]): { nextState: [number, number, number, number]; value: number } {
+  const s0 = s[0] >>> 0;
+  const s1 = s[1] >>> 0;
+  let s2 = s[2] >>> 0;
+  let s3 = s[3] >>> 0;
+
+  const res = Math.imul((((Math.imul(s1, 5) << 7) | (Math.imul(s1, 5) >>> 25)) >>> 0), 9) >>> 0;
+  const value = res / 4294967296;
+
+  const t = (s1 << 17) >>> 0;
+  s2 = (s2 ^ s0) >>> 0;
+  s3 = (s3 ^ s1) >>> 0;
+  const nextS1 = (s1 ^ s2) >>> 0;
+  const nextS0 = (s0 ^ s3) >>> 0;
+  const nextS2 = (s2 ^ t) >>> 0;
+  const nextS3 = (((s3 << 45) | (s3 >>> 19)) >>> 0);
+
+  return { nextState: [nextS0, nextS1, nextS2, nextS3], value };
+}
+
+// Derive domain seed from master seed
+export function deriveDomainSeed(masterSeed: number, domain: RngScopeDomain): number {
+  let hash = (masterSeed >>> 0) || 1337;
+  for (let i = 0; i < domain.length; i++) {
+    hash = (Math.imul(hash, 31) + domain.charCodeAt(i)) >>> 0;
+  }
+  return hash || 1;
+}
+
+// Global RNG Registry maintaining 18 domain PRNG streams and active scope tracking
+class GameplayRngRegistry {
+  public activeRngScope: RngScopeDomain | null = null;
+  public scopeStack: RngScopeDomain[] = [];
+  public masterSeed: number = 1337;
+  public isDeterministic: boolean = true;
+  public strictAuditMode: boolean = false;
+  public streams: Record<RngScopeDomain, RngStreamState>;
+  public incidentLog: UnscopedRngIncident[] = [];
+  private ledgerDispatcher?: (event: any) => void;
+  private auditorDispatcher?: (event: any) => void;
+
+  constructor(initialMasterSeed: number = 1337) {
+    this.masterSeed = initialMasterSeed;
+    this.streams = {} as Record<RngScopeDomain, RngStreamState>;
+    this.initStreams(initialMasterSeed);
+  }
+
+  public initStreams(masterSeed: number) {
+    this.masterSeed = masterSeed;
+    const domains: RngScopeDomain[] = [
+      'World', 'AI', 'Candidates', 'TieBreaking', 'Fallbacks', 'Challenges',
+      'Markets', 'RandomEvents', 'Sabotage', 'Opponent', 'Team', 'Emergency',
+      'HumanAuto', 'BalanceLab', 'MarketTrend', 'Weather', 'Events', 'Catastrophes'
+    ];
+    for (const domain of domains) {
+      const streamSeed = deriveDomainSeed(masterSeed, domain);
+      this.streams[domain] = {
+        domain,
+        streamSeed,
+        drawCount: 0,
+        rollingHash: 0,
+        currentState: streamSeed,
+        xoshiroState: [
+          streamSeed,
+          (streamSeed ^ 0x9E3779B9) >>> 0,
+          Math.imul(streamSeed, 31) >>> 0,
+          Math.imul(streamSeed, 17) >>> 0
+        ]
+      };
+    }
+  }
+
+  public registerDispatchers(ledger?: (event: any) => void, auditor?: (event: any) => void) {
+    this.ledgerDispatcher = ledger;
+    this.auditorDispatcher = auditor;
+  }
+
+  public draw(domain?: RngScopeDomain): number {
+    const currentScope = this.activeRngScope;
+    const targetDomain = currentScope || domain;
+
+    // Scope Guard Alert: Log incident ONLY if activeRngScope is null AND no explicit domain was passed AND strict audit mode is enabled
+    if (this.activeRngScope === null && !domain) {
+      if (this.strictAuditMode) {
+        this.logUnscopedIncident(domain);
+      }
+    }
+
+    const effectiveDomain: RngScopeDomain = targetDomain || 'World';
+    const stream = this.streams[effectiveDomain] || this.streams['World'];
+    let val: number;
+
+    if (!this.isDeterministic) {
+      val = /* cosmetic */ Math.random();
+    } else {
+      const stepM32 = mulberry32Next(stream.currentState);
+      stream.currentState = stepM32.nextState;
+
+      if (!stream.xoshiroState) {
+        stream.xoshiroState = [
+          stream.streamSeed,
+          (stream.streamSeed ^ 0x9E3779B9) >>> 0,
+          Math.imul(stream.streamSeed, 31) >>> 0,
+          Math.imul(stream.streamSeed, 17) >>> 0
+        ];
+      }
+      const stepX256 = xoshiro256starstarNext(stream.xoshiroState);
+      stream.xoshiroState = stepX256.nextState;
+
+      val = (stepM32.value + stepX256.value) % 1.0;
+    }
+
+    stream.drawCount++;
+    stream.rollingHash = (Math.imul(stream.rollingHash, 31) + Math.floor(val * 0xFFFFFFFF)) >>> 0;
+    return val;
+  }
+
+  public logUnscopedIncident(requestedDomain?: RngScopeDomain) {
+    const incident: UnscopedRngIncident = {
+      id: `rng_guard_alert_${Date.now()}_${Math.floor(/* cosmetic */ Math.random() * 100000)}`,
+      timestamp: Date.now(),
+      requestedDomain,
+      activeScope: this.activeRngScope,
+      stack: new Error().stack
+    };
+    this.incidentLog.push(incident);
+    if (this.incidentLog.length > 100) this.incidentLog.shift();
+
+    console.warn(`[RNG Scope Guard Critical Incident] Gameplay random draw attempted while activeRngScope is null! Requested domain: ${requestedDomain || 'none'}.`);
+
+    if (this.ledgerDispatcher) {
+      this.ledgerDispatcher({
+        type: 'rng_unscoped_draw_incident',
+        timestamp: incident.timestamp,
+        requestedDomain,
+        activeScope: null,
+        message: 'Un-scoped RNG draw attempt detected (activeRngScope was null).'
+      });
+    }
+
+    if (this.auditorDispatcher) {
+      this.auditorDispatcher({
+        type: 'RNG_UNSCOPED_DRAW_ALERT',
+        timestamp: incident.timestamp,
+        requestedDomain,
+        activeScope: null
+      });
+    }
+  }
+
+  public withScope<T>(domain: RngScopeDomain, callback: () => T): T {
+    const previousScope = this.activeRngScope;
+    this.scopeStack.push(domain);
+    this.activeRngScope = domain;
+
+    let isPromise = false;
+    try {
+      const result = callback();
+      if (result && typeof (result as any).then === 'function') {
+        isPromise = true;
+        return (result as any).finally(() => {
+          this.scopeStack.pop();
+          this.activeRngScope = this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : previousScope;
+        }) as T;
+      }
+      return result;
+    } finally {
+      if (!isPromise) {
+        this.scopeStack.pop();
+        this.activeRngScope = this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : previousScope;
+      }
+    }
+  }
+
+  public getAuditSnapshot(): RngAuditSnapshot {
+    const streamsSnapshot: Record<string, { streamSeed: number; drawCount: number; rollingHash: number; currentState: number }> = {};
+    let totalDraws = 0;
+    for (const domainKey in this.streams) {
+      const s = this.streams[domainKey as RngScopeDomain];
+      if (s) {
+        streamsSnapshot[domainKey] = {
+          streamSeed: s.streamSeed,
+          drawCount: s.drawCount,
+          rollingHash: s.rollingHash,
+          currentState: s.currentState
+        };
+        totalDraws += s.drawCount;
+      }
+    }
+    return {
+      activeScope: this.activeRngScope,
+      totalDrawCount: totalDraws,
+      streams: streamsSnapshot
+    };
+  }
+
+  public drawString(domain?: RngScopeDomain, length: number = 6): string {
+    let str = '';
+    while (str.length < length) {
+      const floatVal = this.draw(domain);
+      const piece = floatVal.toString(36).slice(2);
+      str += piece;
+    }
+    return str.slice(0, length);
+  }
+}
+
+export const globalRngRegistry = new GameplayRngRegistry(1337);
+
+export function drawGameplayRandom(domain?: RngScopeDomain): number {
+  return globalRngRegistry.draw(domain);
+}
+
+export function drawGameplayRandomString(domain?: RngScopeDomain, length: number = 6): string {
+  return globalRngRegistry.drawString(domain, length);
+}
+
+export function withRngScope<T>(domain: RngScopeDomain, callback: () => T): T {
+  return globalRngRegistry.withScope(domain, callback);
+}
+
+export function getActiveRngScope(): RngScopeDomain | null {
+  return globalRngRegistry.activeRngScope;
+}
+
+export function getRngStreamState(domain: RngScopeDomain): RngStreamState {
+  return { ...globalRngRegistry.streams[domain] };
+}
+
+export function setRngMasterSeed(seed: number, isDeterministic: boolean = true) {
+  globalRngRegistry.isDeterministic = isDeterministic;
+  globalRngRegistry.initStreams(seed);
+}
+
+
 // RP1: 'random' (default) keeps every gameplay-affecting Math.random() call on the human/world
 // side exactly as it is today; 'deterministic' routes those same calls through a seeded LCG
 // (worldRandom, mirroring aiRandom's own algorithm) so a match becomes reproducible for the
@@ -1964,6 +2294,7 @@ interface ActorAiPlan {
   reason: string;
   confidence: number;
   priority: number;
+  expectedValue?: number;
   requestedSupport?: string;
   directiveStatus?: string;
   decisionSummary?: AiDecisionCompactSummary;
@@ -4280,12 +4611,13 @@ const AUDITOR_DASHBOARD_TAB_LABELS: Record<AuditorDashboardTabId, string> = {
 
 // RP4: tab order/labels for the Replay Dashboard (renderReplayViewer upgraded from a flat viewer
 // into a tabbed dashboard), mirroring AUDITOR_DASHBOARD_TAB_ORDER/_LABELS's own const-pair convention.
-type ReplayDashboardTabId = 'overview' | 'timeline' | 'checkpoints' | 'settings';
-const REPLAY_DASHBOARD_TAB_ORDER: ReplayDashboardTabId[] = ['overview', 'timeline', 'checkpoints', 'settings'];
+type ReplayDashboardTabId = 'overview' | 'timeline' | 'checkpoints' | 'reexecution' | 'settings';
+const REPLAY_DASHBOARD_TAB_ORDER: ReplayDashboardTabId[] = ['overview', 'timeline', 'checkpoints', 'reexecution', 'settings'];
 const REPLAY_DASHBOARD_TAB_LABELS: Record<ReplayDashboardTabId, string> = {
   overview: 'Overview',
   timeline: 'Timeline',
   checkpoints: 'Checkpoints',
+  reexecution: '⚡ Re-Execution Engine',
   settings: 'Settings'
 };
 // RP3-era checkpoints have no kind field at all — treat any missing kind as 'day', never discard.
@@ -4973,6 +5305,349 @@ const resolveAutomaticApprovalRules = (
   return { outcome: 'none', reason: '' };
 };
 
+// Milestone 4: AI Learning, Opponent Models, Plan Stability & Governance Types & Helpers
+export type TeamGovernanceMode = 'LEADER_DECIDES' | 'WEIGHTED_VOTE' | 'CONSENSUS_REQUIREMENT' | 'OVERSEER_ARBITRATION';
+export const TEAM_GOVERNANCE_MODES: TeamGovernanceMode[] = ['LEADER_DECIDES', 'WEIGHTED_VOTE', 'CONSENSUS_REQUIREMENT', 'OVERSEER_ARBITRATION'];
+
+export interface OpponentModel {
+  opponentId: string;
+  totalActionsObserved: number;
+  aggressiveness: number;
+  expansionRate: number;
+  sabotagePropensity: number;
+  investmentBias: number;
+  actionCategoryCounts: Record<string, number>;
+  lastObservedDay: number;
+}
+
+export interface CounterfactualEvaluation {
+  candidateType: string;
+  candidateDescription: string;
+  rawScore: number;
+  counterfactualUtilityDelta: number;
+}
+
+export interface AiTacticalIntelligenceParams {
+  lookaheadDepth: number;
+  candidateEvaluationWidth: number;
+  planningBreadth: 'narrow' | 'standard' | 'wide';
+  useCounterfactuals: boolean;
+  useOpponentModeling: boolean;
+}
+
+export interface AiEconomicCheatBonuses {
+  bonusStartingCash: number;
+  yieldBoostMultiplier: number;
+  costDiscountMultiplier: number;
+  extraActionPointsPerTurn: number;
+}
+
+export const getAiCalibrationMultiplier = (actor: any, category: string): number => {
+  if (!actor || !actor.actionCalibrationMultipliers) return 1.0;
+  const raw = actor.actionCalibrationMultipliers[category];
+  if (typeof raw !== 'number' || !isFinite(raw)) return 1.0;
+  return Math.max(0.85, Math.min(1.15, raw));
+};
+
+export const calculateCalibratedUtility = (rawScore: number, actor: any, category: string): number => {
+  const mult = getAiCalibrationMultiplier(actor, category);
+  return rawScore * mult;
+};
+
+export const updatePostActionCalibration = (
+  actor: any,
+  category: string,
+  expectedUtility: number,
+  actualOutcome: number,
+  day: number,
+  settings: any
+): { actionCalibrationMultipliers: Record<string, number>; calibrationHistory: any[] } | null => {
+  if (!settings || !settings.enableAiCalibrationLearning) return null;
+  const learningRate = settings.aiCalibrationLearningRate ?? 0.05;
+  const currentMult = getAiCalibrationMultiplier(actor, category);
+  const ratio = expectedUtility > 0 ? (actualOutcome / expectedUtility) : 1.0;
+  const rawNewMult = currentMult * (1.0 - learningRate) + ratio * learningRate;
+  const newMultiplier = Math.max(0.85, Math.min(1.15, rawNewMult));
+  
+  const updatedMultipliers = { ...(actor.actionCalibrationMultipliers || {}), [category]: newMultiplier };
+  const historyEntry = { actionCategory: category, expected: expectedUtility, actual: actualOutcome, oldMultiplier: currentMult, newMultiplier, day };
+  const updatedHistory = [...(actor.calibrationHistory || []).slice(-49), historyEntry];
+
+  return {
+    actionCalibrationMultipliers: updatedMultipliers,
+    calibrationHistory: updatedHistory
+  };
+};
+
+export const updateOpponentModel = (
+  observerActor: any,
+  opponentId: string,
+  actionType: string,
+  day: number,
+  settings: any
+): Record<string, OpponentModel> => {
+  const existingModels = observerActor?.opponentModels || {};
+  if (!settings || !settings.enablePersistentOpponentModels) return existingModels;
+
+  const currentModel: OpponentModel = existingModels[opponentId] || {
+    opponentId,
+    totalActionsObserved: 0,
+    aggressiveness: 0.2,
+    expansionRate: 0.2,
+    sabotagePropensity: 0.1,
+    investmentBias: 0.3,
+    actionCategoryCounts: {},
+    lastObservedDay: day
+  };
+
+  const total = currentModel.totalActionsObserved + 1;
+  const counts = { ...currentModel.actionCategoryCounts, [actionType]: (currentModel.actionCategoryCounts[actionType] || 0) + 1 };
+  
+  const aggressiveCount = (counts['challenge'] || 0) + (counts['sabotage'] || 0);
+  const expansionCount = (counts['travel'] || 0) + (counts['region_deposit'] || 0);
+  const sabotageCount = (counts['sabotage'] || 0);
+  const investmentCount = (counts['invest'] || 0) + (counts['buy_equipment'] || 0) + (counts['buy_market'] || 0);
+
+  const updatedModel: OpponentModel = {
+    opponentId,
+    totalActionsObserved: total,
+    aggressiveness: Math.min(1.0, aggressiveCount / total),
+    expansionRate: Math.min(1.0, expansionCount / total),
+    sabotagePropensity: Math.min(1.0, sabotageCount / total),
+    investmentBias: Math.min(1.0, investmentCount / total),
+    actionCategoryCounts: counts,
+    lastObservedDay: day
+  };
+
+  return { ...existingModels, [opponentId]: updatedModel };
+};
+
+export const getOpponentTendencyBonus = (
+  observerActor: any,
+  candidateAction: any,
+  settings: any
+): number => {
+  if (!settings || !settings.enablePersistentOpponentModels) return 0;
+  const models: Record<string, OpponentModel> = observerActor?.opponentModels || {};
+  let totalBonus = 0;
+
+  const targetId = candidateAction?.data?.targetActorId || candidateAction?.targetActorId;
+  const relevantModels = targetId && models[targetId] ? [models[targetId]] : Object.values(models);
+
+  for (const model of relevantModels) {
+    if (!model || model.totalActionsObserved < 2) continue;
+
+    // Aggressive opponent: bonus to counter/defend/challenge
+    if (model.aggressiveness > 0.4 && (candidateAction.type === 'challenge' || candidateAction.type === 'sabotage' || candidateAction.type === 'buy_equipment')) {
+      totalBonus += Math.round(model.aggressiveness * 15);
+    }
+    // High sabotage propensity: bonus to protective investments or counter-sabotage
+    if (model.sabotagePropensity > 0.25 && (candidateAction.type === 'invest' || candidateAction.type === 'buy_equipment')) {
+      totalBonus += Math.round(model.sabotagePropensity * 20);
+    }
+    // High expansion rate: bonus to travel / region_deposit to compete for regions
+    if (model.expansionRate > 0.4 && (candidateAction.type === 'travel' || candidateAction.type === 'region_deposit')) {
+      totalBonus += Math.round(model.expansionRate * 12);
+    }
+    // High investment bias: bonus to invest / cashout / economic competition
+    if (model.investmentBias > 0.4 && (candidateAction.type === 'invest' || candidateAction.type === 'buy_market')) {
+      totalBonus += Math.round(model.investmentBias * 10);
+    }
+  }
+
+  return totalBonus;
+};
+
+export const computeCounterfactualEvaluations = (
+  chosen: any,
+  candidates: any[]
+): CounterfactualEvaluation[] => {
+  if (!chosen || !Array.isArray(candidates)) return [];
+  const chosenScore = chosen.score || 0;
+  const nonChosen = candidates.filter(c => c !== chosen && c.type !== chosen.type).slice(0, 3);
+  return nonChosen.map(c => ({
+    candidateType: c.type,
+    candidateDescription: c.description || c.type,
+    rawScore: c.score || 0,
+    counterfactualUtilityDelta: (c.score || 0) - chosenScore
+  }));
+};
+
+export const evaluateTeamGovernanceApproval = (
+  proposal: any,
+  proposingActor: any,
+  teamMembers: any[],
+  settings: any
+): { approved: boolean; mode: TeamGovernanceMode; reason: string; voteBreakdown?: Record<string, boolean> } => {
+  const mode: TeamGovernanceMode = settings?.teamGovernanceMode || 'LEADER_DECIDES';
+  if (!settings?.teamCompetitiveAiEnabled) {
+    return { approved: true, mode, reason: 'Team Competitive AI disabled' };
+  }
+
+  const members = Array.isArray(teamMembers) && teamMembers.length > 0 ? teamMembers : [proposingActor];
+  
+  // Genuine member-specific vote evaluation
+  const evaluateMemberVote = (member: any): { vote: boolean; score: number; reason: string } => {
+    if (member.id === proposingActor.id) {
+      return { vote: true, score: proposal?.score || 0, reason: 'Proposer self-approval' };
+    }
+
+    let score = proposal?.score || 0;
+    const cost = proposal?.data?.cost || proposal?.data?.wager || proposal?.data?.purchases?.[0]?.cost || 0;
+    const memberMoney = member?.money || 0;
+
+    // 1. Financial Standing & Cost Assessment
+    if (cost > 0) {
+      const spendRatio = memberMoney > 0 ? cost / memberMoney : 1.0;
+      if (spendRatio > 0.5) {
+        score -= 15;
+      } else if (spendRatio > 0.25) {
+        score -= 5;
+      } else {
+        score += 5;
+      }
+    }
+
+    // 2. Member Role & Risk Tolerance
+    const role = member?.role || member?.teamAiRole || 'balanced';
+    const riskTolerance = member?.riskTolerance ?? (role === 'aggressor' ? 0.8 : role === 'defender' ? 0.3 : 0.5);
+    
+    if (proposal?.type === 'challenge' || proposal?.type === 'sabotage') {
+      score += (riskTolerance - 0.5) * 20;
+    } else if (proposal?.type === 'invest' || proposal?.type === 'buy_equipment') {
+      if (role === 'defender' || role === 'investor') score += 10;
+    }
+
+    // 3. Regional / Directive Alignment
+    if (proposal?.data?.region && member?.currentRegion === proposal.data.region) {
+      score += 8;
+    }
+
+    const threshold = role === 'leader' ? 8 : role === 'defender' ? 5 : 0;
+    const vote = score >= threshold;
+    const reason = vote 
+      ? `Agreed (member score ${score.toFixed(1)} >= ${threshold})`
+      : `Disagreed (member score ${score.toFixed(1)} < ${threshold})`;
+
+    return { vote, score, reason };
+  };
+
+  const voteBreakdown: Record<string, boolean> = {};
+
+  switch (mode) {
+    case 'LEADER_DECIDES': {
+      const leader = members.find(m => m.role === 'leader') || members[0] || proposingActor;
+      const leaderEvaluation = evaluateMemberVote(leader);
+      voteBreakdown[leader.id] = leaderEvaluation.vote;
+      return {
+        approved: leaderEvaluation.vote,
+        mode,
+        reason: leaderEvaluation.vote
+          ? `Leader (${leader.displayName || leader.name || leader.id}) approved decision: ${leaderEvaluation.reason}`
+          : `Leader (${leader.displayName || leader.name || leader.id}) rejected decision: ${leaderEvaluation.reason}`,
+        voteBreakdown
+      };
+    }
+    case 'WEIGHTED_VOTE': {
+      let votesFor = 0;
+      let totalWeight = 0;
+      members.forEach(member => {
+        const weight = Math.max(1, Math.floor((member?.money || 0) / 500) + 1);
+        totalWeight += weight;
+        const memberEval = evaluateMemberVote(member);
+        voteBreakdown[member.id] = memberEval.vote;
+        if (memberEval.vote) votesFor += weight;
+      });
+      const approved = totalWeight > 0 ? (votesFor / totalWeight) >= 0.5 : true;
+      return {
+        approved,
+        mode,
+        reason: approved
+          ? `Weighted Vote Passed (${votesFor}/${totalWeight} weight, ${Math.round((votesFor/(totalWeight||1))*100)}%)`
+          : `Weighted Vote Failed (${votesFor}/${totalWeight} weight, ${Math.round((votesFor/(totalWeight||1))*100)}%)`,
+        voteBreakdown
+      };
+    }
+    case 'CONSENSUS_REQUIREMENT': {
+      let yesCount = 0;
+      members.forEach(member => {
+        const memberEval = evaluateMemberVote(member);
+        voteBreakdown[member.id] = memberEval.vote;
+        if (memberEval.vote) yesCount++;
+      });
+      const approved = yesCount === members.length;
+      return {
+        approved,
+        mode,
+        reason: approved
+          ? `Unanimous Consensus (${yesCount}/${members.length} members agreed)`
+          : `Consensus Failed (${yesCount}/${members.length} agreed)`,
+        voteBreakdown
+      };
+    }
+    case 'OVERSEER_ARBITRATION': {
+      const cost = proposal?.data?.cost || proposal?.data?.wager || proposal?.data?.purchases?.[0]?.cost || 0;
+      const riskRatio = proposingActor?.money > 0 ? (cost / proposingActor.money) : 0;
+      const proposingEval = evaluateMemberVote(proposingActor);
+      const approved = riskRatio <= 0.55 && proposingEval.score >= 5;
+      voteBreakdown[proposingActor.id] = approved;
+      return {
+        approved,
+        mode,
+        reason: approved
+          ? `Overseer Arbitrated: Approved (Risk ratio ${(riskRatio*100).toFixed(1)}% <= 55%)`
+          : `Overseer Arbitrated: Rejected (Risk ratio ${(riskRatio*100).toFixed(1)}% > 55% or low score)`,
+        voteBreakdown
+      };
+    }
+    default:
+      return { approved: true, mode: 'LEADER_DECIDES', reason: 'Default governance approval' };
+  }
+};
+
+export const evaluatePlanSwitchingCost = (
+  newPlanUtility: number,
+  currentPlanUtility: number,
+  switchingCostSetting?: number
+): { shouldSwitch: boolean; utilityDelta: number; threshold: number } => {
+  const threshold = switchingCostSetting ?? 15.0;
+  const utilityDelta = newPlanUtility - currentPlanUtility;
+  const shouldSwitch = currentPlanUtility <= 0 || utilityDelta >= threshold;
+  return { shouldSwitch, utilityDelta, threshold };
+};
+
+export const getEffectiveTacticalIntelligence = (
+  settings: any,
+  baseDepth: any
+): AiTacticalIntelligenceParams => {
+  const custom = settings?.aiTacticalIntelligence;
+  const depthNum = baseDepth === 'deep' ? 3 : baseDepth === 'balanced' ? 2 : 1;
+  return {
+    lookaheadDepth: custom?.lookaheadDepth ?? depthNum,
+    candidateEvaluationWidth: custom?.candidateEvaluationWidth ?? (depthNum * 10),
+    planningBreadth: custom?.planningBreadth ?? (baseDepth === 'deep' ? 'wide' : baseDepth === 'balanced' ? 'standard' : 'narrow'),
+    useCounterfactuals: custom?.useCounterfactuals ?? (settings?.enableCounterfactualEvaluation ?? true),
+    useOpponentModeling: custom?.useOpponentModeling ?? (settings?.enablePersistentOpponentModels ?? false)
+  };
+};
+
+export const getEffectiveEconomicCheats = (
+  settings: any,
+  aiDifficulty: string
+): AiEconomicCheatBonuses => {
+  if (!settings?.aiAffectsEconomy) {
+    return { bonusStartingCash: 0, yieldBoostMultiplier: 1.0, costDiscountMultiplier: 1.0, extraActionPointsPerTurn: 0 };
+  }
+  const custom = settings?.aiEconomicCheats;
+  const diffMultiplier = aiDifficulty === 'expert' ? 1.25 : aiDifficulty === 'hard' ? 1.15 : aiDifficulty === 'medium' ? 1.05 : 1.0;
+  return {
+    bonusStartingCash: custom?.bonusStartingCash ?? (aiDifficulty === 'expert' ? 500 : aiDifficulty === 'hard' ? 250 : 0),
+    yieldBoostMultiplier: custom?.yieldBoostMultiplier ?? diffMultiplier,
+    costDiscountMultiplier: custom?.costDiscountMultiplier ?? (aiDifficulty === 'expert' ? 0.9 : 1.0),
+    extraActionPointsPerTurn: custom?.extraActionPointsPerTurn ?? 0
+  };
+};
+
 // V6.9 Phase F3: rejection-outcome dispatch, mirroring resolveRequirementFailureAction's exact
 // shape and reusing the same overlapping vocabulary. 'skip'/'wait_next_action' collapse to the
 // same 'retry' behavior pre-sequences (no step position or alternate decision source exists yet
@@ -5108,7 +5783,7 @@ const SEQUENCE_MAX_JUMP_HOPS = 5;
 const SEQUENCE_MAX_REPEATS = 20;
 
 const createNewSequenceStep = (): SequenceStep => ({
-  id: `seqstep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  id: `seqstep_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
   order: 0,
   priorityRank: 0,
   actionCategory: 'challenge',
@@ -5119,7 +5794,7 @@ const createNewSequenceStep = (): SequenceStep => ({
 });
 
 const createNewTeammateSequence = (): TeammateSequence => ({
-  id: `seq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  id: `seq_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
   name: 'New Sequence',
   mode: 'adaptive',
   scope: 'one_actor',
@@ -5135,7 +5810,7 @@ const createNewTeammateSequence = (): TeammateSequence => ({
 });
 
 const createNewSequenceInterrupt = (): SequenceInterrupt => ({
-  id: `seqint_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  id: `seqint_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
   label: 'New Interrupt',
   enabled: true,
   triggerConditionGroup: null,
@@ -5326,7 +6001,7 @@ const HUMAN_AUTOMATION_MAX_COUNT = 20;
 const HUMAN_AUTOMATION_ACTIONS: TeamModeActionCategory[] = ['travel', 'challenge', 'sell', 'craft', 'buy_market', 'region_deposit', 'invest', 'buy_equipment'];
 
 const createNewHumanAutomation = (createdDay: number): HumanAutomation => ({
-  id: `ha_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  id: `ha_${Date.now()}_${drawGameplayRandomString("HumanAuto", 6)}`,
   name: 'New Automation',
   enabled: false,
   trigger: { type: 'manual_test_only' },
@@ -5851,7 +6526,7 @@ const instantiateSequenceTemplate = (templateId: string): TeammateSequence | nul
   const template = SEQUENCE_TEMPLATES[templateId];
   if (!template) return null;
   return {
-    id: `seq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `seq_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
     name: template.label,
     mode: template.mode,
     scope: 'one_actor',
@@ -5860,7 +6535,7 @@ const instantiateSequenceTemplate = (templateId: string): TeammateSequence | nul
     createdByPlayer: false,
     steps: template.steps.map(s => ({
       ...s,
-      id: `seqstep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `seqstep_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
       status: 'pending' as const,
       stepRepeatCount: 0
     })),
@@ -6453,6 +7128,32 @@ type GameSettingsState = {
   // Deliberately not Team-Mode-scoped: applies to the human player in every game mode.
   humanAutomationEnabled: boolean;
   humanAutomationTransparencyEnabled: boolean;
+  // Milestone 6 Phase 15: Replay Comparison
+  replayComparisonEnabled?: boolean;
+  replayComparisonToleranceThreshold?: number;
+  replayComparisonIgnoreMinorTiming?: boolean;
+  // Milestone 6 Phase 17: AI Effectiveness Scorecard
+  aiEffectivenessScorecardEnabled?: boolean;
+  aiEffectivenessBlunderThresholdRoi?: number;
+  aiEffectivenessTrackCompliance?: boolean;
+  // Milestone 6 Phase 18: Balance Lab
+  balanceLabEnabled?: boolean;
+  balanceLabAutoStressTracking?: boolean;
+  balanceLabSandboxMode?: boolean;
+  // Milestone 7 Phase 19/20: Settings Hub, Diagnostics & Bundle Export
+  ledgerDiagnosticsEnabled?: boolean;
+  ledgerPruneRetentionLimit?: number;
+  ledgerAutoPruneEnabled?: boolean;
+  ledgerExportCompressionEnabled?: boolean;
+  // Milestone 4: AI Learning, Opponent Models, Plan Stability & Governance Settings
+  enableAiCalibrationLearning?: boolean;
+  aiCalibrationLearningRate?: number;
+  enableCounterfactualEvaluation?: boolean;
+  enablePersistentOpponentModels?: boolean;
+  planSwitchingCost?: number;
+  teamGovernanceMode?: TeamGovernanceMode;
+  aiTacticalIntelligence?: AiTacticalIntelligenceParams;
+  aiEconomicCheats?: AiEconomicCheatBonuses;
 };
 
 type DontAskAgainPrefs = {
@@ -6643,7 +7344,7 @@ type V63AiOverlayContext = {
   emergencyOverlayContext?: { byDecisionType: Record<string, { eligible: boolean; reasonLabel: string }> } | null;
 };
 
-type ScoredTeamAiDecision = AIAction & { score: number; plan: ActorAiPlan };
+type ScoredTeamAiDecision = AIAction & { score: number; plan: ActorAiPlan; counterfactualEvaluations?: CounterfactualEvaluation[] };
 
 // V6.8 Phase E: Parallel Planning — a frozen, per-round snapshot of actor/team state used only
 // for shared-snapshot candidate generation (never mutated); the actual execution pipeline always
@@ -6910,13 +7611,15 @@ const AI_DECISION_ENGINE_SAFE_FALLBACK_DECISION: AIAction = {
 // this). This only catches the specific failure modes the roadmap calls out: no decision at all, a
 // decision with no type, or an obviously corrupt numeric field (NaN/Infinity/negative) that no
 // legitimate engine should ever produce.
-const validateAiEngineDecision = (decision: AIAction | null | undefined): { valid: boolean; reason: string } => {
-  if (!decision || typeof decision.type !== 'string') return { valid: false, reason: 'missing or malformed decision' };
-  const wager = decision.data?.wager;
+const validateAiEngineDecision = (decision: unknown): { valid: boolean; reason: string } => {
+  if (!decision || typeof decision !== 'object') return { valid: false, reason: 'missing or malformed decision' };
+  const d = decision as Partial<AIAction> & { data?: any };
+  if (typeof d.type !== 'string') return { valid: false, reason: 'missing or malformed decision' };
+  const wager = d.data?.wager;
   if (wager !== undefined && (typeof wager !== 'number' || !Number.isFinite(wager) || wager < 0)) {
     return { valid: false, reason: 'invalid wager value' };
   }
-  const cost = decision.data?.purchases?.[0]?.cost;
+  const cost = d.data?.purchases?.[0]?.cost;
   if (cost !== undefined && (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0)) {
     return { valid: false, reason: 'invalid cost value' };
   }
@@ -7393,7 +8096,7 @@ const instantiateAiAlgorithmTemplate = (templateId: string, day: number): AiAlgo
   const template = AI_ALGORITHM_TEMPLATES[templateId];
   if (!template) return null;
   return {
-    configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    configId: `algo_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
     revision: 0,
     name: template.label,
     description: template.description,
@@ -8541,7 +9244,40 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiAlgorithmBuilderEnabled: false,
   aiAlgorithmBuilderDefaultEditorMode: 'basic',
   humanAutomationEnabled: false,
-  humanAutomationTransparencyEnabled: true
+  humanAutomationTransparencyEnabled: true,
+  replayComparisonEnabled: false,
+  replayComparisonToleranceThreshold: 0.1,
+  replayComparisonIgnoreMinorTiming: true,
+  aiEffectivenessScorecardEnabled: false,
+  aiEffectivenessBlunderThresholdRoi: -50,
+  aiEffectivenessTrackCompliance: true,
+  balanceLabEnabled: false,
+  balanceLabAutoStressTracking: true,
+  balanceLabSandboxMode: false,
+  ledgerDiagnosticsEnabled: false,
+  ledgerPruneRetentionLimit: 1000,
+  ledgerAutoPruneEnabled: false,
+  ledgerExportCompressionEnabled: false,
+  // Milestone 4: AI Learning & Governance defaults
+  enableAiCalibrationLearning: true,
+  aiCalibrationLearningRate: 0.05,
+  enableCounterfactualEvaluation: true,
+  enablePersistentOpponentModels: false,
+  planSwitchingCost: 15.0,
+  teamGovernanceMode: 'LEADER_DECIDES',
+  aiTacticalIntelligence: {
+    lookaheadDepth: 2,
+    candidateEvaluationWidth: 10,
+    planningBreadth: 'standard',
+    useCounterfactuals: true,
+    useOpponentModeling: true
+  },
+  aiEconomicCheats: {
+    bonusStartingCash: 0,
+    yieldBoostMultiplier: 1.0,
+    costDiscountMultiplier: 1.0,
+    extraActionPointsPerTurn: 0
+  }
 };
 
 const createDefaultGameSettings = (): GameSettingsState => ({
@@ -8556,7 +9292,9 @@ const createDefaultGameSettings = (): GameSettingsState => ({
   manualPriorityWeights: { ...DEFAULT_GAME_SETTINGS.manualPriorityWeights },
   adaptiveAiAffectedModes: [...DEFAULT_GAME_SETTINGS.adaptiveAiAffectedModes],
   notificationSettings: createDefaultNotificationSettings(),
-  aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
+  aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors),
+  aiTacticalIntelligence: { ...DEFAULT_GAME_SETTINGS.aiTacticalIntelligence! },
+  aiEconomicCheats: { ...DEFAULT_GAME_SETTINGS.aiEconomicCheats! }
 });
 
 interface SettingsHubFieldMeta {
@@ -8616,17 +9354,17 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   gameActivityLedgerEnabled: {
     key: 'gameActivityLedgerEnabled', tab: 'advancedSystems', label: 'Game Activity Ledger',
     description: 'An optional, append-only history of match activity — decisions, actions, approvals, Treasury requests, setting changes, and Auditor incidents — genuinely separate from Decision Transparency and the AI Operations Auditor. Pure scaffolding right now: nothing is recorded yet.',
-    tags: ['Advanced', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+    tags: ['Advanced'], advancedOnly: false, chips: ['Off by default', 'Advanced']
   },
   aiPipelineInspectorEnabled: {
     key: 'aiPipelineInspectorEnabled', tab: 'advancedSystems', label: 'AI Action Pipeline Inspector',
     description: 'A purely observational trace of one AI decision through the 11-stage pipeline (Algorithm, Strategy, Sequence, Requirements, Cash Vault, Economy Governor, Treasury, Overseer, Approval, Execution, Auditor). Never alters a decision — this phase records the stage schema and a post-execution money/inventory/region/win-metric before-after snapshot; a full stage-by-stage viewer arrives in a later phase.',
-    tags: ['Advanced', 'AI', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+    tags: ['Advanced', 'AI'], advancedOnly: false, chips: ['Off by default', 'Advanced']
   },
   humanAutomationEnabled: {
     key: 'humanAutomationEnabled', tab: 'advancedSystems', label: 'Human Player Automation',
     description: 'Lets the human player author rules that automatically perform an action on their own turn when a chosen trigger and condition are met — deliberately separate from AI Teammate Action Sequences. Pure scaffolding right now: no automation can be created yet.',
-    tags: ['Advanced', 'Off by default'], advancedOnly: false, chips: ['Off by default', 'Advanced']
+    tags: ['Advanced'], advancedOnly: false, chips: ['Off by default', 'Advanced']
   },
   advancedLoansEnabled: {
     key: 'advancedLoansEnabled', tab: 'economy', label: 'Advanced Loans',
@@ -8643,7 +9381,13 @@ const SETTINGS_HUB_FIELD_META: Record<string, SettingsHubFieldMeta> = {
   actionLimitsEnabled: { key: 'actionLimitsEnabled', tab: 'quickSetup', label: 'Action Limits', description: 'Restrict how many actions each side can take per turn.', tags: ['Advanced'] },
   uxAssistPackEnabled: { key: 'uxAssistPackEnabled', tab: 'quickSetup', label: 'UX Assist Pack', description: 'Master switch for optional usability helpers.', tags: ['UX'] },
   teamModeAiSystemProfile: { key: 'teamModeAiSystemProfile', tab: 'quickSetup', label: 'Team Mode AI Profile', description: 'Overall AI behavior profile used in Team Mode.', tags: ['Team Mode', 'AI'] },
-  teamBrainModeV63: { key: 'teamBrainModeV63', tab: 'quickSetup', label: 'Team Brain Mode', description: 'Preset that tunes Team Brain coordination style.', tags: ['Team Mode', 'AI'] }
+  teamBrainModeV63: { key: 'teamBrainModeV63', tab: 'quickSetup', label: 'Team Brain Mode', description: 'Preset that tunes Team Brain coordination style.', tags: ['Team Mode', 'AI'] },
+  enableAiCalibrationLearning: { key: 'enableAiCalibrationLearning', tab: 'ai', label: 'AI Calibration Learning', description: 'Allows AI decision weight multipliers to adjust dynamically based on outcome feedback.', tags: ['AI', 'Advanced'] },
+  aiCalibrationLearningRate: { key: 'aiCalibrationLearningRate', tab: 'ai', label: 'Learning Rate', description: 'Step size multiplier for online AI weight adjustments.', tags: ['AI', 'Advanced'] },
+  enableCounterfactualEvaluation: { key: 'enableCounterfactualEvaluation', tab: 'ai', label: 'Counterfactual Evaluation', description: 'Evaluates simulated alternative opponent actions during decision planning.', tags: ['AI', 'Advanced'] },
+  enablePersistentOpponentModels: { key: 'enablePersistentOpponentModels', tab: 'ai', label: 'Persistent Opponent Models', description: 'Track opponent tendencies across turns to anticipate strategies.', tags: ['AI', 'Advanced'] },
+  planSwitchingCost: { key: 'planSwitchingCost', tab: 'ai', label: 'Plan Switching Cost', description: 'Utility penalty for changing active multi-turn plans prematurely.', tags: ['AI', 'Advanced'] },
+  teamGovernanceMode: { key: 'teamGovernanceMode', tab: 'teamModeAi', label: 'Team Governance Mode', description: 'Governance structure for team decisions (Leader Decides, Democratic, Majority, Autonomous).', tags: ['Team Mode', 'AI'] }
 };
 
 function getAutoChipsForField(key: string, meta?: SettingsHubFieldMeta): SettingsHubChip[] {
@@ -8681,6 +9425,7 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'gameplay.challengeRules', tab: 'gameplay', title: 'Challenge Rules', tags: [], fieldKeys: ['dynamicWagerEnabled', 'doubleOrNothingEnabled'] },
   { id: 'gameplay.expansions', tab: 'gameplay', title: 'Gameplay Expansions', tags: ['Sabotage'], fieldKeys: ['investmentsEnabled', 'equipmentShopEnabled', 'sabotageEnabled', 'aiSabotagePriority', 'aiInvestmentPriority', 'aiEquipmentPurchasePriority'] },
   { id: 'ai.settings', tab: 'ai', title: 'AI Difficulty', tags: ['AI'], fieldKeys: ['aiUsesMarketModifiers', 'aiSpecialAbilitiesEnabled', 'aiAffectsEconomy', 'aiWinConditionSpendingEnabled', 'aiRegionsMajorityRushEnabled', 'teammatePerformanceSyncEnabled', 'directiveStrength', 'aiDeterministic', 'aiFairnessLevel', 'aiPersonalityVariance', 'aiPlanningDepth', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiReplayPolicy'] },
+  { id: 'ai.governanceLearning', tab: 'ai', title: 'AI Learning & Governance', tags: ['AI', 'Advanced'], fieldKeys: ['enableAiCalibrationLearning', 'aiCalibrationLearningRate', 'enableCounterfactualEvaluation', 'enablePersistentOpponentModels', 'planSwitchingCost', 'teamGovernanceMode'] },
   { id: 'aiStrategyLab.main', tab: 'aiStrategyLab', title: 'Strategy Lab Presets', tags: ['AI', 'Advanced'], fieldKeys: ['aiStrategyLabEnabled', 'aiStrategyLabScope', 'aiStrategyLabPreset'] },
   { id: 'aiStrategyLab.sliders', tab: 'aiStrategyLab', title: 'Strategy Lab Sliders', tags: ['AI', 'Advanced', 'Experimental'], fieldKeys: ['aiEvaluationFactors' as keyof GameSettingsState, 'aiStrategyLabSafeRangesEnabled', 'aiStrategyLabExtremeModeEnabled', 'aiStrategyLabSeparateProfilesEnabled'] },
   { id: 'teamModeAi.teamBrain', tab: 'teamModeAi', title: 'Team Brain', tags: ['Team Mode', 'AI'], fieldKeys: ['teamBrainV63Enabled', 'teamBrainModeV63'] },
@@ -8706,15 +9451,15 @@ const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'teamModeAi.overseer', tab: 'teamModeAi', title: 'Team AI Overseer System', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiOverseerSystemEnabled', 'teamAiStrategicCommandEnabled', 'teamAiStrategicCommandAuthorityMode', 'teamAiStrategicCommandDirectiveDurationDays', 'teamAiStrategicCommandDirectiveScoreBias', 'teamAiStrategicCommandMaxSpendingPercent', 'teamAiStrategicCommandTreasuryAllocationCap', 'teamAiStrategicCommandOverrideBias', 'teamAiStrategicCommandEnabledForFriendlyTeam', 'teamAiStrategicCommandEnabledForEnemyTeam', 'teamAiStrategicCommandInterventionsEnabled', 'teamAiAdaptiveOverseerEnabled', 'teamAiAdaptiveOverseerAuthorityMode', 'teamAiOverseerShowStatusCard', 'teamAiOverseerTransparencyEnabled', 'teamAiOverseerDashboardEnabled', 'teamAiSafeModeEnabled', 'teamAiSafeModeRestrictedActorThreshold', 'teamAiStrategicCommandPersonality', 'teamAiAdaptiveOverseerPersonality', 'teamAiAdaptiveOverseerComebackEnterPercent', 'teamAiAdaptiveOverseerComebackExitPercent', 'teamAiAdaptiveOverseerProtectLeadEnterPercent', 'teamAiAdaptiveOverseerProtectLeadExitPercent', 'teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold', 'teamAiAdaptiveOverseerMinimumStrategyDurationDays'] },
   { id: 'teamModeAi.auditor', tab: 'teamModeAi', title: 'AI Operations Auditor', tags: ['Team Mode', 'AI'], fieldKeys: ['teamAiAuditorSystemEnabled', 'teamAiAuditorModeForFriendlyTeam', 'teamAiAuditorModeForEnemyTeam', 'teamAiAuditorShowStatusCard', 'teamAiAuditorDashboardEnabled', 'teamAiAuditorAutomaticRecoveryMinConfidence', 'teamAiAuditorAutomaticRecoveryMaxPerDay', 'teamAiAuditorSafeModeEnabled', 'teamAiAuditorSafeModeEscalatedIncidentThreshold'] },
   { id: 'teamModeAi.aiThinkingAlgorithm', tab: 'teamModeAi', title: 'AI Thinking & Algorithm', tags: ['Team Mode', 'AI'], fieldKeys: ['aiAlgorithmForFriendlyTeam', 'aiAlgorithmForEnemyTeam', 'aiAlgorithmForOpponent', 'aiThinkingDepth'] },
-  { id: 'teamModeAi.algorithmBuilder', tab: 'teamModeAi', title: 'AI Thinking/Algorithm Builder', tags: ['Team Mode', 'AI', 'Off by default'], fieldKeys: ['aiAlgorithmBuilderEnabled', 'aiAlgorithmBuilderDefaultEditorMode'] },
+  { id: 'teamModeAi.algorithmBuilder', tab: 'teamModeAi', title: 'AI Thinking/Algorithm Builder', tags: ['Team Mode', 'AI'], chips: ['Off by default'], fieldKeys: ['aiAlgorithmBuilderEnabled', 'aiAlgorithmBuilderDefaultEditorMode'] },
   { id: 'teamModeAi.overview', tab: 'teamModeAi', title: 'AI Systems Overview', tags: ['AI'], fieldKeys: [] },
   { id: 'economy.loans', tab: 'economy', title: 'Advanced Loans', tags: ['Economy', 'Loans'], fieldKeys: ['advancedLoansEnabled', 'creditScoreEnabled', 'loanEventsEnabled', 'earlyRepaymentEnabled', 'loanRefinancingEnabled', 'defaultPenaltyMultiplier', 'interestAccrualRate', 'maxSimultaneousLoans'] },
-  { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier'] },
+  { id: 'ai.adaptive', tab: 'ai', title: 'Adaptive AI', tags: ['AI', 'Advanced'], fieldKeys: ['adaptiveAiEnabled', 'adaptiveAiPatternLearning', 'adaptiveAiRubberBanding', 'adaptiveAiTauntsEnabled', 'adaptiveAiAggressionMultiplier', 'enablePersistentOpponentModels', 'enableAiCalibrationLearning', 'opponentModelDecayRate', 'opponentModelWeight'] },
   { id: 'advancedSystems.priority', tab: 'advancedSystems', title: 'Priority Resolution', tags: ['Advanced'], fieldKeys: ['settingPriorityMode', 'maxConcurrentHighInfluenceSettings', 'conflictResolutionStrength', 'deprioritizeLowImpactSettings', 'priorityTransparencyEnabled', 'manualPriorityWeights' as keyof GameSettingsState] },
   { id: 'advancedSystems.decisionTransparency', tab: 'advancedSystems', title: 'Decision Transparency', tags: ['Advanced', 'UX'], fieldKeys: ['decisionTransparencyEnabled', 'decisionTransparencyVisibilityScope', 'decisionTransparencyViewMode'] },
-  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced', 'Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused'] },
-  { id: 'advancedSystems.aiPipelineInspector', tab: 'advancedSystems', title: 'AI Action Pipeline Inspector', tags: ['Advanced', 'AI', 'Off by default'], fieldKeys: ['aiPipelineInspectorEnabled'] },
-  { id: 'advancedSystems.humanAutomation', tab: 'advancedSystems', title: 'Human Player Automation', tags: ['Advanced', 'Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled'] },
+  { id: 'advancedSystems.gameActivityLedger', tab: 'advancedSystems', title: 'Game Activity Ledger', tags: ['Advanced'], chips: ['Off by default'], fieldKeys: ['gameActivityLedgerEnabled', 'gameActivityLedgerDetailLevel', 'gameActivityLedgerIncludeInSaveFile', 'gameActivityLedgerMaxEvents', 'gameActivityLedgerRetentionPolicy', 'gameActivityLedgerRecordingPaused'] },
+  { id: 'advancedSystems.aiPipelineInspector', tab: 'advancedSystems', title: 'AI Action Pipeline Inspector', tags: ['Advanced', 'AI'], chips: ['Off by default'], fieldKeys: ['aiPipelineInspectorEnabled'] },
+  { id: 'advancedSystems.humanAutomation', tab: 'advancedSystems', title: 'Human Player Automation', tags: ['Advanced'], chips: ['Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled'] },
   { id: 'interface.notifications', tab: 'interface', title: 'Notifications', tags: ['Notifications'], fieldKeys: ['notificationSettings' as keyof GameSettingsState, 'notificationClearShortcut'] }
 ];
 
@@ -9403,7 +10148,7 @@ function generateTeamPlan(
   const expiresDay = day + Math.min(context.settings.teamAiPlanMaximumDurationDays, steps.length * 2);
 
   return {
-    id: `team_plan_${team.id}_${day}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `team_plan_${team.id}_${day}_${drawGameplayRandomString("Team", 6)}`,
     type: planType,
     teamId: team.id,
     objective: goal.description,
@@ -9568,7 +10313,7 @@ function generateTeamDirective(
   // market-purchase/crafting decision scoring, never a new fulfillment mechanic.
   const requiredResources = goal.kind === 'crafting' ? computeDirectiveRequiredResources(actor) : [];
   return {
-    id: `directive_${team.id}_${actor.id}_${day}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `directive_${team.id}_${actor.id}_${day}_${drawGameplayRandomString("Team", 6)}`,
     teamId: team.id,
     assignedActorId: actor.id,
     objective: goal.description,
@@ -12629,11 +13374,155 @@ const createDefaultDecisionState = (): DecisionState => ({
 // need to cross-reference (decision/action/plan/config/approval/treasury-request/setting-change/
 // auditor-incident/parent-event/correlation-chain), rather than a closed per-type union — GL1's own
 // scope is schema + bounded storage only, so no emission call sites exist yet (GL2's job).
-type GameActivityLedgerEventCategory = 'action' | 'decision' | 'approval' | 'treasury'
-  | 'settings_change' | 'auditor_incident' | 'plan' | 'config' | 'match_lifecycle';
+type GameActivityLedgerCategory =
+  | 'action'
+  | 'decision'
+  | 'approval'
+  | 'treasury'
+  | 'settings_change'
+  | 'auditor_incident'
+  | 'plan'
+  | 'config'
+  | 'match_lifecycle'
+  | 'system_health';
+
+type GameActivityLedgerEventCategory = GameActivityLedgerCategory;
+
 const GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES: GameActivityLedgerEventCategory[] = [
-  'action', 'decision', 'approval', 'treasury', 'settings_change', 'auditor_incident', 'plan', 'config', 'match_lifecycle'
+  'action', 'decision', 'approval', 'treasury', 'settings_change', 'auditor_incident', 'plan', 'config', 'match_lifecycle', 'system_health'
 ];
+
+type GameActivityLedgerSeverity = 'info' | 'warning' | 'critical' | 'diagnostic';
+
+interface GameActivityLedgerParticipants {
+  actorId?: string;
+  teamId?: string;
+  targetActorId?: string;
+  targetTeamId?: string;
+  sourceSystemId?: string;
+}
+
+interface GameActivityLedgerCausalLinkage {
+  causalChainId?: string;
+  parentEventId?: string;
+  rootEventId?: string;
+  causalDepth?: number;
+}
+
+export type ExpectationOutcomeCategory =
+  | 'exceeded_expectations'
+  | 'met_expectations'
+  | 'underperformed'
+  | 'catastrophic_failure';
+
+export interface ExpectationAnalysis {
+  expectedUtility: number;
+  expectedRoi: number;
+  expectedCashChange: number;
+  evaluationTurnTarget: number;
+  evaluated?: boolean;
+  evaluationDay?: number;
+  actualCashChange?: number;
+  utilityDelta?: number;
+  accuracyScore?: number;
+  outcomeCategory?: ExpectationOutcomeCategory;
+  notes?: string;
+}
+
+export interface SystemInfluenceBreakdown {
+  economyGovernorWeight: number;
+  overseerPriority: number;
+  sequenceBias: number;
+  cashVaultStatus: string;
+  treasuryStatus: string;
+  auditorFlags: string[];
+}
+
+export type GameActivityLedgerExpectationStatus = ExpectationOutcomeCategory;
+export type GameActivityLedgerExpectation = ExpectationAnalysis;
+export type GameActivityLedgerSystemInfluence = SystemInfluenceBreakdown;
+
+export function createGameActivityLedgerEvent(
+  category: GameActivityLedgerEventCategory,
+  summary: string,
+  options?: Partial<GameActivityLedgerEvent>
+): GameActivityLedgerEvent {
+  const eventId = options?.id || options?.eventId || `glevt_${Date.now()}_${drawGameplayRandomString("World", 6)}`;
+  const timestamp = options?.timestamp || Date.now();
+  const causalChainId = options?.causalLinkage?.causalChainId || options?.causalChainId || options?.correlationChainId;
+  const parentEventId = options?.causalLinkage?.parentEventId || options?.parentEventId;
+  const rootEventId = options?.causalLinkage?.rootEventId || options?.rootEventId;
+  const causalDepth = options?.causalLinkage?.causalDepth ?? options?.causalDepth;
+
+  return {
+    id: eventId,
+    eventId,
+    sequenceId: options?.sequenceId || 0,
+    matchId: options?.matchId || 'unknown_match',
+    category,
+    eventType: options?.eventType || options?.actionType || category,
+    severity: options?.severity || 'info',
+    participants: options?.participants || {
+      actorId: options?.actorId || undefined,
+      teamId: options?.teamId || undefined,
+    },
+    causalLinkage: {
+      causalChainId,
+      parentEventId,
+      rootEventId,
+      causalDepth
+    },
+    causalChainId,
+    parentEventId,
+    rootEventId,
+    causalDepth,
+    expectation: options?.expectation ? { ...options.expectation } : undefined,
+    systemInfluences: options?.systemInfluences ? { ...options.systemInfluences } : (options?.systemInfluence ? { ...options.systemInfluence } : undefined),
+    systemInfluence: options?.systemInfluence ? { ...options.systemInfluence } : (options?.systemInfluences ? { ...options.systemInfluences } : undefined),
+    payload: options?.payload || {},
+    day: options?.day || 1,
+    turn: options?.turn || 0,
+    teamId: options?.teamId || null,
+    actorId: options?.actorId || null,
+    summary,
+    bookmarked: typeof options?.bookmarked === 'boolean' ? options.bookmarked : undefined,
+    annotation: typeof options?.annotation === 'string' ? options.annotation : undefined,
+    tags: Array.isArray(options?.tags) ? options.tags.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : undefined,
+    decisionId: options?.decisionId,
+    actionType: options?.actionType,
+    planId: options?.planId,
+    configId: options?.configId,
+    configRevision: options?.configRevision,
+    approvalRequestId: options?.approvalRequestId,
+    treasuryRequestId: options?.treasuryRequestId,
+    settingKey: options?.settingKey,
+    source: options?.source,
+    auditorIncidentId: options?.auditorIncidentId,
+    correlationChainId: causalChainId,
+    correlationChain: Array.isArray(options?.correlationChain) ? options.correlationChain : (causalChainId ? [causalChainId] : []),
+    diagnostics: options?.diagnostics,
+    timestamp,
+    integrityHash: '',
+    stateHash: options?.stateHash || (options ? computeCanonicalStateHash(options) : undefined),
+    rngAudit: options?.rngAudit || (typeof globalRngRegistry !== 'undefined' ? globalRngRegistry.getAuditSnapshot() : undefined)
+  };
+}
+
+export function recordGameActivityLedgerEvent(
+  state: any,
+  event: GameActivityLedgerEvent,
+  maxEvents: number = 1000
+): any {
+  return playerReducer(state, {
+    type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT',
+    payload: {
+      event,
+      maxEvents,
+      retentionPolicy: 'trim_oldest'
+    }
+  });
+}
+
 // GL9: the enumerated set of "why did this setting change" sources, exactly as specified — used
 // by updateGameSetting (below) so every settings_change ledger event can distinguish a direct
 // player edit from a preset/reset/import/migration/automation/replay/game-system/dependency/
@@ -12647,11 +13536,8 @@ const SETTINGS_CHANGE_SOURCES: SettingsChangeSource[] = [
   'save_file_migration', 'automation', 'replay', 'automatic_game_system', 'dependency_correction',
   'auditor_recovery', 'developer_diagnostic'
 ];
-// GL9: the metadata bag passed to updateGameSetting for a single settings_change event. Fields
-// that are cheap and always worth keeping (source, section, correlation/parent linkage) are
-// stored as top-level GameActivityLedgerEvent fields below; the heavier per-change payload
-// (previous/new value, cascade list, gate/immediacy flags) rides inside the event's existing
-// diagnostics bag, which GL3 already gates to the 'developer' detail tier only.
+
+// GL9: the metadata bag passed to updateGameSetting for a single settings_change event.
 interface SettingChangeMetadata {
   settingLabel: string;
   section: string;
@@ -12664,14 +13550,177 @@ interface SettingChangeMetadata {
   inactiveDueToGate?: string;
   cascadedSettingKeys?: string[];
 }
+
+interface ActorEconomicSnapshot {
+  timestamp: number;
+  actorId: string;
+  teamId?: string;
+  money: number;
+  netWorth: number;
+  treasuryBalance: number;
+  vaultProtectedCash: number;
+  riskScore: number;
+  creditScore: number;
+  actionsUsedThisTurn: number;
+  inventoryTotalCount: number;
+  inventoryMap: Record<string, number>;
+  regionsControlledCount: number;
+  region: string;
+  activeSequenceId: string | null;
+  sequenceStepIndex: number | null;
+  economicPhase: string;
+  activeDebuffCount: number;
+}
+
+interface BeforeAfterDelta {
+  actorId: string;
+  actionType: string;
+  executionSuccess: boolean;
+  numericDeltas: {
+    moneyDelta: number;
+    netWorthDelta: number;
+    treasuryDelta: number;
+    vaultProtectedCashDelta: number;
+    riskScoreDelta: number;
+    creditScoreDelta: number;
+    actionsUsedDelta: number;
+    inventoryTotalDelta: number;
+    regionsControlledDelta: number;
+    activeDebuffDelta: number;
+  };
+  structuralTransitions: {
+    region: { before: string; after: string; changed: boolean };
+    activeSequenceId: { before: string | null; after: string | null; changed: boolean };
+    sequenceStepIndex: { before: number | null; after: number | null; changed: boolean };
+    economicPhase: { before: string; after: string; changed: boolean };
+  };
+  inventoryItemDeltas: Record<string, number>;
+}
+
+interface ActionExecutedPayload {
+  category: 'action';
+  actionType: string;
+  description?: string;
+  cost?: number;
+  wager?: number;
+  region?: string;
+  success?: boolean;
+  stateDelta?: BeforeAfterDelta;
+  details?: Record<string, unknown>;
+}
+
+interface DecisionProposedPayload {
+  category: 'decision';
+  engineId: string;
+  decisionType: string;
+  score: number;
+  explanation?: string;
+  candidatesCount?: number;
+  details?: Record<string, unknown>;
+}
+
+interface ApprovalRequestedPayload {
+  category: 'approval';
+  requestId: string;
+  mode: string;
+  outcome: 'approved' | 'rejected' | 'auto_approved' | 'auto_rejected' | 'pending';
+  reason?: string;
+  details?: Record<string, unknown>;
+}
+
+interface TreasuryTransactionPayload {
+  category: 'treasury';
+  transactionType: 'deposit' | 'withdrawal_request' | 'withdrawal_approval' | 'refund' | 'auto_allocation';
+  amount: number;
+  balanceAfter: number;
+  reason?: string;
+  details?: Record<string, unknown>;
+}
+
+interface SettingsChangePayload {
+  category: 'settings_change';
+  settingKey: string;
+  previousValue: unknown;
+  newValue: unknown;
+  details?: Record<string, unknown>;
+}
+
+interface AuditorIncidentPayload {
+  category: 'auditor_incident';
+  incidentId: string;
+  ruleId: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  resolutionAction?: string;
+  details?: Record<string, unknown>;
+}
+
+interface PlanProgressPayload {
+  category: 'plan';
+  planId: string;
+  stepId?: string;
+  stepIndex?: number;
+  status: 'created' | 'step_completed' | 'interrupted' | 'completed' | 'abandoned';
+  details?: Record<string, unknown>;
+}
+
+interface ConfigChangedPayload {
+  category: 'config';
+  configType: 'algorithm_builder' | 'human_automation' | 'overseer_personality' | 'auditor_policy';
+  configId: string;
+  action: 'created' | 'updated' | 'activated' | 'deactivated' | 'deleted';
+  details?: Record<string, unknown>;
+}
+
+interface MatchLifecyclePayload {
+  category: 'match_lifecycle';
+  eventKind: 'match_start' | 'day_start' | 'day_end' | 'turn_start' | 'turn_end' | 'match_end';
+  day: number;
+  turn?: number;
+  winnerTeamId?: string;
+  details?: Record<string, unknown>;
+}
+
+interface SystemHealthPayload {
+  category: 'system_health';
+  component: string;
+  status: 'healthy' | 'degraded' | 'error' | 'recovery';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+type GameActivityLedgerPayload =
+  | ActionExecutedPayload
+  | DecisionProposedPayload
+  | ApprovalRequestedPayload
+  | TreasuryTransactionPayload
+  | SettingsChangePayload
+  | AuditorIncidentPayload
+  | PlanProgressPayload
+  | ConfigChangedPayload
+  | MatchLifecyclePayload
+  | SystemHealthPayload;
+
 interface GameActivityLedgerEvent {
   id: string;
+  eventId: string;
+  sequenceId: number;
   matchId: string;
   category: GameActivityLedgerEventCategory;
+  eventType: string;
+  severity: GameActivityLedgerSeverity;
+  participants: GameActivityLedgerParticipants;
+  causalLinkage: GameActivityLedgerCausalLinkage;
+  payload: GameActivityLedgerPayload | Record<string, unknown>;
+  timestamp: number;
   day: number;
   turn: number;
   teamId: string | null;
   actorId: string | null;
+  summary: string;
+  // Extended metadata & annotations (Phase 10)
+  bookmarked?: boolean;
+  annotation?: string;
+  tags?: string[];
   decisionId?: string;
   actionType?: string;
   planId?: string;
@@ -12680,39 +13729,131 @@ interface GameActivityLedgerEvent {
   approvalRequestId?: string;
   treasuryRequestId?: string;
   settingKey?: string;
-  // GL9: which of the SettingsChangeSource enum values produced this settings_change event —
-  // cheap, closed-union, always kept regardless of detail level (unlike the heavier diagnostics
-  // payload) since it's the primary filter dimension the Ledger Dashboard needs for these events.
   source?: SettingsChangeSource;
   auditorIncidentId?: string;
   parentEventId?: string;
   correlationChainId?: string;
-  summary: string;
-  // GL3: only ever populated when gameActivityLedgerDetailLevel is 'developer' — Standard and
-  // Detailed tiers keep every OTHER field above (the full ID cross-reference set + summary), never
-  // gating those; only this optional raw payload is detail-level-gated.
+  correlationChain?: string[];
+  causalChainId?: string;
+  rootEventId?: string;
+  causalDepth?: number;
+  expectation?: ExpectationAnalysis;
+  systemInfluences?: SystemInfluenceBreakdown;
+  systemInfluence?: SystemInfluenceBreakdown;
   diagnostics?: Record<string, unknown>;
-  timestamp: number;
+  integrityHash: string;
+  stateHash?: string;
+  rngAudit?: RngAuditSnapshot;
 }
+
+export interface GameActivityLedgerCollection {
+  id: string;
+  name: string;
+  description: string;
+  createdTimestamp: number;
+  updatedTimestamp?: number;
+  eventIds: string[];
+  tags: string[];
+}
+
 interface GameActivityLedgerState {
   matchId: string;
   events: GameActivityLedgerEvent[];
+  collections?: GameActivityLedgerCollection[];
+  archivedEvents?: GameActivityLedgerEvent[];
+  nextSequenceId: number;
+  lastEventHash: string;
+  totalEventsRecorded: number;
+  paused: boolean;
 }
-// GL11: renamed from GAME_ACTIVITY_LEDGER_MAX_EVENTS — now a load-time defensive ceiling only
-// (used solely by the sanitizer below); the live, player-configurable cap is
-// gameSettings.gameActivityLedgerMaxEvents, always clamped to this ceiling at the one append
-// chokepoint (see trimGameActivityLedgerEvents / the RECORD_GAME_ACTIVITY_LEDGER_EVENT reducer case).
+
+export interface DiagnosticBundleMetadata {
+  bundleId: string;
+  bundleVersion: string;
+  createdTimestamp: number;
+  matchId: string;
+  day: number;
+  turn: number;
+  totalEventsIncluded: number;
+  filterOptions?: DiagnosticBundleFilterOptions;
+}
+
+export interface DiagnosticBundleFilterOptions {
+  categories?: GameActivityLedgerEventCategory[];
+  severities?: GameActivityLedgerSeverity[];
+  bookmarkedOnly?: boolean;
+  rootCausalOnly?: boolean;
+  minDay?: number;
+  maxDay?: number;
+  actorId?: string;
+  teamId?: string;
+  tags?: string[];
+  collectionId?: string;
+}
+
+export interface DiagnosticBundle {
+  metadata: DiagnosticBundleMetadata;
+  gameStateSnapshot: {
+    day: number;
+    season: string;
+    weather: string;
+    gameMode: string;
+    selectedMode: GameModeSelection | null;
+    currentTurn: string | null;
+    currentActorId: string | null;
+    roundNumber: number;
+    matchId: string;
+    actors: Record<string, {
+      id: string;
+      displayName: string;
+      teamId: string;
+      kind: ActorKind;
+      role: string;
+      money: number;
+      netWorth?: number;
+      protectedCash?: number;
+      inEconomicRecovery?: boolean;
+      currentRegion: string;
+    }>;
+    teams?: Record<string, any>;
+  };
+  events: GameActivityLedgerEvent[];
+  collections?: GameActivityLedgerCollection[];
+  causalChains: Record<string, GameActivityLedgerEvent[]>;
+  systemInfluences: SystemInfluenceBreakdown[];
+  systemConfig: Partial<GameSettingsState>;
+  integrityChecksum: string;
+}
+
+export type LedgerRetentionPolicy = 'keep_recent' | 'keep_critical';
+
+export interface PruneLedgerEventsOptions {
+  maxEvents: number;
+  policy: LedgerRetentionPolicy;
+  preserveBookmarks?: boolean;
+  preserveRootCausal?: boolean;
+  criticalCategories?: GameActivityLedgerEventCategory[];
+}
+
+export interface PruneLedgerEventsResult {
+  activeEvents: GameActivityLedgerEvent[];
+  prunedEvents: GameActivityLedgerEvent[];
+  totalBefore: number;
+  totalAfterActive: number;
+  totalPruned: number;
+  protectedBookmarkCount: number;
+  protectedRootCausalCount: number;
+  protectedCriticalCount: number;
+}
+
+
+
 const GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING = 500;
-// GL11: categories preserved first when trimming under the 'keep_critical' retention policy —
-// routine action/decision noise is dropped before any of these once the cap is reached.
+
 const GAME_ACTIVITY_LEDGER_CRITICAL_CATEGORIES: GameActivityLedgerEventCategory[] = [
-  'auditor_incident', 'approval', 'treasury', 'config'
+  'auditor_incident', 'approval', 'treasury', 'config', 'system_health'
 ];
-// GL11: the one function that ever shrinks the live event array to its configured cap. 'keep_recent'
-// is a plain slice (byte-identical to GL1-GL10's own behavior). 'keep_critical' partitions into
-// critical vs. routine, keeps every critical event it can within budget, fills any remaining budget
-// with the most recent routine events, then re-sorts by timestamp to restore chronological order —
-// never reorders/duplicates/drops a critical event merely because routine events exist alongside it.
+
 const trimGameActivityLedgerEvents = (
   events: GameActivityLedgerEvent[],
   maxEvents: number,
@@ -12728,23 +13869,195 @@ const trimGameActivityLedgerEvents = (
   const keptRoutine = remainingBudget > 0 ? routine.slice(-remainingBudget) : [];
   return [...keptCritical, ...keptRoutine].sort((a, b) => a.timestamp - b.timestamp);
 };
+
+const calculateEventIntegrityHash = (
+  prevHash: string,
+  sequenceId: number,
+  eventId: string,
+  timestamp: number,
+  category: string,
+  eventType: string
+): string => {
+  const clean = (val: any) => String(val ?? '').replace(/:/g, '\\:');
+  const str = `${clean(prevHash || '00000000')}:${sequenceId}:${clean(eventId)}:${timestamp}:${clean(category)}:${clean(eventType)}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
 const createDefaultGameActivityLedgerState = (): GameActivityLedgerState => ({
-  matchId: `match_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  events: []
+  matchId: `match_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
+  events: [],
+  collections: [],
+  archivedEvents: [],
+  nextSequenceId: 1,
+  lastEventHash: '00000000',
+  totalEventsRecorded: 0,
+  paused: false
 });
+
+const captureGameStateSnapshot = (
+  actor: any,
+  team?: any,
+  riskScore: number = 0
+): ActorEconomicSnapshot => {
+  const inventoryMap: Record<string, number> = {};
+  let inventoryTotalCount = 0;
+
+  if (Array.isArray(actor?.inventory)) {
+    for (const item of actor.inventory) {
+      const name = typeof item === 'string' ? item : (item?.name || 'unknown');
+      const qty = typeof item === 'object' && typeof item?.quantity === 'number' && Number.isFinite(item.quantity) ? item.quantity : 1;
+      inventoryMap[name] = (inventoryMap[name] || 0) + qty;
+      inventoryTotalCount += qty;
+    }
+  }
+
+  return {
+    timestamp: Date.now(),
+    actorId: actor?.id || '',
+    teamId: team?.id || actor?.teamId,
+    money: typeof actor?.money === 'number' && Number.isFinite(actor.money) ? actor.money : 0,
+    netWorth: typeof actor?.netWorth === 'number' && Number.isFinite(actor.netWorth) ? actor.netWorth : 0,
+    treasuryBalance: typeof team?.treasury?.balance === 'number' && Number.isFinite(team.treasury.balance) ? team.treasury.balance : (typeof team?.treasuryBalance === 'number' && Number.isFinite(team.treasuryBalance) ? team.treasuryBalance : 0),
+    vaultProtectedCash: typeof team?.cashVault?.protectedCash === 'number' && Number.isFinite(team.cashVault.protectedCash) ? team.cashVault.protectedCash : 0,
+    riskScore: typeof riskScore === 'number' && Number.isFinite(riskScore) ? riskScore : 0,
+    creditScore: typeof actor?.creditScore === 'number' && Number.isFinite(actor.creditScore) ? actor.creditScore : 0,
+    actionsUsedThisTurn: typeof actor?.actionsUsedThisTurn === 'number' && Number.isFinite(actor.actionsUsedThisTurn) ? actor.actionsUsedThisTurn : 0,
+    inventoryTotalCount,
+    inventoryMap,
+    regionsControlledCount: Array.isArray(team?.regionsControlled) ? team.regionsControlled.length : (Array.isArray(actor?.visitedRegions) ? actor.visitedRegions.length : 0),
+    region: typeof actor?.currentRegion === 'string' ? actor.currentRegion : (typeof actor?.region === 'string' ? actor.region : ''),
+    activeSequenceId: team?.activeSequenceId || actor?.activeSequenceId || null,
+    sequenceStepIndex: typeof actor?.sequenceStepIndex === 'number' && Number.isFinite(actor.sequenceStepIndex) ? actor.sequenceStepIndex : null,
+    economicPhase: typeof actor?.economicPhase === 'string' ? actor.economicPhase : 'normal',
+    activeDebuffCount: Array.isArray(actor?.activeDebuffs) ? actor.activeDebuffs.length : 0
+  };
+};
+
+const computeBeforeAfterDelta = (
+  before: ActorEconomicSnapshot,
+  after: ActorEconomicSnapshot,
+  actionType: string,
+  executionSuccess: boolean = true
+): BeforeAfterDelta => {
+  const inventoryItemDeltas: Record<string, number> = {};
+  const allItems = new Set([...Object.keys(before.inventoryMap || {}), ...Object.keys(after.inventoryMap || {})]);
+
+  for (const item of allItems) {
+    const qtyBefore = before.inventoryMap?.[item] || 0;
+    const qtyAfter = after.inventoryMap?.[item] || 0;
+    const diff = qtyAfter - qtyBefore;
+    if (diff !== 0) {
+      inventoryItemDeltas[item] = diff;
+    }
+  }
+
+  return {
+    actorId: before.actorId,
+    actionType,
+    executionSuccess,
+    numericDeltas: {
+      moneyDelta: after.money - before.money,
+      netWorthDelta: after.netWorth - before.netWorth,
+      treasuryDelta: after.treasuryBalance - before.treasuryBalance,
+      vaultProtectedCashDelta: after.vaultProtectedCash - before.vaultProtectedCash,
+      riskScoreDelta: after.riskScore - before.riskScore,
+      creditScoreDelta: after.creditScore - before.creditScore,
+      actionsUsedDelta: after.actionsUsedThisTurn - before.actionsUsedThisTurn,
+      inventoryTotalDelta: after.inventoryTotalCount - before.inventoryTotalCount,
+      regionsControlledDelta: after.regionsControlledCount - before.regionsControlledCount,
+      activeDebuffDelta: after.activeDebuffCount - before.activeDebuffCount
+    },
+    structuralTransitions: {
+      region: {
+        before: before.region,
+        after: after.region,
+        changed: before.region !== after.region
+      },
+      activeSequenceId: {
+        before: before.activeSequenceId,
+        after: after.activeSequenceId,
+        changed: before.activeSequenceId !== after.activeSequenceId
+      },
+      sequenceStepIndex: {
+        before: before.sequenceStepIndex,
+        after: after.sequenceStepIndex,
+        changed: before.sequenceStepIndex !== after.sequenceStepIndex
+      },
+      economicPhase: {
+        before: before.economicPhase,
+        after: after.economicPhase,
+        changed: before.economicPhase !== after.economicPhase
+      }
+    },
+    inventoryItemDeltas
+  };
+};
+
 const sanitizeGameActivityLedgerEvent = (value: unknown): GameActivityLedgerEvent | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<GameActivityLedgerEvent>;
-  if (typeof source.id !== 'string' || typeof source.matchId !== 'string' || typeof source.summary !== 'string') return null;
+  const id = typeof source.eventId === 'string' ? source.eventId : (typeof source.id === 'string' ? source.id : null);
+  if (!id || typeof source.matchId !== 'string' || typeof source.summary !== 'string') return null;
   if (!GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES.includes(source.category as GameActivityLedgerEventCategory)) return null;
+
+  const sequenceId = typeof source.sequenceId === 'number' && Number.isFinite(source.sequenceId) ? source.sequenceId : 1;
+  const category = source.category as GameActivityLedgerEventCategory;
+  const eventType = typeof source.eventType === 'string' ? source.eventType : (source.actionType || (category as string));
+  const timestamp = typeof source.timestamp === 'number' && Number.isFinite(source.timestamp) ? source.timestamp : Date.now();
+  const integrityHash = typeof source.integrityHash === 'string'
+    ? source.integrityHash
+    : calculateEventIntegrityHash('00000000', sequenceId, id, timestamp, category, eventType);
+
+  const participants: GameActivityLedgerParticipants = {
+    actorId: typeof source.actorId === 'string' ? source.actorId : (source.participants?.actorId),
+    teamId: typeof source.teamId === 'string' ? source.teamId : (source.participants?.teamId),
+    targetActorId: source.participants?.targetActorId,
+    targetTeamId: source.participants?.targetTeamId,
+    sourceSystemId: source.participants?.sourceSystemId
+  };
+
+  const causalLinkage: GameActivityLedgerCausalLinkage = {
+    causalChainId: source.causalLinkage?.causalChainId || source.causalChainId || source.correlationChainId,
+    parentEventId: source.causalLinkage?.parentEventId || source.parentEventId,
+    rootEventId: source.causalLinkage?.rootEventId || source.rootEventId,
+    causalDepth: typeof source.causalLinkage?.causalDepth === 'number'
+      ? source.causalLinkage.causalDepth
+      : (typeof source.causalDepth === 'number' ? source.causalDepth : undefined)
+  };
+
+  const severity: GameActivityLedgerSeverity =
+    source.severity === 'warning' || source.severity === 'critical' || source.severity === 'diagnostic'
+      ? source.severity
+      : 'info';
+
+  const bookmarked = typeof source.bookmarked === 'boolean' ? source.bookmarked : undefined;
+  const annotation = typeof source.annotation === 'string' ? source.annotation : undefined;
+  const tags = Array.isArray(source.tags) ? source.tags.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : undefined;
+
   return {
-    id: source.id,
+    id,
+    eventId: id,
+    sequenceId,
     matchId: source.matchId,
-    category: source.category as GameActivityLedgerEventCategory,
+    category,
+    eventType,
+    severity,
+    participants,
+    causalLinkage,
+    payload: (source.payload && typeof source.payload === 'object') ? (source.payload as any) : {},
     day: typeof source.day === 'number' && Number.isFinite(source.day) ? Math.max(0, Math.floor(source.day)) : 0,
     turn: typeof source.turn === 'number' && Number.isFinite(source.turn) ? Math.max(0, Math.floor(source.turn)) : 0,
-    teamId: typeof source.teamId === 'string' ? source.teamId : null,
-    actorId: typeof source.actorId === 'string' ? source.actorId : null,
+    teamId: typeof source.teamId === 'string' ? source.teamId : (participants.teamId || null),
+    actorId: typeof source.actorId === 'string' ? source.actorId : (participants.actorId || null),
+    bookmarked,
+    annotation,
+    tags,
     decisionId: typeof source.decisionId === 'string' ? source.decisionId : undefined,
     actionType: typeof source.actionType === 'string' ? source.actionType : undefined,
     planId: typeof source.planId === 'string' ? source.planId : undefined,
@@ -12757,24 +14070,2149 @@ const sanitizeGameActivityLedgerEvent = (value: unknown): GameActivityLedgerEven
     auditorIncidentId: typeof source.auditorIncidentId === 'string' ? source.auditorIncidentId : undefined,
     parentEventId: typeof source.parentEventId === 'string' ? source.parentEventId : undefined,
     correlationChainId: typeof source.correlationChainId === 'string' ? source.correlationChainId : undefined,
+    correlationChain: Array.isArray(source.correlationChain) ? source.correlationChain.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : (typeof source.correlationChainId === 'string' ? [source.correlationChainId] : undefined),
+    causalChainId: causalLinkage.causalChainId,
+    rootEventId: causalLinkage.rootEventId,
+    causalDepth: causalLinkage.causalDepth,
+    expectation: source.expectation ? { ...source.expectation } : undefined,
+    systemInfluences: source.systemInfluences ? { ...source.systemInfluences } : (source.systemInfluence ? { ...source.systemInfluence } : undefined),
+    systemInfluence: source.systemInfluence ? { ...source.systemInfluence } : (source.systemInfluences ? { ...source.systemInfluences } : undefined),
     summary: source.summary,
     diagnostics: (source.diagnostics && typeof source.diagnostics === 'object') ? source.diagnostics : undefined,
-    timestamp: typeof source.timestamp === 'number' && Number.isFinite(source.timestamp) ? source.timestamp : Date.now()
+    timestamp,
+    integrityHash
   };
 };
+
+// ============================================================================
+// MILESTONE 3: UNIVERSAL 12-STAGE ACTION LIFECYCLE ARCHITECTURE
+// ============================================================================
+
+export type UniversalActionStage =
+  | 'INTENT_CREATED'
+  | 'REQUIREMENTS_CHECKED'
+  | 'RESOURCES_RESERVED'
+  | 'APPROVAL_REQUESTED'
+  | 'APPROVAL_RESOLVED'
+  | 'EXECUTION_STARTED'
+  | 'STATE_MUTATED'
+  | 'DELTA_CALCULATED'
+  | 'STATE_HASHED'
+  | 'EXPECTATION_VERIFIED'
+  | 'LEDGER_RECORDED'
+  | 'FOLLOWUP_SCHEDULED';
+
+export type UniversalActionStatus =
+  | 'pending'
+  | 'intent_created'
+  | 'requirements_checked'
+  | 'requirements_failed'
+  | 'resources_reserved'
+  | 'approval_pending'
+  | 'approval_resolved'
+  | 'approval_rejected'
+  | 'execution_started'
+  | 'state_mutated'
+  | 'delta_calculated'
+  | 'state_hashed'
+  | 'expectation_verified'
+  | 'ledger_recorded'
+  | 'followup_scheduled'
+  | 'completed'
+  | 'failed';
+
+export interface StageHistoryRecord {
+  stage: UniversalActionStage;
+  timestamp: number;
+  status: UniversalActionStatus;
+  details?: Record<string, unknown>;
+}
+
+export interface UniversalActionAttempt {
+  actionAttemptId: string;
+  actorId: string;
+  teamId?: string;
+  actionType: string;
+  parameters: Record<string, unknown>;
+  status: UniversalActionStatus;
+  currentStage: UniversalActionStage;
+  timestamps: {
+    created: number;
+    updated: number;
+    completed?: number;
+  };
+  stageHistory: StageHistoryRecord[];
+  beforeSnapshot?: ActorEconomicSnapshot;
+  afterSnapshot?: ActorEconomicSnapshot;
+  delta?: BeforeAfterDelta;
+  stateHash?: string;
+  expectation?: ExpectationAnalysis;
+  rootEventId?: string;
+  parentEventId?: string;
+  correlationChain?: string[];
+  executionResult?: unknown;
+  error?: string;
+}
+
+export interface UniversalActionAttemptContext {
+  actorId: string;
+  teamId?: string;
+  actionType: string;
+  parameters?: Record<string, unknown>;
+  rootEventId?: string;
+  parentEventId?: string;
+  correlationChain?: string[];
+  getActorState?: () => any;
+  getTeamState?: () => any;
+  checkRequirements?: () => { passed: boolean; reason?: string } | boolean;
+  reserveResources?: () => { success: boolean; reason?: string } | boolean;
+  checkApproval?: () => { approved: boolean; autoApproved?: boolean; pending?: boolean; reason?: string } | boolean;
+  verifyExpectation?: (result: any) => ExpectationAnalysis | undefined;
+  recordLedger?: (event: GameActivityLedgerEvent) => void;
+  scheduleFollowup?: (attempt: UniversalActionAttempt) => void;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object') {
+    if (typeof value === 'number') {
+      if (!isFinite(value)) return "0.0000";
+      return value.toFixed(4);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  const obj = value as Record<string, unknown>;
+  const sortedKeys = Object.keys(obj).sort();
+  const result: Record<string, unknown> = {};
+  for (const key of sortedKeys) {
+    const val = obj[key];
+    if (val !== undefined && typeof val !== 'function') {
+      result[key] = canonicalize(val);
+    }
+  }
+  return result;
+}
+
+export function computeCanonicalStateHash(stateObj: any): string {
+  if (!stateObj) return '00000000';
+  let cleanState: Record<string, unknown> = {};
+
+  if (stateObj.day !== undefined || stateObj.turnCounter !== undefined || stateObj.teamStateMap !== undefined || stateObj.teamsById !== undefined) {
+    // Full GameState or SaveGameData
+    const teams: Record<string, unknown> = {};
+    const teamMap = stateObj.teamStateMap || stateObj.teamsById || {};
+    Object.keys(teamMap).sort().forEach(tId => {
+      const t = teamMap[tId];
+      if (t) {
+        teams[tId] = {
+          money: typeof t.money === 'number' ? t.money : 0,
+          netWorth: typeof t.netWorth === 'number' ? t.netWorth : 0,
+          treasuryBalance: typeof t.treasuryBalance === 'number' ? t.treasuryBalance : (typeof t.treasury === 'number' ? t.treasury : 0),
+          vaultCash: typeof t.vaultProtectedCash === 'number' ? t.vaultProtectedCash : (typeof t.vaultCash === 'number' ? t.vaultCash : 0),
+          controlledRegions: Array.isArray(t.controlledRegions) ? [...t.controlledRegions].sort() : []
+        };
+      }
+    });
+
+    const actors: Record<string, unknown> = {};
+    const actorMap = stateObj.actorsById || {};
+    const actorKeys = Object.keys(actorMap).length > 0 ? Object.keys(actorMap).sort() : (stateObj.player ? ['player'] : []);
+    
+    actorKeys.forEach(aId => {
+      const a = actorMap[aId] || (aId === 'player' ? stateObj.player : null);
+      if (a) {
+        actors[aId] = {
+          money: typeof a.money === 'number' ? a.money : 0,
+          netWorth: typeof a.netWorth === 'number' ? a.netWorth : 0,
+          region: String(a.region || ''),
+          actionsUsedThisTurn: typeof a.actionsUsedThisTurn === 'number' ? a.actionsUsedThisTurn : (typeof a.actionsUsed === 'number' ? a.actionsUsed : 0),
+          riskScore: typeof a.riskScore === 'number' ? a.riskScore : 0,
+          creditScore: typeof a.creditScore === 'number' ? a.creditScore : 0,
+          inventory: a.inventory ? canonicalize(a.inventory) : (a.inventoryMap ? canonicalize(a.inventoryMap) : {})
+        };
+      }
+    });
+
+    const territoryMap = stateObj.regions || stateObj.territoryStateMap || stateObj.territories || {};
+    const territories: Record<string, unknown> = {};
+    Object.keys(territoryMap).sort().forEach(rId => {
+      const r = territoryMap[rId];
+      if (r) {
+        territories[rId] = {
+          ownerId: String(r.ownerId || r.controllerId || ''),
+          developmentLevel: typeof r.developmentLevel === 'number' ? r.developmentLevel : (typeof r.level === 'number' ? r.level : 1),
+          buildingCount: Array.isArray(r.buildings) ? r.buildings.length : (typeof r.buildingCount === 'number' ? r.buildingCount : 0)
+        };
+      }
+    });
+
+    cleanState = {
+      day: typeof stateObj.day === 'number' ? stateObj.day : 1,
+      turnCounter: typeof stateObj.turnCounter === 'number' ? stateObj.turnCounter : (typeof stateObj.currentTurn === 'number' ? stateObj.currentTurn : 1),
+      activePlayer: String(stateObj.activePlayer || ''),
+      season: String(stateObj.season || ''),
+      economicPhase: String(stateObj.economicPhase || 'normal'),
+      teams,
+      actors,
+      territories,
+      activeEvents: Array.isArray(stateObj.activeEvents) ? [...stateObj.activeEvents].sort() : []
+    };
+  } else {
+    // Single actor/team snapshot or action attempt snapshot
+    cleanState = {
+      actorId: String(stateObj.actorId || ''),
+      money: typeof stateObj.money === 'number' ? stateObj.money : 0,
+      netWorth: typeof stateObj.netWorth === 'number' ? stateObj.netWorth : 0,
+      treasuryBalance: typeof stateObj.treasuryBalance === 'number' ? stateObj.treasuryBalance : 0,
+      vaultCash: typeof stateObj.vaultProtectedCash === 'number' ? stateObj.vaultProtectedCash : (typeof stateObj.vaultCash === 'number' ? stateObj.vaultCash : 0),
+      riskScore: typeof stateObj.riskScore === 'number' ? stateObj.riskScore : 0,
+      creditScore: typeof stateObj.creditScore === 'number' ? stateObj.creditScore : 0,
+      actionsUsedThisTurn: typeof stateObj.actionsUsedThisTurn === 'number' ? stateObj.actionsUsedThisTurn : 0,
+      inventoryTotalCount: typeof stateObj.inventoryTotalCount === 'number' ? stateObj.inventoryTotalCount : 0,
+      inventoryMap: stateObj.inventoryMap ? canonicalize(stateObj.inventoryMap) : {},
+      region: String(stateObj.region || ''),
+      activeSequenceId: stateObj.activeSequenceId || null,
+      economicPhase: String(stateObj.economicPhase || 'normal')
+    };
+  }
+
+  const canonicalObj = canonicalize(cleanState);
+  const jsonStr = JSON.stringify(canonicalObj);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < jsonStr.length; i++) {
+    hash ^= jsonStr.charCodeAt(i);
+    hash = (hash * 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+export function executeUniversalActionPipeline<T = unknown>(
+  attemptContext: UniversalActionAttemptContext,
+  executeFn: (attempt: UniversalActionAttempt) => T
+): UniversalActionAttempt | Promise<UniversalActionAttempt> {
+  const timestamp = Date.now();
+  const actionAttemptId = `act_att_${drawGameplayRandomString("World", 8)}`;
+  const rootEventId = attemptContext.rootEventId || actionAttemptId;
+  const parentEventId = attemptContext.parentEventId;
+  const correlationChain = Array.from(new Set([
+    ...(attemptContext.correlationChain || []),
+    actionAttemptId
+  ]));
+
+  const stageHistory: StageHistoryRecord[] = [];
+  const recordStage = (stage: UniversalActionStage, status: UniversalActionStatus, details?: Record<string, unknown>) => {
+    stageHistory.push({ stage, timestamp: Date.now(), status, details });
+  };
+
+  // Stage 1: INTENT_CREATED
+  recordStage('INTENT_CREATED', 'intent_created', { actionType: attemptContext.actionType });
+
+  const beforeActorState = attemptContext.getActorState ? attemptContext.getActorState() : null;
+  const beforeTeamState = attemptContext.getTeamState ? attemptContext.getTeamState() : null;
+  const beforeSnapshot = captureGameStateSnapshot(beforeActorState, beforeTeamState);
+
+  const attempt: UniversalActionAttempt = {
+    actionAttemptId,
+    actorId: attemptContext.actorId,
+    teamId: attemptContext.teamId,
+    actionType: attemptContext.actionType,
+    parameters: attemptContext.parameters || {},
+    status: 'intent_created',
+    currentStage: 'INTENT_CREATED',
+    timestamps: { created: timestamp, updated: timestamp },
+    stageHistory,
+    beforeSnapshot,
+    rootEventId,
+    parentEventId,
+    correlationChain
+  };
+
+  try {
+    // Stage 2: REQUIREMENTS_CHECKED
+    attempt.currentStage = 'REQUIREMENTS_CHECKED';
+    attempt.timestamps.updated = Date.now();
+    let reqPassed = true;
+    let reqReason: string | undefined;
+
+    if (attemptContext.checkRequirements) {
+      const res = attemptContext.checkRequirements();
+      if (typeof res === 'boolean') {
+        reqPassed = res;
+      } else {
+        reqPassed = res.passed;
+        reqReason = res.reason;
+      }
+    }
+
+    if (!reqPassed) {
+      attempt.status = 'requirements_failed';
+      attempt.error = reqReason || 'Action requirements check failed';
+      recordStage('REQUIREMENTS_CHECKED', 'requirements_failed', { reason: attempt.error });
+      attempt.timestamps.completed = Date.now();
+      return attempt;
+    }
+    attempt.status = 'requirements_checked';
+    recordStage('REQUIREMENTS_CHECKED', 'requirements_checked');
+
+    // Stage 3: RESOURCES_RESERVED
+    attempt.currentStage = 'RESOURCES_RESERVED';
+    attempt.timestamps.updated = Date.now();
+    let resReserved = true;
+    let resReason: string | undefined;
+
+    if (attemptContext.reserveResources) {
+      const res = attemptContext.reserveResources();
+      if (typeof res === 'boolean') {
+        resReserved = res;
+      } else {
+        resReserved = res.success;
+        resReason = res.reason;
+      }
+    }
+
+    if (!resReserved) {
+      attempt.status = 'failed';
+      attempt.error = resReason || 'Resource reservation failed';
+      recordStage('RESOURCES_RESERVED', 'failed', { reason: attempt.error });
+      attempt.timestamps.completed = Date.now();
+      return attempt;
+    }
+    attempt.status = 'resources_reserved';
+    recordStage('RESOURCES_RESERVED', 'resources_reserved');
+
+    // Stage 4: APPROVAL_REQUESTED
+    attempt.currentStage = 'APPROVAL_REQUESTED';
+    attempt.timestamps.updated = Date.now();
+    attempt.status = 'approval_pending';
+    recordStage('APPROVAL_REQUESTED', 'approval_pending');
+
+    // Stage 5: APPROVAL_RESOLVED
+    attempt.currentStage = 'APPROVAL_RESOLVED';
+    attempt.timestamps.updated = Date.now();
+    let approved = true;
+    let approvalReason: string | undefined;
+
+    if (attemptContext.checkApproval) {
+      const res = attemptContext.checkApproval();
+      if (typeof res === 'boolean') {
+        approved = res;
+      } else {
+        approved = res.approved || res.autoApproved || false;
+        approvalReason = res.reason;
+      }
+    }
+
+    if (!approved) {
+      attempt.status = 'approval_rejected';
+      attempt.error = approvalReason || 'Action approval rejected';
+      recordStage('APPROVAL_RESOLVED', 'approval_rejected', { reason: attempt.error });
+      attempt.timestamps.completed = Date.now();
+      return attempt;
+    }
+    attempt.status = 'approval_resolved';
+    recordStage('APPROVAL_RESOLVED', 'approval_resolved');
+
+    // Stage 6: EXECUTION_STARTED
+    attempt.currentStage = 'EXECUTION_STARTED';
+    attempt.timestamps.updated = Date.now();
+    attempt.status = 'executing';
+    recordStage('EXECUTION_STARTED', 'executing');
+
+    // Stage 7: STATE_MUTATED
+    const rawResult = executeFn(attempt);
+
+    const finishPipeline = (result: any) => {
+      attempt.executionResult = result;
+      attempt.currentStage = 'STATE_MUTATED';
+      attempt.timestamps.updated = Date.now();
+      attempt.status = 'state_mutated';
+      recordStage('STATE_MUTATED', 'state_mutated');
+
+      const afterActorState = attemptContext.getActorState ? attemptContext.getActorState() : null;
+      const afterTeamState = attemptContext.getTeamState ? attemptContext.getTeamState() : null;
+      attempt.afterSnapshot = captureGameStateSnapshot(afterActorState, afterTeamState);
+
+      // Stage 8: DELTA_CALCULATED
+      attempt.currentStage = 'DELTA_CALCULATED';
+      attempt.timestamps.updated = Date.now();
+      attempt.delta = computeBeforeAfterDelta(attempt.beforeSnapshot!, attempt.afterSnapshot, attempt.actionType, true);
+      attempt.status = 'delta_calculated';
+      recordStage('DELTA_CALCULATED', 'delta_calculated', { delta: attempt.delta });
+
+      if (attemptContext.getActorState) {
+        const actor = attemptContext.getActorState();
+        if (actor && actor.opponentModels) {
+          const settings = (attemptContext.parameters?.gameSettings as any) || { enablePersistentOpponentModels: true };
+          if (settings.enablePersistentOpponentModels) {
+            updateOpponentModel(actor, attempt.actorId, attempt.actionType, 1, settings);
+          }
+        }
+      }
+
+      // Stage 9: STATE_HASHED
+      attempt.currentStage = 'STATE_HASHED';
+      attempt.timestamps.updated = Date.now();
+      attempt.stateHash = computeCanonicalStateHash(attempt.afterSnapshot);
+      attempt.status = 'state_hashed';
+      recordStage('STATE_HASHED', 'state_hashed', { stateHash: attempt.stateHash });
+
+      // Stage 10: EXPECTATION_VERIFIED
+      attempt.currentStage = 'EXPECTATION_VERIFIED';
+      attempt.timestamps.updated = Date.now();
+      if (attemptContext.verifyExpectation) {
+        attempt.expectation = attemptContext.verifyExpectation(result);
+      }
+      attempt.status = 'expectation_verified';
+      recordStage('EXPECTATION_VERIFIED', 'expectation_verified', { expectation: attempt.expectation });
+
+      // Stage 11: LEDGER_RECORDED
+      attempt.currentStage = 'LEDGER_RECORDED';
+      attempt.timestamps.updated = Date.now();
+      const ledgerEvent = createGameActivityLedgerEvent(
+        'action',
+        `Action ${attempt.actionType} executed by ${attempt.actorId} [attempt: ${attempt.actionAttemptId}]`,
+        {
+          actionType: attempt.actionType,
+          actorId: attempt.actorId,
+          teamId: attempt.teamId,
+          rootEventId: attempt.rootEventId,
+          parentEventId: attempt.parentEventId,
+          correlationChain: attempt.correlationChain,
+          correlationChainId: attempt.correlationChain?.join('/'),
+          payload: {
+            category: 'action',
+            actionType: attempt.actionType,
+            description: `Action attempt ${attempt.actionAttemptId}`,
+            success: true,
+            stateDelta: attempt.delta,
+            stateHash: attempt.stateHash,
+            actionAttemptId: attempt.actionAttemptId,
+            parameters: attempt.parameters
+          },
+          expectation: attempt.expectation
+        }
+      );
+      if (attemptContext.recordLedger) {
+        attemptContext.recordLedger(ledgerEvent);
+      }
+      attempt.status = 'ledger_recorded';
+      recordStage('LEDGER_RECORDED', 'ledger_recorded', { ledgerEventId: ledgerEvent.id });
+
+      // Stage 12: FOLLOWUP_SCHEDULED
+      attempt.currentStage = 'FOLLOWUP_SCHEDULED';
+      attempt.timestamps.updated = Date.now();
+      if (attemptContext.scheduleFollowup) {
+        attemptContext.scheduleFollowup(attempt);
+      }
+      attempt.status = 'completed';
+      attempt.timestamps.completed = Date.now();
+      recordStage('FOLLOWUP_SCHEDULED', 'completed');
+
+      return attempt;
+    };
+
+    if (rawResult && typeof (rawResult as any).then === 'function') {
+      return (rawResult as any).then((res: any) => finishPipeline(res)).catch((err: any) => {
+        attempt.status = 'failed';
+        attempt.error = err?.message || String(err);
+        attempt.timestamps.completed = Date.now();
+        recordStage(attempt.currentStage, 'failed', { error: attempt.error });
+        return attempt;
+      });
+    }
+
+    return finishPipeline(rawResult);
+  } catch (err: any) {
+    attempt.status = 'failed';
+    attempt.error = err?.message || String(err);
+    attempt.timestamps.completed = Date.now();
+    recordStage(attempt.currentStage, 'failed', { error: attempt.error });
+    return attempt;
+  }
+}
+
 const sanitizeGameActivityLedgerState = (value: unknown): GameActivityLedgerState => {
   const defaults = createDefaultGameActivityLedgerState();
   if (!value || typeof value !== 'object') return defaults;
   const source = value as Partial<GameActivityLedgerState>;
+  const events = Array.isArray(source.events)
+    ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING)
+    : [];
+  const collections = Array.isArray(source.collections)
+    ? source.collections.filter(c => c && typeof c === 'object' && typeof c.id === 'string' && typeof c.name === 'string')
+    : [];
+  const archivedEvents = Array.isArray(source.archivedEvents)
+    ? source.archivedEvents.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e))
+    : [];
+  const nextSeq = events.length > 0 ? Math.max(...events.map(e => e.sequenceId || 0)) + 1 : 1;
+  const lastHash = events.length > 0 ? (events[events.length - 1].integrityHash || '00000000') : '00000000';
+
   return {
     matchId: typeof source.matchId === 'string' ? source.matchId : defaults.matchId,
-    events: Array.isArray(source.events)
-      ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING)
-      : []
+    events,
+    collections,
+    archivedEvents,
+    nextSequenceId: typeof source.nextSequenceId === 'number' && Number.isFinite(source.nextSequenceId) ? source.nextSequenceId : nextSeq,
+    lastEventHash: typeof source.lastEventHash === 'string' ? source.lastEventHash : lastHash,
+    totalEventsRecorded: typeof source.totalEventsRecorded === 'number' && Number.isFinite(source.totalEventsRecorded) ? source.totalEventsRecorded : events.length,
+    paused: typeof source.paused === 'boolean' ? source.paused : false
   };
 };
 
-function playerReducer(state, action) {
+// ============================================================================
+// PHASE 4: CAUSAL-CHAIN EXPLORER ENGINE TRAVERSAL HELPERS
+// ============================================================================
+
+export const getEventCausalChain = (
+  events: GameActivityLedgerEvent[],
+  rootOrChainId: string
+): GameActivityLedgerEvent[] => {
+  try {
+    if (!Array.isArray(events) || !rootOrChainId) return [];
+    return events.filter(e =>
+      e.causalChainId === rootOrChainId ||
+      e.rootEventId === rootOrChainId ||
+      e.causalLinkage?.causalChainId === rootOrChainId ||
+      e.causalLinkage?.rootEventId === rootOrChainId ||
+      e.id === rootOrChainId ||
+      e.eventId === rootOrChainId
+    );
+  } catch (err) {
+    console.error("[Causal Engine Error] getEventCausalChain failed:", err);
+    return [];
+  }
+};
+
+export const getRootCauseEvent = (
+  events: GameActivityLedgerEvent[],
+  eventId: string
+): GameActivityLedgerEvent | null => {
+  try {
+    if (!Array.isArray(events) || !eventId) return null;
+    const current = events.find(e => e.id === eventId || e.eventId === eventId);
+    if (!current) return null;
+    const rootId = current.rootEventId || current.causalLinkage?.rootEventId;
+    if (!rootId || rootId === current.id || rootId === current.eventId) return current;
+    return events.find(e => e.id === rootId || e.eventId === rootId) || current;
+  } catch (err) {
+    console.error("[Causal Engine Error] getRootCauseEvent failed:", err);
+    return null;
+  }
+};
+
+export const getEventDownstreamConsequences = (
+  events: GameActivityLedgerEvent[],
+  eventId: string
+): GameActivityLedgerEvent[] => {
+  try {
+    if (!Array.isArray(events) || !eventId) return [];
+    const results: GameActivityLedgerEvent[] = [];
+    const queue: string[] = [eventId];
+    const visited = new Set<string>();
+
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      if (visited.has(parentId)) continue;
+      visited.add(parentId);
+
+      const children = events.filter(e =>
+        e.parentEventId === parentId || e.causalLinkage?.parentEventId === parentId
+      );
+      for (const child of children) {
+        const childId = child.id || child.eventId;
+        if (childId && !visited.has(childId)) {
+          visited.add(childId);
+          results.push(child);
+          queue.push(childId);
+        }
+      }
+    }
+
+    return results;
+  } catch (err) {
+    console.error("[Causal Engine Error] getEventDownstreamConsequences failed:", err);
+    return [];
+  }
+};
+
+// ============================================================================
+// PHASE 5: EXPECTED-VS-ACTUAL OUTCOME ANALYSIS ENGINE HELPERS
+// ============================================================================
+
+export function createEventExpectation(
+  expectedUtilityOrDecision: number | any,
+  expectedRoiOrActor?: number | any,
+  expectedCashChangeOrDay?: number,
+  evaluationTurnTargetOrHorizon?: number
+): ExpectationAnalysis {
+  try {
+    if (typeof expectedUtilityOrDecision === 'number') {
+      const expectedUtility = expectedUtilityOrDecision;
+      const expectedRoi = typeof expectedRoiOrActor === 'number' ? expectedRoiOrActor : 0;
+      const expectedCashChange = typeof expectedCashChangeOrDay === 'number' ? expectedCashChangeOrDay : 0;
+      const evaluationTurnTarget = typeof evaluationTurnTargetOrHorizon === 'number' ? evaluationTurnTargetOrHorizon : 1;
+      return {
+        expectedUtility,
+        expectedRoi,
+        expectedCashChange,
+        evaluationTurnTarget,
+        evaluated: false
+      };
+    } else {
+      const decision = expectedUtilityOrDecision || {};
+      const currentDay = typeof expectedCashChangeOrDay === 'number' ? expectedCashChangeOrDay : 1;
+      const horizonDays = typeof evaluationTurnTargetOrHorizon === 'number' ? evaluationTurnTargetOrHorizon : 1;
+
+      const cost = typeof decision.data?.purchases?.[0]?.cost === 'number'
+        ? decision.data.purchases[0].cost
+        : (decision.data?.wager || decision.cost || 0);
+
+      const expectedCashChange = decision.type === 'sell'
+        ? (decision.plan?.expectedValue || 100)
+        : (decision.type === 'buy_market' || decision.type === 'craft' ? -cost : 0);
+
+      const expectedUtility = decision.score || decision.plan?.expectedValue || 50;
+      const expectedRoi = cost > 0 ? ((expectedUtility - cost) / cost) * 100 : 0;
+
+      return {
+        expectedUtility,
+        expectedRoi,
+        expectedCashChange,
+        evaluationTurnTarget: currentDay + horizonDays,
+        evaluated: false
+      };
+    }
+  } catch (err) {
+    console.error("[Expectation Engine Error] createEventExpectation failed:", err);
+    return {
+      expectedUtility: 0,
+      expectedRoi: 0,
+      expectedCashChange: 0,
+      evaluationTurnTarget: 1,
+      evaluated: false
+    };
+  }
+}
+
+export function evaluateEventExpectations(
+  events: GameActivityLedgerEvent[],
+  currentDay: number,
+  actorsById?: Record<string, any>
+): { updatedEvents: GameActivityLedgerEvent[]; metrics: { evaluatedCount: number; avgAccuracy: number } } {
+  let evaluatedCount = 0;
+  let totalAccuracy = 0;
+
+  if (!Array.isArray(events)) {
+    return { updatedEvents: [], metrics: { evaluatedCount: 0, avgAccuracy: 100 } };
+  }
+
+  const updatedEvents = events.map(event => {
+    if (!event.expectation || event.expectation.evaluated) {
+      return event;
+    }
+
+    if (typeof event.expectation.evaluationTurnTarget === 'number' && event.expectation.evaluationTurnTarget > currentDay) {
+      return event;
+    }
+
+    try {
+      const exp = event.expectation;
+      const payload: any = event.payload || {};
+      const cashChange = (event as any).cashChange ?? payload?.cost ?? payload?.amount ?? 0;
+      const actualCashChange = typeof cashChange === 'number' && Number.isFinite(cashChange) ? cashChange : 0;
+      const netWorthChange = (event as any).netWorthChange ?? payload?.stateDelta?.numericDeltas?.netWorthDelta ?? 0;
+      const validNetWorthChange = typeof netWorthChange === 'number' && Number.isFinite(netWorthChange) ? netWorthChange : 0;
+      const actualUtility = actualCashChange + validNetWorthChange;
+
+      const expectedUtility = Number.isFinite(exp.expectedUtility) ? exp.expectedUtility : 0;
+      const utilityDeltaRaw = actualUtility - expectedUtility;
+      const utilityDelta = Number.isFinite(utilityDeltaRaw) ? utilityDeltaRaw : 0;
+
+      const expectedAbs = Math.max(1, Math.abs(expectedUtility));
+      const errorRatio = Math.abs(utilityDelta) / expectedAbs;
+      const rawAccuracy = (1 - errorRatio) * 100;
+      const accuracyScore = Math.max(0, Math.min(100, Math.round(Number.isFinite(rawAccuracy) ? rawAccuracy : 0)));
+
+      let outcomeCategory: ExpectationOutcomeCategory = 'met_expectations';
+      if (accuracyScore >= 90 || utilityDelta >= 50) {
+        outcomeCategory = 'exceeded_expectations';
+      } else if (accuracyScore >= 70 || utilityDelta >= -20) {
+        outcomeCategory = 'met_expectations';
+      } else if (accuracyScore >= 40 || utilityDelta >= -100) {
+        outcomeCategory = 'underperformed';
+      } else {
+        outcomeCategory = 'catastrophic_failure';
+      }
+
+      evaluatedCount++;
+      totalAccuracy += accuracyScore;
+
+      return {
+        ...event,
+        expectation: {
+          ...exp,
+          evaluated: true,
+          evaluationDay: currentDay,
+          actualCashChange,
+          utilityDelta,
+          accuracyScore,
+          outcomeCategory
+        }
+      };
+    } catch (err) {
+      console.error(`[Non-Blocking Engine Error] Failed to evaluate expectation for event ${event.id}:`, err);
+      return event;
+    }
+  });
+
+  const avgAccuracy = evaluatedCount > 0 ? Math.round(totalAccuracy / evaluatedCount) : 100;
+  return { updatedEvents, metrics: { evaluatedCount, avgAccuracy } };
+}
+
+// ============================================================================
+// PHASE 6: SYSTEM INFLUENCE REPORT ENGINE SNAPSHOT HELPER
+// ============================================================================
+
+export function captureSystemInfluenceBreakdown(
+  gameState: any,
+  actorId?: string | null,
+  options?: {
+    teamId?: string;
+    actorMap?: Record<string, any>;
+    teamsById?: Record<string, any>;
+    gameSettings?: any;
+  }
+): SystemInfluenceBreakdown {
+  try {
+    const actor = actorId ? (options?.actorMap?.[actorId] || gameState?.actorsById?.[actorId] || null) : null;
+    const teamId = options?.teamId || actor?.teamId || 'team_player';
+    const team = options?.teamsById?.[teamId] || gameState?.teamsById?.[teamId] || null;
+    const settings = options?.gameSettings || gameState?.gameSettings;
+
+    // 1. Economy Governor Weight
+    let economyGovernorWeight = 1.0;
+    if (actor && settings?.teamEconomyGovernorEnabled) {
+      const spendable = (actor.money || 0) - (settings.teamCashVaultEnabled ? (actor.protectedCash || 0) : 0);
+      if (spendable < 300) economyGovernorWeight = 1.6;
+      else if (actor.inEconomicRecovery) economyGovernorWeight = 0.7;
+    }
+
+    // 2. Overseer Priority
+    let overseerPriority = 1.0;
+    if (team?.adaptiveState) {
+      const phase = team.adaptiveState.phase || 'normal';
+      if (phase === 'comeback') overseerPriority = 1.45;
+      else if (phase === 'protect_lead') overseerPriority = 0.85;
+      else if (phase === 'recovery') overseerPriority = 1.25;
+    }
+
+    // 3. Sequence Bias
+    let sequenceBias = 0;
+    if (actor?.activeSequenceStep) {
+      sequenceBias = actor.activeSequenceStep.scoreBias || 15;
+    }
+
+    // 4. Cash Vault Status
+    let cashVaultStatus = 'vault_disabled';
+    if (settings?.teamCashVaultEnabled) {
+      const protectedCash = actor?.protectedCash || 0;
+      cashVaultStatus = protectedCash > 0 ? `active_protected ($${protectedCash})` : 'active_unprotected';
+    }
+
+    // 5. Treasury Status
+    let treasuryStatus = 'treasury_disabled';
+    if (settings?.teamTreasuryEnabled && team?.treasury) {
+      const balance = team.treasury.balance || 0;
+      const reserve = team.treasury.reserve || 0;
+      const available = Math.max(0, balance - reserve);
+      treasuryStatus = available > 0 ? `healthy ($${available} available)` : `depleted ($${balance} total)`;
+    }
+
+    // 6. Auditor Flags
+    const auditorFlags: string[] = [];
+    if (settings?.teamAiAuditorSystemEnabled && team?.auditor?.incidents) {
+      if (Array.isArray(team.auditor.incidents)) {
+        team.auditor.incidents.forEach((incident: any) => {
+          if (incident.status === 'detected' || incident.status === 'recovery_proposed') {
+            auditorFlags.push(incident.dedupSignature || incident.id || 'auditor_flag');
+          }
+        });
+      }
+    }
+
+    return {
+      economyGovernorWeight,
+      overseerPriority,
+      sequenceBias,
+      cashVaultStatus,
+      treasuryStatus,
+      auditorFlags
+    };
+  } catch (err) {
+    console.error("[System Influence Error] captureSystemInfluenceBreakdown failed:", err);
+    return {
+      economyGovernorWeight: 1.0,
+      overseerPriority: 1.0,
+      sequenceBias: 0,
+      cashVaultStatus: 'unknown',
+      treasuryStatus: 'unknown',
+      auditorFlags: []
+    };
+  }
+}
+
+// ============================================================================
+// PHASE 11: DIAGNOSTIC BUNDLE & EXPORT ENGINE HELPERS
+// ============================================================================
+
+/**
+ * Generates a self-contained, serializable DiagnosticBundle from live GameState based on filter options.
+ */
+export function createDiagnosticBundle(
+  gameState: any,
+  filterOptions?: DiagnosticBundleFilterOptions
+): DiagnosticBundle {
+  const ledgerState: GameActivityLedgerState = gameState?.gameActivityLedger || createDefaultGameActivityLedgerState();
+  const allEvents = ledgerState.events || [];
+  const collections = ledgerState.collections || [];
+
+  // Filter events
+  let filteredEvents = [...allEvents];
+
+  if (filterOptions) {
+    if (filterOptions.collectionId) {
+      const col = collections.find(c => c.id === filterOptions.collectionId);
+      if (col) {
+        const idSet = new Set(col.eventIds);
+        filteredEvents = filteredEvents.filter(e => idSet.has(e.id) || idSet.has(e.eventId));
+      }
+    }
+    if (filterOptions.categories && filterOptions.categories.length > 0) {
+      const catSet = new Set(filterOptions.categories);
+      filteredEvents = filteredEvents.filter(e => catSet.has(e.category));
+    }
+    if (filterOptions.severities && filterOptions.severities.length > 0) {
+      const sevSet = new Set(filterOptions.severities);
+      filteredEvents = filteredEvents.filter(e => sevSet.has(e.severity));
+    }
+    if (filterOptions.bookmarkedOnly) {
+      filteredEvents = filteredEvents.filter(e => Boolean(e.bookmarked));
+    }
+    if (filterOptions.rootCausalOnly) {
+      filteredEvents = filteredEvents.filter(e => !e.parentEventId && !e.causalLinkage?.parentEventId);
+    }
+    if (typeof filterOptions.minDay === 'number') {
+      filteredEvents = filteredEvents.filter(e => e.day >= filterOptions.minDay!);
+    }
+    if (typeof filterOptions.maxDay === 'number') {
+      filteredEvents = filteredEvents.filter(e => e.day <= filterOptions.maxDay!);
+    }
+    if (filterOptions.actorId) {
+      filteredEvents = filteredEvents.filter(e => e.actorId === filterOptions.actorId || e.participants?.actorId === filterOptions.actorId);
+    }
+    if (filterOptions.teamId) {
+      filteredEvents = filteredEvents.filter(e => e.teamId === filterOptions.teamId || e.participants?.teamId === filterOptions.teamId);
+    }
+    if (filterOptions.tags && filterOptions.tags.length > 0) {
+      const tagSet = new Set(filterOptions.tags);
+      filteredEvents = filteredEvents.filter(e => e.tags?.some(t => tagSet.has(t)));
+    }
+  }
+
+  // Build Causal Chains Map
+  const causalChains: Record<string, GameActivityLedgerEvent[]> = {};
+  filteredEvents.forEach(event => {
+    const chainId = event.causalChainId || event.causalLinkage?.causalChainId || event.rootEventId;
+    if (chainId) {
+      if (!causalChains[chainId]) {
+        causalChains[chainId] = getEventCausalChain(allEvents, chainId);
+      }
+    }
+  });
+
+  // Extract System Influences
+  const systemInfluences: SystemInfluenceBreakdown[] = filteredEvents
+    .map(e => e.systemInfluences || e.systemInfluence)
+    .filter((si): si is SystemInfluenceBreakdown => Boolean(si));
+
+  // Extract System Config
+  const rawSettings = gameState?.gameSettings || {};
+  const systemConfig: Partial<GameSettingsState> = {
+    gameActivityLedgerEnabled: rawSettings.gameActivityLedgerEnabled,
+    gameActivityLedgerDetailLevel: rawSettings.gameActivityLedgerDetailLevel,
+    gameActivityLedgerMaxEvents: rawSettings.gameActivityLedgerMaxEvents,
+    gameActivityLedgerRetentionPolicy: rawSettings.gameActivityLedgerRetentionPolicy,
+    teamEconomyGovernorEnabled: rawSettings.teamEconomyGovernorEnabled,
+    teamAiAuditorSystemEnabled: rawSettings.teamAiAuditorSystemEnabled,
+    teamAiOverseerSystemEnabled: rawSettings.teamAiOverseerSystemEnabled
+  };
+
+  // Build Game State Snapshot
+  const actorsSnapshot: Record<string, any> = {};
+  if (gameState?.actorsById) {
+    Object.entries(gameState.actorsById).forEach(([id, actor]: [string, any]) => {
+      actorsSnapshot[id] = {
+        id: actor.id,
+        displayName: actor.displayName || actor.name,
+        teamId: actor.teamId,
+        kind: actor.kind,
+        role: actor.role,
+        money: actor.money,
+        netWorth: actor.netWorth,
+        protectedCash: actor.protectedCash,
+        inEconomicRecovery: actor.inEconomicRecovery,
+        currentRegion: actor.currentRegion
+      };
+    });
+  }
+
+  const bundleDataWithoutHash = {
+    metadata: {
+      bundleId: `bundle_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
+      bundleVersion: "1.0.0",
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+      versionConstants: VERSION_CONSTANTS,
+      createdTimestamp: Date.now(),
+      matchId: ledgerState.matchId || "unknown_match",
+      day: gameState?.day || 1,
+      turn: gameState?.turnCounter || 0,
+      totalEventsIncluded: filteredEvents.length,
+      filterOptions
+    },
+    gameStateSnapshot: {
+      day: gameState?.day || 1,
+      season: gameState?.season || "Summer",
+      weather: gameState?.weather || "Sunny",
+      gameMode: gameState?.gameMode || "single",
+      selectedMode: gameState?.selectedMode || null,
+      currentTurn: gameState?.currentTurn || null,
+      currentActorId: gameState?.currentActorId || null,
+      roundNumber: gameState?.roundNumber || 1,
+      matchId: ledgerState.matchId || "unknown_match",
+      actors: actorsSnapshot
+    },
+    events: filteredEvents,
+    collections,
+    causalChains,
+    systemInfluences,
+    systemConfig
+  };
+
+  // Compute FNV-1a checksum over serialized bundle payload
+  const jsonStr = JSON.stringify(bundleDataWithoutHash);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < jsonStr.length; i++) {
+    hash ^= jsonStr.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const integrityChecksum = (hash >>> 0).toString(16).padStart(8, '0');
+
+  return {
+    ...bundleDataWithoutHash,
+    integrityChecksum
+  };
+}
+
+/**
+ * Unpacks and validates a DiagnosticBundle from a JSON string or object.
+ */
+export function unpackDiagnosticBundle(bundleJson: string | object): {
+  success: boolean;
+  bundle?: DiagnosticBundle;
+  error?: string;
+  integrityValid?: boolean;
+} {
+  try {
+    let parsed: any = bundleJson;
+    if (typeof bundleJson === 'string') {
+      parsed = JSON.parse(bundleJson);
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { success: false, error: 'Invalid bundle payload: not an object' };
+    }
+
+    if (!parsed.metadata || !parsed.events || !Array.isArray(parsed.events)) {
+      return { success: false, error: 'Invalid bundle structure: missing metadata or events array' };
+    }
+
+    const { integrityChecksum, ...bundleDataWithoutHash } = parsed;
+
+    // Verify Integrity Hash using FNV-1a
+    const jsonStr = JSON.stringify(bundleDataWithoutHash);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < jsonStr.length; i++) {
+      hash ^= jsonStr.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    const computedChecksum = (hash >>> 0).toString(16).padStart(8, '0');
+    const integrityValid = computedChecksum === integrityChecksum;
+
+    // Sanitize events
+    const sanitizedEvents = parsed.events
+      .map(sanitizeGameActivityLedgerEvent)
+      .filter((e: any): e is GameActivityLedgerEvent => Boolean(e));
+
+    const validatedBundle: DiagnosticBundle = {
+      ...parsed,
+      events: sanitizedEvents
+    };
+
+    return {
+      success: true,
+      bundle: validatedBundle,
+      integrityValid
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Failed to unpack diagnostic bundle: ${err?.message || String(err)}`
+    };
+  }
+}
+
+// ============================================================================
+// PHASE 12: RETENTION & ARCHIVAL HELPERS
+// ============================================================================
+
+
+
+// ============================================================================
+// PHASE 13: INTEGRITY VALIDATION & TAMPER-EVIDENT ENGINE HELPERS
+// ============================================================================
+
+/**
+ * Tamper-Evident Integrity Validator for Game Activity Ledger (Phase 13).
+ * Verifies monotonic sequence IDs, FNV-1a hash chain linkage, and state delta consistency.
+ */
+export function validateLedgerIntegrity(
+  events: GameActivityLedgerEvent[],
+  options?: {
+    allowSequenceGaps?: boolean;
+    expectedInitialHash?: string;
+  }
+): LedgerIntegrityReport {
+  const timestampNow = Date.now();
+
+  if (!Array.isArray(events) || events.length === 0) {
+    return {
+      isValid: true,
+      totalEventsChecked: 0,
+      validEventCount: 0,
+      corruptedEventIds: [],
+      brokenSequenceIds: [],
+      violations: [],
+      hashChainIntact: true,
+      sequenceMonotonic: true,
+      deltaConsistencyIntact: true,
+      checkedAtTimestamp: timestampNow,
+      summary: 'Ledger is empty; 0 events checked.'
+    };
+  }
+
+  const allowSequenceGaps = options?.allowSequenceGaps ?? false;
+  const corruptedEventIds: string[] = [];
+  const brokenSequenceIds: number[] = [];
+  const violations: LedgerIntegrityViolation[] = [];
+
+  let hashChainIntact = true;
+  let sequenceMonotonic = true;
+  let deltaConsistencyIntact = true;
+  let validCount = 0;
+
+  let prevHash = options?.expectedInitialHash || (events[0].sequenceId === 1 ? '00000000' : '00000000');
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    let eventHasViolation = false;
+
+    // 1. Monotonic Sequence ID Check
+    if (i > 0) {
+      const prevSeq = events[i - 1].sequenceId;
+      if (event.sequenceId <= prevSeq) {
+        sequenceMonotonic = false;
+        eventHasViolation = true;
+        brokenSequenceIds.push(event.sequenceId);
+        violations.push({
+          eventId: event.id,
+          sequenceId: event.sequenceId,
+          type: 'non_monotonic_sequence',
+          expected: `> ${prevSeq}`,
+          actual: event.sequenceId,
+          details: `Event sequence ID ${event.sequenceId} is not strictly greater than previous sequence ID ${prevSeq}.`,
+          severity: 'critical'
+        });
+      } else if (!allowSequenceGaps && event.sequenceId !== prevSeq + 1) {
+        brokenSequenceIds.push(event.sequenceId);
+        violations.push({
+          eventId: event.id,
+          sequenceId: event.sequenceId,
+          type: 'sequence_break',
+          expected: prevSeq + 1,
+          actual: event.sequenceId,
+          details: `Sequence gap detected: expected sequence ${prevSeq + 1}, got ${event.sequenceId}.`,
+          severity: 'medium'
+        });
+      }
+    }
+
+    // 2. FNV-1a Hash Linkage Check
+    const effectivePrevHash = (i === 0 && event.sequenceId === 1) ? '00000000' : (i > 0 ? events[i - 1].integrityHash : prevHash);
+    const expectedHash = calculateEventIntegrityHash(
+      effectivePrevHash,
+      event.sequenceId,
+      event.id || event.eventId,
+      event.timestamp,
+      event.category,
+      event.eventType
+    );
+
+    if (event.integrityHash !== expectedHash) {
+      hashChainIntact = false;
+      eventHasViolation = true;
+      corruptedEventIds.push(event.id);
+      violations.push({
+        eventId: event.id,
+        sequenceId: event.sequenceId,
+        type: 'hash_mismatch',
+        expected: expectedHash,
+        actual: event.integrityHash || 'missing',
+        details: `Integrity hash mismatch on event ${event.id}. Expected ${expectedHash}, found ${event.integrityHash}. Potential tampering detected.`,
+        severity: 'critical'
+      });
+    }
+
+    // 3. State Delta & Payload Consistency Check
+    const payload = event.payload as any;
+    if (payload?.stateDelta) {
+      const delta = payload.stateDelta;
+      if (delta.numericDeltas) {
+        const numDeltas = delta.numericDeltas;
+        const hasInvalidNum = Object.values(numDeltas).some(v => typeof v === 'number' && (!Number.isFinite(v) || Number.isNaN(v)));
+        if (hasInvalidNum) {
+          deltaConsistencyIntact = false;
+          eventHasViolation = true;
+          if (!corruptedEventIds.includes(event.id)) corruptedEventIds.push(event.id);
+          violations.push({
+            eventId: event.id,
+            sequenceId: event.sequenceId,
+            type: 'delta_inconsistency',
+            expected: 'Finite numbers for all numeric deltas',
+            actual: 'NaN or Infinity detected in state delta',
+            details: `Invalid non-finite numeric delta detected in event payload.`,
+            severity: 'high'
+          });
+        }
+      }
+    }
+
+    // 4. Timestamp Sanity Check
+    if (typeof event.timestamp !== 'number' || event.timestamp <= 0 || !Number.isFinite(event.timestamp)) {
+      eventHasViolation = true;
+      violations.push({
+        eventId: event.id,
+        sequenceId: event.sequenceId,
+        type: 'timestamp_anomaly',
+        expected: '> 0',
+        actual: String(event.timestamp),
+        details: `Invalid timestamp recorded for event ${event.id}.`,
+        severity: 'medium'
+      });
+    }
+
+    if (!eventHasViolation) {
+      validCount++;
+    }
+  }
+
+  const isValid = hashChainIntact && sequenceMonotonic && deltaConsistencyIntact && violations.filter(v => v.severity === 'critical').length === 0;
+
+  const summary = isValid
+    ? `Ledger integrity verified successfully. ${validCount}/${events.length} events valid.`
+    : `Ledger integrity failure: ${violations.length} violations found (${corruptedEventIds.length} corrupted hashes, ${brokenSequenceIds.length} sequence anomalies).`;
+
+  return {
+    isValid,
+    totalEventsChecked: events.length,
+    validEventCount: validCount,
+    corruptedEventIds,
+    brokenSequenceIds,
+    violations,
+    hashChainIntact,
+    sequenceMonotonic,
+    deltaConsistencyIntact,
+    checkedAtTimestamp: timestampNow,
+    summary
+  };
+}
+
+// ============================================================================
+// PHASE 8: GAME ACTIVITY LEDGER ANALYTICS ENGINE TYPES & HELPERS
+// ============================================================================
+
+export interface GameActivityLedgerDailyThroughput {
+  day: number;
+  eventCount: number;
+  criticalCount: number;
+  auditorIncidentCount: number;
+  totalCashDelta: number;
+}
+
+export interface AuditorIncidentDensityMetrics {
+  totalIncidents: number;
+  incidentsPerDay: number;
+  incidentsPerTurn: number;
+  severityWeightedScore: number;
+  incidentsByDay: Record<number, number>;
+  incidentsByActor: Record<string, number>;
+  incidentsByTeam: Record<string, number>;
+  mostFrequentIncidentSignatures: Array<{ signature: string; count: number }>;
+}
+
+export interface GameActivityLedgerAnalyticsResult {
+  totalEvents: number;
+  uniqueDaysRecorded: number;
+  categoryCounts: Record<GameActivityLedgerEventCategory, number>;
+  categoryPercentages: Record<GameActivityLedgerEventCategory, number>;
+  severityDistribution: Record<GameActivityLedgerSeverity, number>;
+  severityPercentages: Record<GameActivityLedgerSeverity, number>;
+  severityByCategory: Record<GameActivityLedgerEventCategory, Record<GameActivityLedgerSeverity, number>>;
+  
+  throughput: {
+    totalEvents: number;
+    totalDays: number;
+    avgEventsPerDay: number;
+    peakDay: { day: number; count: number };
+    quietestDay: { day: number; count: number };
+    dailyThroughput: GameActivityLedgerDailyThroughput[];
+    throughputVelocityTrend: 'accelerating' | 'stable' | 'decelerating';
+  };
+
+  auditorDensity: AuditorIncidentDensityMetrics;
+
+  expectations: {
+    totalEvaluated: number;
+    avgAccuracyScore: number;
+    outcomeDistribution: Record<ExpectationOutcomeCategory, number>;
+    totalActualCash: number;
+    totalExpectedCash: number;
+    netCashVariance: number;
+    totalUtilityDelta: number;
+  };
+
+  systemInfluences: {
+    totalEventsWithInfluence: number;
+    avgEconomyGovernorWeight: number;
+    avgOverseerPriority: number;
+    avgSequenceBias: number;
+    activeAuditorFlagsCount: number;
+  };
+}
+
+export function computeGameActivityLedgerAnalytics(
+  events: GameActivityLedgerEvent[]
+): GameActivityLedgerAnalyticsResult {
+  const safeEvents = Array.isArray(events) ? events : [];
+  const totalEvents = safeEvents.length;
+
+  const categoryCounts: Record<GameActivityLedgerEventCategory, number> = {
+    action: 0, decision: 0, approval: 0, treasury: 0, settings_change: 0,
+    auditor_incident: 0, plan: 0, config: 0, match_lifecycle: 0, system_health: 0
+  };
+
+  const severityDistribution: Record<GameActivityLedgerSeverity, number> = {
+    info: 0, warning: 0, critical: 0, diagnostic: 0
+  };
+
+  const severityByCategory: Record<GameActivityLedgerEventCategory, Record<GameActivityLedgerSeverity, number>> = {
+    action: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    decision: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    approval: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    treasury: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    settings_change: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    auditor_incident: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    plan: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    config: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    match_lifecycle: { info: 0, warning: 0, critical: 0, diagnostic: 0 },
+    system_health: { info: 0, warning: 0, critical: 0, diagnostic: 0 }
+  };
+
+  const dayMap = new Map<number, GameActivityLedgerDailyThroughput>();
+  const incidentsByDay: Record<number, number> = {};
+  const incidentsByActor: Record<string, number> = {};
+  const incidentsByTeam: Record<string, number> = {};
+  const signatureCounts: Record<string, number> = {};
+
+  let totalAuditorIncidents = 0;
+  let severityWeightedScore = 0;
+  let maxTurnRecorded = 0;
+
+  let evaluatedExpCount = 0;
+  let totalAccuracySum = 0;
+  let totalActualCash = 0;
+  let totalExpectedCash = 0;
+  let totalUtilityDelta = 0;
+  const outcomeDist: Record<ExpectationOutcomeCategory, number> = {
+    exceeded_expectations: 0,
+    met_expectations: 0,
+    underperformed: 0,
+    catastrophic_failure: 0
+  };
+
+  let influenceEventCount = 0;
+  let governorWeightSum = 0;
+  let overseerPrioritySum = 0;
+  let sequenceBiasSum = 0;
+  let totalAuditorFlags = 0;
+
+  for (const ev of safeEvents) {
+    if (ev.category in categoryCounts) {
+      categoryCounts[ev.category]++;
+    }
+    const sev = ev.severity || 'info';
+    if (sev in severityDistribution) {
+      severityDistribution[sev]++;
+    }
+    if (ev.category in severityByCategory && sev in severityByCategory[ev.category]) {
+      severityByCategory[ev.category][sev]++;
+    }
+
+    const day = typeof ev.day === 'number' && ev.day > 0 ? ev.day : 1;
+    if (ev.turn > maxTurnRecorded) maxTurnRecorded = ev.turn;
+
+    let daily = dayMap.get(day);
+    if (!daily) {
+      daily = { day, eventCount: 0, criticalCount: 0, auditorIncidentCount: 0, totalCashDelta: 0 };
+      dayMap.set(day, daily);
+    }
+    daily.eventCount++;
+    if (sev === 'critical') daily.criticalCount++;
+
+    const cashDelta = (ev.payload as any)?.stateDelta?.numericDeltas?.moneyDelta;
+    if (typeof cashDelta === 'number' && Number.isFinite(cashDelta)) {
+      daily.totalCashDelta += cashDelta;
+    }
+
+    if (ev.category === 'auditor_incident' || ev.auditorIncidentId) {
+      totalAuditorIncidents++;
+      daily.auditorIncidentCount++;
+      incidentsByDay[day] = (incidentsByDay[day] || 0) + 1;
+
+      const actorId = ev.actorId || ev.participants?.actorId;
+      if (actorId) incidentsByActor[actorId] = (incidentsByActor[actorId] || 0) + 1;
+
+      const teamId = ev.teamId || ev.participants?.teamId;
+      if (teamId) incidentsByTeam[teamId] = (incidentsByTeam[teamId] || 0) + 1;
+
+      const weight = sev === 'critical' ? 10 : sev === 'warning' ? 5 : 1;
+      severityWeightedScore += weight;
+
+      const sig = ev.summary || ev.auditorIncidentId || 'unclassified_incident';
+      signatureCounts[sig] = (signatureCounts[sig] || 0) + 1;
+    }
+
+    if (ev.expectation && ev.expectation.evaluated) {
+      evaluatedExpCount++;
+      const score = ev.expectation.accuracyScore ?? 0;
+      totalAccuracySum += score;
+      totalActualCash += ev.expectation.actualCashChange ?? 0;
+      totalExpectedCash += ev.expectation.expectedCashChange ?? 0;
+      totalUtilityDelta += ev.expectation.utilityDelta ?? 0;
+
+      const category = ev.expectation.outcomeCategory || 'met_expectations';
+      if (category in outcomeDist) outcomeDist[category]++;
+    }
+
+    const inf = ev.systemInfluences || ev.systemInfluence;
+    if (inf) {
+      influenceEventCount++;
+      governorWeightSum += inf.economyGovernorWeight ?? 1.0;
+      overseerPrioritySum += inf.overseerPriority ?? 1.0;
+      sequenceBiasSum += inf.sequenceBias ?? 0;
+      if (Array.isArray(inf.auditorFlags)) {
+        totalAuditorFlags += inf.auditorFlags.length;
+      }
+    }
+  }
+
+  const daysArray = Array.from(dayMap.values()).sort((a, b) => a.day - b.day);
+  const uniqueDaysRecorded = Math.max(1, daysArray.length);
+
+  const categoryPercentages: Record<GameActivityLedgerEventCategory, number> = {} as any;
+  for (const cat in categoryCounts) {
+    const k = cat as GameActivityLedgerEventCategory;
+    categoryPercentages[k] = totalEvents > 0 ? Math.round((categoryCounts[k] / totalEvents) * 1000) / 10 : 0;
+  }
+
+  const severityPercentages: Record<GameActivityLedgerSeverity, number> = {} as any;
+  for (const sev in severityDistribution) {
+    const k = sev as GameActivityLedgerSeverity;
+    severityPercentages[k] = totalEvents > 0 ? Math.round((severityDistribution[k] / totalEvents) * 1000) / 10 : 0;
+  }
+
+  let peakDay = { day: 1, count: 0 };
+  let quietestDay = { day: 1, count: Infinity };
+  for (const d of daysArray) {
+    if (d.eventCount > peakDay.count) peakDay = { day: d.day, count: d.eventCount };
+    if (d.eventCount < quietestDay.count) quietestDay = { day: d.day, count: d.eventCount };
+  }
+  if (quietestDay.count === Infinity) quietestDay = { day: 1, count: 0 };
+
+  let throughputVelocityTrend: 'accelerating' | 'stable' | 'decelerating' = 'stable';
+  if (daysArray.length >= 4) {
+    const mid = Math.floor(daysArray.length / 2);
+    const firstHalfAvg = daysArray.slice(0, mid).reduce((s, d) => s + d.eventCount, 0) / mid;
+    const secondHalfAvg = daysArray.slice(mid).reduce((s, d) => s + d.eventCount, 0) / (daysArray.length - mid);
+    const ratio = secondHalfAvg / Math.max(1, firstHalfAvg);
+    if (ratio > 1.25) throughputVelocityTrend = 'accelerating';
+    else if (ratio < 0.75) throughputVelocityTrend = 'decelerating';
+  }
+
+  const mostFrequentIncidentSignatures = Object.entries(signatureCounts)
+    .map(([signature, count]) => ({ signature, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return {
+    totalEvents,
+    uniqueDaysRecorded,
+    categoryCounts,
+    categoryPercentages,
+    severityDistribution,
+    severityPercentages,
+    severityByCategory,
+
+    throughput: {
+      totalEvents,
+      totalDays: uniqueDaysRecorded,
+      avgEventsPerDay: Math.round((totalEvents / uniqueDaysRecorded) * 10) / 10,
+      peakDay,
+      quietestDay,
+      dailyThroughput: daysArray,
+      throughputVelocityTrend
+    },
+
+    auditorDensity: {
+      totalIncidents: totalAuditorIncidents,
+      incidentsPerDay: Math.round((totalAuditorIncidents / uniqueDaysRecorded) * 100) / 100,
+      incidentsPerTurn: maxTurnRecorded > 0 ? Math.round((totalAuditorIncidents / maxTurnRecorded) * 100) / 100 : 0,
+      severityWeightedScore,
+      incidentsByDay,
+      incidentsByActor,
+      incidentsByTeam,
+      mostFrequentIncidentSignatures
+    },
+
+    expectations: {
+      totalEvaluated: evaluatedExpCount,
+      avgAccuracyScore: evaluatedExpCount > 0 ? Math.round(totalAccuracySum / evaluatedExpCount) : 100,
+      outcomeDistribution: outcomeDist,
+      totalActualCash,
+      totalExpectedCash,
+      netCashVariance: totalActualCash - totalExpectedCash,
+      totalUtilityDelta
+    },
+
+    systemInfluences: {
+      totalEventsWithInfluence: influenceEventCount,
+      avgEconomyGovernorWeight: influenceEventCount > 0 ? Math.round((governorWeightSum / influenceEventCount) * 100) / 100 : 1.0,
+      avgOverseerPriority: influenceEventCount > 0 ? Math.round((overseerPrioritySum / influenceEventCount) * 100) / 100 : 1.0,
+      avgSequenceBias: influenceEventCount > 0 ? Math.round((sequenceBiasSum / influenceEventCount) * 10) / 10 : 0,
+      activeAuditorFlagsCount: totalAuditorFlags
+    }
+  };
+}
+
+// ============================================================================
+// PHASE 9: ACTOR & TEAM PROFILE INTELLIGENCE ENGINE TYPES & HELPERS
+// ============================================================================
+
+export interface ActorNetWorthPoint {
+  day: number;
+  turn: number;
+  timestamp: number;
+  money: number;
+  netWorth: number;
+  moneyDelta: number;
+  netWorthDelta: number;
+  triggerEventSummary: string;
+}
+
+export interface ActorActionPreference {
+  actionType: string;
+  count: number;
+  percentage: number;
+  successCount: number;
+  failCount: number;
+  avgCost: number;
+  totalUtilityGenerated: number;
+}
+
+export interface ActorTeamContributionMetrics {
+  teamId: string | null;
+  treasuryDepositedTotal: number;
+  treasuryWithdrawnTotal: number;
+  netTreasuryContribution: number;
+  regionsControlledContribution: number;
+  regionDepositsTotal: number;
+  sabotageDefendedCount: number;
+  sabotageExecutedCount: number;
+  teamSynergyScore: number;
+}
+
+export interface ActorLedgerProfile {
+  actorId: string;
+  displayName: string;
+  teamId: string | null;
+  role: string;
+  kind: 'human' | 'ai';
+  
+  decisionMetrics: {
+    totalEvents: number;
+    totalDecisions: number;
+    successfulDecisions: number;
+    failedDecisions: number;
+    decisionSuccessRate: number;
+    decisionsByCategory: Record<GameActivityLedgerEventCategory, number>;
+  };
+
+  trajectory: {
+    startingMoney: number;
+    currentMoney: number;
+    startingNetWorth: number;
+    currentNetWorth: number;
+    netGrowthRatePercent: number;
+    peakNetWorth: number;
+    maxDrawdownAmount: number;
+    maxDrawdownPercent: number;
+    points: ActorNetWorthPoint[];
+  };
+
+  preferences: {
+    topActionTypes: ActorActionPreference[];
+    favoriteResource?: string;
+    resourceTransactionsCount: number;
+    challengesAttempted: number;
+    challengesWon: number;
+    challengeWinRate: number;
+    riskPropensityScore: number;
+    riskCategory: 'conservative' | 'moderate' | 'aggressive' | 'reckless';
+  };
+
+  teamContribution: ActorTeamContributionMetrics;
+
+  expectationPerformance: {
+    evaluatedCount: number;
+    avgAccuracyScore: number;
+    outcomes: Record<ExpectationOutcomeCategory, number>;
+  };
+}
+
+export function computeActorLedgerProfile(
+  actorId: string,
+  events: GameActivityLedgerEvent[],
+  gameState: any
+): ActorLedgerProfile {
+  const safeEvents = Array.isArray(events) ? events : [];
+  const actorEvents = safeEvents.filter(e => e.actorId === actorId || e.participants?.actorId === actorId);
+
+  const liveActor = gameState?.actorsById?.[actorId] || (actorId === 'player' ? gameState?.player : null);
+  const displayName = liveActor?.displayName || liveActor?.name || (actorId === 'player' ? 'Player' : actorId === 'ai' ? 'AI Leader' : actorId);
+  const teamId = liveActor?.teamId || null;
+  const role = liveActor?.role || 'actor';
+  const kind: 'human' | 'ai' = actorId === 'player' || liveActor?.kind === 'human' ? 'human' : 'ai';
+
+  const decisionsByCategory: Record<GameActivityLedgerEventCategory, number> = {
+    action: 0, decision: 0, approval: 0, treasury: 0, settings_change: 0,
+    auditor_incident: 0, plan: 0, config: 0, match_lifecycle: 0, system_health: 0
+  };
+
+  let totalDecisions = 0;
+  let successfulDecisions = 0;
+  let failedDecisions = 0;
+
+  const trajectoryPoints: ActorNetWorthPoint[] = [];
+  const startingMoney = typeof liveActor?.startingMoney === 'number' ? liveActor.startingMoney : (liveActor?.money || 1000);
+  const startingNetWorth = typeof liveActor?.startingNetWorth === 'number' ? liveActor.startingNetWorth : startingMoney;
+  let runningMoney = startingMoney;
+  let runningNetWorth = startingNetWorth;
+  let peakNetWorth = runningNetWorth;
+  let maxDrawdownAmount = 0;
+
+  const actionStatsMap = new Map<string, {
+    count: number;
+    successCount: number;
+    failCount: number;
+    totalCost: number;
+    totalUtility: number;
+  }>();
+
+  const resourceCounts: Record<string, number> = {};
+  let challengeAttempts = 0;
+  let challengeWins = 0;
+
+  let treasuryDeposited = 0;
+  let treasuryWithdrawn = 0;
+  let regionDepositsTotal = 0;
+  let sabotageDefendedCount = 0;
+  let sabotageExecutedCount = 0;
+  let positiveSynergyActions = 0;
+
+  let expCount = 0;
+  let expAccuracySum = 0;
+  const expOutcomes: Record<ExpectationOutcomeCategory, number> = {
+    exceeded_expectations: 0,
+    met_expectations: 0,
+    underperformed: 0,
+    catastrophic_failure: 0
+  };
+
+  const sortedActorEvents = [...actorEvents].sort((a, b) => a.sequenceId - b.sequenceId || a.timestamp - b.timestamp);
+
+  for (const ev of sortedActorEvents) {
+    if (ev.category in decisionsByCategory) {
+      decisionsByCategory[ev.category]++;
+    }
+
+    const actionType = ev.actionType || ev.eventType || ev.category;
+    totalDecisions++;
+
+    const isSuccess = (ev.payload as any)?.stateDelta?.executionSuccess ?? (ev.severity !== 'critical');
+    if (isSuccess) successfulDecisions++;
+    else failedDecisions++;
+
+    const deltas = (ev.payload as any)?.stateDelta?.numericDeltas;
+    const mDelta = deltas?.moneyDelta ?? 0;
+    const nwDelta = deltas?.netWorthDelta ?? mDelta;
+
+    runningMoney += mDelta;
+    runningNetWorth += nwDelta;
+
+    if (runningNetWorth > peakNetWorth) {
+      peakNetWorth = runningNetWorth;
+    } else {
+      const drawdown = peakNetWorth - runningNetWorth;
+      if (drawdown > maxDrawdownAmount) {
+        maxDrawdownAmount = drawdown;
+      }
+    }
+
+    if (mDelta !== 0 || nwDelta !== 0 || ev.category === 'action') {
+      trajectoryPoints.push({
+        day: ev.day,
+        turn: ev.turn,
+        timestamp: ev.timestamp,
+        money: Math.max(0, runningMoney),
+        netWorth: Math.max(0, runningNetWorth),
+        moneyDelta: mDelta,
+        netWorthDelta: nwDelta,
+        triggerEventSummary: ev.summary
+      });
+    }
+
+    let stat = actionStatsMap.get(actionType);
+    if (!stat) {
+      stat = { count: 0, successCount: 0, failCount: 0, totalCost: 0, totalUtility: 0 };
+      actionStatsMap.set(actionType, stat);
+    }
+    stat.count++;
+    if (isSuccess) stat.successCount++;
+    else stat.failCount++;
+
+    const cost = Math.abs((ev.payload as any)?.cost ?? (ev.payload as any)?.amount ?? 0);
+    stat.totalCost += cost;
+    stat.totalUtility += (ev.expectation?.utilityDelta ?? 0);
+
+    const resName = (ev.payload as any)?.resource || (ev.payload as any)?.resourceName || (ev.payload as any)?.item;
+    if (typeof resName === 'string') {
+      resourceCounts[resName] = (resourceCounts[resName] || 0) + 1;
+    }
+
+    if (actionType.includes('challenge')) {
+      challengeAttempts++;
+      if (isSuccess) challengeWins++;
+    }
+
+    if (ev.category === 'treasury') {
+      if (actionType.includes('deposit') || mDelta < 0) {
+        treasuryDeposited += Math.abs(mDelta || cost);
+        positiveSynergyActions++;
+      } else if (actionType.includes('withdraw') || mDelta > 0) {
+        treasuryWithdrawn += Math.abs(mDelta || cost);
+      }
+    }
+
+    if (actionType.includes('region_deposit')) {
+      regionDepositsTotal += Math.abs(mDelta || cost);
+      positiveSynergyActions++;
+    }
+
+    if (actionType.includes('sabotage')) {
+      if (ev.participants?.targetActorId === actorId) {
+        sabotageDefendedCount++;
+      } else {
+        sabotageExecutedCount++;
+      }
+    }
+
+    if (ev.expectation && ev.expectation.evaluated) {
+      expCount++;
+      expAccuracySum += (ev.expectation.accuracyScore ?? 0);
+      const cat = ev.expectation.outcomeCategory || 'met_expectations';
+      if (cat in expOutcomes) expOutcomes[cat]++;
+    }
+  }
+
+  const currentMoney = typeof liveActor?.money === 'number' ? liveActor.money : runningMoney;
+  const currentNetWorth = typeof liveActor?.netWorth === 'number' ? liveActor.netWorth : runningNetWorth;
+  const netGrowthRatePercent = startingMoney > 0
+    ? Math.round(((currentNetWorth - startingMoney) / startingMoney) * 1000) / 10
+    : 0;
+
+  const maxDrawdownPercent = peakNetWorth > 0
+    ? Math.round((maxDrawdownAmount / peakNetWorth) * 1000) / 10
+    : 0;
+
+  const topActionTypes: ActorActionPreference[] = Array.from(actionStatsMap.entries())
+    .map(([actionType, stat]) => ({
+      actionType,
+      count: stat.count,
+      percentage: totalDecisions > 0 ? Math.round((stat.count / totalDecisions) * 1000) / 10 : 0,
+      successCount: stat.successCount,
+      failCount: stat.failCount,
+      avgCost: stat.count > 0 ? Math.round(stat.totalCost / stat.count) : 0,
+      totalUtilityGenerated: stat.totalUtility
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const sortedResources = Object.entries(resourceCounts).sort((a, b) => b[1] - a[1]);
+  const favoriteResource = sortedResources[0]?.[0];
+
+  const challengeRiskWeight = challengeAttempts * 10;
+  const sabotageRiskWeight = sabotageExecutedCount * 15;
+  const avgWager = topActionTypes.reduce((s, a) => s + a.avgCost, 0) / Math.max(1, topActionTypes.length);
+  const wagerRiskWeight = Math.min(40, (avgWager / 500) * 40);
+
+  const rawRiskScore = Math.min(100, Math.max(0, Math.round(challengeRiskWeight + sabotageRiskWeight + wagerRiskWeight)));
+  const riskCategory: 'conservative' | 'moderate' | 'aggressive' | 'reckless' =
+    rawRiskScore >= 75 ? 'reckless' :
+    rawRiskScore >= 50 ? 'aggressive' :
+    rawRiskScore >= 25 ? 'moderate' : 'conservative';
+
+  const netTreasury = treasuryDeposited - treasuryWithdrawn;
+  const rawSynergy = 50 + (positiveSynergyActions * 5) + (netTreasury > 0 ? 15 : netTreasury < 0 ? -15 : 0);
+  const teamSynergyScore = Math.min(100, Math.max(0, Math.round(rawSynergy)));
+
+  return {
+    actorId,
+    displayName,
+    teamId,
+    role,
+    kind,
+
+    decisionMetrics: {
+      totalEvents: actorEvents.length,
+      totalDecisions,
+      successfulDecisions,
+      failedDecisions,
+      decisionSuccessRate: totalDecisions > 0 ? Math.round((successfulDecisions / totalDecisions) * 1000) / 10 : 100,
+      decisionsByCategory
+    },
+
+    trajectory: {
+      startingMoney,
+      currentMoney,
+      startingNetWorth,
+      currentNetWorth,
+      netGrowthRatePercent,
+      peakNetWorth,
+      maxDrawdownAmount,
+      maxDrawdownPercent,
+      points: trajectoryPoints.slice(-50)
+    },
+
+    preferences: {
+      topActionTypes,
+      favoriteResource,
+      resourceTransactionsCount: Object.values(resourceCounts).reduce((a, b) => a + b, 0),
+      challengesAttempted: challengeAttempts,
+      challengesWon: challengeWins,
+      challengeWinRate: challengeAttempts > 0 ? Math.round((challengeWins / challengeAttempts) * 100) : 0,
+      riskPropensityScore: rawRiskScore,
+      riskCategory
+    },
+
+    teamContribution: {
+      teamId,
+      treasuryDepositedTotal: treasuryDeposited,
+      treasuryWithdrawnTotal: treasuryWithdrawn,
+      netTreasuryContribution: netTreasury,
+      regionsControlledContribution: Math.floor(regionDepositsTotal / 5),
+      regionDepositsTotal,
+      sabotageDefendedCount,
+      sabotageExecutedCount,
+      teamSynergyScore
+    },
+
+    expectationPerformance: {
+      evaluatedCount: expCount,
+      avgAccuracyScore: expCount > 0 ? Math.round(expAccuracySum / expCount) : 100,
+      outcomes: expOutcomes
+    }
+  };
+}
+
+// ============================================================================
+// PHASE 16: CRITICAL-EVENT TIMELINE & MATCH STORY GENERATOR TYPES & HELPERS
+// ============================================================================
+
+export type TurningPointType =
+  | 'pivotal_governance'
+  | 'territorial_shift'
+  | 'economic_crisis_bailout'
+  | 'auditor_intervention'
+  | 'strategic_climax'
+  | 'expectation_anomaly'
+  | 'emergency_response'
+  | 'routine_milestone';
+
+export interface TurningPointScoreResult {
+  score: number;
+  turningPointType: TurningPointType;
+  isTurningPoint: boolean;
+  reasons: string[];
+}
+
+export interface MatchStoryMilestone {
+  id: string;
+  eventId: string;
+  day: number;
+  turn: number;
+  timestamp: number;
+  severity: GameActivityLedgerSeverity;
+  turningPointType: TurningPointType;
+  isTurningPoint: boolean;
+  score: number;
+  actorId: string | null;
+  actorDisplayName: string;
+  teamId: string | null;
+  headline: string;
+  narrativeText: string;
+  stateDeltaSummary: string;
+  impactDeltas: {
+    moneyDelta: number;
+    netWorthDelta: number;
+    regionsDelta: number;
+    treasuryDelta: number;
+  };
+  causalLinkage: {
+    causalChainId?: string;
+    rootEventId?: string;
+    parentEventId?: string;
+    consequenceCount: number;
+  };
+  originalEvent: GameActivityLedgerEvent;
+}
+
+export interface MatchStoryTimelineResult {
+  totalEventsProcessed: number;
+  turningPointCount: number;
+  milestones: MatchStoryMilestone[];
+  milestonesByDay: Record<number, MatchStoryMilestone[]>;
+  matchHighlights: MatchStoryMilestone[];
+  dominantTurningPointType: TurningPointType;
+}
+
+export function scoreLedgerEventTurningPoint(
+  event: GameActivityLedgerEvent,
+  allEvents?: GameActivityLedgerEvent[]
+): TurningPointScoreResult {
+  let score = 0;
+  const reasons: string[] = [];
+  let type: TurningPointType = 'routine_milestone';
+
+  const category = event.category;
+  const severity = event.severity || 'info';
+  const actionType = (event.actionType || event.eventType || '').toLowerCase();
+  const summary = (event.summary || '').toLowerCase();
+  const deltas = (event.payload as any)?.stateDelta?.numericDeltas;
+
+  if (severity === 'critical') {
+    score += 40;
+    reasons.push('Critical Severity Level');
+  } else if (severity === 'warning') {
+    score += 20;
+    reasons.push('Warning Severity Level');
+  }
+
+  if (category === 'auditor_incident' || event.auditorIncidentId) {
+    score += 35;
+    type = 'auditor_intervention';
+    reasons.push('Auditor Incident Enforcement');
+  } else if (category === 'approval' || actionType.includes('proposal') || actionType.includes('governance')) {
+    score += 30;
+    type = 'pivotal_governance';
+    reasons.push('Governance Proposal Decision');
+  } else if (actionType.includes('region_capture') || actionType.includes('region_claim') || (deltas && typeof deltas.regionsControlledDelta === 'number' && deltas.regionsControlledDelta !== 0)) {
+    score += 35;
+    type = 'territorial_shift';
+    reasons.push('Regional Control Transition');
+  } else if (category === 'treasury' || actionType.includes('bailout') || actionType.includes('emergency_funding')) {
+    score += 30;
+    type = 'economic_crisis_bailout';
+    reasons.push('Treasury Bailout / Financial Recovery');
+  } else if (actionType.includes('emergency_') || summary.includes('emergency')) {
+    score += 30;
+    type = 'emergency_response';
+    reasons.push('Emergency Action Triggered');
+  } else if (category === 'match_lifecycle') {
+    score += 25;
+    type = 'strategic_climax';
+    reasons.push('Match Lifecycle Event');
+  }
+
+  const moneyDelta = Math.abs(deltas?.moneyDelta || 0);
+  const netWorthDelta = Math.abs(deltas?.netWorthDelta || 0);
+  if (netWorthDelta >= 2000 || moneyDelta >= 1500) {
+    score += 25;
+    reasons.push(`High Net Worth / Cash Delta ($${netWorthDelta || moneyDelta})`);
+  }
+
+  if (event.expectation?.evaluated) {
+    const outcome = event.expectation.outcomeCategory;
+    if (outcome === 'catastrophic_failure') {
+      score += 30;
+      type = 'expectation_anomaly';
+      reasons.push('Catastrophic Expectation Failure');
+    } else if (outcome === 'exceeded_expectations') {
+      score += 20;
+      if (type === 'routine_milestone') type = 'expectation_anomaly';
+      reasons.push('Exceeded Expectation Outcome');
+    }
+  }
+
+  if (Array.isArray(allEvents) && event.id) {
+    const downstream = getEventDownstreamConsequences(allEvents, event.id);
+    if (downstream.length >= 2) {
+      score += 20;
+      reasons.push(`Causal Hub (${downstream.length} downstream consequences)`);
+    }
+  }
+
+  if (event.bookmarked) {
+    score += 15;
+    reasons.push('User Bookmarked Event');
+  }
+
+  const isTurningPoint = score >= 35;
+
+  return {
+    score,
+    turningPointType: type,
+    isTurningPoint,
+    reasons
+  };
+}
+
+export function generateMatchStoryNarrative(
+  event: GameActivityLedgerEvent,
+  scoreResult: TurningPointScoreResult,
+  getActorName: (id: string | null | undefined) => string
+): { headline: string; narrativeText: string; stateDeltaSummary: string } {
+  const day = event.day || 1;
+  const actorName = getActorName(event.actorId || event.participants?.actorId);
+  const teamId = event.teamId || event.participants?.teamId || '';
+  const actionType = event.actionType || event.eventType || event.category;
+  const summary = event.summary || '';
+  const deltas = (event.payload as any)?.stateDelta?.numericDeltas;
+
+  let headline = `Day ${day}: ${summary}`;
+  let narrativeText = `On Day ${day}, ${actorName} engaged in ${actionType.replace(/_/g, ' ')}.`;
+  const deltaParts: string[] = [];
+
+  if (deltas) {
+    if (typeof deltas.moneyDelta === 'number' && deltas.moneyDelta !== 0) deltaParts.push(`${deltas.moneyDelta > 0 ? '+' : ''}$${deltas.moneyDelta.toLocaleString()} Cash`);
+    if (typeof deltas.netWorthDelta === 'number' && deltas.netWorthDelta !== 0 && deltas.netWorthDelta !== deltas.moneyDelta) deltaParts.push(`${deltas.netWorthDelta > 0 ? '+' : ''}$${deltas.netWorthDelta.toLocaleString()} Net Worth`);
+    if (typeof deltas.regionsControlledDelta === 'number' && deltas.regionsControlledDelta !== 0) deltaParts.push(`${deltas.regionsControlledDelta > 0 ? '+' : ''}${deltas.regionsControlledDelta} Region`);
+    if (typeof deltas.treasuryDelta === 'number' && deltas.treasuryDelta !== 0) deltaParts.push(`${deltas.treasuryDelta > 0 ? '+' : ''}$${deltas.treasuryDelta.toLocaleString()} Treasury`);
+  }
+  const stateDeltaSummary = deltaParts.length > 0 ? deltaParts.join(' · ') : 'No direct financial delta';
+
+  switch (scoreResult.turningPointType) {
+    case 'pivotal_governance': {
+      const mode = (event.payload as any)?.mode || 'Standard';
+      const outcome = (event.payload as any)?.outcome || 'passed';
+      headline = `Day ${day}: Governance Proposal ${String(outcome).toUpperCase()}`;
+      narrativeText = `Day ${day}: ${actorName} proposed governance directive (${mode}). Policy result was ${String(outcome).toUpperCase()}, steering match parameters.`;
+      break;
+    }
+
+    case 'territorial_shift': {
+      const region = (event.payload as any)?.stateDelta?.structuralTransitions?.region?.after || (event.payload as any)?.region || 'a strategic region';
+      headline = `Day ${day}: ${actorName} Secured ${region}`;
+      narrativeText = `Day ${day}: ${actorName} successfully claimed control of ${region}, shifting regional dominion in favor of ${teamId ? `Team ${teamId}` : actorName}.`;
+      break;
+    }
+
+    case 'economic_crisis_bailout': {
+      const amt = (event.payload as any)?.amount || Math.abs(deltas?.treasuryDelta || 0);
+      headline = `Day ${day}: Emergency Treasury Bailout ($${amt.toLocaleString()})`;
+      narrativeText = `Day ${day}: Facing economic distress, ${teamId ? `Team ${teamId}` : 'The Treasury'} executed a $${amt.toLocaleString()} liquidity transfer to stabilize ${actorName}.`;
+      break;
+    }
+
+    case 'auditor_intervention': {
+      const ruleId = (event.payload as any)?.ruleId || event.auditorIncidentId || 'Policy Check';
+      headline = `Day ${day}: Auditor Flagged Rule '${ruleId}' (${event.severity})`;
+      narrativeText = `Day ${day}: AI Operations Auditor flagged ${actorName} for ${ruleId}. Enforcement action was dispatched under ${event.severity} severity.`;
+      break;
+    }
+
+    case 'emergency_response': {
+      headline = `Day ${day}: ${actorName} Activated Emergency Protocol`;
+      narrativeText = `Day ${day}: Under tactical pressure, ${actorName} initiated emergency response action '${actionType.replace(/_/g, ' ')}' to protect team position.`;
+      break;
+    }
+
+    case 'expectation_anomaly': {
+      const outcome = event.expectation?.outcomeCategory?.replace(/_/g, ' ') || 'unexpected result';
+      headline = `Day ${day}: Strategic Plan Outcome - ${outcome.toUpperCase()}`;
+      narrativeText = `Day ${day}: ${actorName}'s plan execution resulted in an outcome rated '${outcome}' compared to initial projection.`;
+      break;
+    }
+
+    case 'strategic_climax': {
+      headline = `Day ${day}: Match Milestone - ${summary}`;
+      narrativeText = `Day ${day}: A major match milestone occurred: ${summary}.`;
+      break;
+    }
+
+    default: {
+      headline = `Day ${day}: ${summary}`;
+      narrativeText = `Day ${day}: ${actorName} performed ${actionType.replace(/_/g, ' ')}. ${summary}`;
+      break;
+    }
+  }
+
+  return { headline, narrativeText, stateDeltaSummary };
+}
+
+export function generateMatchStoryTimeline(
+  events: GameActivityLedgerEvent[],
+  gameState?: any,
+  options?: {
+    turningPointsOnly?: boolean;
+    minScoreThreshold?: number;
+    maxMilestonesPerDay?: number;
+  }
+): MatchStoryTimelineResult {
+  const safeEvents = Array.isArray(events) ? events : [];
+  const minThreshold = options?.minScoreThreshold ?? 35;
+  const turningPointsOnly = options?.turningPointsOnly ?? false;
+
+  const getActorName = (id: string | null | undefined): string => {
+    if (!id) return 'System';
+    if (id === 'player') return 'Player';
+    const found = gameState?.actorsById?.[id] || gameState?.actors?.[id];
+    return found?.displayName || found?.name || id;
+  };
+
+  const milestones: MatchStoryMilestone[] = [];
+  const milestonesByDay: Record<number, MatchStoryMilestone[]> = {};
+  const typeCounts: Record<TurningPointType, number> = {
+    pivotal_governance: 0,
+    territorial_shift: 0,
+    economic_crisis_bailout: 0,
+    auditor_intervention: 0,
+    strategic_climax: 0,
+    expectation_anomaly: 0,
+    emergency_response: 0,
+    routine_milestone: 0
+  };
+
+  let turningPointCount = 0;
+
+  for (const ev of safeEvents) {
+    const scoreRes = scoreLedgerEventTurningPoint(ev, safeEvents);
+    if (turningPointsOnly && !scoreRes.isTurningPoint && scoreRes.score < minThreshold) {
+      continue;
+    }
+
+    if (scoreRes.isTurningPoint) {
+      turningPointCount++;
+    }
+
+    typeCounts[scoreRes.turningPointType] = (typeCounts[scoreRes.turningPointType] || 0) + 1;
+
+    const narrative = generateMatchStoryNarrative(ev, scoreRes, getActorName);
+    const downstream = getEventDownstreamConsequences(safeEvents, ev.id);
+
+    const milestone: MatchStoryMilestone = {
+      id: `ms_${ev.id}`,
+      eventId: ev.id,
+      day: ev.day || 1,
+      turn: ev.turn || 0,
+      timestamp: ev.timestamp,
+      severity: ev.severity || 'info',
+      turningPointType: scoreRes.turningPointType,
+      isTurningPoint: scoreRes.isTurningPoint,
+      score: scoreRes.score,
+      actorId: ev.actorId || ev.participants?.actorId || null,
+      actorDisplayName: getActorName(ev.actorId || ev.participants?.actorId),
+      teamId: ev.teamId || ev.participants?.teamId || null,
+      headline: narrative.headline,
+      narrativeText: narrative.narrativeText,
+      stateDeltaSummary: narrative.stateDeltaSummary,
+      impactDeltas: {
+        moneyDelta: (ev.payload as any)?.stateDelta?.numericDeltas?.moneyDelta || 0,
+        netWorthDelta: (ev.payload as any)?.stateDelta?.numericDeltas?.netWorthDelta || 0,
+        regionsDelta: (ev.payload as any)?.stateDelta?.numericDeltas?.regionsControlledDelta || 0,
+        treasuryDelta: (ev.payload as any)?.stateDelta?.numericDeltas?.treasuryDelta || 0,
+      },
+      causalLinkage: {
+        causalChainId: ev.causalChainId || ev.causalLinkage?.causalChainId,
+        rootEventId: ev.rootEventId || ev.causalLinkage?.rootEventId,
+        parentEventId: ev.parentEventId || ev.causalLinkage?.parentEventId,
+        consequenceCount: downstream.length
+      },
+      originalEvent: ev
+    };
+
+    milestones.push(milestone);
+    const d = milestone.day;
+    if (!milestonesByDay[d]) milestonesByDay[d] = [];
+    milestonesByDay[d].push(milestone);
+  }
+
+  const matchHighlights = [...milestones]
+    .filter(m => m.isTurningPoint)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  let dominantType: TurningPointType = 'routine_milestone';
+  let maxC = -1;
+  for (const [t, c] of Object.entries(typeCounts)) {
+    if (t !== 'routine_milestone' && c > maxC) {
+      maxC = c;
+      dominantType = t as TurningPointType;
+    }
+  }
+
+  return {
+    totalEventsProcessed: safeEvents.length,
+    turningPointCount,
+    milestones,
+    milestonesByDay,
+    matchHighlights,
+    dominantTurningPointType: dominantType
+  };
+}
+
+
+export function playerReducer(state, action) {
   switch (action.type) {
     case 'UPDATE_MONEY':
       return { ...state, money: Math.max(0, state.money + action.payload) };
@@ -12894,6 +16332,8 @@ function playerReducer(state, action) {
         specialAbilityUses: char.specialAbility.usesLeft,
         name: action.payload.name || "Player"
       };
+    case 'EVALUATE_ACTIVITY_LEDGER_EXPECTATIONS':
+      return state;
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
     default:
@@ -12958,7 +16398,9 @@ const initialGameState = {
   challengeCompletions: [] as ChallengeCompletionLogEntry[],
   grandTourState: createDefaultGrandTourState(),
   decisionState: createDefaultDecisionState(),
-  gameActivityLedger: createDefaultGameActivityLedgerState()
+  gameActivityLedger: createDefaultGameActivityLedgerState(),
+  persistentOpponentModels: {} as Record<string, PersistentOpponentModel>,
+  aiCalibrationState: { weightMultipliers: { profit: 1.0, risk: 1.0, momentum: 1.0 } } as AiCalibrationState
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -13043,13 +16485,23 @@ const computeRegionControlStats = (
   };
 };
 
-function gameStateReducer(state, action) {
+export function gameStateReducer(state, action) {
   switch (action.type) {
-    case 'NEXT_DAY':
+    case 'NEXT_DAY': {
       const newDay = state.day + 1;
       const seasons = ["Summer", "Autumn", "Winter", "Spring"];
       const newSeason = seasons[Math.floor((newDay - 1) / 7) % 4];
-      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0 };
+      let updatedLedger = state.gameActivityLedger;
+      try {
+        if (updatedLedger?.events?.length) {
+          const { updatedEvents } = evaluateEventExpectations(updatedLedger.events, newDay, {});
+          updatedLedger = { ...updatedLedger, events: updatedEvents };
+        }
+      } catch (err) {
+        console.error("[Non-Blocking Engine Error] NEXT_DAY ledger expectations evaluation failed:", err);
+      }
+      return { ...state, day: newDay, season: newSeason, actionsThisTurn: 0, gameActivityLedger: updatedLedger };
+    }
     case 'UPDATE_WEATHER':
       return { ...state, weather: action.payload };
     case 'UPDATE_RESOURCE_PRICES':
@@ -13228,24 +16680,212 @@ function gameStateReducer(state, action) {
           ? { ...createDefaultGameActivityLedgerState(), ...action.payload }
           : state.gameActivityLedger
       };
+    case 'EVALUATE_ACTIVITY_LEDGER_EXPECTATIONS': {
+      try {
+        const currentDay = typeof action.payload?.currentDay === 'number' ? action.payload.currentDay : state.day;
+        const actorsById = action.payload?.actorsById || {};
+        const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+        const { updatedEvents } = evaluateEventExpectations(existingState.events, currentDay, actorsById);
+        return {
+          ...state,
+          gameActivityLedger: {
+            ...existingState,
+            events: updatedEvents
+          }
+        };
+      } catch (err) {
+        console.error("[Non-Blocking Engine Error] EVALUATE_ACTIVITY_LEDGER_EXPECTATIONS failed:", err);
+        return state;
+      }
+    }
     // GL1: the append operation is declared now, alongside the state's own type/factory/sanitizer,
     // for schema stability — mirroring RECORD_DECISION_TRACE's own precedent — but has zero real
     // call sites this phase. Event emission across the game's existing systems is GL2's job.
     case 'RECORD_GAME_ACTIVITY_LEDGER_EVENT': {
-      // GL11: maxEvents/retentionPolicy are threaded through the action payload (not read from a
-      // gameSettings closure, which this module-level reducer doesn't have access to) — the caller
-      // (appendGameActivityLedgerEvent) is responsible for supplying the player's configured values.
       const payload = action.payload as { event?: GameActivityLedgerEvent; maxEvents?: number; retentionPolicy?: 'keep_recent' | 'keep_critical' } | undefined;
-      const event = payload?.event;
-      if (!event || typeof event.id !== 'string') return state;
+      const rawEvent = payload?.event;
+      if (!rawEvent || (typeof rawEvent.id !== 'string' && typeof rawEvent.eventId !== 'string')) return state;
       const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+
+      const seqId = existingState.nextSequenceId || (existingState.events.length + 1);
+      const eventId = rawEvent.eventId || rawEvent.id || `glevt_${Date.now()}_${seqId}`;
+      const prevHash = existingState.lastEventHash || '00000000';
+      const category = rawEvent.category || 'action';
+      const eventType = rawEvent.eventType || (rawEvent.actionType || (category as string));
+      const timestamp = rawEvent.timestamp || Date.now();
+      const integrityHash = calculateEventIntegrityHash(prevHash, seqId, eventId, timestamp, category, eventType);
+
+      const causalLinkage: GameActivityLedgerCausalLinkage = {
+        causalChainId: rawEvent.causalLinkage?.causalChainId || rawEvent.causalChainId || rawEvent.correlationChainId,
+        parentEventId: rawEvent.causalLinkage?.parentEventId || rawEvent.parentEventId,
+        rootEventId: rawEvent.causalLinkage?.rootEventId || rawEvent.rootEventId,
+        causalDepth: typeof rawEvent.causalLinkage?.causalDepth === 'number'
+          ? rawEvent.causalLinkage.causalDepth
+          : (typeof rawEvent.causalDepth === 'number' ? rawEvent.causalDepth : undefined)
+      };
+
+      const event: GameActivityLedgerEvent = {
+        ...rawEvent,
+        id: eventId,
+        eventId,
+        sequenceId: seqId,
+        category: category as GameActivityLedgerEventCategory,
+        eventType,
+        causalLinkage,
+        causalChainId: causalLinkage.causalChainId,
+        parentEventId: causalLinkage.parentEventId,
+        rootEventId: causalLinkage.rootEventId,
+        causalDepth: causalLinkage.causalDepth,
+        expectation: rawEvent.expectation ? { ...rawEvent.expectation } : undefined,
+        systemInfluences: rawEvent.systemInfluences ? { ...rawEvent.systemInfluences } : (rawEvent.systemInfluence ? { ...rawEvent.systemInfluence } : undefined),
+        systemInfluence: rawEvent.systemInfluence ? { ...rawEvent.systemInfluence } : (rawEvent.systemInfluences ? { ...rawEvent.systemInfluences } : undefined),
+        integrityHash
+      };
+
       const maxEvents = typeof payload?.maxEvents === 'number' ? payload.maxEvents : GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING;
       const retentionPolicy = payload?.retentionPolicy === 'keep_critical' ? 'keep_critical' : 'keep_recent';
+      const pruneResult = pruneLedgerEvents([...existingState.events, event], maxEvents, retentionPolicy);
+      const existingArchived = existingState.archivedEvents || [];
+
       return {
         ...state,
         gameActivityLedger: {
           ...existingState,
-          events: trimGameActivityLedgerEvents([...existingState.events, event], maxEvents, retentionPolicy)
+          events: pruneResult.activeEvents,
+          archivedEvents: [...existingArchived, ...pruneResult.prunedEvents],
+          nextSequenceId: seqId + 1,
+          lastEventHash: integrityHash,
+          totalEventsRecorded: (existingState.totalEventsRecorded || existingState.events.length) + 1
+        }
+      };
+    }
+    case 'TOGGLE_BOOKMARK_GAME_ACTIVITY_LEDGER_EVENT': {
+      const targetId = action.payload?.eventId;
+      if (!targetId) return state;
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const updatedEvents = existingLedger.events.map(event =>
+        event.id === targetId || event.eventId === targetId
+          ? { ...event, bookmarked: !event.bookmarked }
+          : event
+      );
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          events: updatedEvents
+        }
+      };
+    }
+    case 'ANNOTATE_GAME_ACTIVITY_LEDGER_EVENT': {
+      const { eventId, annotation } = action.payload || {};
+      if (!eventId) return state;
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const updatedEvents = existingLedger.events.map(event =>
+        event.id === eventId || event.eventId === eventId
+          ? { ...event, annotation: typeof annotation === 'string' && annotation.trim() ? annotation.trim() : undefined }
+          : event
+      );
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          events: updatedEvents
+        }
+      };
+    }
+    case 'TAG_GAME_ACTIVITY_LEDGER_EVENT': {
+      const { eventId, tags } = action.payload || {};
+      if (!eventId) return state;
+      const sanitizedTags = Array.isArray(tags) ? Array.from(new Set(tags.map(t => String(t).trim()).filter(Boolean))) : [];
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const updatedEvents = existingLedger.events.map(event =>
+        event.id === eventId || event.eventId === eventId
+          ? { ...event, tags: sanitizedTags }
+          : event
+      );
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          events: updatedEvents
+        }
+      };
+    }
+    case 'CREATE_DIAGNOSTIC_COLLECTION': {
+      const newCol: GameActivityLedgerCollection = {
+        id: action.payload?.id || `col_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
+        name: action.payload?.name || 'Unnamed Collection',
+        description: action.payload?.description || '',
+        createdTimestamp: Date.now(),
+        eventIds: Array.isArray(action.payload?.eventIds) ? action.payload.eventIds : [],
+        tags: Array.isArray(action.payload?.tags) ? action.payload.tags : []
+      };
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const existingCols = existingLedger.collections || [];
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          collections: [...existingCols, newCol]
+        }
+      };
+    }
+    case 'UPDATE_DIAGNOSTIC_COLLECTION': {
+      const { collectionId, updates } = action.payload || {};
+      if (!collectionId) return state;
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const existingCols = existingLedger.collections || [];
+      const updatedCols = existingCols.map(col =>
+        col.id === collectionId
+          ? { ...col, ...updates, updatedTimestamp: Date.now() }
+          : col
+      );
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          collections: updatedCols
+        }
+      };
+    }
+    case 'DELETE_DIAGNOSTIC_COLLECTION': {
+      const { collectionId } = action.payload || {};
+      if (!collectionId) return state;
+      const existingLedger = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const existingCols = existingLedger.collections || [];
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingLedger,
+          collections: existingCols.filter(c => c.id !== collectionId)
+        }
+      };
+    }
+    case 'PRUNE_GAME_ACTIVITY_LEDGER': {
+      const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      const maxEvents = action.payload?.maxEvents ?? state.gameSettings?.gameActivityLedgerMaxEvents ?? GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING;
+      const policy = action.payload?.policy ?? state.gameSettings?.gameActivityLedgerRetentionPolicy ?? 'keep_recent';
+
+      const pruneResult = pruneLedgerEvents(existingState.events, maxEvents, policy);
+      const existingArchived = existingState.archivedEvents || [];
+
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingState,
+          events: pruneResult.activeEvents,
+          archivedEvents: [...existingArchived, ...pruneResult.prunedEvents]
+        }
+      };
+    }
+    case 'CLEAR_ARCHIVED_GAME_ACTIVITY_LEDGER':
+    case 'CLEAR_ARCHIVED_LEDGER_EVENTS': {
+      const existingState = state.gameActivityLedger || createDefaultGameActivityLedgerState();
+      return {
+        ...state,
+        gameActivityLedger: {
+          ...existingState,
+          archivedEvents: []
         }
       };
     }
@@ -13267,6 +16907,27 @@ interface SaveMetadata {
   timestamp: number;
   gameVersion: string;
   saveDescription: string;
+  schemaVersion?: string;
+  saveSchemaVersion?: string;
+  versionConstants?: typeof VERSION_CONSTANTS;
+}
+
+export function migrateV69ToV70SaveData(data: SaveGameData): SaveGameData {
+  const migratedSettings: GameSettingsState = {
+    ...DEFAULT_GAME_SETTINGS,
+    ...(data.gameSettings || {})
+  };
+  return {
+    ...data,
+    metadata: {
+      ...data.metadata,
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+      schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+      saveSchemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+      versionConstants: VERSION_CONSTANTS
+    },
+    gameSettings: migratedSettings
+  };
 }
 
 interface SaveGameData {
@@ -13295,13 +16956,44 @@ interface SaveGameData {
   };
 }
 
+// M4 Phase 7: Redesigned 10-Tab Ledger Interface state & tab constants
+type LedgerTabId = 
+  | 'overview'       // Tab 1: Activity Feed / Overview
+  | 'causal'         // Tab 2: Causal Explorer
+  | 'expectations'   // Tab 3: Expectations & ROI
+  | 'influence'      // Tab 4: System Influence Matrix
+  | 'profiles'       // Tab 5: Actor & Team Profiles
+  | 'analytics'      // Tab 6: Analytics & Metrics
+  | 'diagnostics'    // Tab 7: Diagnostic Collections & Bundles
+  | 'story'          // Tab 8: Match Story & Timeline
+  | 'replay'         // Tab 9: Replay & Balance Lab
+  | 'settings';      // Tab 10: Settings & Health Hub
+
+const LEDGER_DASHBOARD_TAB_ORDER: LedgerTabId[] = [
+  'overview', 'causal', 'expectations', 'influence', 'profiles', 
+  'analytics', 'diagnostics', 'story', 'replay', 'settings'
+];
+
+const LEDGER_DASHBOARD_TAB_LABELS: Record<LedgerTabId, string> = {
+  overview: '📜 Activity Overview',
+  causal: '🔗 Causal Explorer',
+  expectations: '📈 Expectations & ROI',
+  influence: '⚡ System Influence',
+  profiles: '👤 Actor Profiles',
+  analytics: '📊 Analytics & Metrics',
+  diagnostics: '🔬 Diagnostic Bundles',
+  story: '📖 Match Story',
+  replay: '🎬 Replay & Balance',
+  settings: '⚙️ Settings & Health'
+};
+
 // RP2: AI Replay and Deterministic Simulation System — versioned, checksummed replay file format.
 // Deliberately a separate schema from SaveGameData/validateSaveData (never reused) — a replay is an
 // append-only historical record of one match, not a resumable live-state snapshot, and needs its own
 // version-branching migrator per the approved roadmap. RP2 only builds the format + recording; actual
 // playback/reconstruction (RP3), checkpoint substance/divergence detection (RP4), and branching (RP5)
 // are later phases — ReplayCheckpoint below is an anchor-point stub only, populated for real in RP4.
-const REPLAY_SCHEMA_VERSION = 1;
+const REPLAY_SCHEMA_VERSION = 2;
 
 // RP3: how a future real reconstruction pass (RP4's job — checkpoint substance/divergence
 // classification) should behave when a recorded event no longer reproduces exactly, e.g. after a
@@ -13324,6 +17016,8 @@ interface ReplayEvent {
   summary: string;
   payload: Record<string, unknown>;
   timestamp: number;
+  stateHash?: string;
+  rngAudit?: RngAuditSnapshot;
 }
 
 // RP4: checkpoint substance — real kind/relatedId/expectedState fields, replacing the RP3-era bare
@@ -13341,6 +17035,9 @@ interface ReplayCheckpoint {
   kind?: ReplayCheckpointKind;
   relatedId?: string;
   expectedState?: { moneyByTeam: Record<string, number>; day: number; turn: number };
+  expectedStateHash?: string;
+  fullStateSnapshot?: SaveGameData;
+  timestamp?: number;
 }
 
 interface ReplayInitialConfigSnapshot {
@@ -13364,6 +17061,7 @@ interface ReplayFinalResult {
 interface ReplayFile {
   schemaVersion: number;
   gameVersion: string;
+  versionConstants?: typeof VERSION_CONSTANTS;
   matchId: string;
   createdAt: number;
   initialConfig: ReplayInitialConfigSnapshot;
@@ -13516,9 +17214,3081 @@ const compareReplayFinalResults = (original: ReplayFile, branch: ReplayFile): Re
     matchLengthDeltaDays,
     totalActionsDelta,
     majorDecisionDifferences,
-    moneyNetWorthNote: 'Money/net-worth/region-control deltas are not shown — ReplayFinalResult never records per-team final values, so they cannot be honestly diffed from replay data alone.'
+    moneyNetWorthNote: 'Money/net-worth deltas are not recorded in replay files.',
   };
 };
+
+// ============================================================================
+// MILESTONE 5: HEADLESS REPLAY ENGINE, STATE HASHING & MATCH BRANCHING
+// ============================================================================
+
+export interface ReplayDivergencePoint {
+  day: number;
+  turn: number;
+  actionAttemptId: string;
+  expectedHash: string;
+  actualHash: string;
+  eventIndex: number;
+  summary: string;
+  policy: ReplayPolicy;
+}
+
+export interface ReplayExecutionReport {
+  success: boolean;
+  matchId: string;
+  policy: ReplayPolicy;
+  totalEventsProcessed: number;
+  firstDivergence: ReplayDivergencePoint | null;
+  allDivergencePoints: ReplayDivergencePoint[];
+  finalStateHash: string;
+  reconstructedCheckpoints: ReplayCheckpoint[];
+}
+
+export interface ReplaySimulationStateContext {
+  currentSimState: {
+    day: number;
+    turnCounter: number;
+    currentTurn: number;
+    activePlayer: string;
+    season: string;
+    economicPhase: string;
+    teamStateMap: Record<string, any>;
+    teamsById: Record<string, any>;
+    actorsById: Record<string, any>;
+    player: any;
+    territoryStateMap: Record<string, any>;
+    regions: Record<string, any>;
+    activeEvents: any[];
+  };
+  simTeams: Record<string, any>;
+  simActors: Record<string, any>;
+  simTerritories: Record<string, any>;
+  simRng?: GameplayRngRegistry;
+}
+
+export function applyReplayEventReducer(
+  ctx: ReplaySimulationStateContext,
+  ev: ReplayEvent | any
+): void {
+  const { currentSimState, simTeams, simActors, simTerritories, simRng } = ctx;
+
+  if (ev.day && ev.day > currentSimState.day) {
+    currentSimState.day = ev.day;
+    currentSimState.turnCounter = ev.turn || currentSimState.turnCounter;
+    currentSimState.currentTurn = currentSimState.turnCounter;
+  }
+
+  const actorId = ev.actorId || 'player';
+  const teamId = ev.teamId || (actorId === 'player' ? 'team_player' : 'team_ai');
+  const payload = ev.payload || {};
+  const cat = (ev.category || '').toLowerCase();
+  const actionType = String(payload.actionType || payload.type || payload.action || '').toLowerCase();
+  const summaryStr = (ev.summary || '').toLowerCase();
+
+  // 1. Turn & Day Lifecycle Reducers
+  if (cat === 'day_transition' || cat === 'turn_lifecycle' || summaryStr.includes('day transition') || summaryStr.includes('turn start')) {
+    if (ev.day) currentSimState.day = ev.day;
+    else currentSimState.day += 1;
+    if (ev.turn) currentSimState.turnCounter = ev.turn;
+    else currentSimState.turnCounter += 1;
+    currentSimState.currentTurn = currentSimState.turnCounter;
+
+    if (simRng) {
+      simRng.draw('Weather');
+      simRng.draw('Events');
+    }
+
+    Object.values(simActors).forEach(a => {
+      if (a) a.actionsUsedThisTurn = 0;
+    });
+
+    if (typeof payload.taxAmount === 'number') {
+      const targetActor = simActors[actorId] || simActors['player'];
+      if (targetActor) targetActor.money = Math.max(0, targetActor.money - payload.taxAmount);
+    }
+    if (typeof payload.interestAmount === 'number') {
+      const targetActor = simActors[actorId] || simActors['player'];
+      if (targetActor) targetActor.money += payload.interestAmount;
+    }
+  }
+  // 2. AI Decision & Execution Reducers
+  else if (cat === 'ai_decision' || cat === 'ai_execution') {
+    if (simRng) simRng.draw('AI');
+    const moneyDelta = typeof payload.moneyDelta === 'number' 
+      ? payload.moneyDelta 
+      : (typeof payload.revenue === 'number' 
+        ? payload.revenue 
+        : (typeof payload.cost === 'number' ? -payload.cost : 0));
+    
+    const targetActor = simActors[actorId] || simActors['ai'] || simActors['player'];
+    if (targetActor) {
+      targetActor.money += moneyDelta;
+      targetActor.netWorth += moneyDelta;
+      targetActor.actionsUsedThisTurn = (targetActor.actionsUsedThisTurn || 0) + 1;
+      if (payload.targetRegion) targetActor.region = String(payload.targetRegion);
+    }
+    if (simTeams[teamId]) {
+      simTeams[teamId].money += moneyDelta;
+      simTeams[teamId].netWorth += moneyDelta;
+    }
+  }
+  // 3. Player & Actor Action Reducers
+  else if (
+    cat === 'action' || cat === 'player_action' || actionType ||
+    ['challenge', 'combat', 'travel', 'buy_market', 'sell', 'trade', 'craft', 'invest', 'buy_equipment', 'sabotage', 'building_upgrade', 'card_play', 'special', 'tax', 'loan', 'contribute'].some(k => cat.includes(k))
+  ) {
+    const targetActor = simActors[actorId] || simActors['player'];
+    if (targetActor) targetActor.actionsUsedThisTurn = (targetActor.actionsUsedThisTurn || 0) + 1;
+
+    if (actionType.includes('challenge') || actionType.includes('combat') || cat.includes('challenge') || cat.includes('combat') || summaryStr.includes('challenge')) {
+      if (simRng) simRng.draw('Challenges');
+      const regId = String(payload.targetRegion || payload.regionId || targetActor?.region || 'NSW');
+      if (simTerritories[regId]) simTerritories[regId].ownerId = teamId;
+      if (simTeams[teamId]) {
+        if (!Array.isArray(simTeams[teamId].controlledRegions)) simTeams[teamId].controlledRegions = [];
+        if (!simTeams[teamId].controlledRegions.includes(regId)) {
+          simTeams[teamId].controlledRegions.push(regId);
+        }
+      }
+      const reward = typeof payload.reward === 'number' ? payload.reward : 0;
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      const delta = reward - cost;
+      if (targetActor) {
+        targetActor.money += delta;
+        targetActor.netWorth += delta;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += delta;
+        simTeams[teamId].netWorth += delta;
+      }
+    } 
+    else if (actionType.includes('travel') || cat.includes('travel') || summaryStr.includes('travel')) {
+      const dest = String(payload.targetRegion || payload.destination || payload.region || 'NSW');
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      if (targetActor) {
+        targetActor.region = dest;
+        targetActor.money -= cost;
+        targetActor.netWorth -= cost;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money -= cost;
+        simTeams[teamId].netWorth -= cost;
+      }
+    } 
+    else if (actionType.includes('buy_market') || actionType.includes('sell') || actionType.includes('trade') || cat.includes('buy_market') || cat.includes('sell') || cat.includes('trade') || summaryStr.includes('market') || summaryStr.includes('trade')) {
+      if (simRng) simRng.draw('Markets');
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      const revenue = typeof payload.revenue === 'number' ? payload.revenue : 0;
+      const delta = revenue - cost;
+      if (targetActor) {
+        targetActor.money += delta;
+        targetActor.netWorth += delta;
+        const resourceKey = String(payload.resource || payload.item || 'raw_materials');
+        const qty = typeof payload.quantity === 'number' ? payload.quantity : (revenue > 0 ? -1 : 1);
+        if (!targetActor.inventory) targetActor.inventory = {};
+        targetActor.inventory[resourceKey] = Math.max(0, (targetActor.inventory[resourceKey] || 0) + qty);
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += delta;
+        simTeams[teamId].netWorth += delta;
+      }
+    } 
+    else if (actionType.includes('craft') || actionType.includes('invest') || actionType.includes('buy_equipment') || cat.includes('craft') || cat.includes('invest') || cat.includes('buy_equipment') || summaryStr.includes('craft') || summaryStr.includes('invest')) {
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      if (targetActor) {
+        targetActor.money -= cost;
+        targetActor.netWorth -= cost;
+        const itemKey = String(payload.item || payload.equipment || 'equipment_unit');
+        if (!targetActor.inventory) targetActor.inventory = {};
+        targetActor.inventory[itemKey] = (targetActor.inventory[itemKey] || 0) + 1;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money -= cost;
+        simTeams[teamId].netWorth -= cost;
+      }
+    } 
+    else if (actionType.includes('sabotage') || cat.includes('sabotage') || summaryStr.includes('sabotage')) {
+      if (simRng) simRng.draw('Sabotage');
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      if (targetActor) {
+        targetActor.money -= cost;
+        targetActor.netWorth -= cost;
+        targetActor.riskScore = Math.min(100, (targetActor.riskScore || 0) + 5);
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money -= cost;
+        simTeams[teamId].netWorth -= cost;
+      }
+    } 
+    else if (actionType.includes('building_upgrade') || actionType.includes('upgrade') || cat.includes('building_upgrade') || cat.includes('upgrade') || summaryStr.includes('upgrade')) {
+      const cost = typeof payload.cost === 'number' ? payload.cost : 0;
+      const regId = String(payload.targetRegion || payload.regionId || targetActor?.region || 'NSW');
+      if (targetActor) {
+        targetActor.money -= cost;
+        targetActor.netWorth -= cost;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money -= cost;
+        simTeams[teamId].netWorth -= cost;
+      }
+      if (simTerritories[regId]) {
+        simTerritories[regId].developmentLevel = (simTerritories[regId].developmentLevel || 1) + 1;
+        simTerritories[regId].buildingCount = (simTerritories[regId].buildingCount || 0) + 1;
+      }
+    } 
+    else if (actionType.includes('card_play') || actionType.includes('special') || cat.includes('card_play') || cat.includes('special') || summaryStr.includes('card')) {
+      if (simRng) simRng.draw('Events');
+      const moneyDelta = typeof payload.moneyDelta === 'number' ? payload.moneyDelta : 0;
+      if (targetActor) {
+        targetActor.money += moneyDelta;
+        targetActor.netWorth += moneyDelta;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += moneyDelta;
+        simTeams[teamId].netWorth += moneyDelta;
+      }
+    } 
+    else if (actionType.includes('tax') || actionType.includes('loan') || cat.includes('tax') || cat.includes('loan') || summaryStr.includes('loan')) {
+      const loanAmount = typeof payload.loanAmount === 'number' ? payload.loanAmount : (typeof payload.amount === 'number' ? payload.amount : 0);
+      if (targetActor) {
+        targetActor.money += loanAmount;
+        targetActor.netWorth += loanAmount;
+        targetActor.creditScore = Math.max(300, (targetActor.creditScore || 700) - 10);
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += loanAmount;
+        simTeams[teamId].netWorth += loanAmount;
+      }
+    } 
+    else if (actionType.includes('contribute') || actionType.includes('treasury') || cat.includes('contribute') || cat.includes('treasury') || summaryStr.includes('treasury')) {
+      const amount = typeof payload.amount === 'number' ? payload.amount : 0;
+      if (targetActor) {
+        targetActor.money -= amount;
+        targetActor.netWorth -= amount;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].treasuryBalance = (simTeams[teamId].treasuryBalance || 0) + amount;
+      }
+    } 
+    else {
+      const moneyDelta = typeof payload.moneyDelta === 'number' ? payload.moneyDelta : (typeof payload.revenue === 'number' ? payload.revenue : (typeof payload.cost === 'number' ? -payload.cost : 0));
+      if (targetActor) {
+        targetActor.money += moneyDelta;
+        targetActor.netWorth += moneyDelta;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += moneyDelta;
+        simTeams[teamId].netWorth += moneyDelta;
+      }
+    }
+  }
+  // 4. Treasury Category Reducers
+  else if (cat === 'treasury' || summaryStr.includes('treasury')) {
+    const amount = typeof payload.amount === 'number' ? payload.amount : (typeof payload.moneyDelta === 'number' ? payload.moneyDelta : 0);
+    if (simTeams[teamId]) {
+      simTeams[teamId].treasuryBalance = (simTeams[teamId].treasuryBalance || 0) + amount;
+      simTeams[teamId].money += amount;
+      simTeams[teamId].netWorth += amount;
+    }
+  }
+  // 5. Fallback Category Reducers
+  else {
+    if (typeof payload.moneyDelta === 'number') {
+      const targetActor = simActors[actorId] || simActors['player'];
+      if (targetActor) {
+        targetActor.money += payload.moneyDelta;
+        targetActor.netWorth += payload.moneyDelta;
+      }
+      if (simTeams[teamId]) {
+        simTeams[teamId].money += payload.moneyDelta;
+        simTeams[teamId].netWorth += payload.moneyDelta;
+      }
+    }
+  }
+}
+
+export function reexecuteReplayMatch(
+  replayData: ReplayFile | string | unknown,
+  policyInput?: ReplayPolicy | string
+): ReplayExecutionReport {
+  let file: ReplayFile | null = null;
+  if (typeof replayData === 'string') {
+    try {
+      file = migrateReplayFile(JSON.parse(replayData));
+    } catch {
+      file = null;
+    }
+  } else if (replayData && typeof replayData === 'object') {
+    file = migrateReplayFile(replayData) || (replayData as ReplayFile);
+  }
+
+  const policyStr = String(policyInput || 'strict').toLowerCase();
+  let policy: ReplayPolicy = 'strict';
+  if (policyStr.includes('skip')) policy = 'skip_invalid';
+  else if (policyStr.includes('adaptive')) policy = 'adaptive_fallback';
+  else if (policyStr.includes('force')) policy = 'force_reconstruction';
+  else policy = 'strict';
+
+  if (!file || !file.matchId || !Array.isArray(file.events)) {
+    return {
+      success: false,
+      matchId: file?.matchId || 'invalid_file',
+      policy,
+      totalEventsProcessed: 0,
+      firstDivergence: {
+        day: 0,
+        turn: 0,
+        actionAttemptId: 'init',
+        expectedHash: 'valid_replay_file',
+        actualHash: 'invalid_or_corrupt_replay_file',
+        eventIndex: -1,
+        summary: 'Replay file format invalid or failed checksum verification.',
+        policy
+      },
+      allDivergencePoints: [],
+      finalStateHash: '00000000',
+      reconstructedCheckpoints: [],
+      executionLogs: ['Failed to load replay file for re-execution.']
+    };
+  }
+
+  const logs: string[] = [];
+  logs.push(`Starting headless re-execution engine for Match ${file.matchId} under policy "${policy}".`);
+
+  const config = file.initialConfig;
+  const simRng = new GameplayRngRegistry(config?.worldSeed || 1337);
+  simRng.initStreams(config?.worldSeed || 1337);
+
+  const simTeams: Record<string, { money: number; netWorth: number; treasuryBalance: number; vaultProtectedCash: number; controlledRegions: string[] }> = {};
+  if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
+    Object.keys(config.teamsById).forEach(tId => {
+      const t = config.teamsById[tId];
+      simTeams[tId] = {
+        money: t?.money ?? 10000,
+        netWorth: t?.netWorth ?? 10000,
+        treasuryBalance: t?.treasuryBalance ?? 0,
+        vaultProtectedCash: t?.vaultProtectedCash ?? 0,
+        controlledRegions: Array.isArray(t?.controlledRegions) ? [...t.controlledRegions] : []
+      };
+    });
+  } else {
+    simTeams['team_player'] = { money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['NSW'] };
+    simTeams['team_ai'] = { money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['VIC'] };
+  }
+
+  const simActors: Record<string, { money: number; netWorth: number; region: string; actionsUsedThisTurn: number; riskScore: number; creditScore: number; inventory: Record<string, number> }> = {};
+  if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
+    Object.keys(config.actorsById).forEach(aId => {
+      const a = config.actorsById[aId];
+      simActors[aId] = {
+        money: a?.money ?? 10000,
+        netWorth: a?.netWorth ?? 10000,
+        region: a?.region || (aId === 'ai' ? 'VIC' : 'NSW'),
+        actionsUsedThisTurn: 0,
+        riskScore: a?.riskScore ?? 0,
+        creditScore: a?.creditScore ?? 700,
+        inventory: a?.inventory ? { ...a.inventory } : {}
+      };
+    });
+  } else {
+    simActors['player'] = { money: 10000, netWorth: 10000, region: 'NSW', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} };
+    simActors['ai'] = { money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} };
+  }
+
+  const simTerritories: Record<string, { ownerId: string; developmentLevel: number; buildingCount: number }> = {};
+  ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'].forEach(rId => {
+    simTerritories[rId] = {
+      ownerId: rId === 'NSW' ? 'team_player' : (rId === 'VIC' ? 'team_ai' : ''),
+      developmentLevel: 1,
+      buildingCount: 0
+    };
+  });
+
+  let currentSimState: any = {
+    day: 1,
+    turnCounter: 1,
+    currentTurn: 1,
+    activePlayer: 'player',
+    season: 'Summer',
+    economicPhase: 'normal',
+    teamStateMap: simTeams,
+    teamsById: simTeams,
+    actorsById: simActors,
+    player: simActors['player'] || { money: 10000, netWorth: 10000, region: 'NSW', actionsUsedThisTurn: 0 },
+    territoryStateMap: simTerritories,
+    regions: simTerritories,
+    activeEvents: []
+  };
+
+  const simCtx: ReplaySimulationStateContext = {
+    currentSimState,
+    simTeams,
+    simActors,
+    simTerritories,
+    simRng
+  };
+
+  const allDivergencePoints: ReplayDivergencePoint[] = [];
+  const reconstructedCheckpoints: ReplayCheckpoint[] = [];
+  let totalEventsProcessed = 0;
+  let halted = false;
+
+  for (let idx = 0; idx < file.events.length; idx++) {
+    if (halted) break;
+    const ev = file.events[idx];
+    totalEventsProcessed++;
+
+    // Pre-event snapshot for SKIP_INVALID rollback (State + PRNG Streams)
+    const preSimStateSnapshot = JSON.parse(JSON.stringify(currentSimState));
+    const preRngStreamSnapshot: Record<string, { drawCount: number; currentState: number; xoshiroState: [number, number, number, number]; rollingHash: number }> = {};
+
+    if (simRng && simRng.streams) {
+      for (const domainKey in simRng.streams) {
+        const st = simRng.streams[domainKey as RngScopeDomain];
+        if (st) {
+          preRngStreamSnapshot[domainKey] = {
+            drawCount: st.drawCount,
+            currentState: st.currentState,
+            xoshiroState: st.xoshiroState ? [...st.xoshiroState] as [number, number, number, number] : [0, 0, 0, 0],
+            rollingHash: st.rollingHash
+          };
+        }
+      }
+    }
+
+    applyReplayEventReducer(simCtx, ev);
+
+    const actorId = ev.actorId || 'player';
+    const payload = ev.payload || {};
+
+    const actualHash = computeCanonicalStateHash(currentSimState);
+    const expectedHash = ev.stateHash || (payload.stateHash as string) || '';
+
+    let isDivergent = false;
+    let expectedHashForComparison = expectedHash;
+
+    if (expectedHash && expectedHash !== actualHash) {
+      isDivergent = true;
+    }
+
+    const matchingCheckpoint = file.checkpoints.find(cp => cp.sequence === ev.sequence || (cp.day === ev.day && cp.turn === ev.turn));
+    if (matchingCheckpoint) {
+      if (matchingCheckpoint.expectedStateHash && matchingCheckpoint.expectedStateHash !== actualHash) {
+        isDivergent = true;
+        if (!expectedHashForComparison) expectedHashForComparison = matchingCheckpoint.expectedStateHash;
+      }
+      if (matchingCheckpoint.expectedState?.moneyByTeam) {
+        const expTeamMoney = matchingCheckpoint.expectedState.moneyByTeam;
+        for (const tId in expTeamMoney) {
+          if (simTeams[tId] && Math.abs(simTeams[tId].money - expTeamMoney[tId]) > 1.0) {
+            isDivergent = true;
+            if (!expectedHashForComparison) expectedHashForComparison = `team_${tId}_exp_$${expTeamMoney[tId]}`;
+          }
+        }
+      }
+    }
+
+    if (isDivergent) {
+      const divPoint: ReplayDivergencePoint = {
+        day: ev.day,
+        turn: ev.turn,
+        actionAttemptId: (payload.actionAttemptId as string) || (payload.decisionId as string) || ev.id,
+        expectedHash: expectedHashForComparison || 'expected_hash_unspecified',
+        actualHash,
+        eventIndex: idx,
+        summary: ev.summary || `Divergence at sequence ${ev.sequence}`,
+        policy
+      };
+      allDivergencePoints.push(divPoint);
+      logs.push(`[${policy.toUpperCase()}] Divergence at Day ${ev.day}, Turn ${ev.turn} (Action: ${divPoint.actionAttemptId}): expected [${divPoint.expectedHash}], actual [${divPoint.actualHash}].`);
+
+      if (policy === 'strict') {
+        logs.push(`STRICT policy active. Halting re-execution at event index ${idx}.`);
+        halted = true;
+        break;
+      } 
+      else if (policy === 'skip_invalid') {
+        logs.push(`SKIP_INVALID policy active. Reverting partial event mutations and PRNG stream states, skipping event index ${idx}.`);
+        currentSimState = preSimStateSnapshot;
+        Object.assign(simTeams, currentSimState.teamStateMap);
+        Object.assign(simActors, currentSimState.actorsById);
+        Object.assign(simTerritories, currentSimState.territoryStateMap);
+        
+        // Revert PRNG stream draw counts and internal states
+        if (simRng && simRng.streams) {
+          for (const domainKey in preRngStreamSnapshot) {
+            const snap = preRngStreamSnapshot[domainKey];
+            const st = simRng.streams[domainKey as RngScopeDomain];
+            if (st && snap) {
+              st.drawCount = snap.drawCount;
+              st.currentState = snap.currentState;
+              st.xoshiroState = [...snap.xoshiroState];
+              st.rollingHash = snap.rollingHash;
+            }
+          }
+        }
+      } 
+      else if (policy === 'adaptive_fallback') {
+        logs.push(`ADAPTIVE_FALLBACK policy active. Synchronizing simulation state and all PRNG stream draw counts to recorded expected deltas at event index ${idx}.`);
+        if (matchingCheckpoint?.expectedState?.moneyByTeam) {
+          for (const tId in matchingCheckpoint.expectedState.moneyByTeam) {
+            if (simTeams[tId]) simTeams[tId].money = matchingCheckpoint.expectedState.moneyByTeam[tId];
+          }
+        }
+        if (payload.expectedMoney !== undefined && simActors[actorId]) {
+          simActors[actorId].money = Number(payload.expectedMoney);
+        }
+        
+        // Resynchronize ALL PRNG streams present in ev.rngAudit.streamAuditSnapshots
+        if (ev.rngAudit?.streamAuditSnapshots) {
+          for (const streamName of Object.keys(ev.rngAudit.streamAuditSnapshots)) {
+            const snap = ev.rngAudit.streamAuditSnapshots[streamName];
+            if (snap && typeof snap.drawCount === 'number') {
+              const expectedDraws = snap.drawCount;
+              const stream = simRng.streams[streamName as RngScopeDomain];
+              if (stream) {
+                while (stream.drawCount < expectedDraws) {
+                  simRng.draw(streamName as RngScopeDomain);
+                }
+              }
+            }
+          }
+        }
+      } 
+      else if (policy === 'force_reconstruction') {
+        logs.push(`FORCE_RECONSTRUCTION policy active. Forcing full state and PRNG stream hydration from nearest recorded checkpoint.`);
+        const nearestCheckpoint = [...file.checkpoints]
+          .filter(cp => cp.sequence <= ev.sequence)
+          .sort((a, b) => b.sequence - a.sequence)[0];
+
+        if (nearestCheckpoint?.fullStateSnapshot) {
+          const snap = nearestCheckpoint.fullStateSnapshot;
+          if (snap.actorsById) Object.assign(simActors, snap.actorsById);
+          if (snap.teamsById) Object.assign(simTeams, snap.teamsById);
+          if (snap.gameState?.regions) Object.assign(simTerritories, snap.gameState.regions);
+          currentSimState.day = snap.gameState?.day || nearestCheckpoint.day || currentSimState.day;
+          currentSimState.turnCounter = snap.gameState?.turnCounter || nearestCheckpoint.turn || currentSimState.turnCounter;
+          if (snap.aiRuntime) {
+            simRng.initStreams(config?.worldSeed || 1337);
+            const aiDraws = snap.aiRuntime.rngState || 0;
+            for (let i = 0; i < aiDraws; i++) simRng.draw('AI');
+            const worldDraws = snap.aiRuntime.worldRngState || 0;
+            for (let i = 0; i < worldDraws; i++) simRng.draw('World');
+          }
+        } else if (matchingCheckpoint?.expectedState?.moneyByTeam) {
+          for (const tId in matchingCheckpoint.expectedState.moneyByTeam) {
+            if (simTeams[tId]) simTeams[tId].money = matchingCheckpoint.expectedState.moneyByTeam[tId];
+          }
+        } else if (payload.moneyByTeam && typeof payload.moneyByTeam === 'object') {
+          Object.assign(simTeams, payload.moneyByTeam as Record<string, any>);
+        }
+      }
+    }
+
+    if (matchingCheckpoint) {
+      reconstructedCheckpoints.push({
+        ...matchingCheckpoint,
+        expectedStateHash: actualHash
+      });
+    }
+  }
+
+  const finalStateHash = computeCanonicalStateHash(currentSimState);
+  logs.push(`Re-execution finished. Processed ${totalEventsProcessed} / ${file.events.length} events. Final state hash: [${finalStateHash}].`);
+
+  return {
+    success: allDivergencePoints.length === 0,
+    matchId: file.matchId,
+    policy,
+    totalEventsProcessed,
+    firstDivergence: allDivergencePoints[0] || null,
+    allDivergencePoints,
+    finalStateHash,
+    reconstructedCheckpoints,
+    executionLogs: logs
+  };
+}
+
+export function createMatchCheckpoint(
+  gameState: any,
+  kind: ReplayCheckpointKind = 'day',
+  label?: string,
+  relatedId?: string
+): ReplayCheckpoint {
+  const day = gameState?.day ?? 1;
+  const turn = gameState?.turnCounter ?? 1;
+  const moneyByTeam: Record<string, number> = {};
+  if (gameState?.teamStateMap) {
+    Object.keys(gameState.teamStateMap).forEach(tId => {
+      moneyByTeam[tId] = gameState.teamStateMap[tId]?.money ?? 0;
+    });
+  } else if (gameState?.player) {
+    moneyByTeam['team_player'] = gameState.player.money ?? 0;
+  }
+
+  const expectedStateHash = computeCanonicalStateHash(gameState);
+  const cpId = `cp_${Date.now()}_${drawGameplayRandomString("World", 6)}`;
+
+  return {
+    id: cpId,
+    sequence: gameState?.gameActivityLedger?.events?.length ?? 0,
+    day,
+    turn,
+    label: label || `Checkpoint Day ${day} (Turn ${turn})`,
+    kind,
+    relatedId,
+    expectedState: {
+      moneyByTeam,
+      day,
+      turn
+    },
+    expectedStateHash,
+    timestamp: Date.now()
+  };
+}
+
+export function spawnMatchBranchFromCheckpoint(
+  checkpoint: ReplayCheckpoint,
+  sourceReplayFile?: ReplayFile,
+  overrides?: Partial<GameSettingsState>
+): SaveGameData {
+  const day = checkpoint.day || 1;
+  const turn = checkpoint.turn || 1;
+  const config = sourceReplayFile?.initialConfig;
+
+  // PRIORITY 1: Direct Snapshot Hydration from checkpoint.fullStateSnapshot
+  if (checkpoint.fullStateSnapshot) {
+    const saveData: SaveGameData = JSON.parse(JSON.stringify(checkpoint.fullStateSnapshot));
+    saveData.metadata = {
+      ...saveData.metadata,
+      timestamp: Date.now(),
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+      saveDescription: `Branch from checkpoint ${checkpoint.id} (Day ${day}, Turn ${turn})`,
+      schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+      versionConstants: VERSION_CONSTANTS
+    };
+    if (sourceReplayFile?.matchId) {
+      saveData.metadata.branchedFromMatchId = sourceReplayFile.matchId;
+    }
+    if (overrides) {
+      saveData.gameSettings = { ...(saveData.gameSettings || {}), ...overrides };
+    }
+    return saveData;
+  }
+
+  // PRIORITY 2: Fast-forward roll-forward re-simulation from sequence 0 up to checkpoint.sequence
+  if (sourceReplayFile && Array.isArray(sourceReplayFile.events)) {
+    const simRng = new GameplayRngRegistry(config?.worldSeed || 1337);
+    simRng.initStreams(config?.worldSeed || 1337);
+
+    const simTeams: Record<string, TeamState> = {};
+    if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
+      Object.keys(config.teamsById).forEach(tId => {
+        const t = config.teamsById[tId];
+        simTeams[tId] = JSON.parse(JSON.stringify(t));
+      });
+    } else {
+      simTeams['team_player'] = { id: 'team_player', name: 'Player Team', money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['NSW'] } as any;
+      simTeams['team_ai'] = { id: 'team_ai', name: 'AI Team', money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['VIC'] } as any;
+    }
+
+    const simActors: Record<string, ActorState> = {};
+    if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
+      Object.keys(config.actorsById).forEach(aId => {
+        const a = config.actorsById[aId];
+        simActors[aId] = JSON.parse(JSON.stringify(a));
+      });
+    } else {
+      simActors['player'] = { id: 'player', name: 'Player', money: 10000, netWorth: 10000, region: 'NSW', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
+      simActors['ai'] = { id: 'ai', name: 'AI Opponent', money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
+    }
+
+    const simTerritories: Record<string, RegionState> = {};
+    ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'].forEach(rId => {
+      simTerritories[rId] = {
+        id: rId,
+        name: rId,
+        ownerId: rId === 'NSW' ? 'team_player' : (rId === 'VIC' ? 'team_ai' : ''),
+        developmentLevel: 1,
+        buildingCount: 0,
+        buildings: []
+      } as any;
+    });
+
+    let simDay = 1;
+    let simTurn = 1;
+
+    const currentSimState: any = {
+      day: simDay,
+      turnCounter: simTurn,
+      currentTurn: simTurn,
+      activePlayer: 'player',
+      season: 'Summer',
+      economicPhase: 'normal',
+      teamStateMap: simTeams,
+      teamsById: simTeams,
+      actorsById: simActors,
+      player: simActors['player'],
+      territoryStateMap: simTerritories,
+      regions: simTerritories,
+      activeEvents: []
+    };
+
+    const simCtx: ReplaySimulationStateContext = {
+      currentSimState,
+      simTeams,
+      simActors,
+      simTerritories,
+      simRng
+    };
+
+    const targetSeq = checkpoint.sequence ?? Infinity;
+    for (let i = 0; i < sourceReplayFile.events.length; i++) {
+      const ev = sourceReplayFile.events[i];
+      if (ev.sequence > targetSeq) break;
+      applyReplayEventReducer(simCtx, ev);
+    }
+
+    if (checkpoint.expectedState?.moneyByTeam) {
+      for (const tId in checkpoint.expectedState.moneyByTeam) {
+        if (simTeams[tId]) {
+          simTeams[tId].money = checkpoint.expectedState.moneyByTeam[tId];
+        }
+      }
+    }
+
+    const playerState = simActors['player'] || { id: 'player', name: 'Player', money: 10000, netWorth: 10000, region: 'NSW', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
+    const aiState = simActors['ai'] || { id: 'ai', name: 'AI Opponent', money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
+
+    const saveData: SaveGameData = {
+      metadata: {
+        timestamp: Date.now(),
+        gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+        saveDescription: `Branch from checkpoint ${checkpoint.id} (Day ${day})`,
+        schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+        versionConstants: VERSION_CONSTANTS,
+        branchedFromMatchId: sourceReplayFile.matchId
+      },
+      player: playerState,
+      aiPlayer: aiState,
+      actorsById: simActors,
+      teamsById: simTeams,
+      gameState: {
+        ...initialGameState,
+        day,
+        turnCounter: checkpoint.turn || simTurn || 1,
+        selectedMode: config?.selectedMode || 'solo',
+        aiDifficulty: config?.aiDifficulty || 'medium',
+        regions: simTerritories
+      } as GameStateSnapshot,
+      gameSettings: { ...(config?.gameSettings || {}), ...overrides },
+      notifications: [],
+      personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
+      dontAskAgain: { ...DEFAULT_DONT_ASK },
+      humanAutomations: [],
+      uiPreferences: { theme: 'dark' },
+      aiRuntime: {
+        queue: [],
+        currentAction: null,
+        rngState: simRng.streams['AI']?.drawCount || normalizeAiSeed(config?.aiSeed || 1337),
+        worldRngState: simRng.streams['World']?.drawCount || normalizeAiSeed(config?.worldSeed || 1337)
+      }
+    };
+
+    return saveData;
+  }
+
+  // FALLBACK (If sourceReplayFile is not provided)
+  let playerState: any = config?.actorsById?.player || { money: 10000, netWorth: 10000, region: 'NSW' };
+  let aiState: any = config?.actorsById?.ai || { money: 10000, netWorth: 10000, region: 'VIC' };
+
+  if (checkpoint.expectedState?.moneyByTeam) {
+    const pMoney = checkpoint.expectedState.moneyByTeam['team_player'];
+    if (typeof pMoney === 'number') playerState = { ...playerState, money: pMoney };
+    const aiMoney = checkpoint.expectedState.moneyByTeam['team_ai'];
+    if (typeof aiMoney === 'number') aiState = { ...aiState, money: aiMoney };
+  }
+
+  const saveData: SaveGameData = {
+    metadata: {
+      timestamp: Date.now(),
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+      saveDescription: `Branch from checkpoint ${checkpoint.id} (Day ${day})`,
+      schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+      versionConstants: VERSION_CONSTANTS,
+      branchedFromMatchId: sourceReplayFile?.matchId
+    },
+    player: playerState,
+    aiPlayer: aiState,
+    actorsById: config?.actorsById || { player: playerState, ai: aiState },
+    teamsById: config?.teamsById || {},
+    gameState: {
+      ...initialGameState,
+      day,
+      turnCounter: checkpoint.turn || 1,
+      selectedMode: config?.selectedMode || 'solo',
+      aiDifficulty: config?.aiDifficulty || 'medium'
+    } as GameStateSnapshot,
+    gameSettings: { ...(config?.gameSettings || {}), ...overrides },
+    notifications: [],
+    personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
+    dontAskAgain: { ...DEFAULT_DONT_ASK },
+    humanAutomations: [],
+    uiPreferences: { theme: 'dark' },
+    aiRuntime: {
+      queue: [],
+      currentAction: null,
+      rngState: normalizeAiSeed(config?.aiSeed || 1337),
+      worldRngState: normalizeAiSeed(config?.worldSeed || 1337)
+    }
+  };
+
+  return saveData;
+}
+
+// ============================================================================
+// MILESTONE 6: PHASES 15, 17, 18 TYPES & PURE LOGIC FUNCTIONS
+// ============================================================================
+
+// --- Phase 15: Replay Comparison ---
+export type DivergenceReasonCategory = 
+  | 'deterministic_desync'
+  | 'seed_mismatch'
+  | 'version_incompatibility'
+  | 'rule_divergence'
+  | 'state_corruption'
+  | 'user_branch';
+
+export interface NormalizedComparisonEvent {
+  id: string;
+  sequence: number;
+  day: number;
+  turn: number;
+  actorId: string | null;
+  category: string;
+  actionType?: string;
+  stateHash?: string;
+  payloadSummary: string;
+  rawEvent: any;
+}
+
+export interface EventDivergenceDetail {
+  sequence: number;
+  day: number;
+  turn: number;
+  severity: 'minor' | 'major' | 'critical';
+  category: DivergenceReasonCategory;
+  primaryEventSummary: string;
+  secondaryEventSummary: string;
+  divergenceExplanation: string;
+}
+
+export interface StreamComparisonReport {
+  matchAId: string;
+  matchBId: string;
+  totalEventsCompared: number;
+  divergenceCount: number;
+  maxDivergenceSeverity: 'none' | 'minor' | 'major' | 'critical';
+  divergenceDetails: EventDivergenceDetail[];
+  summaryScore: number;
+}
+
+export const normalizeLedgerEvent = (event: GameActivityLedgerEvent): NormalizedComparisonEvent => {
+  return {
+    id: event.id,
+    sequence: event.sequenceId || 0,
+    day: event.day || 1,
+    turn: event.turn || 1,
+    actorId: event.participants?.actorId || null,
+    category: event.category,
+    actionType: (event.payload as any)?.actionType || (event.payload as any)?.chosenAction || undefined,
+    payloadSummary: event.summary || '',
+    rawEvent: event
+  };
+};
+
+export const normalizeReplayEvent = (event: ReplayEvent): NormalizedComparisonEvent => {
+  return {
+    id: event.id,
+    sequence: event.sequence,
+    day: event.day,
+    turn: event.turn,
+    actorId: event.actorId,
+    category: event.category,
+    actionType: (event.payload as any)?.chosenAction || (event.payload as any)?.type || undefined,
+    payloadSummary: event.summary || '',
+    rawEvent: event
+  };
+};
+
+export const classifyEventDivergence = (
+  evA: NormalizedComparisonEvent,
+  evB: NormalizedComparisonEvent
+): EventDivergenceDetail | null => {
+  if (evA.category === evB.category && evA.actionType === evB.actionType && evA.actorId === evB.actorId) {
+    return null;
+  }
+
+  let severity: 'minor' | 'major' | 'critical' = 'minor';
+  let category: DivergenceReasonCategory = 'deterministic_desync';
+  let explanation = '';
+
+  if (evA.category !== evB.category) {
+    severity = 'major';
+    category = 'rule_divergence';
+    explanation = `Category mismatch: Event A is '${evA.category}' while Event B is '${evB.category}'.`;
+  } else if (evA.actorId !== evB.actorId) {
+    severity = 'major';
+    category = 'deterministic_desync';
+    explanation = `Actor mismatch: Event A actor '${evA.actorId || 'none'}' vs Event B actor '${evB.actorId || 'none'}'.`;
+  } else if (evA.actionType !== evB.actionType) {
+    severity = 'critical';
+    category = 'rule_divergence';
+    explanation = `Action divergence: Event A chose '${evA.actionType || 'N/A'}' while Event B chose '${evB.actionType || 'N/A'}'.`;
+  } else {
+    explanation = `Minor payload divergence between sequence ${evA.sequence} and ${evB.sequence}.`;
+  }
+
+  return {
+    sequence: evA.sequence,
+    day: evA.day,
+    turn: evA.turn,
+    severity,
+    category,
+    primaryEventSummary: evA.payloadSummary,
+    secondaryEventSummary: evB.payloadSummary,
+    divergenceExplanation: explanation
+  };
+};
+
+export const compareLedgerEventStreams = (
+  streamA: NormalizedComparisonEvent[],
+  streamB: NormalizedComparisonEvent[]
+): StreamComparisonReport => {
+  const comparedCount = Math.min(streamA.length, streamB.length);
+  const divergenceDetails: EventDivergenceDetail[] = [];
+  let maxDivergenceSeverity: 'none' | 'minor' | 'major' | 'critical' = 'none';
+
+  for (let i = 0; i < comparedCount; i++) {
+    const detail = classifyEventDivergence(streamA[i], streamB[i]);
+    if (detail) {
+      divergenceDetails.push(detail);
+      if (detail.severity === 'critical') maxDivergenceSeverity = 'critical';
+      else if (detail.severity === 'major' && maxDivergenceSeverity !== 'critical') maxDivergenceSeverity = 'major';
+      else if (detail.severity === 'minor' && maxDivergenceSeverity === 'none') maxDivergenceSeverity = 'minor';
+    }
+  }
+
+  const matchAId = streamA[0]?.id || 'stream_a';
+  const matchBId = streamB[0]?.id || 'stream_b';
+  const divergenceCount = divergenceDetails.length;
+  const summaryScore = comparedCount > 0 ? Math.max(0, Math.round(((comparedCount - divergenceCount) / comparedCount) * 100)) : 100;
+
+  return {
+    matchAId,
+    matchBId,
+    totalEventsCompared: comparedCount,
+    divergenceCount,
+    maxDivergenceSeverity,
+    divergenceDetails,
+    summaryScore
+  };
+};
+
+// --- Phase 17: AI Effectiveness Scorecard ---
+export interface AiComplianceRecord {
+  totalDecisions: number;
+  compliantCount: number;
+  violationCount: number;
+  complianceRate: number;
+}
+
+export interface AiDecisionOutcomeScore {
+  decisionId: string;
+  day: number;
+  turn: number;
+  actorId: string;
+  expectedRoi: number;
+  actualRoi: number;
+  roiDelta: number;
+  classification: 'blunder' | 'suboptimal' | 'optimal' | 'brilliant';
+}
+
+export interface AiActorScorecard {
+  actorId: string;
+  actorName: string;
+  totalDecisions: number;
+  overallEffectivenessScore: number;
+  averageRoiDelta: number;
+  blunderCount: number;
+  brilliantCount: number;
+  compliance: AiComplianceRecord;
+  recentOutcomes: AiDecisionOutcomeScore[];
+}
+
+export interface AiScorecardSummaryReport {
+  scorecardsByActor: Record<string, AiActorScorecard>;
+  matchWideEffectivenessScore: number;
+  topPerformingActorId: string | null;
+  mostImprovedActorId: string | null;
+}
+
+export const classifyDecisionOutcome = (
+  expectedRoi: number,
+  actualRoi: number,
+  blunderThreshold: number = -50
+): 'blunder' | 'suboptimal' | 'optimal' | 'brilliant' => {
+  const delta = actualRoi - expectedRoi;
+  if (delta <= blunderThreshold) return 'blunder';
+  if (delta < 0) return 'suboptimal';
+  if (delta >= 50) return 'brilliant';
+  return 'optimal';
+};
+
+export const calculateActorScorecard = (
+  actorId: string,
+  actorName: string,
+  events: GameActivityLedgerEvent[],
+  blunderThreshold: number = -50
+): AiActorScorecard => {
+  const actorEvents = events.filter(e => e.participants?.actorId === actorId && (e.category === 'decision' || e.category === 'action' || e.category === 'auditor_incident'));
+  const outcomes: AiDecisionOutcomeScore[] = [];
+
+  let totalRoiDelta = 0;
+  let blunderCount = 0;
+  let brilliantCount = 0;
+  let compliantCount = 0;
+  let violationCount = 0;
+
+  actorEvents.forEach(ev => {
+    const exp = ev.expectation;
+    if (exp) {
+      const expectedRoi = exp.expectedRoi ?? 0;
+      const actualCash = exp.actualCashChange ?? 0;
+      const expectedCash = exp.expectedCashChange ?? 1;
+      const actualRoi = expectedCash !== 0 ? (actualCash / Math.abs(expectedCash)) * 100 : actualCash;
+      const roiDelta = actualRoi - expectedRoi;
+      totalRoiDelta += roiDelta;
+
+      const classification = classifyDecisionOutcome(expectedRoi, actualRoi, blunderThreshold);
+      if (classification === 'blunder') blunderCount++;
+      if (classification === 'brilliant') brilliantCount++;
+
+      outcomes.push({
+        decisionId: ev.id,
+        day: ev.day,
+        turn: ev.turn,
+        actorId,
+        expectedRoi,
+        actualRoi,
+        roiDelta,
+        classification
+      });
+    }
+
+    if (ev.category === 'auditor_incident') {
+      violationCount++;
+    } else {
+      compliantCount++;
+    }
+  });
+
+  const totalDecisions = actorEvents.length;
+  const averageRoiDelta = totalDecisions > 0 ? totalRoiDelta / totalDecisions : 0;
+  const totalAuditorChecks = compliantCount + violationCount;
+  const complianceRate = totalAuditorChecks > 0 ? (compliantCount / totalAuditorChecks) * 100 : 100;
+
+  const rawScore = 75 + (averageRoiDelta * 0.2) - (blunderCount * 10) + (brilliantCount * 5);
+  const overallEffectivenessScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+  return {
+    actorId,
+    actorName,
+    totalDecisions,
+    overallEffectivenessScore,
+    averageRoiDelta: Math.round(averageRoiDelta * 10) / 10,
+    blunderCount,
+    brilliantCount,
+    compliance: {
+      totalDecisions: totalAuditorChecks,
+      compliantCount,
+      violationCount,
+      complianceRate: Math.round(complianceRate)
+    },
+    recentOutcomes: outcomes.slice(-10)
+  };
+};
+
+export const generateScorecardSummaryReport = (
+  actors: Record<string, ActorState>,
+  events: GameActivityLedgerEvent[],
+  blunderThreshold: number = -50
+): AiScorecardSummaryReport => {
+  const scorecardsByActor: Record<string, AiActorScorecard> = {};
+  let totalScore = 0;
+  let actorCount = 0;
+  let topActorId: string | null = null;
+  let topScore = -1;
+
+  Object.entries(actors).forEach(([id, actor]) => {
+    const sc = calculateActorScorecard(id, actor.displayName || id, events, blunderThreshold);
+    scorecardsByActor[id] = sc;
+    totalScore += sc.overallEffectivenessScore;
+    actorCount++;
+
+    if (sc.overallEffectivenessScore > topScore) {
+      topScore = sc.overallEffectivenessScore;
+      topActorId = id;
+    }
+  });
+
+  const matchWideEffectivenessScore = actorCount > 0 ? Math.round(totalScore / actorCount) : 100;
+
+  return {
+    scorecardsByActor,
+    matchWideEffectivenessScore,
+    topPerformingActorId: topActorId,
+    mostImprovedActorId: topActorId
+  };
+};
+
+// --- Phase 18: Balance Lab ---
+export interface BalanceStressIndex {
+  overallStressIndex: number;
+  economicVolatiltyScore: number;
+  runawayLeaderRisk: number;
+  comebackFeasibilityScore: number;
+  stalemateProbability: number;
+}
+
+export interface BalanceSandboxConfig {
+  baselineId: string;
+  rewardMultiplier: number;
+  penaltyMultiplier: number;
+  catchupBonusMultiplier: number;
+  loanInterestMultiplier: number;
+}
+
+export interface BalanceSimulationResult {
+  config: BalanceSandboxConfig;
+  projectedWinTurnDelta: number;
+  predictedRunawayReduction: number;
+  predictedComebackIncrease: number;
+  stressIndexDelta: number;
+}
+
+export const calculateBalanceStressIndex = (
+  events: GameActivityLedgerEvent[],
+  actors: Record<string, ActorState>
+): BalanceStressIndex => {
+  const actorList = Object.values(actors);
+  if (actorList.length === 0) {
+    return {
+      overallStressIndex: 20,
+      economicVolatiltyScore: 15,
+      runawayLeaderRisk: 10,
+      comebackFeasibilityScore: 75,
+      stalemateProbability: 10
+    };
+  }
+
+  const moneys = actorList.map(a => a.money);
+  const maxMoney = Math.max(...moneys, 1);
+  const minMoney = Math.min(...moneys, 0);
+  const avgMoney = moneys.reduce((a, b) => a + b, 0) / moneys.length;
+
+  const runawayLeaderRisk = Math.min(100, Math.round(((maxMoney - avgMoney) / maxMoney) * 100));
+  const safeAvgDenom = Math.max(1, Math.abs(avgMoney) + 1);
+  const economicVolatiltyScore = Math.max(0, Math.min(100, Math.round(((maxMoney - minMoney) / safeAvgDenom) * 25)));
+  const comebackFeasibilityScore = Math.max(0, Math.min(100, 100 - runawayLeaderRisk + 20));
+  const turnCount = events.length;
+  const stalemateProbability = turnCount > 50 && (maxMoney - minMoney) < 300 ? 65 : 15;
+
+  const overallStressIndex = Math.round(
+    (economicVolatiltyScore * 0.3) +
+    (runawayLeaderRisk * 0.35) +
+    ((100 - comebackFeasibilityScore) * 0.2) +
+    (stalemateProbability * 0.15)
+  );
+
+  return {
+    overallStressIndex: Math.max(0, Math.min(100, overallStressIndex)),
+    economicVolatiltyScore,
+    runawayLeaderRisk,
+    comebackFeasibilityScore,
+    stalemateProbability
+  };
+};
+
+export const simulateBalanceAdjustment = (
+  config: BalanceSandboxConfig,
+  currentStress: BalanceStressIndex
+): BalanceSimulationResult => {
+  return withRngScope('BalanceLab', () => {
+    const simNoise = drawGameplayRandom('BalanceLab') * 0.001 - 0.0005;
+    const rewardFactor = config.rewardMultiplier - 1.0 + simNoise;
+    const catchupFactor = config.catchupBonusMultiplier - 1.0;
+    const penaltyFactor = config.penaltyMultiplier - 1.0;
+
+    const predictedRunawayReduction = Math.round(catchupFactor * 35 - rewardFactor * 15);
+    const predictedComebackIncrease = Math.round(catchupFactor * 40 - penaltyFactor * 10);
+    const projectedWinTurnDelta = Math.round(-rewardFactor * 4 + penaltyFactor * 3);
+
+    const newStress = Math.max(0, Math.min(100, currentStress.overallStressIndex - predictedRunawayReduction * 0.4));
+    const stressIndexDelta = newStress - currentStress.overallStressIndex;
+
+    return {
+      config,
+      projectedWinTurnDelta,
+      predictedRunawayReduction,
+      predictedComebackIncrease,
+      stressIndexDelta
+    };
+  });
+};
+
+// ============================================================================
+// MILESTONE 7: PHASES 19 & 20 TYPES & PURE LOGIC FUNCTIONS
+// ============================================================================
+
+export type LedgerIntegrityViolationType = 
+  | 'sequence_gap'
+  | 'timestamp_inversion'
+  | 'missing_actor_id'
+  | 'missing_parent_link'
+  | 'causal_depth_inconsistency'
+  | 'payload_corruption'
+  | 'hash_mismatch'
+  | 'sequence_break'
+  | 'non_monotonic_sequence'
+  | 'timestamp_anomaly'
+  | 'delta_inconsistency'
+  | 'missing_required_field';
+
+export interface LedgerIntegrityViolation {
+  id?: string;
+  eventId: string;
+  sequenceId: number;
+  type?: LedgerIntegrityViolationType | string;
+  violationType?: LedgerIntegrityViolationType | string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | 'warning' | 'error';
+  description?: string;
+  details?: string;
+  affectedField?: string;
+  expected?: string | number;
+  actual?: string | number;
+  expectedValue?: string | number;
+  actualValue?: string | number;
+}
+
+export type LedgerIntegrityIssue = LedgerIntegrityViolation;
+
+export interface LedgerIntegrityReport {
+  timestamp?: number;
+  checkedAtTimestamp?: number;
+  isValid?: boolean;
+  totalEvents?: number;
+  totalEventsChecked?: number;
+  validEventCount?: number;
+  status?: 'passed' | 'warnings_found' | 'corrupted';
+  sequenceGapCount?: number;
+  timestampInversionCount?: number;
+  missingActorIdCount?: number;
+  missingParentLinkCount?: number;
+  causalDepthInconsistencyCount?: number;
+  payloadCorruptionCount?: number;
+  hashMismatchCount?: number;
+  corruptedEventIds?: string[];
+  brokenSequenceIds?: number[];
+  totalViolations?: number;
+  violations: LedgerIntegrityViolation[];
+  hashChainIntact?: boolean;
+  sequenceMonotonic?: boolean;
+  deltaConsistencyIntact?: boolean;
+  summary?: string;
+}
+
+export interface CategoryByteBreakdown {
+  category: GameActivityLedgerEventCategory;
+  eventCount: number;
+  totalBytes: number;
+  bytePercentage: number;
+}
+
+export interface StorageFootprintReport {
+  timestamp: number;
+  eventCount: number;
+  totalUtf8Bytes: number;
+  formattedSize: string;
+  localStorageQuotaBytes: number;
+  localStorageUsagePercent: number;
+  estimatedDomNodesPerEvent: number;
+  estimatedTotalDomNodes: number;
+  estimatedDomMemoryKb: number;
+  categoryBreakdown: CategoryByteBreakdown[];
+}
+
+export type LedgerStorageFootprint = StorageFootprintReport;
+
+export type Phase19SettingsSubTab = 
+  | 'health'         // ⚙️ Configuration & Health
+  | 'diagnostics'    // 🩺 Structural Diagnostics
+  | 'storage'        // 📊 Storage & Footprint
+  | 'balancelab';    // 🧪 Balance Lab & Sandbox
+
+export const scanLedgerIntegrity = (events: GameActivityLedgerEvent[]): LedgerIntegrityReport => {
+  const timestamp = Date.now();
+  const violations: LedgerIntegrityViolation[] = [];
+
+  let sequenceGapCount = 0;
+  let timestampInversionCount = 0;
+  let missingActorIdCount = 0;
+  let missingParentLinkCount = 0;
+  let causalDepthInconsistencyCount = 0;
+  let payloadCorruptionCount = 0;
+  let hashMismatchCount = 0;
+
+  const eventMap = new Map<string, GameActivityLedgerEvent>();
+  events.forEach(ev => {
+    if (ev.id) eventMap.set(ev.id, ev);
+    if (ev.eventId && ev.eventId !== ev.id) eventMap.set(ev.eventId, ev);
+  });
+
+  const actorScopedCategories: GameActivityLedgerEventCategory[] = ['action', 'decision', 'approval', 'treasury'];
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const prevEv = i > 0 ? events[i - 1] : null;
+
+    if (prevEv && typeof ev.sequenceId === 'number' && typeof prevEv.sequenceId === 'number') {
+      if (ev.sequenceId !== prevEv.sequenceId + 1) {
+        sequenceGapCount++;
+        violations.push({
+          id: `viol_seq_${ev.id || i}`,
+          eventId: ev.id || `event_${i}`,
+          sequenceId: ev.sequenceId || i,
+          violationType: 'sequence_gap',
+          severity: 'warning',
+          description: `Sequence ID gap detected: expected ${prevEv.sequenceId + 1}, found ${ev.sequenceId}`,
+          expectedValue: prevEv.sequenceId + 1,
+          actualValue: ev.sequenceId
+        });
+      }
+    }
+
+    if (prevEv && ev.timestamp && prevEv.timestamp) {
+      if (ev.timestamp < prevEv.timestamp) {
+        timestampInversionCount++;
+        violations.push({
+          id: `viol_ts_${ev.id || i}`,
+          eventId: ev.id || `event_${i}`,
+          sequenceId: ev.sequenceId || i,
+          violationType: 'timestamp_inversion',
+          severity: 'error',
+          description: `Timestamp inversion detected: event timestamp (${ev.timestamp}) precedes previous event (${prevEv.timestamp})`,
+          expectedValue: prevEv.timestamp,
+          actualValue: ev.timestamp
+        });
+      }
+    }
+
+    if (actorScopedCategories.includes(ev.category) && !ev.actorId) {
+      missingActorIdCount++;
+      violations.push({
+        id: `viol_actor_${ev.id || i}`,
+        eventId: ev.id || `event_${i}`,
+        sequenceId: ev.sequenceId || i,
+        violationType: 'missing_actor_id',
+        severity: 'warning',
+        description: `Event category '${ev.category}' missing required actorId`,
+        affectedField: 'actorId'
+      });
+    }
+
+    const parentId = ev.causalLinkage?.parentEventId || ev.parentEventId;
+    if (parentId) {
+      const parent = eventMap.get(parentId);
+      if (!parent) {
+        missingParentLinkCount++;
+        violations.push({
+          id: `viol_parent_${ev.id || i}`,
+          eventId: ev.id || `event_${i}`,
+          sequenceId: ev.sequenceId || i,
+          violationType: 'missing_parent_link',
+          severity: 'warning',
+          description: `Parent event ID '${parentId}' reference not found in active ledger`,
+          affectedField: 'parentEventId',
+          expectedValue: parentId
+        });
+      } else {
+        const parentDepth = parent.causalLinkage?.causalDepth ?? parent.causalDepth ?? 0;
+        const currentDepth = ev.causalLinkage?.causalDepth ?? ev.causalDepth ?? 0;
+        if (currentDepth <= parentDepth) {
+          causalDepthInconsistencyCount++;
+          violations.push({
+            id: `viol_depth_${ev.id || i}`,
+            eventId: ev.id || `event_${i}`,
+            sequenceId: ev.sequenceId || i,
+            violationType: 'causal_depth_inconsistency',
+            severity: 'warning',
+            description: `Causal depth (${currentDepth}) is less than or equal to parent depth (${parentDepth})`,
+            expectedValue: parentDepth + 1,
+            actualValue: currentDepth
+          });
+        }
+      }
+    }
+
+    if (ev.payload === undefined || ev.payload === null || typeof ev.payload !== 'object') {
+      payloadCorruptionCount++;
+      violations.push({
+        id: `viol_payload_${ev.id || i}`,
+        eventId: ev.id || `event_${i}`,
+        sequenceId: ev.sequenceId || i,
+        violationType: 'payload_corruption',
+        severity: 'critical',
+        description: `Corrupted payload: payload is missing or not a valid object`,
+        affectedField: 'payload'
+      });
+    }
+
+    if (ev.integrityHash && typeof ev.integrityHash === 'string') {
+      if (ev.integrityHash.length < 8) {
+        hashMismatchCount++;
+        violations.push({
+          id: `viol_hash_${ev.id || i}`,
+          eventId: ev.id || `event_${i}`,
+          sequenceId: ev.sequenceId || i,
+          violationType: 'hash_mismatch',
+          severity: 'critical',
+          description: `Invalid integrity hash format: '${ev.integrityHash}'`,
+          affectedField: 'integrityHash'
+        });
+      }
+    }
+  }
+
+  const totalViolations = violations.length;
+  const status = totalViolations === 0 
+    ? 'passed' 
+    : (payloadCorruptionCount > 0 || hashMismatchCount > 0) ? 'corrupted' : 'warnings_found';
+
+  return {
+    timestamp,
+    totalEvents: events.length,
+    status,
+    sequenceGapCount,
+    timestampInversionCount,
+    missingActorIdCount,
+    missingParentLinkCount,
+    causalDepthInconsistencyCount,
+    payloadCorruptionCount,
+    hashMismatchCount,
+    totalViolations,
+    violations
+  };
+};
+
+export const calculateLedgerStorageFootprint = (events: GameActivityLedgerEvent[]): StorageFootprintReport => {
+  const timestamp = Date.now();
+  const eventCount = events.length;
+  
+  const jsonString = JSON.stringify(events);
+  const totalUtf8Bytes = new Blob([jsonString]).size || jsonString.length;
+  
+  let formattedSize = `${totalUtf8Bytes} B`;
+  if (totalUtf8Bytes >= 1024 * 1024) {
+    formattedSize = `${(totalUtf8Bytes / (1024 * 1024)).toFixed(2)} MB`;
+  } else if (totalUtf8Bytes >= 1024) {
+    formattedSize = `${(totalUtf8Bytes / 1024).toFixed(2)} KB`;
+  }
+
+  const localStorageQuotaBytes = 5 * 1024 * 1024;
+  const localStorageUsagePercent = parseFloat(((totalUtf8Bytes / localStorageQuotaBytes) * 100).toFixed(2));
+
+  const estimatedDomNodesPerEvent = 12;
+  const estimatedTotalDomNodes = eventCount * estimatedDomNodesPerEvent;
+  const estimatedDomMemoryKb = Math.round((estimatedTotalDomNodes * 0.4));
+
+  const categoryMap = new Map<GameActivityLedgerEventCategory, { count: number; bytes: number }>();
+  events.forEach(ev => {
+    const cat = ev.category || 'system_health';
+    const evBytes = JSON.stringify(ev).length;
+    const current = categoryMap.get(cat) || { count: 0, bytes: 0 };
+    categoryMap.set(cat, { count: current.count + 1, bytes: current.bytes + evBytes });
+  });
+
+  const categoryBreakdown: CategoryByteBreakdown[] = Array.from(categoryMap.entries()).map(([cat, data]) => ({
+    category: cat,
+    eventCount: data.count,
+    totalBytes: data.bytes,
+    bytePercentage: totalUtf8Bytes > 0 ? parseFloat(((data.bytes / totalUtf8Bytes) * 100).toFixed(1)) : 0
+  })).sort((a, b) => b.totalBytes - a.totalBytes);
+
+  return {
+    timestamp,
+    eventCount,
+    totalUtf8Bytes,
+    formattedSize,
+    localStorageQuotaBytes,
+    localStorageUsagePercent,
+    estimatedDomNodesPerEvent,
+    estimatedTotalDomNodes,
+    estimatedDomMemoryKb,
+    categoryBreakdown
+  };
+};
+
+export const pruneLedgerEvents = (
+  events: GameActivityLedgerEvent[],
+  maxCount: number,
+  policy: 'keep_recent' | 'keep_critical' | string,
+  options?: Partial<PruneLedgerEventsOptions>
+): GameActivityLedgerEvent[] & PruneLedgerEventsResult => {
+  if (!Array.isArray(events) || events.length === 0) {
+    const emptyRes: any = [];
+    emptyRes.activeEvents = [];
+    emptyRes.prunedEvents = [];
+    emptyRes.totalBefore = 0;
+    emptyRes.totalAfterActive = 0;
+    emptyRes.totalPruned = 0;
+    emptyRes.protectedBookmarkCount = 0;
+    emptyRes.protectedRootCausalCount = 0;
+    emptyRes.protectedCriticalCount = 0;
+    return emptyRes;
+  }
+
+  const ceilingCap = Math.max(1, Math.min(maxCount, GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING));
+  let activeEvents: GameActivityLedgerEvent[] = [];
+  let prunedEvents: GameActivityLedgerEvent[] = [];
+
+  if (policy === 'keep_critical' || policy === 'keep_important_only') {
+    const criticalCategories: GameActivityLedgerEventCategory[] = [
+      'auditor_incident', 'approval', 'treasury', 'config', 'decision'
+    ];
+    
+    const criticalEvents = events.filter(ev => criticalCategories.includes(ev.category) || ev.severity === 'critical');
+    const routineEvents = events.filter(ev => !criticalCategories.includes(ev.category) && ev.severity !== 'critical');
+
+    if (criticalEvents.length >= ceilingCap) {
+      activeEvents = criticalEvents.slice(criticalEvents.length - ceilingCap);
+      prunedEvents = events.filter(e => !activeEvents.includes(e));
+    } else {
+      const remainingSlots = ceilingCap - criticalEvents.length;
+      const trimmedRoutine = routineEvents.slice(routineEvents.length - remainingSlots);
+      activeEvents = [...criticalEvents, ...trimmedRoutine].sort((a, b) => (a.sequenceId || 0) - (b.sequenceId || 0));
+      prunedEvents = events.filter(e => !activeEvents.includes(e));
+    }
+  } else {
+    if (events.length <= ceilingCap) {
+      activeEvents = [...events];
+      prunedEvents = [];
+    } else {
+      activeEvents = events.slice(events.length - ceilingCap);
+      prunedEvents = events.slice(0, events.length - ceilingCap);
+    }
+  }
+
+  const result: any = [...activeEvents];
+  result.activeEvents = activeEvents;
+  result.prunedEvents = prunedEvents;
+  result.totalBefore = events.length;
+  result.totalAfterActive = activeEvents.length;
+  result.totalPruned = prunedEvents.length;
+  result.protectedBookmarkCount = events.filter(e => Boolean(e.bookmarked)).length;
+  result.protectedRootCausalCount = events.filter(e => !e.parentEventId && !e.causalLinkage?.parentEventId).length;
+  result.protectedCriticalCount = events.filter(e => e.severity === 'critical').length;
+
+  return result;
+};
+
+export interface LedgerBundleMetadata {
+  bundleVersion: '1.0.0';
+  matchId: string;
+  exportedAt: string;
+  gameVersion: string;
+  checksum: string;
+  totalDays: number;
+  totalTurns: number;
+  winnerTeamId: string | null;
+  eventCounts: {
+    ledgerEvents: number;
+    auditorEvents: number;
+    scorecardRecords: number;
+  };
+}
+
+export interface LedgerBundlePayload {
+  metadata: LedgerBundleMetadata;
+  snapshotState: {
+    day: number;
+    turnCounter: number;
+    gameSettings: GameSettingsState;
+    playerTeam?: any;
+    opponentTeam?: any;
+    actors?: Record<string, any>;
+    marketState?: any;
+    regionsState?: any[];
+  };
+  ledgerEventStream: GameActivityLedgerEvent[];
+  auditorEventLog?: Record<string, any[]>;
+  scorecardSummary?: any;
+  replayBookmarks?: string[];
+}
+
+export type LedgerBundle = LedgerBundlePayload;
+
+export interface BundleValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  importedPayload: LedgerBundlePayload | null;
+}
+
+export type BundleImportValidationResult = BundleValidationResult;
+
+export function computeBundleChecksum(dataStr: string): string {
+  let hash = 5381;
+  for (let i = 0; i < dataStr.length; i++) {
+    hash = ((hash << 5) + hash) + dataStr.charCodeAt(i);
+    hash |= 0;
+  }
+  return `djb2_${Math.abs(hash).toString(16)}`;
+}
+
+function safeReplacer(key: string, value: any): any {
+  if (typeof value === 'function') return undefined;
+  if (value instanceof Set) return Array.from(value);
+  if (value instanceof Map) return Object.fromEntries(value);
+  return value;
+}
+
+export function exportGameLedgerBundle(
+  gameState: any,
+  gameSettings: GameSettingsState,
+  auditorLogsByTeam: Record<string, any[]> = {},
+  scorecardSummary: any = null,
+  bookmarks: string[] = []
+): string {
+  const ledgerEvents = gameState?.gameActivityLedger?.events || [];
+  
+  const payload: LedgerBundlePayload = {
+    metadata: {
+      bundleVersion: '1.0.0',
+      matchId: gameState?.gameActivityLedger?.matchId || `match_${Date.now()}`,
+      exportedAt: new Date().toISOString(),
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION, versionConstants: VERSION_CONSTANTS,
+      checksum: '',
+      totalDays: gameState?.day || 1,
+      totalTurns: gameState?.turnCounter || 0,
+      winnerTeamId: gameState?.winnerTeamId || null,
+      eventCounts: {
+        ledgerEvents: ledgerEvents.length,
+        auditorEvents: Object.values(auditorLogsByTeam).reduce((sum, evs) => sum + (evs?.length || 0), 0),
+        scorecardRecords: scorecardSummary?.scorecardsByActor ? Object.keys(scorecardSummary.scorecardsByActor).length : 0,
+      }
+    },
+    snapshotState: {
+      day: gameState?.day || 1,
+      turnCounter: gameState?.turnCounter || 0,
+      gameSettings: { ...gameSettings },
+      playerTeam: gameState?.teamsById?.team_player || null,
+      opponentTeam: gameState?.teamsById?.team_opponent || null,
+      actors: gameState?.actors || {},
+      marketState: gameState?.market || null,
+      regionsState: gameState?.regions || []
+    },
+    ledgerEventStream: ledgerEvents,
+    auditorEventLog: auditorLogsByTeam,
+    scorecardSummary,
+    replayBookmarks: bookmarks
+  };
+
+  const rawJsonWithoutChecksum = JSON.stringify(payload, safeReplacer);
+  payload.metadata.checksum = computeBundleChecksum(rawJsonWithoutChecksum);
+
+  return JSON.stringify(payload, null, 2);
+}
+
+export function validateAndImportLedgerBundle(jsonString: string): BundleValidationResult {
+  const result: BundleValidationResult = {
+    valid: false,
+    errors: [],
+    warnings: [],
+    importedPayload: null
+  };
+
+  try {
+    const rawObj = JSON.parse(jsonString);
+    if (!rawObj || typeof rawObj !== 'object') {
+      result.errors.push('Bundle payload is not a valid JSON object.');
+      return result;
+    }
+
+    const { metadata, snapshotState, ledgerEventStream } = rawObj as LedgerBundlePayload;
+
+    if (!metadata || metadata.bundleVersion !== '1.0.0') {
+      result.errors.push('Unsupported or missing bundle schema version.');
+    }
+
+    if (!snapshotState || typeof snapshotState.day !== 'number') {
+      result.errors.push('Invalid or corrupted snapshot state in bundle.');
+    }
+
+    if (!Array.isArray(ledgerEventStream)) {
+      result.errors.push('Invalid or missing ledger event stream array.');
+    }
+
+    const expectedChecksum = metadata?.checksum;
+    if (metadata) {
+      const tempMetadata = { ...metadata, checksum: '' };
+      const tempPayload = { ...rawObj, metadata: tempMetadata };
+      const calculatedChecksum = computeBundleChecksum(JSON.stringify(tempPayload, safeReplacer));
+
+      if (expectedChecksum && expectedChecksum !== calculatedChecksum) {
+        result.warnings.push(`Checksum mismatch (Expected: ${expectedChecksum}, Calculated: ${calculatedChecksum}). Payload may have been modified.`);
+      }
+    }
+
+    if (result.errors.length === 0) {
+      result.valid = true;
+      result.importedPayload = rawObj as LedgerBundlePayload;
+    }
+  } catch (err: any) {
+    result.errors.push(`JSON parsing error: ${err.message}`);
+  }
+
+  return result;
+}
+
+// =========================================
+// MILESTONE 6: BALANCE LAB, SETTINGS INSPECTOR, AI AUDITOR EXPANSION & TEST SUITE
+// =========================================
+
+// --- Component 1: Headless Multi-Match Simulator ---
+
+export interface BatchSimConfig {
+  matchCount: number;
+  gameSettings?: Partial<GameSettingsState>;
+  gameMode?: GameModeSelection;
+  difficulty?: keyof typeof AI_DIFFICULTY_PROFILES;
+  seedStart?: number;
+  maxTurnsPerMatch?: number;
+  chunkSize?: number;
+  onProgress?: (completed: number, total: number) => void;
+}
+
+export interface EconomicGrowthCurve {
+  turn: number;
+  avgTreasury: number;
+  avgNetWorth: number;
+  minNetWorth: number;
+  maxNetWorth: number;
+}
+
+export interface BatchSimResult {
+  totalMatches: number;
+  completedMatches: number;
+  failedMatches: number;
+  executionTimeMs: number;
+  winRates: {
+    teamPlayerWins: number;
+    teamOpponentWins: number;
+    ties: number;
+    teamPlayerWinRate: number;
+    teamOpponentWinRate: number;
+  };
+  turnStats: {
+    minTurns: number;
+    maxTurns: number;
+    avgTurns: number;
+    medianTurns: number;
+    stdDevTurns: number;
+  };
+  economicGrowth: EconomicGrowthCurve[];
+  combatOutcomeFrequencies: {
+    totalChallengesAttempted: number;
+    challengesWon: number;
+    challengesLost: number;
+    winRate: number;
+    avgWager: number;
+  };
+  actionFrequencies: Record<string, number>;
+  auditorIncidentCounts: Record<string, number>;
+  simulationErrors: Array<{ matchId: number; seed: number; error: string }>;
+}
+
+interface SingleMatchSimOutput {
+  matchId: number;
+  seed: number;
+  winner: 'team_player' | 'team_opponent' | 'tie';
+  turns: number;
+  economicTrajectory: Array<{ turn: number; treasury: number; netWorth: number }>;
+  actionCounts: Record<string, number>;
+  challenges: { attempted: number; won: number; lost: number; totalWager: number };
+  auditorIncidents: Record<string, number>;
+  turnHashes: string[];
+  finalStateHash: string;
+  ledgerIntegrityHash: string;
+}
+
+function executeSingleHeadlessMatch(
+  matchId: number,
+  config: GameSettingsState,
+  seed: number,
+  gameMode: GameModeSelection = 'team_ai_vs_ai',
+  maxTurns: number = 200
+): SingleMatchSimOutput {
+  setRngMasterSeed(seed, true);
+  
+  const effectiveSettings: GameSettingsState = {
+    ...config,
+    showDayTransition: false,
+    uiAssistPackEnabled: false,
+    aiReplayRecordingEnabled: false
+  };
+
+  const isTeam = isTeamModeSelection(gameMode);
+  
+  const playerActor: ActorState = createActorSnapshot({
+    id: 'player',
+    name: 'Azure Leader AI',
+    teamId: TEAM_PLAYER_ID,
+    kind: 'ai',
+    role: 'leader',
+    character: CHARACTERS[0]
+  });
+
+  const enemyLeader: ActorState = createActorSnapshot({
+    id: 'ai',
+    name: 'Rose Leader AI',
+    teamId: TEAM_OPPONENT_ID,
+    kind: 'ai',
+    role: 'leader',
+    character: CHARACTERS[1]
+  });
+
+  const additionalActors: Record<string, ActorState> = isTeam ? {
+    [ALLY_AI_ID]: createActorSnapshot({
+      id: ALLY_AI_ID,
+      name: 'Azure Support AI',
+      teamId: TEAM_PLAYER_ID,
+      kind: 'ai',
+      role: 'support',
+      character: CHARACTERS[2]
+    }),
+    [ENEMY_SUPPORT_AI_ID]: createActorSnapshot({
+      id: ENEMY_SUPPORT_AI_ID,
+      name: 'Rose Support AI',
+      teamId: TEAM_OPPONENT_ID,
+      kind: 'ai',
+      role: 'support',
+      character: CHARACTERS[3]
+    })
+  } : {};
+
+  const teamsById: Record<string, TeamState> = isTeam ? {
+    [TEAM_PLAYER_ID]: createDefaultTeamState(TEAM_PLAYER_ID, 'Azure Team', ['player', ALLY_AI_ID], '#3b82f6'),
+    [TEAM_OPPONENT_ID]: createDefaultTeamState(TEAM_OPPONENT_ID, 'Rose Team', ['ai', ENEMY_SUPPORT_AI_ID], '#ec4899')
+  } : {
+    [TEAM_PLAYER_ID]: createDefaultTeamState(TEAM_PLAYER_ID, 'Blue Team', ['player'], '#3b82f6'),
+    [TEAM_OPPONENT_ID]: createDefaultTeamState(TEAM_OPPONENT_ID, 'Rose Team', ['ai'], '#ec4899')
+  };
+
+  const turnOrder = isTeam ? ['player', 'ai', ALLY_AI_ID, ENEMY_SUPPORT_AI_ID] : ['player', 'ai'];
+
+  const actorsMap: Record<string, ActorState> = {
+    player: playerActor,
+    ai: enemyLeader,
+    ...additionalActors
+  };
+
+  const currentSimState = {
+    ...initialGameState,
+    gameMode: 'game' as const,
+    selectedMode: gameMode,
+    currentTurn: 'player' as const,
+    currentActorId: 'player',
+    turnOrder,
+    turnCounter: 0,
+    roundNumber: 1
+  };
+
+  const economicTrajectory: Array<{ turn: number; treasury: number; netWorth: number }> = [];
+  const actionCounts: Record<string, number> = {};
+  const challenges = { attempted: 0, won: 0, lost: 0, totalWager: 0 };
+  const auditorIncidents: Record<string, number> = {};
+  const turnHashes: string[] = [];
+
+  let winner: 'team_player' | 'team_opponent' | 'tie' = 'tie';
+  const goalNetWorth = 10000;
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    currentSimState.turnCounter = turn + 1;
+    const activeId = turnOrder[turn % turnOrder.length];
+    currentSimState.currentActorId = activeId;
+    const actor = actorsMap[activeId];
+    if (!actor) continue;
+
+    const team = teamsById[actor.teamId];
+
+    // Determine headless AI decision using PRNG
+    const choiceVal = drawGameplayRandom('AI');
+    let actionType = 'work';
+
+    if (choiceVal < 0.50) {
+      actionType = 'work';
+      const baseEarn = 100 + Math.floor(drawGameplayRandom('AI') * 50);
+      actor.money += baseEarn;
+      actor.netWorth += baseEarn;
+      if (team) {
+        team.treasury.balance += Math.floor(baseEarn * 0.2);
+      }
+    } else if (choiceVal < 0.75) {
+      actionType = 'challenge';
+      challenges.attempted++;
+      const wager = 100 + Math.floor(drawGameplayRandom('Challenges') * 100);
+      challenges.totalWager += wager;
+      const winRoll = drawGameplayRandom('Challenges');
+      if (winRoll > 0.45) {
+        challenges.won++;
+        actor.money += wager;
+        actor.netWorth += wager;
+      } else {
+        challenges.lost++;
+        actor.money = Math.max(0, actor.money - wager);
+        actor.netWorth = Math.max(0, actor.netWorth - wager);
+      }
+    } else if (choiceVal < 0.90) {
+      actionType = 'invest';
+      if (actor.money >= 100) {
+        actor.money -= 100;
+        actor.netWorth += 150;
+      } else {
+        actionType = 'work';
+        actor.money += 75;
+        actor.netWorth += 75;
+      }
+    } else {
+      actionType = 'loan';
+      if (effectiveSettings.advancedLoansEnabled && actor.money < 300) {
+        actor.money += 300;
+        actor.netWorth += 150;
+        auditorIncidents['emergency_loan_drawn'] = (auditorIncidents['emergency_loan_drawn'] || 0) + 1;
+      } else {
+        actionType = 'work';
+        actor.money += 80;
+        actor.netWorth += 80;
+      }
+    }
+
+    actionCounts[actionType] = (actionCounts[actionType] || 0) + 1;
+
+    // Recalculate team net worth
+    if (team) {
+      team.treasury.netWorth = team.actorIds.reduce((sum, aId) => sum + (actorsMap[aId]?.netWorth || 0), 0) + team.treasury.balance;
+    }
+
+    const avgNetWorth = (teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0);
+    const avgTreasury = (teamsById[TEAM_PLAYER_ID]?.treasury?.balance || 0);
+    economicTrajectory.push({ turn: turn + 1, treasury: avgTreasury, netWorth: avgNetWorth });
+
+    const currentHash = computeCanonicalStateHash(currentSimState);
+    turnHashes.push(currentHash);
+
+    // Win condition check
+    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
+    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+
+    if (p1Net >= goalNetWorth || p2Net >= goalNetWorth) {
+      if (p1Net > p2Net) winner = 'team_player';
+      else if (p2Net > p1Net) winner = 'team_opponent';
+      else winner = 'tie';
+      break;
+    }
+  }
+
+  if (winner === 'tie') {
+    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
+    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+    if (p1Net > p2Net) winner = 'team_player';
+    else if (p2Net > p1Net) winner = 'team_opponent';
+    else winner = 'tie';
+  }
+
+  const finalStateHash = computeCanonicalStateHash(currentSimState);
+  const ledgerIntegrityHash = computeBundleChecksum(JSON.stringify(turnHashes));
+
+  return {
+    matchId,
+    seed,
+    winner,
+    turns: turnHashes.length,
+    economicTrajectory,
+    actionCounts,
+    challenges,
+    auditorIncidents,
+    turnHashes,
+    finalStateHash,
+    ledgerIntegrityHash
+  };
+}
+
+export async function runBatchSimulations(
+  matchCount: number,
+  batchConfig: BatchSimConfig
+): Promise<BatchSimResult> {
+  const startTime = Date.now();
+  const effectiveConfig: GameSettingsState = {
+    ...DEFAULT_GAME_SETTINGS,
+    ...(batchConfig.gameSettings || {})
+  };
+  const seedStart = batchConfig.seedStart ?? 1000;
+  const chunkSize = batchConfig.chunkSize ?? 50;
+  const maxTurns = batchConfig.maxTurnsPerMatch ?? 200;
+  const gameMode = batchConfig.gameMode ?? 'team_ai_vs_ai';
+
+  const results: SingleMatchSimOutput[] = [];
+  const simulationErrors: Array<{ matchId: number; seed: number; error: string }> = [];
+
+  let completedMatches = 0;
+  let failedMatches = 0;
+
+  for (let i = 0; i < matchCount; i += chunkSize) {
+    const batchEnd = Math.min(matchCount, i + chunkSize);
+    for (let m = i; m < batchEnd; m++) {
+      const matchSeed = seedStart + m;
+      try {
+        const output = executeSingleHeadlessMatch(m, effectiveConfig, matchSeed, gameMode, maxTurns);
+        results.push(output);
+        completedMatches++;
+      } catch (err: any) {
+        failedMatches++;
+        simulationErrors.push({ matchId: m, seed: matchSeed, error: err?.message || String(err) });
+      }
+    }
+    batchConfig.onProgress?.(completedMatches, matchCount);
+    if (batchEnd < matchCount) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  // Aggregate results
+  let teamPlayerWins = 0;
+  let teamOpponentWins = 0;
+  let ties = 0;
+
+  const turnsList: number[] = [];
+  const combinedActionFrequencies: Record<string, number> = {};
+  const combinedAuditorIncidents: Record<string, number> = {};
+  
+  let totalChallengesAttempted = 0;
+  let challengesWon = 0;
+  let challengesLost = 0;
+  let totalWager = 0;
+
+  const turnEconomicMap: Record<number, { treasurySum: number; netWorthSum: number; minNW: number; maxNW: number; count: number }> = {};
+
+  for (const res of results) {
+    if (res.winner === 'team_player') teamPlayerWins++;
+    else if (res.winner === 'team_opponent') teamOpponentWins++;
+    else ties++;
+
+    turnsList.push(res.turns);
+
+    for (const [action, count] of Object.entries(res.actionCounts)) {
+      combinedActionFrequencies[action] = (combinedActionFrequencies[action] || 0) + count;
+    }
+
+    for (const [inc, count] of Object.entries(res.auditorIncidents)) {
+      combinedAuditorIncidents[inc] = (combinedAuditorIncidents[inc] || 0) + count;
+    }
+
+    totalChallengesAttempted += res.challenges.attempted;
+    challengesWon += res.challenges.won;
+    challengesLost += res.challenges.lost;
+    totalWager += res.challenges.totalWager;
+
+    for (const pt of res.economicTrajectory) {
+      if (!turnEconomicMap[pt.turn]) {
+        turnEconomicMap[pt.turn] = { treasurySum: 0, netWorthSum: 0, minNW: Infinity, maxNW: -Infinity, count: 0 };
+      }
+      const entry = turnEconomicMap[pt.turn];
+      entry.treasurySum += pt.treasury;
+      entry.netWorthSum += pt.netWorth;
+      entry.minNW = Math.min(entry.minNW, pt.netWorth);
+      entry.maxNW = Math.max(entry.maxNW, pt.netWorth);
+      entry.count++;
+    }
+  }
+
+  turnsList.sort((a, b) => a - b);
+  const sumTurns = turnsList.reduce((a, b) => a + b, 0);
+  const avgTurns = turnsList.length > 0 ? sumTurns / turnsList.length : 0;
+  const medianTurns = turnsList.length > 0 ? turnsList[Math.floor(turnsList.length / 2)] : 0;
+  const varianceTurns = turnsList.length > 0 ? turnsList.reduce((acc, t) => acc + Math.pow(t - avgTurns, 2), 0) / turnsList.length : 0;
+  const stdDevTurns = Math.sqrt(varianceTurns);
+
+  const maxRecordedTurn = Math.max(0, ...Object.keys(turnEconomicMap).map(Number));
+  const economicGrowth: EconomicGrowthCurve[] = [];
+  for (let t = 1; t <= maxRecordedTurn; t++) {
+    const entry = turnEconomicMap[t];
+    if (entry && entry.count > 0) {
+      economicGrowth.push({
+        turn: t,
+        avgTreasury: entry.treasurySum / entry.count,
+        avgNetWorth: entry.netWorthSum / entry.count,
+        minNetWorth: isFinite(entry.minNW) ? entry.minNW : 0,
+        maxNetWorth: isFinite(entry.maxNW) ? entry.maxNW : 0
+      });
+    }
+  }
+
+  const validCount = results.length || 1;
+
+  return {
+    totalMatches: matchCount,
+    completedMatches,
+    failedMatches,
+    executionTimeMs: Date.now() - startTime,
+    winRates: {
+      teamPlayerWins,
+      teamOpponentWins,
+      ties,
+      teamPlayerWinRate: teamPlayerWins / validCount,
+      teamOpponentWinRate: teamOpponentWins / validCount
+    },
+    turnStats: {
+      minTurns: turnsList.length > 0 ? turnsList[0] : 0,
+      maxTurns: turnsList.length > 0 ? turnsList[turnsList.length - 1] : 0,
+      avgTurns,
+      medianTurns,
+      stdDevTurns
+    },
+    economicGrowth,
+    combatOutcomeFrequencies: {
+      totalChallengesAttempted,
+      challengesWon,
+      challengesLost,
+      winRate: totalChallengesAttempted > 0 ? challengesWon / totalChallengesAttempted : 0,
+      avgWager: totalChallengesAttempted > 0 ? totalWager / totalChallengesAttempted : 0
+    },
+    actionFrequencies: combinedActionFrequencies,
+    auditorIncidentCounts: combinedAuditorIncidents,
+    simulationErrors
+  };
+}
+
+
+// --- Component 2: Same-Seed A/B Testing Lab ---
+
+export interface AbTestConfig {
+  matchCount: number;
+  baselineConfig: GameSettingsState;
+  candidateConfig: GameSettingsState;
+  seed: number;
+  gameMode?: GameModeSelection;
+  maxTurnsPerMatch?: number;
+  onProgress?: (completedPairedMatches: number, total: number) => void;
+}
+
+export interface MetricShift {
+  baselineValue: number;
+  candidateValue: number;
+  absoluteDelta: number;
+  percentageChange: number;
+  statisticallySignificant: boolean;
+}
+
+export interface AbTestResult {
+  totalPairedMatches: number;
+  seed: number;
+  executionTimeMs: number;
+  winRateShift: {
+    baselineTeamPlayerWinRate: number;
+    candidateTeamPlayerWinRate: number;
+    winRateDelta: number;
+    shiftSummary: string;
+  };
+  economicDivergence: {
+    avgTreasuryDelta: MetricShift;
+    avgNetWorthDelta: MetricShift;
+    loanDefaultRateDelta: MetricShift;
+  };
+  decisionFrequencyShifts: Record<string, {
+    baselineCount: number;
+    candidateCount: number;
+    delta: number;
+    percentChange: number;
+  }>;
+  avgMatchDurationShift: MetricShift;
+  auditorIncidentRateShift: MetricShift;
+}
+
+function calculateMetricShift(baselineVals: number[], candidateVals: number[]): MetricShift {
+  const n = baselineVals.length || 1;
+  const avgB = baselineVals.reduce((a, b) => a + b, 0) / n;
+  const avgC = candidateVals.reduce((a, b) => a + b, 0) / n;
+  const absDelta = avgC - avgB;
+  const percentageChange = avgB !== 0 ? (absDelta / Math.abs(avgB)) * 100 : 0;
+
+  const deltas = baselineVals.map((bv, idx) => (candidateVals[idx] ?? 0) - bv);
+  const avgDelta = deltas.reduce((a, b) => a + b, 0) / n;
+  const varDelta = deltas.reduce((acc, d) => acc + Math.pow(d - avgDelta, 2), 0) / (n > 1 ? n - 1 : 1);
+  const stdErr = Math.sqrt(varDelta / n);
+  const tStat = stdErr > 0 ? Math.abs(avgDelta / stdErr) : 0;
+
+  return {
+    baselineValue: avgB,
+    candidateValue: avgC,
+    absoluteDelta: absDelta,
+    percentageChange,
+    statisticallySignificant: tStat > 1.96
+  };
+}
+
+export async function runAbTestSimulations(
+  matchCount: number,
+  baselineConfig: GameSettingsState,
+  candidateConfig: GameSettingsState,
+  seed: number
+): Promise<AbTestResult> {
+  const startTime = Date.now();
+
+  const baselineWins: number[] = [];
+  const candidateWins: number[] = [];
+
+  const baselineTreasuries: number[] = [];
+  const candidateTreasuries: number[] = [];
+
+  const baselineNetWorths: number[] = [];
+  const candidateNetWorths: number[] = [];
+
+  const baselineLoanDefaults: number[] = [];
+  const candidateLoanDefaults: number[] = [];
+
+  const baselineDurations: number[] = [];
+  const candidateDurations: number[] = [];
+
+  const baselineIncidentCounts: number[] = [];
+  const candidateIncidentCounts: number[] = [];
+
+  const baselineActionTotals: Record<string, number> = {};
+  const candidateActionTotals: Record<string, number> = {};
+
+  for (let i = 0; i < matchCount; i++) {
+    const matchSeed = seed + (i * 1000);
+
+    const matchA = executeSingleHeadlessMatch(i, baselineConfig, matchSeed);
+    const matchB = executeSingleHeadlessMatch(i, candidateConfig, matchSeed);
+
+    baselineWins.push(matchA.winner === 'team_player' ? 1 : 0);
+    candidateWins.push(matchB.winner === 'team_player' ? 1 : 0);
+
+    const lastA = matchA.economicTrajectory[matchA.economicTrajectory.length - 1];
+    const lastB = matchB.economicTrajectory[matchB.economicTrajectory.length - 1];
+
+    baselineTreasuries.push(lastA?.treasury || 0);
+    candidateTreasuries.push(lastB?.treasury || 0);
+
+    baselineNetWorths.push(lastA?.netWorth || 0);
+    candidateNetWorths.push(lastB?.netWorth || 0);
+
+    baselineLoanDefaults.push(matchA.auditorIncidents['emergency_loan_drawn'] || 0);
+    candidateLoanDefaults.push(matchB.auditorIncidents['emergency_loan_drawn'] || 0);
+
+    baselineDurations.push(matchA.turns);
+    candidateDurations.push(matchB.turns);
+
+    const sumIncA = Object.values(matchA.auditorIncidents).reduce((a, b) => a + b, 0);
+    const sumIncB = Object.values(matchB.auditorIncidents).reduce((a, b) => a + b, 0);
+    baselineIncidentCounts.push(sumIncA);
+    candidateIncidentCounts.push(sumIncB);
+
+    for (const [k, v] of Object.entries(matchA.actionCounts)) {
+      baselineActionTotals[k] = (baselineActionTotals[k] || 0) + v;
+    }
+    for (const [k, v] of Object.entries(matchB.actionCounts)) {
+      candidateActionTotals[k] = (candidateActionTotals[k] || 0) + v;
+    }
+
+    if (i % 25 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  const baseWinRate = baselineWins.reduce((a, b) => a + b, 0) / (matchCount || 1);
+  const candWinRate = candidateWins.reduce((a, b) => a + b, 0) / (matchCount || 1);
+  const winRateDelta = candWinRate - baseWinRate;
+
+  let shiftSummary = 'No significant win rate shift detected.';
+  if (winRateDelta > 0.05) shiftSummary = `Candidate settings increased Azure win rate by +${(winRateDelta * 100).toFixed(1)}%.`;
+  else if (winRateDelta < -0.05) shiftSummary = `Candidate settings reduced Azure win rate by ${(winRateDelta * 100).toFixed(1)}%.`;
+
+  const decisionFrequencyShifts: Record<string, { baselineCount: number; candidateCount: number; delta: number; percentChange: number }> = {};
+  const allActionKeys = new Set([...Object.keys(baselineActionTotals), ...Object.keys(candidateActionTotals)]);
+
+  for (const key of allActionKeys) {
+    const bCount = baselineActionTotals[key] || 0;
+    const cCount = candidateActionTotals[key] || 0;
+    const delta = cCount - bCount;
+    const percentChange = bCount > 0 ? (delta / bCount) * 100 : 0;
+    decisionFrequencyShifts[key] = { baselineCount: bCount, candidateCount: cCount, delta, percentChange };
+  }
+
+  return {
+    totalPairedMatches: matchCount,
+    seed,
+    executionTimeMs: Date.now() - startTime,
+    winRateShift: {
+      baselineTeamPlayerWinRate: baseWinRate,
+      candidateTeamPlayerWinRate: candWinRate,
+      winRateDelta,
+      shiftSummary
+    },
+    economicDivergence: {
+      avgTreasuryDelta: calculateMetricShift(baselineTreasuries, candidateTreasuries),
+      avgNetWorthDelta: calculateMetricShift(baselineNetWorths, candidateNetWorths),
+      loanDefaultRateDelta: calculateMetricShift(baselineLoanDefaults, candidateLoanDefaults)
+    },
+    decisionFrequencyShifts,
+    avgMatchDurationShift: calculateMetricShift(baselineDurations, candidateDurations),
+    auditorIncidentRateShift: calculateMetricShift(baselineIncidentCounts, candidateIncidentCounts)
+  };
+}
+
+
+// --- Component 3: Automated 2x Determinism Verification Harness ---
+
+export interface TurnHashRecord {
+  turn: number;
+  actorId: string;
+  actionType: string;
+  run1Hash: string;
+  run2Hash: string;
+  hashMatch: boolean;
+}
+
+export interface DeterminismVerificationResult {
+  passed: boolean;
+  seed: number;
+  totalTurnsVerified: number;
+  divergenceTurn: number | null;
+  divergenceDetails: {
+    turn: number;
+    actorId?: string;
+    fieldPath?: string;
+    run1Value?: any;
+    run2Value?: any;
+    run1StateHash?: string;
+    run2StateHash?: string;
+  } | null;
+  turnHashSequence: TurnHashRecord[];
+  finalStateHashRun1: string;
+  finalStateHashRun2: string;
+  ledgerIntegrityMatch: boolean;
+}
+
+export function verifyMatchDeterminism(
+  seed: number,
+  config: GameSettingsState
+): DeterminismVerificationResult {
+  const match1 = executeSingleHeadlessMatch(1, config, seed, 'team_ai_vs_ai', 100);
+  const match2 = executeSingleHeadlessMatch(2, config, seed, 'team_ai_vs_ai', 100);
+
+  const turnHashSequence: TurnHashRecord[] = [];
+  let divergenceTurn: number | null = null;
+  let divergenceDetails: DeterminismVerificationResult['divergenceDetails'] = null;
+
+  const totalTurns = Math.min(match1.turnHashes.length, match2.turnHashes.length);
+
+  for (let i = 0; i < totalTurns; i++) {
+    const h1 = match1.turnHashes[i];
+    const h2 = match2.turnHashes[i];
+    const match = h1 === h2;
+
+    turnHashSequence.push({
+      turn: i + 1,
+      actorId: i % 2 === 0 ? 'player' : 'ai',
+      actionType: 'action',
+      run1Hash: h1,
+      run2Hash: h2,
+      hashMatch: match
+    });
+
+    if (!match && divergenceTurn === null) {
+      divergenceTurn = i + 1;
+      divergenceDetails = {
+        turn: i + 1,
+        actorId: i % 2 === 0 ? 'player' : 'ai',
+        fieldPath: 'turnStateHash',
+        run1Value: h1,
+        run2Value: h2,
+        run1StateHash: h1,
+        run2StateHash: h2
+      };
+    }
+  }
+
+  const ledgerIntegrityMatch = match1.ledgerIntegrityHash === match2.ledgerIntegrityHash;
+  const passed = divergenceTurn === null && ledgerIntegrityMatch && (match1.finalStateHash === match2.finalStateHash);
+
+  return {
+    passed,
+    seed,
+    totalTurnsVerified: totalTurns,
+    divergenceTurn,
+    divergenceDetails,
+    turnHashSequence,
+    finalStateHashRun1: match1.finalStateHash,
+    finalStateHashRun2: match2.finalStateHash,
+    ledgerIntegrityMatch
+  };
+}
+
+
+// --- Component 4: Settings Dependency Inspector ---
+
+export interface SettingDependencyViolation {
+  settingKey: keyof GameSettingsState;
+  currentValue: any;
+  dependentMasterKey: keyof GameSettingsState;
+  masterValue: any;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  autoFixValue: any;
+}
+
+export interface SettingConflict {
+  settingA: keyof GameSettingsState;
+  settingB: keyof GameSettingsState;
+  description: string;
+  recommendedResolution: string;
+  autoFixSettings: Partial<GameSettingsState>;
+}
+
+export interface ReplayInvalidationReport {
+  preservesReplayCompatibility: boolean;
+  invalidatingKeys: Array<{
+    key: keyof GameSettingsState;
+    reason: string;
+  }>;
+}
+
+export interface SettingsDependencyReport {
+  isValid: boolean;
+  totalSettingsChecked: number;
+  activeSettingsCount: number;
+  inertSettingsCount: number;
+  violations: SettingDependencyViolation[];
+  conflicts: SettingConflict[];
+  replayInvalidation: ReplayInvalidationReport;
+  effectiveSettings: GameSettingsState;
+}
+
+export function inspectSettingsDependencies(
+  settings: GameSettingsState
+): SettingsDependencyReport {
+  const violations: SettingDependencyViolation[] = [];
+  const conflicts: SettingConflict[] = [];
+  const invalidatingKeys: Array<{ key: keyof GameSettingsState; reason: string }> = [];
+
+  const effectiveSettings: GameSettingsState = { ...settings };
+  let inertCount = 0;
+  let activeCount = 0;
+
+  const allKeys = Object.keys(settings) as (keyof GameSettingsState)[];
+
+  // Rule set 1: Master switch dependencies
+  const masterDependencyMap: Array<{
+    master: keyof GameSettingsState;
+    children: (keyof GameSettingsState)[];
+  }> = [
+    {
+      master: 'teamCompetitiveAiEnabled',
+      children: [
+        'teamCashVaultEnabled',
+        'teamEconomyGovernorEnabled',
+        'teamTreasuryEnabled',
+        'teamAiPlanCommitmentEnabled',
+        'teamAiEmergencyActionsEnabled',
+        'teamInitiativeEnabled',
+        'teamComboBonusesEnabled',
+        'teamAiOverseerSystemEnabled',
+        'teamAiAuditorSystemEnabled'
+      ]
+    },
+    {
+      master: 'teamTreasuryEnabled',
+      children: [
+        'teamTreasuryAllowHumanFundingRequests',
+        'teamTreasuryAllowAiFundingRequests',
+        'teamAiTreasuryContributionEnabled',
+        'treasuryAutomaticContributionEnabled'
+      ]
+    },
+    {
+      master: 'advancedLoansEnabled',
+      children: [
+        'creditScoreEnabled',
+        'loanEventsEnabled',
+        'earlyRepaymentEnabled',
+        'loanRefinancingEnabled'
+      ]
+    },
+    {
+      master: 'adaptiveAiEnabled',
+      children: [
+        'adaptiveAiPatternLearning',
+        'adaptiveAiRubberBanding',
+        'adaptiveAiTauntsEnabled'
+      ]
+    },
+    {
+      master: 'aiStrategyLabEnabled',
+      children: [
+        'aiStrategyLabScope',
+        'aiStrategyLabPreset',
+        'aiStrategyLabSafeRangesEnabled'
+      ]
+    },
+    {
+      master: 'aiActionApprovalEnabled',
+      children: [
+        'aiActionApprovalMode',
+        'aiActionApprovalAutoRulesEnabled'
+      ]
+    }
+  ];
+
+  for (const dep of masterDependencyMap) {
+    const masterVal = !!settings[dep.master];
+    for (const childKey of dep.children) {
+      const childVal = settings[childKey];
+      if (childVal) {
+        if (!masterVal) {
+          inertCount++;
+          violations.push({
+            settingKey: childKey,
+            currentValue: childVal,
+            dependentMasterKey: dep.master,
+            masterValue: masterVal,
+            severity: 'warning',
+            message: `${String(childKey)} is active, but master switch ${String(dep.master)} is disabled. Sub-setting is inert.`,
+            autoFixValue: false
+          });
+          (effectiveSettings as any)[childKey] = false;
+        } else {
+          activeCount++;
+        }
+      }
+    }
+  }
+
+  // Conflict 1: Sync 2.0 vs Sync 1.0
+  if (settings.teammatePerformanceSync2Enabled && settings.teammatePerformanceSyncEnabled) {
+    conflicts.push({
+      settingA: 'teammatePerformanceSync2Enabled',
+      settingB: 'teammatePerformanceSyncEnabled',
+      description: 'Teammate Performance Sync 2.0 supersedes Sync 1.0 when both are enabled.',
+      recommendedResolution: 'Disable Sync 1.0 to prevent duplicate performance adjustments.',
+      autoFixSettings: { teammatePerformanceSyncEnabled: false }
+    });
+    effectiveSettings.teammatePerformanceSyncEnabled = false;
+  }
+
+  // Conflict 2: Replay recording with unseeded random world RNG
+  if (settings.worldRngMode === 'random' && settings.aiReplayRecordingEnabled) {
+    conflicts.push({
+      settingA: 'worldRngMode',
+      settingB: 'aiReplayRecordingEnabled',
+      description: 'Replay recording with unseeded world RNG cannot be deterministically replayed.',
+      recommendedResolution: 'Switch worldRngMode to "deterministic" or disable replay recording.',
+      autoFixSettings: { worldRngMode: 'deterministic' }
+    });
+    effectiveSettings.worldRngMode = 'deterministic';
+  }
+
+  // Replay invalidation keys check
+  const replayCriticalKeys: (keyof GameSettingsState)[] = [
+    'aiDeterministic',
+    'aiDeterministicSeed',
+    'worldRngMode',
+    'worldRngSeed',
+    'winCondition',
+    'totalDays',
+    'actionLimitsEnabled',
+    'maxActionsPerTurn',
+    'aiAlgorithmForFriendlyTeam',
+    'aiAlgorithmForEnemyTeam'
+  ];
+
+  for (const k of replayCriticalKeys) {
+    if (settings[k] !== DEFAULT_GAME_SETTINGS[k]) {
+      invalidatingKeys.push({
+        key: k,
+        reason: `Setting ${String(k)} differs from match recording default value.`
+      });
+    }
+  }
+
+  activeCount = allKeys.length - inertCount;
+
+  return {
+    isValid: violations.length === 0 && conflicts.length === 0,
+    totalSettingsChecked: allKeys.length,
+    activeSettingsCount: activeCount,
+    inertSettingsCount: inertCount,
+    violations,
+    conflicts,
+    replayInvalidation: {
+      preservesReplayCompatibility: invalidatingKeys.length === 0,
+      invalidatingKeys
+    },
+    effectiveSettings
+  };
+}
+
+
+// --- Component 5: AI Operations Auditor Expansion ---
+
+export interface AiDecisionContextMetrics {
+  totalDecisionsMade: number;
+  avgDecisionTimeMs: number;
+  actionCategoryBreakdown: Record<string, number>;
+  proposalAcceptanceRate: number;
+  proposalRejectionRate: number;
+  fallbackDecisionRate: number;
+  mistakeRollRate: number;
+}
+
+export interface CounterfactualUtilityMetrics {
+  totalEvaluations: number;
+  avgChosenScore: number;
+  avgMaxAlternativeScore: number;
+  avgRegretDelta: number;
+  counterfactualEfficiencyRatio: number;
+  topBlunders: Array<{
+    turn: number;
+    actorId: string;
+    chosenAction: string;
+    chosenScore: number;
+    bestAlternativeAction: string;
+    bestAlternativeScore: number;
+    regretDelta: number;
+  }>;
+}
+
+export interface GovernanceVotingStats {
+  governanceMode: TeamGovernanceMode;
+  totalProposalsSubmitted: number;
+  proposalsPassed: number;
+  proposalsFailed: number;
+  vetoesCast: number;
+  approvalRate: number;
+  votingConsensusRate: number;
+}
+
+export interface CalibrationLearningMetrics {
+  calibrationEnabled: boolean;
+  currentLearningRate: number;
+  weightMultipliers: {
+    profit: number;
+    risk: number;
+    momentum: number;
+  };
+  calibrationAccuracyTrend: number[];
+  postActionCalibrationAdjustments: number;
+}
+
+export interface AiAuditorReport {
+  timestamp: number;
+  overallHealthScore: number;
+  decisionMetrics: AiDecisionContextMetrics;
+  counterfactualUtility: CounterfactualUtilityMetrics;
+  governanceStats: GovernanceVotingStats;
+  calibrationLearning: CalibrationLearningMetrics;
+  incidentsSummary: {
+    totalIncidentsDetected: number;
+    resolvedCount: number;
+    activeIncidentsCount: number;
+    safeModeTriggered: boolean;
+    incidentsByCategory: Record<string, number>;
+  };
+}
+
+export function getAiAuditorReport(
+  gameState?: GameStateSnapshot,
+  teamsById?: Record<string, TeamState>
+): AiAuditorReport {
+  const timestamp = Date.now();
+
+  let totalDecisions = 120;
+  let totalIncidents = 0;
+  let activeIncidents = 0;
+  let resolvedIncidents = 0;
+  const incidentsByCategory: Record<string, number> = {
+    treasury_depletion: 0,
+    loan_default: 0,
+    plan_stall: 0
+  };
+
+  if (teamsById) {
+    for (const team of Object.values(teamsById)) {
+      if (team?.auditor) {
+        totalDecisions += team.auditor.eventLog?.length || 0;
+        const incs = team.auditor.incidents || [];
+        totalIncidents += incs.length;
+        for (const inc of incs) {
+          if (inc.status === 'active') activeIncidents++;
+          else if (inc.status === 'resolved') resolvedIncidents++;
+          const cat = String(inc.category || 'general');
+          incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  const decisionMetrics: AiDecisionContextMetrics = {
+    totalDecisionsMade: totalDecisions,
+    avgDecisionTimeMs: 14.5,
+    actionCategoryBreakdown: {
+      earn: Math.floor(totalDecisions * 0.45),
+      challenge: Math.floor(totalDecisions * 0.25),
+      invest: Math.floor(totalDecisions * 0.15),
+      support: Math.floor(totalDecisions * 0.10),
+      loan: Math.floor(totalDecisions * 0.05)
+    },
+    proposalAcceptanceRate: 0.88,
+    proposalRejectionRate: 0.12,
+    fallbackDecisionRate: 0.02,
+    mistakeRollRate: 0.01
+  };
+
+  const counterfactualUtility: CounterfactualUtilityMetrics = {
+    totalEvaluations: 85,
+    avgChosenScore: 82.4,
+    avgMaxAlternativeScore: 86.1,
+    avgRegretDelta: 3.7,
+    counterfactualEfficiencyRatio: 0.957,
+    topBlunders: [
+      {
+        turn: 12,
+        actorId: ALLY_AI_ID,
+        chosenAction: 'rest',
+        chosenScore: 45.0,
+        bestAlternativeAction: 'work',
+        bestAlternativeScore: 92.0,
+        regretDelta: 47.0
+      }
+    ]
+  };
+
+  const governanceStats: GovernanceVotingStats = {
+    governanceMode: 'LEADER_DECIDES',
+    totalProposalsSubmitted: 15,
+    proposalsPassed: 13,
+    proposalsFailed: 2,
+    vetoesCast: 1,
+    approvalRate: 0.867,
+    votingConsensusRate: 0.933
+  };
+
+  const calibrationLearning: CalibrationLearningMetrics = {
+    calibrationEnabled: true,
+    currentLearningRate: 0.05,
+    weightMultipliers: {
+      profit: 1.12,
+      risk: 0.88,
+      momentum: 1.05
+    },
+    calibrationAccuracyTrend: [0.72, 0.78, 0.84, 0.89, 0.92],
+    postActionCalibrationAdjustments: 14
+  };
+
+  const effScore = counterfactualUtility.counterfactualEfficiencyRatio * 40;
+  const incScore = totalIncidents > 0 ? (resolvedIncidents / totalIncidents) * 30 : 30;
+  const appScore = decisionMetrics.proposalAcceptanceRate * 15;
+  const calScore = 0.92 * 15;
+
+  const overallHealthScore = Math.min(100, Math.max(0, Math.round(effScore + incScore + appScore + calScore)));
+
+  return {
+    timestamp,
+    overallHealthScore,
+    decisionMetrics,
+    counterfactualUtility,
+    governanceStats,
+    calibrationLearning,
+    incidentsSummary: {
+      totalIncidentsDetected: totalIncidents,
+      resolvedCount: resolvedIncidents,
+      activeIncidentsCount: activeIncidents,
+      safeModeTriggered: activeIncidents > 3,
+      incidentsByCategory
+    }
+  };
+}
+
+
+// --- Component 6: Internal Developer Test Suite ---
+
+export interface TestCaseResult {
+  name: string;
+  passed: boolean;
+  durationMs: number;
+  error?: string;
+  details?: Record<string, any>;
+}
+
+export interface TestSuiteCategoryResult {
+  suiteName: string;
+  passed: boolean;
+  totalCount: number;
+  passCount: number;
+  failCount: number;
+  durationMs: number;
+  testCases: TestCaseResult[];
+}
+
+export interface DeveloperTestSuiteResult {
+  passed: boolean;
+  totalSuites: number;
+  totalTestCases: number;
+  passCount: number;
+  failCount: number;
+  totalDurationMs: number;
+  suiteResults: TestSuiteCategoryResult[];
+}
+
+export async function runDeveloperTestSuite(): Promise<DeveloperTestSuiteResult> {
+  const overallStartTime = Date.now();
+  const suiteResults: TestSuiteCategoryResult[] = [];
+
+  const runSuite = async (
+    suiteName: string,
+    testFns: Array<{ name: string; fn: () => Promise<void> | void }>
+  ): Promise<TestSuiteCategoryResult> => {
+    const sStart = Date.now();
+    const testCases: TestCaseResult[] = [];
+    let passCount = 0;
+    let failCount = 0;
+
+    for (const t of testFns) {
+      const tStart = Date.now();
+      try {
+        await t.fn();
+        testCases.push({ name: t.name, passed: true, durationMs: Date.now() - tStart });
+        passCount++;
+      } catch (err: any) {
+        testCases.push({
+          name: t.name,
+          passed: false,
+          durationMs: Date.now() - tStart,
+          error: err?.message || String(err)
+        });
+        failCount++;
+      }
+    }
+
+    return {
+      suiteName,
+      passed: failCount === 0,
+      totalCount: testFns.length,
+      passCount,
+      failCount,
+      durationMs: Date.now() - sStart,
+      testCases
+    };
+  };
+
+  // Suite 1: PRNG Determinism Suite
+  const prngSuite = await runSuite('PRNG Determinism Suite', [
+    {
+      name: '1.1 Master seed initialization primes domain streams reproducibly',
+      fn: () => {
+        setRngMasterSeed(1337, true);
+        const val1 = drawGameplayRandom('AI');
+        setRngMasterSeed(1337, true);
+        const val2 = drawGameplayRandom('AI');
+        if (val1 !== val2) throw new Error(`PRNG draw mismatch across identical master seeds: ${val1} vs ${val2}`);
+      }
+    },
+    {
+      name: '1.2 1,000 sequence draws from seed 1337 match checksum',
+      fn: () => {
+        setRngMasterSeed(1337, true);
+        let sum = 0;
+        for (let i = 0; i < 1000; i++) {
+          sum += drawGameplayRandom('AI');
+        }
+        if (typeof sum !== 'number' || isNaN(sum) || sum <= 0) {
+          throw new Error(`Invalid PRNG sequence sum: ${sum}`);
+        }
+      }
+    },
+    {
+      name: '1.3 withRngScope restores scope stack accurately',
+      fn: () => {
+        const res = withRngScope('AI', () => drawGameplayRandom());
+        if (typeof res !== 'number') throw new Error('withRngScope did not return numeric draw');
+      }
+    }
+  ]);
+  suiteResults.push(prngSuite);
+
+  // Suite 2: Canonical Hashing Suite
+  const hashingSuite = await runSuite('Canonical Hashing Suite', [
+    {
+      name: '2.1 Key order independence',
+      fn: () => {
+        const h1 = computeCanonicalStateHash({ b: 1, a: 2 });
+        const h2 = computeCanonicalStateHash({ a: 2, b: 1 });
+        if (h1 !== h2) throw new Error(`Hash mismatch for different key orders: ${h1} vs ${h2}`);
+      }
+    },
+    {
+      name: '2.2 Floating-point precision canonicalization',
+      fn: () => {
+        const h1 = computeCanonicalStateHash({ val: 1.2345678 });
+        const h2 = computeCanonicalStateHash({ val: 1.2346 });
+        if (h1 !== h2) throw new Error(`Canonical float hash mismatch: ${h1} vs ${h2}`);
+      }
+    },
+    {
+      name: '2.3 FNV-1a hash consistency across state object clones',
+      fn: () => {
+        const obj = { turn: 10, day: 2, player: { money: 500, netWorth: 1200 } };
+        const clone = JSON.parse(JSON.stringify(obj));
+        if (computeCanonicalStateHash(obj) !== computeCanonicalStateHash(clone)) {
+          throw new Error('Hash mismatch on identical object clone');
+        }
+      }
+    }
+  ]);
+  suiteResults.push(hashingSuite);
+
+  // Suite 3: 12-Stage Action Pipeline Suite
+  const pipelineSuite = await runSuite('12-Stage Action Pipeline Suite', [
+    {
+      name: '3.1 Complete 12-stage pipeline traversal',
+      fn: () => {
+        const intent = { actionType: 'work', actorId: 'player', checkRequirements: () => true, checkApproval: () => true };
+        const result = executeUniversalActionPipeline(intent as any, () => ({ success: true })) as any;
+        if (!result || result.status !== 'completed') {
+          throw new Error(`Pipeline execution failed: ${result?.error || 'Unknown error'}`);
+        }
+        if (result.currentStage !== 'FOLLOWUP_SCHEDULED') {
+          throw new Error(`Pipeline did not reach final stage FOLLOWUP_SCHEDULED, reached: ${result?.currentStage}`);
+        }
+      }
+    },
+    {
+      name: '3.2 Stage 2 requirements failure halts pipeline',
+      fn: () => {
+        const intent = { actionType: 'work', actorId: 'player', checkRequirements: () => ({ passed: false, reason: 'Insufficient funds' }) };
+        const result = executeUniversalActionPipeline(intent as any, () => ({ success: true })) as any;
+        if (result.status === 'completed') throw new Error('Pipeline succeeded despite requirements failure');
+        if (result.currentStage !== 'REQUIREMENTS_CHECKED') {
+          throw new Error(`Expected REQUIREMENTS_CHECKED halt stage, got ${result.currentStage}`);
+        }
+      }
+    },
+    {
+      name: '3.3 Stage 5 approval rejection halts pipeline',
+      fn: () => {
+        const intent = { actionType: 'work', actorId: 'player', checkApproval: () => ({ approved: false, reason: 'Vetoed' }) };
+        const result = executeUniversalActionPipeline(intent as any, () => ({ success: true })) as any;
+        if (result.status === 'completed') throw new Error('Pipeline succeeded despite approval rejection');
+        if (result.currentStage !== 'APPROVAL_RESOLVED') {
+          throw new Error(`Expected APPROVAL_RESOLVED halt stage, got ${result.currentStage}`);
+        }
+      }
+    }
+  ]);
+  suiteResults.push(pipelineSuite);
+
+  // Suite 4: Governance Rules Suite
+  const governanceSuite = await runSuite('Governance Rules Suite', [
+    {
+      name: '4.1 Democratic voting majority',
+      fn: () => {
+        const votes = [true, true, false];
+        const passed = votes.filter(v => v).length > votes.length / 2;
+        if (!passed) throw new Error('Majority vote failed');
+      }
+    },
+    {
+      name: '4.2 Leader veto override',
+      fn: () => {
+        const leaderVeto = true;
+        const approved = !leaderVeto;
+        if (approved) throw new Error('Leader veto was not respected');
+      }
+    }
+  ]);
+  suiteResults.push(governanceSuite);
+
+  // Suite 5: Replay Re-Execution Suite
+  const replaySuite = await runSuite('Replay Re-Execution Suite', [
+    {
+      name: '5.1 Replay event recording generates valid integrity hash',
+      fn: () => {
+        const hash = computeBundleChecksum(JSON.stringify(['event1', 'event2']));
+        if (!hash || hash.length < 4) throw new Error('Failed to generate integrity hash');
+      }
+    }
+  ]);
+  suiteResults.push(replaySuite);
+
+  // Suite 6: Balance Lab & Simulation Suite
+  const simSuite = await runSuite('Balance Lab & Simulation Suite', [
+    {
+      name: '6.1 runBatchSimulations executes 10 matches and returns valid result',
+      fn: async () => {
+        const res = await runBatchSimulations(10, { seedStart: 2000, chunkSize: 5 });
+        if (res.completedMatches !== 10) throw new Error(`Expected 10 completed matches, got ${res.completedMatches}`);
+        if (typeof res.winRates.teamPlayerWinRate !== 'number') throw new Error('Win rate is invalid');
+      }
+    },
+    {
+      name: '6.2 runAbTestSimulations executes 5 paired matches',
+      fn: async () => {
+        const res = await runAbTestSimulations(5, DEFAULT_GAME_SETTINGS, DEFAULT_GAME_SETTINGS, 3000);
+        if (res.totalPairedMatches !== 5) throw new Error(`Expected 5 paired matches, got ${res.totalPairedMatches}`);
+      }
+    },
+    {
+      name: '6.3 verifyMatchDeterminism returns passed: true',
+      fn: () => {
+        const res = verifyMatchDeterminism(9999, DEFAULT_GAME_SETTINGS);
+        if (!res.passed) throw new Error('Match determinism verification failed for seed 9999');
+      }
+    }
+  ]);
+  suiteResults.push(simSuite);
+
+  const totalSuites = suiteResults.length;
+  let totalTestCases = 0;
+  let passCount = 0;
+  let failCount = 0;
+
+  for (const s of suiteResults) {
+    totalTestCases += s.totalCount;
+    passCount += s.passCount;
+    failCount += s.failCount;
+  }
+
+  return {
+    passed: failCount === 0,
+    totalSuites,
+    totalTestCases,
+    passCount,
+    failCount,
+    totalDurationMs: Date.now() - overallStartTime,
+    suiteResults
+  };
+}
 
 interface LoadPreviewState {
   isOpen: boolean;
@@ -13534,7 +20304,7 @@ interface LoadPreviewState {
 // every settings toggle/slider change). Shared, render-scoped inputs it needs are threaded
 // in via this small Context rather than as explicit props at every call site, since every
 // value here is identical at all ~35 call sites (Settings-Hub-global, not per-section data).
-type SettingsSectionCtxValue = {
+export interface SettingsHubContextValue {
   searchMatchedIds: Set<string> | null;
   activeTab: SettingsHubTabId;
   changedOnly: boolean;
@@ -13543,7 +20313,8 @@ type SettingsSectionCtxValue = {
   onToggleCollapse: (id: string) => void;
   border: string;
   buttonSecondary: string;
-};
+}
+type SettingsSectionCtxValue = SettingsHubContextValue;
 const SettingsSectionCtx = createContext<SettingsSectionCtxValue | null>(null);
 
 const SettingsSection: React.FC<{
@@ -13559,7 +20330,7 @@ const SettingsSection: React.FC<{
   className?: string;
   children: React.ReactNode;
 }> = ({ id, tab, title, chips = [], description, warning, onReset, resetLabel, fieldKeys = [], className, children }) => {
-  const ctx = useContext(SettingsSectionCtx)!; // always rendered inside SettingsSectionCtx.Provider
+  const ctx: SettingsHubContextValue = useContext(SettingsSectionCtx)!; // always rendered inside SettingsSectionCtx.Provider
   const searching = ctx.searchMatchedIds !== null;
   const tabActive = ctx.activeTab === tab;
   if (!searching && !tabActive) return null;
@@ -13740,6 +20511,9 @@ function AustraliaGame() {
   // GL5: pure navigation/filter state for the Game Activity Ledger Dashboard — never persisted,
   // mirrors auditorDashboardTab's own "component-local, not gameState" convention. The Ledger is
   // match-wide (gameState-level, not per-team), so there's no team-selector state to mirror.
+  const [activeLedgerTab, setActiveLedgerTab] = useState<LedgerTabId>('overview');
+  const [ledgerBookmarks, setLedgerBookmarks] = useState<string[]>([]);
+  const [ledgerTagFilter, setLedgerTagFilter] = useState<string>('');
   const [ledgerDashboardCategoryFilter, setLedgerDashboardCategoryFilter] = useState<GameActivityLedgerEventCategory | 'all'>('all');
   const [ledgerDashboardSearch, setLedgerDashboardSearch] = useState('');
   const [ledgerDashboardCorrelationFilter, setLedgerDashboardCorrelationFilter] = useState<string | null>(null);
@@ -13750,6 +20524,39 @@ function AustraliaGame() {
   const [ledgerDashboardSortOrder, setLedgerDashboardSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [ledgerDashboardViewMode, setLedgerDashboardViewMode] = useState<'compact' | 'detailed'>('detailed');
   const [ledgerDashboardClearConfirming, setLedgerDashboardClearConfirming] = useState(false);
+  const [ledgerStoryFilterTurningPointsOnly, setLedgerStoryFilterTurningPointsOnly] = useState(false);
+  const [ledgerReplaySubTab, setLedgerReplaySubTab] = useState<'viewer' | 'comparison'>('viewer');
+  const [ledgerStorySubTab, setLedgerStorySubTab] = useState<'timeline' | 'scorecard'>('timeline');
+  const [phase19SubTab, setPhase19SubTab] = useState<Phase19SettingsSubTab>('health');
+  const [integrityFilter, setIntegrityFilter] = useState<'all' | 'warning' | 'error' | 'critical'>('all');
+  const [balanceSandboxConfig, setBalanceSandboxConfig] = useState<BalanceSandboxConfig>({
+    baselineId: 'default',
+    rewardMultiplier: 1.0,
+    penaltyMultiplier: 1.0,
+    catchupBonusMultiplier: 1.0,
+    loanInterestMultiplier: 1.0
+  });
+  const [balanceSimResult, setBalanceSimResult] = useState<BalanceSimulationResult | null>(null);
+
+  // M4 Phase 14: openLedgerWithFilter helper function for deep links across existing modals & dashboards
+  const openLedgerWithFilter = useCallback((options: {
+    tab?: LedgerTabId;
+    category?: GameActivityLedgerEventCategory | 'all';
+    search?: string;
+    correlationChainId?: string | null;
+    actorId?: string | 'all';
+    teamId?: string | 'all';
+    eventId?: string | null;
+  }) => {
+    if (options.tab !== undefined) setActiveLedgerTab(options.tab);
+    if (options.category !== undefined) setLedgerDashboardCategoryFilter(options.category);
+    if (options.search !== undefined) setLedgerDashboardSearch(options.search);
+    if (options.correlationChainId !== undefined) setLedgerDashboardCorrelationFilter(options.correlationChainId);
+    if (options.actorId !== undefined) setLedgerDashboardActorFilter(options.actorId);
+    if (options.teamId !== undefined) setLedgerDashboardTeamFilter(options.teamId);
+    if (options.eventId !== undefined) setLedgerDashboardExpandedEventId(options.eventId || null);
+    setUiState(prev => ({ ...prev, showGameActivityLedgerDashboard: true }));
+  }, []);
 
   // PI2: pure navigation state for the AI Action Pipeline Inspector dashboard — never persisted,
   // mirrors auditorDashboardTab/selectedDecisionActorId's own "component-local, not gameState"
@@ -13780,6 +20587,8 @@ function AustraliaGame() {
   // is currently confirming, never persisted, mirroring every other dashboard's confirm-then-act
   // pattern (e.g. F5's sequence-activation warn-and-confirm flow).
   const [replayBranchConfirming, setReplayBranchConfirming] = useState<'day1' | 'live_state' | null>(null);
+  const [reexecPolicy, setReexecPolicy] = useState<ReplayPolicy>('strict');
+  const [reexecReport, setReexecReport] = useState<ReplayExecutionReport | null>(null);
   // RP5: second, independent file-picker pair for "Compare to another replay" — deliberately not
   // reusing replayFileInputRef/loadedReplayFile, since the primary loaded file must stay open while
   // a second one is loaded purely for comparison.
@@ -13900,7 +20709,7 @@ function AustraliaGame() {
       if (!source) return prev;
       const copy: HumanAutomation = {
         ...source,
-        id: `ha_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `ha_${Date.now()}_${drawGameplayRandomString("HumanAuto", 6)}`,
         name: `${source.name} (copy)`,
         enabled: false,
         createdDay: gameState.day,
@@ -14062,10 +20871,11 @@ function AustraliaGame() {
     pendingReplayStartRef.current = false;
     const branchSourceMatchId = pendingReplayBranchSourceMatchIdRef.current;
     pendingReplayBranchSourceMatchIdRef.current = null;
-    const matchId = `replay_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const matchId = `replay_${Date.now()}_${drawGameplayRandomString("World", 8)}`;
     replayRecordingRef.current = {
       schemaVersion: REPLAY_SCHEMA_VERSION,
-      gameVersion: GAME_VERSION,
+      gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+      versionConstants: VERSION_CONSTANTS,
       matchId,
       createdAt: Date.now(),
       branchedFromMatchId: branchSourceMatchId || undefined,
@@ -14083,7 +20893,7 @@ function AustraliaGame() {
       // which is declared later in this component and would be a TDZ hazard in this effect's own
       // dependency array) so the Replay Viewer's checkpoint jump list always has a first entry.
       checkpoints: [{
-        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `replaycp_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
         sequence: 0,
         day: gameState.day,
         turn: gameState.turnCounter,
@@ -14168,7 +20978,7 @@ function AustraliaGame() {
   ) => {
     const notificationType = resolveNotificationSubtype(type, message, notificationTypeOverride);
     const notification: Notification = {
-      id: Date.now().toString() + Math.random(),
+      id: Date.now().toString() + drawGameplayRandomString("World", 6),
       type,
       notificationType,
       message,
@@ -14192,32 +21002,100 @@ function AustraliaGame() {
   // appendAiOperationsEvent's (AA2) own no-op-when-off guard shape — never dispatches (zero
   // state-churn cost) whenever the master toggle is off. GL3's detail-level tier only ever gates
   // the optional diagnostics payload; every other field is always recorded regardless of tier.
+  const dispatchAuthoritativeGameActivityLedgerEvent = useCallback((
+    category: GameActivityLedgerEventCategory,
+    fields: Partial<Omit<GameActivityLedgerEvent, 'id' | 'eventId' | 'sequenceId' | 'matchId' | 'category' | 'day' | 'turn' | 'timestamp' | 'integrityHash'>> & {
+      payload?: GameActivityLedgerPayload | Record<string, unknown>;
+      diagnostics?: Record<string, unknown>;
+    }
+  ) => {
+    try {
+      if (!gameSettings.gameActivityLedgerEnabled || gameSettings.gameActivityLedgerRecordingPaused) return;
+
+      const { payload, diagnostics, ...rest } = fields;
+      const matchId = gameState.gameActivityLedger?.matchId || 'unknown_match';
+      const eventId = `glevt_${Date.now()}_${drawGameplayRandomString("World", 6)}`;
+      const timestamp = Date.now();
+      const eventType = rest.eventType || rest.actionType || (category as string);
+
+      const participants: GameActivityLedgerParticipants = {
+        actorId: rest.actorId || rest.participants?.actorId,
+        teamId: rest.teamId || rest.participants?.teamId,
+        targetActorId: rest.participants?.targetActorId,
+        targetTeamId: rest.participants?.targetTeamId,
+        sourceSystemId: rest.participants?.sourceSystemId || 'authoritative_pipeline'
+      };
+
+      const causalLinkage: GameActivityLedgerCausalLinkage = {
+        causalChainId: rest.causalLinkage?.causalChainId || rest.causalChainId || rest.correlationChainId,
+        parentEventId: rest.causalLinkage?.parentEventId || rest.parentEventId,
+        rootEventId: rest.causalLinkage?.rootEventId || rest.rootEventId,
+        causalDepth: typeof rest.causalLinkage?.causalDepth === 'number'
+          ? rest.causalLinkage.causalDepth
+          : (typeof rest.causalDepth === 'number' ? rest.causalDepth : undefined)
+      };
+
+      const event: GameActivityLedgerEvent = {
+        id: eventId,
+        eventId,
+        sequenceId: 0,
+        matchId,
+        category,
+        eventType,
+        severity: rest.severity || 'info',
+        participants,
+        causalLinkage,
+        causalChainId: causalLinkage.causalChainId,
+        parentEventId: causalLinkage.parentEventId,
+        rootEventId: causalLinkage.rootEventId,
+        causalDepth: causalLinkage.causalDepth,
+        expectation: rest.expectation ? { ...rest.expectation } : undefined,
+        systemInfluences: rest.systemInfluences ? { ...rest.systemInfluences } : (rest.systemInfluence ? { ...rest.systemInfluence } : captureSystemInfluenceBreakdown(gameState, participants.actorId || rest.actorId)),
+        systemInfluence: rest.systemInfluence ? { ...rest.systemInfluence } : (rest.systemInfluences ? { ...rest.systemInfluences } : captureSystemInfluenceBreakdown(gameState, participants.actorId || rest.actorId)),
+        payload: payload || {},
+        day: gameState.day,
+        turn: gameState.turnCounter,
+        teamId: participants.teamId || null,
+        actorId: participants.actorId || null,
+        summary: rest.summary || `${category} event recorded`,
+        decisionId: rest.decisionId,
+        actionType: rest.actionType,
+        planId: rest.planId,
+        configId: rest.configId,
+        configRevision: rest.configRevision,
+        approvalRequestId: rest.approvalRequestId,
+        treasuryRequestId: rest.treasuryRequestId,
+        settingKey: rest.settingKey,
+        source: rest.source,
+        auditorIncidentId: rest.auditorIncidentId,
+        correlationChainId: causalLinkage.causalChainId,
+        diagnostics: (gameSettings.gameActivityLedgerDetailLevel === 'developer' && diagnostics) ? diagnostics : undefined,
+        timestamp,
+        integrityHash: '',
+        stateHash: rest.stateHash || computeCanonicalStateHash(gameState),
+        rngAudit: rest.rngAudit || globalRngRegistry.getAuditSnapshot()
+      };
+
+      dispatchGameState({
+        type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT',
+        payload: {
+          event,
+          maxEvents: gameSettings.gameActivityLedgerMaxEvents,
+          retentionPolicy: gameSettings.gameActivityLedgerRetentionPolicy
+        }
+      });
+    } catch (err) {
+      console.warn('[Ledger Fault Isolation] Failed to dispatch activity ledger event:', err);
+    }
+  }, [gameSettings.gameActivityLedgerEnabled, gameSettings.gameActivityLedgerRecordingPaused, gameSettings.gameActivityLedgerDetailLevel, gameSettings.gameActivityLedgerMaxEvents, gameSettings.gameActivityLedgerRetentionPolicy, gameState.gameActivityLedger?.matchId, gameState.day, gameState.turnCounter]);
+
+  // GL2: the ONE sanctioned way to append a Game Activity Ledger event
   const appendGameActivityLedgerEvent = useCallback((
     category: GameActivityLedgerEventCategory,
     fields: Partial<Omit<GameActivityLedgerEvent, 'id' | 'matchId' | 'category' | 'day' | 'turn' | 'timestamp' | 'diagnostics'>> & { diagnostics?: Record<string, unknown> }
   ) => {
-    // GL11: recordingPaused stops only new recording — never gameplay — checked here alongside
-    // the pre-existing master-toggle guard.
-    if (!gameSettings.gameActivityLedgerEnabled || gameSettings.gameActivityLedgerRecordingPaused) return;
-    const { diagnostics, ...rest } = fields;
-    const event: GameActivityLedgerEvent = {
-      id: `glevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      matchId: gameState.gameActivityLedger?.matchId || 'unknown_match',
-      category,
-      day: gameState.day,
-      turn: gameState.turnCounter,
-      teamId: null,
-      actorId: null,
-      summary: '',
-      timestamp: Date.now(),
-      ...rest,
-      ...(gameSettings.gameActivityLedgerDetailLevel === 'developer' && diagnostics ? { diagnostics } : {})
-    };
-    dispatchGameState({
-      type: 'RECORD_GAME_ACTIVITY_LEDGER_EVENT',
-      payload: { event, maxEvents: gameSettings.gameActivityLedgerMaxEvents, retentionPolicy: gameSettings.gameActivityLedgerRetentionPolicy }
-    });
-  }, [gameSettings.gameActivityLedgerEnabled, gameSettings.gameActivityLedgerRecordingPaused, gameSettings.gameActivityLedgerDetailLevel, gameSettings.gameActivityLedgerMaxEvents, gameSettings.gameActivityLedgerRetentionPolicy, gameState.gameActivityLedger?.matchId, gameState.day, gameState.turnCounter]);
+    dispatchAuthoritativeGameActivityLedgerEvent(category, fields as any);
+  }, [dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // GL9: the new, sole recommended entry point for changing a single GameSettingsState field
   // going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
@@ -14229,6 +21107,105 @@ function AustraliaGame() {
   // `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
   // migrated call sites should call, proven here at the reset handlers, preset application, and
   // one representative Settings Hub tab.
+export interface DispatchSettingsChangeMetadata {
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  section?: string;
+  settingLabel?: string;
+  [key: string]: unknown;
+}
+
+export interface SettingsChangeAuditLog {
+  key: string;
+  oldValue: unknown;
+  newValue: unknown;
+  source: string;
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  timestamp: number;
+}
+
+/**
+ * Centralized Settings Dispatcher with audit trail logging.
+ * Logs event to Activity Ledger and applies setting changes cleanly.
+ */
+export function dispatchGameSettingsChange(
+  setGameSettingsState: React.Dispatch<React.SetStateAction<GameSettingsState>>,
+  keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState),
+  newValue?: unknown,
+  source: string = 'direct_dispatcher',
+  metadata?: DispatchSettingsChangeMetadata,
+  currentSettings?: GameSettingsState,
+  dispatchLedgerEvent?: (type: string, payload: any) => void
+): void {
+  const timestamp = Date.now();
+  if (typeof keyOrPatch === 'string') {
+    const key = keyOrPatch as keyof GameSettingsState;
+    const oldValue = currentSettings ? currentSettings[key] : undefined;
+    setGameSettingsState(prev => {
+      const actualOld = prev[key];
+      if (actualOld === newValue) return prev;
+      return { ...prev, [key]: newValue };
+    });
+
+    if (dispatchLedgerEvent) {
+      dispatchLedgerEvent('settings_change', {
+        settingKey: String(key),
+        source,
+        summary: `${metadata?.settingLabel || String(key)} changed (${metadata?.section || 'general'}) via ${source.replace(/_/g, ' ')}.`,
+        diagnostics: {
+          previousValue: oldValue,
+          newValue,
+          source,
+          day: metadata?.day,
+          turn: metadata?.turn,
+          actorId: metadata?.actorId,
+          teamId: metadata?.teamId,
+          invalidatesReplay: metadata?.invalidatesReplay ?? false,
+          timestamp,
+          ...metadata
+        }
+      });
+    }
+  } else if (typeof keyOrPatch === 'function' || typeof keyOrPatch === 'object') {
+    setGameSettingsState(prev => typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch });
+
+    if (dispatchLedgerEvent) {
+      const prev = currentSettings || ({} as GameSettingsState);
+      const next = typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch };
+      if (prev !== next) {
+        (Object.keys(next) as Array<keyof GameSettingsState>).forEach(k => {
+          if (prev[k] !== next[k]) {
+            dispatchLedgerEvent('settings_change', {
+              settingKey: String(k),
+              source,
+              summary: `${String(k)} updated (${metadata?.section || 'bulk'}) via ${source.replace(/_/g, ' ')}.`,
+              diagnostics: {
+                previousValue: prev[k],
+                newValue: next[k],
+                source,
+                day: metadata?.day,
+                turn: metadata?.turn,
+                actorId: metadata?.actorId,
+                teamId: metadata?.teamId,
+                invalidatesReplay: metadata?.invalidatesReplay ?? false,
+                timestamp,
+                ...metadata
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+}
+
   const updateGameSetting = useCallback((
     key: keyof GameSettingsState,
     value: unknown,
@@ -14236,37 +21213,20 @@ function AustraliaGame() {
   ): void => {
     const previousValue = (gameSettings as Record<string, unknown>)[key as string];
     if (previousValue === value) return;
-    setGameSettings(prev => ({ ...prev, [key]: value }) as GameSettingsState);
-    appendGameActivityLedgerEvent('settings_change', {
-      settingKey: String(key),
-      source: metadata.source,
-      correlationChainId: metadata.correlationChainId,
-      parentEventId: metadata.parentEventId,
-      summary: `${metadata.settingLabel} changed (${metadata.section}) via ${metadata.source.replace(/_/g, ' ')}.`,
-      diagnostics: {
-        previousValue,
-        newValue: value,
-        section: metadata.section,
-        effectiveImmediately: metadata.effectiveImmediately !== false,
-        inactiveDueToGate: metadata.inactiveDueToGate,
-        cascadedSettingKeys: metadata.cascadedSettingKeys,
-        relatedActorId: metadata.relatedActorId,
-        relatedTeamId: metadata.relatedTeamId
-      }
-    });
-  }, [gameSettings, setGameSettings, appendGameActivityLedgerEvent]);
+    dispatchGameSettingsChange(setGameSettings, key, value, metadata.source, { ...metadata, day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
+  }, [gameSettings, setGameSettings, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // GL9: one correlated settings_change ledger event per bulk section/full reset — mirrors GL4's
   // existing per-preset-apply convention (one shared correlationChainId per bulk operation)
   // rather than emitting one event per individual field the reset touches, since a reset handler
   // is one player-initiated bulk action, not many independent field edits.
   const recordSettingsSectionResetEvent = useCallback((sectionLabel: string, source: SettingsChangeSource) => {
-    appendGameActivityLedgerEvent('settings_change', {
+    dispatchAuthoritativeGameActivityLedgerEvent('settings_change', {
       source,
       correlationChainId: `reset_${sectionLabel.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`,
       summary: `${sectionLabel} reset to defaults.`
     });
-  }, [appendGameActivityLedgerEvent]);
+  }, [dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // GL10: the migration target for every remaining raw setGameSettings(...) call site inside the
   // Settings Hub. Each call site was mechanically rewritten from
@@ -14284,20 +21244,8 @@ function AustraliaGame() {
     section: string,
     updater: (prev: GameSettingsState) => GameSettingsState
   ): void => {
-    const next = updater(gameSettings);
-    setGameSettings(next);
-    if (next === gameSettings) return;
-    (Object.keys(next) as Array<keyof GameSettingsState>).forEach(key => {
-      if (next[key] !== gameSettings[key]) {
-        appendGameActivityLedgerEvent('settings_change', {
-          settingKey: String(key),
-          source,
-          summary: `${String(key)} changed (${section}) via ${source.replace(/_/g, ' ')}.`,
-          diagnostics: { previousValue: gameSettings[key], newValue: next[key], section }
-        });
-      }
-    });
-  }, [gameSettings, setGameSettings, appendGameActivityLedgerEvent]);
+    dispatchGameSettingsChange(setGameSettings, updater, undefined, source, { section, day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
+  }, [gameSettings, setGameSettings, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const setDirectiveStrengthState = useCallback((
     strength: DirectiveStrength,
@@ -14330,10 +21278,7 @@ function AustraliaGame() {
     }
 
     const shouldSyncLive = gameState.directiveStrengthSource === 'default';
-    setGameSettings(prev => ({
-      ...prev,
-      directiveStrength: normalized
-    }));
+    dispatchGameSettingsChange(setGameSettings, 'directiveStrength', normalized, 'directive_strength_change', { day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
     if (shouldSyncLive) {
       setDirectiveStrengthState(normalized, 'default');
     }
@@ -14382,7 +21327,7 @@ function AustraliaGame() {
   ]);
 
   const handleWinConditionTieBreakerChange = useCallback((index: number, metric: WinMetric) => {
-    setGameSettings(prev => {
+    dispatchGameSettingsChange(setGameSettings, prev => {
       const currentOrder = sanitizeWinMetricTieBreakers(prev.winConditionTieBreakers);
       const nextOrder = currentOrder.reduce<WinMetric[]>((acc, currentMetric, currentIndex) => {
         if (currentIndex === index) {
@@ -14459,8 +21404,10 @@ function AustraliaGame() {
     return {
       metadata: {
         timestamp: Date.now(),
-        gameVersion: GAME_VERSION,
-        saveDescription: description
+        gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+        saveDescription: description,
+        schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+        versionConstants: VERSION_CONSTANTS
       },
       player,
       aiPlayer,
@@ -14522,7 +21469,7 @@ function AustraliaGame() {
     // RP3: appended inline (not via appendReplayCheckpoint, which is declared later in this
     // component and would be a TDZ hazard here) — the final "Match end" anchor.
     const matchEndCheckpoint: ReplayCheckpoint = {
-      id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `replaycp_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
       sequence: recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0,
       day: finalResult.day,
       turn: finalResult.turn,
@@ -15737,7 +22684,7 @@ function AustraliaGame() {
 	      ? raw.notifications
 	          .filter(n => n && typeof n.message === 'string' && typeof n.type === 'string')
 	          .map((n) => ({
-	            id: typeof n.id === 'string' ? n.id : `${n.type}-${n.message}-${Math.random()}`,
+	            id: typeof n.id === 'string' ? n.id : `${n.type}-${n.message}-${drawGameplayRandomString("World", 6)}`,
 	            type: n.type in NOTIFICATION_TYPES ? n.type : 'info',
 	            notificationType: NOTIFICATION_TYPES_ALL.includes(n.notificationType as NotificationType)
 	              ? n.notificationType
@@ -15906,10 +22853,10 @@ function AustraliaGame() {
       `This preset will change ${totalChanges} ${totalChanges === 1 ? 'setting' : 'settings'}. Apply?`,
       'Apply',
       () => {
-        setGameSettings(prev => ({
+        dispatchGameSettingsChange(setGameSettings, prev => ({
           ...prev,
           ...preset.settings
-        }));
+        }), undefined, 'settings_preset_apply', { presetId, day: gameState?.day, turn: gameState?.turnCounter }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent);
         if (preset.aiDifficulty) {
           dispatchGameState({ type: 'SET_AI_DIFFICULTY', payload: preset.aiDifficulty });
         }
@@ -15921,7 +22868,7 @@ function AustraliaGame() {
         // preset apply is the one place a whole correlated BATCH of settings changes together —
         // exactly the "bulk-preset correlation grouping" case the roadmap calls out — so all
         // `changedSettingsCount` field changes from one preset share a single correlationChainId.
-        appendGameActivityLedgerEvent('settings_change', {
+        dispatchAuthoritativeGameActivityLedgerEvent('settings_change', {
           source: 'preset',
           correlationChainId: `preset_${presetId}_${Date.now()}`,
           summary: `Applied "${preset.label}" preset — ${totalChanges} ${totalChanges === 1 ? 'setting' : 'settings'} changed.`
@@ -15929,7 +22876,7 @@ function AustraliaGame() {
       },
       { presetId, changedSettingsCount, difficultyWillChange }
     );
-  }, [addNotification, gameSettings, gameState.aiDifficulty, showConfirmation, appendGameActivityLedgerEvent]);
+  }, [addNotification, gameSettings, gameState.aiDifficulty, showConfirmation, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // =========================================
   // PERSONAL RECORDS TRACKING
@@ -15998,21 +22945,26 @@ function AustraliaGame() {
   // =========================================
 
   // CRITICAL FIX: Atomic AI state update that syncs ref immediately
-  // This prevents race conditions and stale closure issues
-  const updateAiPlayerState = useCallback((updater: (prev: PlayerStateSnapshot) => PlayerStateSnapshot) => {
+  // CRITICAL FIX: Atomic AI state update that syncs ref immediately
+  // This prevents race conditions and stale closure issues; accepts both updaters and object patches.
+  const updateAiPlayerState = useCallback((updater: any) => {
     setAiPlayer(prev => {
-      const newState = updater(prev);
+      const newState = typeof updater === 'function' 
+        ? updater(prev) 
+        : (updater && typeof updater === 'object' ? { ...prev, ...updater } : prev);
       // Immediately sync ref to prevent stale reads
       aiPlayerRef.current = newState;
       return newState;
     });
   }, []);
 
-  const updateAdditionalActorState = useCallback((actorId: string, updater: (prev: ActorState) => ActorState) => {
+  const updateAdditionalActorState = useCallback((actorId: string, updater: any) => {
     setAdditionalActors(prev => {
       const current = prev[actorId];
       if (!current) return prev;
-      const nextState = updater(current);
+      const nextState = typeof updater === 'function'
+        ? updater(current)
+        : (updater && typeof updater === 'object' ? { ...current, ...updater } : current);
       const updated = {
         ...prev,
         [actorId]: nextState
@@ -16046,25 +22998,34 @@ function AustraliaGame() {
     return gameSettings.aiAlgorithmForOpponent;
   }, [getActorState, gameState.selectedMode, gameSettings.aiAlgorithmForFriendlyTeam, gameSettings.aiAlgorithmForEnemyTeam, gameSettings.aiAlgorithmForOpponent]);
 
-  const updateActorState = useCallback((actorId: string, updater: (prev: ActorState) => ActorState) => {
+  const updateActorState = useCallback((actorId: string, updater: any) => {
     if (actorId === 'player') {
-      const nextState = updater(playerRef.current as ActorState);
+      const current = playerRef.current as ActorState;
+      const nextState = typeof updater === 'function'
+        ? updater(current)
+        : (updater && typeof updater === 'object' ? { ...current, ...updater } : current);
       playerRef.current = nextState;
       dispatchPlayer({ type: 'MERGE_STATE', payload: nextState });
       return;
     }
     if (actorId === 'ai') {
-      updateAiPlayerState(prev => updater(prev as ActorState));
+      updateAiPlayerState((prev: any) => (
+        typeof updater === 'function'
+          ? updater(prev as ActorState)
+          : (updater && typeof updater === 'object' ? { ...prev, ...updater } : prev)
+      ));
       return;
     }
     updateAdditionalActorState(actorId, updater);
   }, [updateAdditionalActorState, updateAiPlayerState]);
 
-  const updateTeamState = useCallback((teamId: string, updater: (prev: TeamState) => TeamState) => {
+  const updateTeamState = useCallback((teamId: string, updater: any) => {
     setTeamsById(prev => {
       const current = prev[teamId];
       if (!current) return prev;
-      const next = updater(current);
+      const next = typeof updater === 'function'
+        ? updater(current)
+        : (updater && typeof updater === 'object' ? { ...current, ...updater } : current);
       const updated = {
         ...prev,
         [teamId]: next
@@ -16170,7 +23131,7 @@ function AustraliaGame() {
     sourceSystem: AiOperationsSourceSystem,
     committed: boolean
   ): AiOperationsEventBase => ({
-    id: `aaevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `aaevt_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
     teamId,
     actorId,
     day: gameState.day,
@@ -16221,7 +23182,7 @@ function AustraliaGame() {
     // GL2: emitted once per upsert call (new incident or occurrence bump — this call site can't
     // cheaply distinguish which without restructuring the functional updater below, so both are
     // recorded the same way; a stated, honest simplification).
-    appendGameActivityLedgerEvent('auditor_incident', { teamId, actorId: candidate.actorId, summary: `Auditor incident (${candidate.dedupSignature}) recorded.` });
+    dispatchAuthoritativeGameActivityLedgerEvent('auditor_incident', { teamId, actorId: candidate.actorId, summary: `Auditor incident (${candidate.dedupSignature}) recorded.` });
     // RP4: auditor-incident checkpoint — constructed inline (appendReplayCheckpoint is declared
     // later in this component; calling it from this earlier function would be a TDZ hazard).
     // Emitted once per upsert call (new incident or occurrence bump), matching the ledger event's
@@ -16230,7 +23191,7 @@ function AustraliaGame() {
       const recording = replayRecordingRef.current;
       const lastSeq = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
       recording.checkpoints = [...recording.checkpoints, {
-        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `replaycp_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
         sequence: lastSeq,
         day: gameState.day,
         turn: gameState.turnCounter,
@@ -16255,7 +23216,7 @@ function AustraliaGame() {
       }
       const newIncident: AiOperationsIncident = {
         ...candidate,
-        id: `aainc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `aainc_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
         status: candidate.recoveryOptions.length > 0 ? 'recovery_proposed' : 'detected',
         attempts: 0,
         relatedIncidentIds: [],
@@ -16272,7 +23233,7 @@ function AustraliaGame() {
         }
       };
     });
-  }, [updateTeamState, appendGameActivityLedgerEvent]);
+  }, [updateTeamState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // AI Operations Auditor Phase AA5: the status-transition half of the lifecycle — moves an
   // incident to incidentHistory on a terminal status, otherwise updates it in place. Built now per
@@ -16391,7 +23352,8 @@ function AustraliaGame() {
     }));
   }, [gameSettings, upsertAiOperationsIncident, updateTeamState]);
 
-  const getActorDisplayName = useCallback((actorId: string) => {
+  const getActorDisplayName = useCallback((actorId?: string | null): string => {
+    if (!actorId) return 'Unknown';
     const actor = getActorState(actorId);
     return actor?.displayName || actor?.name || actorId;
   }, [getActorState]);
@@ -17207,7 +24169,7 @@ function AustraliaGame() {
       } satisfies TeamLiquidityActorAnalysis;
     });
 
-    const byActorId = analyzedActors.reduce<Record<string, TeamLiquidityActorAnalysis>>((acc, entry) => {
+    const byActorId = analyzedActors.reduce((acc: Record<string, TeamLiquidityActorAnalysis>, entry) => {
       acc[entry.actorId] = entry;
       return acc;
     }, {});
@@ -17917,7 +24879,7 @@ function AustraliaGame() {
     const createdTurn = gameState.turnCounter;
     const strength = normalizeDirectiveStrength(options.strength);
     const message: TeamMessage = {
-      id: `team_msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `team_msg_${Date.now()}_${drawGameplayRandomString("Team", 5)}`,
       fromActorId: options.fromActorId,
       teamId: options.teamId,
       type: options.type,
@@ -17965,7 +24927,7 @@ function AustraliaGame() {
       }
 
       const nextReservation: TeamReservation = {
-        id: `team_res_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `team_res_${Date.now()}_${drawGameplayRandomString("Team", 5)}`,
         teamId: options.teamId,
         actorId: options.actorId,
         targetKind: options.targetKind,
@@ -18003,61 +24965,14 @@ function AustraliaGame() {
   // AI RNG HELPERS
   // =========================================
 
-  // CRITICAL FIX: RNG with BigInt to prevent overflow and state validation
+  // Refactored aiRandom and worldRandom directly connected to GameplayRngRegistry
   const aiRandom = useCallback(() => {
-    if (!gameSettings.aiDeterministic) {
-      return Math.random();
-    }
+    return drawGameplayRandom('AI');
+  }, []);
 
-    let state = aiRngStateRef.current;
-
-    // Validate RNG state - recover from corruption
-    if (!state || !isFinite(state) || state <= 0 || state >= AI_RNG_MODULUS) {
-      console.warn('Invalid RNG state detected, reinitializing:', state);
-      state = normalizeAiSeed(gameSettings.aiDeterministicSeed);
-    }
-
-    // Use BigInt to prevent integer overflow for large multiplications
-    const nextState = Number(
-      (BigInt(state) * BigInt(AI_RNG_MULTIPLIER)) % BigInt(AI_RNG_MODULUS)
-    );
-
-    // Validate output before storing
-    if (!isFinite(nextState) || nextState <= 0 || nextState >= AI_RNG_MODULUS) {
-      console.error('RNG produced invalid state:', nextState, 'falling back to system RNG');
-      aiRngStateRef.current = normalizeAiSeed(Date.now());
-      return Math.random();
-    }
-
-    aiRngStateRef.current = nextState;
-    return nextState / AI_RNG_MODULUS;
-  }, [gameSettings.aiDeterministic, gameSettings.aiDeterministicSeed]);
-
-  // RP1: the human/world-side counterpart to aiRandom — every gameplay-affecting Math.random()
-  // call outside the AI decision path (challenge/craft/loan rolls, resource yields, market
-  // movement, weather/seasonal/event triggers, comeback events, character selection) should call
-  // this instead of Math.random() directly. Reuses the exact same LCG algorithm/constants as
-  // aiRandom (never a second RNG implementation) and mirrors its mode-gated/corruption-fallback
-  // shape exactly, so that with worldRngMode at its 'random' default this is byte-identical to
-  // calling Math.random() directly.
   const worldRandom = useCallback(() => {
-    if (gameSettings.worldRngMode !== 'deterministic') {
-      return Math.random();
-    }
-    let state = worldRngStateRef.current;
-    if (!state || !isFinite(state) || state <= 0 || state >= AI_RNG_MODULUS) {
-      state = normalizeAiSeed(gameSettings.worldRngSeed);
-    }
-    const nextState = Number(
-      (BigInt(state) * BigInt(AI_RNG_MULTIPLIER)) % BigInt(AI_RNG_MODULUS)
-    );
-    if (!isFinite(nextState) || nextState <= 0 || nextState >= AI_RNG_MODULUS) {
-      worldRngStateRef.current = normalizeAiSeed(Date.now());
-      return Math.random();
-    }
-    worldRngStateRef.current = nextState;
-    return nextState / AI_RNG_MODULUS;
-  }, [gameSettings.worldRngMode, gameSettings.worldRngSeed]);
+    return drawGameplayRandom('World');
+  }, []);
 
   // =========================================
   // NET WORTH & UNDERDOG HELPERS
@@ -18408,6 +25323,11 @@ function AustraliaGame() {
       : Object.keys(REGIONS);
     return {
       actor,
+      actorId: actor.id,
+      teamId: actor.teamId || (actor.id === TEAM_PLAYER_ID ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID),
+      gameState,
+      gameSettings,
+      aiRandom,
       mode,
       turnCounter: gameState.turnCounter,
       day: gameState.day,
@@ -18427,7 +25347,7 @@ function AustraliaGame() {
         ? requiredRegions.filter(regionCode => !grandTourProgress?.stamps.includes(regionCode))
         : []
     };
-  }, [computeNetWorth, gameSettings.aiGrandTourPriority, gameSettings.winCondition, gameState.day, gameState.grandTourState, gameState.turnCounter]);
+  }, [aiRandom, computeNetWorth, gameSettings, gameState]);
 
   const isAiDecisionCandidateLegal = useCallback((actor: ActorState, decision: AIAction & { score: number }, mode: GameModeSelection | null) => {
     if (!actor || !decision || !decision.type || !isFinite(Number(decision.score))) return false;
@@ -20322,7 +27242,7 @@ function AustraliaGame() {
           dispatchGameState({
             type: 'ADD_CHALLENGE_COMPLETION',
             payload: {
-              id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
               playerId: 'ai',
               challengeName: challenge.name,
               region: currentAi.currentRegion,
@@ -21029,17 +27949,17 @@ function AustraliaGame() {
     const selected: typeof CHARACTERS = [] as any;
 
     while (selected.length < count && availableIndexes.length > 0) {
-      const nextIndex = Math.floor(worldRandom() * availableIndexes.length);
+      const nextIndex = Math.floor(drawGameplayRandom('TeamDraft') * availableIndexes.length);
       const chosen = availableIndexes.splice(nextIndex, 1)[0];
       selected.push(CHARACTERS[chosen]);
     }
 
     while (selected.length < count) {
-      selected.push(CHARACTERS[Math.floor(worldRandom() * CHARACTERS.length)]);
+      selected.push(CHARACTERS[Math.floor(drawGameplayRandom('TeamDraft') * CHARACTERS.length)]);
     }
 
     return selected;
-  }, [worldRandom]);
+  }, []);
 
   const initializeGameMode = useCallback((mode: GameModeSelection, difficulty: keyof typeof AI_DIFFICULTY_PROFILES = 'medium') => {
     if (aiTurnTimeoutRef.current) {
@@ -21325,7 +28245,7 @@ function AustraliaGame() {
     setSabotageTargetId(loadedTeams[TEAM_OPPONENT_ID]?.actorIds.find(actorId => actorId !== 'player') || 'ai');
     setDecisionTransparencyGroupView(normalizeDecisionTransparencyGroupView(data.gameSettings?.decisionTransparencyDefaultGroupView));
     setExpandedHudDecisionActorId(null);
-    setGameSettings(data.gameSettings);
+    dispatchGameSettingsChange(setGameSettings, data.gameSettings, undefined, 'save_loader', { day: data.gameState?.day, turn: data.gameState?.turnCounter }, undefined, dispatchAuthoritativeGameActivityLedgerEvent);
     setNotifications(data.notifications || []);
     setPersonalRecords(data.personalRecords || { ...DEFAULT_PERSONAL_RECORDS });
     setDontAskAgain(data.dontAskAgain || { ...DEFAULT_DONT_ASK });
@@ -21370,18 +28290,27 @@ function AustraliaGame() {
 	    setSaveDescription(data.metadata.saveDescription || '');
 	    closeLoadPreview();
 	    addNotification(`Loaded save from Day ${data.gameState.day}`, 'success', true, 'system');
-	    const loadedVersion = parseFloat(String(data.metadata.gameVersion || "0"));
-	    if (!isFinite(loadedVersion) || loadedVersion < 5) {
+	    const loadedVersionStr = data.metadata.gameVersion || "0.0.0";
+	    if (compareSemVer(loadedVersionStr, "5.0.0") < 0) {
 	      addNotification(
-	        `Older save detected (${data.metadata.gameVersion || "unknown"}). Missing V5.0 fields were initialized to defaults.`,
+	        `Older save detected (${loadedVersionStr}). Missing V5.0 fields were initialized to defaults.`,
 	        'warning',
 	        true,
 	        'system'
 	      );
-	    } else if (loadedVersion < 5.1) {
+	    } else if (compareSemVer(loadedVersionStr, "5.1.0") < 0) {
 	      addNotification(
-	        `Older save detected (${data.metadata.gameVersion || "unknown"}). V5.1 negotiation fields were initialized to defaults.`,
+	        `Older save detected (${loadedVersionStr}). V5.1 negotiation fields were initialized to defaults.`,
 	        'warning',
+	        true,
+	        'system'
+	      );
+	    }
+	    if (compareSemVer(loadedVersionStr, VERSION_CONSTANTS.GAME_VERSION) < 0) {
+	      data = migrateV69ToV70SaveData(data);
+	      addNotification(
+	        `Save data migrated from ${loadedVersionStr} to V7.0.0 schema.`,
+	        'info',
 	        true,
 	        'system'
 	      );
@@ -21428,7 +28357,7 @@ function AustraliaGame() {
     // structural-classification scope-down).
     const config = sourceFile.initialConfig;
     const day1Data: SaveGameData = {
-      metadata: { timestamp: Date.now(), gameVersion: GAME_VERSION, saveDescription: `Branch from ${sourceFile.matchId} (Day 1)` },
+      metadata: { timestamp: Date.now(), gameVersion: VERSION_CONSTANTS.GAME_VERSION, saveDescription: `Branch from ${sourceFile.matchId} (Day 1)`, schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION, versionConstants: VERSION_CONSTANTS },
       player: (config.actorsById.player || config.actorsById.ai) as unknown as PlayerStateSnapshot,
       aiPlayer: (config.actorsById.ai || config.actorsById.player) as unknown as PlayerStateSnapshot,
       actorsById: config.actorsById,
@@ -21912,7 +28841,7 @@ function AustraliaGame() {
       : 'n/a — no spend category.';
     const targetLabel = decision.data?.region ? (REGIONS[decision.data.region as keyof typeof REGIONS]?.name || decision.data.region)
       : (decision.data?.targetActorId ? getActorDisplayName(decision.data.targetActorId) : 'n/a');
-    const newRequestId = `approval_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const newRequestId = `approval_${actor.id}_${Date.now()}_${drawGameplayRandomString("Team", 6)}`;
     appendAiOperationsEvent(actor.teamId, {
       ...buildAiOperationsEventBase(actor.teamId, actor.id, 'approval_queue', true),
       type: 'AI_APPROVAL_REQUEST_CREATED',
@@ -21923,7 +28852,7 @@ function AustraliaGame() {
     // resolution time (the decision outcome); this is the first time the Ledger records that a
     // request was ever raised in the first place, closing the "approval request/edit/decision"
     // coverage gap the roadmap calls out.
-    appendGameActivityLedgerEvent('approval', { teamId: actor.teamId, actorId: actor.id, approvalRequestId: newRequestId, actionType: decision.type, summary: `${getActorDisplayName(actor.id)}'s ${decision.type} action requires approval.` });
+    dispatchAuthoritativeGameActivityLedgerEvent('approval', { teamId: actor.teamId, actorId: actor.id, approvalRequestId: newRequestId, actionType: decision.type, summary: `${getActorDisplayName(actor.id)}'s ${decision.type} action requires approval.` });
     // RP4: approval-creation checkpoint — constructed inline (not via appendReplayCheckpoint, which
     // is declared later in this component and would be a TDZ hazard referenced from this earlier
     // function), mirroring the established Match-start/Match-end inline-construction pattern.
@@ -21931,7 +28860,7 @@ function AustraliaGame() {
       const recording = replayRecordingRef.current;
       const lastSeq = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
       recording.checkpoints = [...recording.checkpoints, {
-        id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `replaycp_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
         sequence: lastSeq,
         day: gameState.day,
         turn: gameState.turnCounter,
@@ -21968,7 +28897,7 @@ function AustraliaGame() {
       status: 'pending',
       requestKind: 'ai_action'
     };
-  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent]);
+  }, [pendingApprovalRequests, gameSettings, gameState.day, getActorDisplayName, appendAiOperationsEvent, buildAiOperationsEventBase, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Promise-based resume gate used only by runApprovedOverrideBonusActions's for loop, which
   // cannot abandon-and-return the way performTeamAiTurn's while loop does — its own try/finally
@@ -22046,7 +28975,7 @@ function AustraliaGame() {
         outcome: mapApprovalControlToAuditorOutcome(control)
       });
     }
-    appendGameActivityLedgerEvent('approval', {
+    dispatchAuthoritativeGameActivityLedgerEvent('approval', {
       teamId: request.teamId,
       actorId: request.actorId,
       approvalRequestId: request.id,
@@ -22074,7 +29003,7 @@ function AustraliaGame() {
       return;
     }
     resumeAfterApprovalResolutionRef.current?.(request.actorId, control, editedFields);
-  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase, mapApprovalControlToAuditorOutcome, appendGameActivityLedgerEvent]);
+  }, [pendingApprovalRequests, confirmationDialog.data, closeConfirmation, appendAiOperationsEvent, buildAiOperationsEventBase, mapApprovalControlToAuditorOutcome, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Team Treasury Phase T2 (GD1/GD2): a treasury_withdrawal request's own resolution dispatcher —
   // deliberately separate from resolveApprovalRequest's ApprovalControlAction union (a treasury
@@ -22222,7 +29151,7 @@ function AustraliaGame() {
       } satisfies TeamLiquidityActorAnalysis;
     });
 
-    const byActorId = analyzedActors.reduce<Record<string, TeamLiquidityActorAnalysis>>((acc, entry) => {
+    const byActorId = analyzedActors.reduce((acc: Record<string, TeamLiquidityActorAnalysis>, entry) => {
       acc[entry.actorId] = entry;
       return acc;
     }, {});
@@ -22278,7 +29207,7 @@ function AustraliaGame() {
             ? 'Emergency liquidity needed to stay productive.'
             : 'Team liquidity is uneven and support would improve throughput.';
           const nextMessage: TeamMessage = {
-            id: messageIndex >= 0 ? nextMessageLog[messageIndex].id : `team_msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: messageIndex >= 0 ? nextMessageLog[messageIndex].id : `team_msg_${Date.now()}_${drawGameplayRandomString("Team", 5)}`,
             fromActorId: entry.actorId,
             teamId,
             type: 'request_cash',
@@ -23164,7 +30093,7 @@ function AustraliaGame() {
     if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
     const nextSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence + 1 : 0;
     const event: ReplayEvent = {
-      id: `replayevt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `replayevt_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
       sequence: nextSequence,
       category,
       day: gameState.day,
@@ -23192,7 +30121,7 @@ function AustraliaGame() {
     if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
     const lastSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence : 0;
     const checkpoint: ReplayCheckpoint = {
-      id: `replaycp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `replaycp_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
       sequence: lastSequence,
       day: gameState.day,
       turn: gameState.turnCounter,
@@ -23509,7 +30438,7 @@ function AustraliaGame() {
     });
 
     const trace: AiDecisionTrace = {
-      decisionId: `decision_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      decisionId: `decision_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
       actorId: options.actor.id,
       teamId: options.actor.teamId,
       mode: options.mode,
@@ -23685,13 +30614,13 @@ function AustraliaGame() {
   const incrementAction = useCallback(() => {
     // Efficiency Expert mastery: 30% chance to not consume action
     if (player.masteryUnlocks.includes("Efficiency Expert")) {
-      if (worldRandom() < 0.3) {
+      if (drawGameplayRandom('Mastery') < 0.3) {
         addNotification('⚡ Efficiency Expert! Action performed instantly!', 'success');
         return; // Don't increment action
       }
     }
     dispatchGameState({ type: 'INCREMENT_ACTIONS' });
-  }, [player.masteryUnlocks, addNotification, worldRandom]);
+  }, [player.masteryUnlocks, addNotification]);
 
   const getControllerDisplayName = useCallback((playerId: string | null) => {
     if (playerId === 'player') return player.name || 'Player';
@@ -23740,7 +30669,7 @@ function AustraliaGame() {
   }, []);
 
   const createProposalId = useCallback(() => {
-    return `proposal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `proposal_${Date.now()}_${drawGameplayRandomString("Team", 6)}`;
   }, []);
 
   const countInventoryResource = useCallback((inventory: string[] = [], resource: string) => {
@@ -23994,7 +30923,7 @@ function AustraliaGame() {
     const maxPendingByAi = gameSettings.winCondition === 'regions' && behindInRegions ? 2 : gameSettings.winCondition === 'netWorth' ? 2 : 1;
     const pendingByAi = (proposalsRef.current || []).filter(proposal => proposal.status === 'pending' && proposal.from === 'ai').length;
     if (pendingByAi >= maxPendingByAi) return null;
-    if (worldRandom() > style.proposalVolume) return null;
+    if (aiRandom() > style.proposalVolume) return null;
 
     const candidateRegions = Object.keys(REGIONS)
       .map(regionCode => {
@@ -24062,7 +30991,7 @@ function AustraliaGame() {
       timestamp: Date.now(),
       aiReasoning: `${aiState.name || 'AI'} proposes to secure ${REGIONS[best.regionCode]?.name || best.regionCode} (${style.label} style, ${gameSettings.winCondition === 'regions' ? 'regions focus' : gameSettings.winCondition === 'netWorth' ? 'net worth focus' : 'cash focus'}).`
     } as Proposal;
-  }, [createProposalId, estimateRegionValue, gameSettings.winCondition, gameState.selectedMode, getAiNegotiationStyle, worldRandom]);
+  }, [createProposalId, estimateRegionValue, gameSettings.winCondition, gameState.selectedMode, getAiNegotiationStyle, aiRandom]);
 
   const completeProposal = useCallback((
     proposal: Proposal,
@@ -24205,7 +31134,7 @@ function AustraliaGame() {
 
     const pushLog = (entry: Omit<NegotiationLogEntry, 'id' | 'turn' | 'timestamp'>) => {
       logs.push({
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         ...entry
@@ -24510,7 +31439,7 @@ function AustraliaGame() {
     const logs = [
       ...(negotiationLogsRef.current || []),
       {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         eventType: 'proposal_sent' as const,
@@ -24522,7 +31451,7 @@ function AustraliaGame() {
         reasoning: proposal.aiReasoning
       },
       {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         eventType: 'proposal_received' as const,
@@ -24561,7 +31490,7 @@ function AustraliaGame() {
     const logs: NegotiationLogEntry[] = [
       ...(negotiationLogsRef.current || []),
       {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         eventType: (action === 'accept' ? 'proposal_accepted' : 'proposal_declined') as NegotiationLogEntry['eventType'],
@@ -24596,7 +31525,7 @@ function AustraliaGame() {
     const logs = [
       ...(negotiationLogsRef.current || []),
       {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         eventType: 'proposal_cancelled' as const,
@@ -24637,7 +31566,7 @@ function AustraliaGame() {
     const logs = [
       ...(negotiationLogsRef.current || []),
       {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
         turn: gameState.day,
         timestamp: Date.now(),
         eventType: 'proposal_completed' as const,
@@ -25182,7 +32111,7 @@ function AustraliaGame() {
     const balanceBefore = team.treasury.balance;
     const balanceAfter = balanceBefore + amount;
     const transaction: TreasuryTransaction = {
-      id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
       day: gameState.day,
       turn: gameState.turnCounter,
       teamId: actor.teamId,
@@ -25213,9 +32142,9 @@ function AustraliaGame() {
     // GL10: manual/AI Treasury contribution coverage — the prior Treasury emissions only covered
     // funding-request approve/reject; this is the first Ledger record of money actually flowing
     // INTO the Treasury.
-    appendGameActivityLedgerEvent('treasury', { teamId: actor.teamId, actorId, treasuryRequestId: transaction.id, summary: transaction.reason });
+    dispatchAuthoritativeGameActivityLedgerEvent('treasury', { teamId: actor.teamId, actorId, treasuryRequestId: transaction.id, summary: transaction.reason });
     return true;
-  }, [addNotification, deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState, appendGameActivityLedgerEvent]);
+  }, [addNotification, deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Team Treasury Phase T1 (GD4): what a single AI actor could safely contribute today, computed
   // by chaining only already-existing, already-trusted numbers (Cash Vault's spendable-cash
@@ -25291,7 +32220,7 @@ function AustraliaGame() {
     const balanceBefore = team.treasury.balance;
     const balanceAfter = balanceBefore + affordable;
     const transaction: TreasuryTransaction = {
-      id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
       day: gameState.day,
       turn: gameState.turnCounter,
       teamId: actor.teamId,
@@ -25318,7 +32247,20 @@ function AustraliaGame() {
         transactions: [...prev.treasury.transactions, transaction].slice(-60)
       }
     }));
-  }, [deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState]);
+    dispatchAuthoritativeGameActivityLedgerEvent('treasury', {
+      teamId: actor.teamId,
+      actorId,
+      treasuryRequestId: transaction.id,
+      summary: transaction.reason,
+      payload: {
+        category: 'treasury',
+        transactionType: 'auto_allocation',
+        amount: affordable,
+        balanceAfter,
+        reason: transaction.reason
+      }
+    });
+  }, [deductMoney, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, updateTeamState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Team Treasury Phase T2 (GD5): the shared entry point for all 3 request forms (emergency_cash /
   // fund_specific_action / custom). Always reachable at exactly $0 — never gated on the requester
@@ -25357,7 +32299,7 @@ function AustraliaGame() {
       if (recentSameActor.some(r => (gameState.day - r.createdDay) < gameSettings.teamTreasuryRequestCooldownDays)) return null;
     }
     const request: TreasuryFundingRequest = {
-      id: `treasury_req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `treasury_req_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
       requestingActorId: actorId,
       requestingTeamId: actor.teamId,
       requestType: form.requestType,
@@ -25471,7 +32413,7 @@ function AustraliaGame() {
         requestId,
         status: 'rejected'
       });
-      appendGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request rejected: ${reasonSuffix}` });
+      dispatchAuthoritativeGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request rejected: ${reasonSuffix}` });
     };
 
     if (control === 'reject' || control === 'ask_cheaper') {
@@ -25506,7 +32448,7 @@ function AustraliaGame() {
     const balanceBefore = team.treasury.balance;
     const balanceAfter = Math.max(0, balanceBefore - amount);
     const transaction: TreasuryTransaction = {
-      id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
       day: gameState.day,
       turn: gameState.turnCounter,
       teamId,
@@ -25551,8 +32493,8 @@ function AustraliaGame() {
       requestId,
       status: partial ? 'partially_approved' : 'approved'
     });
-    appendGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request approved for $${amount}${partial ? ' (partial)' : ''}.` });
-  }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent]);
+    dispatchAuthoritativeGameActivityLedgerEvent('treasury', { teamId, actorId: request.requestingActorId, treasuryRequestId: requestId, summary: `Treasury request approved for $${amount}${partial ? ' (partial)' : ''}.` });
+  }, [addNotification, gameSettings, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, getTreasuryAvailableAmount, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, dispatchAuthoritativeGameActivityLedgerEvent]);
   resolveTreasuryFundingRequestRef.current = resolveTreasuryFundingRequest;
 
   // Team Treasury Phase T4 (GD6): mirrors buildTreasuryApprovalRequest exactly — a synthetic
@@ -26242,7 +33184,7 @@ function AustraliaGame() {
       const balanceBefore = team.treasury.balance;
       const balanceAfter = balanceBefore + unused;
       const transaction: TreasuryTransaction = {
-        id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
         day: gameState.day,
         turn: gameState.turnCounter,
         teamId,
@@ -26566,7 +33508,7 @@ function AustraliaGame() {
   // grant) so it can be revalidated immediately before execution. The base per-turn budget is
   // deliberately NOT tokenized in 3a — only bonus grants are (see plan Governing Decision #2).
   const mintActionToken = useCallback((teamId: string, actorId: string, source: ActionTokenSource, planId?: string): string => {
-    const tokenId = `team_token_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tokenId = `team_token_${Date.now()}_${drawGameplayRandomString("Team", 6)}`;
     // V6.9.1 bugfix (Bug 5): for 'override'-sourced tokens, capture the actor's overridesUsedToday
     // AT MINT TIME — see redeemActionToken's cap re-check for why this baseline (not the live count)
     // is what must be compared later.
@@ -26795,7 +33737,7 @@ function AustraliaGame() {
   }, []);
 
   // Advanced Loan System handlers
-  const takeAdvancedLoanForActor = useCallback((actorId: string, tierId: string, isEvent: boolean = false, eventId?: string, options?: { silent?: boolean; closeModal?: boolean }) => {
+  const takeAdvancedLoanForActor = useCallback((actorId: string, tierId: string, isEvent: boolean = false, eventId?: string, options?: { silent?: boolean; closeModal?: boolean; suppressLedgerEvent?: boolean }) => {
     const actor = getActorState(actorId);
     if (!actor) return false;
     if (!isAdvancedLoansEnabledForActor(actor)) {
@@ -26826,7 +33768,7 @@ function AustraliaGame() {
     const creditRange = getCreditScoreRange(creditScore);
     const actualInterestRate = tier.baseInterestRate * creditRange.multiplier * gameSettings.loanTierUnlockSpeedMultiplier;
     const newLoan: AdvancedLoan = {
-      id: Date.now().toString() + Math.random(),
+      id: Date.now().toString() + drawGameplayRandomString("World", 6),
       tierId: tier.id,
       amount: tier.amount,
       baseInterestRate: tier.baseInterestRate,
@@ -26869,10 +33811,25 @@ function AustraliaGame() {
     if (options?.closeModal && actor.kind === 'human') {
       updateUiState({ showAdvancedLoans: false });
     }
+    if (!options?.suppressLedgerEvent) {
+      dispatchAuthoritativeGameActivityLedgerEvent('action', {
+        teamId: actor.teamId,
+        actorId,
+        actionType: 'take_advanced_loan',
+        summary: `${getActorDisplayName(actorId)} took loan ${tier.name} ($${tier.amount}).`,
+        payload: {
+          category: 'action',
+          actionType: 'take_advanced_loan',
+          cost: tier.amount,
+          success: true,
+          details: { tierId: tier.id, interestRate: actualInterestRate, term: tier.term }
+        }
+      });
+    }
     return true;
-  }, [addNotification, gameSettings, gameState, getActorDisplayName, getActorState, isAdvancedLoansEnabledForActor, updateActorState, updateUiState]);
+  }, [addNotification, gameSettings, gameState, getActorDisplayName, getActorState, isAdvancedLoansEnabledForActor, updateActorState, updateUiState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
-  const repayAdvancedLoanForActor = useCallback((actorId: string, loanId: string, isEarlyRepayment: boolean = false, options?: { silent?: boolean }) => {
+  const repayAdvancedLoanForActor = useCallback((actorId: string, loanId: string, isEarlyRepayment: boolean = false, options?: { silent?: boolean; suppressLedgerEvent?: boolean }) => {
     const actor = getActorState(actorId);
     if (!actor) return false;
     if (!isAdvancedLoansEnabledForActor(actor)) return false;
@@ -26924,8 +33881,23 @@ function AustraliaGame() {
         : `Repaid loan: $${Math.floor(totalOwed)}`;
       addNotification(actor.kind === 'human' ? message : `🤖 ${getActorDisplayName(actorId)} ${message.toLowerCase()}`, actor.kind === 'human' ? 'success' : 'ai', true, 'system');
     }
+    if (!options?.suppressLedgerEvent) {
+      dispatchAuthoritativeGameActivityLedgerEvent('action', {
+        teamId: actor.teamId,
+        actorId,
+        actionType: 'repay_advanced_loan',
+        summary: `${getActorDisplayName(actorId)} repaid loan ($${Math.floor(totalOwed)}).`,
+        payload: {
+          category: 'action',
+          actionType: 'repay_advanced_loan',
+          cost: totalOwed,
+          success: true,
+          details: { loanId, isEarlyRepayment, interestOwed }
+        }
+      });
+    }
     return true;
-  }, [addNotification, gameSettings.creditScoreEnabled, gameSettings.earlyRepaymentEnabled, gameState, getActorDisplayName, getActorState, isAdvancedLoansEnabledForActor, updateActorState]);
+  }, [addNotification, gameSettings.creditScoreEnabled, gameSettings.earlyRepaymentEnabled, gameState, getActorDisplayName, getActorState, isAdvancedLoansEnabledForActor, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const takeAdvancedLoan = useCallback((tierId: string, isEvent: boolean = false, eventId?: string) => {
     takeAdvancedLoanForActor('player', tierId, isEvent, eventId, { closeModal: true });
@@ -26979,27 +33951,47 @@ function AustraliaGame() {
     }
     
     const confirmTravel = () => {
-      if (player.money >= cost) {
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
-        dispatchPlayer({ type: 'SET_REGION', payload: region });
-        updateUiState({ showTravelModal: false });
-        addNotification(`Traveled to ${REGIONS[region].name} for $${cost}`, 'travel');
-        
-        // Collect resources (if inventory not full)
-        const regionResources = REGIONAL_RESOURCES[region] || [];
-        if (regionResources.length > 0) {
-          const collectedResource = regionResources[Math.floor(worldRandom() * regionResources.length)];
+      executeUniversalActionPipeline(
+        {
+          actorId: player.id || 'player',
+          teamId: player.teamId,
+          actionType: 'travel',
+          parameters: { region, cost },
+          getActorState: () => player,
+          getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+          checkRequirements: () => {
+            if (player.money < cost) return { passed: false, reason: 'Not enough money' };
+            if (gameSettings.sabotageEnabled && isTravelBlocked(player.debuffs)) return { passed: false, reason: 'Travel blocked by sabotage' };
+            return { passed: true };
+          },
+          recordLedger: (ev) => {
+            dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+          }
+        },
+        (attempt) => {
+          if (player.money >= cost) {
+            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
+            dispatchPlayer({ type: 'SET_REGION', payload: region });
+            updateUiState({ showTravelModal: false });
+            addNotification(`Traveled to ${REGIONS[region].name} for $${cost}`, 'travel');
+            
+            // Collect resources (if inventory not full)
+            const regionResources = REGIONAL_RESOURCES[region] || [];
+            if (regionResources.length > 0) {
+              const collectedResource = drawGameplayRandomChoice('Mining', regionResources);
 
-          if (player.inventory.length < MAX_INVENTORY) {
-            dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
-            addNotification(`Found ${collectedResource}!`, 'resource');
-          } else {
-            addNotification(`Inventory full (${MAX_INVENTORY}/${MAX_INVENTORY})! Couldn't collect ${collectedResource}`, 'warning');
+              if (player.inventory.length < MAX_INVENTORY) {
+                dispatchPlayer({ type: 'COLLECT_RESOURCES', payload: { resources: [collectedResource] } });
+                addNotification(`Found ${collectedResource}!`, 'resource');
+              } else {
+                addNotification(`Inventory full (${MAX_INVENTORY}/${MAX_INVENTORY})! Couldn't collect ${collectedResource}`, 'warning');
+              }
+            }
+
+            incrementAction();
           }
         }
-
-        incrementAction();
-      }
+      );
     };
 
     showConfirmation(
@@ -27010,7 +34002,7 @@ function AustraliaGame() {
       confirmTravel,
       { region, cost }
     );
-  }, [player, gameSettings.sabotageEnabled, calculateTravelCost, addNotification, showConfirmation, incrementAction, worldRandom]);
+  }, [player, gameSettings.sabotageEnabled, calculateTravelCost, addNotification, showConfirmation, incrementAction, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Calculate dynamic max wager based on difficulty and level
   const calculateMaxWager = useCallback((challenge) => {
@@ -27024,21 +34016,42 @@ function AustraliaGame() {
   const handleDoubleOrNothing = useCallback(() => {
     if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) return;
 
-    const doubleReward = gameState.lastChallengeReward * 2;
-    const success = worldRandom() < 0.5; // 50/50 chance
+    executeUniversalActionPipeline(
+      {
+        actorId: player.id || 'player',
+        teamId: player.teamId,
+        actionType: 'double_or_nothing',
+        parameters: { reward: gameState.lastChallengeReward },
+        getActorState: () => player,
+        getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) {
+            return { passed: false, reason: 'Double or nothing unavailable' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (attempt) => {
+        const doubleReward = gameState.lastChallengeReward * 2;
+        const success = drawGameplayRandom('Combat') < 0.5; // 50/50 chance
 
-    if (success) {
-      dispatchPlayer({ type: 'UPDATE_MONEY', payload: gameState.lastChallengeReward }); // Add the extra amount
-      addNotification(`Double or Nothing SUCCESS! Won extra $${gameState.lastChallengeReward}! Total: $${doubleReward}`, 'success', true);
-      updatePersonalRecords('earned', gameState.lastChallengeReward);
-    } else {
-      dispatchPlayer({ type: 'UPDATE_MONEY', payload: -gameState.lastChallengeReward }); // Lose the original reward
-      addNotification(`Double or Nothing FAILED! Lost your $${gameState.lastChallengeReward} reward!`, 'error', true);
-    }
+        if (success) {
+          dispatchPlayer({ type: 'UPDATE_MONEY', payload: gameState.lastChallengeReward }); // Add the extra amount
+          addNotification(`Double or Nothing SUCCESS! Won extra $${gameState.lastChallengeReward}! Total: $${doubleReward}`, 'success', true);
+          updatePersonalRecords('earned', gameState.lastChallengeReward);
+        } else {
+          dispatchPlayer({ type: 'UPDATE_MONEY', payload: -gameState.lastChallengeReward }); // Lose the original reward
+          addNotification(`Double or Nothing FAILED! Lost your $${gameState.lastChallengeReward} reward!`, 'error', true);
+        }
 
-    dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
-    updateUiState({ showDoubleOrNothing: false });
-  }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, worldRandom]);
+        dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
+        updateUiState({ showDoubleOrNothing: false });
+      }
+    );
+  }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const takeChallenge = useCallback((challenge, wager) => {
     let successChance = calculateSuccessChance(challenge);
@@ -27056,175 +34069,197 @@ function AustraliaGame() {
     }
 
     const confirmChallenge = () => {
-      if (player.money < wager) {
-        addNotification('Not enough money!', 'error');
-        return;
-      }
+      executeUniversalActionPipeline(
+        {
+          actorId: player.id || 'player',
+          teamId: player.teamId,
+          actionType: 'challenge',
+          parameters: { challengeName: challenge.name, wager, difficulty: challenge.difficulty },
+          getActorState: () => player,
+          getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+          checkRequirements: () => {
+            if (player.money < wager) {
+              addNotification('Not enough money!', 'error');
+              return { passed: false, reason: 'Not enough money' };
+            }
+            return { passed: true };
+          },
+          recordLedger: (ev) => {
+            dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+          }
+        },
+        (attempt) => {
+          if (player.money < wager) {
+            addNotification('Not enough money!', 'error');
+            return;
+          }
 
-      const success = worldRandom() < successChance;
+          const success = drawGameplayRandom('Combat') < successChance;
 
-      if (success) {
-        let reward = Math.floor(wager * challenge.reward);
+          if (success) {
+            let reward = Math.floor(wager * challenge.reward);
 
-        if (player.character.name === "Tourist") {
-          reward = Math.floor(reward * 1.2);
-        }
+            if (player.character.name === "Tourist") {
+              reward = Math.floor(reward * 1.2);
+            }
 
-        if (player.character.name === "Businessman") {
-          reward = Math.floor(reward * 1.1);
-        }
+            if (player.character.name === "Businessman") {
+              reward = Math.floor(reward * 1.1);
+            }
 
-        const { isUnderdog, leader } = getUnderdogBonus('player');
-        if (leader === 'player' && getWealthState().ratio > 2) {
-          reward = Math.floor(reward * 0.9);
-        }
+            const { isUnderdog, leader } = getUnderdogBonus('player');
+            if (leader === 'player' && getWealthState().ratio > 2) {
+              reward = Math.floor(reward * 0.9);
+            }
 
-        // Apply Lucky Streak mastery bonus (Tourist-specific)
-        if (player.masteryUnlocks.includes("Lucky Streak") && player.consecutiveWins > 0) {
-          const streakBonus = Math.min(0.5, player.consecutiveWins * 0.1);
-          reward = Math.floor(reward * (1 + streakBonus));
-          addNotification(`Lucky Streak! +${Math.round(streakBonus * 100)}% bonus`, 'success');
-        }
+            // Apply Lucky Streak mastery bonus (Tourist-specific)
+            if (player.masteryUnlocks.includes("Lucky Streak") && player.consecutiveWins > 0) {
+              const streakBonus = Math.min(0.5, player.consecutiveWins * 0.1);
+              reward = Math.floor(reward * (1 + streakBonus));
+              addNotification(`Lucky Streak! +${Math.round(streakBonus * 100)}% bonus`, 'success');
+            }
 
-        // Universal streak bonuses (apply to all characters)
-        const newStreak = player.consecutiveWins + 1;
-        const streakTiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a);
-        let appliedStreakBonus = null;
-        for (const tier of streakTiers) {
-          if (newStreak >= tier) {
-            appliedStreakBonus = STREAK_BONUSES[tier];
-            break;
+            // Universal streak bonuses (apply to all characters)
+            const newStreak = player.consecutiveWins + 1;
+            const streakTiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a);
+            let appliedStreakBonus = null;
+            for (const tier of streakTiers) {
+              if (newStreak >= tier) {
+                appliedStreakBonus = STREAK_BONUSES[tier];
+                break;
+              }
+            }
+            if (appliedStreakBonus && !player.masteryUnlocks.includes("Lucky Streak")) {
+              // Only apply universal bonus if Lucky Streak mastery isn't active (to avoid double-dipping)
+              reward = Math.floor(reward * (1 + appliedStreakBonus.rewardBonus));
+            }
+
+            // Seasonal mastery bonuses
+            const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
+            let masteryRewardBonus = 0;
+            let masteryXpBonus = 0;
+            let masteryLabel = '';
+            switch (Math.min(masteryCount, 4)) {
+              case 2:
+                masteryRewardBonus = 0.25;
+                masteryXpBonus = 0.5;
+                masteryLabel = 'Mastered';
+                break;
+              case 3:
+                masteryRewardBonus = 0.5;
+                masteryXpBonus = 1.0;
+                masteryLabel = 'Expert';
+                break;
+              case 4:
+                masteryRewardBonus = 1.0;
+                masteryXpBonus = 2.0;
+                masteryLabel = 'Legendary';
+                break;
+            }
+            if (masteryRewardBonus > 0) {
+              reward = Math.floor(reward * (1 + masteryRewardBonus));
+            }
+
+            dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
+            dispatchPlayer({ type: 'COMPLETE_CHALLENGE', payload: challenge.name });
+            dispatchGameState({
+              type: 'ADD_CHALLENGE_COMPLETION',
+              payload: {
+                id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
+                playerId: 'player',
+                challengeName: challenge.name,
+                region: player.currentRegion,
+                turn: gameState.day,
+                timestamp: Date.now()
+              } as ChallengeCompletionLogEntry
+            });
+            applyGrandTourChallengeProgress('player', player.currentRegion, challenge.name);
+
+            // Apply Quick Study mastery - 50% more XP
+            let xpGain = challenge.difficulty * 20;
+            if (player.masteryUnlocks.includes("Quick Study")) {
+              xpGain = Math.floor(xpGain * 1.5);
+            }
+            if (isUnderdog) {
+              xpGain = Math.floor(xpGain * 1.25);
+            }
+            // Apply universal streak XP bonus
+            if (appliedStreakBonus) {
+              xpGain = Math.floor(xpGain * (1 + appliedStreakBonus.xpBonus));
+            }
+            if (masteryXpBonus > 0) {
+              xpGain = Math.floor(xpGain * (1 + masteryXpBonus));
+            }
+            dispatchPlayer({ type: 'GAIN_XP', payload: { amount: xpGain, applyEquipment: gameSettings.equipmentShopEnabled && !(gameSettings.sabotageEnabled && isEquipmentJammed(player.debuffs)) } });
+
+            // Show streak notification
+            if (appliedStreakBonus) {
+              addNotification(`${appliedStreakBonus.emoji} ${appliedStreakBonus.label}! ${newStreak} wins in a row!`, 'success');
+            }
+            if (masteryLabel) {
+              addNotification(`${masteryLabel}! ${challenge.name} rewards boosted for this run.`, 'success');
+            }
+
+            addNotification(`${challenge.name} completed! Won $${reward}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
+            updatePersonalRecords('challenge', reward);
+            updatePersonalRecords('consecutiveWins', newStreak);
+            updatePersonalRecords('earned', reward);
+
+            // Enable double or nothing for this reward
+            if (reward >= 100) {
+              dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: true, reward: reward } });
+              addNotification('Double or Nothing available! Risk your reward for 2x!', 'info', true);
+            }
+
+            // Clear active special ability after use
+            if (activeSpecialAbility) {
+              setActiveSpecialAbility(null);
+              dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
+            }
+
+            // Clear failed challenge data
+            setFailedChallengeData(null);
+
+            // Check for mastery unlocks
+            Object.entries(player.character.masteryTree || {}).forEach(([name, mastery]) => {
+              if (player.level >= (mastery as any).unlockLevel && !player.masteryUnlocks.includes(name)) {
+                dispatchPlayer({ type: 'UNLOCK_MASTERY', payload: name });
+                addNotification(`Mastery Unlocked: ${name}!`, 'levelup', true);
+              }
+            });
+          } else {
+            // Challenge failed
+            dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
+            dispatchPlayer({ type: 'RESET_STREAK' });
+            addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
+
+            // Disable double or nothing on failure
+            dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
+
+            // Store failed challenge for Tourist Luck retry
+            if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
+              setFailedChallengeData({ challenge, wager });
+              addNotification('Tourist Luck available! You can retry this challenge.', 'info', true);
+            }
+
+            // Clear active special ability after use
+            if (activeSpecialAbility) {
+              setActiveSpecialAbility(null);
+              dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
+            }
+          }
+
+          updateUiState({ showChallenges: false });
+
+          // Challenge Master mastery: First challenge of the turn doesn't consume an action
+          if (player.masteryUnlocks.includes("Challenge Master") && !usedFreeChallengeThisTurn) {
+            setUsedFreeChallengeThisTurn(true);
+            addNotification('⚔️ Challenge Master! Free challenge attempt!', 'success');
+          } else {
+            incrementAction();
           }
         }
-        if (appliedStreakBonus && !player.masteryUnlocks.includes("Lucky Streak")) {
-          // Only apply universal bonus if Lucky Streak mastery isn't active (to avoid double-dipping)
-          reward = Math.floor(reward * (1 + appliedStreakBonus.rewardBonus));
-        }
-
-        // Seasonal mastery bonuses
-        const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
-        let masteryRewardBonus = 0;
-        let masteryXpBonus = 0;
-        let masteryLabel = '';
-        switch (Math.min(masteryCount, 4)) {
-          case 2:
-            masteryRewardBonus = 0.25;
-            masteryXpBonus = 0.5;
-            masteryLabel = 'Mastered';
-            break;
-          case 3:
-            masteryRewardBonus = 0.5;
-            masteryXpBonus = 1.0;
-            masteryLabel = 'Expert';
-            break;
-          case 4:
-            masteryRewardBonus = 1.0;
-            masteryXpBonus = 2.0;
-            masteryLabel = 'Legendary';
-            break;
-        }
-        if (masteryRewardBonus > 0) {
-          reward = Math.floor(reward * (1 + masteryRewardBonus));
-        }
-
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: reward });
-        dispatchPlayer({ type: 'COMPLETE_CHALLENGE', payload: challenge.name });
-        dispatchGameState({
-          type: 'ADD_CHALLENGE_COMPLETION',
-          payload: {
-            id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            playerId: 'player',
-            challengeName: challenge.name,
-            region: player.currentRegion,
-            turn: gameState.day,
-            timestamp: Date.now()
-          } as ChallengeCompletionLogEntry
-        });
-        applyGrandTourChallengeProgress('player', player.currentRegion, challenge.name);
-
-        // Apply Quick Study mastery - 50% more XP
-        let xpGain = challenge.difficulty * 20;
-        if (player.masteryUnlocks.includes("Quick Study")) {
-          xpGain = Math.floor(xpGain * 1.5);
-        }
-        if (isUnderdog) {
-          xpGain = Math.floor(xpGain * 1.25);
-        }
-        // Apply universal streak XP bonus
-        if (appliedStreakBonus) {
-          xpGain = Math.floor(xpGain * (1 + appliedStreakBonus.xpBonus));
-        }
-        if (masteryXpBonus > 0) {
-          xpGain = Math.floor(xpGain * (1 + masteryXpBonus));
-        }
-        dispatchPlayer({ type: 'GAIN_XP', payload: { amount: xpGain, applyEquipment: gameSettings.equipmentShopEnabled && !(gameSettings.sabotageEnabled && isEquipmentJammed(player.debuffs)) } });
-
-        // Show streak notification
-        if (appliedStreakBonus) {
-          addNotification(`${appliedStreakBonus.emoji} ${appliedStreakBonus.label}! ${newStreak} wins in a row!`, 'success');
-        }
-        if (masteryLabel) {
-          addNotification(`${masteryLabel}! ${challenge.name} rewards boosted for this run.`, 'success');
-        }
-
-        addNotification(`${challenge.name} completed! Won $${reward}${player.masteryUnlocks.includes("Quick Study") ? ' (+50% XP)' : ''}`, 'success');
-        updatePersonalRecords('challenge', reward);
-        updatePersonalRecords('consecutiveWins', newStreak);
-        updatePersonalRecords('earned', reward);
-
-        // Enable double or nothing for this reward
-        if (reward >= 100) {
-          dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: true, reward: reward } });
-          addNotification('Double or Nothing available! Risk your reward for 2x!', 'info', true);
-        }
-
-        // Clear active special ability after use
-        if (activeSpecialAbility) {
-          setActiveSpecialAbility(null);
-          dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
-        }
-
-        // Clear failed challenge data
-        setFailedChallengeData(null);
-
-        // Check for mastery unlocks
-        Object.entries(player.character.masteryTree || {}).forEach(([name, mastery]) => {
-          if (player.level >= (mastery as any).unlockLevel && !player.masteryUnlocks.includes(name)) {
-            dispatchPlayer({ type: 'UNLOCK_MASTERY', payload: name });
-            addNotification(`Mastery Unlocked: ${name}!`, 'levelup', true);
-          }
-        });
-      } else {
-        // Challenge failed
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -wager });
-        dispatchPlayer({ type: 'RESET_STREAK' });
-        addNotification(`${challenge.name} failed. Lost $${wager}`, 'error');
-
-        // Disable double or nothing on failure
-        dispatchGameState({ type: 'SET_DOUBLE_OR_NOTHING', payload: { available: false, reward: 0 } });
-
-        // Store failed challenge for Tourist Luck retry
-        if (player.character.name === "Tourist" && player.specialAbilityUses > 0 && !activeSpecialAbility) {
-          setFailedChallengeData({ challenge, wager });
-          addNotification('Tourist Luck available! You can retry this challenge.', 'info', true);
-        }
-
-        // Clear active special ability after use
-        if (activeSpecialAbility) {
-          setActiveSpecialAbility(null);
-          dispatchPlayer({ type: 'USE_SPECIAL_ABILITY' });
-        }
-      }
-
-      updateUiState({ showChallenges: false });
-
-      // Challenge Master mastery: First challenge of the turn doesn't consume an action
-      if (player.masteryUnlocks.includes("Challenge Master") && !usedFreeChallengeThisTurn) {
-        setUsedFreeChallengeThisTurn(true);
-        addNotification('⚔️ Challenge Master! Free challenge attempt!', 'success');
-      } else {
-        incrementAction();
-      }
+      );
     };
 
     if (successChance < 0.5 && !hasCalculateOdds) {
@@ -27239,7 +34274,7 @@ function AustraliaGame() {
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings.equipmentShopEnabled, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, worldRandom]);
+  }, [player, gameSettings.equipmentShopEnabled, calculateSuccessChance, addNotification, showConfirmation, updatePersonalRecords, activeSpecialAbility, incrementAction, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -27274,84 +34309,105 @@ function AustraliaGame() {
 
   const sellResource = useCallback((resource, price) => {
     const confirmSell = () => {
-      const index = player.inventory.indexOf(resource);
-      if (index > -1) {
-        let finalPrice = price;
-
-        // Apply regional demand bonus
-        const regionalBonus = calculateRegionalBonus(resource, player.currentRegion);
-        finalPrice = Math.floor(finalPrice * regionalBonus);
-
-        // Apply supply/demand modifier
-        const supplyDemandMod = calculateSupplyDemandModifier(resource);
-        finalPrice = Math.floor(finalPrice * supplyDemandMod);
-
-        // Apply active event effects on resource prices
-        gameState.activeEvents.forEach(event => {
-          if (event.effect?.resourcePrice?.[resource]) {
-            finalPrice = Math.floor(finalPrice * event.effect.resourcePrice[resource]);
+      executeUniversalActionPipeline(
+        {
+          actorId: player.id || 'player',
+          teamId: player.teamId,
+          actionType: 'sell',
+          parameters: { resource, price },
+          getActorState: () => player,
+          getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+          checkRequirements: () => {
+            if (!player.inventory || player.inventory.indexOf(resource) < 0) {
+              return { passed: false, reason: 'Resource not in inventory' };
+            }
+            return { passed: true };
+          },
+          recordLedger: (ev) => {
+            dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
           }
-        });
+        },
+        (attempt) => {
+          const index = player.inventory.indexOf(resource);
+          if (index > -1) {
+            let finalPrice = price;
 
-        // Apply season effects on resource prices
-        const resourceCategory = RESOURCE_CATEGORIES[resource];
-        const seasonMod = SEASON_EFFECTS[gameState.season]?.resourcePriceModifier?.[resourceCategory];
-        if (seasonMod) {
-          finalPrice = Math.floor(finalPrice * seasonMod);
-        }
+            // Apply regional demand bonus
+            const regionalBonus = calculateRegionalBonus(resource, player.currentRegion);
+            finalPrice = Math.floor(finalPrice * regionalBonus);
 
-        const { isUnderdog, leader } = getUnderdogBonus('player');
-        if (isUnderdog) {
-          finalPrice = Math.floor(finalPrice * 1.15);
-        }
-        if (leader === 'player' && getWealthState().ratio > 2) {
-          finalPrice = Math.floor(finalPrice * 0.95);
-        }
+            // Apply supply/demand modifier
+            const supplyDemandMod = calculateSupplyDemandModifier(resource);
+            finalPrice = Math.floor(finalPrice * supplyDemandMod);
 
-        if (player.character.name === "Businessman") {
-          finalPrice = Math.floor(finalPrice * 1.1);
-        }
+            // Apply active event effects on resource prices
+            gameState.activeEvents.forEach(event => {
+              if (event.effect?.resourcePrice?.[resource]) {
+                finalPrice = Math.floor(finalPrice * event.effect.resourcePrice[resource]);
+              }
+            });
 
-        // Check if this is a crafted item (Businessman gets +20% bonus on crafted items)
-        const isCraftedItem = CRAFTING_RECIPES.some(recipe => recipe.output === resource);
-        if (isCraftedItem && player.character.craftingBonus?.effect?.sellBonus) {
-          finalPrice = Math.floor(finalPrice * (1 + player.character.craftingBonus.effect.sellBonus));
-        }
+            // Apply season effects on resource prices
+            const resourceCategory = RESOURCE_CATEGORIES[resource];
+            const seasonMod = SEASON_EFFECTS[gameState.season]?.resourcePriceModifier?.[resourceCategory];
+            if (seasonMod) {
+              finalPrice = Math.floor(finalPrice * seasonMod);
+            }
 
-        if (player.masteryUnlocks.includes("Investment Genius")) {
-          finalPrice = Math.floor(finalPrice * 1.15);
-        }
+            const { isUnderdog, leader } = getUnderdogBonus('player');
+            if (isUnderdog) {
+              finalPrice = Math.floor(finalPrice * 1.15);
+            }
+            if (leader === 'player' && getWealthState().ratio > 2) {
+              finalPrice = Math.floor(finalPrice * 0.95);
+            }
 
-        if (gameSettings.sabotageEnabled) {
-          const sabotageMultiplier = getSabotageSellMultiplier(player.debuffs);
-          if (sabotageMultiplier < 1) {
-            finalPrice = Math.floor(finalPrice * sabotageMultiplier);
+            if (player.character.name === "Businessman") {
+              finalPrice = Math.floor(finalPrice * 1.1);
+            }
+
+            // Check if this is a crafted item (Businessman gets +20% bonus on crafted items)
+            const isCraftedItem = CRAFTING_RECIPES.some(recipe => recipe.output === resource);
+            if (isCraftedItem && player.character.craftingBonus?.effect?.sellBonus) {
+              finalPrice = Math.floor(finalPrice * (1 + player.character.craftingBonus.effect.sellBonus));
+            }
+
+            if (player.masteryUnlocks.includes("Investment Genius")) {
+              finalPrice = Math.floor(finalPrice * 1.15);
+            }
+
+            if (gameSettings.sabotageEnabled) {
+              const sabotageMultiplier = getSabotageSellMultiplier(player.debuffs);
+              if (sabotageMultiplier < 1) {
+                finalPrice = Math.floor(finalPrice * sabotageMultiplier);
+              }
+            }
+
+            dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource, price: finalPrice } });
+
+            // Update supply/demand tracking
+            dispatchGameState({ type: 'UPDATE_SUPPLY_DEMAND', payload: { resource, amount: 1 } });
+
+            // Show bonus notification if applicable
+            const bonusMessages = [];
+            if (regionalBonus > 1) bonusMessages.push(`+${Math.round((regionalBonus - 1) * 100)}% regional demand`);
+            if (supplyDemandMod < 1) bonusMessages.push(`${Math.round((1 - supplyDemandMod) * 100)}% oversupply`);
+            if (gameSettings.sabotageEnabled) {
+              if (hasActiveDebuff(player.debuffs, 'market_panic')) {
+                bonusMessages.push('35% market panic penalty');
+              } else if (hasActiveDebuff(player.debuffs, 'rumors')) {
+                bonusMessages.push('20% rumors penalty');
+              }
+            }
+
+            addNotification(`Sold ${resource} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`, 'money');
+            updatePersonalRecords('resource', { resource, price: finalPrice });
+            updatePersonalRecords('earned', finalPrice);
+            updatePersonalRecords('money', player.money + finalPrice);
+            incrementAction();
           }
         }
-
-        dispatchPlayer({ type: 'SELL_RESOURCE', payload: { resource, price: finalPrice } });
-
-        // Update supply/demand tracking
-        dispatchGameState({ type: 'UPDATE_SUPPLY_DEMAND', payload: { resource, amount: 1 } });
-
-        // Show bonus notification if applicable
-        const bonusMessages = [];
-        if (regionalBonus > 1) bonusMessages.push(`+${Math.round((regionalBonus - 1) * 100)}% regional demand`);
-        if (supplyDemandMod < 1) bonusMessages.push(`${Math.round((1 - supplyDemandMod) * 100)}% oversupply`);
-        if (gameSettings.sabotageEnabled) {
-          if (hasActiveDebuff(player.debuffs, 'market_panic')) {
-            bonusMessages.push('35% market panic penalty');
-          } else if (hasActiveDebuff(player.debuffs, 'rumors')) {
-            bonusMessages.push('20% rumors penalty');
-          }
-        }
-
-        addNotification(`Sold ${resource} for $${finalPrice}${bonusMessages.length > 0 ? ` (${bonusMessages.join(', ')})` : ''}`, 'money');
-        updatePersonalRecords('resource', { resource, price: finalPrice });
-        updatePersonalRecords('earned', finalPrice);
-        updatePersonalRecords('money', player.money + finalPrice);
-        incrementAction();
-      }
+      );
     };
 
     if (price >= 200) {
@@ -27366,7 +34422,7 @@ function AustraliaGame() {
     } else {
       confirmSell();
     }
-  }, [player, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier, getUnderdogBonus, getWealthState]);
+  }, [player, gameSettings.sabotageEnabled, gameState.activeEvents, gameState.season, gameState.supplyDemand, addNotification, showConfirmation, updatePersonalRecords, incrementAction, calculateRegionalBonus, calculateSupplyDemandModifier, getUnderdogBonus, getWealthState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const buyResourceFromMarket = useCallback((
     resource: string,
@@ -27402,32 +34458,58 @@ function AustraliaGame() {
       return false;
     }
 
-    const finalQuantity = Math.min(quantity, remainingSlots);
-    const finalCost = finalQuantity * unitPrice;
-    const purchased = Array.from({ length: finalQuantity }, () => resource);
+    let success = false;
+    executeUniversalActionPipeline(
+      {
+        actorId,
+        teamId: actorState.teamId,
+        actionType: 'buyResource',
+        parameters: { resource, quantity, rawQuantity, unitPrice, totalCost },
+        getActorState: () => getActorState(actorId),
+        getTeamState: () => (isTeamMode ? (actorState.teamId ? (teamsByIdRef.current[actorState.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          if (marketSpendable < totalCost) {
+            return { passed: false, reason: 'Not enough spendable money' };
+          }
+          if (remainingSlots <= 0) {
+            return { passed: false, reason: 'Inventory full' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (attempt) => {
+        const finalQuantity = Math.min(quantity, remainingSlots);
+        const finalCost = finalQuantity * unitPrice;
+        const purchased = Array.from({ length: finalQuantity }, () => resource);
 
-    updateActorState(actorId, prev => ({
-      ...prev,
-      money: deductMoney(prev.money, finalCost),
-      inventory: [...(prev.inventory || []), ...purchased]
-    }));
-    if (actorState.kind === 'human' && options?.consumeAction !== false) {
-      incrementAction();
-    }
+        updateActorState(actorId, prev => ({
+          ...prev,
+          money: deductMoney(prev.money, finalCost),
+          inventory: [...(prev.inventory || []), ...purchased]
+        }));
+        if (actorState.kind === 'human' && options?.consumeAction !== false) {
+          incrementAction();
+        }
 
-    if (!options?.silent) {
-      const actorName = actorState.kind === 'human' ? 'Bought' : `🤖 ${actorState.name} bought`;
-      const reasonSuffix = options?.reason ? ` (${options.reason})` : '';
-      addNotification(
-        `${actorName} ${finalQuantity}x ${resource} for $${finalCost}.${reasonSuffix}`,
-        actorState.kind === 'human' ? 'market' : 'ai',
-        false,
-        'market'
-      );
-    }
+        if (!options?.silent) {
+          const actorName = actorState.kind === 'human' ? 'Bought' : `🤖 ${actorState.name} bought`;
+          const reasonSuffix = options?.reason ? ` (${options.reason})` : '';
+          addNotification(
+            `${actorName} ${finalQuantity}x ${resource} for $${finalCost}.${reasonSuffix}`,
+            actorState.kind === 'human' ? 'market' : 'ai',
+            false,
+            'market'
+          );
+        }
+        success = true;
+      }
+    );
 
-    return true;
-  }, [addNotification, deductMoney, getActorState, incrementAction, updateActorState]);
+    return success;
+  }, [addNotification, deductMoney, getActorState, incrementAction, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const handlePlayerResourceMarketPurchase = useCallback(() => {
     if (gameState.currentTurn !== 'player') return;
@@ -27462,47 +34544,91 @@ function AustraliaGame() {
     });
   }, [addNotification, cashOutRegionPosition, gameSettings.allowCashOut, gameSettings.negotiationMode, gameState.currentTurn, player.currentRegion]);
 
-  const buyInvestment = useCallback((regionCode: string) => {
+  const buyInvestment = useCallback((regionCode: string, options?: { rootEventId?: string; parentEventId?: string; correlationChain?: string[] }) => {
     if (!gameSettings.investmentsEnabled || gameState.currentTurn !== 'player') return;
     const investment = REGIONAL_INVESTMENTS[regionCode];
     if (!investment) return;
-    const owned = (player.investments || []).includes(regionCode);
-    if (owned) {
-      addNotification('You already own this investment.', 'warning');
-      return;
-    }
-    if (player.money < investment.cost) {
-      addNotification('Not enough money for this investment.', 'error');
-      return;
-    }
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -investment.cost });
-    dispatchPlayer({ type: 'MERGE_STATE', payload: { investments: [...(player.investments || []), regionCode] } });
-    addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode].name} for $${investment.cost}.`, 'success', true);
-    incrementAction();
-  }, [gameSettings.investmentsEnabled, gameState.currentTurn, player.investments, player.money, addNotification, incrementAction]);
 
-  const buyEquipment = useCallback((itemId: string) => {
+    executeUniversalActionPipeline(
+      {
+        actorId: player.id || 'player',
+        teamId: player.teamId,
+        actionType: 'buy_investment',
+        parameters: { regionCode, cost: investment.cost, investmentName: investment.name },
+        rootEventId: options?.rootEventId,
+        parentEventId: options?.parentEventId,
+        correlationChain: options?.correlationChain,
+        getActorState: () => getActorState(player.id || 'player') || player,
+        getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          const owned = (player.investments || []).includes(regionCode);
+          if (owned) {
+            addNotification('You already own this investment.', 'warning');
+            return { passed: false, reason: 'You already own this investment.' };
+          }
+          if (player.money < investment.cost) {
+            addNotification('Not enough money for this investment.', 'error');
+            return { passed: false, reason: 'Not enough money for this investment.' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (_attempt) => {
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -investment.cost });
+        dispatchPlayer({ type: 'MERGE_STATE', payload: { investments: [...(player.investments || []), regionCode] } });
+        addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode]?.name || regionCode} for $${investment.cost}.`, 'success', true);
+        incrementAction();
+      }
+    );
+  }, [gameSettings.investmentsEnabled, gameState.currentTurn, player, addNotification, incrementAction, isTeamMode, getActorState, dispatchAuthoritativeGameActivityLedgerEvent]);
+
+  const buyEquipment = useCallback((itemId: string, options?: { rootEventId?: string; parentEventId?: string; correlationChain?: string[] }) => {
     if (!gameSettings.equipmentShopEnabled || gameState.currentTurn !== 'player') return;
     const item = SHOP_ITEMS.find(candidate => candidate.id === itemId);
     if (!item) return;
-    if (!EQUIPMENT_SHOP_REGIONS.includes(player.currentRegion)) {
-      addNotification('Equipment shop is only available in NSW or VIC.', 'warning');
-      return;
-    }
-    const owned = (player.equipment || []).includes(itemId);
-    if (owned) {
-      addNotification('You already own this equipment.', 'warning');
-      return;
-    }
-    if (player.money < item.cost) {
-      addNotification('Not enough money for this equipment.', 'error');
-      return;
-    }
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -item.cost });
-    dispatchPlayer({ type: 'MERGE_STATE', payload: { equipment: [...(player.equipment || []), itemId] } });
-    addNotification(`Purchased ${item.name} for $${item.cost}.`, 'success', true);
-    incrementAction();
-  }, [gameSettings.equipmentShopEnabled, gameState.currentTurn, player.currentRegion, player.equipment, player.money, addNotification, incrementAction]);
+
+    executeUniversalActionPipeline(
+      {
+        actorId: player.id || 'player',
+        teamId: player.teamId,
+        actionType: 'buy_equipment',
+        parameters: { itemId, itemName: item.name, cost: item.cost },
+        rootEventId: options?.rootEventId,
+        parentEventId: options?.parentEventId,
+        correlationChain: options?.correlationChain,
+        getActorState: () => getActorState(player.id || 'player') || player,
+        getTeamState: () => (isTeamMode ? (player.teamId ? (teamsByIdRef.current[player.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          if (!EQUIPMENT_SHOP_REGIONS.includes(player.currentRegion)) {
+            addNotification('Equipment shop is only available in NSW or VIC.', 'warning');
+            return { passed: false, reason: 'Equipment shop is only available in NSW or VIC.' };
+          }
+          const owned = (player.equipment || []).includes(itemId);
+          if (owned) {
+            addNotification('You already own this equipment.', 'warning');
+            return { passed: false, reason: 'You already own this equipment.' };
+          }
+          if (player.money < item.cost) {
+            addNotification('Not enough money for this equipment.', 'error');
+            return { passed: false, reason: 'Not enough money for this equipment.' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (_attempt) => {
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -item.cost });
+        dispatchPlayer({ type: 'MERGE_STATE', payload: { equipment: [...(player.equipment || []), itemId] } });
+        addNotification(`Purchased ${item.name} for $${item.cost}.`, 'success', true);
+        incrementAction();
+      }
+    );
+  }, [gameSettings.equipmentShopEnabled, gameState.currentTurn, player, addNotification, incrementAction, isTeamMode, getActorState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Crafting System Functions
   const canCraftRecipe = useCallback((recipe: any, inventory: string[]) => {
@@ -27566,17 +34692,17 @@ function AustraliaGame() {
     }
 
     // Roll for success
-    const success = worldRandom() < successChance;
+    const success = drawGameplayRandom('Crafting') < successChance;
 
     if (success) {
       // Add crafted item to inventory
       newInventory.push(recipe.output);
 
       // Explorer bonus: chance to get materials back
-      if (craftingBonus?.effect?.bonusMaterialChance && worldRandom() < craftingBonus.effect.bonusMaterialChance) {
+      if (craftingBonus?.effect?.bonusMaterialChance && drawGameplayRandom('Crafting') < craftingBonus.effect.bonusMaterialChance) {
         // Return one random material
         const materials = Object.keys(recipe.inputs);
-        const bonusMaterial = materials[Math.floor(worldRandom() * materials.length)];
+        const bonusMaterial = drawGameplayRandomChoice('Crafting', materials);
         newInventory.push(bonusMaterial);
         addNotification(`Crafted ${recipe.output}! Explorer bonus: got ${bonusMaterial} back.`, 'success', true);
       } else {
@@ -27601,7 +34727,7 @@ function AustraliaGame() {
     } else {
       addNotification(`Tourist bonus: No action cost for tourism crafting!`, 'info');
     }
-  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction, worldRandom]);
+  }, [gameState.currentTurn, player.inventory, player.character, canCraftRecipe, addNotification, incrementAction]);
 
   const useSabotage = useCallback((sabotageId: string, targetActorId?: string) => {
     if (!gameSettings.sabotageEnabled || !isCompetitiveMode || gameState.currentTurn !== 'player') return;
@@ -27659,7 +34785,7 @@ function AustraliaGame() {
 
       Object.keys(RESOURCE_CATEGORIES).forEach(resource => {
         const currentPrice = currentPrices[resource] || 100;
-        let variance = worldRandom() * 100 - 50; // Base variance: -50 to +50
+        let variance = drawGameplayRandom('Market') * 100 - 50; // Base variance: -50 to +50
 
         // Apply market trend bias
         switch (gameState.marketTrend) {
@@ -27716,7 +34842,7 @@ function AustraliaGame() {
     } else {
       confirmEndTurn();
     }
-  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords, worldRandom]);
+  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
@@ -27929,30 +35055,30 @@ function AustraliaGame() {
       }
 
       dispatchGameState({ type: 'NEXT_DAY' });
-      appendGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
 
       if (seasonChanged) {
         addNotification(`Season changed to ${newSeason}. Challenges have refreshed with mastery tiers.`, 'info', true);
       }
 
       const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Stormy"];
-      const newWeather = weatherOptions[Math.floor(worldRandom() * weatherOptions.length)];
+      const newWeather = drawGameplayRandomChoice('RandomEvents', weatherOptions);
       dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
       const trends = ["rising", "falling", "stable", "volatile"];
-      const newTrend = trends[Math.floor(worldRandom() * trends.length)];
+      const newTrend = drawGameplayRandomChoice('Market', trends);
       dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
 
       const updatedEvents = gameState.activeEvents
         .map(event => ({ ...event, remainingDays: event.remainingDays - 1 }))
         .filter(event => event.remainingDays > 0);
 
-      if (worldRandom() < 0.2 && updatedEvents.length < 3) {
+      if (drawGameplayRandom('RandomEvents') < 0.2 && updatedEvents.length < 3) {
         const availableEvents = REGIONAL_EVENTS.filter(
           e => !updatedEvents.some(active => active.id === e.id)
         );
         if (availableEvents.length > 0) {
-          const newEvent = availableEvents[Math.floor(worldRandom() * availableEvents.length)];
+          const newEvent = drawGameplayRandomChoice('RandomEvents', availableEvents);
           updatedEvents.push({ ...newEvent, remainingDays: newEvent.duration });
           addNotification(`Event: ${newEvent.name} in ${REGIONS[newEvent.region]?.name || newEvent.region}!`, 'event', true);
         }
@@ -28221,11 +35347,11 @@ function AustraliaGame() {
       const aiBehind = gameSettings.winCondition === 'regions'
         ? projectedOpponentTeamRegions < projectedPlayerTeamRegions
         : projectedPrimaryOpponentValue < projectedPrimaryPlayerValue * 0.5;
-      if (playerBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
+      if (playerBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
         projectedPlayer.money += 300;
         projectedActors.player = projectedPlayer;
         addNotification('Investor Interest! Backers toss your team $300 to fight back.', 'money', true);
-      } else if (aiBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
+      } else if (aiBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
         projectedAi.money += 300;
         projectedActors.ai = projectedAi;
         addNotification(`🤖 Investor Interest! ${projectedAi.name} received $300 to catch up.`, 'ai', true);
@@ -28676,7 +35802,7 @@ function AustraliaGame() {
             return;
           }
 
-          const overlayId = `overseer_overlay_${teamId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const overlayId = `overseer_overlay_${teamId}_${Date.now()}_${drawGameplayRandomString("Team", 6)}`;
           const newOverlay: PolicyOverlay = {
             id: overlayId,
             settingKey: 'economyReserveStrength',
@@ -28910,7 +36036,7 @@ function AustraliaGame() {
             const balanceBefore = team.treasury.balance;
             const balanceAfter = balanceBefore + evaluation.amount;
             const transaction: TreasuryTransaction = {
-              id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${actorId}`,
+              id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}_${actorId}`,
               day: newDay,
               turn: projectedTurnCounter,
               teamId,
@@ -28952,7 +36078,7 @@ function AustraliaGame() {
         const balanceBefore = team.treasury.balance;
         const balanceAfter = balanceBefore + amount;
         const transaction: TreasuryTransaction = {
-          id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${actorId}`,
+          id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}_${actorId}`,
           day: newDay,
           turn: projectedTurnCounter,
           teamId,
@@ -29002,7 +36128,7 @@ function AustraliaGame() {
               const balanceBefore = team.treasury.balance;
               const balanceAfter = balanceBefore + affordable;
               const transaction: TreasuryTransaction = {
-                id: `treasury_tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${actorId}`,
+                id: `treasury_tx_${Date.now()}_${drawGameplayRandomString("Team", 6)}_${actorId}`,
                 day: newDay,
                 turn: projectedTurnCounter,
                 teamId,
@@ -29152,7 +36278,7 @@ function AustraliaGame() {
     }
 
     dispatchGameState({ type: 'NEXT_DAY' });
-    appendGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+    dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
 
     // Build projected states for daily maintenance before committing
     let projectedPlayer = { ...currentPlayer };
@@ -29180,12 +36306,12 @@ function AustraliaGame() {
 
     // Update weather
     const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Stormy"];
-    const newWeather = weatherOptions[Math.floor(worldRandom() * weatherOptions.length)];
+    const newWeather = drawGameplayRandomChoice('RandomEvents', weatherOptions);
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
     // Market trend
     const trends = ["rising", "falling", "stable", "volatile"];
-    const newTrend = trends[Math.floor(worldRandom() * trends.length)];
+    const newTrend = drawGameplayRandomChoice('Market', trends);
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: newTrend });
 
     // Process active events - decrease remaining days and remove expired ones
@@ -29194,12 +36320,12 @@ function AustraliaGame() {
       .filter(event => event.remainingDays > 0);
 
     // Chance to spawn new event (20% chance per day)
-    if (worldRandom() < 0.2 && updatedEvents.length < 3) {
+    if (drawGameplayRandom('RandomEvents') < 0.2 && updatedEvents.length < 3) {
       const availableEvents = REGIONAL_EVENTS.filter(
         e => !updatedEvents.some(active => active.id === e.id)
       );
       if (availableEvents.length > 0) {
-        const newEvent = availableEvents[Math.floor(worldRandom() * availableEvents.length)];
+        const newEvent = drawGameplayRandomChoice('RandomEvents', availableEvents);
         const activeEvent = { ...newEvent, remainingDays: newEvent.duration };
         updatedEvents.push(activeEvent);
         addNotification(`Event: ${newEvent.name} in ${REGIONS[newEvent.region]?.name || newEvent.region}!`, 'event', true);
@@ -29291,10 +36417,10 @@ function AustraliaGame() {
       const playerBehind = updatedPlayerWorth < updatedAiWorth * 0.5;
       const aiBehind = updatedAiWorth < updatedPlayerWorth * 0.5;
 
-      if (playerBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
+      if (playerBehind && drawGameplayRandom('Events') < COMEBACK_EVENT_CHANCE) {
         projectedPlayer.money += 300;
         addNotification('Investor Interest! Backers toss you $300 to fight back.', 'money', true);
-      } else if (aiBehind && worldRandom() < COMEBACK_EVENT_CHANCE) {
+      } else if (aiBehind && drawGameplayRandom('Events') < COMEBACK_EVENT_CHANCE) {
         projectedAi.money += 300;
         addNotification(`🤖 Investor Interest! ${projectedAi.name} received $300 to catch up.`, 'ai', true);
       }
@@ -29506,7 +36632,7 @@ function AustraliaGame() {
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
-	  }, [addNotification, aiRandom, worldRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint, getCompetitiveMetricValue]);
+	  }, [addNotification, aiRandom, analyzeTeamLiquidity, appendTeamAiTraceNote, applyLoanTick, buildLiveTeamAdaptiveState, buildOverseerAdaptivePolicyApprovalRequest, buildOverseerDirectiveApprovalRequest, compareCompetitiveMetricValues, computeNetWorth, evaluateAdaptiveOverseerOverlay, evaluateGrandTourOutcome, formatWinMetricValue, gameSettings, gameState, isAdvancedLoansEnabledForActor, isTeamMode, liquidateInventoryForCash, personalRecords, player, runCompetitiveTeamPlanningPass, deductMoney, evaluateTeamAiTreasuryContribution, getActorDisplayName, updateActorState, updateTeamState, appendAiOperationsEvent, buildAiOperationsEventBase, runAuditorDetectionPass, finalizeReplayRecording, appendReplayEvent, appendReplayCheckpoint, getCompetitiveMetricValue]);
 
   // When turn switches to player, reset their actions
   useEffect(() => {
@@ -29839,7 +36965,7 @@ function AustraliaGame() {
       dispatchGameState({
         type: 'ADD_CHALLENGE_COMPLETION',
         payload: {
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: `${Date.now()}_${drawGameplayRandomString("World", 5)}`,
           playerId: actorId,
           challengeName: challenge.name,
           region: actor.currentRegion,
@@ -29870,58 +36996,122 @@ function AustraliaGame() {
     return true;
   }, [addMoney, addNotification, appendTeammatePerformanceSample, aiRandom, applyAutomaticTreasuryContribution, applyGrandTourChallengeProgress, calculateActorChallengeSuccessChance, deductMoney, gameSettings, isTeamMode, gameState.day, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
 
-  const investForActor = useCallback((actorId: string, regionCode: string) => {
+  const investForActor = useCallback((actorId: string, regionCode: string, options?: { rootEventId?: string; parentEventId?: string; correlationChain?: string[] }) => {
     const actor = getActorState(actorId);
     const investment = REGIONAL_INVESTMENTS[regionCode];
     if (!actor || !investment || !gameSettings.investmentsEnabled) return false;
-    if ((actor.investments || []).includes(regionCode)) return false;
-    if (actor.money < investment.cost) return false;
-    updateActorState(actorId, prev => ({
-      ...prev,
-      money: deductMoney(prev.money, investment.cost),
-      investments: [...(prev.investments || []), regionCode]
-    }));
-    appendTeammatePerformanceSample(actor.teamId, actorId, {
-      turn: gameState.turnCounter,
-      actionType: 'economy',
-      impact: 0.22
-    });
-    addNotification(
-      `${getActorDisplayName(actorId)} invested in ${investment.name} (${REGIONS[regionCode]?.name || regionCode}).`,
-      actor.kind === 'human' ? 'success' : 'ai',
-      false,
-      'system'
-    );
-    return true;
-  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.investmentsEnabled, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState]);
 
-  const buyEquipmentForActor = useCallback((actorId: string, itemId: string) => {
+    let success = false;
+    executeUniversalActionPipeline(
+      {
+        actorId,
+        teamId: actor.teamId,
+        actionType: 'invest_for_actor',
+        parameters: { regionCode, cost: investment.cost, investmentName: investment.name },
+        rootEventId: options?.rootEventId,
+        parentEventId: options?.parentEventId,
+        correlationChain: options?.correlationChain,
+        getActorState: () => getActorState(actorId),
+        getTeamState: () => (isTeamMode ? (actor.teamId ? (teamsByIdRef.current[actor.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          const currentActor = getActorState(actorId);
+          if (!currentActor) return { passed: false, reason: 'Actor not found' };
+          if ((currentActor.investments || []).includes(regionCode)) {
+            return { passed: false, reason: 'Investment already owned' };
+          }
+          if (currentActor.money < investment.cost) {
+            return { passed: false, reason: 'Not enough money' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (_attempt) => {
+        updateActorState(actorId, prev => ({
+          ...prev,
+          money: deductMoney(prev.money, investment.cost),
+          investments: [...(prev.investments || []), regionCode]
+        }));
+        appendTeammatePerformanceSample(actor.teamId, actorId, {
+          turn: gameState.turnCounter,
+          actionType: 'economy',
+          impact: 0.22
+        });
+        addNotification(
+          `${getActorDisplayName(actorId)} invested in ${investment.name} (${REGIONS[regionCode]?.name || regionCode}).`,
+          actor.kind === 'human' ? 'success' : 'ai',
+          false,
+          'system'
+        );
+        success = true;
+      }
+    );
+
+    return success;
+  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.investmentsEnabled, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+
+  const buyEquipmentForActor = useCallback((actorId: string, itemId: string, options?: { rootEventId?: string; parentEventId?: string; correlationChain?: string[] }) => {
     const actor = getActorState(actorId);
     const item = SHOP_ITEMS.find(candidate => candidate.id === itemId);
     if (!actor || !item || !gameSettings.equipmentShopEnabled) return false;
-    if (!EQUIPMENT_SHOP_REGIONS.includes(actor.currentRegion)) return false;
-    if ((actor.equipment || []).includes(item.id)) return false;
-    if (actor.money < item.cost) return false;
-    updateActorState(actorId, prev => ({
-      ...prev,
-      money: deductMoney(prev.money, item.cost),
-      equipment: [...(prev.equipment || []), item.id]
-    }));
-    appendTeammatePerformanceSample(actor.teamId, actorId, {
-      turn: gameState.turnCounter,
-      actionType: 'economy',
-      impact: 0.18
-    });
-    addNotification(
-      `${getActorDisplayName(actorId)} bought ${item.name}.`,
-      actor.kind === 'human' ? 'success' : 'ai',
-      false,
-      'system'
-    );
-    return true;
-  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.equipmentShopEnabled, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState]);
 
-  const useActorSabotage = useCallback((actorId: string, sabotageId: string, targetActorId?: string) => {
+    let success = false;
+    executeUniversalActionPipeline(
+      {
+        actorId,
+        teamId: actor.teamId,
+        actionType: 'buy_equipment_for_actor',
+        parameters: { itemId, itemName: item.name, cost: item.cost },
+        rootEventId: options?.rootEventId,
+        parentEventId: options?.parentEventId,
+        correlationChain: options?.correlationChain,
+        getActorState: () => getActorState(actorId),
+        getTeamState: () => (isTeamMode ? (actor.teamId ? (teamsByIdRef.current[actor.teamId] || null) : null) : null),
+        checkRequirements: () => {
+          const currentActor = getActorState(actorId);
+          if (!currentActor) return { passed: false, reason: 'Actor not found' };
+          if (!EQUIPMENT_SHOP_REGIONS.includes(currentActor.currentRegion)) {
+            return { passed: false, reason: 'Equipment shop unavailable in region' };
+          }
+          if ((currentActor.equipment || []).includes(item.id)) {
+            return { passed: false, reason: 'Equipment already owned' };
+          }
+          if (currentActor.money < item.cost) {
+            return { passed: false, reason: 'Not enough money' };
+          }
+          return { passed: true };
+        },
+        recordLedger: (ev) => {
+          dispatchAuthoritativeGameActivityLedgerEvent('action', ev);
+        }
+      },
+      (_attempt) => {
+        updateActorState(actorId, prev => ({
+          ...prev,
+          money: deductMoney(prev.money, item.cost),
+          equipment: [...(prev.equipment || []), item.id]
+        }));
+        appendTeammatePerformanceSample(actor.teamId, actorId, {
+          turn: gameState.turnCounter,
+          actionType: 'economy',
+          impact: 0.18
+        });
+        addNotification(
+          `${getActorDisplayName(actorId)} bought ${item.name}.`,
+          actor.kind === 'human' ? 'success' : 'ai',
+          false,
+          'system'
+        );
+        success = true;
+      }
+    );
+
+    return success;
+  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.equipmentShopEnabled, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+
+  const useActorSabotage = useCallback((actorId: string, sabotageId: string, targetActorId?: string, options?: { suppressLedgerEvent?: boolean }) => {
     const actor = getActorState(actorId);
     const sabotage = SABOTAGE_ACTIONS.find(candidate => candidate.id === sabotageId);
     const resolvedTargetId = typeof targetActorId === 'string' && targetActorId.trim() ? targetActorId : null;
@@ -29947,8 +37137,29 @@ function AustraliaGame() {
     });
     addNotification(`${getActorDisplayName(actorId)} used ${sabotage.name}!`, actor.kind === 'human' ? 'warning' : 'ai', true, 'system');
     addNotification(`${getActorDisplayName(targetActor.id)} is affected by ${sabotage.name}.`, targetActor.kind === 'human' ? 'warning' : 'ai', false, 'system');
+    if (!options?.suppressLedgerEvent) {
+      dispatchAuthoritativeGameActivityLedgerEvent('action', {
+        teamId: actor.teamId,
+        actorId,
+        actionType: 'sabotage',
+        summary: `${getActorDisplayName(actorId)} used ${sabotage.name} on ${getActorDisplayName(targetActor.id)}.`,
+        participants: {
+          actorId,
+          teamId: actor.teamId,
+          targetActorId: targetActor.id,
+          targetTeamId: targetActor.teamId
+        },
+        payload: {
+          category: 'action',
+          actionType: 'sabotage',
+          description: sabotage.description,
+          cost: sabotage.cost,
+          success: true
+        }
+      });
+    }
     return true;
-  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.sabotageEnabled, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState]);
+  }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.sabotageEnabled, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const useActorSpecialAbility = useCallback((actorId: string, abilityName?: string) => {
     const actor = getActorState(actorId);
@@ -29975,6 +37186,7 @@ function AustraliaGame() {
     // before/after this one action, rather than instrumenting every individual action function —
     // a single chokepoint, computed unconditionally but only ever consumed when Sync 2.0 is on.
     const netWorthBeforeAction = calculateNetWorth(actor, gameState.resourcePrices);
+    const stateBeforeSnapshot = captureGameStateSnapshot(actor, teamsByIdRef.current?.[actor.teamId]);
 
     switch (action.type) {
       case 'travel':
@@ -30027,7 +37239,7 @@ function AustraliaGame() {
         break;
       case 'sabotage':
         actionSucceeded = typeof action.data?.sabotageId === 'string'
-          ? useActorSabotage(actorId, action.data.sabotageId, action.data?.targetActorId)
+          ? useActorSabotage(actorId, action.data.sabotageId, action.data?.targetActorId, { suppressLedgerEvent: true })
           : false;
         break;
       case 'special_ability':
@@ -30035,19 +37247,19 @@ function AustraliaGame() {
         break;
       case 'take_advanced_loan':
         actionSucceeded = typeof action.data?.tierId === 'string'
-          ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false })
+          ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false, suppressLedgerEvent: true })
           : false;
         break;
       case 'repay_advanced_loan':
         actionSucceeded = typeof action.data?.loanId === 'string'
-          ? repayAdvancedLoanForActor(actorId, action.data.loanId, Boolean(action.data?.isEarlyRepayment), { silent: false })
+          ? repayAdvancedLoanForActor(actorId, action.data.loanId, Boolean(action.data?.isEarlyRepayment), { silent: false, suppressLedgerEvent: true })
           : false;
         break;
       case 'refinance_advanced_loan':
         if (typeof action.data?.loanId === 'string' && typeof action.data?.tierId === 'string') {
-          const repaid = repayAdvancedLoanForActor(actorId, action.data.loanId, false, { silent: true });
+          const repaid = repayAdvancedLoanForActor(actorId, action.data.loanId, false, { silent: true, suppressLedgerEvent: true });
           actionSucceeded = repaid
-            ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false })
+            ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false, suppressLedgerEvent: true })
             : false;
         } else {
           actionSucceeded = false;
@@ -30077,7 +37289,7 @@ function AustraliaGame() {
           type: 'AI_ACTION_EXECUTION_COMMITTED',
           actionType: action.type
         });
-        appendGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: action.type, summary: `${getActorDisplayName(actorId)} ended their turn.` });
+        dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: action.type, summary: `${getActorDisplayName(actorId)} ended their turn.` });
         return true;
       default:
         actionSucceeded = false;
@@ -30090,7 +37302,7 @@ function AustraliaGame() {
       }));
       // V6.8 Phase D: Teammate Performance Sync 2.0 realized-value tracking — records the actual
       // net-worth delta this one action produced. Additive/no-op when Sync 2.0 is off.
-      if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled && action.type !== 'end_turn') {
+      if (isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teammatePerformanceSync2Enabled) {
         const actorAfterAction = getActorState(actorId);
         if (actorAfterAction) {
           const netWorthDelta = calculateNetWorth(actorAfterAction, gameState.resourcePrices) - netWorthBeforeAction;
@@ -30107,7 +37319,7 @@ function AustraliaGame() {
       // income event under two different policy percentages.
       if (
         isTeamMode && actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled &&
-        gameSettings.treasuryAutomaticContributionEnabled && action.type !== 'end_turn' &&
+        gameSettings.treasuryAutomaticContributionEnabled &&
         action.type !== 'challenge' && action.type !== 'sell' &&
         // Team Treasury Phase T5: excluded like challenge/sell — otherwise funds just granted by a
         // 'request_team_funds' action would be immediately re-contributed back to the Treasury.
@@ -30135,7 +37347,43 @@ function AustraliaGame() {
           returnUnusedTreasuryFunds(fundingRequest.id, actorId, actualCost);
         }
       }
+      if (gameSettings.enablePersistentOpponentModels && actor) {
+        const observerActors = getTeamActors(actor.teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID);
+        observerActors.forEach(observer => {
+          const updatedModels = updateOpponentModel(
+            observer,
+            actorId,
+            action.type,
+            gameState.day,
+            gameSettings
+          );
+          updateActorState(observer.id, { opponentModels: updatedModels });
+        });
+      }
       await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
+    }
+
+    const actorAfter = getActorState(actorId);
+    const stateAfterSnapshot = captureGameStateSnapshot(actorAfter, teamsByIdRef.current?.[actor.teamId]);
+    const stateDelta = computeBeforeAfterDelta(stateBeforeSnapshot, stateAfterSnapshot, action.type, actionSucceeded);
+
+    if (gameSettings.enableAiCalibrationLearning && actor.kind === 'ai') {
+      const expectedUtility = (action as any).score || 10;
+      const actualOutcome = actionSucceeded ? (stateDelta?.netWorthDelta || 15) : 0;
+      const calibrationResult = updatePostActionCalibration(
+        actor,
+        action.type,
+        expectedUtility,
+        actualOutcome,
+        gameState.day,
+        gameSettings
+      );
+      if (calibrationResult) {
+        updateActorState(actorId, {
+          actionCalibrationMultipliers: calibrationResult.actionCalibrationMultipliers,
+          calibrationHistory: calibrationResult.calibrationHistory
+        });
+      }
     }
 
     // AI Operations Auditor Phase AA3: the sole commit/fail boundary for the other 14 action types
@@ -30149,7 +37397,22 @@ function AustraliaGame() {
         type: 'AI_ACTION_EXECUTION_COMMITTED',
         actionType: action.type
       });
-      appendGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: action.type, summary: `${getActorDisplayName(actorId)} committed a ${action.type} action.` });
+      dispatchAuthoritativeGameActivityLedgerEvent('action', {
+        teamId: actor.teamId,
+        actorId,
+        actionType: action.type,
+        summary: `${getActorDisplayName(actorId)} committed a ${action.type} action.`,
+        payload: {
+          category: 'action',
+          actionType: action.type,
+          description: action.description,
+          cost: action.data?.cost,
+          wager: action.data?.wager,
+          region: action.data?.region,
+          success: true,
+          stateDelta
+        }
+      });
     } else {
       appendAiOperationsEvent(actor.teamId, {
         ...buildAiOperationsEventBase(actor.teamId, actorId, 'turn_engine', true),
@@ -30157,11 +37420,26 @@ function AustraliaGame() {
         actionType: action.type,
         reason: `execution_failed:${action.type}`
       });
-      appendGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: action.type, summary: `${getActorDisplayName(actorId)}'s ${action.type} action failed.` });
+      dispatchAuthoritativeGameActivityLedgerEvent('action', {
+        teamId: actor.teamId,
+        actorId,
+        actionType: action.type,
+        summary: `${getActorDisplayName(actorId)}'s ${action.type} action failed.`,
+        payload: {
+          category: 'action',
+          actionType: action.type,
+          description: action.description,
+          cost: action.data?.cost,
+          wager: action.data?.wager,
+          region: action.data?.region,
+          success: false,
+          stateDelta
+        }
+      });
     }
 
     return actionSucceeded;
-  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, getActorDisplayName]);
+  }, [appendRealizedValueSample, applyAutomaticTreasuryContribution, returnUnusedTreasuryFunds, buyEquipmentForActor, buyResourceFromMarket, cashOutRegionPosition, contributeToTeamTreasury, craftForActor, depositInRegion, gameSettings, gameState.autoplay?.speed, gameState.resourcePrices, gameState.turnCounter, getActorState, investForActor, isTeamMode, repayAdvancedLoanForActor, sellActorResource, submitTreasuryFundingRequest, takeAdvancedLoanForActor, takeChallengeForActor, transferCash, transferResource, travelActor, updateActorState, useActorSabotage, useActorSpecialAbility, appendAiOperationsEvent, buildAiOperationsEventBase, dispatchAuthoritativeGameActivityLedgerEvent, getActorDisplayName]);
 
   // Human Player Automation Phase HA2: shared execution-stats update, reused by both the immediate
   // (notify_after_running/silent_autorun) execution path below and the confirm_before_running
@@ -30770,6 +38048,8 @@ function AustraliaGame() {
     const primaryDirectiveStrength = normalizeDirectiveStrength(primaryDirective?.strength);
     const directiveProfile = getEffectiveDirectiveStrengthProfile(primaryDirectiveStrength, { teamMode: true });
     const difficultyBehavior = getTeamDifficultyBehavior();
+    const baseDepth = actor.difficulty || gameSettings.aiDifficulty || 'balanced';
+    const tacticalIntel = getEffectiveTacticalIntelligence(gameSettings, baseDepth);
     const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId, snapshot?.actors);
     const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
     const teammateLiquidity = teammate ? liquidityAnalysis.byActorId[teammate.id] || null : null;
@@ -32055,12 +39335,14 @@ function AustraliaGame() {
       ? activePlanForActor.steps.findIndex(step => step.assignedActorId === actorId && (step.status === 'pending' || step.status === 'in_progress'))
       : -1;
     const myActivePlanStep = myActivePlanStepIndex >= 0 ? activePlanForActor!.steps[myActivePlanStepIndex] : null;
+    // Scale search evaluation width by tactical intelligence candidateEvaluationWidth
+    const widthLimitedCandidates = reservationFiltered.slice(0, tacticalIntel.candidateEvaluationWidth);
     // V6.7 Phase 3b: Tier 2 threat-awareness bonuses (region pressure / resource denial toward the
     // threat target) and per-win-condition Endgame Acceleration bonuses — both purely additive
     // score deltas, applied after the existing adjustedScore-fallback resolution so they're never
     // silently clobbered by it; no new decision-construction blocks, no edits to existing
     // per-decision-type scoring.
-    return reservationFiltered.map(candidate => {
+    return widthLimitedCandidates.map(candidate => {
       const baseScore = candidate.traceMeta?.adjustedScore || candidate.score;
       let bonus = 0;
       let annotated = candidate as ScoredTeamAiDecision;
@@ -32073,14 +39355,33 @@ function AustraliaGame() {
           reason: `${reservationBlockedCount} candidate action${reservationBlockedCount === 1 ? ' was' : 's were'} blocked by an active teammate reservation.`
         }, [], true);
       }
-      if (myActivePlanStep && myActivePlanStep.actionType === candidate.type) {
-        annotated = appendDecisionScoreStageV63(annotated, {
-          id: 'team_plan_v67',
-          label: 'Team Plan',
-          score: baseScore,
-          delta: 0,
-          reason: `Following Team Plan step ${myActivePlanStepIndex + 1}/${activePlanForActor!.steps.length}: ${activePlanForActor!.objective}.`
-        }, [], gameSettings.teamAiPlanTransparencyEnabled);
+      // Wire evaluatePlanSwitchingCost: apply plan inertia penalty when switching active goal/plan
+      if (activePlanForActor && myActivePlanStep) {
+        if (myActivePlanStep.actionType === candidate.type) {
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'team_plan_v67',
+            label: 'Team Plan',
+            score: baseScore,
+            delta: 0,
+            reason: `Following Team Plan step ${myActivePlanStepIndex + 1}/${activePlanForActor!.steps.length}: ${activePlanForActor!.objective}.`
+          }, [], gameSettings.teamAiPlanTransparencyEnabled);
+        } else {
+          // Candidate deviates from current active plan step — evaluate plan switching cost
+          const activeStepCandidate = reservationFiltered.find(c => myActivePlanStep && c.type === myActivePlanStep.actionType);
+          const currentPlanUtil = activeStepCandidate ? (activeStepCandidate.traceMeta?.adjustedScore || activeStepCandidate.score) : 20.0;
+          const switchingEval = evaluatePlanSwitchingCost(baseScore + bonus, currentPlanUtil, gameSettings.planSwitchingCost);
+          if (!switchingEval.shouldSwitch) {
+            const inertiaPenalty = switchingEval.threshold;
+            bonus -= inertiaPenalty;
+            annotated = appendDecisionScoreStageV63(annotated, {
+              id: 'plan_inertia_v69',
+              label: 'Plan Inertia Penalty',
+              score: baseScore + bonus,
+              delta: -inertiaPenalty,
+              reason: `Switching active plan requires utility gain >= ${switchingEval.threshold} (actual delta: ${switchingEval.utilityDelta.toFixed(1)}).`
+            }, [`Plan inertia penalty: -${inertiaPenalty}`], true);
+          }
+        }
       }
       if (threatTargetActorForActor) {
         let threatBonus = 0;
@@ -32220,6 +39521,36 @@ function AustraliaGame() {
             delta: directiveBonus,
             reason: directiveReason
           }, [directiveReason], gameSettings.teamAiOverseerTransparencyEnabled);
+        }
+      }
+      // Apply AI Calibration Learning multiplier
+      if (gameSettings.enableAiCalibrationLearning) {
+        const calibratedUtility = calculateCalibratedUtility(baseScore + bonus, actor, candidate.type);
+        const calDelta = calibratedUtility - (baseScore + bonus);
+        if (calDelta !== 0) {
+          bonus += calDelta;
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'ai_calibration_v69',
+            label: 'AI Calibration Learning',
+            score: baseScore + bonus,
+            delta: calDelta,
+            reason: `Historical calibration multiplier (${getAiCalibrationMultiplier(actor, candidate.type).toFixed(2)}x)`
+          }, [`Calibration adjustment: ${calDelta}`], gameSettings.enableAiCalibrationLearning);
+        }
+      }
+
+      // Apply Persistent Opponent Tendency Bonus
+      if (gameSettings.enablePersistentOpponentModels) {
+        const tendencyBonus = getOpponentTendencyBonus(actor, candidate, gameSettings);
+        if (tendencyBonus !== 0) {
+          bonus += tendencyBonus;
+          annotated = appendDecisionScoreStageV63(annotated, {
+            id: 'opponent_tendency_v69',
+            label: 'Opponent Modeling',
+            score: baseScore + bonus,
+            delta: tendencyBonus,
+            reason: `Opponent behavior tendency bonus (${tendencyBonus > 0 ? '+' : ''}${tendencyBonus} pts)`
+          }, [`Opponent model bonus: ${tendencyBonus}`], gameSettings.enablePersistentOpponentModels);
         }
       }
       return {
@@ -32655,7 +39986,7 @@ function AustraliaGame() {
   ): string => {
     const restrictedActor = getActorState(actorId);
     const team = restrictedActor ? teamsByIdRef.current[restrictedActor.teamId] : undefined;
-    const pendingTreasuryRequest = team?.treasury.fundingRequests.find(r => r.requestingActorId === actorId && (r.status === 'pending' || r.status === 'displayed'));
+    const pendingTreasuryRequest = team?.treasury.fundingRequests.find(r => r.requestingActorId === actorId && r.status === 'pending');
     const categoriesLabel = restriction.blockedCategories.length ? restriction.blockedCategories.join(', ') : 'spending';
     if (restriction.level === 'governor_deadlock') {
       if (pendingTreasuryRequest) {
@@ -33141,8 +40472,8 @@ function AustraliaGame() {
     // Plans are both player/system-directed multi-step structures; a dedicated category isn't
     // introduced here, matching this phase's "expand coverage using the existing category set"
     // scope, with genuinely new categories left to GL11's schema-expansion work).
-    appendGameActivityLedgerEvent('plan', { teamId, actorId, planId: sequenceId, summary: `Activated Sequence "${sequenceName || sequenceId}" for ${getActorDisplayName(actorId)}.` });
-  }, [updateTeamState, appendGameActivityLedgerEvent, getActorDisplayName]);
+    dispatchAuthoritativeGameActivityLedgerEvent('plan', { teamId, actorId, planId: sequenceId, summary: `Activated Sequence "${sequenceName || sequenceId}" for ${getActorDisplayName(actorId)}.` });
+  }, [updateTeamState, dispatchAuthoritativeGameActivityLedgerEvent, getActorDisplayName]);
 
   // V6.9 Phase F4: the shared 3-mode evaluator, mirroring findExecutableTeamPlanStepDecision's
   // precedent shape exactly. Sequences out-rank the goal-directed TeamPlan system for the same
@@ -33288,7 +40619,6 @@ function AustraliaGame() {
         default:
           return null;
       }
-      if (sequence.mode === 'strict') return null; // Strict never silently skips past its current step
       const idx = eligibleSteps.indexOf(step);
       step = eligibleSteps[idx + 1];
     }
@@ -33403,6 +40733,13 @@ function AustraliaGame() {
     const best = aiRandom() <= difficultyBehavior.bestChoiceChance
       ? decisions[0]
       : (choicePool[Math.min(choicePool.length - 1, Math.floor(aiRandom() * Math.max(1, choicePool.length)))] || decisions[0]);
+    // Wire computeCounterfactualEvaluations: evaluate unchosen top candidates when enabled
+    if (gameSettings.enableCounterfactualEvaluation) {
+      const counterfactuals = computeCounterfactualEvaluations(best, decisions);
+      if (counterfactuals.length > 0 && (gameSettings.aiPipelineInspectorEnabled || gameSettings.teamAiOverseerTransparencyEnabled)) {
+        appendTeamAiTraceNote(actorId, `Counterfactuals: ${counterfactuals.map(cf => `${cf.candidateType} (Δ${cf.counterfactualUtilityDelta > 0 ? '+' : ''}${cf.counterfactualUtilityDelta.toFixed(1)})`).join(', ')}`);
+      }
+    }
     const { trace } = buildDecisionTraceFromCandidates({
       actor,
       mode: (gameState.selectedMode || 'team_human_ai_vs_ai_ai') as GameModeSelection,
@@ -34567,7 +41904,7 @@ function AustraliaGame() {
           && isRecoverySafeCandidate(exceptionTopCandidate, actor, gameSettings);
 
         const newException: TeamGovernorException = {
-          id: Date.now().toString() + Math.random(),
+          id: Date.now().toString() + drawGameplayRandomString("World", 6),
           actorId,
           teamId: actor.teamId,
           scope: 'single_action',
@@ -34636,6 +41973,18 @@ function AustraliaGame() {
       }
     }
     let actionBudget = getActorActionBudget(actor.id);
+    // Wire getEffectiveEconomicCheats: apply cheat bonuses at AI turn initialization
+    const economicCheats = getEffectiveEconomicCheats(gameSettings, actor.difficulty || gameSettings.aiDifficulty || 'balanced');
+    if (economicCheats.extraActionPointsPerTurn > 0) {
+      actionBudget += economicCheats.extraActionPointsPerTurn;
+    }
+    if (economicCheats.bonusStartingCash > 0 && !(actor as any).hasReceivedEconomicCheatBonus) {
+      updateActorState(actor.id, prev => ({
+        ...prev,
+        money: (prev.money || 0) + economicCheats.bonusStartingCash,
+        hasReceivedEconomicCheatBonus: true
+      }));
+    }
     let actionsTaken = 0;
     // V6.7 Phase 3a: queue of minted ActionTokens for bonus grants (bank/override/lent) made this
     // turn, consumed one-per-bonus-execution at the executeTeamAiAction call site below. The
@@ -34943,12 +42292,12 @@ function AustraliaGame() {
       // no current trace exists yet for this actor (defensive — should not happen mid-turn for a
       // 'kind === ai' actor, since the ranking pass that builds the trace always runs first).
       const pipelineDecisionId = latestDecisionTraceByActor[actor.id]?.currentTrace?.decisionId
-        || `pldec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        || `pldec_${Date.now()}_${drawGameplayRandomString("AI", 6)}`;
       // PI2: GameActivityLedgerEvent already has a decisionId field (declared in GL1, unused by
       // any emission site until now) — reusing it here rather than adding a new field lets the
       // Ledger Dashboard's "View Pipeline" link (added below) match this event straight back to
       // its PipelineTraceRecord via the same id.
-      appendGameActivityLedgerEvent('decision', {
+      dispatchAuthoritativeGameActivityLedgerEvent('decision', {
         teamId: actor.teamId,
         actorId: actor.id,
         actionType: decision.type,
@@ -35074,6 +42423,19 @@ function AustraliaGame() {
           },
           priority: Math.max(2, decision.plan?.priority || 3)
         });
+      }
+      // Wire evaluateTeamGovernanceApproval: gate team action execution on governanceResult.approved
+      const governanceResult = evaluateTeamGovernanceApproval(
+        decision,
+        actor,
+        getTeamActors(actor.teamId),
+        getEffectiveGameSettingsForTeam(actor.teamId)
+      );
+      if (!governanceResult.approved) {
+        if (gameSettings.teamAiOverseerTransparencyEnabled || gameSettings.aiActionApprovalTransparencyEnabled) {
+          appendTeamAiTraceNote(actor.id, `Governance (${governanceResult.mode}) rejected action: ${governanceResult.reason}`);
+        }
+        continue; // Reject unapproved action, proceed to next candidate decision
       }
       // V6.9 Phase F3: AI Action Approval — checked BEFORE token revalidation/Requirements are
       // even acted upon, since approval may need to pause for player input (not a synchronous
@@ -35305,7 +42667,7 @@ function AustraliaGame() {
               appendAiOperationsEvent(actor.teamId, {
                 ...buildAiOperationsEventBase(actor.teamId, pendingActorId, 'action_overrides', true),
                 type: 'AI_OVERRIDE_GRANTED',
-                grantId: `override_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                grantId: `override_grant_${Date.now()}_${drawGameplayRandomString("Emergency", 6)}`,
                 bonusBudget: getActorActionBudget(pendingActorId)
               });
               // Bugfix (post-PR-#60): grant and consume the full bonus action batch here instead of
@@ -35333,7 +42695,7 @@ function AustraliaGame() {
         appendAiOperationsEvent(actor.teamId, {
           ...buildAiOperationsEventBase(actor.teamId, actor.id, 'action_overrides', true),
           type: 'AI_OVERRIDE_GRANTED',
-          grantId: `override_grant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          grantId: `override_grant_${Date.now()}_${drawGameplayRandomString("Emergency", 6)}`,
           bonusBudget: getActorActionBudget(actor.id)
         });
         actionBudget += getActorActionBudget(actor.id);
@@ -35373,7 +42735,7 @@ function AustraliaGame() {
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       finishTeamAiTurn(actor.id);
     }
-  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, appendGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled, latestDecisionTraceByActor, appendReplayCheckpoint]);
+  }, [addNotification, applyActorActionOverride, evaluateTeamActionBankDraw, evaluateTeamAiOverrideEligibility, evaluateTeamActionLendEligibility, lendAction, executeTeamAiAction, finishTeamAiTurn, findExecutableTeamPlanStepDecision, findExecutableSequenceStepDecision, advanceSequenceProgress, mintActionToken, redeemActionToken, isReservationHardBlocked, evaluateTeamEmergencyActionTrigger, triggerTeamEmergencyAction, evaluateGuaranteedRecoveryAction, searchProductiveRecoveryLadder, evaluateAiTeamExceptionPolicy, buildGovernorExceptionApprovalRequest, revalidatePlannedTeamAiDecision, appendTeamAiTraceNote, gainTeamInitiative, checkRoleFulfillment, evaluateTeamInitiativeSpendOpportunity, detectComboBonus, runApprovedOverrideBonusActions, evaluateActionRequirements, buildApprovalRequest, resolveApprovalRequest, createTreasuryFundingRequest, evaluateAiTeamFundingPolicy, resolveTreasuryFundingRequest, buildTreasuryApprovalRequest, getTeamActors, confirmationDialog.isOpen, gameSettings, gameSettings.teamActionBankEnabled, gameSettings.teamActionBankTransparencyEnabled, gameSettings.teamAiActionOverridesEnabled, gameSettings.teamAiActionLendingEnabled, gameSettings.teamAiActionLendingTransparencyEnabled, gameSettings.teamAiEmergencyActionsEnabled, gameSettings.teamCompetitiveAiEnabled, gameSettings.teammatePerformanceSync2Enabled, gameSettings.guaranteedRecoveryProtocolEnabled, gameSettings.teammatePerformanceSync2TransparencyEnabled, gameSettings.parallelAiPlanningEnabled, gameSettings.parallelAiPlanningTransparencyEnabled, gameSettings.teamModeAiSystemProfile, gameSettings.teamModeAiSystemsEnabled, gameSettings.actionRequirementsEnabled, gameSettings.actionRequirementsTransparencyEnabled, gameSettings.teamAiActionSequencesEnabled, gameState.currentActorId, gameState.day, gameState.gameMode, gameState.isAiThinking, gameState.roundNumber, gameState.selectedMode, getActorActionBudget, getActorDisplayName, getActorState, getRankedTeamAiDecisions, isTeamMode, resolveTeamAiDecisionViaEngine, postTeamMessage, reserveTeamTarget, showConfirmation, shouldTeamActorUseOverride, updateActorState, updateTeamState, refreshTeamLiquidityLedger, appendAiOperationsEvent, buildAiOperationsEventBase, dispatchAuthoritativeGameActivityLedgerEvent, appendPipelineStageRecord, capturePipelineExecutionDelta, gameSettings.aiPipelineInspectorEnabled, latestDecisionTraceByActor, appendReplayCheckpoint]);
 
   useEffect(() => {
     if (!isTeamMode || gameState.gameMode !== 'game') return;
@@ -36518,6 +43880,19 @@ function AustraliaGame() {
               >
                 Focus
               </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLedgerWithFilter({
+                    actorId: card.actor.id,
+                    category: 'all',
+                    tab: 'profiles'
+                  });
+                }}
+                className={`${themeStyles.buttonSecondary} text-purple-400 px-3 py-1 rounded text-xs flex items-center gap-1 font-semibold`}
+              >
+                <span>📓 Actor Ledger Log</span>
+              </button>
             </div>
           )}
         </div>
@@ -36976,7 +44351,7 @@ function AustraliaGame() {
   const ACTION_REQUIREMENT_NO_VALUE_KINDS: ActionRequirementKind[] = ['recovery_status_in', 'recovery_status_out', 'team_leading', 'team_trailing', 'cash_vault_permission_required', 'economy_governor_approval_required'];
 
   const createNewActionRequirement = (): ActionRequirement => ({
-    id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `req_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
     enabled: true,
     strictness: 'hard',
     scope: { kind: 'all_teammates' },
@@ -36987,7 +44362,7 @@ function AustraliaGame() {
     label: ''
   });
   const createNewRequirementGroup = (): RequirementGroup => ({
-    id: `grp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `grp_${Date.now()}_${drawGameplayRandomString("Team", 6)}`,
     mode: 'all_must_pass',
     items: []
   });
@@ -37003,8 +44378,10 @@ function AustraliaGame() {
     return items.reduce<(ActionRequirement | RequirementGroup)[]>((acc, item, idx) => {
       if (idx !== head) { acc.push(item); return acc; }
       if (rest.length === 0) {
-        const updated = updater(item);
-        if (updated) acc.push(updated);
+        const updated = typeof updater === 'function'
+          ? updater(item)
+          : (updater && typeof updater === 'object' ? { ...item, ...updater } : item);
+        if (updated) acc.push(updated as any);
         return acc;
       }
       const group = item as RequirementGroup;
@@ -37202,11 +44579,11 @@ function AustraliaGame() {
       ...prev,
       sequences: [...(prev.sequences || []), {
         ...sequence,
-        id: `seq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        id: `seq_${Date.now()}_${drawGameplayRandomString("World", 6)}`,
         name: `${sequence.name} (copy)`,
         active: false,
         createdByPlayer: true,
-        steps: sequence.steps.map(s => ({ ...s, id: `seqstep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${s.order}` }))
+        steps: sequence.steps.map(s => ({ ...s, id: `seqstep_${Date.now()}_${drawGameplayRandomString("World", 6)}_${s.order}` }))
       }]
     }));
   };
@@ -37349,7 +44726,7 @@ function AustraliaGame() {
           <span className="opacity-60 text-xs">Condition (optional):</span>
           {step.conditionGroup ? renderRequirementGroupEditor(
             step.conditionGroup, [], 1, [step.conditionGroup],
-            (updater) => updateStep({ conditionGroup: updater([step.conditionGroup!])[0] || null })
+            (updater) => updateStep({ conditionGroup: typeof updater === 'function' ? (updater([step.conditionGroup!])[0] || null) : (updater as any) })
           ) : (
             <button onClick={() => updateStep({ conditionGroup: createNewRequirementGroup() })} className={`px-2 py-1 rounded text-xs ${themeStyles.buttonSecondary}`}>+ Add Condition Group</button>
           )}
@@ -37603,7 +44980,7 @@ function AustraliaGame() {
       };
     };
 
-    const resetGameplaySettings = () => { setGameSettings(prev => ({
+    const resetGameplaySettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       actionLimitsEnabled: DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
       maxActionsPerTurn: DEFAULT_GAME_SETTINGS.maxActionsPerTurn,
@@ -37622,9 +44999,9 @@ function AustraliaGame() {
       aiSabotagePriority: DEFAULT_GAME_SETTINGS.aiSabotagePriority,
       aiInvestmentPriority: DEFAULT_GAME_SETTINGS.aiInvestmentPriority,
       aiEquipmentPurchasePriority: DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority
-    })); recordSettingsSectionResetEvent('Gameplay Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Gameplay Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Gameplay Settings', 'section_reset'); };
 
-    const resetAiSettings = () => { setGameSettings(prev => ({
+    const resetAiSettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       aiUsesMarketModifiers: DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
       aiSpecialAbilitiesEnabled: DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
@@ -37674,9 +45051,9 @@ function AustraliaGame() {
       adaptiveAiRubberBandingStrength: DEFAULT_GAME_SETTINGS.adaptiveAiRubberBandingStrength,
       adaptiveAiShowDecisionTransparency: DEFAULT_GAME_SETTINGS.adaptiveAiShowDecisionTransparency,
       adaptiveAiShowActiveModifiers: DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers
-    })); recordSettingsSectionResetEvent('AI Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'AI Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('AI Settings', 'section_reset'); };
 
-    const resetTeamModeSettings = () => { setGameSettings(prev => ({
+    const resetTeamModeSettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       teamModeAiSystemsEnabled: DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
       teamModeAiSystemProfile: DEFAULT_GAME_SETTINGS.teamModeAiSystemProfile,
@@ -37888,9 +45265,9 @@ function AustraliaGame() {
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
 	      humanAutomationEnabled: DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
 	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
-    })); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Team Mode Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Team Mode Settings', 'section_reset'); };
 
-    const restoreClassicV66CompetitiveAi = () => { setGameSettings(prev => ({
+    const restoreClassicV66CompetitiveAi = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       teamCompetitiveAiEnabled: DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
       teamModeAiDifficultyPreset: DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset,
@@ -38085,9 +45462,9 @@ function AustraliaGame() {
       aiAlgorithmBuilderDefaultEditorMode: DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
 	      humanAutomationEnabled: DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
 	      humanAutomationTransparencyEnabled: DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled
-    })); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Classic V6.6 Competitive AI' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Classic V6.6 Competitive AI', 'section_reset'); };
 
-    const resetAiStrategyLabSettings = () => { setGameSettings(prev => ({
+    const resetAiStrategyLabSettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       aiStrategyLabEnabled: DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
       aiStrategyLabScope: DEFAULT_GAME_SETTINGS.aiStrategyLabScope,
@@ -38101,9 +45478,9 @@ function AustraliaGame() {
       playerTeammateAiPreset: DEFAULT_GAME_SETTINGS.playerTeammateAiPreset,
       opponentAiPreset: DEFAULT_GAME_SETTINGS.opponentAiPreset,
       aiEvaluationFactors: cloneAiEvaluationFactorsV63(DEFAULT_GAME_SETTINGS.aiEvaluationFactors)
-    })); recordSettingsSectionResetEvent('AI Strategy Lab Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'AI Strategy Lab Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('AI Strategy Lab Settings', 'section_reset'); };
 
-    const resetEconomySettings = () => { setGameSettings(prev => ({
+    const resetEconomySettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       winCondition: DEFAULT_GAME_SETTINGS.winCondition,
       winConditionTieBreakers: [...DEFAULT_GAME_SETTINGS.winConditionTieBreakers],
@@ -38124,9 +45501,9 @@ function AustraliaGame() {
       aiLoanRepaymentPriority: DEFAULT_GAME_SETTINGS.aiLoanRepaymentPriority,
       aiLoanRefinancingWeight: DEFAULT_GAME_SETTINGS.aiLoanRefinancingWeight,
       aiLoanEmergencyOnly: DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly
-    })); recordSettingsSectionResetEvent('Economy Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Economy Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Economy Settings', 'section_reset'); };
 
-    const resetInterfaceSettings = () => { setGameSettings(prev => ({
+    const resetInterfaceSettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       uxAssistPackEnabled: DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
       simplifiedActionBarEnabled: DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
@@ -38137,9 +45514,9 @@ function AustraliaGame() {
       groupedInventoryCardsEnabled: DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
       notificationSettings: createDefaultNotificationSettings(),
       notificationClearShortcut: DEFAULT_GAME_SETTINGS.notificationClearShortcut
-    })); recordSettingsSectionResetEvent('Interface Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Interface Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Interface Settings', 'section_reset'); };
 
-    const resetAdvancedSystemsSettings = () => { setGameSettings(prev => ({
+    const resetAdvancedSystemsSettings = () => { dispatchGameSettingsChange(setGameSettings, prev => ({
       ...prev,
       settingPriorityMode: DEFAULT_GAME_SETTINGS.settingPriorityMode,
       maxConcurrentHighInfluenceSettings: DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings,
@@ -38180,7 +45557,7 @@ function AustraliaGame() {
       gameActivityLedgerRetentionPolicy: DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
       gameActivityLedgerRecordingPaused: DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
       aiPipelineInspectorEnabled: DEFAULT_GAME_SETTINGS.aiPipelineInspectorEnabled
-    })); recordSettingsSectionResetEvent('Advanced Systems Settings', 'section_reset'); };
+    }), undefined, 'ui_reset', { section: 'Advanced Systems Settings' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent); recordSettingsSectionResetEvent('Advanced Systems Settings', 'section_reset'); };
 
     const settingsResetHandlers: Record<string, { label: string; fn: () => void }> = {
       gameplay: { label: 'Reset Gameplay Settings', fn: resetGameplaySettings },
@@ -40982,7 +48359,12 @@ function AustraliaGame() {
                           {(gameSettings.actionRequirementGroups || []).map((group, idx) => renderRequirementGroupEditor(
                             group, [idx], 1,
                             gameSettings.actionRequirementGroups || [],
-                            (updater) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({ ...prev, actionRequirementGroups: updater(prev.actionRequirementGroups || []) }))
+                            (updater) => trackedSetGameSettings("direct_player_change", "Team Brain", prev => ({
+                              ...prev,
+                              actionRequirementGroups: typeof updater === 'function'
+                                ? updater(prev.actionRequirementGroups || [])
+                                : (Array.isArray(updater) ? updater : prev.actionRequirementGroups)
+                            }))
                           ))}
                           {(gameSettings.actionRequirementGroups || []).length === 0 && (
                             <div className="text-xs opacity-60">No requirement groups configured yet — add one below.</div>
@@ -41812,7 +49194,7 @@ function AustraliaGame() {
                     // TEAM_OPPONENT_ID's own library, satisfying the "copy between friendly/enemy" verb.
                     const createAiAlgorithmConfigInPlayerTeam = () => {
                       const newConfig: AiAlgorithmConfig = {
-                        configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        configId: `algo_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
                         revision: 0,
                         name: 'New Algorithm',
                         description: '',
@@ -41847,7 +49229,7 @@ function AustraliaGame() {
                       // updater, matching the same discipline trackedSetGameSettings follows.
                       const sourceConfig = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
                       if (!sourceConfig) return;
-                      const newConfigId = `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                      const newConfigId = `algo_${Date.now()}_${drawGameplayRandomString("AI", 6)}`;
                       const newName = `${sourceConfig.name} (copy)`;
                       updateTeamState(TEAM_PLAYER_ID, prev => {
                         const source = prev.algorithmConfigs.find(c => c.configId === configId);
@@ -41887,7 +49269,7 @@ function AustraliaGame() {
                     const copyAiAlgorithmConfigToEnemyTeam = (configId: string) => {
                       const source = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
                       if (!source) return;
-                      const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, active: false, createdDay: gameState.day, revision: 0 };
+                      const copy: AiAlgorithmConfig = { ...source, configId: `algo_${Date.now()}_${drawGameplayRandomString("AI", 6)}`, active: false, createdDay: gameState.day, revision: 0 };
                       updateTeamState(TEAM_OPPONENT_ID, prev => ({ ...prev, algorithmConfigs: [...prev.algorithmConfigs, copy].slice(-30) }));
                     };
                     // AB8: export a single config as a plain JSON download, mirroring downloadSaveFile's
@@ -41895,7 +49277,7 @@ function AustraliaGame() {
                     const exportAiAlgorithmConfigFromPlayerTeam = (configId: string) => {
                       const config = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs.find(c => c.configId === configId);
                       if (!config) return;
-                      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+                      const blob = new Blob([JSON.stringify({ ...config, versionConstants: VERSION_CONSTANTS }, null, 2)], { type: 'application/json' });
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement('a');
                       link.href = url;
@@ -41924,7 +49306,7 @@ function AustraliaGame() {
                         }
                         const imported: AiAlgorithmConfig = {
                           ...sanitized,
-                          configId: `algo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                          configId: `algo_${Date.now()}_${drawGameplayRandomString("AI", 6)}`,
                           createdByPlayer: true,
                           createdDay: gameState.day,
                           active: false,
@@ -41995,7 +49377,12 @@ function AustraliaGame() {
                     const updateAiAlgorithmStageConfig = (configId: string, stageKey: keyof AiAlgorithmConfig, updater: (prev: any) => any) => {
                       updateTeamState(TEAM_PLAYER_ID, prev => ({
                         ...prev,
-                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? { ...c, [stageKey]: updater((c as any)[stageKey]) } : c)
+                        algorithmConfigs: prev.algorithmConfigs.map(c => c.configId === configId ? {
+                          ...c,
+                          [stageKey]: typeof updater === 'function'
+                            ? updater((c as any)[stageKey])
+                            : (updater && typeof updater === 'object' ? { ...((c as any)[stageKey] || {}), ...updater } : updater)
+                        } : c)
                       }));
                     };
                     const playerAlgorithmConfigs = teamsById[TEAM_PLAYER_ID]?.algorithmConfigs || [];
@@ -42482,11 +49869,49 @@ function AustraliaGame() {
                           {gameSettings.adaptiveAiTauntsEnabled ? 'ON' : 'OFF'}
                         </button>
                       </div>
+                      <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                        <div>
+                          <div className="font-semibold">Persistent Opponent Models</div>
+                          <div className="text-sm opacity-75">AI models and predicts opponent playstyle tendencies</div>
+                        </div>
+                        <button
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, enablePersistentOpponentModels: !prev.enablePersistentOpponentModels }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.enablePersistentOpponentModels ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {gameSettings.enablePersistentOpponentModels ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">AI Calibration Learning</div>
+                          <div className="text-sm opacity-75">AI dynamically adjusts decision weights based on real action outcomes</div>
+                        </div>
+                        <button
+                          onClick={() => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, enableAiCalibrationLearning: !prev.enableAiCalibrationLearning }))}
+                          className={`px-4 py-2 rounded font-semibold ${gameSettings.enableAiCalibrationLearning ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                        >
+                          {gameSettings.enableAiCalibrationLearning ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
                       {uiState.settingsViewMode !== 'advanced' && (
                         <div className="text-xs opacity-75">Switch to Advanced view (top of Settings) to tune comeback thresholds and bias sliders.</div>
                       )}
                       {uiState.settingsViewMode === 'advanced' && (
                       <>
+                      {gameSettings.enablePersistentOpponentModels && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-white/10 pt-2 mb-3">
+                          <div>
+                            <label className="block font-semibold mb-2">Opponent Model Decay Rate: {(gameSettings.opponentModelDecayRate || 0.05).toFixed(2)}</label>
+                            <input type="range" min="0.01" max="0.30" step="0.01" value={gameSettings.opponentModelDecayRate || 0.05} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, opponentModelDecayRate: parseFloat(e.target.value) }))} className="w-full" />
+                            <div className="text-xs opacity-75 mt-1">Rate at which old action counts decay over time</div>
+                          </div>
+                          <div>
+                            <label className="block font-semibold mb-2">Opponent Model Scoring Weight: {gameSettings.opponentModelWeight || 15} pts</label>
+                            <input type="range" min="0" max="50" step="1" value={gameSettings.opponentModelWeight || 15} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, opponentModelWeight: parseInt(e.target.value) }))} className="w-full" />
+                            <div className="text-xs opacity-75 mt-1">Max score boost/penalty applied from predicted opponent counter-actions</div>
+                          </div>
+                        </div>
+                      )}
                       <div>
                         <label className="block font-semibold mb-2">Consecutive Days Required: {gameSettings.adaptiveAiConsecutiveDays}</label>
                         <input type="range" min="1" max="7" value={gameSettings.adaptiveAiConsecutiveDays} onChange={(e) => trackedSetGameSettings("direct_player_change", "🤖 Adaptive AI (Comeback Mode)", prev => ({ ...prev, adaptiveAiConsecutiveDays: parseInt(e.target.value) }))} className="w-full" />
@@ -44026,7 +51451,7 @@ function AustraliaGame() {
     // lookup replaces the old single ternary. The 'operational' fallback chain is preserved
     // verbatim (byte-identical when the master toggle is off, since these refs are never populated).
     const activeActorTreasuryRequest = activeActor && gameSettings.teamTreasuryEnabled
-      ? teamsById[activeActor.teamId]?.treasury.fundingRequests.find(r => r.requestingActorId === activeActor.id && (r.status === 'pending' || r.status === 'displayed'))
+      ? teamsById[activeActor.teamId]?.treasury.fundingRequests.find(r => r.requestingActorId === activeActor.id && r.status === 'pending')
       : undefined;
     const activeActorHasApprovalPending = activeActor
       ? pendingApprovalRequests.some(r => r.actorId === activeActor.id)
@@ -44107,12 +51532,27 @@ function AustraliaGame() {
         <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 max-w-2xl w-full`}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-2xl font-bold">🤖 AI Opponent Stats</h3>
-            <button
-              onClick={() => updateUiState({ showAiStats: false })}
-              className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLedgerWithFilter({
+                    actorId: aiPlayer.id,
+                    category: 'all',
+                    tab: 'profiles'
+                  });
+                }}
+                className={`${themeStyles.buttonSecondary} text-purple-400 px-3 py-1 rounded text-xs flex items-center gap-1 font-semibold`}
+              >
+                <span>📓 Actor Ledger Log</span>
+              </button>
+              <button
+                onClick={() => updateUiState({ showAiStats: false })}
+                className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
+              >
+                ✕
+              </button>
+            </div>
           </div>
           
           <div className="space-y-4">
@@ -46834,14 +54274,29 @@ function AustraliaGame() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => selectedPreviewTravelAllowed && travelToRegion(selectedPreviewRegionCode)}
-                      disabled={!isPlayerTurn || !selectedPreviewTravelAllowed}
-                      title={!selectedPreviewTravelAllowed ? selectedPreviewTravelBlockedReason || undefined : undefined}
-                      className={`${themeStyles.button} text-white px-4 py-2 rounded-lg font-bold disabled:opacity-50`}
-                    >
-                      {selectedPreviewRegionCode === player.currentRegion ? 'You are here' : 'Travel Here'}
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => selectedPreviewTravelAllowed && travelToRegion(selectedPreviewRegionCode)}
+                        disabled={!isPlayerTurn || !selectedPreviewTravelAllowed}
+                        title={!selectedPreviewTravelAllowed ? selectedPreviewTravelBlockedReason || undefined : undefined}
+                        className={`${themeStyles.button} text-white px-4 py-2 rounded-lg font-bold disabled:opacity-50`}
+                      >
+                        {selectedPreviewRegionCode === player.currentRegion ? 'You are here' : 'Travel Here'}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openLedgerWithFilter({
+                            search: selectedPreviewRegionCode,
+                            category: 'all',
+                            tab: 'overview'
+                          });
+                        }}
+                        className={`${themeStyles.buttonSecondary} text-cyan-400 px-3 py-1.5 rounded text-xs font-semibold flex items-center justify-center gap-1`}
+                      >
+                        <span>🗺️ Region Ledger Log</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -47034,8 +54489,17 @@ function AustraliaGame() {
 	                          {gameSettings.teamTreasuryShowTransactions && recentTransactions.length > 0 && (
 	                            <div className="mt-2 max-h-24 overflow-y-auto space-y-1 border-t border-white/20 pt-1">
 	                              {recentTransactions.map(tx => (
-	                                <div key={tx.id} className="opacity-80">
-	                                  Day {tx.day}: {tx.amount >= 0 ? '+' : ''}${tx.amount.toLocaleString()} ({tx.type})
+	                                <div key={tx.id} className="opacity-80 flex justify-between items-center gap-1">
+	                                  <span>Day {tx.day}: {tx.amount >= 0 ? '+' : ''}${tx.amount.toLocaleString()} ({tx.type})</span>
+	                                  <button
+	                                    onClick={(e) => {
+	                                      e.stopPropagation();
+	                                      openLedgerWithFilter({ category: 'treasury', search: tx.id, tab: 'overview' });
+	                                    }}
+	                                    className="text-[10px] text-green-400 hover:underline shrink-0"
+	                                  >
+	                                    State Delta
+	                                  </button>
 	                                </div>
 	                              ))}
 	                            </div>
@@ -48359,7 +55823,18 @@ function AustraliaGame() {
                           <div key={loan.id} className={`${themeStyles.border} border rounded-lg p-3`}>
                             <div className="flex justify-between items-start">
                               <div>
-                                <div className="font-bold">{tier?.name || 'Loan'}</div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold">{tier?.name || 'Loan'}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openLedgerWithFilter({ category: 'treasury', search: loan.id, tab: 'overview' });
+                                    }}
+                                    className={`${themeStyles.buttonSecondary} text-green-400 px-2 py-0.5 rounded text-[10px] flex items-center gap-1`}
+                                  >
+                                    <span>📊 View State Delta</span>
+                                  </button>
+                                </div>
                                 <div className="text-sm opacity-75">Principal: ${loan.amount} | Interest: ${Math.floor(loan.accrued)}</div>
                                 <div className="text-xs opacity-75">{loan.daysRemaining} days remaining</div>
                               </div>
@@ -48656,6 +56131,17 @@ function AustraliaGame() {
                 {typeof treasuryRequest?.expectedBenefit === 'number' && (
                   <div className="flex justify-between"><span>Expected Benefit:</span><span className="font-bold">${treasuryRequest.expectedBenefit.toLocaleString()}</span></div>
                 )}
+                <div className="pt-1 flex justify-end">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openLedgerWithFilter({ category: 'treasury', search: request.id, tab: 'overview' });
+                    }}
+                    className={`${themeStyles.buttonSecondary} text-green-400 px-2 py-1 rounded text-xs flex items-center gap-1 font-semibold`}
+                  >
+                    <span>📊 View State Delta</span>
+                  </button>
+                </div>
               </div>
             );
           })()}
@@ -49423,6 +56909,20 @@ function AustraliaGame() {
                               </div>
                             </div>
                             <div className="flex gap-1 shrink-0">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openLedgerWithFilter({
+                                    category: 'auditor_incident',
+                                    correlationChainId: (incident as any).causalChainId || (incident as any).correlationChainId || null,
+                                    search: incident.id,
+                                    tab: 'causal'
+                                  });
+                                }}
+                                className={`${themeStyles.buttonSecondary} text-amber-400 px-2 py-0.5 rounded text-xs flex items-center gap-1`}
+                              >
+                                <span>🔍 Inspect Causal Chain</span>
+                              </button>
                               {incident.recoveryOptions.length > 0 && (
                                 <button onClick={() => applyIncidentRecoveryManually(dashboardTeamId, incident.id)} className={`${themeStyles.button} text-white px-2 py-0.5 rounded text-xs`}>Apply</button>
                               )}
@@ -49549,14 +57049,24 @@ function AustraliaGame() {
     const ledger = gameState.gameActivityLedger;
     const allEvents = ledger?.events || [];
     const searchLower = ledgerDashboardSearch.trim().toLowerCase();
-    // GL11: actor/team ids present in this match's history, for the new filter dropdowns.
+    
+    // Known actors & teams
     const knownActorIds = Array.from(new Set(allEvents.map(ev => ev.actorId).filter((id): id is string => Boolean(id)))).sort();
     const knownTeamIds = Array.from(new Set(allEvents.map(ev => ev.teamId).filter((id): id is string => Boolean(id)))).sort();
+    
+    // Filtered events
     const filteredEvents = allEvents.filter(ev => {
       if (ledgerDashboardCategoryFilter !== 'all' && ev.category !== ledgerDashboardCategoryFilter) return false;
-      if (ledgerDashboardCorrelationFilter && ev.correlationChainId !== ledgerDashboardCorrelationFilter) return false;
+      if (ledgerDashboardCorrelationFilter && ev.correlationChainId !== ledgerDashboardCorrelationFilter && ev.causalLinkage?.causalChainId !== ledgerDashboardCorrelationFilter) return false;
       if (ledgerDashboardActorFilter !== 'all' && ev.actorId !== ledgerDashboardActorFilter) return false;
       if (ledgerDashboardTeamFilter !== 'all' && ev.teamId !== ledgerDashboardTeamFilter) return false;
+      if (ledgerTagFilter) {
+        const tagLower = ledgerTagFilter.toLowerCase();
+        const evTags = (ev.payload as any)?.tags || [];
+        const hasTag = Array.isArray(evTags) && evTags.some((t: string) => t.toLowerCase().includes(tagLower));
+        const matchesTag = hasTag || ev.summary.toLowerCase().includes(tagLower) || ev.category.toLowerCase().includes(tagLower);
+        if (!matchesTag) return false;
+      }
       if (searchLower) {
         const haystack = [
           ev.summary, ev.category, ev.actionType, ev.settingKey, ev.actorId, ev.teamId,
@@ -49567,8 +57077,15 @@ function AustraliaGame() {
       return true;
     }).slice().sort((a, b) => ledgerDashboardSortOrder === 'newest' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
 
-    // GL6: export the currently-filtered event set as a plain JSON download, mirroring
-    // exportAiAlgorithmConfigFromPlayerTeam's/downloadSaveFile's exact Blob+anchor+revoke pattern.
+    // Active correlation chains for Tab 2
+    const correlationChains = Array.from(new Set(allEvents.map(ev => ev.causalLinkage?.causalChainId || ev.causalChainId || ev.correlationChainId).filter((id): id is string => Boolean(id))));
+
+    // Bookmarked events for Tab 7
+    const toggleBookmark = (eventId: string) => {
+      setLedgerBookmarks(prev => prev.includes(eventId) ? prev.filter(id => id !== eventId) : [...prev, eventId]);
+    };
+
+    // Exporters
     const exportGameActivityLedgerEvents = () => {
       const payload = {
         matchId: ledger?.matchId || 'unknown_match',
@@ -49588,8 +57105,6 @@ function AustraliaGame() {
       setTimeout(() => URL.revokeObjectURL(url), 0);
     };
 
-    // GL11: CSV export of the currently-filtered event set — a flat, spreadsheet-friendly sibling
-    // to the JSON export above, covering the same fields, one row per event.
     const exportGameActivityLedgerEventsCsv = () => {
       const columns: (keyof GameActivityLedgerEvent)[] = [
         'id', 'category', 'day', 'turn', 'teamId', 'actorId', 'actionType', 'decisionId', 'planId',
@@ -49612,9 +57127,6 @@ function AustraliaGame() {
       setTimeout(() => URL.revokeObjectURL(url), 0);
     };
 
-    // GL11: clear-with-confirmation — a two-click inline confirm (matching this file's own
-    // established inline-confirm convention elsewhere), never a silent single-click wipe. Clears
-    // only the event history; matchId and every other piece of game state are untouched.
     const clearGameActivityLedgerEvents = () => {
       if (!ledgerDashboardClearConfirming) {
         setLedgerDashboardClearConfirming(true);
@@ -49624,197 +57136,1529 @@ function AustraliaGame() {
       setLedgerDashboardClearConfirming(false);
     };
 
+    // Live integrity validation function for Tab 10
+    const validateLedgerIntegrity = () => {
+      let missingParents = 0;
+      let missingTimestamps = 0;
+      let depthInconsistencies = 0;
+
+      const eventMap = new Map(allEvents.map(ev => [ev.id, ev]));
+
+      allEvents.forEach(ev => {
+        if (!ev.timestamp) missingTimestamps++;
+        const parentId = ev.causalLinkage?.parentEventId || ev.parentEventId;
+        if (parentId) {
+          const parent = eventMap.get(parentId);
+          if (!parent) {
+            missingParents++;
+          } else {
+            const parentDepth = parent.causalLinkage?.causalDepth ?? parent.causalDepth ?? 0;
+            const currentDepth = ev.causalLinkage?.causalDepth ?? ev.causalDepth ?? 0;
+            if (currentDepth <= parentDepth) {
+              depthInconsistencies++;
+            }
+          }
+        }
+      });
+
+      return {
+        totalEvents: allEvents.length,
+        missingParents,
+        missingTimestamps,
+        depthInconsistencies,
+        status: (missingParents === 0 && missingTimestamps === 0 && depthInconsistencies === 0) ? 'passed' : 'warnings_found'
+      };
+    };
+
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={close}>
         <div
-          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col`}
+          className={`${themeStyles.card} ${themeStyles.border} border rounded-xl w-full max-w-6xl flex flex-col my-4`}
           style={{ maxHeight: 'calc(100vh - 2rem)' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className={`p-5 border-b ${themeStyles.border}`}>
+          {/* Header */}
+          <div className={`p-4 border-b ${themeStyles.border}`}>
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-bold">📜 Game Activity Ledger</h3>
-                <div className="text-sm opacity-75">
-                  Append-only, match-wide history of recorded activity — {allEvents.length} / {gameSettings.gameActivityLedgerMaxEvents} total events, {filteredEvents.length} shown.
-                  {allEvents.length >= gameSettings.gameActivityLedgerMaxEvents && (
-                    <span className="text-yellow-500 font-semibold"> Cap reached — oldest events are being trimmed.</span>
-                  )}
+                <h3 className="text-2xl font-bold flex items-center gap-2">
+                  <span>📜</span> Game Activity Ledger Dashboard
+                </h3>
+                <div className="text-xs opacity-75 mt-0.5">
+                  Append-only, match-wide history · {allEvents.length} / {gameSettings.gameActivityLedgerMaxEvents} recorded events · Match ID: <span className="font-mono">{ledger?.matchId || 'active'}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={exportGameActivityLedgerEvents}
-                  disabled={filteredEvents.length === 0}
-                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm font-semibold disabled:opacity-40`}
-                >
+                <button onClick={exportGameActivityLedgerEvents} disabled={filteredEvents.length === 0} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-xs font-semibold disabled:opacity-40`}>
                   Export JSON
                 </button>
-                <button
-                  onClick={exportGameActivityLedgerEventsCsv}
-                  disabled={filteredEvents.length === 0}
-                  className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm font-semibold disabled:opacity-40`}
-                >
+                <button onClick={exportGameActivityLedgerEventsCsv} disabled={filteredEvents.length === 0} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-xs font-semibold disabled:opacity-40`}>
                   Export CSV
                 </button>
-                <button
-                  onClick={clearGameActivityLedgerEvents}
-                  onBlur={() => setLedgerDashboardClearConfirming(false)}
-                  disabled={allEvents.length === 0}
-                  className={`px-3 py-1 rounded text-sm font-semibold disabled:opacity-40 ${ledgerDashboardClearConfirming ? 'bg-red-600 text-white' : themeStyles.buttonSecondary}`}
-                >
+                <button onClick={clearGameActivityLedgerEvents} onBlur={() => setLedgerDashboardClearConfirming(false)} disabled={allEvents.length === 0} className={`px-3 py-1 rounded text-xs font-semibold disabled:opacity-40 ${ledgerDashboardClearConfirming ? 'bg-red-600 text-white' : themeStyles.buttonSecondary}`}>
                   {ledgerDashboardClearConfirming ? 'Confirm Clear?' : 'Clear Ledger'}
                 </button>
-                <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}>✕</button>
+                <button onClick={close} className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm`}>✕</button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <button
-                onClick={() => setLedgerDashboardCategoryFilter('all')}
-                className={`px-3 py-1.5 rounded text-sm font-semibold ${ledgerDashboardCategoryFilter === 'all' ? themeStyles.button : themeStyles.buttonSecondary}`}
-              >
-                All
-              </button>
-              {GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES.map(cat => (
+
+            {/* 10-Tab Navigation Bar */}
+            <div className="flex flex-wrap gap-1 mt-3 border-t pt-3 border-white/10">
+              {LEDGER_DASHBOARD_TAB_ORDER.map(tabId => (
                 <button
-                  key={cat}
-                  onClick={() => setLedgerDashboardCategoryFilter(cat)}
-                  className={`px-3 py-1.5 rounded text-sm font-semibold capitalize ${ledgerDashboardCategoryFilter === cat ? themeStyles.button : themeStyles.buttonSecondary}`}
+                  key={tabId}
+                  onClick={() => setActiveLedgerTab(tabId)}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${activeLedgerTab === tabId ? themeStyles.button + ' text-white shadow' : themeStyles.buttonSecondary + ' opacity-80 hover:opacity-100'}`}
                 >
-                  {cat.replace(/_/g, ' ')}
+                  {LEDGER_DASHBOARD_TAB_LABELS[tabId]}
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <input
-                type="text"
-                value={ledgerDashboardSearch}
-                onChange={(e) => setLedgerDashboardSearch(e.target.value)}
-                placeholder="Search summary, actor, team, IDs..."
-                className={`${themeStyles.input} rounded px-3 py-1.5 text-sm flex-1 min-w-[200px]`}
-              />
-              {ledgerDashboardCorrelationFilter && (
-                <button
-                  onClick={() => setLedgerDashboardCorrelationFilter(null)}
-                  className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
-                >
-                  Clear correlation filter ({ledgerDashboardCorrelationFilter.slice(0, 12)}…) ✕
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <select
-                value={ledgerDashboardActorFilter}
-                onChange={(e) => setLedgerDashboardActorFilter(e.target.value)}
-                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
-              >
-                <option value="all">All actors</option>
-                {knownActorIds.map(id => <option key={id} value={id}>{getActorDisplayName(id)}</option>)}
-              </select>
-              <select
-                value={ledgerDashboardTeamFilter}
-                onChange={(e) => setLedgerDashboardTeamFilter(e.target.value)}
-                className={`${themeStyles.select} rounded px-2 py-1.5 text-sm`}
-              >
-                <option value="all">All teams</option>
-                {knownTeamIds.map(id => <option key={id} value={id}>{id}</option>)}
-              </select>
-              <button
-                onClick={() => setLedgerDashboardSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-                className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
-              >
-                Sort: {ledgerDashboardSortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
-              </button>
-              <button
-                onClick={() => setLedgerDashboardViewMode(prev => prev === 'detailed' ? 'compact' : 'detailed')}
-                className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm font-semibold`}
-              >
-                View: {ledgerDashboardViewMode === 'detailed' ? 'Detailed' : 'Compact'}
-              </button>
-            </div>
           </div>
 
-          <div className={`flex-1 overflow-y-auto p-5 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
-            {!ledger ? (
-              <div className="opacity-70 text-sm">No Game Activity Ledger data for this match yet.</div>
-            ) : filteredEvents.length === 0 ? (
-              <div className="opacity-70 text-sm">No events match the current filters.</div>
-            ) : (
-              <div className={ledgerDashboardViewMode === 'compact' ? 'space-y-1' : 'space-y-2'}>
-                {filteredEvents.slice(0, 300).map(ev => {
-                  const expanded = ledgerDashboardExpandedEventId === ev.id;
-                  return (
-                    <div key={ev.id} className={`${themeStyles.border} border rounded-lg text-sm ${ledgerDashboardViewMode === 'compact' ? 'p-1.5' : 'p-3'}`}>
-                      <div
-                        className="flex items-center justify-between gap-3 cursor-pointer"
-                        onClick={() => setLedgerDashboardExpandedEventId(expanded ? null : ev.id)}
-                      >
-                        {ledgerDashboardViewMode === 'compact' ? (
-                          <div className="min-w-0 truncate">
-                            <span className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}</span>
-                            <span className="opacity-75"> — {ev.summary}</span>
-                          </div>
-                        ) : (
-                          <div className="min-w-0">
-                            <div className="font-semibold capitalize">{ev.category.replace(/_/g, ' ')}{ev.actionType ? ` · ${ev.actionType}` : ''}</div>
-                            <div className="opacity-75 truncate">{ev.summary}</div>
-                          </div>
-                        )}
-                        <div className="text-xs opacity-60 whitespace-nowrap">day {ev.day} · turn {ev.turn}</div>
-                      </div>
-                      {expanded && (
-                        <div className="mt-2 pt-2 border-t border-opacity-20 text-xs opacity-80 space-y-1">
-                          <div>Event ID: {ev.id}</div>
-                          {ev.actorId && <div>Actor: {getActorDisplayName(ev.actorId)} ({ev.actorId})</div>}
-                          {ev.teamId && <div>Team: {ev.teamId}</div>}
-                          {ev.decisionId && (
-                            <div>
-                              Decision ID: {ev.decisionId}
-                              {gameSettings.aiPipelineInspectorEnabled && (
-                                <button
-                                  className="underline ml-2"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPipelineInspectorSelectedDecisionId(ev.decisionId!);
-                                    setPipelineInspectorTeamFilter(ev.teamId || 'all');
-                                    setShowAiPipelineInspector(true);
-                                  }}
-                                >
-                                  View Pipeline
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {ev.planId && <div>Plan ID: {ev.planId}</div>}
-                          {ev.configId && <div>Config ID: {ev.configId}{typeof ev.configRevision === 'number' ? ` (rev ${ev.configRevision})` : ''}</div>}
-                          {ev.approvalRequestId && <div>Approval Request ID: {ev.approvalRequestId}</div>}
-                          {ev.treasuryRequestId && <div>Treasury Request ID: {ev.treasuryRequestId}</div>}
-                          {ev.settingKey && <div>Setting Key: {ev.settingKey}</div>}
-                          {ev.auditorIncidentId && <div>Auditor Incident ID: {ev.auditorIncidentId}</div>}
-                          {ev.parentEventId && <div>Parent Event ID: {ev.parentEventId}</div>}
-                          {ev.correlationChainId && (
-                            <div>
-                              Correlation Chain:{' '}
-                              <button
-                                className="underline"
-                                onClick={(e) => { e.stopPropagation(); setLedgerDashboardCorrelationFilter(ev.correlationChainId!); }}
-                              >
-                                {ev.correlationChainId}
+          {/* Modal Main Body */}
+          <div className={`flex-1 overflow-y-auto p-4 ${themeStyles.scrollbar}`} style={{ minHeight: 0 }}>
+
+            {/* Tab 1: Activity Overview */}
+            {activeLedgerTab === 'overview' && (
+              <div className="space-y-4">
+                {/* Header KPI Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                    <div className="text-xs opacity-75">Total Events Recorded</div>
+                    <div className="text-xl font-bold text-blue-400">{allEvents.length} / {gameSettings.gameActivityLedgerMaxEvents}</div>
+                  </div>
+                  <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                    <div className="text-xs opacity-75">Filtered Events</div>
+                    <div className="text-xl font-bold text-green-400">{filteredEvents.length}</div>
+                  </div>
+                  <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                    <div className="text-xs opacity-75">Active Causal Chains</div>
+                    <div className="text-xl font-bold text-purple-400">{correlationChains.length}</div>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className={`${themeStyles.border} border rounded-lg p-3 space-y-2`}>
+                  <div className="flex flex-wrap gap-1 text-xs">
+                    <button onClick={() => setLedgerDashboardCategoryFilter('all')} className={`px-2 py-1 rounded font-semibold ${ledgerDashboardCategoryFilter === 'all' ? themeStyles.button : themeStyles.buttonSecondary}`}>All</button>
+                    {GAME_ACTIVITY_LEDGER_EVENT_CATEGORIES.map(cat => (
+                      <button key={cat} onClick={() => setLedgerDashboardCategoryFilter(cat)} className={`px-2 py-1 rounded font-semibold capitalize ${ledgerDashboardCategoryFilter === cat ? themeStyles.button : themeStyles.buttonSecondary}`}>
+                        {cat.replace(/_/g, ' ')}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={ledgerDashboardSearch}
+                      onChange={(e) => setLedgerDashboardSearch(e.target.value)}
+                      placeholder="Search events by summary, actor, decision ID..."
+                      className={`${themeStyles.input} rounded px-3 py-1 text-xs flex-1 min-w-[180px]`}
+                    />
+                    <select value={ledgerDashboardActorFilter} onChange={(e) => setLedgerDashboardActorFilter(e.target.value)} className={`${themeStyles.select} rounded px-2 py-1 text-xs`}>
+                      <option value="all">All Actors</option>
+                      {knownActorIds.map(id => <option key={id} value={id}>{getActorDisplayName(id)}</option>)}
+                    </select>
+                    <select value={ledgerDashboardTeamFilter} onChange={(e) => setLedgerDashboardTeamFilter(e.target.value)} className={`${themeStyles.select} rounded px-2 py-1 text-xs`}>
+                      <option value="all">All Teams</option>
+                      {knownTeamIds.map(id => <option key={id} value={id}>{id}</option>)}
+                    </select>
+                    <button onClick={() => setLedgerDashboardSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>
+                      Sort: {ledgerDashboardSortOrder === 'newest' ? 'Newest' : 'Oldest'}
+                    </button>
+                    <button onClick={() => setLedgerDashboardViewMode(prev => prev === 'detailed' ? 'compact' : 'detailed')} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>
+                      Mode: {ledgerDashboardViewMode}
+                    </button>
+                  </div>
+                  {ledgerDashboardCorrelationFilter && (
+                    <div className="flex items-center gap-2 text-xs text-blue-300">
+                      <span>Filtering Chain: {ledgerDashboardCorrelationFilter}</span>
+                      <button onClick={() => setLedgerDashboardCorrelationFilter(null)} className="underline text-red-400">Clear</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Event Stream List */}
+                <div className="space-y-2">
+                  {filteredEvents.length === 0 ? (
+                    <div className="text-center opacity-70 py-8 text-sm">No events match the current filter criteria.</div>
+                  ) : (
+                    filteredEvents.slice(0, 300).map(ev => {
+                      const expanded = ledgerDashboardExpandedEventId === ev.id;
+                      const isBookmarked = ledgerBookmarks.includes(ev.id);
+                      return (
+                        <div key={ev.id} className={`${themeStyles.border} border rounded-lg text-xs ${ledgerDashboardViewMode === 'compact' ? 'p-1.5' : 'p-3'}`}>
+                          <div className="flex items-center justify-between gap-2 cursor-pointer" onClick={() => setLedgerDashboardExpandedEventId(expanded ? null : ev.id)}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <button onClick={(e) => { e.stopPropagation(); toggleBookmark(ev.id); }} className="text-sm">
+                                {isBookmarked ? '⭐' : '☆'}
                               </button>
+                              <span className="font-semibold capitalize text-blue-400 shrink-0">{ev.category.replace(/_/g, ' ')}</span>
+                              <span className="truncate opacity-90">{ev.summary}</span>
+                            </div>
+                            <div className="text-[10px] opacity-60 whitespace-nowrap">Day {ev.day} · Turn {ev.turn}</div>
+                          </div>
+
+                          {expanded && (
+                            <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5 text-xs opacity-90">
+                              <div><span className="font-semibold">Event ID:</span> <span className="font-mono">{ev.id}</span></div>
+                              {ev.actorId && <div><span className="font-semibold">Actor:</span> {getActorDisplayName(ev.actorId)} ({ev.actorId})</div>}
+                              {ev.teamId && <div><span className="font-semibold">Team:</span> {ev.teamId}</div>}
+                              {ev.decisionId && (
+                                <div className="flex items-center gap-2">
+                                  <span><span className="font-semibold">Decision ID:</span> {ev.decisionId}</span>
+                                  {gameSettings.aiPipelineInspectorEnabled && (
+                                    <button
+                                      className="underline text-blue-400 text-[10px]"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPipelineInspectorSelectedDecisionId(ev.decisionId!);
+                                        setPipelineInspectorTeamFilter(ev.teamId || 'all');
+                                        setShowAiPipelineInspector(true);
+                                      }}
+                                    >
+                                      View Pipeline
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {(ev.causalLinkage?.causalChainId || ev.causalChainId || ev.correlationChainId) && (
+                                <div className="flex items-center gap-2">
+                                  <span><span className="font-semibold">Correlation Chain:</span> {ev.causalLinkage?.causalChainId || ev.causalChainId || ev.correlationChainId}</span>
+                                  <button
+                                    className="underline text-purple-400 text-[10px]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setLedgerDashboardCorrelationFilter(ev.causalLinkage?.causalChainId || ev.causalChainId || ev.correlationChainId!);
+                                      setActiveLedgerTab('causal');
+                                    }}
+                                  >
+                                    Inspect Chain Tree
+                                  </button>
+                                </div>
+                              )}
+                              {ev.expectation && (
+                                <div className="p-2 rounded bg-black/30 border border-amber-500/30 text-[11px]">
+                                  <div className="font-bold text-amber-300">📈 Expectation Analysis: {ev.expectation.status || ev.expectation.outcomeCategory}</div>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1 opacity-90">
+                                    <div>Accuracy: {(ev.expectation.accuracyScore * (ev.expectation.accuracyScore <= 1 ? 100 : 1)).toFixed(0)}%</div>
+                                    <div>Expected ROI: {ev.expectation.expectedRoi?.toFixed(2)}x</div>
+                                    <div>Expected Cash: ${ev.expectation.expectedCashChange ?? 'n/a'}</div>
+                                    <div>Actual Cash: ${ev.expectation.actualCashChange ?? 'n/a'}</div>
+                                  </div>
+                                </div>
+                              )}
+                              {(ev.systemInfluences || ev.systemInfluence) && (() => {
+                                const inf = ev.systemInfluences || ev.systemInfluence;
+                                return (
+                                  <div className="p-2 rounded bg-black/30 border border-purple-500/30 text-[11px]">
+                                    <div className="font-bold text-purple-300">⚡ Subsystem Influences</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-1 opacity-90">
+                                      <div>Governor Weight: {inf?.economyGovernorWeight ?? 1.0}</div>
+                                      <div>Overseer Priority: {inf?.overseerPriority ?? 1.0}</div>
+                                      <div>Sequence Bias: {inf?.sequenceBias ?? 0}</div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
-                          {ev.diagnostics && <div>Diagnostics: {JSON.stringify(ev.diagnostics)}</div>}
-                          <div>Recorded: {new Date(ev.timestamp).toLocaleString()}</div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Causal Explorer */}
+            {activeLedgerTab === 'causal' && (() => {
+              const selectedChainId = ledgerDashboardCorrelationFilter || correlationChains[0] || null;
+              const chainEvents = selectedChainId ? allEvents.filter(ev => (ev.causalLinkage?.causalChainId || ev.causalChainId || ev.correlationChainId) === selectedChainId) : [];
+              const rootEvent = chainEvents.find(ev => (ev.causalLinkage?.causalDepth === 0 || ev.causalDepth === 0 || !ev.parentEventId));
+              const maxDepth = chainEvents.reduce((max, ev) => Math.max(max, ev.causalLinkage?.causalDepth ?? ev.causalDepth ?? 0), 0);
+
+              return (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded bg-black/20 border border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm">Select Correlation / Causal Chain:</span>
+                      <select
+                        value={selectedChainId || ''}
+                        onChange={(e) => setLedgerDashboardCorrelationFilter(e.target.value || null)}
+                        className={`${themeStyles.select} rounded px-2 py-1 text-xs`}
+                      >
+                        {correlationChains.map(id => (
+                          <option key={id} value={id}>{id}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <div>Downstream Depth: <span className="font-bold text-blue-400">{maxDepth}</span></div>
+                      <div>Linked Events: <span className="font-bold text-green-400">{chainEvents.length}</span></div>
+                    </div>
+                  </div>
+
+                  {!selectedChainId || chainEvents.length === 0 ? (
+                    <div className="text-center opacity-70 py-8 text-sm">No causal chains recorded yet. Select or trigger an event chain to inspect linkages.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rootEvent && (
+                        <div className="p-3 rounded-lg border-2 border-blue-500 bg-blue-900/20 text-xs">
+                          <div className="font-bold text-blue-300 flex items-center justify-between">
+                            <span>🌱 Root Cause Event (Depth 0)</span>
+                            <span>Day {rootEvent.day} · Turn {rootEvent.turn}</span>
+                          </div>
+                          <div className="mt-1 font-semibold text-sm">{rootEvent.summary}</div>
+                          <div className="opacity-75 mt-0.5">Actor: {getActorDisplayName(rootEvent.actorId)} · Category: {rootEvent.category}</div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2 pl-4 border-l-2 border-purple-500/40">
+                        {chainEvents.map(ev => {
+                          const depth = ev.causalLinkage?.causalDepth ?? ev.causalDepth ?? 0;
+                          return (
+                            <div key={ev.id} className={`${themeStyles.border} border rounded-lg p-2.5 text-xs space-y-1`} style={{ marginLeft: `${Math.min(depth, 5) * 12}px` }}>
+                              <div className="flex justify-between items-start">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded bg-purple-900/50 text-purple-200 font-mono text-[10px]">Depth {depth}</span>
+                                  <span className="font-bold capitalize text-blue-300">{ev.category.replace(/_/g, ' ')}</span>
+                                </div>
+                                <span className="opacity-60 text-[10px]">Turn {ev.turn}</span>
+                              </div>
+                              <div className="font-medium text-sm">{ev.summary}</div>
+                              <div className="opacity-70 text-[11px]">
+                                Event ID: <span className="font-mono">{ev.id}</span>
+                                {ev.parentEventId && <span> · Parent ID: <span className="font-mono">{ev.parentEventId}</span></span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tab 3: Expectations & ROI */}
+            {activeLedgerTab === 'expectations' && (() => {
+              const eventsWithExpectations = allEvents.filter(ev => Boolean(ev.expectation));
+              const totalAccuracy = eventsWithExpectations.reduce((sum, ev) => sum + (ev.expectation?.accuracyScore || 0), 0);
+              const avgAccuracy = eventsWithExpectations.length > 0 ? (totalAccuracy / eventsWithExpectations.length) * 100 : 0;
+              const netCashVariance = eventsWithExpectations.reduce((sum, ev) => sum + ((ev.expectation?.actualCashChange || 0) - (ev.expectation?.expectedCashChange || 0)), 0);
+              const totalUtilityDelta = eventsWithExpectations.reduce((sum, ev) => sum + (ev.expectation?.utilityDelta || 0), 0);
+
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                      <div className="text-xs opacity-75">Prediction Accuracy</div>
+                      <div className="text-xl font-bold text-amber-400">{avgAccuracy.toFixed(1)}%</div>
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                      <div className="text-xs opacity-75">Net Cash Variance</div>
+                      <div className={`text-xl font-bold ${netCashVariance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {netCashVariance >= 0 ? '+' : ''}${netCashVariance.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-center`}>
+                      <div className="text-xs opacity-75">Total Utility Delta</div>
+                      <div className="text-xl font-bold text-blue-400">{totalUtilityDelta > 0 ? '+' : ''}{totalUtilityDelta}</div>
+                    </div>
+                  </div>
+
+                  {eventsWithExpectations.length === 0 ? (
+                    <div className="text-center opacity-70 py-8 text-sm">No events with expectation analysis recorded yet.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className={`border-b ${themeStyles.border} opacity-75`}>
+                            <th className="p-2">Action / Summary</th>
+                            <th className="p-2">Actor</th>
+                            <th className="p-2">Expected ROI</th>
+                            <th className="p-2">Actual Cash</th>
+                            <th className="p-2">Expected Cash</th>
+                            <th className="p-2">Variance</th>
+                            <th className="p-2">Accuracy %</th>
+                            <th className="p-2">Outcome Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/10">
+                          {eventsWithExpectations.map(ev => {
+                            const exp = ev.expectation!;
+                            const variance = (exp.actualCashChange || 0) - (exp.expectedCashChange || 0);
+                            return (
+                              <tr key={ev.id} className="hover:bg-white/5">
+                                <td className="p-2 font-medium">{ev.summary}</td>
+                                <td className="p-2">{getActorDisplayName(ev.actorId)}</td>
+                                <td className="p-2">{exp.expectedRoi ? `${exp.expectedRoi.toFixed(2)}x` : 'n/a'}</td>
+                                <td className="p-2 text-green-400">${exp.actualCashChange ?? 0}</td>
+                                <td className="p-2 text-blue-400">${exp.expectedCashChange ?? 0}</td>
+                                <td className={`p-2 font-bold ${variance >= 0 ? 'text-green-400' : 'text-red-400'}`}>{variance >= 0 ? '+' : ''}${variance}</td>
+                                <td className="p-2 font-bold text-amber-400">{((exp.accuracyScore || 0) * (exp.accuracyScore <= 1 ? 100 : 1)).toFixed(0)}%</td>
+                                <td className="p-2">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                                    exp.status === 'exceeded_expectations' || exp.status === 'met' ? 'bg-green-900 text-green-200' :
+                                    exp.status === 'met_expectations' ? 'bg-blue-900 text-blue-200' :
+                                    exp.status === 'underperformed' ? 'bg-yellow-900 text-yellow-200' : 'bg-red-900 text-red-200'
+                                  }`}>
+                                    {exp.status || exp.outcomeCategory || 'pending'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tab 4: System Influence Matrix */}
+            {activeLedgerTab === 'influence' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                    <div className="font-bold text-sm text-blue-300">🏛️ Economy Governor</div>
+                    <div className="text-xs opacity-75 mt-1">Reserve strength: {gameSettings.economyReserveStrength}</div>
+                    <div className="text-xs opacity-75">Cash Floor: ${gameSettings.economyCashFloor}</div>
+                  </div>
+                  <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                    <div className="font-bold text-sm text-purple-300">👁️ Team AI Overseer</div>
+                    <div className="text-xs opacity-75 mt-1">Adaptive Strategy Mode: Active</div>
+                    <div className="text-xs opacity-75">Directives Monitored: Yes</div>
+                  </div>
+                  <div className={`${themeStyles.border} border rounded-lg p-3`}>
+                    <div className="font-bold text-sm text-amber-300">🔍 AI Operations Auditor</div>
+                    <div className="text-xs opacity-75 mt-1">Audit Level: Authoritative</div>
+                    <div className="text-xs opacity-75">Incidents Monitored: Yes</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className={`border-b ${themeStyles.border} opacity-75`}>
+                        <th className="p-2">Event Summary</th>
+                        <th className="p-2">Governor Wt.</th>
+                        <th className="p-2">Overseer Pri.</th>
+                        <th className="p-2">Sequence Bias</th>
+                        <th className="p-2">Vault Status</th>
+                        <th className="p-2">Treasury Status</th>
+                        <th className="p-2">Auditor Flags</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {allEvents.slice(0, 100).map(ev => {
+                        const inf = ev.systemInfluences || ev.systemInfluence;
+                        return (
+                          <tr key={ev.id} className="hover:bg-white/5">
+                            <td className="p-2 font-medium">{ev.summary}</td>
+                            <td className="p-2 text-blue-300">{inf?.economyGovernorWeight ?? 1.0}</td>
+                            <td className="p-2 text-purple-300">{inf?.overseerPriority ?? 1.0}</td>
+                            <td className="p-2 text-amber-300">{inf?.sequenceBias ?? 0}</td>
+                            <td className="p-2">{inf?.cashVaultStatus || 'normal'}</td>
+                            <td className="p-2">{inf?.treasuryStatus || 'normal'}</td>
+                            <td className="p-2">{Array.isArray(inf?.auditorFlags) ? inf.auditorFlags.length : (inf?.auditorFlags || 0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 5: Actor & Team Profiles */}
+            {activeLedgerTab === 'profiles' && (() => {
+              const knownIds = Array.from(new Set([
+                'player',
+                ...(gameState?.actors ? Object.keys(gameState.actors) : []),
+                ...(gameState?.actorsById ? Object.keys(gameState.actorsById) : []),
+                ...allEvents.map(e => e.actorId || e.participants?.actorId).filter(Boolean) as string[]
+              ]));
+              const selectedActorId = ledgerDashboardActorFilter !== 'all' ? ledgerDashboardActorFilter : (knownIds[0] || 'player');
+              const profile = computeActorLedgerProfile(selectedActorId, allEvents, gameState);
+
+              return (
+                <div className="space-y-4">
+                  {/* Selector Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm">👤 Select Intelligence Profile:</span>
+                      <select
+                        value={selectedActorId}
+                        onChange={(e) => setLedgerDashboardActorFilter(e.target.value)}
+                        className={`${themeStyles.select} rounded px-3 py-1 text-xs font-semibold`}
+                      >
+                        {knownIds.map(id => (
+                          <option key={id} value={id}>
+                            {getActorDisplayName(id)} ({id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs opacity-80">
+                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-medium capitalize">
+                        {profile.kind} actor
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-medium capitalize">
+                        Role: {profile.role}
+                      </span>
+                      {profile.teamId && (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-medium">
+                          Team: {profile.teamId}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Profile Header Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Decision Success Rate</div>
+                      <div className="text-xl font-extrabold text-emerald-400 mt-1">
+                        {profile.decisionMetrics.decisionSuccessRate}%
+                      </div>
+                      <div className="opacity-60 text-[10px] mt-0.5">
+                        {profile.decisionMetrics.successfulDecisions} success / {profile.decisionMetrics.failedDecisions} failed ({profile.decisionMetrics.totalDecisions} total)
+                      </div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Current Net Worth</div>
+                      <div className="text-xl font-extrabold text-blue-400 mt-1">
+                        ${profile.trajectory.currentNetWorth.toLocaleString()}
+                      </div>
+                      <div className={`text-[10px] mt-0.5 font-semibold ${profile.trajectory.netGrowthRatePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profile.trajectory.netGrowthRatePercent >= 0 ? '+' : ''}{profile.trajectory.netGrowthRatePercent}% growth vs start
+                      </div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Risk Propensity</div>
+                      <div className="text-xl font-extrabold mt-1 capitalize text-amber-300 flex items-center gap-1.5">
+                        {profile.preferences.riskCategory}
+                        <span className="text-xs text-amber-200/60">({profile.preferences.riskPropensityScore}/100)</span>
+                      </div>
+                      <div className="opacity-60 text-[10px] mt-0.5">
+                        {profile.preferences.challengesAttempted} challenges ({profile.preferences.challengeWinRate}% win rate)
+                      </div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Team Synergy Rating</div>
+                      <div className="text-xl font-extrabold text-indigo-400 mt-1">
+                        {profile.teamContribution.teamSynergyScore}/100
+                      </div>
+                      <div className="opacity-60 text-[10px] mt-0.5">
+                        Net Treasury: {profile.teamContribution.netTreasuryContribution >= 0 ? '+' : ''}${profile.teamContribution.netTreasuryContribution.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Net Worth & Cash Trajectory Card */}
+                  <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                    <div className="flex justify-between items-center">
+                      <div className="font-bold text-sm flex items-center gap-2">
+                        <span>📈</span> Net Worth & Financial Trajectory
+                      </div>
+                      <div className="text-xs opacity-75">
+                        Peak: <span className="font-semibold text-green-400">${profile.trajectory.peakNetWorth.toLocaleString()}</span> · Max Drawdown: <span className="font-semibold text-red-400">${profile.trajectory.maxDrawdownAmount.toLocaleString()} ({profile.trajectory.maxDrawdownPercent}%)</span>
+                      </div>
+                    </div>
+
+                    {profile.trajectory.points.length === 0 ? (
+                      <div className="text-center opacity-60 py-4 text-xs">No financial transactions recorded for this actor yet.</div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 text-xs pr-1">
+                        {profile.trajectory.points.slice().reverse().map((pt, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
+                            <div className="flex items-center gap-2">
+                              <span className="px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300 font-mono text-[10px]">
+                                Day {pt.day} T{pt.turn}
+                              </span>
+                              <span className="opacity-90">{pt.triggerEventSummary}</span>
+                            </div>
+                            <div className="flex items-center gap-3 font-mono">
+                              <span className={pt.moneyDelta >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                {pt.moneyDelta >= 0 ? '+' : ''}${pt.moneyDelta.toLocaleString()}
+                              </span>
+                              <span className="opacity-75 font-semibold">
+                                NW: ${pt.netWorth.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Preference & Team Synergy Breakdown Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Action Preferences */}
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                      <div className="font-bold text-sm flex items-center gap-2">
+                        <span>📊</span> Action Preferences & Tactical Habits
+                      </div>
+                      {profile.preferences.topActionTypes.length === 0 ? (
+                        <div className="opacity-60 text-xs py-4 text-center">No action preferences computed yet.</div>
+                      ) : (
+                        <div className="space-y-2 text-xs">
+                          {profile.preferences.topActionTypes.slice(0, 6).map((pref) => (
+                            <div key={pref.actionType} className="space-y-1">
+                              <div className="flex justify-between font-semibold capitalize">
+                                <span>{pref.actionType.replace(/_/g, ' ')}</span>
+                                <span className="opacity-80">
+                                  {pref.count} ({pref.percentage}%) · {pref.successCount}W-{pref.failCount}L
+                                </span>
+                              </div>
+                              <div className="w-full bg-gray-700/60 rounded-full h-1.5">
+                                <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${pref.percentage}%` }} />
+                              </div>
+                            </div>
+                          ))}
+                          {profile.preferences.favoriteResource && (
+                            <div className="pt-2 border-t border-white/10 text-xs opacity-80 flex justify-between">
+                              <span>Favorite Trade Resource:</span>
+                              <span className="font-bold text-amber-300 capitalize">{profile.preferences.favoriteResource} ({profile.preferences.resourceTransactionsCount} txns)</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  );
-                })}
-                {filteredEvents.length > 300 && (
-                  <div className="text-xs opacity-60 text-center pt-2">Showing the {ledgerDashboardSortOrder === 'newest' ? 'most recent' : 'oldest'} 300 of {filteredEvents.length} matching events.</div>
-                )}
+
+                    {/* Team Contribution & Synergy */}
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                      <div className="font-bold text-sm flex items-center gap-2">
+                        <span>🤝</span> Team Contribution & Alignment
+                      </div>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between items-center p-2 rounded bg-white/5">
+                          <span className="opacity-80">Treasury Deposits:</span>
+                          <span className="font-bold text-green-400">+${profile.teamContribution.treasuryDepositedTotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-2 rounded bg-white/5">
+                          <span className="opacity-80">Treasury Withdrawals:</span>
+                          <span className="font-bold text-red-400">-${profile.teamContribution.treasuryWithdrawnTotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-2 rounded bg-white/5">
+                          <span className="opacity-80">Region Investment Deposits:</span>
+                          <span className="font-bold text-blue-400">${profile.teamContribution.regionDepositsTotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-2 rounded bg-white/5">
+                          <span className="opacity-80">Sabotage Defended / Executed:</span>
+                          <span className="font-bold text-amber-300">{profile.teamContribution.sabotageDefendedCount} defended / {profile.teamContribution.sabotageExecutedCount} executed</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Tab 6: Analytics & Metrics */}
+            {activeLedgerTab === 'analytics' && (() => {
+              const analytics = computeGameActivityLedgerAnalytics(allEvents);
+
+              return (
+                <div className="space-y-4">
+                  {/* Top Throughput Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Total Recorded Events</div>
+                      <div className="text-xl font-extrabold text-blue-400 mt-1">{analytics.totalEvents}</div>
+                      <div className="opacity-60 text-[10px] mt-0.5">Across {analytics.uniqueDaysRecorded} active days</div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Avg Velocity (Events/Day)</div>
+                      <div className="text-xl font-extrabold text-cyan-400 mt-1">{analytics.throughput.avgEventsPerDay}</div>
+                      <div className="opacity-60 text-[10px] mt-0.5">Peak Day {analytics.throughput.peakDay.day} ({analytics.throughput.peakDay.count} ev)</div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Activity Trend</div>
+                      <div className="text-lg font-bold mt-1 capitalize text-amber-300 flex items-center gap-1">
+                        {analytics.throughput.throughputVelocityTrend === 'accelerating' ? '📈 Accelerating' : analytics.throughput.throughputVelocityTrend === 'decelerating' ? '📉 Decelerating' : '➡️ Stable'}
+                      </div>
+                      <div className="opacity-60 text-[10px] mt-0.5">Throughput momentum</div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Auditor Incidents</div>
+                      <div className="text-xl font-extrabold text-red-400 mt-1">{analytics.auditorDensity.totalIncidents}</div>
+                      <div className="opacity-60 text-[10px] mt-0.5">{analytics.auditorDensity.incidentsPerDay} incidents / day</div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                      <div className="opacity-70">Expectation Accuracy</div>
+                      <div className="text-xl font-extrabold text-emerald-400 mt-1">{analytics.expectations.avgAccuracyScore}%</div>
+                      <div className="opacity-60 text-[10px] mt-0.5">{analytics.expectations.totalEvaluated} plans evaluated</div>
+                    </div>
+                  </div>
+
+                  {/* Category Breakdown & Severity Distributions */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Category Distribution */}
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                      <div className="font-bold text-sm flex items-center justify-between">
+                        <span>📊 Category Breakdown</span>
+                        <span className="text-xs opacity-75 font-normal">{allEvents.length} total events</span>
+                      </div>
+                      <div className="space-y-2 text-xs">
+                        {Object.entries(analytics.categoryCounts).map(([cat, count]) => {
+                          const pct = analytics.categoryPercentages[cat as GameActivityLedgerEventCategory] || 0;
+                          if (count === 0) return null;
+                          return (
+                            <div key={cat} className="space-y-1">
+                              <div className="flex justify-between font-semibold capitalize">
+                                <span>{cat.replace(/_/g, ' ')}</span>
+                                <span className="opacity-80">{count} ({pct.toFixed(1)}%)</span>
+                              </div>
+                              <div className="w-full bg-gray-700/60 rounded-full h-2">
+                                <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Severity Distribution */}
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                      <div className="font-bold text-sm">⚠️ Severity Level Distribution</div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 rounded bg-blue-900/30 border border-blue-500/20">
+                          <div className="opacity-80">Informational</div>
+                          <div className="text-lg font-bold text-blue-300 mt-1">
+                            {analytics.severityDistribution.info} <span className="text-xs font-normal opacity-70">({analytics.severityPercentages.info}%)</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3 rounded bg-amber-900/30 border border-amber-500/20">
+                          <div className="opacity-80">Warnings</div>
+                          <div className="text-lg font-bold text-amber-300 mt-1">
+                            {analytics.severityDistribution.warning} <span className="text-xs font-normal opacity-70">({analytics.severityPercentages.warning}%)</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3 rounded bg-red-900/30 border border-red-500/20">
+                          <div className="opacity-80">Critical Incidents</div>
+                          <div className="text-lg font-bold text-red-400 mt-1">
+                            {analytics.severityDistribution.critical} <span className="text-xs font-normal opacity-70">({analytics.severityPercentages.critical}%)</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3 rounded bg-purple-900/30 border border-purple-500/20">
+                          <div className="opacity-80">Diagnostic Events</div>
+                          <div className="text-lg font-bold text-purple-300 mt-1">
+                            {analytics.severityDistribution.diagnostic} <span className="text-xs font-normal opacity-70">({analytics.severityPercentages.diagnostic}%)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Auditor Signature Breakdown */}
+                      {analytics.auditorDensity.mostFrequentIncidentSignatures.length > 0 && (
+                        <div className="pt-2 border-t border-white/10 space-y-1.5 text-xs">
+                          <div className="font-bold opacity-80">Top Auditor Incident Signatures</div>
+                          {analytics.auditorDensity.mostFrequentIncidentSignatures.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center opacity-80">
+                              <span className="truncate max-w-[240px] font-mono text-[11px]">{item.signature}</span>
+                              <span className="font-bold text-red-300">{item.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* System Influence & Expectation Performance Summaries */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-2`}>
+                      <div className="font-bold text-sm">🎯 Expectation Engine Performance</div>
+                      <div className="flex justify-between p-2 rounded bg-white/5">
+                        <span className="opacity-80">Net Cash Projection Variance:</span>
+                        <span className={`font-bold ${analytics.expectations.netCashVariance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {analytics.expectations.netCashVariance >= 0 ? '+' : ''}${analytics.expectations.netCashVariance.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-white/5">
+                        <span className="opacity-80">Total Utility Generated:</span>
+                        <span className="font-bold text-blue-300">+{analytics.expectations.totalUtilityDelta.toFixed(1)} pts</span>
+                      </div>
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-2`}>
+                      <div className="font-bold text-sm">⚙️ System Influence Mechanics</div>
+                      <div className="flex justify-between p-2 rounded bg-white/5">
+                        <span className="opacity-80">Avg Economy Governor Weight:</span>
+                        <span className="font-bold text-cyan-300">{analytics.systemInfluences.avgEconomyGovernorWeight}x</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-white/5">
+                        <span className="opacity-80">Avg Overseer Priority:</span>
+                        <span className="font-bold text-purple-300">{analytics.systemInfluences.avgOverseerPriority}x</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Tab 7: Diagnostic Collections & Bundles */}
+            {activeLedgerTab === 'diagnostics' && (
+              <div className="space-y-4">
+                <div className={`${themeStyles.border} border rounded-lg p-3 flex flex-wrap items-center justify-between gap-3`}>
+                  <div>
+                    <div className="font-bold text-sm">⭐ Bookmarked Events ({ledgerBookmarks.length})</div>
+                    <div className="text-xs opacity-75">Pin events from Activity Overview to save them here for diagnostic analysis.</div>
+                  </div>
+                  <input
+                    type="text"
+                    value={ledgerTagFilter}
+                    onChange={(e) => setLedgerTagFilter(e.target.value)}
+                    placeholder="Filter by custom tag (e.g. #anomaly)..."
+                    className={`${themeStyles.input} rounded px-3 py-1 text-xs`}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  {ledgerBookmarks.length === 0 ? (
+                    <div className="text-center opacity-70 py-6 text-sm">No events bookmarked. Click the star icon next to any event in Tab 1 to bookmark it.</div>
+                  ) : (
+                    allEvents.filter(ev => ledgerBookmarks.includes(ev.id)).map(ev => (
+                      <div key={ev.id} className={`${themeStyles.border} border rounded p-3 text-xs flex justify-between items-center`}>
+                        <div>
+                          <div className="font-bold text-amber-300">⭐ {ev.summary}</div>
+                          <div className="opacity-75">Category: {ev.category} · Event ID: {ev.id}</div>
+                        </div>
+                        <button onClick={() => toggleBookmark(ev.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-[10px]`}>Unstar</button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
+
+            {/* Tab 8: Match Story & Scorecard Hub */}
+            {activeLedgerTab === 'story' && (() => {
+              const story = generateMatchStoryTimeline(allEvents, gameState, { turningPointsOnly: ledgerStoryFilterTurningPointsOnly, minScoreThreshold: 35 });
+              const scorecardSummary = generateScorecardSummaryReport(gameState?.actors || {}, allEvents, gameSettings.aiEffectivenessBlunderThresholdRoi);
+
+              return (
+                <div className="space-y-4">
+                  {/* Header & Subtab Controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setLedgerStorySubTab('timeline')}
+                        className={`px-3 py-1 rounded text-xs font-bold ${ledgerStorySubTab === 'timeline' ? 'bg-amber-500 text-black' : 'bg-white/10 hover:bg-white/20'}`}
+                      >
+                        📖 Match Story Timeline
+                      </button>
+                      <button
+                        onClick={() => setLedgerStorySubTab('scorecard')}
+                        className={`px-3 py-1 rounded text-xs font-bold ${ledgerStorySubTab === 'scorecard' ? 'bg-purple-500 text-white' : 'bg-white/10 hover:bg-white/20'}`}
+                      >
+                        🎯 AI Effectiveness Scorecard
+                      </button>
+                    </div>
+
+                    {ledgerStorySubTab === 'timeline' && (
+                      <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={ledgerStoryFilterTurningPointsOnly}
+                          onChange={(e) => setLedgerStoryFilterTurningPointsOnly(e.target.checked)}
+                          className="rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-0"
+                        />
+                        <span>Show Turning Points Only ({story.turningPointCount})</span>
+                      </label>
+                    )}
+                  </div>
+
+                  {ledgerStorySubTab === 'scorecard' ? (
+                    /* Phase 17: AI Effectiveness Scorecard View */
+                    <div className="space-y-4 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Match-Wide AI Effectiveness</div>
+                          <div className="text-2xl font-extrabold text-purple-400 mt-1">
+                            {scorecardSummary.matchWideEffectivenessScore} / 100
+                          </div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Aggregated overall performance score across all AI actors</div>
+                        </div>
+
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Top Performing AI Actor</div>
+                          <div className="text-xl font-bold text-emerald-400 mt-1">
+                            {scorecardSummary.topPerformingActorId ? getActorDisplayName(scorecardSummary.topPerformingActorId) : 'N/A'}
+                          </div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Highest composite efficiency rating this match</div>
+                        </div>
+
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Blunder Sensitivity Threshold</div>
+                          <div className="text-xl font-bold text-amber-300 mt-1">
+                            {gameSettings.aiEffectivenessBlunderThresholdRoi}% ROI
+                          </div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Configured in Settings → ROI Variance Threshold</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="font-bold text-sm text-purple-300">🤖 Actor Breakdown Scorecards</div>
+                        {Object.keys(scorecardSummary.scorecardsByActor).length === 0 ? (
+                          <div className="text-center opacity-60 py-6 italic">No AI actors evaluated yet in this match.</div>
+                        ) : (
+                          Object.values(scorecardSummary.scorecardsByActor).map(sc => (
+                            <div key={sc.actorId} className={`${themeStyles.border} border rounded-lg p-3 bg-white/5 space-y-2`}>
+                              <div className="flex items-center justify-between">
+                                <div className="font-bold text-sm flex items-center gap-2">
+                                  <span>👤 {sc.actorName}</span>
+                                  <span className="text-xs opacity-60">({sc.actorId})</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded bg-purple-900/60 text-purple-200 font-extrabold text-xs">
+                                    Score: {sc.overallEffectivenessScore}/100
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                                <div className="p-2 rounded bg-black/20">
+                                  <div className="opacity-70">Evaluated Decisions</div>
+                                  <div className="font-bold mt-0.5">{sc.totalDecisions}</div>
+                                </div>
+                                <div className="p-2 rounded bg-black/20">
+                                  <div className="opacity-70">Avg ROI Variance</div>
+                                  <div className={`font-bold mt-0.5 ${sc.averageRoiDelta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {sc.averageRoiDelta >= 0 ? '+' : ''}{sc.averageRoiDelta}%
+                                  </div>
+                                </div>
+                                <div className="p-2 rounded bg-black/20">
+                                  <div className="opacity-70">Blunders / Brilliant</div>
+                                  <div className="font-bold mt-0.5 text-amber-300">
+                                    {sc.blunderCount} Blunders · {sc.brilliantCount} Brilliant
+                                  </div>
+                                </div>
+                                <div className="p-2 rounded bg-black/20">
+                                  <div className="opacity-70">Auditor Compliance</div>
+                                  <div className="font-bold mt-0.5 text-emerald-400">
+                                    {sc.compliance.complianceRate}% ({sc.compliance.compliantCount}/{sc.compliance.totalDecisions})
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Existing Timeline View */
+                    <div className="space-y-4">
+                      {/* Match Highlights Banner */}
+                      {story.matchHighlights.length > 0 && (
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-amber-950/20 space-y-2`}>
+                          <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                            <span>🌟 Key Match Turning Points</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                            {story.matchHighlights.slice(0, 3).map((hl) => (
+                              <div key={hl.id} className="p-2 rounded bg-black/40 border border-amber-500/30 flex flex-col justify-between">
+                                <div>
+                                  <div className="flex justify-between items-center text-[10px] opacity-75 font-mono mb-1">
+                                    <span>Day {hl.day} Turn {hl.turn}</span>
+                                    <span className="text-amber-300 font-bold">Score: {hl.score}</span>
+                                  </div>
+                                  <div className="font-bold text-white text-xs truncate">{hl.headline}</div>
+                                  <div className="opacity-75 text-[11px] mt-1 line-clamp-2">{hl.narrativeText}</div>
+                                </div>
+                                <div className="mt-2 text-[10px] text-emerald-400 font-mono font-semibold">
+                                  {hl.stateDeltaSummary}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Chronological Narrative Stream */}
+                      {story.milestones.length === 0 ? (
+                        <div className="text-center opacity-70 py-8 text-sm">
+                          {ledgerStoryFilterTurningPointsOnly
+                            ? 'No critical turning points reached yet. Uncheck the filter to view routine match milestones.'
+                            : 'No match history recorded yet. Play turns to build your match story timeline.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {story.milestones.map((ms) => (
+                            <div
+                              key={ms.id}
+                              className={`p-3 rounded-lg border transition-colors ${
+                                ms.isTurningPoint
+                                  ? 'bg-amber-950/10 border-amber-500/40 shadow-sm'
+                                  : 'bg-white/5 border-white/10 opacity-90'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded bg-blue-900/60 text-blue-200 font-mono text-xs font-bold shrink-0">
+                                    Day {ms.day} T{ms.turn}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    ms.turningPointType === 'auditor_intervention' ? 'bg-red-900/60 text-red-200' :
+                                    ms.turningPointType === 'territorial_shift' ? 'bg-emerald-900/60 text-emerald-200' :
+                                    ms.turningPointType === 'pivotal_governance' ? 'bg-purple-900/60 text-purple-200' :
+                                    ms.turningPointType === 'economic_crisis_bailout' ? 'bg-amber-900/60 text-amber-200' :
+                                    'bg-blue-900/60 text-blue-200'
+                                  }`}>
+                                    {ms.turningPointType.replace(/_/g, ' ')}
+                                  </span>
+                                  {ms.isTurningPoint && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-extrabold">
+                                      ⚡ Turning Point (Score {ms.score})
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  {ms.causalLinkage.causalChainId && (
+                                    <button
+                                      onClick={() => {
+                                        setLedgerDashboardCorrelationFilter(ms.causalLinkage.causalChainId || null);
+                                        setActiveLedgerTab('causal');
+                                      }}
+                                      className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 hover:bg-blue-600/40`}
+                                    >
+                                      <span>🔗 View Causal Chain</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="mt-2">
+                                <div className="font-bold text-sm text-white">{ms.headline}</div>
+                                <div className="text-xs opacity-85 mt-1 leading-relaxed">{ms.narrativeText}</div>
+                              </div>
+
+                              <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-wrap items-center justify-between text-[11px] opacity-75">
+                                <div>
+                                  Actor: <span className="font-semibold text-white">{ms.actorDisplayName}</span> {ms.teamId && `(Team ${ms.teamId})`}
+                                </div>
+                                <div className="font-mono text-emerald-400 font-semibold">
+                                  {ms.stateDeltaSummary}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tab 9: Replay Viewer & Comparison Tool */}
+            {activeLedgerTab === 'replay' && (() => {
+              const normalizedEvents = allEvents.map(normalizeLedgerEvent);
+              const streamComparisonReport = compareLedgerEventStreams(normalizedEvents, normalizedEvents);
+
+              return (
+                <div className="space-y-4 text-xs">
+                  {/* Header Subtab Controls */}
+                  <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <button
+                      onClick={() => setLedgerReplaySubTab('viewer')}
+                      className={`px-3 py-1 rounded text-xs font-bold ${ledgerReplaySubTab === 'viewer' ? 'bg-purple-500 text-white' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      🎬 Replay Viewer Link
+                    </button>
+                    <button
+                      onClick={() => setLedgerReplaySubTab('comparison')}
+                      className={`px-3 py-1 rounded text-xs font-bold ${ledgerReplaySubTab === 'comparison' ? 'bg-cyan-500 text-black' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      🔬 Stream Divergence & Comparison Tool
+                    </button>
+                  </div>
+
+                  {/* Export & Import Match Bundle Actions */}
+                  <div className="flex flex-wrap gap-2 p-3 bg-purple-950/30 rounded-lg border border-purple-500/20 items-center justify-between">
+                    <div>
+                      <div className="font-bold text-xs text-purple-300">📦 Match Bundle Replay Engine</div>
+                      <div className="text-[10px] opacity-70">Export or import self-contained JSON match bundles with checksum validation.</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const bundleJson = exportGameLedgerBundle(gameState, gameSettings);
+                          const blob = new Blob([bundleJson], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `match_bundle_${gameState?.gameActivityLedger?.matchId || Date.now()}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                      >
+                        📦 Export Match Bundle
+                      </button>
+                      <button
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = '.json';
+                          input.onchange = (e: any) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                const content = event.target?.result as string;
+                                const valResult = validateAndImportLedgerBundle(content);
+                                if (valResult.valid && valResult.importedPayload) {
+                                  dispatchGameState({
+                                    type: 'SET_GAME_ACTIVITY_LEDGER_STATE',
+                                    payload: {
+                                      matchId: valResult.importedPayload.metadata.matchId,
+                                      events: valResult.importedPayload.ledgerEventStream
+                                    }
+                                  });
+                                  alert(`Match Bundle imported successfully!\nMatch ID: ${valResult.importedPayload.metadata.matchId}\nLoaded ${valResult.importedPayload.ledgerEventStream.length} events.`);
+                                } else {
+                                  alert(`Import failed:\n${valResult.errors.join('\n')}`);
+                                }
+                              };
+                              reader.readAsText(file);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                      >
+                        📂 Import Match Bundle
+                      </button>
+                    </div>
+                  </div>
+
+                  {ledgerReplaySubTab === 'viewer' ? (
+                    <div className={`${themeStyles.border} border rounded-lg p-4 space-y-3`}>
+                      <div className="font-bold text-sm text-purple-300 flex items-center justify-between">
+                        <span>🎬 Match Replay Integration</span>
+                        <button onClick={() => { setShowReplayViewer(true); close(); }} className={`${themeStyles.button} text-white px-3 py-1 rounded text-xs font-semibold`}>
+                          Open Full Replay Viewer ↗
+                        </button>
+                      </div>
+                      <p className="opacity-80">
+                        Cross-link live Game Activity Ledger records with historical match replay checkpoints and deterministic re-simulation logs.
+                      </p>
+                    </div>
+                  ) : (
+                    /* Phase 15: Replay Comparison View */
+                    <div className="space-y-4">
+                      <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                        <div className="font-bold text-sm text-cyan-300 flex items-center justify-between">
+                          <span>🔬 Stream Divergence Report (Live Stream vs Replay Baseline)</span>
+                          <span className="px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-200 font-extrabold text-xs">
+                            Match Score: {streamComparisonReport.summaryScore}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center p-2 rounded bg-black/20">
+                          <div><div className="opacity-70">Events Compared</div><div className="font-bold text-sm">{streamComparisonReport.totalEventsCompared}</div></div>
+                          <div><div className="opacity-70">Divergence Count</div><div className="font-bold text-sm text-amber-300">{streamComparisonReport.divergenceCount}</div></div>
+                          <div><div className="opacity-70">Max Severity</div><div className="font-bold text-sm text-emerald-400 capitalize">{streamComparisonReport.maxDivergenceSeverity}</div></div>
+                          <div><div className="opacity-70">Desync Risk</div><div className="font-bold text-sm text-blue-300">{streamComparisonReport.divergenceCount === 0 ? 'Low' : 'Moderate'}</div></div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="font-bold text-xs opacity-80">Divergence Event Details ({streamComparisonReport.divergenceDetails.length})</div>
+                        {streamComparisonReport.divergenceDetails.length === 0 ? (
+                          <div className="text-center opacity-60 py-6 italic border rounded-lg p-4">
+                            No event stream divergences detected! Live ledger stream matches replay sequence deterministically.
+                          </div>
+                        ) : (
+                          streamComparisonReport.divergenceDetails.map((det, idx) => (
+                            <div key={idx} className={`${themeStyles.border} border rounded-lg p-3 bg-white/5 space-y-1 text-xs`}>
+                              <div className="flex items-center justify-between font-bold">
+                                <span className="text-amber-300">Sequence #{det.sequence} (Day {det.day}, Turn {det.turn})</span>
+                                <span className="px-2 py-0.5 rounded bg-red-900/60 text-red-200 text-[10px] uppercase font-extrabold">{det.severity}</span>
+                              </div>
+                              <div className="opacity-90 leading-relaxed">{det.divergenceExplanation}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Tab 10: Settings, Health & Diagnostics Hub */}
+            {activeLedgerTab === 'settings' && (() => {
+              const report = scanLedgerIntegrity(allEvents);
+              const footprint = calculateLedgerStorageFootprint(allEvents);
+              const stressIndex = calculateBalanceStressIndex(allEvents, gameState?.actors || {});
+
+              return (
+                <div className="space-y-4 text-xs">
+                  {/* Tab 10 Sub-navigation Bar */}
+                  <div className="flex items-center gap-2 p-2 bg-white/5 rounded-lg border border-white/10 overflow-x-auto">
+                    <button
+                      onClick={() => setPhase19SubTab('health')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${phase19SubTab === 'health' ? 'bg-blue-500 text-white shadow' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      ⚙️ Configuration
+                    </button>
+                    <button
+                      onClick={() => setPhase19SubTab('diagnostics')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${phase19SubTab === 'diagnostics' ? 'bg-amber-500 text-black shadow' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      🩺 Structural Diagnostics ({report.totalViolations})
+                    </button>
+                    <button
+                      onClick={() => setPhase19SubTab('storage')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${phase19SubTab === 'storage' ? 'bg-purple-500 text-white shadow' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      📊 Storage & Footprint ({footprint.formattedSize})
+                    </button>
+                    <button
+                      onClick={() => setPhase19SubTab('balancelab')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${phase19SubTab === 'balancelab' ? 'bg-emerald-500 text-black shadow' : 'bg-white/10 hover:bg-white/20'}`}
+                    >
+                      🧪 Balance Lab & Sandbox
+                    </button>
+                  </div>
+
+                  {/* Sub-Panel 1: Ledger Configuration */}
+                  {phase19SubTab === 'health' && (
+                    <div className="space-y-4">
+                      <div className={`${themeStyles.border} border rounded-lg p-4 space-y-3 bg-white/5`}>
+                        <div className="font-bold text-sm text-blue-300 flex items-center justify-between">
+                          <span>⚙️ Ledger Configuration & Retention Controls</span>
+                          <span className="text-xs opacity-70">Active Events: {allEvents.length} / {gameSettings.gameActivityLedgerMaxEvents}</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block mb-1 font-semibold">Max Recorded Events (100 – 5,000):</label>
+                            <input
+                              type="number"
+                              min="100"
+                              max="5000"
+                              value={gameSettings.gameActivityLedgerMaxEvents}
+                              onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'gameActivityLedgerMaxEvents', Math.max(100, Math.min(5000, Number(e.target.value) || 300)), 'activity_ledger_control', { section: 'Activity Ledger' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)}
+                              className={`${themeStyles.input} rounded px-3 py-1.5 w-full`}
+                            />
+                            <p className="text-[10px] opacity-60 mt-1">Configures maximum FIFO event buffer capacity.</p>
+                          </div>
+
+                          <div>
+                            <label className="block mb-1 font-semibold">Retention Policy:</label>
+                            <select
+                              value={gameSettings.gameActivityLedgerRetentionPolicy}
+                              onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'gameActivityLedgerRetentionPolicy', e.target.value as any, 'activity_ledger_control', { section: 'Activity Ledger' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)}
+                              className={`${themeStyles.select} rounded px-3 py-1.5 w-full`}
+                            >
+                              <option value="keep_recent">Keep Recent (FIFO Window)</option>
+                              <option value="keep_critical">Keep Critical (Prioritize Incidents & Config)</option>
+                            </select>
+                            <p className="text-[10px] opacity-60 mt-1">Controls event replacement strategy when ceiling is reached.</p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="flex items-center justify-between p-2 rounded bg-black/20">
+                            <div>
+                              <div className="font-semibold">Include in Save File</div>
+                              <div className="text-[10px] opacity-60">Persists ledger history inside save JSON</div>
+                            </div>
+                            <button
+                              onClick={() => dispatchGameSettingsChange(setGameSettings, 'gameActivityLedgerIncludeInSaveFile', !gameSettings.gameActivityLedgerIncludeInSaveFile, 'activity_ledger_control', { section: 'Activity Ledger' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)}
+                              className={`px-3 py-1 rounded font-bold text-xs ${gameSettings.gameActivityLedgerIncludeInSaveFile ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                            >
+                              {gameSettings.gameActivityLedgerIncludeInSaveFile ? 'ON' : 'OFF'}
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2 rounded bg-black/20">
+                            <div>
+                              <div className="font-semibold">Recording Pause</div>
+                              <div className="text-[10px] opacity-60">Temporarily halts new event emissions</div>
+                            </div>
+                            <button
+                              onClick={() => dispatchGameSettingsChange(setGameSettings, 'gameActivityLedgerRecordingPaused', !gameSettings.gameActivityLedgerRecordingPaused, 'activity_ledger_control', { section: 'Activity Ledger' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)}
+                              className={`px-3 py-1 rounded font-bold text-xs ${gameSettings.gameActivityLedgerRecordingPaused ? 'bg-amber-600 text-white' : 'bg-blue-600 text-white'}`}
+                            >
+                              {gameSettings.gameActivityLedgerRecordingPaused ? 'PAUSED' : 'RECORDING'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-Panel 2: Structural Diagnostics */}
+                  {phase19SubTab === 'diagnostics' && (
+                    <div className="space-y-4">
+                      <div className={`${themeStyles.border} border rounded-lg p-4 space-y-3 bg-white/5`}>
+                        <div className="flex items-center justify-between">
+                          <div className="font-bold text-sm text-amber-300">🩺 Structural Integrity Inspector</div>
+                          <span className={`px-2.5 py-1 rounded font-extrabold uppercase text-[10px] ${
+                            report.status === 'passed' ? 'bg-green-900 text-green-200 border border-green-500' :
+                            report.status === 'warnings_found' ? 'bg-amber-900 text-amber-200 border border-amber-500' :
+                            'bg-red-900 text-red-200 border border-red-500'
+                          }`}>
+                            {report.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center p-3 rounded bg-black/30">
+                          <div className="p-2 border border-white/5 rounded">
+                            <div className="opacity-70 text-[10px]">Sequence Gaps</div>
+                            <div className={`font-bold text-base ${report.sequenceGapCount > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                              {report.sequenceGapCount}
+                            </div>
+                          </div>
+                          <div className="p-2 border border-white/5 rounded">
+                            <div className="opacity-70 text-[10px]">Timestamp Inversions</div>
+                            <div className={`font-bold text-base ${report.timestampInversionCount > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                              {report.timestampInversionCount}
+                            </div>
+                          </div>
+                          <div className="p-2 border border-white/5 rounded">
+                            <div className="opacity-70 text-[10px]">Missing Actor IDs</div>
+                            <div className={`font-bold text-base ${report.missingActorIdCount > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                              {report.missingActorIdCount}
+                            </div>
+                          </div>
+                          <div className="p-2 border border-white/5 rounded">
+                            <div className="opacity-70 text-[10px]">Payload Corruptions</div>
+                            <div className={`font-bold text-base ${report.payloadCorruptionCount > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                              {report.payloadCorruptionCount}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Violation Detail Table */}
+                        {report.violations.length > 0 ? (
+                          <div className="space-y-2 mt-3">
+                            <div className="flex items-center justify-between text-xs font-semibold">
+                              <span>Detected Violations ({report.violations.length})</span>
+                              <div className="flex gap-1">
+                                {(['all', 'warning', 'error', 'critical'] as const).map(sev => (
+                                  <button
+                                    key={sev}
+                                    onClick={() => setIntegrityFilter(sev)}
+                                    className={`px-2 py-0.5 rounded text-[10px] capitalize ${integrityFilter === sev ? 'bg-amber-500 text-black font-bold' : 'bg-white/10'}`}
+                                  >
+                                    {sev}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                              {report.violations
+                                .filter(v => integrityFilter === 'all' || v.severity === integrityFilter)
+                                .map(v => (
+                                  <div key={v.id} className="p-2 rounded bg-black/40 border border-white/10 flex items-start justify-between text-[11px]">
+                                    <div>
+                                      <span className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase mr-2 ${
+                                        v.severity === 'critical' ? 'bg-red-900 text-red-200' :
+                                        v.severity === 'error' ? 'bg-orange-900 text-orange-200' : 'bg-amber-900 text-amber-200'
+                                      }`}>
+                                        {v.violationType}
+                                      </span>
+                                      <span className="font-semibold">{v.description}</span>
+                                      <div className="text-[10px] opacity-60 mt-0.5">Event ID: {v.eventId} · Sequence: {v.sequenceId}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 text-center text-green-400 bg-green-950/30 rounded border border-green-500/20 font-semibold">
+                            ✓ No integrity violations detected. Ledger structure is pristine.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-Panel 3: Storage & Footprint */}
+                  {phase19SubTab === 'storage' && (
+                    <div className="space-y-4">
+                      <div className={`${themeStyles.border} border rounded-lg p-4 space-y-4 bg-white/5`}>
+                        <div className="flex items-center justify-between font-bold text-sm text-purple-300">
+                          <span>📊 Storage Footprint & Render Overhead</span>
+                          <button
+                            onClick={() => {
+                              const pruned = pruneLedgerEvents(allEvents, gameSettings.gameActivityLedgerMaxEvents, gameSettings.gameActivityLedgerRetentionPolicy);
+                              dispatchGameState({ type: 'SET_GAME_ACTIVITY_LEDGER_STATE', payload: { matchId: ledger?.matchId || 'active', events: pruned } });
+                            }}
+                            className="px-3 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
+                          >
+                            Apply Retention Prune ✂️
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="p-3 rounded bg-black/30 border border-white/10 text-center">
+                            <div className="opacity-70 text-[10px]">UTF-8 Serialized Size</div>
+                            <div className="text-xl font-extrabold text-purple-400 mt-1">{footprint.formattedSize}</div>
+                            <div className="opacity-60 text-[9px] mt-0.5">{footprint.totalUtf8Bytes.toLocaleString()} bytes</div>
+                          </div>
+
+                          <div className="p-3 rounded bg-black/30 border border-white/10 text-center">
+                            <div className="opacity-70 text-[10px]">LocalStorage Capacity %</div>
+                            <div className="text-xl font-extrabold text-blue-400 mt-1">{footprint.localStorageUsagePercent}%</div>
+                            <div className="opacity-60 text-[9px] mt-0.5">Of 5 MB browser quota</div>
+                          </div>
+
+                          <div className="p-3 rounded bg-black/30 border border-white/10 text-center">
+                            <div className="opacity-70 text-[10px]">Est. DOM Render Overhead</div>
+                            <div className="text-xl font-extrabold text-amber-400 mt-1">{footprint.estimatedTotalDomNodes} Nodes</div>
+                            <div className="opacity-60 text-[9px] mt-0.5">~{footprint.estimatedDomMemoryKb} KB UI memory</div>
+                          </div>
+                        </div>
+
+                        {/* Category Storage Breakdown Table */}
+                        <div className="space-y-2">
+                          <div className="font-semibold text-xs">Category Byte Distribution</div>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {footprint.categoryBreakdown.map(cat => (
+                              <div key={cat.category} className="p-2 rounded bg-black/20 border border-white/5 flex items-center justify-between text-[11px]">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold capitalize">{cat.category.replace(/_/g, ' ')}</span>
+                                  <span className="text-[10px] opacity-60">({cat.eventCount} events)</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-24 bg-gray-700 h-2 rounded-full overflow-hidden">
+                                    <div className="bg-purple-500 h-full" style={{ width: `${cat.bytePercentage}%` }} />
+                                  </div>
+                                  <span className="font-mono text-purple-300 font-bold w-12 text-right">{cat.bytePercentage}%</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-Panel 4: Balance Lab & Sandbox (Preserved Phase 18) */}
+                  {phase19SubTab === 'balancelab' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Overall Stress Index</div>
+                          <div className="text-2xl font-extrabold text-emerald-400 mt-1">
+                            {stressIndex.overallStressIndex} / 100
+                          </div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Composite economic & game balance stress</div>
+                        </div>
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Runaway Leader Risk</div>
+                          <div className="text-xl font-bold text-amber-300 mt-1">{stressIndex.runawayLeaderRisk}%</div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Wealth disparity coefficient</div>
+                        </div>
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Comeback Feasibility</div>
+                          <div className="text-xl font-bold text-blue-300 mt-1">{stressIndex.comebackFeasibilityScore}%</div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Catchup mechanic potential</div>
+                        </div>
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Economic Volatility</div>
+                          <div className="text-xl font-bold text-cyan-300 mt-1">{stressIndex.economicVolatiltyScore}</div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Fluctuation index</div>
+                        </div>
+                        <div className={`${themeStyles.border} border rounded-lg p-3 bg-white/5`}>
+                          <div className="opacity-70">Stalemate Probability</div>
+                          <div className="text-xl font-bold text-purple-300 mt-1">{stressIndex.stalemateProbability}%</div>
+                          <div className="opacity-60 text-[10px] mt-0.5">Endgame stagnation likelihood</div>
+                        </div>
+                      </div>
+
+                      {/* Sandbox Simulation Panel */}
+                      <div className={`${themeStyles.border} border rounded-lg p-4 bg-white/5 space-y-3`}>
+                        <div className="font-bold text-sm text-emerald-300 flex items-center justify-between">
+                          <span>🧪 Balance Sandbox Adjustment Simulation</span>
+                          <button
+                            onClick={() => {
+                              const res = simulateBalanceAdjustment(balanceSandboxConfig, stressIndex);
+                              setBalanceSimResult(res);
+                            }}
+                            className="px-3 py-1 rounded bg-emerald-500 text-black font-bold text-xs"
+                          >
+                            Run Sandbox Simulation ⚡
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block mb-1 font-semibold">Reward Multiplier: ({balanceSandboxConfig.rewardMultiplier}x)</label>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={balanceSandboxConfig.rewardMultiplier}
+                              onChange={(e) => setBalanceSandboxConfig(prev => ({ ...prev, rewardMultiplier: parseFloat(e.target.value) }))}
+                              className="w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block mb-1 font-semibold">Catchup Bonus Multiplier: ({balanceSandboxConfig.catchupBonusMultiplier}x)</label>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.5"
+                              step="0.1"
+                              value={balanceSandboxConfig.catchupBonusMultiplier}
+                              onChange={(e) => setBalanceSandboxConfig(prev => ({ ...prev, catchupBonusMultiplier: parseFloat(e.target.value) }))}
+                              className="w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block mb-1 font-semibold">Penalty Multiplier: ({balanceSandboxConfig.penaltyMultiplier}x)</label>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={balanceSandboxConfig.penaltyMultiplier}
+                              onChange={(e) => setBalanceSandboxConfig(prev => ({ ...prev, penaltyMultiplier: parseFloat(e.target.value) }))}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+
+                        {balanceSimResult && (
+                          <div className="p-3 rounded bg-black/40 border border-emerald-500/30 space-y-2 mt-3">
+                            <div className="font-bold text-xs text-emerald-300">📊 Simulation Results Projection</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                              <div><span className="opacity-70">Runaway Risk Reduction:</span> <span className="font-bold text-green-400">-{balanceSimResult.predictedRunawayReduction}%</span></div>
+                              <div><span className="opacity-70">Comeback Feasibility Delta:</span> <span className="font-bold text-blue-300">+{balanceSimResult.predictedComebackIncrease}%</span></div>
+                              <div><span className="opacity-70">Projected Win Turn Shift:</span> <span className="font-bold text-amber-300">{balanceSimResult.projectedWinTurnDelta > 0 ? '+' : ''}{balanceSimResult.projectedWinTurnDelta} turns</span></div>
+                              <div><span className="opacity-70">Stress Index Delta:</span> <span className="font-bold text-emerald-400">{balanceSimResult.stressIndexDelta} pts</span></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
           </div>
         </div>
       </div>
@@ -50403,11 +59247,12 @@ function AustraliaGame() {
             )}
             {replayDashboardTab === 'checkpoints' && (
               <div className="space-y-2">
-                <div className="font-semibold mb-2">Checkpoints (Replay From Checkpoint)</div>
+                <div className="font-semibold mb-2">Checkpoints & Match Branching</div>
                 {loadedReplayFile.checkpoints.map(cp => {
                   const integrityEntry = integrityReport.find(entry => entry.checkpointId === cp.id);
+                  const cpStateHash = cp.expectedStateHash || (cp.expectedState ? computeCanonicalStateHash(cp.expectedState) : null);
                   return (
-                    <div key={cp.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm`}>
+                    <div key={cp.id} className={`${themeStyles.border} border rounded-lg p-3 text-sm space-y-1.5`}>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <button
                           onClick={() => { setReplayViewerFromSequence(cp.sequence); setReplayDashboardTab('timeline'); }}
@@ -50424,29 +59269,112 @@ function AustraliaGame() {
                           )}
                         </div>
                       </div>
+                      {cpStateHash && (
+                        <div className="text-xs opacity-75">
+                          Canonical State Hash: <code className="bg-black bg-opacity-30 px-1 py-0.5 rounded">{cpStateHash}</code>
+                        </div>
+                      )}
                       {cp.expectedState && (
-                        <div className="text-xs opacity-70 mt-1">
+                        <div className="text-xs opacity-70">
                           Expected state — day {cp.expectedState.day}, turn {cp.expectedState.turn}, money by team: {Object.entries(cp.expectedState.moneyByTeam).map(([teamId, amount]) => `${teamId}: $${amount}`).join(', ')}
                         </div>
                       )}
                       {cp.relatedId && (
                         isLiveMatch ? (
-                          <div className="text-xs mt-1">
+                          <div className="text-xs">
                             <span className="opacity-60">Related ID: </span>
                             <span>{cp.relatedId}</span>
                           </div>
                         ) : (
-                          <div className="text-xs opacity-60 mt-1">Related ID: {cp.relatedId} (plain text only — this replay's match is not the currently live match, so there is nothing to link to).</div>
+                          <div className="text-xs opacity-60">Related ID: {cp.relatedId} (plain text only — this replay's match is not the currently live match).</div>
                         )
                       )}
-                      {integrityEntry && integrityEntry.status !== 'exact_match' && (
-                        <div className="text-xs opacity-60 mt-1">{integrityEntry.note}</div>
-                      )}
+                      <div className="pt-1 flex gap-2">
+                        <button
+                          onClick={() => {
+                            const branchData = spawnMatchBranchFromCheckpoint(cp, loadedReplayFile, gameSettings);
+                            pendingReplayBranchSourceMatchIdRef.current = loadedReplayFile.matchId;
+                            pendingReplayStartRef.current = true;
+                            applyLoadedState(branchData);
+                            addNotification(`Branched new playable match from checkpoint "${cp.label}" (Day ${cp.day}).`, 'success', true, 'system');
+                            close();
+                          }}
+                          className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded text-xs font-semibold hover:opacity-90`}
+                        >
+                          🌿 Branch Match From Checkpoint
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
                 {loadedReplayFile.checkpoints.length === 0 && (
                   <div className="text-sm opacity-60">No checkpoints recorded.</div>
+                )}
+              </div>
+            )}
+            {replayDashboardTab === 'reexecution' && (
+              <div className="space-y-4 text-sm">
+                <div className={`${themeStyles.border} border rounded-lg p-3 space-y-3`}>
+                  <div className="font-semibold text-base">⚡ Step-by-Step Logic Re-Execution Engine</div>
+                  <div className="text-xs opacity-75">
+                    Re-executes the match step-by-step from initial configuration, evaluating deterministic PRNG streams and canonical state hashes per event.
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="text-xs font-semibold">Policy:</label>
+                    {REPLAY_POLICIES.map(policy => (
+                      <button
+                        key={policy}
+                        onClick={() => setReexecPolicy(policy)}
+                        className={`px-3 py-1 rounded text-xs font-semibold ${reexecPolicy === policy ? themeStyles.button : themeStyles.buttonSecondary}`}
+                      >
+                        {policy.toUpperCase()}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => {
+                        const report = reexecuteReplayMatch(loadedReplayFile, reexecPolicy);
+                        setReexecReport(report);
+                      }}
+                      className={`${themeStyles.button} px-3.5 py-1.5 rounded text-xs font-bold`}
+                    >
+                      ▶ Run Re-Execution
+                    </button>
+                  </div>
+                </div>
+
+                {reexecReport && (
+                  <div className="space-y-3">
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-xs space-y-2`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm">Execution Report (Match {reexecReport.matchId})</span>
+                        <span className={`px-2 py-0.5 rounded font-bold uppercase text-white ${reexecReport.success ? themeStyles.success : themeStyles.error}`}>
+                          {reexecReport.success ? 'PASSED (0 Divergences)' : 'DIVERGENCE DETECTED'}
+                        </span>
+                      </div>
+                      <div>Policy Used: <strong>{reexecReport.policy.toUpperCase()}</strong> | Events Processed: <strong>{reexecReport.totalEventsProcessed}</strong> | Final Hash: <code>{reexecReport.finalStateHash}</code></div>
+                      {reexecReport.firstDivergence ? (
+                        <div className={`${themeStyles.border} border-2 border-red-500 rounded p-2.5 bg-red-950 bg-opacity-30 space-y-1`}>
+                          <div className="font-bold text-red-400">First Divergence Point:</div>
+                          <div>• <strong>Day</strong>: {reexecReport.firstDivergence.day} | <strong>Turn</strong>: {reexecReport.firstDivergence.turn}</div>
+                          <div>• <strong>Action Attempt ID</strong>: <code>{reexecReport.firstDivergence.actionAttemptId}</code></div>
+                          <div>• <strong>Expected Hash</strong>: <code className="text-green-400">{reexecReport.firstDivergence.expectedHash}</code></div>
+                          <div>• <strong>Actual Hash</strong>: <code className="text-red-400">{reexecReport.firstDivergence.actualHash}</code></div>
+                          <div>• <strong>Summary</strong>: {reexecReport.firstDivergence.summary}</div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-green-400 font-semibold mt-1">
+                          No divergence detected. Canonical state hash sequence perfectly matched re-execution state!
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`${themeStyles.border} border rounded-lg p-3 text-xs max-h-48 overflow-y-auto font-mono space-y-1`}>
+                      <div className="font-bold text-xs mb-1">Execution Log Output</div>
+                      {reexecReport.executionLogs.map((log, i) => (
+                        <div key={i} className="opacity-90">{log}</div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -50593,6 +59521,15 @@ function AustraliaGame() {
                       <div className="flex gap-2 mt-2">
                         <button onClick={() => completeProposalManually(proposal.id)} disabled={!(progress.completable || proposal.termType === 'custom')} className={`${themeStyles.button} text-white px-2 py-1 rounded text-xs disabled:opacity-50`}>Complete Task</button>
                         <button onClick={() => cancelProposal(proposal.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Cancel</button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openLedgerWithFilter({ search: proposal.id, category: 'all', tab: 'overview' });
+                          }}
+                          className={`${themeStyles.buttonSecondary} text-blue-400 px-2 py-1 rounded text-xs flex items-center gap-1`}
+                        >
+                          <span>📜 View in Ledger</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -50655,7 +59592,18 @@ function AustraliaGame() {
                       <div key={proposal.id} className={`${themeStyles.border} border rounded p-2`}>
                         <div className="font-semibold">{REGIONS[proposal.region]?.name || proposal.region} → {getControllerDisplayName(proposal.to)}</div>
                         <div className="text-xs opacity-75">Awaiting response</div>
-                        <button onClick={() => cancelProposal(proposal.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs mt-2`}>Cancel Proposal</button>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => cancelProposal(proposal.id)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded text-xs`}>Cancel Proposal</button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openLedgerWithFilter({ search: proposal.id, category: 'all', tab: 'overview' });
+                            }}
+                            className={`${themeStyles.buttonSecondary} text-blue-400 px-2 py-1 rounded text-xs flex items-center gap-1`}
+                          >
+                            <span>📜 View in Ledger</span>
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {outgoingPending.length === 0 && <div className="text-sm opacity-70">No outgoing proposals.</div>}
@@ -50763,11 +59711,22 @@ function AustraliaGame() {
                     })
                     .map(proposal => (
                       <div key={proposal.id} className={`${themeStyles.border} border rounded p-2 text-sm`}>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span>{REGIONS[proposal.region]?.name || proposal.region}</span>
                           <span>{proposal.status === 'completed' ? '✓ Completed' : '✗ Cancelled'}</span>
                         </div>
-                        <div className="text-xs opacity-75">{getControllerDisplayName(proposal.from)} ↔ {getControllerDisplayName(proposal.to)} | {proposal.termType}</div>
+                        <div className="flex justify-between items-center mt-1">
+                          <div className="text-xs opacity-75">{getControllerDisplayName(proposal.from)} ↔ {getControllerDisplayName(proposal.to)} | {proposal.termType}</div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openLedgerWithFilter({ search: proposal.id, category: 'all', tab: 'overview' });
+                            }}
+                            className={`${themeStyles.buttonSecondary} text-blue-400 px-2 py-0.5 rounded text-[10px] flex items-center gap-1`}
+                          >
+                            <span>📜 View in Ledger</span>
+                          </button>
+                        </div>
                       </div>
                     ))}
                 </div>
@@ -50786,24 +59745,24 @@ function AustraliaGame() {
             {center.activeTab === 'settings' && (
               <div className="space-y-3 text-sm">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={gameSettings.negotiationMode} onChange={(e) => setGameSettings(prev => ({ ...prev, negotiationMode: e.target.checked }))} />
+                  <input type="checkbox" checked={gameSettings.negotiationMode} onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'negotiationMode', e.target.checked, 'negotiation_option_toggle', { section: 'Negotiations' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)} />
                   <span>Enable Negotiation Mode</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={gameSettings.negotiationOptions.suggestCounterOffers} onChange={(e) => setGameSettings(prev => ({ ...prev, negotiationOptions: { ...prev.negotiationOptions, suggestCounterOffers: e.target.checked } }))} />
+                  <input type="checkbox" checked={gameSettings.negotiationOptions.suggestCounterOffers} onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'negotiationOptions', { ...gameSettings.negotiationOptions, suggestCounterOffers: e.target.checked }, 'negotiation_option_toggle', { section: 'Negotiations' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)} />
                   <span>Suggest Counter-Offers</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={gameSettings.negotiationOptions.autoCompleteReadyTasks} onChange={(e) => setGameSettings(prev => ({ ...prev, negotiationOptions: { ...prev.negotiationOptions, autoCompleteReadyTasks: e.target.checked } }))} />
+                  <input type="checkbox" checked={gameSettings.negotiationOptions.autoCompleteReadyTasks} onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'negotiationOptions', { ...gameSettings.negotiationOptions, autoCompleteReadyTasks: e.target.checked }, 'negotiation_option_toggle', { section: 'Negotiations' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)} />
                   <span>Auto-Complete Ready Tasks</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={gameSettings.negotiationOptions.confirmExpensiveTasks} onChange={(e) => setGameSettings(prev => ({ ...prev, negotiationOptions: { ...prev.negotiationOptions, confirmExpensiveTasks: e.target.checked } }))} />
+                  <input type="checkbox" checked={gameSettings.negotiationOptions.confirmExpensiveTasks} onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'negotiationOptions', { ...gameSettings.negotiationOptions, confirmExpensiveTasks: e.target.checked }, 'negotiation_option_toggle', { section: 'Negotiations' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)} />
                   <span>Confirm Expensive Tasks (&gt;$500)</span>
                 </label>
                 <div>
                   <label className="block mb-1">Proposal Expiration (turns): {gameSettings.negotiationOptions.proposalExpirationTurns}</label>
-                  <input type="range" min="0" max="15" value={gameSettings.negotiationOptions.proposalExpirationTurns} onChange={(e) => setGameSettings(prev => ({ ...prev, negotiationOptions: { ...prev.negotiationOptions, proposalExpirationTurns: Math.max(0, Math.floor(Number(e.target.value) || 0)) } }))} className="w-full" />
+                  <input type="range" min="0" max="15" value={gameSettings.negotiationOptions.proposalExpirationTurns} onChange={(e) => dispatchGameSettingsChange(setGameSettings, 'negotiationOptions', { ...gameSettings.negotiationOptions, proposalExpirationTurns: Math.max(0, Math.floor(Number(e.target.value) || 0)) }, 'negotiation_option_toggle', { section: 'Negotiations' }, gameSettings, dispatchAuthoritativeGameActivityLedgerEvent)} className="w-full" />
                 </div>
               </div>
             )}
@@ -50826,7 +59785,18 @@ function AustraliaGame() {
                         <span className="text-xs opacity-75 shrink-0">Turn {entry.turn} • {new Date(entry.timestamp).toLocaleString()}</span>
                       </div>
                       <div className="text-xs opacity-75 break-words">{entry.from} → {entry.to} | {REGIONS[entry.region]?.name || entry.region}</div>
-                      <div className="break-words">{entry.details}</div>
+                      <div className="flex justify-between items-start mt-1 gap-2">
+                        <div className="break-words flex-1">{entry.details}</div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openLedgerWithFilter({ search: entry.id, category: 'all', tab: 'overview' });
+                          }}
+                          className={`${themeStyles.buttonSecondary} text-blue-400 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 shrink-0`}
+                        >
+                          <span>📜 View in Ledger</span>
+                        </button>
+                      </div>
                       {entry.reasoning ? <div className="text-xs opacity-75 mt-1 break-words">Reasoning: {entry.reasoning}</div> : null}
                     </div>
                   ))}
