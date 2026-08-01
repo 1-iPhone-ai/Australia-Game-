@@ -24606,10 +24606,10 @@ function AustraliaGame() {
       ...baseDecision,
       data: nextData,
       score: nextScore,
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         confidence: Math.max(0, Math.min(1, baseDecision.plan.confidence + confidenceDelta))
-      }
+      } : undefined
     };
     const influenceDelta = nextScore - baseDecision.score;
     const nextDecisionWithMeta = {
@@ -24759,10 +24759,10 @@ function AustraliaGame() {
       ...baseDecision,
       data: nextData,
       score: nextScore,
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         confidence: Math.max(0, Math.min(1, baseDecision.plan.confidence + confidenceDelta))
-      }
+      } : undefined
     };
     const influenceDelta = nextScore - baseDecision.score;
     const teammate = getTeammateForSync(options.actorId, teamsByIdRef.current[actor.teamId]);
@@ -24836,14 +24836,14 @@ function AustraliaGame() {
           influenceDelta
         }
       },
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         priority: primaryAligned
           ? Math.max(baseDecision.plan.priority, normalizedStrength === 'priority' ? 5 : normalizedStrength === 'high' ? 4 : baseDecision.plan.priority)
           : supportsDirective
             ? Math.max(baseDecision.plan.priority, normalizedStrength === 'priority' ? 4 : normalizedStrength === 'high' ? 3 : baseDecision.plan.priority)
             : baseDecision.plan.priority
-      }
+      } : undefined
     };
     if (nextScore === baseDecision.score) {
       return nextDecision;
