@@ -17567,7 +17567,7 @@ export function reexecuteReplayMatch(
   const simTeams: Record<string, { money: number; netWorth: number; treasuryBalance: number; vaultProtectedCash: number; controlledRegions: string[] }> = {};
   if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
     Object.keys(config.teamsById).forEach(tId => {
-      const t = config.teamsById[tId];
+      const t = config.teamsById[tId] as any;
       simTeams[tId] = {
         money: t?.money ?? 10000,
         netWorth: t?.netWorth ?? 10000,
@@ -17584,7 +17584,7 @@ export function reexecuteReplayMatch(
   const simActors: Record<string, { money: number; netWorth: number; region: string; actionsUsedThisTurn: number; riskScore: number; creditScore: number; inventory: Record<string, number> }> = {};
   if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
     Object.keys(config.actorsById).forEach(aId => {
-      const a = config.actorsById[aId];
+      const a = config.actorsById[aId] as any;
       simActors[aId] = {
         money: a?.money ?? 10000,
         netWorth: a?.netWorth ?? 10000,
@@ -17744,10 +17744,10 @@ export function reexecuteReplayMatch(
           simActors[actorId].money = Number(payload.expectedMoney);
         }
         
-        // Resynchronize ALL PRNG streams present in ev.rngAudit.streamAuditSnapshots
-        if (ev.rngAudit?.streamAuditSnapshots) {
-          for (const streamName of Object.keys(ev.rngAudit.streamAuditSnapshots)) {
-            const snap = ev.rngAudit.streamAuditSnapshots[streamName];
+        // Resynchronize ALL PRNG streams present in ev.rngAudit.streams
+        if (ev.rngAudit?.streams) {
+          for (const streamName of Object.keys(ev.rngAudit.streams)) {
+            const snap = ev.rngAudit.streams[streamName];
             if (snap && typeof snap.drawCount === 'number') {
               const expectedDraws = snap.drawCount;
               const stream = simRng.streams[streamName as RngScopeDomain];
@@ -17886,7 +17886,7 @@ export function spawnMatchBranchFromCheckpoint(
     const simRng = new GameplayRngRegistry(config?.worldSeed || 1337);
     simRng.initStreams(config?.worldSeed || 1337);
 
-    const simTeams: Record<string, TeamState> = {};
+    const simTeams: Record<string, any> = {};
     if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
       Object.keys(config.teamsById).forEach(tId => {
         const t = config.teamsById[tId];
@@ -17897,7 +17897,7 @@ export function spawnMatchBranchFromCheckpoint(
       simTeams['team_ai'] = { id: 'team_ai', name: 'AI Team', money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['VIC'] } as any;
     }
 
-    const simActors: Record<string, ActorState> = {};
+    const simActors: Record<string, any> = {};
     if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
       Object.keys(config.actorsById).forEach(aId => {
         const a = config.actorsById[aId];
