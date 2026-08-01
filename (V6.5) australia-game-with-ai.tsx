@@ -7150,6 +7150,8 @@ type GameSettingsState = {
   aiCalibrationLearningRate?: number;
   enableCounterfactualEvaluation?: boolean;
   enablePersistentOpponentModels?: boolean;
+  opponentModelDecayRate?: number;
+  opponentModelWeight?: number;
   planSwitchingCost?: number;
   teamGovernanceMode?: TeamGovernanceMode;
   aiTacticalIntelligence?: AiTacticalIntelligenceParams;
@@ -9263,6 +9265,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiCalibrationLearningRate: 0.05,
   enableCounterfactualEvaluation: true,
   enablePersistentOpponentModels: false,
+  opponentModelDecayRate: 0.05,
+  opponentModelWeight: 15,
   planSwitchingCost: 15.0,
   teamGovernanceMode: 'LEADER_DECIDES',
   aiTacticalIntelligence: {
@@ -9405,6 +9409,7 @@ interface SettingsHubSectionMeta {
   tab: SettingsHubTabId;
   title: string;
   tags: SettingsHubTag[];
+  chips?: SettingsHubChip[];
   fieldKeys: (keyof GameSettingsState)[];
   keywords?: string; // free-text search terms not expressible via the closed SettingsHubTag union
 }
@@ -19044,7 +19049,7 @@ function executeSingleHeadlessMatch(
   const effectiveSettings: GameSettingsState = {
     ...config,
     showDayTransition: false,
-    uiAssistPackEnabled: false,
+    uxAssistPackEnabled: false,
     aiReplayRecordingEnabled: false
   };
 
@@ -20370,6 +20375,115 @@ const SettingsSection: React.FC<{
   );
 };
 
+// GL9: the new, sole recommended entry point for changing a single GameSettingsState field
+// going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
+// Deliberately NOT a generic function (no `<K extends ...>`), matching this file's own
+// standing rule against bare-type-parameter TSX generics (the exact construct that broke the
+// Sucrase-based external preview earlier this session) — `key`/`value` are typed via
+// `keyof GameSettingsState`/`unknown`, with the single, already-established `as GameSettingsState`
+// cast at the one assignment site. This does not replace the ~300+ existing raw
+// `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
+// migrated call sites should call, proven here at the reset handlers, preset application, and
+// one representative Settings Hub tab.
+export interface DispatchSettingsChangeMetadata {
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  section?: string;
+  settingLabel?: string;
+  [key: string]: unknown;
+}
+
+export interface SettingsChangeAuditLog {
+  key: string;
+  oldValue: unknown;
+  newValue: unknown;
+  source: string;
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  timestamp: number;
+}
+
+/**
+ * Centralized Settings Dispatcher with audit trail logging.
+ * Logs event to Activity Ledger and applies setting changes cleanly.
+ */
+export function dispatchGameSettingsChange(
+  setGameSettingsState: React.Dispatch<React.SetStateAction<GameSettingsState>>,
+  keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState),
+  newValue?: unknown,
+  source: string = 'direct_dispatcher',
+  metadata?: DispatchSettingsChangeMetadata,
+  currentSettings?: GameSettingsState,
+  dispatchLedgerEvent?: (type: string, payload: any) => void
+): void {
+  const timestamp = Date.now();
+  if (typeof keyOrPatch === 'string') {
+    const key = keyOrPatch as keyof GameSettingsState;
+    const oldValue = currentSettings ? currentSettings[key] : undefined;
+    setGameSettingsState(prev => {
+      const actualOld = prev[key];
+      if (actualOld === newValue) return prev;
+      return { ...prev, [key]: newValue };
+    });
+
+    if (dispatchLedgerEvent) {
+      dispatchLedgerEvent('settings_change', {
+        settingKey: String(key),
+        source,
+        summary: `${metadata?.settingLabel || String(key)} changed (${metadata?.section || 'general'}) via ${source.replace(/_/g, ' ')}.`,
+        diagnostics: {
+          previousValue: oldValue,
+          newValue,
+          source,
+          day: metadata?.day,
+          turn: metadata?.turn,
+          actorId: metadata?.actorId,
+          teamId: metadata?.teamId,
+          invalidatesReplay: metadata?.invalidatesReplay ?? false,
+          timestamp,
+          ...metadata
+        }
+      });
+    }
+  } else if (typeof keyOrPatch === 'function' || typeof keyOrPatch === 'object') {
+    setGameSettingsState(prev => typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch });
+
+    if (dispatchLedgerEvent) {
+      const prev = currentSettings || ({} as GameSettingsState);
+      const next = typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch };
+      if (prev !== next) {
+        (Object.keys(next) as Array<keyof GameSettingsState>).forEach(k => {
+          if (prev[k] !== next[k]) {
+            dispatchLedgerEvent('settings_change', {
+              settingKey: String(k),
+              source,
+              summary: `${String(k)} updated (${metadata?.section || 'bulk'}) via ${source.replace(/_/g, ' ')}.`,
+              diagnostics: {
+                previousValue: prev[k],
+                newValue: next[k],
+                source,
+                day: metadata?.day,
+                turn: metadata?.turn,
+                actorId: metadata?.actorId,
+                teamId: metadata?.teamId,
+                invalidatesReplay: metadata?.invalidatesReplay ?? false,
+                timestamp,
+                ...metadata
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+}
+
 // =========================================
 // MAIN COMPONENT
 // =========================================
@@ -21096,115 +21210,6 @@ function AustraliaGame() {
   ) => {
     dispatchAuthoritativeGameActivityLedgerEvent(category, fields as any);
   }, [dispatchAuthoritativeGameActivityLedgerEvent]);
-
-  // GL9: the new, sole recommended entry point for changing a single GameSettingsState field
-  // going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
-  // Deliberately NOT a generic function (no `<K extends ...>`), matching this file's own
-  // standing rule against bare-type-parameter TSX generics (the exact construct that broke the
-  // Sucrase-based external preview earlier this session) — `key`/`value` are typed via
-  // `keyof GameSettingsState`/`unknown`, with the single, already-established `as GameSettingsState`
-  // cast at the one assignment site. This does not replace the ~300+ existing raw
-  // `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
-  // migrated call sites should call, proven here at the reset handlers, preset application, and
-  // one representative Settings Hub tab.
-export interface DispatchSettingsChangeMetadata {
-  day?: number;
-  turn?: number;
-  actorId?: string;
-  teamId?: string;
-  invalidatesReplay?: boolean;
-  section?: string;
-  settingLabel?: string;
-  [key: string]: unknown;
-}
-
-export interface SettingsChangeAuditLog {
-  key: string;
-  oldValue: unknown;
-  newValue: unknown;
-  source: string;
-  day?: number;
-  turn?: number;
-  actorId?: string;
-  teamId?: string;
-  invalidatesReplay?: boolean;
-  timestamp: number;
-}
-
-/**
- * Centralized Settings Dispatcher with audit trail logging.
- * Logs event to Activity Ledger and applies setting changes cleanly.
- */
-export function dispatchGameSettingsChange(
-  setGameSettingsState: React.Dispatch<React.SetStateAction<GameSettingsState>>,
-  keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState),
-  newValue?: unknown,
-  source: string = 'direct_dispatcher',
-  metadata?: DispatchSettingsChangeMetadata,
-  currentSettings?: GameSettingsState,
-  dispatchLedgerEvent?: (type: string, payload: any) => void
-): void {
-  const timestamp = Date.now();
-  if (typeof keyOrPatch === 'string') {
-    const key = keyOrPatch as keyof GameSettingsState;
-    const oldValue = currentSettings ? currentSettings[key] : undefined;
-    setGameSettingsState(prev => {
-      const actualOld = prev[key];
-      if (actualOld === newValue) return prev;
-      return { ...prev, [key]: newValue };
-    });
-
-    if (dispatchLedgerEvent) {
-      dispatchLedgerEvent('settings_change', {
-        settingKey: String(key),
-        source,
-        summary: `${metadata?.settingLabel || String(key)} changed (${metadata?.section || 'general'}) via ${source.replace(/_/g, ' ')}.`,
-        diagnostics: {
-          previousValue: oldValue,
-          newValue,
-          source,
-          day: metadata?.day,
-          turn: metadata?.turn,
-          actorId: metadata?.actorId,
-          teamId: metadata?.teamId,
-          invalidatesReplay: metadata?.invalidatesReplay ?? false,
-          timestamp,
-          ...metadata
-        }
-      });
-    }
-  } else if (typeof keyOrPatch === 'function' || typeof keyOrPatch === 'object') {
-    setGameSettingsState(prev => typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch });
-
-    if (dispatchLedgerEvent) {
-      const prev = currentSettings || ({} as GameSettingsState);
-      const next = typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch };
-      if (prev !== next) {
-        (Object.keys(next) as Array<keyof GameSettingsState>).forEach(k => {
-          if (prev[k] !== next[k]) {
-            dispatchLedgerEvent('settings_change', {
-              settingKey: String(k),
-              source,
-              summary: `${String(k)} updated (${metadata?.section || 'bulk'}) via ${source.replace(/_/g, ' ')}.`,
-              diagnostics: {
-                previousValue: prev[k],
-                newValue: next[k],
-                source,
-                day: metadata?.day,
-                turn: metadata?.turn,
-                actorId: metadata?.actorId,
-                teamId: metadata?.teamId,
-                invalidatesReplay: metadata?.invalidatesReplay ?? false,
-                timestamp,
-                ...metadata
-              }
-            });
-          }
-        });
-      }
-    }
-  }
-}
 
   const updateGameSetting = useCallback((
     key: keyof GameSettingsState,
