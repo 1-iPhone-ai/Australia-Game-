@@ -5835,7 +5835,7 @@ const sanitizeSequenceStep = (value: unknown): SequenceStep | null => {
     targetId: typeof source.targetId === 'string' ? source.targetId : undefined,
     targetTeammateId: typeof source.targetTeammateId === 'string' ? source.targetTeammateId : undefined,
     wagerRule: (source.wagerRule && typeof source.wagerRule === 'object') ? source.wagerRule as SequenceWagerRule : undefined,
-    spendingRule: (source.spendingRule && typeof source.spendingRule === 'object') ? { allowRecoverySpending: false, ...source.spendingRule as SequenceSpendingRule } : undefined,
+    spendingRule: (source.spendingRule && typeof source.spendingRule === 'object') ? { ...source.spendingRule as SequenceSpendingRule, allowRecoverySpending: (source.spendingRule as SequenceSpendingRule).allowRecoverySpending ?? false } : undefined,
     conditionGroup: source.conditionGroup ? sanitizeRequirementGroup(source.conditionGroup) : null,
     fallbackBehavior: SEQUENCE_STEP_FALLBACK_ACTIONS.includes(source.fallbackBehavior as SequenceStepFallbackAction) ? source.fallbackBehavior as SequenceStepFallbackAction : 'use_fallback_action',
     fallbackJumpToStepId: typeof source.fallbackJumpToStepId === 'string' ? source.fallbackJumpToStepId : undefined,
@@ -6150,7 +6150,7 @@ const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
       itemId: typeof paramsSource.itemId === 'string' ? paramsSource.itemId : undefined,
       amount: typeof paramsSource.amount === 'number' && isFinite(paramsSource.amount) ? Math.max(0, paramsSource.amount) : undefined,
       wagerRule: (paramsSource.wagerRule && typeof paramsSource.wagerRule === 'object') ? paramsSource.wagerRule as SequenceWagerRule : undefined,
-      spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { allowRecoverySpending: false, ...paramsSource.spendingRule as SequenceSpendingRule } : undefined
+      spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { ...paramsSource.spendingRule as SequenceSpendingRule, allowRecoverySpending: (paramsSource.spendingRule as SequenceSpendingRule).allowRecoverySpending ?? false } : undefined
     },
     priority: typeof source.priority === 'number' && isFinite(source.priority) ? source.priority : 0,
     authorityMode: HUMAN_AUTOMATION_AUTHORITY_MODES.includes(source.authorityMode as HumanAutomationAuthorityMode) ? source.authorityMode as HumanAutomationAuthorityMode : 'confirm_before_running',
@@ -12053,7 +12053,7 @@ const applyAiStrategyLabOverlayV63 = <T extends AIAction & { score: number }>(
 
   const teamBehind = Boolean(
     context.teamContext?.teamBehind ||
-    context.teamContext?.opponentLead > 0
+    (context.teamContext?.opponentLead ?? 0) > 0
   );
 
   const teamAhead = Boolean(context.teamContext?.teamAhead);
@@ -19942,11 +19942,20 @@ export function getAiAuditorReport(
     for (const team of Object.values(teamsById)) {
       if (team?.auditor) {
         totalDecisions += team.auditor.eventLog?.length || 0;
+        // team.auditor.incidents only ever holds non-terminal incidents (a terminal status moves
+        // an incident to incidentHistory instead, per this codebase's own established convention
+        // -- see the AA5-era comment above sanitizeAiOperationsAuditorState) -- so every entry here
+        // is definitionally still active; resolved entries must be sourced from incidentHistory.
         const incs = team.auditor.incidents || [];
-        totalIncidents += incs.length;
+        const history = team.auditor.incidentHistory || [];
+        totalIncidents += incs.length + history.length;
+        activeIncidents += incs.length;
         for (const inc of incs) {
-          if (inc.status === 'active') activeIncidents++;
-          else if (inc.status === 'resolved') resolvedIncidents++;
+          const cat = String(inc.category || 'general');
+          incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
+        }
+        for (const inc of history) {
+          if (inc.status === 'resolved' || inc.status === 'resolved_with_warning') resolvedIncidents++;
           const cat = String(inc.category || 'general');
           incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
         }
