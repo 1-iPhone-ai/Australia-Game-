@@ -25992,7 +25992,7 @@ function AustraliaGame() {
       reason: string;
     } | null = null;
 
-    CRAFTING_RECIPES.forEach(recipe => {
+    for (const recipe of CRAFTING_RECIPES) {
       const missing: Array<{ resource: string; quantity: number }> = [];
       let totalCost = 0;
       let totalMissingUnits = 0;
@@ -26008,22 +26008,22 @@ function AustraliaGame() {
         }
       });
 
-      if (missing.length === 0) return;
-      if (totalMissingUnits > 5) return;
-      if (aiState.inventory.length + totalMissingUnits > MAX_INVENTORY) return;
-      if (aiState.money - totalCost < AI_SAFETY_BUFFER) return;
+      if (missing.length === 0) continue;
+      if (totalMissingUnits > 5) continue;
+      if (aiState.inventory.length + totalMissingUnits > MAX_INVENTORY) continue;
+      if (aiState.money - totalCost < AI_SAFETY_BUFFER) continue;
 
       let score = recipe.baseValue - totalCost;
-      if (score <= 50) return;
+      if (score <= 50) continue;
       if (totalMissingUnits <= 2) score *= 1.2;
       if (gameSettings.winCondition === 'money') score *= 1.1;
       if (gameSettings.winCondition === 'netWorth') score *= 1.24;
       if (gameSettings.winCondition === 'regions') score *= 0.92;
       if (recipe.baseValue > 800) score *= 1.15;
-      if (gameSettings.winCondition === 'money' && score < (totalCost * 0.5)) return;
+      if (gameSettings.winCondition === 'money' && score < (totalCost * 0.5)) continue;
       if (gameSettings.winCondition === 'netWorth' && recipe.baseValue > totalCost) score += Math.min(120, (recipe.baseValue - totalCost) * 0.08);
 
-      if (!bestPlan || score > bestPlan.score) {
+      if (!bestPlan || score > (bestPlan as { score: number }).score) {
         bestPlan = {
           score,
           purchases: missing,
@@ -26031,7 +26031,7 @@ function AustraliaGame() {
           reason: `buying missing materials for ${recipe.name}`
         };
       }
-    });
+    }
 
     return bestPlan;
   }, [gameSettings.winCondition]);
@@ -26390,16 +26390,16 @@ function AustraliaGame() {
 
     let bestCashout: { region: string; refund: number; score: number; reason: string } | null = null;
 
-    Object.keys(REGIONS).forEach(regionCode => {
+    for (const regionCode of Object.keys(REGIONS)) {
       const regionEntry = regionDeposits[regionCode] || {};
       const snapshot = getRegionControlSnapshot(regionEntry);
-      if (snapshot.controllerId !== 'ai') return;
+      if (snapshot.controllerId !== 'ai') continue;
 
       const aiDeposit = Math.floor(regionEntry.ai || 0);
       const playerDeposit = Math.floor(regionEntry.player || 0);
       const holdMargin = aiDeposit - playerDeposit;
       const refund = Math.floor(aiDeposit * 0.5);
-      if (refund <= 0) return;
+      if (refund <= 0) continue;
 
       let score = -Infinity;
       if (desperateForCash && aiDeposit >= 2) {
@@ -26412,7 +26412,7 @@ function AustraliaGame() {
         score = Math.max(score, refund + 45 - Math.max(0, holdMargin * 12));
       }
 
-      if (score > -Infinity && (!bestCashout || score > bestCashout.score)) {
+      if (score > -Infinity && (!bestCashout || score > (bestCashout as { score: number }).score)) {
         bestCashout = {
           region: regionCode,
           refund,
@@ -26420,7 +26420,7 @@ function AustraliaGame() {
           reason: `liquidating ${regionCode} to reallocate funds`
         };
       }
-    });
+    }
 
     return bestCashout;
   }, [gameSettings.aiRegionsMajorityRushEnabled, gameSettings.allowCashOut, gameSettings.negotiationMode, gameSettings.winCondition]);
@@ -26458,7 +26458,7 @@ function AustraliaGame() {
 	      if (cashoutMove) {
 	        decisions.push({
 	          type: 'cashout_region',
-	          description: `Cash out ${REGIONS[cashoutMove.region]?.name || cashoutMove.region}`,
+	          description: `Cash out ${REGIONS[cashoutMove.region as keyof typeof REGIONS]?.name || cashoutMove.region}`,
 	          data: {
 	            region: cashoutMove.region,
 	            reason: cashoutMove.reason
