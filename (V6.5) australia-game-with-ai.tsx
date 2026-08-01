@@ -19102,11 +19102,12 @@ function executeSingleHeadlessMatch(
 
   const turnOrder = isTeam ? ['player', 'ai', ALLY_AI_ID, ENEMY_SUPPORT_AI_ID] : ['player', 'ai'];
 
-  const actorsMap: Record<string, ActorState> = {
-    player: playerActor,
-    ai: enemyLeader,
-    ...additionalActors
+  const actorsMap: Record<string, ActorState & { netWorth: number }> = {
+    player: { ...playerActor, netWorth: calculateNetWorth(playerActor) },
+    ai: { ...enemyLeader, netWorth: calculateNetWorth(enemyLeader) },
+    ...Object.fromEntries(Object.entries(additionalActors).map(([id, a]) => [id, { ...a, netWorth: calculateNetWorth(a) }]))
   };
+  const teamNetWorth: Record<string, number> = {};
 
   const currentSimState = {
     ...initialGameState,
@@ -19191,10 +19192,10 @@ function executeSingleHeadlessMatch(
 
     // Recalculate team net worth
     if (team) {
-      team.treasury.netWorth = team.actorIds.reduce((sum, aId) => sum + (actorsMap[aId]?.netWorth || 0), 0) + team.treasury.balance;
+      teamNetWorth[team.id] = team.actorIds.reduce((sum, aId) => sum + (actorsMap[aId]?.netWorth || 0), 0) + team.treasury.balance;
     }
 
-    const avgNetWorth = (teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0);
+    const avgNetWorth = (teamNetWorth[TEAM_PLAYER_ID] || 0);
     const avgTreasury = (teamsById[TEAM_PLAYER_ID]?.treasury?.balance || 0);
     economicTrajectory.push({ turn: turn + 1, treasury: avgTreasury, netWorth: avgNetWorth });
 
@@ -19202,8 +19203,8 @@ function executeSingleHeadlessMatch(
     turnHashes.push(currentHash);
 
     // Win condition check
-    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
-    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+    const p1Net = teamNetWorth[TEAM_PLAYER_ID] || 0;
+    const p2Net = teamNetWorth[TEAM_OPPONENT_ID] || 0;
 
     if (p1Net >= goalNetWorth || p2Net >= goalNetWorth) {
       if (p1Net > p2Net) winner = 'team_player';
@@ -19214,8 +19215,8 @@ function executeSingleHeadlessMatch(
   }
 
   if (winner === 'tie') {
-    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
-    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+    const p1Net = teamNetWorth[TEAM_PLAYER_ID] || 0;
+    const p2Net = teamNetWorth[TEAM_OPPONENT_ID] || 0;
     if (p1Net > p2Net) winner = 'team_player';
     else if (p2Net > p1Net) winner = 'team_opponent';
     else winner = 'tie';
@@ -26284,7 +26285,7 @@ function AustraliaGame() {
 
     let bestMove: { region: string; amount: number; score: number; reason: string } | null = null;
 
-    Object.keys(REGIONS).forEach(regionCode => {
+    for (const regionCode of Object.keys(REGIONS)) {
       const regionEntry = regionDeposits[regionCode] || {};
       const snapshot = getRegionControlSnapshot(regionEntry);
       const aiDeposit = Math.floor(regionEntry.ai || 0);
@@ -26364,7 +26365,7 @@ function AustraliaGame() {
         }
       }
 
-      if (amount > 0 && score > -Infinity && (!bestMove || score > bestMove.score)) {
+      if (amount > 0 && score > -Infinity && (!bestMove || score > (bestMove as { score: number }).score)) {
         bestMove = {
           region: regionCode,
           amount: Math.max(1, Math.floor(amount)),
@@ -26372,7 +26373,7 @@ function AustraliaGame() {
           reason
         };
       }
-    });
+    }
 
     return bestMove;
   }, [gameSettings.aiRegionsMajorityRushEnabled, gameSettings.aiWinConditionSpendingEnabled, gameSettings.negotiationMode, gameSettings.totalDays, gameSettings.winCondition]);
@@ -38062,7 +38063,7 @@ function AustraliaGame() {
     const primaryDirectiveStrength = normalizeDirectiveStrength(primaryDirective?.strength);
     const directiveProfile = getEffectiveDirectiveStrengthProfile(primaryDirectiveStrength, { teamMode: true });
     const difficultyBehavior = getTeamDifficultyBehavior();
-    const baseDepth = actor.difficulty || gameSettings.aiDifficulty || 'balanced';
+    const baseDepth = gameState.aiDifficulty || 'balanced';
     const tacticalIntel = getEffectiveTacticalIntelligence(gameSettings, baseDepth);
     const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId, snapshot?.actors);
     const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
@@ -38509,23 +38510,23 @@ function AustraliaGame() {
         score: number;
         reason: string;
       } = null;
-      CRAFTING_RECIPES.forEach(recipe => {
+      for (const recipe of CRAFTING_RECIPES) {
         const missing = Object.entries(recipe.inputs)
           .map(([resource, requiredCount]) => ({
             resource,
             quantity: Math.max(0, Number(requiredCount) - teammate.inventory.filter(item => item === resource).length)
           }))
           .filter(entry => entry.quantity > 0);
-        if (missing.length !== 1) return;
+        if (missing.length !== 1) continue;
         const missingEntry = missing[0];
         const giverOwned = actor.inventory.filter(item => item === missingEntry.resource).length;
-        if (giverOwned < missingEntry.quantity) return;
-        if ((teammate.inventory?.length || 0) + missingEntry.quantity > MAX_INVENTORY) return;
+        if (giverOwned < missingEntry.quantity) continue;
+        if ((teammate.inventory?.length || 0) + missingEntry.quantity > MAX_INVENTORY) continue;
         const craftProfit = recipe.baseValue - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
           return sum + ((gameState.resourcePrices[resource] || 100) * Number(count));
         }, 0);
         const score = Math.max(0, craftProfit) + (teammateLiquidity?.isRecoveryEligible ? 95 : 42);
-        if (!bestResourceSupport || score > bestResourceSupport.score) {
+        if (!bestResourceSupport || score > (bestResourceSupport as { score: number }).score) {
           bestResourceSupport = {
             recipe,
             resource: missingEntry.resource,
@@ -38534,7 +38535,7 @@ function AustraliaGame() {
             reason: `${missingEntry.resource} would unlock ${recipe.output} for ${getActorDisplayName(teammate.id)}.`
           };
         }
-      });
+      }
       if (bestResourceSupport) {
         if (actor.currentRegion === teammate.currentRegion) {
           pushDecision({
@@ -41988,7 +41989,7 @@ function AustraliaGame() {
     }
     let actionBudget = getActorActionBudget(actor.id);
     // Wire getEffectiveEconomicCheats: apply cheat bonuses at AI turn initialization
-    const economicCheats = getEffectiveEconomicCheats(gameSettings, actor.difficulty || gameSettings.aiDifficulty || 'balanced');
+    const economicCheats = getEffectiveEconomicCheats(gameSettings, gameState.aiDifficulty || 'balanced');
     if (economicCheats.extraActionPointsPerTurn > 0) {
       actionBudget += economicCheats.extraActionPointsPerTurn;
     }
