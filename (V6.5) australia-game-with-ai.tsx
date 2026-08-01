@@ -14423,8 +14423,8 @@ export function executeUniversalActionPipeline<T = unknown>(
     // Stage 6: EXECUTION_STARTED
     attempt.currentStage = 'EXECUTION_STARTED';
     attempt.timestamps.updated = Date.now();
-    attempt.status = 'executing';
-    recordStage('EXECUTION_STARTED', 'executing');
+    attempt.status = 'execution_started';
+    recordStage('EXECUTION_STARTED', 'execution_started');
 
     // Stage 7: STATE_MUTATED
     const rawResult = executeFn(attempt);
@@ -16404,8 +16404,8 @@ const initialGameState = {
   grandTourState: createDefaultGrandTourState(),
   decisionState: createDefaultDecisionState(),
   gameActivityLedger: createDefaultGameActivityLedgerState(),
-  persistentOpponentModels: {} as Record<string, PersistentOpponentModel>,
-  aiCalibrationState: { weightMultipliers: { profit: 1.0, risk: 1.0, momentum: 1.0 } } as AiCalibrationState
+  persistentOpponentModels: {} as Record<string, OpponentModel>,
+  aiCalibrationState: { weightMultipliers: { profit: 1.0, risk: 1.0, momentum: 1.0 } }
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -17908,7 +17908,7 @@ export function spawnMatchBranchFromCheckpoint(
       simActors['ai'] = { id: 'ai', name: 'AI Opponent', money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
     }
 
-    const simTerritories: Record<string, RegionState> = {};
+    const simTerritories: Record<string, any> = {};
     ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'].forEach(rId => {
       simTerritories[rId] = {
         id: rId,
