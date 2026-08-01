@@ -2195,6 +2195,11 @@ export function drawGameplayRandomString(domain?: RngScopeDomain, length: number
   return globalRngRegistry.drawString(domain, length);
 }
 
+export function drawGameplayRandomChoice<T>(domain: RngScopeDomain | undefined, options: T[]): T {
+  const index = Math.min(options.length - 1, Math.floor(drawGameplayRandom(domain) * options.length));
+  return options[index];
+}
+
 export function withRngScope<T>(domain: RngScopeDomain, callback: () => T): T {
   return globalRngRegistry.withScope(domain, callback);
 }
