@@ -6181,6 +6181,8 @@ export interface ContextualRecommendation {
   relevanceScore?: number;
   /** V9: objective-alignment component of relevanceScore. */
   objectiveAlignment?: number;
+  /** GI3: how this (already legal) action fits the active strategy — a ranking signal only, never legality. */
+  strategyAlignment?: GI3ActionAlignment | null;
 }
 
 export interface PlayerAttentionSnapshot {
@@ -10362,6 +10364,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     aiCommunication: migrateCommunicationState(save?.aiCommunication || gameState?.aiCommunication),
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(save?.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
     teamOperatingSystem: sanitizeTeamOperatingSystemState(save?.teamOperatingSystem || gameState?.teamOperatingSystem),
+    gi3Strategy: sanitizeGI3StrategyState(save?.gi3Strategy || gameState?.gi3Strategy),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10529,6 +10532,7 @@ export function canonicalStateFromLiveRuntime(
     aiCommunication: migrateCommunicationState(liveState.aiCommunication || gameState?.aiCommunication),
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(liveState.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
     teamOperatingSystem: sanitizeTeamOperatingSystemState(liveState.teamOperatingSystem || gameState?.teamOperatingSystem),
+    gi3Strategy: sanitizeGI3StrategyState(liveState.gi3Strategy || gameState?.gi3Strategy),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -21605,6 +21609,7 @@ interface SaveGameData {
   gameState: GameStateSnapshot;
   gameSettings: GameSettingsState;
   teamOperatingSystem?: TeamOperatingSystemState;
+  gi3Strategy?: GI3StrategyState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35594,7 +35599,8 @@ export const initialGameState = {
   persistentMemorySnapshot: null as PersistentMemorySnapshot | null,
   aiCommunication: createEmptyCommunicationState(),
   teamStrategicPlansByTeam: {} as Record<string, TeamStrategicPlan>,
-  teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState
+  teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState,
+  gi3Strategy: createEmptyGI3StrategyState()
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -44591,6 +44597,12 @@ export function evaluateGuardianRiskPipeline(
   }
   if (context.settings.evaluators.teamEconomy || context.settings.evaluators.teamGovernance) {
     const res = safeExecuteGuardianEvaluator(() => evaluateTeamRisk(context), context, 'team');
+    rawRisks.push(...res.risks);
+    if (res.failureMode) failureModes.push(res.failureMode);
+  }
+  // GI3: explicit constraints of the player's active strategy (context only — Guardian keeps its own rules).
+  {
+    const res = safeExecuteGuardianEvaluator(() => evaluateGI3StrategyRisk(context), context, 'gi3_strategy', 'allow_silent');
     rawRisks.push(...res.risks);
     if (res.failureMode) failureModes.push(res.failureMode);
   }
@@ -65621,7 +65633,7 @@ export function isRoutineActivityNotification(n: any): boolean {
 export function rankContextualRecommendations(
   candidates: any[] | null | undefined,
   objective: CurrentObjective | null,
-  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any }
+  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any; strategy?: GI3RankingContext | null }
 ): ContextualRecommendation[] {
   const apRemaining = options?.apRemaining;
   const limit = options?.limit ?? 3;
@@ -65660,8 +65672,10 @@ export function rankContextualRecommendations(
     if (objective?.sourceType === 'contract' && String(c.category || '').includes('contract')) alignment += 20;
     if (objective?.sourceType === 'expedition' && String(c.actionType || '').includes('expedition')) alignment += 20;
     if (objective?.recommendedNextStep?.actionType && c.actionType === objective.recommendedNextStep.actionType) alignment += 25;
-    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15;
-    return { c, score, alignment };
+    // GI3: strategic alignment is scored only for candidates that already passed every legality filter above.
+    const strategy = options?.strategy ? scoreGI3ActionAlignment(c, options.strategy) : null;
+    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15 + (strategy ? strategy.score * 0.6 : 0);
+    return { c, score, alignment, strategy };
   }).sort((a, b) => b.score - a.score);
 
   const picked: typeof scored = [];
@@ -65681,8 +65695,9 @@ export function rankContextualRecommendations(
     }
   }
 
-  return picked.map(({ c, alignment, score }) => {
+  return picked.map(({ c, alignment, score, strategy }) => {
     const whyPoints: string[] = [];
+    if (strategy && (strategy.label === 'high' || strategy.label === 'medium')) whyPoints.push(`fits your strategy: ${strategy.reason}`);
     if (alignment >= 20 && objective) whyPoints.push(`advances your current goal: ${objective.title}`);
     if ((c.apCost ?? 1) <= 1) whyPoints.push('costs only 1 AP');
     if ((c.costEstimate || 0) === 0) whyPoints.push('no extra cash required');
@@ -65704,7 +65719,8 @@ export function rankContextualRecommendations(
       candidate: c,
       whyPoints,
       relevanceScore: score,
-      objectiveAlignment: alignment
+      objectiveAlignment: alignment,
+      strategyAlignment: strategy
     };
   });
 }
@@ -79475,6 +79491,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   migrated.teamStrategicPlansByTeam = migratedPlans;
   if (migrated.gameState) migrated.gameState.teamStrategicPlansByTeam = migratedPlans;
   if (migrated.gameState) migrated.gameState.teamOperatingSystem = sanitizeTeamOperatingSystemState(migrated.gameState.teamOperatingSystem || migrated.teamOperatingSystem);
+  // GI3 strategy: older saves have none — they load with an empty (no active strategy) state.
+  if (migrated.gameState) migrated.gameState.gi3Strategy = sanitizeGI3StrategyState(migrated.gameState.gi3Strategy || migrated.gi3Strategy);
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
 
@@ -99861,6 +99879,8 @@ export interface ContextualActionCandidate {
   confidence: number | null;
   requiresConfirmation: boolean;
   scoreBreakdown: ContextualActionScoreFactor[];
+  /** GI3: alignment with the active strategy (metadata only — legality is decided before this). */
+  strategyAlignment?: GI3ActionAlignment | null;
 }
 
 export interface ContextualSurfaceInput {
@@ -99971,6 +99991,9 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
     const breakdown: ContextualActionScoreFactor[] = [{ factor: 'Co-Pilot strategic value', points: utility }];
     if (alignment) breakdown.push({ factor: objective ? `Advances goal: ${objective.title}` : 'Advances current goal', points: alignment });
     if (riskPenalty) breakdown.push({ factor: 'Risk', points: -riskPenalty });
+    const strat = rec.strategyAlignment || null;
+    const stratPoints = strat ? Math.round(strat.score * 0.6) : 0;
+    if (strat && stratPoints) breakdown.push({ factor: stratPoints > 0 ? `Strategy fit (${strat.label}): ${strat.reason}` : `Strategy conflict: ${strat.reason}`, points: stratPoints });
     if (addressesAttention && urgencyBoost) breakdown.push({ factor: `Addresses: ${attention?.label}`, points: urgencyBoost });
     const relevance = breakdown.reduce((sum, f) => sum + f.points, 0);
     const cost = Number(rec.costEstimate || 0);
@@ -100003,7 +100026,8 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       sourceSystem: 'Co-Pilot action candidates',
       confidence: Number.isFinite(Number(c.rewardScore)) ? Math.max(0, Math.min(1, Number(c.rewardScore) / 100)) : null,
       requiresConfirmation: false,
-      scoreBreakdown: breakdown
+      scoreBreakdown: breakdown,
+      strategyAlignment: strat
     });
   }
 
@@ -100209,6 +100233,11 @@ export function findContextualCandidate(set: ContextualActionSet | null | undefi
 
 export type GameIntelligenceButtonKind =
   | 'team_apply'
+  | 'gi3_activate'
+  | 'gi3_cancel'
+  | 'gi3_control'
+  | 'gi3_dismiss'
+  | 'gi3_continue_action'
   | 'team_cancel'
   | 'team_proposal_accept'
   | 'team_proposal_reject'
@@ -101762,6 +101791,8 @@ export interface GIWorld {
   systems?: GISystemsView;
   /** Team Intelligence 2.0: the Team Operating System view (Game Intelligence is its front door). */
   team?: TeamOSView | null;
+  /** Game Intelligence 3.0: the player's persistent strategy (null when none). */
+  gi3?: GI3StrategyState | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -101961,6 +101992,14 @@ export interface GIConversationContext {
   lastTeamTaskId?: string | null;
   /** A previewed team strategy waiting for Apply (never applied without an explicit click). */
   pendingTeamDraft?: { kind: 'apply' | 'adopt'; command: TeamCommandIntent; summary: string } | null;
+  /** GI3: a strategy preview / what-if waiting for Activate / Adopt (never applied automatically). */
+  pendingGI3Draft?: { kind: 'activate' | 'adopt'; contract: GI3StrategyContract; changes: string[] } | null;
+  /** Which strategy layer the last strategic exchange touched (routes "make that…" repairs). */
+  lastStrategyDomain?: 'gi3' | 'team' | null;
+  /** GI3 references: last goal / field / change discussed ("drop the second goal", "why did that change?"). */
+  lastStrategyGoalId?: string | null;
+  lastStrategyField?: 'cash' | 'reserve' | 'region' | 'loan' | null;
+  lastStrategyChange?: string | null;
 }
 
 export interface GITopicFrame {
@@ -102057,7 +102096,17 @@ export function sanitizeGIConversationContext(raw: unknown): GIConversationConte
     lastTeamTaskId: typeof src.lastTeamTaskId === 'string' ? src.lastTeamTaskId.slice(0, 80) : null,
     pendingTeamDraft: src.pendingTeamDraft && (src.pendingTeamDraft.kind === 'apply' || src.pendingTeamDraft.kind === 'adopt') && sanitizeTeamCommandIntent(src.pendingTeamDraft.command)
       ? { kind: src.pendingTeamDraft.kind, command: sanitizeTeamCommandIntent(src.pendingTeamDraft.command)!, summary: String(src.pendingTeamDraft.summary || '').slice(0, 300) }
-      : null
+      : null,
+    pendingGI3Draft: (() => {
+      const d: any = src.pendingGI3Draft;
+      if (!d || (d.kind !== 'activate' && d.kind !== 'adopt')) return null;
+      const contract = sanitizeGI3StrategyState({ active: d.contract }).active;
+      return contract ? { kind: d.kind, contract, changes: Array.isArray(d.changes) ? d.changes.map(String).slice(0, 8) : [] } : null;
+    })(),
+    lastStrategyDomain: src.lastStrategyDomain === 'gi3' || src.lastStrategyDomain === 'team' ? src.lastStrategyDomain : null,
+    lastStrategyGoalId: typeof src.lastStrategyGoalId === 'string' ? src.lastStrategyGoalId.slice(0, 80) : null,
+    lastStrategyField: ['cash', 'reserve', 'region', 'loan'].includes(src.lastStrategyField as string) ? src.lastStrategyField! : null,
+    lastStrategyChange: typeof src.lastStrategyChange === 'string' ? src.lastStrategyChange.slice(0, 200) : null
   };
 }
 
@@ -102845,6 +102894,8 @@ export interface GISemanticFrame {
   references: string[];
   hypotheses: Array<{ text: string; kind: 'causal' | 'correlation' | 'sequence' }>;
   conversationRepair: GIConversationRepair | null;
+  /** GI 2.1 strategic reading per clause (consumed by the GI3 strategy compiler). */
+  strategic?: GIStrategicReading[];
   style: GIResponseStyle;
   isQuestion: boolean;
   /** Fragment / statement with no explicit question ("only $700 left"). */
@@ -103403,6 +103454,8 @@ export function giClauseAgent(clause: GIClause, beforeIndex: number, world: GIWo
   }
   // Nearest subject first: "riley nearly got nsw, i'm broke" → the player is broke.
   for (const t of [...toks].reverse()) {
+    // "my teammate / my partner can handle money" → the teammate (the possessive is not the agent).
+    if (/^(teammate|mate|partner|ally)$/.test(t.t) && !t.entity && world.teammateIds.length) return world.teammateIds[0];
     if (/^(i|me|my|we|our|us|myself)$/.test(t.t)) return 'player';
     if (t.entity?.kind === 'actor') return t.entity.id;
     if (/^(he|she|him|her|they|them)$/.test(t.t)) return ctx?.last?.actor?.id || world.primaryRivalId || 'other';
@@ -104053,6 +104106,144 @@ const GI_AMBIGUOUS_PHRASES: Array<{ re: RegExp; candidates: Array<{ label: strin
 
 // ---- 15. Public entry: the semantic frame --------------------------------------------------
 
+// ---- GI 2.1 strategic clause reading (consumed by Game Intelligence 3.0) -------------------------
+// Part of the GI 2.1 language layer: each clause's strategic content (what to protect, target, reach
+// or avoid, in which order) read from GI 2.1 tokens, entities, quantities and polarity. GI3 never
+// parses raw language itself — it compiles these readings.
+
+export interface GIStrategicReading {
+  clause: number;
+  kind: 'protect_region' | 'target_region' | 'deprioritize_region' | 'threat_cleared' | 'cash_target' | 'reserve' | 'spend_cap' | 'regions_count'
+    | 'project' | 'contracts' | 'contracts_drop' | 'debt' | 'mission_regions' | 'mission_net_worth' | 'mission_money' | 'loan_allowed' | 'deadline_turn' | 'lock';
+  regionId?: string;
+  amount?: number;
+  fraction?: number;
+  count?: number;
+  projectHint?: string;
+  /** Sequence position: lower runs first ("first" pulls forward; "then/after/next/later" pushes back). */
+  order: number;
+  /** Read with GI 2.1 polarity (giReadPolarity) — negated readings never become targets. */
+  negated: boolean;
+  agentId: string | null;
+  evidence: string;
+}
+
+const GI_STRAT_PROTECT = /^(protect|protecting|protected|defend|defending|hold|holding|held|keep|keeping|safe|secure|securing|secured|guard|guarding|stay|stays|save|saving|priority)$/;
+const GI_STRAT_LOSS = /^(lose|losing|lost|fall|falls|falling|slip)$/;
+const GI_STRAT_TARGET = /^(go|going|push|pushing|expand|expanding|expansion|take|taking|target|targets|targeting|attack|attacking|contest|contesting|grab|invade|capture|conquer|claim|move|after|next|then|later)$/;
+const GI_STRAT_DROP = /^(forget|ignore|skip|drop|abandon|deprioritise|deprioritize|deprioritised|deprioritized)$/;
+const GI_STRAT_STOP = /^(stop|stopped|quit|cease|ceasing)$/;
+const GI_STRAT_PROJECT = /^(rail|railway|railroad|port|harbour|harbor|bridge|pipeline|highway|airport|dam|project|infrastructure|mine|refinery|network)$/;
+
+export function giReadStrategicClauses(clauses: GIClause[], quantities: GIQuantity[], world: GIWorld, ctx: GIConversationContext | null, lowerText: string): GIStrategicReading[] {
+  const out: GIStrategicReading[] = [];
+  let seq = 0;
+  // "Don't go | after Victoria": the clause splitter can separate a negated verb from its region; the
+  // negation carries into the next clause when that clause only supplies the object.
+  let carryNegTarget = false;
+  clauses.forEach(clause => {
+    const toks = clause.tokens;
+    const words = toks.map(t => t.t);
+    const text = ` ${words.join(' ')} `;
+    const has = (re: RegExp) => words.some(w => re.test(w));
+    if (clause.marker === 'then' || clause.marker === 'after' || /\b(then|afterwards?|after that|next|later|eventually|once)\b/.test(text)) seq += 1;
+    // Ordering inside a clause: "15k first and then vic" — items before an inner "then" take the
+    // clause's "first"; items after it come later.
+    const firstIdx = toks.findIndex(t => /^(first|firstly)$/.test(t.t));
+    const thenIdx = toks.findIndex((t, j) => j > 0 && /^(then|after|afterwards|next|later)$/.test(t.t));
+    const clauseFirst = /\b(first|firstly|before anything|start with|priority one|top priority)\b/.test(text);
+    const orderAt = (pos: number) => {
+      const afterInner = thenIdx > 0 && pos > thenIdx;
+      const isFirst = clauseFirst && !afterInner && (firstIdx < 0 || thenIdx < 0 || firstIdx < thenIdx || pos < thenIdx);
+      return isFirst ? -10 + clause.index : seq * 10 + clause.index + (afterInner ? 5 : 0);
+    };
+    const moneyPos = (q: GIQuantity) => { const j = toks.findIndex(t => (t.kind === 'money' || t.kind === 'number') && q.raw.toLowerCase().includes(t.t)); return j < 0 ? 0 : j; };
+    const push = (r: Omit<GIStrategicReading, 'clause' | 'order' | 'evidence'> & { order?: number; pos?: number }) => { const { pos, ...rest } = r; out.push({ clause: clause.index, order: r.order ?? orderAt(pos ?? 0), evidence: clause.text.slice(0, 120), ...rest }); };
+    const polarityAt = (i: number) => {
+      const reading = giReadPolarity(clause, i, i + 1);
+      // "don't stop protecting" — a stop-verb before the verb flips once more (continue = keep doing it).
+      const stopBefore = toks.slice(Math.max(0, i - 3), i).some(t => GI_STRAT_STOP.test(t.t));
+      return stopBefore ? !reading.negated : reading.negated;
+    };
+    const agentAt = (i: number) => { const a = giClauseAgent(clause, i, world, ctx); return a && a !== 'other' ? a : null; };
+
+    // "X instead of Y": X is the new choice, Y the replaced one (for both regions and amounts).
+    const insteadIdx = toks.findIndex((t, j) => t.t === 'instead' && toks[j + 1]?.t === 'of');
+    const rather = toks.findIndex((t, j) => t.t === 'rather' && toks[j + 1]?.t === 'than');
+    const replacedFrom = insteadIdx >= 0 ? insteadIdx : rather;
+    // Regions: bind each region to its own verb in the clause (not a global entity list).
+    toks.forEach((t, i) => {
+      if (t.entity?.kind !== 'region') return;
+      const regionId = t.entity.id;
+      if (replacedFrom >= 0) {
+        const heldR = Boolean(world.regions[regionId]?.controlledByPlayer);
+        push({ kind: i > replacedFrom ? 'deprioritize_region' : heldR ? 'protect_region' : 'target_region', regionId, negated: false, agentId: null, pos: i });
+        return;
+      }
+      const window = toks.map((x, j) => ({ x, j })).filter(({ j }) => j !== i && j >= i - 5 && j <= i + 4);
+      const nearest = (re: RegExp) => window.filter(({ x }) => re.test(x.t)).sort((a, b) => Math.abs(a.j - i) - Math.abs(b.j - i))[0] || null;
+      const drop = nearest(GI_STRAT_DROP) || (/\bstop caring about\b/.test(text) ? { x: t, j: i } : null);
+      const loss = nearest(GI_STRAT_LOSS);
+      const target = window.filter(({ x, j }) => GI_STRAT_TARGET.test(x.t) && j < i).sort((a, b) => b.j - a.j)[0] || nearest(/^(after|next|later|then)$/);
+      const protect = nearest(GI_STRAT_PROTECT);
+      const problem = nearest(/^(problem|threat|threatened|danger|dangerous|issue|risk)$/);
+      const agentId = agentAt(i);
+      const held = Boolean(world.regions[regionId]?.controlledByPlayer);
+      if (drop) { push({ kind: 'deprioritize_region', regionId, negated: false, agentId, pos: i }); return; }
+      if (carryNegTarget && !held && !protect && (!target || /^(after|next|later|then)$/.test(target.x.t))) { push({ kind: 'deprioritize_region', regionId, negated: false, agentId, pos: i }); return; }
+      if (problem && polarityAt(problem.j)) { push({ kind: 'threat_cleared', regionId, negated: false, agentId, pos: i }); return; }
+      if (loss) { if (polarityAt(loss.j)) push({ kind: 'protect_region', regionId, negated: false, agentId, pos: i }); return; }
+      if (target && (!protect || Math.abs(target.j - i) <= Math.abs(protect.j - i))) {
+        const neg = polarityAt(target.j);
+        push({ kind: neg ? 'deprioritize_region' : held ? 'protect_region' : 'target_region', regionId, negated: false, agentId, pos: i });
+        return;
+      }
+      if (protect) { const neg = polarityAt(protect.j); if (!neg) push({ kind: held || !/^(take|expand)$/.test(protect.x.t) ? 'protect_region' : 'target_region', regionId, negated: false, agentId, pos: i }); return; }
+      // Bare mention in a plan ("NSW first, … Victoria after"): what the team already holds is protected,
+      // anything else is a target — grounded in canonical control, never guessed.
+      if (/\b(first|then|after|next|later|actually|instead)\b/.test(text) || clauses.length > 1) push({ kind: held ? 'protect_region' : 'target_region', regionId, negated: false, agentId, pos: i });
+    });
+
+    // Money: a target unless the clause describes a reserve, a spending cap or a concrete purchase.
+    quantities.filter(q => q.clause === clause.index && q.unit === '$' && (q.value !== null || typeof q.fraction === 'number') && !(replacedFrom >= 0 && moneyPos(q) > replacedFrom)).forEach(q => {
+      const reserve = /\b(keep|preserve|reserve|reserved|safe|untouched|floor|minimum|at least|aside|save|buffer)\b/.test(text) && !/\b(reach|get to|get me to|build|make|above|over)\b/.test(text);
+      const cap = /\bspend\b/.test(text) && /\b(more than|max|maximum|at most|no more|up to)\b/.test(text);
+      const purchase = /\b(buy|sell|deposit|put|pay|invest|fund|spend|donate|give|bid)\b/.test(text) && !/\b(reach|get to|build|make|above|over|need)\b/.test(text);
+      if (cap) push({ kind: 'spend_cap', amount: q.value ?? undefined, fraction: q.fraction, negated: false, agentId: null, pos: moneyPos(q) });
+      else if (reserve) push({ kind: 'reserve', amount: q.value ?? undefined, negated: false, agentId: null, pos: moneyPos(q) });
+      else if (!purchase && q.value !== null && q.role !== 'state' && q.role !== 'floor' && q.role !== 'ceiling') push({ kind: 'cash_target', amount: q.value, negated: false, agentId: agentAt(0), pos: moneyPos(q) });
+    });
+    if (/\bspend\b/.test(text) && /\bhalf\b/.test(text) && /\b(more than|no more|at most|max)\b/.test(text)) push({ kind: 'spend_cap', fraction: 0.5, negated: false, agentId: null });
+
+    const regionsQ = quantities.find(q => q.clause === clause.index && q.unit === 'regions' && q.value !== null);
+    if (regionsQ && /\b(control|win|own|hold|get|reach|have|take|need)\b/.test(text)) push({ kind: 'regions_count', count: regionsQ.value!, negated: false, agentId: null });
+
+    if (has(GI_STRAT_PROJECT) && /\b(finish|finished|complete|completed|build|built|fund|funded|done)\b/.test(text)) {
+      const hint = words.find(w => GI_STRAT_PROJECT.test(w) && !/^(project|infrastructure)$/.test(w)) || words.find(w => GI_STRAT_PROJECT.test(w))!;
+      push({ kind: 'project', projectHint: hint, negated: false, agentId: null });
+    }
+    if (/\bcontracts?\b/.test(text)) {
+      if (/\b(forget|drop|ignore|skip|stop caring about)\b/.test(text)) push({ kind: 'contracts_drop', negated: false, agentId: null });
+      else if (/\b(focus|finish|complete|do|work on|prioriti[sz]e)\b/.test(text)) push({ kind: 'contracts', negated: false, agentId: null });
+    }
+    if (/\bdebt\b/.test(text) && /\b(pay|clear|eliminate|off|zero|rid)\b/.test(text)) push({ kind: 'debt', negated: false, agentId: null });
+    if (/\bwin\b|\bwinning\b|\bvictory\b/.test(text) || /\bstrategy\b/.test(text)) {
+      if (/\bnet ?worth\b/.test(text)) push({ kind: 'mission_net_worth', negated: false, agentId: null });
+      if (/\bregions?\b|\bregional\b|\bterritor/.test(text) && !/\bnot (through |by |via )?regions?\b/.test(text)) push({ kind: 'mission_regions', negated: false, agentId: null });
+      if (/\b(most money|cash|money)\b/.test(text) && !/\bnet ?worth\b/.test(text) && !/\bregions?\b/.test(text)) push({ kind: 'mission_money', negated: false, agentId: null });
+    }
+    if (/\bloans?\b/.test(text) && (/\b(remove|drop|lift|cancel|forget)\b.*\b(restriction|limit|rule|ban)\b/.test(text) || /\bloans? (are|is) (fine|ok|okay|allowed)\b/.test(text))) push({ kind: 'loan_allowed', negated: false, agentId: null });
+    const turnDeadline = text.match(/\b(?:before|by) (?:turn|round|day) (\d{1,3})\b/);
+    if (turnDeadline) push({ kind: 'deadline_turn', count: Number(turnDeadline[1]), negated: false, agentId: null });
+    const within = text.match(/\bwithin (\d{1,2}) (?:turns|rounds|days)\b/);
+    if (within) push({ kind: 'deadline_turn', count: world.turn + Number(within[1]), negated: false, agentId: null });
+    if (/\b(no matter what|whatever happens|at all costs|always|the whole time|at all times)\b/.test(text)) push({ kind: 'lock', negated: false, agentId: null });
+    carryNegTarget = !toks.some(t => t.entity?.kind === 'region') && toks.some((t, j) => GI_STRAT_TARGET.test(t.t) && !/^(after|next|later|then)$/.test(t.t) && polarityAt(j));
+  });
+  void lowerText;
+  return out;
+}
+
 export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversationContext): GISemanticFrame {
   const ctx = sanitizeGIConversationContext(ctxIn);
   const lex = buildGILexicon(world);
@@ -104158,10 +104349,11 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   optionText = optionText.replace(/\bleave\s+(\S+)\s+and\s+(travel to|try)\b/gi, 'travel to');
 
   const relations = giBuildLanguageRelations(propositions, actions);
+  const strategic = giReadStrategicClauses(clauses, quantities, world, ctx, lowerText);
   const partial = {
     originalQuery: query, normalizedText, canonicalText, optionText, corrections, uncorrected, clauses, concepts, requestKinds, goals, problems, threats,
     entities, actions, constraints, preferences, conditions, time, quantities, comparisons, negations, references, hypotheses,
-    conversationRepair: repair, style, isQuestion, implicit, propositions, relations
+    conversationRepair: repair, style, isQuestion, implicit, propositions, relations, strategic
   };
   const capabilityScores = giScoreCapabilities(partial, world, ctx);
 
@@ -104226,7 +104418,8 @@ export type GICapability =
   | 'player_status' | 'objective_status' | 'economy_diagnosis' | 'strategic_diagnosis' | 'affordability' | 'action_validation'
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
-  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif';
+  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104252,6 +104445,9 @@ export interface GIQueryUnderstanding {
   confidence: number;
   /** GI 2.1: the semantic frame the understanding was reconstructed from. */
   frame?: GISemanticFrame;
+  /** GI3: which persistent-strategy intent was detected (create/update/status/control/whatif). */
+  strategyIntent?: GI3IntentKind;
+  strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
   repair?: GIConversationRepair | null;
@@ -104620,10 +104816,26 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // A conditional instruction ("if Riley attacks NSW, defend it; otherwise…") is a strategy to explain and validate.
   if (!isComposed && frame.conditions.some(c => c.isStrategy) && primary !== 'control') { primary = 'sequence_plan'; needs.prediction = false; addSupport('rival_assessment'); }
 
+  // ---- Game Intelligence 3.0: persistent strategy (above Team OS; GI 2.1 frame is the only input) ----
+  let strategyIntent: GI3IntentKind | undefined;
+  let strategyControl: GI3Control | undefined;
+  if (primary !== 'control') {
+    const det = detectGI3StrategyIntent(frame, world, ctx, world.gi3?.active || null);
+    // A team-coordination instruction with no multi-turn goal stays with Team Intelligence.
+    const teamOnly = det.kind === 'create' && Boolean(world.team?.enabled) && !det.signals.some(sg => sg === 'mission' || sg === 'ordered goals' || sg === 'cash target') && !/\b(my plan|strategy|over the next|few turns|win)\b/.test(normalized);
+    if (det.kind !== 'none' && !teamOnly) {
+      strategyIntent = det.kind;
+      strategyControl = det.control;
+      primary = det.kind === 'status' ? 'strategy_status' : det.kind === 'control' ? 'strategy_control' : det.kind === 'whatif' ? 'strategy_whatif' : 'strategy_preview';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false;
+    }
+  }
+
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control') {
+  if (teamView && primary !== 'control' && !strategyIntent) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -104643,7 +104855,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -104656,7 +104868,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -104699,8 +104911,10 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif'].includes(primary),
-    teamCommand
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif'].includes(primary),
+    teamCommand,
+    strategyIntent,
+    strategyControl
   };
 }
 
@@ -104823,7 +105037,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state';
 
 export interface GIPlanStep {
   id: string;
@@ -104861,7 +105075,11 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   system_explain: ['system_state'],
   team_command: ['team_state'],
   team_explain: ['team_state'],
-  team_whatif: ['team_state']
+  team_whatif: ['team_state'],
+  strategy_preview: ['gi3_state'],
+  strategy_status: ['gi3_state'],
+  strategy_control: ['gi3_state'],
+  strategy_whatif: ['gi3_state']
 };
 
 export interface GIQueryPlan {
@@ -104885,7 +105103,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives'
 };
 
 function giHash(text: string): string {
@@ -104950,6 +105168,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('control_state' as any)) add('control_state');
     if (want('system_explain')) add('system_state', {}, { purpose: 'Read-only summaries of team, treasury, governor, Guardian, Auto Mode and Co-Pilot' });
     if (want('team_command') || want('team_explain') || want('team_whatif')) add('team_state', {}, { purpose: 'Team Operating System: mission, objectives, tasks, roles, resources, conflicts' });
+    if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -105444,6 +105663,19 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
       push(fact('team.readiness', 'Team readiness', Math.round(ev.readiness.overall * 100), 'Team Operating System', 'team', { unit: '%', certainty: 'calculated' }));
       ev.resources.envelopes.forEach(e => push(fact(`team.env.${e.category}`, `${e.category} allocation`, e.allocated, 'Team Resource Planner', 'team', { unit: '$', certainty: 'calculated' })));
       return { ...base, ok: true, data: view, facts };
+    }
+    case 'gi3_state': {
+      const st = world.gi3;
+      const facts: GIFact[] = [];
+      const push = (f: GIFact) => { facts.push(f); g.fact(f); };
+      if (st?.active) {
+        push(fact('gi3.strategy', 'Active strategy', st.active.summary, 'Game Intelligence 3.0 strategy', 'objectives'));
+        if (st.progress) {
+          push(fact('gi3.cash', 'Strategy cash measure', st.progress.resourceStatus.cash, 'Game Intelligence 3.0 (canonical balances)', 'player', { unit: '$', certainty: 'calculated' }));
+          st.progress.milestones.slice(0, 8).forEach(m => push(fact(`gi3.ms.${m.id}`, m.label, m.target, 'Game Intelligence 3.0 milestones', 'objectives', { unit: m.unit === '$' ? '$' : undefined, certainty: 'calculated' })));
+        }
+      }
+      return { ...base, ok: true, data: st || null, facts };
     }
     case 'system_state': {
       const sys = world.systems;
@@ -106304,6 +106536,212 @@ export function composeTeamWhatIf(u: GIQueryUnderstanding, world: GIWorld): GICo
 }
 
 /** Team questions answered from Team OS evidence (mission, tasks, conflicts, blockers, allocations…). */
+// ---- Game Intelligence 3.0 answers (Strategic Command Center) ------------------------------------------
+// Every number in a GI3 claim comes from the strategy's progress evidence (canonical state); the claim's
+// `derived` list carries exactly those numbers so verifyGIClaims can check them.
+
+const gi3Claim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed', evidence: number[] = []) => claim(text, kind, certainty, ['gi3.strategy'], { derived: evidence });
+
+function gi3OnTrackText(t: GI3OnTrack): string {
+  return ({ on_track: "You're on track", ahead: "You're ahead of the plan", at_risk: 'The plan is still viable, but it is at risk', blocked: 'The plan is blocked right now', recovering: 'The plan is recovering', needs_decision: 'The plan needs a decision from you', completed: 'The strategy is complete', failed: 'The strategy failed' } as Record<GI3OnTrack, string>)[t];
+}
+
+function gi3PreviewSections(c: GI3StrategyContract, world: GIWorld, changes: string[], notes: string[]): GIAnswerSection[] {
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const sections: GIAnswerSection[] = [];
+  const nums = (g: GI3StrategyGoal) => [g.amount || 0, g.count || 0].filter(Boolean);
+  if (changes.length) sections.push({ id: 'changes', heading: 'Changes', claims: changes.map(ch => gi3Claim(`${ch}.`, 'fact', 'confirmed', giNumbersIn(ch).map(n => n.value))) });
+  sections.push({ id: 'mission', heading: 'Strategy preview', claims: [
+    gi3Claim(`Mission: ${c.mission.label}.`, 'fact', 'confirmed', giNumbersIn(c.mission.label).map(n => n.value)),
+    gi3Claim(`Current phase: ${live[Math.min(c.phaseIndex, Math.max(0, live.length - 1))]?.label || '—'}.`, 'fact', 'confirmed', live.flatMap(nums))
+  ] });
+  sections.push({ id: 'goals', heading: 'Goals (in order)', claims: live.map((g, i) => gi3Claim(`${i + 1}. ${g.label}${g.role === 'primary' ? ' (primary)' : ''}${g.owner !== 'player' ? ` — ${g.owner === 'team' ? 'team' : teamName(world, g.owner)}` : ''}${g.deadlineTurn ? ` by turn ${g.deadlineTurn}` : ''}.`, 'fact', 'confirmed', [...nums(g), i + 1, g.deadlineTurn || 0])) });
+  const cons: GIClaim[] = [];
+  if (c.constraints.loanPolicy !== 'allowed') cons.push(gi3Claim(`Loans: ${c.constraints.loanPolicy === 'forbidden' ? 'no new loans' : 'avoid unless nothing else works'}.`));
+  if (c.constraints.minimumCashReserve) cons.push(gi3Claim(`Keep at least ${gi3Money(c.constraints.minimumCashReserve)} safe${c.locks.reserve ? ' (locked)' : ''}.`, 'fact', 'confirmed', [c.constraints.minimumCashReserve]));
+  if (c.constraints.maximumSpendFraction) cons.push(gi3Claim(`Spend at most ${Math.round(c.constraints.maximumSpendFraction * 100)}% of your cash at once.`, 'fact', 'confirmed', [Math.round(c.constraints.maximumSpendFraction * 100)]));
+  if (c.constraints.deprioritizedRegions.length) cons.push(gi3Claim(`Not targeting: ${c.constraints.deprioritizedRegions.join(', ')}.`));
+  if (cons.length) sections.push({ id: 'constraints', heading: 'Constraints and resource strategy', claims: cons });
+  if (c.responsibilities.length) sections.push({ id: 'resp', heading: 'Team responsibilities', claims: [
+    ...c.responsibilities.map(r => gi3Claim(`${teamName(world, r.actorId)} → ${r.focus === 'region' ? getGILocationName(r.regionId || '') : r.focus}${r.untilCash ? ` until ${gi3Money(r.untilCash)}` : ''}.`, 'fact', 'confirmed', [r.untilCash || 0])),
+    gi3Claim('The team part of this strategy is handed to Team Intelligence, which coordinates it; nothing is executed automatically.', 'caveat')
+  ] });
+  if (c.contingencies.length) sections.push({ id: 'cont', heading: 'Contingencies', claims: c.contingencies.slice(0, 3).map(x => gi3Claim(`${x.label}.`, 'fact', 'confirmed', giNumbersIn(x.label).map(n => n.value))) });
+  if (c.assumptions.length) sections.push({ id: 'assume', heading: 'Assumptions (not facts)', claims: c.assumptions.slice(0, 3).map(a => gi3Claim(`The plan assumes ${/^[A-Z][a-z]/.test(a.label) ? a.label.charAt(0).toLowerCase() + a.label.slice(1) : a.label}.`, 'inference', 'moderate')) });
+  notes.forEach(n => sections.push({ id: `note_${sections.length}`, heading: null, claims: [gi3Claim(n, 'caveat')] }));
+  sections.push({ id: 'authority', heading: null, claims: [gi3Claim('A strategy only guides recommendations, tracking and team coordination. It never plays your turns or changes who controls them.', 'caveat')] });
+  return sections;
+}
+
+export function composeGI3Answer(u: GIQueryUnderstanding, world: GIWorld, convo: GIConversationContext, frame: GISemanticFrame | null): GIComposePart & { shape: GIAnswerShape; ctx: Partial<GIConversationContext>; draft?: { kind: 'activate' | 'adopt'; contract: GI3StrategyContract; changes: string[] } | null } {
+  const state = world.gi3 || createEmptyGI3StrategyState();
+  const active = state.active && (state.active.status === 'active' || state.active.status === 'paused') ? state.active : null;
+  const q = u.normalizedQuery;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const ctxOut: Partial<GIConversationContext> = { lastStrategyDomain: 'gi3' };
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | ''>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const fieldFrom = (f: GISemanticFrame | null): GIConversationContext['lastStrategyField'] => {
+    const r = (f?.strategic || []).find(x => ['cash_target', 'reserve', 'target_region', 'protect_region', 'loan_allowed'].includes(x.kind));
+    return r ? (r.kind === 'cash_target' ? 'cash' : r.kind === 'reserve' ? 'reserve' : r.kind === 'loan_allowed' ? 'loan' : 'region') : f?.constraints.some(c => c.subject === 'loan') ? 'loan' : null;
+  };
+
+  // ---- Preview (create / update) ----
+  if (u.primary === 'strategy_preview') {
+    if (!frame) { say('none', null, [gi3Claim('I could not read a strategy from that.', 'caveat')]); return { title: 'Strategy', sections, buttons, shape: 'plan', ctx: ctxOut }; }
+    const isUpdate = u.strategyIntent === 'update';
+    const base = isUpdate ? (convo.pendingGI3Draft?.contract || active) : null;
+    const compiled = compileGI3StrategyIntent(frame, world, convo, base);
+    const live = compiled.contract.goals.filter(g => g.status !== 'removed');
+    if (!live.length && compiled.contract.mission.kind === 'custom' && !compiled.changes.length) {
+      say('none', null, [gi3Claim('I did not find a concrete goal to track. Try something like “Protect NSW, reach $15K, then go Victoria.”', 'caveat')]);
+      return { title: 'Strategy', sections, buttons, shape: 'plan', ctx: ctxOut };
+    }
+    sections.push(...gi3PreviewSections(compiled.contract, world, isUpdate ? compiled.changes : [], compiled.notes));
+    buttons.push(
+      { id: 'gi3_activate', label: isUpdate && active ? 'Apply Changes' : 'Activate Strategy', kind: 'gi3_activate', tone: 'primary' },
+      { id: 'gi3_modify', label: 'Modify', kind: 'ask', query: 'How do I change the strategy?', tone: 'secondary' },
+      { id: 'gi3_explain', label: 'Explain', kind: 'ask', query: 'Explain this strategy', tone: 'secondary' },
+      { id: 'gi3_cancel', label: 'Cancel', kind: 'gi3_cancel', tone: 'secondary' }
+    );
+    const draft = { kind: 'activate' as const, contract: compiled.contract, changes: compiled.changes };
+    return { title: isUpdate && active ? 'Strategy update preview' : 'Strategy preview', sections, buttons, shape: 'plan', draft, ctx: { ...ctxOut, pendingGI3Draft: draft, lastStrategyField: fieldFrom(frame), lastStrategyChange: compiled.changes[0] || null } };
+  }
+
+  // ---- What-If (isolated) ----
+  if (u.primary === 'strategy_whatif') {
+    if (!active || !frame) { say('none', null, [gi3Claim('There is no active strategy to compare against yet.', 'caveat')]); return { title: 'Strategy What-If', sections, buttons, shape: 'comparison', ctx: ctxOut }; }
+    const alt = compileGI3StrategyIntent(frame, world, convo, active).contract;
+    const res = simulateGI3Alternative(state, world, { ...alt, status: 'active' });
+    say('cur', 'Current strategy', [gi3Claim(res.current.summary, 'fact', 'confirmed', giNumbersIn(res.current.summary).map(n => n.value))]);
+    say('alt', 'Alternative', [gi3Claim(res.alternative.summary, 'fact', 'confirmed', giNumbersIn(res.alternative.summary).map(n => n.value))]);
+    say('metrics', 'Comparison (same current state, nothing applied)', res.metrics.map(m => gi3Claim(`${m.metric}: ${m.current} now vs ${m.alternative} with the alternative${m.better === 'same' ? '' : ` (${m.better} better)`}.`, 'inference', 'high', [...giNumbersIn(m.current).map(n => n.value), ...giNumbersIn(m.alternative).map(n => n.value)])));
+    say('verdict', null, [gi3Claim(res.verdict, 'inference', 'moderate'), gi3Claim('Rival moves are not predicted; only what you can currently see is used.', 'caveat')]);
+    buttons.push({ id: 'gi3_adopt', label: 'Adopt Strategy', kind: 'gi3_activate', tone: 'primary' }, { id: 'gi3_keep', label: 'Keep My Plan', kind: 'gi3_cancel', tone: 'secondary' });
+    const draft = { kind: 'adopt' as const, contract: alt, changes: ['adopted from What-If'] };
+    return { title: 'Strategy What-If', sections, buttons, shape: 'comparison', draft, ctx: { ...ctxOut, pendingGI3Draft: draft } };
+  }
+
+  // ---- Control (confirm with a button; strategic state only) ----
+  if (u.primary === 'strategy_control') {
+    const control = u.strategyControl || 'pause';
+    if (!active) { say('none', null, [gi3Claim('There is no active strategy.', 'caveat')]); return { title: 'Strategy', sections, buttons, shape: 'control', ctx: ctxOut }; }
+    const label = { pause: 'Pause Strategy', resume: 'Resume Strategy', abandon: 'Abandon Strategy', replan: 'Replan Now', lock: 'Lock Strategy', unlock: 'Unlock Strategy' }[control];
+    say('control', null, [gi3Claim(`${label}? This changes only the strategy (${active.summary.replace(/\.$/, '')}). No game action is taken.`, 'fact', 'confirmed', giNumbersIn(active.summary).map(n => n.value))]);
+    buttons.push({ id: `gi3_control_${control}`, label, kind: 'gi3_control', query: control, tone: control === 'abandon' ? 'danger' : 'primary' }, { id: 'gi3_cancel', label: 'Never mind', kind: 'gi3_cancel', tone: 'secondary' });
+    return { title: 'Strategy control', sections, buttons, shape: 'control', ctx: ctxOut };
+  }
+
+  // ---- Status / explanation (resolves against the active strategy) ----
+  const draft = convo.pendingGI3Draft?.contract || null;
+  if (/\bexplain (this|the|my|our) (strategy|plan)\b/.test(q) && draft && (!active || draft.id !== active.id || draft.revision !== active.revision)) {
+    const live = draft.goals.filter(g => g.status !== 'removed');
+    say('explain', 'How this strategy would work', [
+      gi3Claim(`It runs in ${live.length} phase(s): ${live.map((g, i) => `phase ${i + 1} ${g.label}`).join(', ')}.`, 'fact', 'confirmed', [live.length, ...live.map((_, i) => i + 1), ...live.flatMap(g => [g.amount || 0, g.count || 0])]),
+      gi3Claim('Each phase starts only when the previous one is actually complete in the game; protected regions are watched the whole time.', 'fact'),
+      draft.teamIntent ? gi3Claim('Team responsibilities go to Team Intelligence, which assigns tasks to your AI teammate through the normal Strategic Command path.', 'fact') : null,
+      gi3Claim('Nothing is applied until you press Activate Strategy.', 'caveat')
+    ]);
+    buttons.push({ id: 'gi3_activate', label: 'Activate Strategy', kind: 'gi3_activate', tone: 'primary' });
+    return { title: 'Explaining the strategy', sections, buttons, shape: 'explanation', ctx: ctxOut };
+  }
+  if (!active) { say('none', null, [gi3Claim('You have no active strategy. Tell me what you want to achieve over the next few turns, e.g. “Protect NSW, reach $15K, then go Victoria.”', 'caveat')]); return { title: 'Strategy', sections, buttons, shape: 'status', ctx: ctxOut }; }
+  const ev = evaluateGI3Strategy(state, world);
+  const c = ev.state.active || active;
+  const p = ev.progress;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  if (c.status === 'paused' || !p) {
+    say('paused', null, [gi3Claim(`Your strategy is paused: ${c.summary}`, 'fact', 'confirmed', giNumbersIn(c.summary).map(n => n.value))]);
+    buttons.push({ id: 'gi3_control_resume', label: 'Resume Strategy', kind: 'gi3_control', query: 'resume', tone: 'primary' });
+    return { title: 'Strategy (paused)', sections, buttons, shape: 'status', ctx: ctxOut };
+  }
+  const phaseGoal = live[p.phaseIndex] || null;
+  const cash = p.resourceStatus.cash;
+  const cashLabel = p.resourceStatus.cashSource === 'team' ? 'team free cash' : 'cash';
+  const goalFor = (code?: string) => (code ? live.find(g => g.regionId === code) || null : null);
+  const namedRegion = u.entities.find(e => e.kind === 'region')?.id;
+  const phaseLine = () => gi3Claim(phaseGoal ? `Current phase ${p.phaseIndex + 1} of ${live.length}: ${phaseGoal.label}.` : 'Every phase is complete.', 'fact', 'confirmed', [p.phaseIndex + 1, live.length, phaseGoal?.amount || 0, phaseGoal?.count || 0]);
+  const blockerLine = (b?: GI3Blocker) => b ? gi3Claim(`${b.label}.`, b.kind === 'region_pressure' ? 'inference' : 'fact', b.kind === 'region_pressure' ? 'high' : 'confirmed', [...giNumbersIn(b.label).map(n => n.value), b.shortfall || 0]) : null;
+  const cashMs = p.milestones.filter(m => m.type === 'cash' && m.status !== 'reached')[0];
+  ctxOut.lastStrategyGoalId = phaseGoal?.id || null;
+
+  if (/\b(what changed|why did (the|my|our) (strategy|plan) change|why did we replan|replanned|what happened to (the|my|our) plan|why did that change)\b/.test(q)) {
+    const revs = c.revisions.slice(-3).reverse();
+    const recent = ev.state.events.filter(e => e.significance !== 'minor').slice(-4).reverse();
+    say('changes', 'What changed', [
+      ...revs.map(r => gi3Claim(`Revision ${r.revision} (turn ${r.turn}, ${r.source === 'automatic' ? 'automatic replan' : 'your change'}): ${r.trigger}${r.changes.length ? ` — ${r.changes.slice(0, 3).join('; ')}` : ''}. ${r.reason}`, 'fact', 'confirmed', [r.revision, r.turn, ...giNumbersIn(`${r.trigger} ${r.changes.join(' ')} ${r.reason}`).map(n => n.value)])),
+      ...recent.map(e => gi3Claim(`Turn ${e.turn}: ${e.summary}.`, 'fact', 'confirmed', [e.turn, ...giNumbersIn(e.summary).map(n => n.value)])),
+      !revs.length && !recent.length ? gi3Claim('Nothing material has changed; only live progress was refreshed.', 'fact') : null,
+      gi3Claim('The strategy is only replanned on material events (a region lost, a contingency, your own changes); ordinary cash moves just update progress.', 'caveat')
+    ]);
+    return { title: 'What changed in the strategy', sections, buttons, shape: 'explanation', ctx: ctxOut };
+  }
+  if (/\b(block|blocking|blocked|waiting|holding .* up|stuck|paused|why is \w+ (paused|waiting|on hold))\b/.test(q)) {
+    const g = goalFor(namedRegion) || phaseGoal;
+    const idx = g ? live.indexOf(g) : -1;
+    const bl = p.blockers.filter(b => !g || b.goalId === g.id);
+    if (g && idx > p.phaseIndex) {
+      say('waiting', null, [
+        gi3Claim(`${g.label} is waiting because it is phase ${idx + 1}; the plan is still on phase ${p.phaseIndex + 1} (${phaseGoal?.label}).`, 'fact', 'confirmed', [idx + 1, p.phaseIndex + 1, g.amount || 0, phaseGoal?.amount || 0]),
+        ...p.blockers.slice(0, 2).map(blockerLine),
+        c.constraints.minimumCashReserve ? gi3Claim(`Your plan keeps ${gi3Money(c.constraints.minimumCashReserve)} safe, so only ${gi3Money(p.resourceStatus.freeAboveReserve)} is free for later phases right now.`, 'fact', 'confirmed', [c.constraints.minimumCashReserve, p.resourceStatus.freeAboveReserve]) : null
+      ]);
+    } else say('blockers', 'What is blocking the plan', bl.length ? bl.slice(0, 3).map(b => gi3Claim(`${b.chain.join(' ← ')}: ${b.label}.`, b.kind === 'region_pressure' ? 'inference' : 'fact', b.kind === 'region_pressure' ? 'high' : 'confirmed', [...giNumbersIn(`${b.chain.join(' ')} ${b.label}`).map(n => n.value), b.shortfall || 0])) : [gi3Claim(`Nothing is blocking ${g?.label || 'the plan'} right now.`, 'fact', 'confirmed', [g?.amount || 0])]);
+    return { title: 'Strategy blockers', sections, buttons, shape: 'explanation', ctx: ctxOut };
+  }
+  if (/\bhow much (more )?(money|cash)\b|\bhow far\b/.test(q)) {
+    const cashGoal = live.find(g => g.type === 'reach_cash' && g.status !== 'completed');
+    say('money', null, [cashGoal ? gi3Claim(`You have ${gi3Money(cash)} (${cashLabel}) toward ${gi3Money(cashGoal.amount || 0)}: ${gi3Money(Math.max(0, (cashGoal.amount || 0) - cash))} to go.`, 'fact', 'confirmed', [cash, cashGoal.amount || 0, Math.max(0, (cashGoal.amount || 0) - cash)]) : gi3Claim('Your strategy has no open cash target.', 'fact'),
+      ...p.blockers.filter(b => b.shortfall && (!cashGoal || b.goalId !== cashGoal.id)).slice(0, 1).map(blockerLine)]);
+    return { title: 'Cash toward the plan', sections, buttons, shape: 'status', ctx: { ...ctxOut, lastStrategyField: 'cash' } };
+  }
+  if (/\b(what phase|which phase|what'?s next|what is next|after that|what happens after|what are we working toward|what am i working toward|what are we waiting for)\b/.test(q)) {
+    const after = namedRegion ? live.findIndex(g => g.regionId === namedRegion) : -1;
+    const nextIdx = after >= 0 ? after + 1 : p.phaseIndex + 1;
+    say('phases', null, [phaseLine(), live[nextIdx] ? gi3Claim(`Next: phase ${nextIdx + 1}, ${live[nextIdx].label}, once ${live[nextIdx - 1]?.label.toLowerCase()} is done.`, 'fact', 'confirmed', [nextIdx + 1, live[nextIdx].amount || 0, live[nextIdx - 1]?.amount || 0]) : gi3Claim('That is the last phase of the strategy.', 'fact'), p.nextMove ? gi3Claim(`Next useful move: ${p.nextMove.label}.`, 'recommendation', 'moderate', giNumbersIn(p.nextMove.label).map(n => n.value)) : null]);
+    return { title: 'Strategy phases', sections, buttons, shape: 'status', ctx: ctxOut };
+  }
+  if (/\bwhich milestone|milestone matters\b/.test(q)) {
+    const m = p.milestones.find(x => x.goalId === phaseGoal?.id && x.status !== 'reached') || p.milestones.find(x => x.status !== 'reached');
+    say('ms', null, [m ? gi3Claim(`${m.label} — ${m.unit === '$' ? `${gi3Money(m.current)} of ${gi3Money(m.target)}` : m.unit === 'status' ? 'not yet reached' : `${m.current} of ${m.target} ${m.unit}`}. It gates the current phase.`, 'fact', 'confirmed', [m.current, m.target]) : gi3Claim('Every milestone is reached.', 'fact')]);
+    return { title: 'Most important milestone', sections, buttons, shape: 'status', ctx: ctxOut };
+  }
+  if (/\bwhat should \w+ be doing\b|\bwho is responsible\b|\bresponsib/.test(q) && c.responsibilities.length) {
+    say('resp', 'Responsibilities', p.responsibilityStatus.map(r => gi3Claim(`${teamName(world, r.actorId)} (${r.focus}${r.regionId ? ` ${r.regionId}` : ''}): ${r.status}.`, 'fact', 'confirmed', giNumbersIn(r.status).map(n => n.value))));
+    return { title: 'Who is doing what', sections, buttons, shape: 'status', ctx: ctxOut };
+  }
+  if (/\bignore the plan\b/.test(q)) {
+    say('ignore', null, [gi3Claim('You are always free to ignore the plan — it never blocks your actions.', 'fact'), phaseLine(), cashMs ? gi3Claim(`Spending away from the plan delays the ${cashMs.label} milestone (${gi3Money(cashMs.current)} of ${gi3Money(cashMs.target)} now).`, 'inference', 'high', [cashMs.current, cashMs.target]) : null, c.constraints.minimumCashReserve ? gi3Claim(`It could also break your ${gi3Money(c.constraints.minimumCashReserve)} reserve; Guardian will mention that when it applies.`, 'inference', 'moderate', [c.constraints.minimumCashReserve]) : null]);
+    return { title: 'Ignoring the plan', sections, buttons, shape: 'explanation', ctx: ctxOut };
+  }
+  if (/\b(how do i|how can i) (change|modify|edit)\b|\b(change|modify|edit) (the|my|our) (plan|strategy)\b/.test(q)) {
+    say('how', null, [gi3Claim('Just tell me what to change, for example “Make that $20K”, “Actually Queensland instead of Victoria”, “Keep $10K instead”, “Forget contracts” or “Remove the loan restriction”. I will show the change before applying it.', 'fact')]);
+    return { title: 'Changing the strategy', sections, buttons, shape: 'explanation', ctx: ctxOut };
+  }
+  // Default: overall status ("How are we doing?", "Are we on track?", "What is my plan?").
+  const cashGoal = live.find(g => g.type === 'reach_cash');
+  const regionLines = Object.entries(p.regionStatus).map(([code, st]) => gi3Claim(`${code}: ${st === 'held_stable' ? 'held and stable' : st === 'held_at_risk' ? 'held but at risk (a visible rival can afford to take it)' : st === 'held_unknown' ? 'held (rival cash is hidden, so pressure is unknown)' : live.find(g => g.regionId === code && live.indexOf(g) > p.phaseIndex) ? 'not started yet' : 'not under your control'}.`, st === 'held_at_risk' ? 'inference' : 'fact', st === 'held_at_risk' ? 'high' : 'confirmed'));
+  say('status', null, [
+    gi3Claim(`${gi3OnTrackText(p.onTrack)}.`, 'inference', p.onTrack === 'on_track' ? 'high' : 'moderate'),
+    gi3Claim(`Strategy: ${c.summary}`, 'fact', 'confirmed', giNumbersIn(c.summary).map(n => n.value)),
+    phaseLine(),
+    cashGoal ? gi3Claim(`Cash: ${gi3Money(cash)} of ${gi3Money(cashGoal.amount || 0)}${cashLabel === 'team free cash' ? ' (team free cash)' : ''}.`, 'fact', 'confirmed', [cash, cashGoal.amount || 0]) : null,
+    ...regionLines,
+    p.blockers[0] ? gi3Claim(`Main blocker: ${p.blockers[0].label}.`, p.blockers[0].kind === 'region_pressure' ? 'inference' : 'fact', p.blockers[0].kind === 'region_pressure' ? 'high' : 'confirmed', [...giNumbersIn(p.blockers[0].label).map(n => n.value), p.blockers[0].shortfall || 0]) : null,
+    p.nextMove ? gi3Claim(`Next useful move: ${p.nextMove.label}.`, 'recommendation', 'moderate', giNumbersIn(p.nextMove.label).map(n => n.value)) : null,
+    ...p.responsibilityStatus.filter(r => r.actorId !== 'player').slice(0, 2).map(r => gi3Claim(`${teamName(world, r.actorId)} is on ${r.focus}${r.regionId ? ` ${r.regionId}` : ''}: ${r.status}.`, 'fact', 'confirmed', giNumbersIn(r.status).map(n => n.value)))
+  ]);
+  const assumptionsAtRisk = c.assumptions.filter(a => a.status === 'violated');
+  if (assumptionsAtRisk.length) say('assume', 'Assumptions', assumptionsAtRisk.map(a => gi3Claim(`No longer holding: ${a.label}.`, 'inference', 'high')));
+  const notice = ev.state.notices.filter(n => !n.dismissed).slice(-1)[0];
+  if (notice) {
+    say('notice', null, [gi3Claim(notice.text, 'inference', 'moderate', giNumbersIn(notice.text).map(n => n.value))]);
+    buttons.push({ id: `gi3_keep_${notice.id}`, label: 'Keep Current Strategy', kind: 'gi3_dismiss', candidateId: notice.id, tone: 'secondary' }, { id: 'gi3_update', label: 'Update Strategy', kind: 'ask', query: 'How do I change the strategy?', tone: 'secondary' });
+  }
+  buttons.push({ id: 'gi3_whatif', label: 'What If?', kind: 'ask', query: 'What if I switch the plan to contracts instead?', tone: 'secondary' }, { id: 'gi3_pause', label: 'Pause', kind: 'gi3_control', query: 'pause', tone: 'secondary' });
+  return { title: 'Strategy status', sections, buttons, shape: 'status', ctx: ctxOut };
+}
+
 export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, convo: GIConversationContext): GIComposePart & { actorId: string | null } {
   const view = world.team!;
   const ev = view.evaluation;
@@ -107129,6 +107567,11 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       }
       if (wants(/\b(auto ?mode|automode|autopilot)\b/) && sys.autoMode) claims.push(claim(sys.autoMode.enabled ? `Auto Mode is on${sys.autoMode.permission ? ` with ${sys.autoMode.permission.replace(/_/g, ' ')} permission` : ''}.` : 'Auto Mode is off.', 'fact', 'confirmed', []));
       if (wants(/\bcopilot\b/)) claims.push(claim(`Co-Pilot is ${sys.coPilot.enabled ? 'enabled' : 'off'} (authority: ${sys.coPilot.authorityMode.replace(/_/g, ' ')})${sys.coPilot.minimumCashReserve !== null ? `, keeping at least ${money(sys.coPilot.minimumCashReserve)} in cash` : ''}${sys.coPilot.sessionStatus ? `; its current session is ${sys.coPilot.sessionStatus}` : ''}.`, 'fact', 'confirmed', giFactIds(exec, ['sys.copilotReserve'])));
+      if (wants(/\bcopilot\b/)) {
+        // GI3: the active strategy is Co-Pilot context (ranking + explanations) — never extra authority.
+        const g3 = gi3CoPilotContext(world.gi3);
+        if (g3) claims.push(claim(`Co-Pilot also reads your active strategy as context — phase ${g3.phase}: ${g3.goal}${g3.constraints.length ? ` (${g3.constraints.join(', ')})` : ''}. It ranks strategy-aligned moves higher but gains no extra authority from it.`, 'fact', 'confirmed', [], { derived: (`${g3.phase} ${g3.goal} ${g3.constraints.join(' ')}`.match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => Number(x.replace(/,/g, ''))).filter(Number.isFinite) }));
+      }
       if (sys.pendingApprovals && (wants(/\bapprov/) || teamish)) claims.push(claim(`${sys.pendingApprovals} approval request(s) are waiting for you — nothing they cover happens until you answer.`, 'fact', 'confirmed', giFactIds(exec, ['sys.approvals'])));
       if (wants(/\bexpedition/)) claims.push(claim(sys.expeditions.length ? `Active expeditions: ${sys.expeditions.join(', ')}.` : 'You have no active expeditions.', 'fact', 'confirmed', []));
       if (wants(/\b(scenario|campaign|mission)\b/)) claims.push(claim(sys.scenarioObjectives.length ? `Scenario objectives: ${sys.scenarioObjectives.join('; ')}.` : 'No scenario objectives are active in this match.', 'fact', 'confirmed', []));
@@ -107136,6 +107579,19 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       if (!claims.length) claims.push(claim('None of those systems is doing anything that would explain this right now.', 'inference', 'moderate', []));
       section('answer', null, claims);
       if (teamish && sys.team) buttons.push({ id: 'open_team', label: 'Team plan settings (LAB)', kind: 'open', nav: navAction('assistant_advanced', 'Team plan settings', { section: 'teamModeAi.teamPlans' }), tone: 'secondary' });
+      break;
+    }
+    case 'strategy_preview':
+    case 'strategy_status':
+    case 'strategy_control':
+    case 'strategy_whatif': {
+      kind = 'next_step';
+      const part = composeGI3Answer(u, world, convo, u.frame || null);
+      title = part.title || 'Strategy';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      Object.assign(ctx, part.ctx);
       break;
     }
     case 'team_command':
@@ -107152,6 +107608,7 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
         if (part.actorId) ctx.lastTeamActorId = part.actorId;
         break;
       }
+      ctx.lastStrategyDomain = 'team';
       const part = u.primary === 'team_command' ? composeTeamCommandPreview(u, world) : composeTeamWhatIf(u, world);
       title = part.title || 'Team strategy';
       shape = u.primary === 'team_command' ? 'plan' : 'comparison';
@@ -107333,6 +107790,11 @@ function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, c
     if (cu.lastDeficit !== undefined) next.lastDeficit = cu.lastDeficit;
     if (cu.pendingClarification !== undefined) next.pendingClarification = cu.pendingClarification;
     if (cu.pendingTeamDraft !== undefined) next.pendingTeamDraft = cu.pendingTeamDraft;
+    if (cu.pendingGI3Draft !== undefined) next.pendingGI3Draft = cu.pendingGI3Draft;
+    if (cu.lastStrategyDomain !== undefined) next.lastStrategyDomain = cu.lastStrategyDomain;
+    if (cu.lastStrategyGoalId !== undefined) next.lastStrategyGoalId = cu.lastStrategyGoalId;
+    if (cu.lastStrategyField !== undefined) next.lastStrategyField = cu.lastStrategyField;
+    if (cu.lastStrategyChange !== undefined) next.lastStrategyChange = cu.lastStrategyChange;
     if (cu.lastTeamCommand !== undefined) next.lastTeamCommand = cu.lastTeamCommand;
     if (cu.lastTeamActorId !== undefined) next.lastTeamActorId = cu.lastTeamActorId;
     if (cu.lastTeamTaskId !== undefined) next.lastTeamTaskId = cu.lastTeamTaskId;
@@ -107605,9 +108067,9 @@ export const GI_STATE_BOUND_BUTTON_KINDS: GameIntelligenceButtonKind[] = ['do', 
 // ---- Dependency-aware fingerprints -------------------------------------------
 
 export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history'
-  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios';
+  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios' | 'strategy';
 export type GIFingerprintMap = Partial<Record<GIFingerprintDomain, string>>;
-export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios'];
+export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios', 'strategy'];
 
 /** Which state domains each grounded tool reads. 'turn' (actor/turn/day) is always included. */
 const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
@@ -107631,6 +108093,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   settings_search: ['assistance'],
   system_state: ['assistance', 'actors', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'scenarios'],
   team_state: ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors', 'world', 'player'],
+  gi3_state: ['strategy', 'player', 'world', 'projects', 'contracts', 'team_strategy', 'team_resources'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -110432,7 +110895,10 @@ export function parseTeamCommandFromFrame(frame: GISemanticFrame, world: GIWorld
     let agent: string | null = null;
     const mateTok = toks.find(t => mateByToken(t));
     if (/\b(i|me|my|mine|myself)\b/.test(ct) && !(mateTok && toks.indexOf(mateTok) < toks.findIndex(t => /^(i|me|my|mine)$/.test(t.t)) && /^(have|let|make|tell)/.test(ct))) agent = 'player';
-    if (mateTok && (!agent || /^(have|let|make|tell|get|switch)\b/.test(ct) || toks.indexOf(mateTok) === 0)) agent = mateByToken(mateTok)!;
+    // "my teammate can handle money": the possessive belongs to the teammate, who is the subject.
+    const mateIdx = mateTok ? toks.indexOf(mateTok) : -1;
+    const possessiveSubject = mateIdx > 0 && /^(my|our)$/.test(toks[mateIdx - 1].t) && !toks.slice(0, mateIdx - 1).some(t => /^(i|me)$/.test(t.t));
+    if (mateTok && (!agent || /^(have|let|make|tell|get|switch)\b/.test(ct) || mateIdx === 0 || possessiveSubject)) agent = mateByToken(mateTok)!;
     if (/\bwe both\b|\bboth of us\b/.test(ct)) agent = 'both';
     if (!agent) return;
     const region = toks.find(t => t.entity?.kind === 'region')?.entity?.id;
@@ -111498,6 +111964,1592 @@ export function runTeamOsScenarioSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+
+// ============================================================================
+// SECTION 20E: GAME INTELLIGENCE 3.0 — STRATEGIC COMMAND CENTER
+// ----------------------------------------------------------------------------
+// Persistent strategic intent ABOVE GI 2.1 (language), Team Intelligence 2.0 (team coordination) and
+// the existing Strategic Command (AI actor directives). GI3 owns WHAT the player is trying to achieve
+// over several turns; it compiles GI 2.1 frames (never raw text), derives progress only from canonical
+// state, hands the team-relevant subset to the Team Operating System, and never executes actions or
+// changes authority. Names are GI3-prefixed so nothing collides with Strategic Command.
+// ============================================================================
+
+export type GI3StrategyStatus = 'draft' | 'active' | 'paused' | 'achieved' | 'failed' | 'superseded' | 'abandoned';
+export type GI3StrategySource = 'player_command' | 'player_goal' | 'team_plan' | 'scenario_objective' | 'campaign_objective' | 'inferred_from_explicit_goal' | 'imported';
+export type GI3StrategyScope = 'personal' | 'team' | 'hybrid';
+export type GI3GoalType = 'protect_region' | 'control_region' | 'reach_cash' | 'control_n_regions' | 'increase_net_worth' | 'complete_project' | 'focus_contracts' | 'eliminate_debt';
+export type GI3GoalStatus = 'pending' | 'active' | 'completed' | 'maintained' | 'blocked' | 'failed' | 'removed';
+export type GI3OnTrack = 'on_track' | 'ahead' | 'at_risk' | 'blocked' | 'recovering' | 'needs_decision' | 'completed' | 'failed';
+
+export interface GI3StrategyGoal {
+  id: string;
+  type: GI3GoalType;
+  label: string;
+  order: number;
+  role: 'primary' | 'secondary' | 'supporting';
+  dependsOn: string[];
+  regionId?: string;
+  amount?: number;
+  count?: number;
+  projectId?: string;
+  baseline?: number;
+  owner: string;          // 'player' | 'team' | actor id
+  status: GI3GoalStatus;
+  locked: boolean;
+  deadlineTurn: number | null;
+  /** A protected region that was lost and must be won back; it returns to protection once retaken. */
+  retake?: boolean;
+}
+
+export interface GI3StrategyMilestone {
+  id: string;
+  goalId: string;
+  label: string;
+  type: 'cash' | 'regions' | 'region_status' | 'project_funding' | 'contracts' | 'debt' | 'net_worth';
+  target: number;
+  current: number;
+  unit: '$' | 'regions' | '%' | 'count' | 'status';
+  status: 'pending' | 'reached';
+  progress: number;
+  completionCondition: string;
+  deadlineTurn: number | null;
+  confidence: 'high' | 'moderate' | 'low';
+}
+
+export interface GI3Constraints {
+  loanPolicy: 'allowed' | 'avoid' | 'forbidden';
+  minimumCashReserve: number | null;
+  maximumSpendFraction: number | null;
+  deprioritizedRegions: string[];
+  droppedTopics: string[];
+}
+
+export interface GI3Contingency {
+  id: string;
+  label: string;
+  trigger: { kind: 'region_critical' | 'region_lost' | 'cash_below'; regionId?: string; threshold?: number };
+  effect: 'prioritize_protect' | 'pause_expansion';
+  status: 'armed' | 'triggered' | 'resolved';
+  source: 'player' | 'default';
+}
+
+export interface GI3Assumption {
+  id: string;
+  label: string;
+  kind: 'region_stable' | 'no_new_debt' | 'income_available' | 'teammate_economy';
+  regionId?: string;
+  actorId?: string;
+  confidence: 'low' | 'moderate' | 'high';
+  status: 'holding' | 'violated';
+}
+
+export interface GI3StrategyLocks { mission: boolean; primaryGoal: boolean; reserve: boolean; regions: string[]; responsibilities: boolean; ordering: boolean }
+
+export interface GI3StrategyRevision {
+  revision: number;
+  turn: number;
+  trigger: string;
+  changes: string[];
+  reason: string;
+  source: 'player' | 'automatic' | 'team_os';
+  confidence: 'high' | 'moderate' | 'low';
+}
+
+export interface GI3StrategyContract {
+  id: string;
+  ownerActorId: string;
+  status: GI3StrategyStatus;
+  revision: number;
+  createdTurn: number;
+  updatedTurn: number;
+  source: GI3StrategySource;
+  scope: GI3StrategyScope;
+  mission: { kind: 'regions' | 'net_worth' | 'money' | 'custom'; label: string };
+  goals: GI3StrategyGoal[];
+  primaryGoalId: string | null;
+  constraints: GI3Constraints;
+  responsibilities: TeamResponsibility[];
+  /** The team-relevant subset handed to Team Intelligence 2.0 (never a second team plan). */
+  teamIntent: TeamCommandIntent | null;
+  contingencies: GI3Contingency[];
+  assumptions: GI3Assumption[];
+  successConditions: string[];
+  failureConditions: string[];
+  timeHorizon: { kind: 'multi_turn' | 'turns' | 'endgame'; turns: number | null };
+  confidence: 'high' | 'moderate' | 'low';
+  locks: GI3StrategyLocks;
+  revisions: GI3StrategyRevision[];
+  summary: string;
+  originalText: string;
+  phaseIndex: number;
+  phaseEnteredTurn: number;
+  lastReplanTurn: number | null;
+}
+
+export interface GI3Blocker { goalId: string; kind: 'money' | 'reserve' | 'location' | 'project' | 'team_task' | 'treasury' | 'governor' | 'prerequisite' | 'region_pressure' | 'deadline' | 'region_lost'; label: string; chain: string[]; shortfall?: number }
+
+export interface GI3ProgressState {
+  strategyId: string;
+  revision: number;
+  phaseIndex: number;
+  goalProgress: Record<string, { progress: number; status: GI3GoalStatus; detail: string }>;
+  milestones: GI3StrategyMilestone[];
+  blockers: GI3Blocker[];
+  resourceStatus: { cash: number; cashSource: 'player' | 'team'; reserve: number | null; freeAboveReserve: number; debt: number; loanPolicy: GI3Constraints['loanPolicy'] };
+  regionStatus: Record<string, 'held_stable' | 'held_at_risk' | 'held_unknown' | 'lost' | 'not_held'>;
+  responsibilityStatus: Array<{ actorId: string; focus: string; regionId?: string; status: string }>;
+  onTrack: GI3OnTrack;
+  trend: 'improving' | 'flat' | 'worsening' | 'unknown';
+  overallProgress: number;
+  nextMove: { label: string; reason: string } | null;
+  lastMeaningfulEvent: string | null;
+  updatedTurn: number;
+}
+
+export type GI3EventKind = 'milestone_reached' | 'goal_completed' | 'goal_blocked' | 'region_lost' | 'region_secured' | 'region_at_risk' | 'cash_threshold_crossed'
+  | 'reserve_breached' | 'debt_changed' | 'project_progress' | 'contract_completed' | 'contingency_triggered' | 'contingency_resolved' | 'phase_changed'
+  | 'team_plan_changed' | 'strategy_modified' | 'player_override' | 'strategy_achieved' | 'goal_failed' | 'assumption_violated' | 'drift_detected';
+
+export interface GI3StrategyEvent { id: string; turn: number; kind: GI3EventKind; significance: 'minor' | 'meaningful' | 'major' | 'critical'; summary: string; goalId?: string }
+
+export interface GI3ReplanDecision { replan: boolean; reason: string; trigger: string | null; changes: string[] }
+
+export interface GI3StrategyState {
+  version: 1;
+  active: GI3StrategyContract | null;
+  progress: GI3ProgressState | null;
+  events: GI3StrategyEvent[];
+  history: Array<{ id: string; summary: string; status: GI3StrategyStatus; endedTurn: number; revisions: number }>;
+  recentPlayerActions: Array<{ turn: number; category: string; key: string }>;
+  lastObservedLedgerId: string | null;
+  notices: Array<{ id: string; kind: 'divergence' | 'drift' | 'impossible' | 'recommend_change' | 'achieved'; text: string; revision: number; turn: number; dismissed: boolean }>;
+}
+
+export const GI3_LIMITS = { goals: 6, revisions: 25, events: 30, history: 5, recentActions: 12, notices: 6, replanCooldownTurns: 2, minPhaseTurns: 1 };
+
+export function createEmptyGI3StrategyState(): GI3StrategyState {
+  return { version: 1, active: null, progress: null, events: [], history: [], recentPlayerActions: [], lastObservedLedgerId: null, notices: [] };
+}
+
+const gi3Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const gi3Hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36); };
+const gi3RegionName = (world: GIWorld, code?: string) => (code ? world.regions[code]?.name || getGILocationName(code) || code : 'the region');
+
+// ---- Detection: persistent strategy vs ordinary question -------------------------------------------
+
+export type GI3IntentKind = 'create' | 'update' | 'status' | 'control' | 'whatif' | 'none';
+export type GI3Control = 'pause' | 'resume' | 'abandon' | 'replan' | 'lock' | 'unlock';
+
+const GI3_CREATE_SIGNALS = /\b(my plan|the plan is|our plan is|our strategy|my strategy|strategy should|i want to|i want us to|we want to|over the next|for the next few|next few turns|help me (get|reach|win)|i need to (reach|get)|we need to (reach|get|secure|take|hold)|let'?s focus|focus on|until we|win through|win by|win via|win on|going forward|long term|get me to|get me above|build (cash )?to|then|after that|first\b)/;
+const GI3_UPDATE_SIGNALS = /\b(change the plan|change of plan|update the plan|new plan|actually|instead|make that|make it|forget|drop the|remove the|stop caring|make \w+ the (priority|next target)|keep \$?\d|switch to|swap|no, |go back to|resume the old)\b/;
+const GI3_STATUS_SIGNALS = /\b(how are we doing|how am i doing|are we on track|am i on track|on track|what are we working toward|what am i working toward|what'?s next|what is next|what changed|what'?s blocking|what is blocking|blocking (the|my|our) plan|how far|why did (the|my|our) (strategy|plan) change|why did we replan|what is my plan|what'?s my plan|what is our plan|what'?s our plan|what phase|which phase|waiting for|how much more money|ahead or behind|which milestone|what happens after|what should \w+ be doing|ignore the plan|what is the strategy|what'?s the strategy|summari[sz]e (the|my|our) (plan|strategy)|strategy status|plan status|why is \w+ (paused|waiting)|progress)\b/;
+
+/** Does this GI 2.1 frame express a persistent multi-turn strategy (or a change to one)? */
+export function detectGI3StrategyIntent(frame: GISemanticFrame, world: GIWorld, ctx: GIConversationContext | null, active: GI3StrategyContract | null): { kind: GI3IntentKind; control?: GI3Control; signals: string[] } {
+  const text = ` ${frame.normalizedText.toLowerCase()} `;
+  const readings = (frame.strategic || []).filter(r => !r.negated);
+  const goalReadings = readings.filter(r => ['protect_region', 'target_region', 'cash_target', 'regions_count', 'project', 'contracts', 'debt'].includes(r.kind));
+  const missionReading = readings.some(r => r.kind.startsWith('mission_'));
+  const signals: string[] = [];
+  const hasActive = Boolean(active && (active.status === 'active' || active.status === 'paused'));
+  const strategyNoun = /\b(strategy|plan|mission)\b/.test(text);
+  // Control of an existing strategy (no gameplay action).
+  if (hasActive && strategyNoun || /\b(the|my|our) (strategy|plan)\b/.test(text)) {
+    const control: GI3Control | null = /\b(pause|hold off on|put .* on hold)\b/.test(text) ? 'pause' : /\b(resume|restart|unpause|continue with)\b/.test(text) && !/\bold plan\b/.test(text) ? 'resume'
+      : /\b(abandon|cancel|scrap|throw out|give up on)\b/.test(text) ? 'abandon' : /\b(replan|re-plan|rethink|redo)\b/.test(text) ? 'replan' : /\bunlock\b/.test(text) ? 'unlock' : null;
+    if (control && hasActive) return { kind: 'control', control, signals: [`control:${control}`] };
+  }
+  if (/\bexplain (this|the|my|our) (strategy|plan)\b/.test(text) && (ctx?.pendingGI3Draft || hasActive)) return { kind: 'status', signals: ['explain'] };
+  if (/\b(what if|what would happen if|suppose)\b/.test(text) && (strategyNoun || /\b(switch|instead|first|focus)\b/.test(text)) && (hasActive || goalReadings.length)) return { kind: 'whatif', signals: ['whatif'] };
+  if (hasActive && GI3_STATUS_SIGNALS.test(text) && (frame.isQuestion || /^\s*(how|what|why|are|am|which|where|when|summari)/.test(text)) && !goalReadings.some(r => r.kind === 'cash_target' && /\bmake that|make it\b/.test(text))) return { kind: 'status', signals: ['status'] };
+  // Repairs / edits to an active strategy ("make that $20K", "actually Queensland instead", "forget Victoria").
+  const recentGI3 = Boolean(ctx?.lastStrategyDomain === 'gi3' || ctx?.pendingGI3Draft);
+  if (hasActive || ctx?.pendingGI3Draft) {
+    const editsContent = goalReadings.length > 0 || readings.some(r => ['deprioritize_region', 'reserve', 'spend_cap', 'loan_allowed', 'contracts_drop', 'threat_cleared', 'lock'].includes(r.kind)) || frame.constraints.some(c => c.subject === 'loan' || c.subject === 'cash_floor');
+    if (editsContent && (GI3_UPDATE_SIGNALS.test(text) || recentGI3 || /\b(plan|strategy|priority)\b/.test(text)) && !(ctx?.lastStrategyDomain === 'team' && /\b(make that|make it|swap|switch)\b/.test(text))) { signals.push('update'); return { kind: 'update', signals }; }
+    if (/\bswap (riley and me|me and \w+|us|roles)\b/.test(text) && ctx?.lastStrategyDomain === 'gi3') return { kind: 'update', signals: ['swap'] };
+  }
+  // Questions stay questions ("should I … or …?"), unless the player explicitly states a plan.
+  if ((frame.isQuestion || frame.comparisons.length) && !/\b(my plan is|the plan is|our plan is|help me (get|reach|win))\b/.test(text)) return { kind: 'none', signals: ['question'] };
+  // Creation: explicit strategic language with strategic goals, several ordered goals, or a mission.
+  const explicit = GI3_CREATE_SIGNALS.test(text);
+  const goalKeys = new Map<string, number>();
+  goalReadings.forEach(r => { const k = `${r.kind === 'protect_region' || r.kind === 'target_region' ? 'region' : r.kind}:${r.regionId || r.amount || r.count || r.projectHint || ''}`; if (!goalKeys.has(k)) goalKeys.set(k, r.order); });
+  const ordered = goalKeys.size >= 2 && new Set(goalKeys.values()).size >= 2;
+  const persistentCash = goalReadings.some(r => r.kind === 'cash_target') && /\b(get me to|reach|build|above|over the|need to get|i want)\b/.test(text);
+  if (missionReading) signals.push('mission');
+  if (ordered) signals.push('ordered goals');
+  if (persistentCash) signals.push('cash target');
+  if (explicit && goalReadings.length) signals.push('explicit strategy language');
+  if ((explicit && goalReadings.length) || ordered || missionReading || persistentCash || (goalReadings.length && /\b(until|the whole time|few turns|over time)\b/.test(text))) {
+    // A purely tactical sequence of concrete actions ("sell gold then put $3K into NSW") stays a GI 2.1 plan.
+    const strongWords = /\b(my plan|the plan is|our plan|strategy|i want|we want|over the next|few turns|help me|i need to reach|let'?s focus|focus on|until we|win through|win by|going forward|long term|get me to|get me above)\b/.test(text);
+    const tactical = frame.actions.some(a => a.amount || a.family === 'sell' || a.family === 'buy') && !missionReading && !strongWords;
+    // A choice ("X or Y?") or a GI 2.1 conditional instruction ("if Riley attacks NSW, defend it") is not a persistent strategy.
+    const choiceOrConditional = (frame.comparisons.length > 0 || frame.conditions.some(cd => cd.isStrategy)) && !strongWords && !missionReading;
+    if (!tactical && !choiceOrConditional) return { kind: 'create', signals };
+  }
+  return { kind: 'none', signals };
+}
+
+// ---- Compiler: GI 2.1 frame → GI3 strategy contract ----------------------------------------------
+
+function gi3GoalLabel(g: Pick<GI3StrategyGoal, 'type' | 'regionId' | 'amount' | 'count' | 'projectId'>, world: GIWorld): string {
+  switch (g.type) {
+    case 'protect_region': return `Protect ${gi3RegionName(world, g.regionId)}`;
+    case 'control_region': return `Expand into ${gi3RegionName(world, g.regionId)}`;
+    case 'reach_cash': return `Reach ${gi3Money(g.amount || 0)}`;
+    case 'control_n_regions': return `Control ${g.count} regions`;
+    case 'increase_net_worth': return g.amount ? `Reach ${gi3Money(g.amount)} net worth` : 'Grow net worth';
+    case 'complete_project': return `Finish ${world.projects.find(p => p.id === g.projectId)?.title || 'the project'}`;
+    case 'focus_contracts': return 'Complete a contract';
+    case 'eliminate_debt': return 'Clear all debt';
+  }
+}
+
+function gi3NewGoal(type: GI3GoalType, order: number, world: GIWorld, extra: Partial<GI3StrategyGoal> = {}): GI3StrategyGoal {
+  const base: GI3StrategyGoal = { id: '', type, label: '', order, role: 'supporting', dependsOn: [], owner: 'player', status: 'pending', locked: false, deadlineTurn: null, ...extra };
+  base.id = `g3_${type}_${extra.regionId || extra.projectId || extra.amount || extra.count || order}`;
+  base.label = gi3GoalLabel(base, world);
+  return base;
+}
+
+/** Recompute roles, dependencies and labels after any goal change (bounded DAG: a simple chain). */
+function gi3NormalizeGoals(goals: GI3StrategyGoal[], world: GIWorld): GI3StrategyGoal[] {
+  const live = goals.filter(g => g.status !== 'removed');
+  // Protection runs first (stabilize), then the stated order — unless the player explicitly ordered otherwise.
+  const key = (g: GI3StrategyGoal) => (g.order <= -100 ? -1000 + g.order : g.type === 'protect_region' && g.order <= 0 ? -500 + g.order : g.order);
+  live.sort((a, b) => key(a) - key(b) || a.id.localeCompare(b.id));
+  const seen = new Set<string>();
+  const out: GI3StrategyGoal[] = [];
+  live.forEach(g => { if (!seen.has(g.id) && out.length < GI3_LIMITS.goals) { seen.add(g.id); out.push({ ...g, label: gi3GoalLabel(g, world) }); } });
+  out.forEach((g, i) => { g.role = i === 0 ? 'primary' : i === 1 ? 'secondary' : 'supporting'; g.dependsOn = i === 0 ? [] : [out[i - 1].id]; g.order = i; });
+  return [...out, ...goals.filter(g => g.status === 'removed')];
+}
+
+function gi3Summary(c: Pick<GI3StrategyContract, 'goals' | 'constraints' | 'mission'>): string {
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const steps = live.map((g, i) => (i === 0 ? g.label : i === live.length - 1 && live.length > 1 ? `then ${g.label.charAt(0).toLowerCase()}${g.label.slice(1)}` : g.label.charAt(0).toLowerCase() + g.label.slice(1)));
+  const tail = [c.constraints.loanPolicy === 'forbidden' ? 'without new loans' : c.constraints.loanPolicy === 'avoid' ? 'avoiding loans' : null, c.constraints.minimumCashReserve ? `keeping ${gi3Money(c.constraints.minimumCashReserve)} safe` : null].filter(Boolean);
+  const body = steps.join(', ') || c.mission.label;
+  return `${body}${tail.length ? `, ${tail.join(' and ')}` : ''}.`.replace(/^./, m => m.toUpperCase());
+}
+
+/** Default contingencies and assumptions derived from the goals (bounded, deterministic). */
+function gi3DeriveSafety(c: GI3StrategyContract, world: GIWorld, conditions: GICondition[]): Pick<GI3StrategyContract, 'contingencies' | 'assumptions'> {
+  const contingencies: GI3Contingency[] = [];
+  const protect = c.goals.filter(g => g.type === 'protect_region' && g.status !== 'removed');
+  const expansion = c.goals.some(g => g.type === 'control_region' && g.status !== 'removed');
+  conditions.filter(cd => cd.trigger.regionId && (cd.trigger.event === 'pressure_critical' || cd.trigger.event === 'rival_attacks' || cd.trigger.event === 'region_lost')).forEach(cd => {
+    contingencies.push({ id: `g3c_${cd.trigger.event}_${cd.trigger.regionId}`, label: `If ${cd.trigger.regionId} ${cd.trigger.event === 'region_lost' ? 'is lost' : 'becomes critical'}, prioritise it${expansion ? ' and pause expansion' : ''}`, trigger: { kind: cd.trigger.event === 'region_lost' ? 'region_lost' : 'region_critical', regionId: cd.trigger.regionId }, effect: 'prioritize_protect', status: 'armed', source: 'player' });
+  });
+  protect.forEach(g => {
+    if (!contingencies.some(x => x.trigger.regionId === g.regionId)) contingencies.push({ id: `g3c_region_critical_${g.regionId}`, label: `If ${g.regionId} becomes critical, return to protecting it${expansion ? ' and pause expansion' : ''}`, trigger: { kind: 'region_critical', regionId: g.regionId }, effect: 'prioritize_protect', status: 'armed', source: 'default' });
+  });
+  if (c.constraints.minimumCashReserve) contingencies.push({ id: 'g3c_cash_below_reserve', label: `If cash falls below ${gi3Money(c.constraints.minimumCashReserve)}, pause spending goals`, trigger: { kind: 'cash_below', threshold: c.constraints.minimumCashReserve }, effect: 'pause_expansion', status: 'armed', source: 'default' });
+  const assumptions: GI3Assumption[] = [];
+  protect.forEach(g => assumptions.push({ id: `g3a_stable_${g.regionId}`, label: `${g.regionId} stays stable while the plan builds toward later phases`, kind: 'region_stable', regionId: g.regionId, confidence: 'moderate', status: 'holding' }));
+  if (c.constraints.loanPolicy !== 'allowed') assumptions.push({ id: 'g3a_no_debt', label: 'The plan can be funded without new loans', kind: 'no_new_debt', confidence: 'moderate', status: 'holding' });
+  if (c.goals.some(g => g.type === 'reach_cash' && g.status !== 'removed')) assumptions.push({ id: 'g3a_income', label: 'Income opportunities (sales, contracts, work) stay available', kind: 'income_available', confidence: 'moderate', status: 'holding' });
+  const mateEconomy = c.responsibilities.find(r => r.actorId !== 'player' && r.focus === 'economy');
+  if (mateEconomy) assumptions.push({ id: `g3a_mate_${mateEconomy.actorId}`, label: `${world.actors.find(a => a.id === mateEconomy.actorId)?.name || 'Your teammate'} keeps earning for the team`, kind: 'teammate_economy', actorId: mateEconomy.actorId, confidence: 'moderate', status: 'holding' });
+  return { contingencies: contingencies.slice(0, 5), assumptions: assumptions.slice(0, 5) };
+}
+
+/** Team-relevant subset for Team Intelligence 2.0: current responsibilities + reserve; future targets join when their phase starts. */
+export function gi3TeamIntentForPhase(c: GI3StrategyContract, phaseIndex: number): TeamCommandIntent | null {
+  if (!c.teamIntent && !c.responsibilities.length) return null;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const futureRegions = new Set(live.slice(phaseIndex + 1).filter(g => g.type === 'control_region' && g.regionId).map(g => g.regionId!));
+  const currentExpansion = live[phaseIndex]?.type === 'control_region' ? live[phaseIndex].regionId : null;
+  const base: TeamCommandIntent = c.teamIntent || { responsibilities: [], reserveFloor: null, contingencies: [], priorities: [], deprioritizedRegions: [], spendLocks: [], missionHint: null, swap: false, evidence: [] };
+  const responsibilities = (c.responsibilities.length ? c.responsibilities : base.responsibilities).filter(r => !(r.focus === 'expansion' && r.regionId && futureRegions.has(r.regionId)));
+  if (currentExpansion && !responsibilities.some(r => r.regionId === currentExpansion)) {
+    const owner = c.responsibilities.find(r => r.regionId === currentExpansion)?.actorId || 'player';
+    responsibilities.push({ actorId: owner, focus: 'expansion', regionId: currentExpansion });
+  }
+  return {
+    ...base,
+    responsibilities,
+    reserveFloor: c.constraints.minimumCashReserve ?? base.reserveFloor ?? null,
+    deprioritizedRegions: Array.from(new Set([...(base.deprioritizedRegions || []), ...c.constraints.deprioritizedRegions])),
+    missionHint: base.missionHint || c.mission.kind === 'custom' ? base.missionHint : c.mission.label,
+    evidence: [...(base.evidence || []).slice(0, 4), `GI3 strategy rev ${c.revision}`]
+  };
+}
+
+export interface GI3CompileResult { contract: GI3StrategyContract; changes: string[]; notes: string[] }
+
+/**
+ * Compile the GI 2.1 frame into a strategy contract. With `base`, only the parts the player referred
+ * to change ("make that $20K" changes the cash target; everything else is preserved).
+ */
+export function compileGI3StrategyIntent(frame: GISemanticFrame, world: GIWorld, ctx: GIConversationContext | null, base: GI3StrategyContract | null): GI3CompileResult {
+  const text = ` ${frame.normalizedText.toLowerCase()} `;
+  const readings = (frame.strategic || []).filter(r => !r.negated).slice().sort((a, b) => a.order - b.order);
+  const notes: string[] = [];
+  const changes: string[] = [];
+  const turn = world.turn;
+  const regionHeld = (code: string) => Boolean(world.regions[code]?.controlledByPlayer);
+  let goals: GI3StrategyGoal[] = base ? base.goals.map(g => ({ ...g })) : [];
+  const constraints: GI3Constraints = base ? { ...base.constraints, deprioritizedRegions: [...base.constraints.deprioritizedRegions], droppedTopics: [...base.constraints.droppedTopics] } : { loanPolicy: 'allowed', minimumCashReserve: null, maximumSpendFraction: null, deprioritizedRegions: [], droppedTopics: [] };
+  const locks: GI3StrategyLocks = base ? { ...base.locks, regions: [...base.locks.regions] } : { mission: false, primaryGoal: false, reserve: false, regions: [], responsibilities: false, ordering: false };
+  let mission = base?.mission || { kind: 'custom' as const, label: '' };
+  const findGoal = (pred: (g: GI3StrategyGoal) => boolean) => goals.find(g => g.status !== 'removed' && pred(g));
+  const replaceWord = /\b(instead|replace|rather than|make \w+ the (next target|priority)|swap .* for)\b/.test(text);
+  const lockAll = readings.some(r => r.kind === 'lock');
+  const firstExplicit = /\bfirst\b/.test(text);
+  readings.forEach(r => {
+    const order = r.order;
+    switch (r.kind) {
+      case 'protect_region': {
+        if (!r.regionId) break;
+        const existing = findGoal(g => g.regionId === r.regionId && (g.type === 'protect_region' || g.type === 'control_region'));
+        if (existing && base) { if (firstExplicit) { existing.order = -100; changes.push(`${r.regionId} moved first`); } }
+        else if (!existing) { goals.push(gi3NewGoal(regionHeld(r.regionId) ? 'protect_region' : 'control_region', order, world, { regionId: r.regionId, locked: lockAll })); if (base) changes.push(`added ${regionHeld(r.regionId) ? 'protect' : 'take'} ${r.regionId}`); }
+        if (lockAll && !locks.regions.includes(r.regionId)) locks.regions.push(r.regionId);
+        constraints.deprioritizedRegions = constraints.deprioritizedRegions.filter(x => x !== r.regionId);
+        break;
+      }
+      case 'target_region': {
+        if (!r.regionId) break;
+        const existing = findGoal(g => g.regionId === r.regionId);
+        if (existing) { if (base && firstExplicit) { existing.order = -100; changes.push(`${r.regionId} moved first`); } break; }
+        // "Actually Queensland instead of Victoria" → replace the future expansion target only.
+        const future = base ? goals.filter(g => g.status !== 'removed' && g.type === 'control_region' && !(locks.regions.includes(g.regionId || ''))) : [];
+        if (base && future.length && (replaceWord || /\b(actually|next target|go \w+ next)\b/.test(text)) && !firstExplicit) {
+          const old = future[future.length - 1];
+          changes.push(`future target ${old.regionId} → ${r.regionId}`);
+          const replaced = gi3NewGoal('control_region', old.order, world, { regionId: r.regionId, owner: old.owner });
+          goals = goals.map(g => (g.id === old.id ? replaced : g));
+        } else {
+          goals.push(gi3NewGoal('control_region', firstExplicit && base ? -100 : order, world, { regionId: r.regionId }));
+          if (base) changes.push(`added expand ${r.regionId}${firstExplicit ? ' (first)' : ''}`);
+        }
+        constraints.deprioritizedRegions = constraints.deprioritizedRegions.filter(x => x !== r.regionId);
+        break;
+      }
+      case 'deprioritize_region': {
+        if (!r.regionId) break;
+        if (locks.regions.includes(r.regionId)) { notes.push(`${r.regionId} is locked in your strategy, so it was not dropped.`); break; }
+        goals.forEach(g => { if (g.regionId === r.regionId && g.status !== 'removed' && g.type === 'control_region') { g.status = 'removed'; changes.push(`dropped ${g.label}`); } });
+        if (!constraints.deprioritizedRegions.includes(r.regionId)) constraints.deprioritizedRegions.push(r.regionId);
+        break;
+      }
+      case 'threat_cleared': notes.push(`${r.regionId} is no longer treated as under threat.`); break;
+      case 'cash_target': {
+        if (!r.amount) break;
+        const existing = findGoal(g => g.type === 'reach_cash');
+        if (existing) { if (existing.amount !== r.amount) { changes.push(`cash target ${gi3Money(existing.amount || 0)} → ${gi3Money(r.amount)}`); existing.amount = r.amount; existing.status = existing.status === 'completed' ? 'pending' : existing.status; existing.id = `g3_reach_cash_${r.amount}`; } }
+        else goals.push(gi3NewGoal('reach_cash', order, world, { amount: r.amount, owner: r.agentId && r.agentId !== 'player' ? r.agentId : 'player' }));
+        break;
+      }
+      case 'reserve': if (r.amount) { if (constraints.minimumCashReserve !== r.amount) changes.push(`reserve ${constraints.minimumCashReserve ? gi3Money(constraints.minimumCashReserve) : 'none'} → ${gi3Money(r.amount)}`); constraints.minimumCashReserve = r.amount; if (lockAll) locks.reserve = true; } break;
+      case 'spend_cap': constraints.maximumSpendFraction = r.fraction ?? (r.amount && world.player.money ? Math.min(1, r.amount / world.player.money) : null); break;
+      case 'regions_count': if (r.count && !findGoal(g => g.type === 'control_n_regions')) goals.push(gi3NewGoal('control_n_regions', order, world, { count: r.count })); break;
+      case 'project': {
+        const hint = String(r.projectHint || '');
+        const match = world.projects.find(p => p.title.toLowerCase().includes(hint)) || (hint === 'project' || hint === 'infrastructure' ? world.projects.find(p => p.status !== 'completed' && p.invested > 0) : null);
+        if (match) { if (!findGoal(g => g.projectId === match.id)) goals.push(gi3NewGoal('complete_project', order, world, { projectId: match.id })); }
+        else notes.push(`No ${hint} project exists in this match, so it was not added as a goal.`);
+        break;
+      }
+      case 'contracts': if (!findGoal(g => g.type === 'focus_contracts')) goals.push(gi3NewGoal('focus_contracts', order, world, { baseline: world.contracts.filter(c => c.assignedToPlayer && /complete/i.test(c.status)).length })); break;
+      case 'contracts_drop': goals.forEach(g => { if (g.type === 'focus_contracts' && g.status !== 'removed') { g.status = 'removed'; changes.push('dropped contract focus'); } }); if (!constraints.droppedTopics.includes('contracts')) constraints.droppedTopics.push('contracts'); break;
+      case 'debt': if (!findGoal(g => g.type === 'eliminate_debt')) goals.push(gi3NewGoal('eliminate_debt', order, world, { baseline: world.player.debtTotal })); break;
+      case 'mission_regions': mission = { kind: 'regions', label: 'Win through regional control' }; if (base && base.mission.kind !== 'regions') changes.push('mission → regions'); break;
+      case 'mission_net_worth': mission = { kind: 'net_worth', label: 'Win through net worth' }; if (base && base.mission.kind !== 'net_worth') changes.push('mission → net worth'); break;
+      case 'mission_money': mission = { kind: 'money', label: 'Win with the most money' }; break;
+      case 'loan_allowed': if (constraints.loanPolicy !== 'allowed') changes.push('loan restriction removed'); constraints.loanPolicy = 'allowed'; break;
+      case 'deadline_turn': { const target = goals.filter(g => g.status !== 'removed').slice(-1)[0]; if (target && r.count) target.deadlineTurn = r.count; break; }
+      default: break;
+    }
+  });
+  // Loans and reserves from GI 2.1 constraints (polarity already resolved there).
+  const loan = [...frame.constraints, ...frame.preferences].find(c => c.subject === 'loan');
+  if (loan) { const policy = loan.policy === 'forbidden' ? 'forbidden' : loan.policy === 'avoid' || loan.policy === 'fallback_only' ? 'avoid' : loan.policy === 'allowed' ? 'allowed' : constraints.loanPolicy; if (policy !== constraints.loanPolicy) changes.push(`loans ${constraints.loanPolicy} → ${policy}`); constraints.loanPolicy = policy; }
+  const floor = frame.constraints.find(c => c.subject === 'cash_floor' && c.amount?.value);
+  if (floor && floor.amount?.value && !readings.some(r => r.kind === 'reserve')) { if (constraints.minimumCashReserve !== floor.amount.value) changes.push(`reserve → ${gi3Money(floor.amount.value)}`); constraints.minimumCashReserve = floor.amount.value; }
+  // "Keep $10K instead" / "Make that $20K" after a reserve vs target: a bare amount repairs the last-touched money field.
+  if (base && !readings.some(r => r.kind === 'cash_target' || r.kind === 'reserve') && /\b(make that|make it|actually|instead)\b/.test(text)) {
+    const amount = frame.quantities.find(q => q.unit === '$' && q.value)?.value;
+    if (amount) {
+      const cash = findGoal(g => g.type === 'reach_cash');
+      if (ctx?.lastStrategyField === 'reserve' || (!cash && constraints.minimumCashReserve)) { changes.push(`reserve → ${gi3Money(amount)}`); constraints.minimumCashReserve = amount; }
+      else if (cash) { changes.push(`cash target ${gi3Money(cash.amount || 0)} → ${gi3Money(amount)}`); cash.amount = amount; cash.id = `g3_reach_cash_${amount}`; cash.status = 'pending'; }
+    }
+  }
+  // Responsibilities (Team Mode): GI 2.1 team command parsing — GI3 keeps the subset, Team OS runs it.
+  let teamIntent: TeamCommandIntent | null = base?.teamIntent || null;
+  let responsibilities: TeamResponsibility[] = base ? base.responsibilities.map(r => ({ ...r })) : [];
+  if (world.team?.enabled) {
+    const cmd = parseTeamCommandFromFrame(frame, world, ctx);
+    if (cmd && (cmd.responsibilities.length || cmd.swap)) {
+      if (base && responsibilities.length) changes.push(cmd.swap ? 'responsibilities swapped' : 'responsibilities updated');
+      // "…while I defend" names no region: the Team OS parser falls back to the actor's location, but in a
+      // strategy the defended region is the one the strategy protects (e.g. "Keep NSW safe").
+      const named = new Set((frame.strategic || []).map(r => r.regionId).filter(Boolean) as string[]);
+      const guarded = (frame.strategic || []).find(r => r.kind === 'protect_region' && !r.negated && r.regionId)?.regionId
+        || goals.find(g => g.status !== 'removed' && g.type === 'protect_region' && g.regionId)?.regionId;
+      responsibilities = cmd.responsibilities.map(r => (r.focus === 'region' && r.regionId && !named.has(r.regionId) && guarded && !cmd.responsibilities.some(x => x.regionId === guarded) ? { ...r, regionId: guarded } : { ...r }));
+      teamIntent = { ...cmd, responsibilities: responsibilities.map(r => ({ ...r })) };
+    } else if (cmd && !teamIntent) teamIntent = cmd;
+    // A teammate responsible for a later expansion target ("then we push VIC") is recorded on the goal.
+    goals.forEach(g => { const owner = responsibilities.find(r => r.regionId && r.regionId === g.regionId); if (owner) g.owner = owner.actorId; });
+    if (/\b(we|us|our|both|team)\b/.test(text)) goals.forEach(g => { if (g.type === 'control_region' && g.owner === 'player' && !responsibilities.some(r => r.regionId === g.regionId)) g.owner = 'team'; });
+  }
+  goals = gi3NormalizeGoals(goals, world);
+  const live = goals.filter(g => g.status !== 'removed');
+  if (!mission.label) {
+    const regionsFocused = live.some(g => g.type === 'control_region' || g.type === 'control_n_regions') && world.win?.regionsTarget;
+    mission = regionsFocused && /\bwin\b/.test(text) ? { kind: 'regions', label: 'Win through regional control' } : { kind: 'custom', label: live.map(g => g.label).join(' → ') || 'Player strategy' };
+  }
+  if (mission.kind === 'custom') mission = { kind: 'custom', label: live.map(g => g.label).join(' → ') || 'Player strategy' };
+  const scope: GI3StrategyScope = responsibilities.some(r => r.actorId !== 'player') ? (responsibilities.some(r => r.actorId === 'player') ? 'hybrid' : 'team') : world.team?.enabled && /\b(we|us|our|team)\b/.test(text) ? 'team' : 'personal';
+  const horizonTime = frame.time.find(t => t.kind === 'horizon' && t.count);
+  const timeHorizon = /\b(endgame|end of (the )?game|before the end)\b/.test(text) ? { kind: 'endgame' as const, turns: null } : horizonTime ? { kind: 'turns' as const, turns: horizonTime.count || null } : base?.timeHorizon || { kind: 'multi_turn' as const, turns: null };
+  const revision = (base?.revision || 0) + 1;
+  const contract: GI3StrategyContract = {
+    id: base?.id || `gi3_${gi3Hash(`${frame.normalizedText}|${turn}`)}`,
+    ownerActorId: world.player.id,
+    status: base?.status === 'active' || base?.status === 'paused' ? base.status : 'draft',
+    revision,
+    createdTurn: base?.createdTurn ?? turn,
+    updatedTurn: turn,
+    source: base?.source || (readings.some(r => r.kind.startsWith('mission_')) || live.length > 1 ? 'player_command' : 'player_goal'),
+    scope,
+    mission,
+    goals,
+    primaryGoalId: live[0]?.id || null,
+    constraints,
+    responsibilities,
+    teamIntent,
+    contingencies: [],
+    assumptions: [],
+    successConditions: live.map(g => `${g.label}${g.type === 'protect_region' ? ' (held and stable)' : ''}`),
+    failureConditions: [...live.filter(g => g.type === 'protect_region').map(g => `${g.regionId} is lost`), ...live.filter(g => g.deadlineTurn).map(g => `${g.label} not done by turn ${g.deadlineTurn}`)],
+    timeHorizon,
+    confidence: live.length ? (frame.confidence.semanticFrameConfidence >= 0.7 ? 'high' : 'moderate') : 'low',
+    locks: { ...locks, primaryGoal: locks.primaryGoal || (lockAll && live[0]?.type === 'protect_region') },
+    revisions: base?.revisions || [],
+    summary: '',
+    originalText: base ? base.originalText : frame.originalQuery.slice(0, 300),
+    phaseIndex: base?.phaseIndex ?? 0,
+    phaseEnteredTurn: base?.phaseEnteredTurn ?? turn,
+    lastReplanTurn: base?.lastReplanTurn ?? null
+  };
+  Object.assign(contract, gi3DeriveSafety(contract, world, frame.conditions));
+  if (base) contract.contingencies = contract.contingencies.map(c => { const prev = base.contingencies.find(x => x.id === c.id); return prev ? { ...c, status: prev.status } : c; });
+  contract.summary = gi3Summary(contract);
+  contract.teamIntent = world.team?.enabled ? gi3TeamIntentForPhase(contract, contract.phaseIndex) : null;
+  return { contract, changes, notes };
+}
+
+// ---- Progress, phases, events, replanning ------------------------------------------------------------
+
+function gi3RegionStatus(world: GIWorld, code: string): GI3ProgressState['regionStatus'][string] {
+  const r = world.regions[code];
+  if (!r) return 'not_held';
+  if (!r.controlledByPlayer) return 'not_held';
+  const rivals = world.actors.filter(a => a.relation === 'rival');
+  const visible = rivals.filter(a => a.money !== null);
+  if (!visible.length) return 'held_unknown';
+  const best = Math.max(...visible.map(a => a.money || 0));
+  const cost = r.rivalCostToControl;
+  if (cost !== null && cost !== undefined && best >= cost) return 'held_at_risk';
+  return 'held_stable';
+}
+
+function gi3CashMeasure(c: GI3StrategyContract, world: GIWorld): { cash: number; source: 'player' | 'team' } {
+  if ((c.scope === 'team' || c.scope === 'hybrid') && world.team?.enabled) return { cash: Math.round(world.team.evaluation.resources.freeCash), source: 'team' };
+  return { cash: Math.round(world.player.money), source: 'player' };
+}
+
+function gi3CashMilestones(goalId: string, target: number, cash: number, deadline: number | null): GI3StrategyMilestone[] {
+  const steps = Array.from(new Set([0.5, 0.75, 1].map(f => (f === 1 ? target : Math.round((target * f) / 1000) * 1000)))).filter(v => v > 0).sort((a, b) => a - b);
+  return steps.map((v, i) => ({ id: `${goalId}_m${i}`, goalId, label: `${gi3Money(v)} cash`, type: 'cash', target: v, current: cash, unit: '$', status: cash >= v ? 'reached' : 'pending', progress: Math.min(1, cash / v), completionCondition: `cash ≥ ${gi3Money(v)}`, deadlineTurn: v === target ? deadline : null, confidence: 'high' }));
+}
+
+/** Pure evaluation of one goal against canonical state (no manual progress increments, ever). */
+function gi3EvaluateGoal(g: GI3StrategyGoal, c: GI3StrategyContract, world: GIWorld): { progress: number; status: GI3GoalStatus; detail: string; milestones: GI3StrategyMilestone[]; blockers: GI3Blocker[] } {
+  const blockers: GI3Blocker[] = [];
+  const deadlinePassed = g.deadlineTurn !== null && world.turn > g.deadlineTurn;
+  const { cash } = gi3CashMeasure(c, world);
+  const reserve = c.constraints.minimumCashReserve || 0;
+  const free = Math.max(0, cash - reserve);
+  switch (g.type) {
+    case 'protect_region': {
+      const st = gi3RegionStatus(world, g.regionId || '');
+      const ms: GI3StrategyMilestone[] = [{ id: `${g.id}_held`, goalId: g.id, label: `${g.regionId} held and stable`, type: 'region_status', target: 1, current: st === 'held_stable' || st === 'held_unknown' ? 1 : 0, unit: 'status', status: st === 'held_stable' || st === 'held_unknown' ? 'reached' : 'pending', progress: st === 'held_stable' ? 1 : st === 'held_unknown' ? 0.8 : st === 'held_at_risk' ? 0.5 : 0, completionCondition: `${g.regionId} held with no visible rival able to take it`, deadlineTurn: null, confidence: st === 'held_unknown' ? 'low' : 'high' }];
+      if (st === 'not_held') { blockers.push({ goalId: g.id, kind: 'region_lost', label: `${g.regionId} is not under your control`, chain: [g.label, `${g.regionId} must be retaken first`] }); return { progress: 0, status: 'blocked', detail: `${g.regionId} is not held`, milestones: ms, blockers }; }
+      if (st === 'held_at_risk') { const cost = world.regions[g.regionId!]?.rivalCostToControl || 0; blockers.push({ goalId: g.id, kind: 'region_pressure', label: `A visible rival can afford the ${gi3Money(cost)} needed to take ${g.regionId}`, chain: [g.label, `rival pressure on ${g.regionId}`] }); return { progress: 0.5, status: 'active', detail: `${g.regionId} is at risk`, milestones: ms, blockers }; }
+      return { progress: st === 'held_stable' ? 1 : 0.8, status: 'maintained', detail: st === 'held_stable' ? `${g.regionId} is held and stable` : `${g.regionId} is held (rival cash hidden)`, milestones: ms, blockers };
+    }
+    case 'control_region': {
+      const r = world.regions[g.regionId || ''];
+      if (!r) return { progress: 0, status: 'failed', detail: 'unknown region', milestones: [], blockers };
+      if (r.controlledByPlayer) return { progress: 1, status: 'completed', detail: `${g.regionId} is under your control`, milestones: [], blockers };
+      const cost = Math.max(0, r.playerCostToControl || 0);
+      const travel = r.isHere ? 0 : Math.max(0, r.travelCost || 0);
+      const need = cost + travel;
+      const funded = free >= need;
+      const ms: GI3StrategyMilestone[] = [
+        { id: `${g.id}_funds`, goalId: g.id, label: `${gi3Money(need)} free above reserve for ${g.regionId}`, type: 'cash', target: need, current: free, unit: '$', status: funded ? 'reached' : 'pending', progress: need ? Math.min(1, free / need) : 1, completionCondition: `free cash above the reserve ≥ ${gi3Money(need)}`, deadlineTurn: null, confidence: 'high' },
+        { id: `${g.id}_control`, goalId: g.id, label: `Control ${g.regionId}`, type: 'region_status', target: 1, current: 0, unit: 'status', status: 'pending', progress: 0, completionCondition: `${g.regionId} under your control`, deadlineTurn: g.deadlineTurn, confidence: 'moderate' }
+      ];
+      if (!funded) blockers.push({ goalId: g.id, kind: reserve && cash >= need ? 'reserve' : 'money', label: `You need ${gi3Money(need - free)} more free cash before ${g.regionId} can start`, chain: [g.label, `needs ${gi3Money(cost)} deposit${travel ? ` + ${gi3Money(travel)} travel` : ''}`, reserve ? `${gi3Money(free)} is free above your ${gi3Money(reserve)} reserve` : `you have ${gi3Money(cash)}`], shortfall: need - free });
+      if (deadlinePassed) return { progress: 0, status: 'failed', detail: `the deadline (turn ${g.deadlineTurn}) has passed`, milestones: ms, blockers: [{ goalId: g.id, kind: 'deadline', label: `The turn ${g.deadlineTurn} deadline has passed`, chain: [g.label] }] };
+      return { progress: Math.round((need ? Math.min(1, free / need) : 1) * 0.6 * 100) / 100, status: funded ? 'active' : 'blocked', detail: funded ? `funded — ready to contest ${g.regionId}` : `${gi3Money(need - free)} short`, milestones: ms, blockers };
+    }
+    case 'reach_cash': {
+      const target = g.amount || 0;
+      const ms = gi3CashMilestones(g.id, target, cash, g.deadlineTurn);
+      if (cash >= target) return { progress: 1, status: 'completed', detail: `${gi3Money(cash)} of ${gi3Money(target)}`, milestones: ms, blockers };
+      if (deadlinePassed) return { progress: cash / target, status: 'failed', detail: `deadline turn ${g.deadlineTurn} passed at ${gi3Money(cash)}`, milestones: ms, blockers: [{ goalId: g.id, kind: 'deadline', label: `The turn ${g.deadlineTurn} deadline has passed`, chain: [g.label] }] };
+      blockers.push({ goalId: g.id, kind: 'money', label: `You need ${gi3Money(target - cash)} more`, chain: [g.label, `${gi3Money(cash)} of ${gi3Money(target)}`], shortfall: target - cash });
+      return { progress: Math.round(Math.min(1, cash / Math.max(1, target)) * 100) / 100, status: 'active', detail: `${gi3Money(cash)} of ${gi3Money(target)}`, milestones: ms, blockers };
+    }
+    case 'control_n_regions': {
+      const have = Object.values(world.regions).filter(r => r.controlledByPlayer).length;
+      const n = g.count || 1;
+      const ms: GI3StrategyMilestone[] = Array.from(new Set([Math.max(1, n - 2), Math.max(1, n - 1), n])).map((v, i) => ({ id: `${g.id}_m${i}`, goalId: g.id, label: `${v} regions`, type: 'regions', target: v, current: have, unit: 'regions', status: have >= v ? 'reached' : 'pending', progress: Math.min(1, have / v), completionCondition: `control ${v} regions`, deadlineTurn: v === n ? g.deadlineTurn : null, confidence: 'high' }));
+      if (have >= n) return { progress: 1, status: 'completed', detail: `${have} of ${n} regions`, milestones: ms, blockers };
+      return { progress: Math.round((have / n) * 100) / 100, status: 'active', detail: `${have} of ${n} regions`, milestones: ms, blockers };
+    }
+    case 'complete_project': {
+      const p = world.projects.find(x => x.id === g.projectId);
+      if (!p) return { progress: 0, status: 'failed', detail: 'the project is no longer available', milestones: [], blockers };
+      const funded = p.totalCost ? p.invested / p.totalCost : 0;
+      const done = /complete|built|finished|operational/i.test(p.status) || (p.totalCost > 0 && p.remaining <= 0);
+      const ms: GI3StrategyMilestone[] = [0.5, 0.75, 1].map((f, i) => ({ id: `${g.id}_m${i}`, goalId: g.id, label: `${Math.round(f * 100)}% funded`, type: 'project_funding', target: Math.round(f * 100), current: Math.round(funded * 100), unit: '%', status: funded >= f ? 'reached' : 'pending', progress: Math.min(1, funded / f), completionCondition: `${p.title} ${Math.round(f * 100)}% funded`, deadlineTurn: f === 1 ? g.deadlineTurn : null, confidence: 'high' }));
+      if (done) return { progress: 1, status: 'completed', detail: `${p.title} is complete`, milestones: ms, blockers };
+      if (p.requiredDevTier !== null && p.regionDevTier !== null && p.regionDevTier < p.requiredDevTier) blockers.push({ goalId: g.id, kind: 'project', label: `${p.title} needs development tier ${p.requiredDevTier} (the region is tier ${p.regionDevTier})`, chain: [g.label, 'regional development requirement'] });
+      if (p.remaining > free) blockers.push({ goalId: g.id, kind: 'money', label: `${p.title} still needs ${gi3Money(p.remaining)}; ${gi3Money(free)} is free${reserve ? ` above your ${gi3Money(reserve)} reserve` : ''}`, chain: [g.label, `${gi3Money(p.remaining)} remaining`], shortfall: p.remaining - free });
+      return { progress: Math.round(funded * 100) / 100, status: blockers.length ? 'blocked' : 'active', detail: `${Math.round(funded * 100)}% funded`, milestones: ms, blockers };
+    }
+    case 'focus_contracts': {
+      const done = world.contracts.filter(k => k.assignedToPlayer && /complete/i.test(k.status)).length - (g.baseline || 0);
+      const activeOnes = world.contracts.filter(k => k.assignedToPlayer && !/complete|fail|expire/i.test(k.status)).length;
+      if (done >= 1) return { progress: 1, status: 'completed', detail: 'a contract was completed', milestones: [], blockers };
+      if (!activeOnes && !world.contracts.some(k => /available/i.test(k.status))) blockers.push({ goalId: g.id, kind: 'prerequisite', label: 'No contract is available or active right now', chain: [g.label] });
+      return { progress: activeOnes ? 0.5 : 0, status: blockers.length ? 'blocked' : 'active', detail: activeOnes ? `${activeOnes} contract(s) in progress` : 'no active contract yet', milestones: [], blockers };
+    }
+    case 'eliminate_debt': {
+      const debt = world.player.debtTotal;
+      if (debt <= 0) return { progress: 1, status: 'completed', detail: 'no debt', milestones: [], blockers };
+      const base = Math.max(debt, g.baseline || debt);
+      return { progress: Math.round((1 - debt / base) * 100) / 100, status: 'active', detail: `${gi3Money(debt)} still owed`, milestones: [{ id: `${g.id}_zero`, goalId: g.id, label: 'Debt cleared', type: 'debt', target: 0, current: debt, unit: '$', status: 'pending', progress: 1 - debt / base, completionCondition: 'debt = $0', deadlineTurn: g.deadlineTurn, confidence: 'high' }], blockers };
+    }
+    case 'increase_net_worth': {
+      const value = world.win?.playerValue ?? world.player.money;
+      const target = g.amount || Math.round((g.baseline || value) * 1.25);
+      if (value >= target) return { progress: 1, status: 'completed', detail: `${gi3Money(value)}`, milestones: [], blockers };
+      return { progress: Math.round(Math.min(1, value / target) * 100) / 100, status: 'active', detail: `${gi3Money(value)} of ${gi3Money(target)}`, milestones: [], blockers };
+    }
+  }
+}
+
+export interface GI3Evaluation {
+  state: GI3StrategyState;
+  progress: GI3ProgressState | null;
+  events: GI3StrategyEvent[];
+  replan: GI3ReplanDecision;
+}
+
+function gi3Significance(kind: GI3EventKind): GI3StrategyEvent['significance'] {
+  return kind === 'region_lost' || kind === 'goal_failed' ? 'critical' : ['reserve_breached', 'contingency_triggered', 'region_at_risk', 'phase_changed', 'strategy_achieved', 'assumption_violated'].includes(kind) ? 'major'
+    : ['milestone_reached', 'goal_completed', 'region_secured', 'contract_completed', 'team_plan_changed', 'contingency_resolved', 'goal_blocked', 'drift_detected'].includes(kind) ? 'meaningful' : 'minor';
+}
+
+/**
+ * Event-driven evaluation. STATUS REFRESH (progress, milestones, blockers, phase readiness) every time;
+ * REPLAN (goal order/phase/contingency response) only on material triggers, with a cooldown, minimum
+ * phase duration and player locks — so small value changes never make the strategy oscillate.
+ */
+export function evaluateGI3Strategy(stateIn: GI3StrategyState | null | undefined, world: GIWorld): GI3Evaluation {
+  const state = stateIn || createEmptyGI3StrategyState();
+  const c0 = state.active;
+  const noReplan: GI3ReplanDecision = { replan: false, reason: 'no active strategy', trigger: null, changes: [] };
+  if (!c0 || c0.status !== 'active') return { state, progress: state.progress, events: [], replan: noReplan };
+  const turn = world.turn;
+  let c: GI3StrategyContract = { ...c0, goals: c0.goals.map(g => ({ ...g })), contingencies: c0.contingencies.map(x => ({ ...x })), assumptions: c0.assumptions.map(a => ({ ...a })) };
+  const prev = state.progress && state.progress.strategyId === c.id ? state.progress : null;
+  const events: GI3StrategyEvent[] = [];
+  const ev = (kind: GI3EventKind, summary: string, goalId?: string) => events.push({ id: `g3e_${turn}_${kind}_${gi3Hash(summary)}`, turn, kind, significance: gi3Significance(kind), summary, goalId });
+  const live = () => c.goals.filter(g => g.status !== 'removed');
+  // 1) Goal evaluation from canonical state.
+  const evals = new Map(live().map(g => [g.id, gi3EvaluateGoal(g, c, world)]));
+  const regionStatus: GI3ProgressState['regionStatus'] = {};
+  live().filter(g => g.regionId).forEach(g => { regionStatus[g.regionId!] = gi3RegionStatus(world, g.regionId!); });
+  // 2) Region events (compared with the last observed status).
+  Object.entries(regionStatus).forEach(([code, st]) => {
+    const before = prev?.regionStatus[code];
+    if (!before) return;
+    const heldBefore = before.startsWith('held');
+    if (heldBefore && st === 'not_held') ev('region_lost', `${code} was lost`);
+    if (!heldBefore && st.startsWith('held')) ev('region_secured', `${code} is now under your control`);
+    if (before !== 'held_at_risk' && st === 'held_at_risk') ev('region_at_risk', `${code} is now at risk: a visible rival can afford to take it`);
+  });
+  // 3) Contingencies (fire once per arming; resolved when the condition stops holding).
+  const { cash } = gi3CashMeasure(c, world);
+  c.contingencies = c.contingencies.map(x => {
+    const st = x.trigger.regionId ? regionStatus[x.trigger.regionId] || gi3RegionStatus(world, x.trigger.regionId) : null;
+    const active = x.trigger.kind === 'region_critical' ? st === 'held_at_risk' : x.trigger.kind === 'region_lost' ? st === 'not_held' : x.trigger.kind === 'cash_below' ? cash < (x.trigger.threshold || 0) : false;
+    if (active && x.status !== 'triggered') { ev('contingency_triggered', x.label); return { ...x, status: 'triggered' as const }; }
+    if (!active && x.status === 'triggered') { ev('contingency_resolved', `Resolved: ${x.label}`); return { ...x, status: 'resolved' as const }; }
+    return x;
+  });
+  // 4) Assumptions.
+  c.assumptions = c.assumptions.map(a => {
+    const violated = a.kind === 'region_stable' ? regionStatus[a.regionId || ''] === 'held_at_risk' || regionStatus[a.regionId || ''] === 'not_held'
+      : a.kind === 'no_new_debt' ? world.player.debtTotal > 0 && c.constraints.loanPolicy === 'forbidden' && (prev ? world.player.debtTotal > prev.resourceStatus.debt : false)
+      : a.kind === 'teammate_economy' ? Boolean(world.systems?.teammates.find(m => m.id === a.actorId)?.inRecovery) : false;
+    if (violated && a.status === 'holding') { ev('assumption_violated', `Assumption no longer holds: ${a.label}`); return { ...a, status: 'violated' as const }; }
+    if (!violated && a.status === 'violated') return { ...a, status: 'holding' as const };
+    return a;
+  });
+  // 5) Replan decision (material triggers only).
+  const decision: GI3ReplanDecision = { replan: false, reason: 'status refresh', trigger: null, changes: [] };
+  const cooling = c.lastReplanTurn !== null && turn - c.lastReplanTurn < GI3_LIMITS.replanCooldownTurns;
+  const lost = events.filter(e => e.kind === 'region_lost');
+  const lostCodes = lost.map(e => e.summary.split(' ')[0]).filter(code => c.goals.some(g => g.regionId === code && g.status !== 'removed' && (g.type === 'protect_region' || (g.type === 'control_region' && (g.status === 'completed' || g.status === 'maintained')))));
+  if (lostCodes.length) {
+    // Critical: a held strategy region was lost → retake it first; expansion waits (it stays a goal).
+    lostCodes.forEach(code => {
+      c.goals = c.goals.map(g => (g.regionId === code && g.status !== 'removed' && (g.type === 'protect_region' || g.status === 'completed' || g.status === 'maintained') ? { ...g, type: 'control_region' as const, id: `g3_control_region_${code}`, order: -100, status: 'pending' as const, retake: true } : g));
+      decision.changes.push(`${code}: protect → retake first`);
+    });
+    decision.replan = true; decision.trigger = lostCodes.map(code => `${code} was lost`).join('; '); decision.reason = 'A protected region was lost, so retaking it comes before later phases.';
+  }
+  const failedGoal = live().find(g => evals.get(g.id)?.status === 'failed' && g.status !== 'failed');
+  if (failedGoal) { ev('goal_failed', `${failedGoal.label} can no longer be achieved (${evals.get(failedGoal.id)!.detail})`, failedGoal.id); c.goals = c.goals.map(g => (g.id === failedGoal.id ? { ...g, status: 'failed' as const } : g)); }
+  if (decision.replan && cooling && c.revisions.length) {
+    // Hysteresis: a repeat within the replan cooldown restructures the goals (safety first) but is folded
+    // into the current revision instead of producing a new one — no revision churn, no thrashing.
+    c.goals = gi3NormalizeGoals(c.goals, world);
+    const last = c.revisions[c.revisions.length - 1];
+    c.revisions = [...c.revisions.slice(0, -1), { ...last, changes: Array.from(new Set([...last.changes, ...decision.changes])).slice(-8) }];
+    c.summary = gi3Summary(c);
+    decision.replan = false; decision.reason = `${decision.reason} (folded into rev ${c.revision}: replan cooldown)`;
+  } else if (decision.replan) {
+    c.goals = gi3NormalizeGoals(c.goals, world);
+    c.revision += 1; c.lastReplanTurn = turn; c.updatedTurn = turn;
+    c.revisions = [...c.revisions, { revision: c.revision, turn, trigger: decision.trigger || decision.reason, changes: decision.changes, reason: decision.reason, source: 'automatic' as const, confidence: 'high' as const }].slice(-GI3_LIMITS.revisions);
+    c.summary = gi3Summary(c);
+  } else if (cooling) decision.reason = `status refresh (replan cooldown until turn ${(c.lastReplanTurn || 0) + GI3_LIMITS.replanCooldownTurns})`;
+  // Re-evaluate after any structural change.
+  let evals2 = new Map(live().map(g => [g.id, gi3EvaluateGoal(g, c, world)]));
+  // 6) Goal status + phase. A goal completes only on real completion; protection is "maintained".
+  let retaken = false;
+  c.goals = c.goals.map(g => {
+    if (g.status === 'removed' || g.status === 'failed') return g;
+    const e = evals2.get(g.id)!;
+    const prevStatus = prev?.goalProgress[g.id]?.status;
+    const done = e.status === 'completed' || e.status === 'maintained';
+    if (done && prevStatus && prevStatus !== 'completed' && prevStatus !== 'maintained') ev('goal_completed', `${g.label}: ${e.detail}`, g.id);
+    // A completed retake becomes protection again (hold what was won back).
+    if (g.retake && g.type === 'control_region' && e.status === 'completed' && g.regionId) { retaken = true; return { ...g, type: 'protect_region' as const, id: `g3_protect_region_${g.regionId}`, label: `Protect ${gi3RegionName(world, g.regionId)}`, status: 'maintained' as const, retake: false }; }
+    return { ...g, status: e.status };
+  });
+  if (retaken) {
+    c.goals = gi3NormalizeGoals(c.goals, world);
+    evals2 = new Map(live().map(g => [g.id, gi3EvaluateGoal(g, c, world)]));
+  }
+  const liveGoals = live();
+  const triggeredProtect = c.contingencies.find(x => x.status === 'triggered' && x.effect === 'prioritize_protect');
+  let phaseIndex = liveGoals.findIndex(g => g.status !== 'completed' && g.status !== 'maintained' && g.status !== 'failed');
+  if (triggeredProtect?.trigger.regionId) {
+    const idx = liveGoals.findIndex(g => g.regionId === triggeredProtect.trigger.regionId);
+    if (idx >= 0 && (phaseIndex < 0 || idx < phaseIndex || liveGoals[phaseIndex]?.type === 'control_region')) phaseIndex = idx;
+  }
+  if (phaseIndex < 0) phaseIndex = liveGoals.length;   // every goal done
+  // Minimum phase duration: never step BACK to an earlier phase within the same turn unless critical.
+  if (phaseIndex < c.phaseIndex && turn - c.phaseEnteredTurn < GI3_LIMITS.minPhaseTurns && !events.some(e => e.significance === 'critical' || e.kind === 'contingency_triggered')) phaseIndex = c.phaseIndex;
+  if (phaseIndex !== c.phaseIndex) {
+    const from = liveGoals[c.phaseIndex]?.label || 'start';
+    const to = liveGoals[phaseIndex]?.label || 'complete';
+    ev('phase_changed', `Phase ${Math.min(c.phaseIndex, liveGoals.length) + 1} (${from}) → phase ${Math.min(phaseIndex, liveGoals.length) + 1} (${to})${triggeredProtect && liveGoals[phaseIndex]?.regionId === triggeredProtect.trigger.regionId ? ` because ${triggeredProtect.label.toLowerCase()}` : ''}`);
+    if (triggeredProtect && phaseIndex < c.phaseIndex) {
+      c.revision += 1; c.lastReplanTurn = turn;
+      c.revisions = [...c.revisions, { revision: c.revision, turn, trigger: triggeredProtect.label, changes: [`phase returned to ${to}`], reason: `${triggeredProtect.trigger.regionId} became critical, so expansion waits while it is stabilised.`, source: 'automatic' as const, confidence: 'high' as const }].slice(-GI3_LIMITS.revisions);
+      decision.replan = true; decision.trigger = triggeredProtect.label; decision.reason = 'contingency'; decision.changes.push(`phase → ${to}`);
+    }
+    c.phaseIndex = phaseIndex; c.phaseEnteredTurn = turn;
+  }
+  // 7) Milestones, blockers (incl. Team OS feedback), resources, responsibilities.
+  const milestones = liveGoals.flatMap(g => evals2.get(g.id)?.milestones || []);
+  milestones.forEach(m => { const before = prev?.milestones.find(x => x.id === m.id); if (before && before.status !== 'reached' && m.status === 'reached') ev(m.type === 'cash' ? 'cash_threshold_crossed' : 'milestone_reached', `Milestone reached: ${m.label}`, m.goalId); });
+  const current = liveGoals[phaseIndex] || null;
+  const blockers: GI3Blocker[] = current ? [...(evals2.get(current.id)?.blockers || [])] : [];
+  if (world.team?.enabled && current) {
+    // Team OS discovers execution reality (Treasury / Governor / task blockers); GI3 surfaces it, never re-decides it.
+    world.team.evaluation.fundingIntents.filter(f => !current.regionId || world.team!.state.contract?.taskGraph.find(t => t.id === f.taskId)?.regionId === current.regionId).slice(0, 2).forEach(f => blockers.push({ goalId: current.id, kind: f.governorReason ? 'governor' : 'treasury', label: `${teamName(world, f.actorId)} can safely fund ${gi3Money(f.actorSafe)} of ${gi3Money(f.required)} for “${f.purpose}”${f.treasuryCanCover ? ' — a Treasury request is the suggested path' : ' — the Treasury cannot cover the gap yet'}`, chain: [current.label, f.purpose, f.governorReason ? `Economy Governor: ${f.governorReason}` : 'funding gap'], shortfall: f.gap }));
+    (world.team.state.contract?.taskGraph || []).filter(t => t.status === 'blocked' && t.regionId && t.regionId === current.regionId && !t.id.startsWith('task_fund_')).slice(0, 1).forEach(t => { if (!blockers.some(b => b.label.includes(t.label))) blockers.push({ goalId: current.id, kind: 'team_task', label: `Team task “${t.label}” is blocked: ${t.blockers[0] || 'no reason recorded'}`, chain: [current.label, t.label] }); });
+  }
+  const reserve = c.constraints.minimumCashReserve;
+  if (reserve && cash < reserve && !(prev && prev.resourceStatus.cash < reserve)) ev('reserve_breached', `Cash ${gi3Money(cash)} is below your ${gi3Money(reserve)} strategy reserve`);
+  if (prev && world.player.debtTotal > prev.resourceStatus.debt) ev('debt_changed', `Debt rose to ${gi3Money(world.player.debtTotal)}`);
+  if (world.team?.enabled && prev && state.events.length && world.team.state.contract && !state.events.some(e => e.kind === 'team_plan_changed' && e.summary.includes(`rev ${world.team!.state.contract!.revision}`))) {
+    const teamRev = world.team.state.contract.revision;
+    const lastSeen = state.events.filter(e => e.kind === 'team_plan_changed').slice(-1)[0];
+    if (lastSeen && !lastSeen.summary.includes(`rev ${teamRev}`)) ev('team_plan_changed', `Team strategy moved to rev ${teamRev}`);
+  }
+  const responsibilityStatus = c.responsibilities.map(r => {
+    const task = world.team?.state.contract?.taskGraph.find(t => t.assignedActorIds.includes(r.actorId === 'player' ? world.player.id : r.actorId) && ['ready', 'active', 'blocked'].includes(t.status));
+    return { actorId: r.actorId, focus: r.focus, regionId: r.regionId, status: task ? `${task.label} (${task.status})` : 'no active team task' };
+  });
+  // 8) Overall state.
+  const weights = liveGoals.map(g => (g.role === 'primary' ? 2 : 1));
+  const overall = liveGoals.length ? Math.round((liveGoals.reduce((s, g, i) => s + (evals2.get(g.id)?.progress || 0) * weights[i], 0) / weights.reduce((a, b) => a + b, 0)) * 100) / 100 : 0;
+  const allDone = liveGoals.length > 0 && liveGoals.every(g => g.status === 'completed' || g.status === 'maintained');
+  const anyFailed = liveGoals.some(g => g.status === 'failed');
+  const atRisk = Object.values(regionStatus).includes('held_at_risk') || (reserve !== null && cash < reserve);
+  const trend: GI3ProgressState['trend'] = !prev ? 'unknown' : overall > prev.overallProgress + 0.02 ? 'improving' : overall < prev.overallProgress - 0.02 ? 'worsening' : 'flat';
+  const onTrack: GI3OnTrack = allDone ? 'completed' : anyFailed ? 'needs_decision' : lost.length ? 'blocked' : atRisk ? 'at_risk'
+    : prev && (prev.onTrack === 'at_risk' || prev.onTrack === 'blocked') && trend === 'improving' ? 'recovering'
+    : current && evals2.get(current.id)?.status === 'blocked' && trend !== 'improving' ? 'blocked' : 'on_track';
+  if (allDone && c.status === 'active') {
+    ev('strategy_achieved', `Strategy achieved: ${c.summary}`);
+    c = { ...c, status: 'achieved', updatedTurn: turn };
+  }
+  const nextMove = current ? gi3NextMove(current, evals2.get(current.id)!, c, world) : null;
+  const progress: GI3ProgressState = {
+    strategyId: c.id, revision: c.revision, phaseIndex,
+    goalProgress: Object.fromEntries(liveGoals.map(g => [g.id, { progress: evals2.get(g.id)?.progress || 0, status: g.status, detail: evals2.get(g.id)?.detail || '' }])),
+    milestones, blockers,
+    resourceStatus: { cash, cashSource: gi3CashMeasure(c, world).source, reserve, freeAboveReserve: Math.max(0, cash - (reserve || 0)), debt: world.player.debtTotal, loanPolicy: c.constraints.loanPolicy },
+    regionStatus, responsibilityStatus, onTrack, trend, overallProgress: overall, nextMove,
+    lastMeaningfulEvent: events.filter(e => e.significance !== 'minor').slice(-1)[0]?.summary || prev?.lastMeaningfulEvent || null,
+    updatedTurn: turn
+  };
+  // Achieved / impossible → a player notice (never an automatic new long-term goal).
+  let notices = state.notices;
+  if (c.status === 'achieved') notices = [...notices, { id: `g3n_achieved_${c.id}`, kind: 'achieved' as const, text: 'Strategy complete. Want to set a new one?', revision: c.revision, turn, dismissed: false }];
+  if (anyFailed && !notices.some(n => n.kind === 'impossible' && n.revision === c.revision)) notices = [...notices, { id: `g3n_impossible_${c.id}_${c.revision}`, kind: 'impossible' as const, text: `${liveGoals.find(g => g.status === 'failed')?.label} can no longer be achieved. Update the strategy?`, revision: c.revision, turn, dismissed: false }];
+  const nextState: GI3StrategyState = {
+    ...state,
+    active: c,
+    progress,
+    events: [...state.events, ...events.filter(e => e.significance !== 'minor' && !state.events.some(x => x.id === e.id))].slice(-GI3_LIMITS.events),
+    notices: notices.slice(-GI3_LIMITS.notices)
+  };
+  return { state: nextState, progress, events, replan: decision };
+}
+
+/** The action that best advances the current phase (a strategic pointer; Contextual Actions picks the legal move). */
+function gi3NextMove(g: GI3StrategyGoal, e: { status: GI3GoalStatus; blockers: GI3Blocker[] }, c: GI3StrategyContract, world: GIWorld): { label: string; reason: string } {
+  const loanNote = c.constraints.loanPolicy !== 'allowed' ? ' without new loans' : '';
+  switch (g.type) {
+    case 'protect_region': return e.status === 'active' ? { label: `Reinforce ${g.regionId}`, reason: `${g.regionId} is at risk and protecting it is the current phase.` } : e.status === 'blocked' ? { label: `Retake ${g.regionId}`, reason: `${g.regionId} is not under your control.` } : { label: 'Build cash for the next phase', reason: `${g.regionId} is stable, so the plan moves on.` };
+    case 'reach_cash': return { label: `Earn income${loanNote}`, reason: e.blockers[0]?.label || 'The cash milestone is the current phase.' };
+    case 'control_region': return e.status === 'blocked' ? { label: `Save toward ${g.regionId}${loanNote}`, reason: e.blockers[0]?.label || '' } : { label: world.regions[g.regionId || '']?.isHere ? `Deposit to take ${g.regionId}` : `Travel to ${g.regionId}`, reason: `The expansion into ${g.regionId} is funded.` };
+    case 'control_n_regions': return { label: 'Take the cheapest available region', reason: 'Each region counts toward the target.' };
+    case 'complete_project': return { label: `Fund ${world.projects.find(p => p.id === g.projectId)?.title || 'the project'}`, reason: e.blockers[0]?.label || 'Funding moves the project milestones.' };
+    case 'focus_contracts': return { label: 'Work on an active contract', reason: 'Finishing a contract is the current phase.' };
+    case 'eliminate_debt': return { label: 'Repay debt', reason: 'Clearing debt is the current phase.' };
+    case 'increase_net_worth': return { label: 'Grow net worth', reason: 'Net worth is the current phase.' };
+  }
+}
+
+// ---- Signatures, persistence, ledger ---------------------------------------------------------------
+
+export function gi3StrategySignature(state: GI3StrategyState | null | undefined): string {
+  const c = state?.active;
+  const p = state?.progress;
+  if (!c) return `none:${(state?.history || []).length}`;
+  return gi3Hash([
+    c.id, c.status, c.revision, c.phaseIndex, c.goals.map(g => `${g.id}:${g.status}`).join(','), c.contingencies.map(x => `${x.id}:${x.status}`).join(','), c.assumptions.map(a => `${a.id}:${a.status}`).join(','),
+    p ? [p.onTrack, p.phaseIndex, Object.entries(p.goalProgress).map(([k, v]) => `${k}:${Math.round(v.progress * 20)}`).join(','), p.milestones.map(m => `${m.id}:${m.status}`).join(','), p.blockers.map(b => `${b.kind}:${Math.round((b.shortfall || 0) / 500)}`).join(','), Math.round(p.resourceStatus.cash / 500), Object.entries(p.regionStatus).map(([k, v]) => `${k}:${v}`).join(',')].join('|') : '',
+    state!.events.length, state!.notices.filter(n => !n.dismissed).length, state!.recentPlayerActions.length, state!.lastObservedLedgerId || ''
+  ].join('|'));
+}
+
+export function gi3LedgerEvents(prev: GI3StrategyState | null | undefined, next: GI3StrategyState): Array<{ kind: string; summary: string }> {
+  const out: Array<{ kind: string; summary: string }> = [];
+  const pc = prev?.active || null;
+  const nc = next.active;
+  if (nc && (!pc || pc.id !== nc.id) && nc.status === 'active') out.push({ kind: 'strategy_activated', summary: `Strategy activated: ${nc.summary}` });
+  if (nc && pc && pc.id === nc.id && nc.revision !== pc.revision) {
+    const r = nc.revisions[nc.revisions.length - 1];
+    out.push({ kind: r?.source === 'automatic' ? 'strategy_replan' : 'strategy_modified', summary: `Strategy rev ${nc.revision}: ${r ? `${r.trigger} — ${r.changes.slice(0, 3).join('; ')}` : 'updated'}` });
+  }
+  if (nc && pc && pc.id === nc.id && pc.status !== nc.status) out.push({ kind: `strategy_${nc.status}`, summary: `Strategy ${nc.status}: ${nc.summary}` });
+  const newEvents = next.events.filter(e => !(prev?.events || []).some(x => x.id === e.id) && ['phase_changed', 'milestone_reached', 'cash_threshold_crossed', 'contingency_triggered', 'region_lost', 'goal_failed', 'strategy_achieved', 'reserve_breached'].includes(e.kind));
+  newEvents.forEach(e => out.push({ kind: `strategy_${e.kind}`, summary: e.summary }));
+  if (!nc && pc) out.push({ kind: 'strategy_ended', summary: `Strategy ended: ${pc.summary}` });
+  return out.slice(0, 6);
+}
+
+export function sanitizeGI3StrategyState(raw: unknown): GI3StrategyState {
+  const out = createEmptyGI3StrategyState();
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as any;
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d);
+  const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const c = r.active;
+  if (c && typeof c === 'object' && typeof c.id === 'string' && Array.isArray(c.goals)) {
+    const goals: GI3StrategyGoal[] = arr(c.goals).filter((g: any) => g && typeof g.id === 'string' && typeof g.type === 'string').slice(0, GI3_LIMITS.goals + 4).map((g: any) => ({
+      id: g.id, type: g.type, label: str(g.label), order: num(g.order), role: ['primary', 'secondary', 'supporting'].includes(g.role) ? g.role : 'supporting', dependsOn: arr(g.dependsOn).map(String).slice(0, 3),
+      regionId: g.regionId ? String(g.regionId) : undefined, amount: typeof g.amount === 'number' ? g.amount : undefined, count: typeof g.count === 'number' ? g.count : undefined, projectId: g.projectId ? String(g.projectId) : undefined,
+      baseline: typeof g.baseline === 'number' ? g.baseline : undefined, owner: str(g.owner, 'player'), status: ['pending', 'active', 'completed', 'maintained', 'blocked', 'failed', 'removed'].includes(g.status) ? g.status : 'pending', retake: g.retake === true || undefined, locked: g.locked === true, deadlineTurn: typeof g.deadlineTurn === 'number' ? g.deadlineTurn : null
+    }));
+    const k = c.constraints || {};
+    out.active = {
+      id: c.id, ownerActorId: str(c.ownerActorId, 'player'), status: ['draft', 'active', 'paused', 'achieved', 'failed', 'superseded', 'abandoned'].includes(c.status) ? c.status : 'paused', revision: num(c.revision, 1),
+      createdTurn: num(c.createdTurn), updatedTurn: num(c.updatedTurn), source: str(c.source, 'player_command') as GI3StrategySource, scope: ['personal', 'team', 'hybrid'].includes(c.scope) ? c.scope : 'personal',
+      mission: { kind: ['regions', 'net_worth', 'money', 'custom'].includes(c.mission?.kind) ? c.mission.kind : 'custom', label: str(c.mission?.label, 'Player strategy') },
+      goals, primaryGoalId: typeof c.primaryGoalId === 'string' ? c.primaryGoalId : goals[0]?.id || null,
+      constraints: { loanPolicy: ['allowed', 'avoid', 'forbidden'].includes(k.loanPolicy) ? k.loanPolicy : 'allowed', minimumCashReserve: typeof k.minimumCashReserve === 'number' ? k.minimumCashReserve : null, maximumSpendFraction: typeof k.maximumSpendFraction === 'number' ? k.maximumSpendFraction : null, deprioritizedRegions: arr(k.deprioritizedRegions).map(String).slice(0, 8), droppedTopics: arr(k.droppedTopics).map(String).slice(0, 6) },
+      responsibilities: arr(c.responsibilities).filter((x: any) => x && x.actorId).slice(0, 6).map((x: any) => ({ actorId: String(x.actorId), focus: x.focus, regionId: x.regionId ? String(x.regionId) : undefined, untilCash: typeof x.untilCash === 'number' ? x.untilCash : null })),
+      teamIntent: c.teamIntent && typeof c.teamIntent === 'object' ? sanitizeTeamCommandIntent(c.teamIntent) : null,
+      contingencies: arr(c.contingencies).filter((x: any) => x && x.id).slice(0, 6).map((x: any) => ({ id: String(x.id), label: str(x.label), trigger: { kind: ['region_critical', 'region_lost', 'cash_below'].includes(x.trigger?.kind) ? x.trigger.kind : 'region_critical', regionId: x.trigger?.regionId, threshold: typeof x.trigger?.threshold === 'number' ? x.trigger.threshold : undefined }, effect: x.effect === 'pause_expansion' ? 'pause_expansion' : 'prioritize_protect', status: ['armed', 'triggered', 'resolved'].includes(x.status) ? x.status : 'armed', source: x.source === 'player' ? 'player' : 'default' })),
+      assumptions: arr(c.assumptions).filter((x: any) => x && x.id).slice(0, 6).map((x: any) => ({ id: String(x.id), label: str(x.label), kind: x.kind, regionId: x.regionId, actorId: x.actorId, confidence: ['low', 'moderate', 'high'].includes(x.confidence) ? x.confidence : 'moderate', status: x.status === 'violated' ? 'violated' : 'holding' })),
+      successConditions: arr(c.successConditions).map(String).slice(0, 8), failureConditions: arr(c.failureConditions).map(String).slice(0, 8),
+      timeHorizon: { kind: ['multi_turn', 'turns', 'endgame'].includes(c.timeHorizon?.kind) ? c.timeHorizon.kind : 'multi_turn', turns: typeof c.timeHorizon?.turns === 'number' ? c.timeHorizon.turns : null },
+      confidence: ['high', 'moderate', 'low'].includes(c.confidence) ? c.confidence : 'moderate',
+      locks: { mission: c.locks?.mission === true, primaryGoal: c.locks?.primaryGoal === true, reserve: c.locks?.reserve === true, regions: arr(c.locks?.regions).map(String).slice(0, 8), responsibilities: c.locks?.responsibilities === true, ordering: c.locks?.ordering === true },
+      revisions: arr(c.revisions).slice(-GI3_LIMITS.revisions).map((x: any) => ({ revision: num(x?.revision), turn: num(x?.turn), trigger: str(x?.trigger), changes: arr(x?.changes).map(String).slice(0, 8), reason: str(x?.reason), source: ['player', 'automatic', 'team_os'].includes(x?.source) ? x.source : 'player', confidence: ['high', 'moderate', 'low'].includes(x?.confidence) ? x.confidence : 'moderate' })),
+      summary: str(c.summary), originalText: str(c.originalText).slice(0, 300), phaseIndex: num(c.phaseIndex), phaseEnteredTurn: num(c.phaseEnteredTurn), lastReplanTurn: typeof c.lastReplanTurn === 'number' ? c.lastReplanTurn : null
+    };
+  }
+  const p = r.progress;
+  if (out.active && p && typeof p === 'object' && p.strategyId === out.active.id) {
+    out.progress = {
+      strategyId: p.strategyId, revision: num(p.revision), phaseIndex: num(p.phaseIndex),
+      goalProgress: Object.fromEntries(Object.entries(p.goalProgress && typeof p.goalProgress === 'object' ? p.goalProgress : {}).slice(0, 12).map(([k, v]: [string, any]) => [k, { progress: num(v?.progress), status: v?.status || 'pending', detail: str(v?.detail) }])),
+      milestones: arr(p.milestones).slice(0, 24), blockers: arr(p.blockers).slice(0, 8),
+      resourceStatus: { cash: num(p.resourceStatus?.cash), cashSource: p.resourceStatus?.cashSource === 'team' ? 'team' : 'player', reserve: typeof p.resourceStatus?.reserve === 'number' ? p.resourceStatus.reserve : null, freeAboveReserve: num(p.resourceStatus?.freeAboveReserve), debt: num(p.resourceStatus?.debt), loanPolicy: ['allowed', 'avoid', 'forbidden'].includes(p.resourceStatus?.loanPolicy) ? p.resourceStatus.loanPolicy : 'allowed' },
+      regionStatus: p.regionStatus && typeof p.regionStatus === 'object' ? p.regionStatus : {}, responsibilityStatus: arr(p.responsibilityStatus).slice(0, 6),
+      onTrack: p.onTrack || 'on_track', trend: p.trend || 'unknown', overallProgress: num(p.overallProgress), nextMove: p.nextMove && typeof p.nextMove === 'object' ? { label: str(p.nextMove.label), reason: str(p.nextMove.reason) } : null,
+      lastMeaningfulEvent: typeof p.lastMeaningfulEvent === 'string' ? p.lastMeaningfulEvent : null, updatedTurn: num(p.updatedTurn)
+    };
+  }
+  out.events = arr(r.events).filter((e: any) => e && e.id).slice(-GI3_LIMITS.events).map((e: any) => ({ id: String(e.id), turn: num(e.turn), kind: e.kind, significance: e.significance || 'minor', summary: str(e.summary).slice(0, 200), goalId: e.goalId }));
+  out.history = arr(r.history).slice(-GI3_LIMITS.history).map((h: any) => ({ id: str(h?.id), summary: str(h?.summary), status: h?.status || 'superseded', endedTurn: num(h?.endedTurn), revisions: num(h?.revisions) }));
+  out.recentPlayerActions = arr(r.recentPlayerActions).slice(-GI3_LIMITS.recentActions).map((a: any) => ({ turn: num(a?.turn), category: str(a?.category), key: str(a?.key) }));
+  out.lastObservedLedgerId = typeof r.lastObservedLedgerId === 'string' ? r.lastObservedLedgerId : null;
+  out.notices = arr(r.notices).slice(-GI3_LIMITS.notices).map((n: any) => ({ id: str(n?.id), kind: n?.kind || 'divergence', text: str(n?.text), revision: num(n?.revision), turn: num(n?.turn), dismissed: n?.dismissed === true }));
+  return out;
+}
+
+// ---- Lifecycle (strategic state only — never gameplay) ----------------------------------------------
+
+export function activateGI3Strategy(state: GI3StrategyState, draft: GI3StrategyContract, turn: number, note: string): GI3StrategyState {
+  const prev = state.active;
+  const replacing = prev && prev.id !== draft.id && (prev.status === 'active' || prev.status === 'paused');
+  const history = replacing ? [...state.history, { id: prev!.id, summary: prev!.summary, status: 'superseded' as const, endedTurn: turn, revisions: prev!.revisions.length }].slice(-GI3_LIMITS.history) : state.history;
+  const sameStrategy = prev && prev.id === draft.id;
+  const revisionEntry: GI3StrategyRevision = { revision: draft.revision, turn, trigger: note, changes: sameStrategy ? ['player edit'] : ['strategy created'], reason: sameStrategy ? 'Player correction' : 'Player activated a new strategy', source: 'player', confidence: draft.confidence };
+  const active: GI3StrategyContract = { ...draft, status: 'active', updatedTurn: turn, revisions: [...draft.revisions, revisionEntry].slice(-GI3_LIMITS.revisions) };
+  return { ...state, active, progress: sameStrategy ? state.progress : null, history, notices: state.notices.filter(n => n.dismissed || n.kind === 'achieved' ? false : true) };
+}
+
+export function controlGI3Strategy(state: GI3StrategyState, control: GI3Control, turn: number): { state: GI3StrategyState; message: string } {
+  const c = state.active;
+  if (!c) return { state, message: 'There is no active strategy.' };
+  const rev = (status: GI3StrategyStatus, reason: string): GI3StrategyContract => ({ ...c, status, revision: c.revision + 1, updatedTurn: turn, revisions: [...c.revisions, { revision: c.revision + 1, turn, trigger: `player ${control}`, changes: [`status ${c.status} → ${status}`], reason, source: 'player' as const, confidence: 'high' as const }].slice(-GI3_LIMITS.revisions) });
+  switch (control) {
+    case 'pause': return { state: { ...state, active: rev('paused', 'Paused by the player') }, message: 'Strategy paused. Tracking and recommendations stop until you resume it.' };
+    case 'resume': return { state: { ...state, active: rev('active', 'Resumed by the player') }, message: 'Strategy resumed.' };
+    case 'abandon': return { state: { ...state, active: null, progress: null, history: [...state.history, { id: c.id, summary: c.summary, status: 'abandoned' as const, endedTurn: turn, revisions: c.revisions.length }].slice(-GI3_LIMITS.history) }, message: 'Strategy abandoned. Its history is kept.' };
+    case 'replan': return { state: { ...state, active: { ...c, lastReplanTurn: null, phaseEnteredTurn: turn - GI3_LIMITS.minPhaseTurns } }, message: 'The strategy will be re-evaluated against the current state now.' };
+    case 'lock': return { state: { ...state, active: { ...c, locks: { ...c.locks, primaryGoal: true, ordering: true } } }, message: 'Primary goal and ordering locked: automatic replans will not change them.' };
+    case 'unlock': return { state: { ...state, active: { ...c, locks: { mission: false, primaryGoal: false, reserve: false, regions: [], responsibilities: false, ordering: false } } }, message: 'Strategy locks cleared.' };
+  }
+}
+
+// ---- Current Objective projection, Contextual Actions alignment, Co-Pilot / Guardian context -----------
+
+/** The active phase as the existing Current Objective surface (only when the player has not tracked one manually). */
+export function projectGI3CurrentObjective(state: GI3StrategyState | null | undefined): CurrentObjective | null {
+  const c = state?.active;
+  const p = state?.progress;
+  if (!c || c.status !== 'active' || !p) return null;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const g = live[p.phaseIndex];
+  if (!g) return null;
+  const ms = p.milestones.filter(m => m.goalId === g.id);
+  return {
+    id: `gi3:${c.id}:${g.id}`, sourceType: 'manual', sourceId: `gi3_${g.id}`,
+    title: g.label, description: `Phase ${p.phaseIndex + 1} of ${live.length} of your strategy: ${c.summary}`,
+    priority: 1,
+    progress: { completed: ms.filter(m => m.status === 'reached').length, total: Math.max(1, ms.length) },
+    requirements: ms.map(m => makeRequirement(m.id, m.label, m.status === 'reached')),
+    blockers: p.blockers.filter(b => b.goalId === g.id).map(b => b.label).slice(0, 3),
+    recommendedNextStep: p.nextMove ? { id: `gi3_next_${g.id}`, label: p.nextMove.label, completed: false } : null,
+    completionState: p.goalProgress[g.id]?.status === 'blocked' ? 'blocked' : 'active'
+  };
+}
+
+export interface GI3RankingContext { contract: GI3StrategyContract; progress: GI3ProgressState; cash: number }
+export interface GI3ActionAlignment { score: number; label: 'high' | 'medium' | 'low' | 'conflict'; reason: string; dimensions: { goalProgress: number; constraintCompliance: number; phaseAlignment: number } }
+
+export function gi3RankingContext(state: GI3StrategyState | null | undefined, cash: number): GI3RankingContext | null {
+  const c = state?.active;
+  if (!c || c.status !== 'active' || !state?.progress) return null;
+  return { contract: c, progress: state.progress, cash };
+}
+
+/** Deterministic, interpretable strategic alignment for a LEGAL candidate (never overrides legality). */
+export function scoreGI3ActionAlignment(candidate: any, ctx: GI3RankingContext): GI3ActionAlignment {
+  const c = ctx.contract;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const g = live[ctx.progress.phaseIndex] || null;
+  const type = String(candidate?.actionType || candidate?.type || '').toLowerCase();
+  const blob = `${type} ${candidate?.title || ''} ${candidate?.category || ''}`.toLowerCase();
+  const region = String(candidate?.regionId || candidate?.targetId || candidate?.multiTurnPlanSequence?.[0]?.targetId || '').toUpperCase();
+  const cost = Math.max(0, Number(candidate?.costEstimate || 0));
+  const gain = Number(candidate?.expectedStateDelta?.cashDelta || 0);
+  let goalProgress = 0; let constraint = 0; let phase = 0;
+  const reasons: string[] = [];
+  const reserve = c.constraints.minimumCashReserve || 0;
+  if (/loan|borrow/.test(blob) && c.constraints.loanPolicy !== 'allowed') { constraint -= c.constraints.loanPolicy === 'forbidden' ? 40 : 20; reasons.push('conflicts with your no-loan rule'); }
+  if (cost > 0 && reserve && ctx.cash - cost < reserve) { constraint -= 30; reasons.push(`would drop you below your ${gi3Money(reserve)} strategy reserve`); }
+  if (region && c.constraints.deprioritizedRegions.includes(region) && !/sell|work/.test(blob)) { constraint -= 20; reasons.push(`${region} is deprioritised in your strategy`); }
+  if (g) {
+    const isDeposit = /deposit|defend|reinforce|secure|control|claim/.test(blob);
+    const isTravel = /travel|move/.test(blob);
+    switch (g.type) {
+      case 'reach_cash': {
+        const short = Math.max(1, (g.amount || 0) - ctx.progress.resourceStatus.cash);
+        if (gain > 0) { goalProgress += Math.min(35, 12 + (gain / short) * 25); reasons.push(`moves you toward the ${gi3Money(g.amount || 0)} cash milestone${c.constraints.loanPolicy !== 'allowed' ? ' without a loan' : ''}`); }
+        else if (cost > 0) { goalProgress -= 8; }
+        break;
+      }
+      case 'protect_region': if (region === g.regionId && isDeposit) { goalProgress += 35; reasons.push(`protects ${g.regionId}, the current phase`); } else if (region === g.regionId && isTravel) { goalProgress += 15; reasons.push(`positions you in ${g.regionId}`); } break;
+      case 'control_region': if (region === g.regionId && isDeposit) { goalProgress += 35; reasons.push(`contests ${g.regionId}, the current phase`); } else if (region === g.regionId && isTravel) { goalProgress += 25; reasons.push(`gets you to ${g.regionId} for the expansion phase`); } else if (gain > 0) { goalProgress += 10; reasons.push(`funds the ${g.regionId} expansion`); } break;
+      case 'complete_project': if (/invest|fund|project|infrastructure/.test(blob)) { goalProgress += 35; reasons.push('funds the project in your strategy'); } else if (gain > 0) goalProgress += 8; break;
+      case 'focus_contracts': if (/contract/.test(blob)) { goalProgress += 30; reasons.push('works on the contract phase'); } break;
+      case 'eliminate_debt': if (/repay|debt/.test(blob)) { goalProgress += 35; reasons.push('pays down debt, the current phase'); } else if (gain > 0) goalProgress += 8; break;
+      default: break;
+    }
+    phase = goalProgress > 0 ? 5 : 0;
+  }
+  const score = Math.max(-45, Math.min(45, Math.round(goalProgress + constraint + phase)));
+  const label: GI3ActionAlignment['label'] = constraint <= -20 ? 'conflict' : score >= 30 ? 'high' : score >= 10 ? 'medium' : 'low';
+  return { score, label, reason: reasons.length ? reasons.join('; ') : g ? `does not directly advance “${g.label}”` : 'no active phase', dimensions: { goalProgress: Math.round(goalProgress), constraintCompliance: constraint, phaseAlignment: phase } };
+}
+
+/** Compact strategy context for Co-Pilot (context only — it grants no authority). */
+export function gi3CoPilotContext(state: GI3StrategyState | null | undefined): { phase: string; goal: string; constraints: string[]; reserve: number | null; blocker: string | null; summary: string } | null {
+  const c = state?.active;
+  if (!c || c.status !== 'active') return null;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const p = state!.progress;
+  const g = live[p?.phaseIndex ?? 0];
+  return { phase: `${(p?.phaseIndex ?? 0) + 1}/${live.length}`, goal: g?.label || c.summary, constraints: [c.constraints.loanPolicy !== 'allowed' ? `loans: ${c.constraints.loanPolicy}` : '', c.constraints.minimumCashReserve ? `reserve ${gi3Money(c.constraints.minimumCashReserve)}` : ''].filter(Boolean), reserve: c.constraints.minimumCashReserve, blocker: p?.blockers[0]?.label || null, summary: c.summary };
+}
+
+/** Divergence: does a player action materially conflict with the active strategy? (The player stays free.) */
+export function checkGI3Divergence(state: GI3StrategyState | null | undefined, action: { actionType?: string; cost?: number; regionId?: string | null; cashAfter?: number | null; label?: string }, cash: number): { conflict: boolean; severity: 'none' | 'notice' | 'major'; message: string; delaysMilestone: string | null } {
+  const c = state?.active;
+  if (!c || c.status !== 'active') return { conflict: false, severity: 'none', message: '', delaysMilestone: null };
+  const cost = Math.max(0, Number(action.cost || 0));
+  const type = String(action.actionType || '').toLowerCase();
+  const after = typeof action.cashAfter === 'number' ? action.cashAfter : cash - cost;
+  const reserve = c.constraints.minimumCashReserve;
+  const msgs: string[] = [];
+  let major = false;
+  if (/loan|borrow/.test(type) && c.constraints.loanPolicy === 'forbidden') { msgs.push('Your active strategy rules out new loans.'); major = true; }
+  if (reserve && cost > 0 && after < reserve && cost >= Math.max(500, cash * 0.1)) { msgs.push(`Your active strategy keeps ${gi3Money(reserve)} in reserve, and this leaves ${gi3Money(after)}.`); major = true; }
+  if (action.regionId && c.constraints.deprioritizedRegions.includes(String(action.regionId)) && cost >= 500) msgs.push(`${action.regionId} is deprioritised in your strategy.`);
+  const cashGoal = c.goals.find(g => g.type === 'reach_cash' && g.status !== 'completed' && g.status !== 'removed');
+  const delays = cashGoal && cost >= Math.max(500, cash * 0.1) && !/sell|work|contract/.test(type) ? `${cashGoal.label}` : null;
+  if (!msgs.length) return { conflict: false, severity: 'none', message: '', delaysMilestone: null };
+  return { conflict: true, severity: major ? 'major' : 'notice', message: `${msgs.join(' ')}${delays ? ` It also delays “${delays}”.` : ''}`, delaysMilestone: delays };
+}
+
+/** Drift: repeated player actions outside every active goal (never silently rewrites the strategy). */
+export function observeGI3PlayerActions(state: GI3StrategyState, actions: Array<{ id: string; turn: number; summary: string; eventType?: string }>): GI3StrategyState {
+  if (!actions.length) return state;
+  const categorize = (s: string) => /invest|infrastructure|project|fund/.test(s) ? 'infrastructure' : /deposit|region|control/.test(s) ? 'regions' : /contract/.test(s) ? 'contracts' : /sell|buy|market|trade|work/.test(s) ? 'economy' : /travel/.test(s) ? 'travel' : /challenge/.test(s) ? 'challenges' : 'other';
+  const recent = [...state.recentPlayerActions, ...actions.map(a => ({ turn: a.turn, category: categorize(`${a.eventType || ''} ${a.summary}`.toLowerCase()), key: a.id }))].slice(-GI3_LIMITS.recentActions);
+  let notices = state.notices;
+  const c = state.active;
+  if (c && c.status === 'active') {
+    const wanted = new Set<string>(['economy', 'travel', 'other']);
+    c.goals.filter(g => g.status !== 'removed').forEach(g => { if (g.type === 'complete_project') wanted.add('infrastructure'); if (g.type === 'focus_contracts') wanted.add('contracts'); if (g.type === 'protect_region' || g.type === 'control_region' || g.type === 'control_n_regions') wanted.add('regions'); if (g.type === 'reach_cash') wanted.add('contracts'); });
+    const last = recent.slice(-6);
+    const counts = new Map<string, number>();
+    last.forEach(a => counts.set(a.category, (counts.get(a.category) || 0) + 1));
+    const off = Array.from(counts.entries()).filter(([k, n]) => !wanted.has(k) && n >= 4)[0];
+    const turns = new Set(last.map(a => a.turn)).size;
+    if (off && turns >= 2 && !notices.some(n => n.kind === 'drift' && n.revision === c.revision)) {
+      notices = [...notices, { id: `g3n_drift_${c.id}_${c.revision}`, kind: 'drift' as const, text: `Your recent actions are prioritising ${off[0]} over the active strategy (${c.summary.replace(/\.$/, '')}).`, revision: c.revision, turn: Math.max(...last.map(a => a.turn)), dismissed: false }].slice(-GI3_LIMITS.notices);
+    }
+  }
+  return { ...state, recentPlayerActions: recent, lastObservedLedgerId: actions[actions.length - 1].id, notices };
+}
+
+// ---- Strategy What-If (isolated; never mutates the live strategy or game state) -----------------------
+
+export interface GI3WhatIfResult { current: { summary: string; phase: string; firstShortfall: number; atRisk: string[] }; alternative: { summary: string; phase: string; firstShortfall: number; atRisk: string[] }; metrics: Array<{ metric: string; current: string; alternative: string; better: 'current' | 'alternative' | 'same' }>; verdict: string; alternativeContract: GI3StrategyContract }
+
+export function simulateGI3Alternative(state: GI3StrategyState, world: GIWorld, alternative: GI3StrategyContract): GI3WhatIfResult {
+  const describe = (c: GI3StrategyContract) => {
+    const sandbox: GI3StrategyState = { ...createEmptyGI3StrategyState(), active: { ...JSON.parse(JSON.stringify(c)), status: 'active' as const } };
+    const e = evaluateGI3Strategy(sandbox, world);
+    const p = e.progress!;
+    const live = e.state.active!.goals.filter(g => g.status !== 'removed');
+    const phaseGoal = live[p.phaseIndex];
+    const exposed = Object.entries(world.regions).filter(([code, r]) => r.controlledByPlayer && gi3RegionStatus(world, code) === 'held_at_risk' && !live.some(g => g.regionId === code && g.type === 'protect_region')).map(([code]) => code);
+    return { summary: e.state.active!.summary, phase: phaseGoal ? phaseGoal.label : 'complete', firstShortfall: Math.round(p.blockers.find(b => b.shortfall)?.shortfall || 0), atRisk: exposed, overall: p.overallProgress };
+  };
+  const a = describe(state.active!);
+  const b = describe(alternative);
+  const cmp = (x: number, y: number, lowerBetter: boolean) => (x === y ? 'same' as const : (x < y) === lowerBetter ? 'current' as const : 'alternative' as const);
+  const metrics: GI3WhatIfResult['metrics'] = [
+    { metric: 'Current phase', current: a.phase, alternative: b.phase, better: 'same' },
+    { metric: 'Immediate funding gap', current: a.firstShortfall ? gi3Money(a.firstShortfall) : 'none', alternative: b.firstShortfall ? gi3Money(b.firstShortfall) : 'none', better: cmp(a.firstShortfall, b.firstShortfall, true) },
+    { metric: 'Held regions left unprotected while at risk', current: a.atRisk.join(', ') || 'none', alternative: b.atRisk.join(', ') || 'none', better: cmp(a.atRisk.length, b.atRisk.length, true) },
+    { metric: 'Progress toward goals', current: `${Math.round(a.overall * 100)}%`, alternative: `${Math.round(b.overall * 100)}%`, better: cmp(a.overall, b.overall, false) }
+  ];
+  const score = (side: 'current' | 'alternative') => metrics.filter(m => m.better === side).length;
+  const verdict = score('alternative') > score('current') ? 'The alternative looks stronger on the measurable factors.' : score('current') > score('alternative') ? 'Your current strategy looks stronger on the measurable factors.' : 'Both strategies are about even on the measurable factors.';
+  return { current: a, alternative: b, metrics, verdict, alternativeContract: alternative };
+}
+
+/** Divergence notice as a Game Intelligence card: Continue / Explain / Modify Strategy / Cancel. Never a block. */
+export function buildGI3DivergenceAnswer(check: { message: string; severity: 'none' | 'notice' | 'major' }, candidate: { id: string; label: string }, state: GI3StrategyState | null | undefined): GameIntelligenceAnswer {
+  const c = state?.active;
+  return {
+    id: nextIntelligenceAnswerId('gi3div'),
+    query: candidate.label,
+    kind: 'why',
+    title: 'This differs from your strategy',
+    lines: [
+      `${candidate.label}: ${check.message}`,
+      c ? `Active strategy: ${c.summary}` : 'No active strategy.',
+      'You are free to continue — the strategy is guidance, not a rule. Continuing records it as a player override.'
+    ],
+    evidence: [{ source: 'Game Intelligence 3.0', detail: `Explicit strategy constraints${c ? ` (rev ${c.revision})` : ''} compared with the action's cost and target.` }],
+    buttons: [
+      { id: `gi3_continue_${candidate.id}`, label: 'Continue', kind: 'gi3_continue_action', candidateId: candidate.id, tone: check.severity === 'major' ? 'danger' : 'primary' },
+      { id: 'gi3_div_explain', label: 'Explain', kind: 'ask', query: 'Explain this strategy' },
+      { id: 'gi3_div_modify', label: 'Modify Strategy', kind: 'ask', query: 'How do I change the strategy?' },
+      { id: 'gi3_div_cancel', label: 'Cancel', kind: 'gi3_cancel', tone: 'secondary' }
+    ],
+    sourceSystems: ['Game Intelligence 3.0'],
+    grounded: true
+  };
+}
+
+/** Guardian evaluator: an intended action that breaks an explicit strategy constraint (Guardian still owns protection). */
+export function evaluateGI3StrategyRisk(context: GuardianEvaluationContext): readonly GuardianDetectedRisk[] {
+  const state = context.gameState?.gi3Strategy as GI3StrategyState | undefined;
+  const c = state?.active;
+  if (!c || c.status !== 'active' || context.isReplay) return [];
+  const payload = context.actionPayload || {};
+  const cost = typeof payload.cost === 'number' ? payload.cost : typeof payload.amount === 'number' && !/loan/.test(context.actionType) ? payload.amount : typeof payload.price === 'number' ? payload.price : 0;
+  const check = checkGI3Divergence(state, { actionType: context.actionType, cost, regionId: typeof payload.regionId === 'string' ? payload.regionId : typeof payload.region === 'string' ? payload.region : null }, context.currentCash);
+  if (!check.conflict) return [];
+  return [{
+    id: `risk_gi3_strategy_${context.actorId}_t${context.turn}_${context.actionType}`, category: 'liquidity', severity: check.severity === 'major' ? 'caution' : 'informational',
+    title: 'Conflicts with your active strategy', description: `This also conflicts with your active strategy: ${check.message}`,
+    evidence: [`Active strategy: ${c.summary}`], assumptions: ['You can keep, change or ignore the strategy — this is information, not a block.'],
+    probability: 1, estimatedImpact: cost, confidence: 0.9, reversible: true, immediate: false, triggeredSettingKeys: [], systemIds: ['gi3_strategy']
+  }];
+}
+
+
+// ---- Game Intelligence 3.0 deterministic self-tests -------------------------------------------------
+
+export function runGameIntelligence3SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const solo = () => createGIFixtureWorld().world;
+  const team = () => createTeamGIFixtureWorld();
+  const MAIN = 'Protect NSW, reach $15K, then go Victoria. No loans.';
+  const TEAM_MAIN = 'I want to win through regions. Keep NSW safe, get me above $15K without new loans, then go after Victoria. Riley can handle money while I defend.';
+  const frameOf = (q: string, w: GIWorld, ctx?: GIConversationContext) => parseGILanguage(q, w, ctx || createGIConversationContext());
+  const detect = (q: string, w: GIWorld = solo(), active: GI3StrategyContract | null = null) => detectGI3StrategyIntent(frameOf(q, w), w, createGIConversationContext(), active).kind;
+  const compile = (q: string, w: GIWorld = solo(), base: GI3StrategyContract | null = null) => compileGI3StrategyIntent(frameOf(q, w), w, createGIConversationContext(), base);
+  const live = (c: GI3StrategyContract) => c.goals.filter(g => g.status !== 'removed');
+  const shape = (c: GI3StrategyContract) => live(c).map(g => `${g.type}:${g.regionId || g.amount || g.count || ''}`).join(' > ');
+  const activate = (c: GI3StrategyContract, w: GIWorld) => evaluateGI3Strategy(activateGI3Strategy(createEmptyGI3StrategyState(), c, w.turn, 'test'), w).state;
+  const withMoney = (w: GIWorld, money: number): GIWorld => ({ ...w, player: { ...w.player, money }, actors: w.actors.map(a => (a.relation === 'self' ? { ...a, money } : a)) });
+  const withTurn = (w: GIWorld, turn: number): GIWorld => ({ ...w, turn });
+  const loseRegion = (w: GIWorld, code: string): GIWorld => ({ ...w, regions: { ...w.regions, [code]: { ...w.regions[code], controlledByPlayer: false, controlledByRival: true, controllerId: 'ai', playerDeposit: 0 } } });
+  const soloActive = () => { const w = solo(); return { w, st: activate(compile(MAIN, w).contract, w) }; };
+  /** NSW out of the visible rival's reach (the fixture rival can otherwise afford to take it). */
+  const secureNsw = (w: GIWorld): GIWorld => ({ ...w, regions: { ...w.regions, NSW: { ...w.regions.NSW, rivalCostToControl: 50000 } } });
+  /** Key-order-independent comparison (JSON drops undefined fields the same way on both sides). */
+  const canon = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+
+  // Detection — persistent strategy vs ordinary question
+  check('gi3_detect_strategy', 'Detection: a multi-goal plan is a strategy', () => {
+    const k = detect(MAIN);
+    return k === 'create' || `got ${k}`;
+  });
+  check('gi3_detect_question', 'Detection: ordinary questions never create a strategy ("Should I sell Gold?")', () => {
+    const bad = ['Should I sell Gold?', 'Can I afford Victoria?', 'What should I do next?', 'Is NSW safe?'].filter(q => detect(q) === 'create');
+    return !bad.length || `created for: ${bad.join(' | ')}`;
+  });
+  check('gi3_detect_tactical', 'Detection: a tactical sequence stays tactical (no strategy)', () => {
+    const k = detect('sell gold then put $3K into NSW');
+    return k === 'none' || `got ${k}`;
+  });
+  check('gi3_detect_needs_active', 'Detection: status/control only exist with an active strategy', () => {
+    const w = solo();
+    const a = detect('How are we doing?', w, null);
+    const b = detect('Pause the plan', w, null);
+    const { st } = soloActive();
+    const c = detect('How are we doing?', w, st.active);
+    const d = detect('Pause the plan', w, st.active);
+    return (a !== 'status' && b !== 'control' && c === 'status' && d === 'control') || JSON.stringify({ a, b, c, d });
+  });
+
+  // Compilation
+  check('gi3_compile_contract', 'Compilation: goals, order, dependencies, constraints from GI 2.1 frames', () => {
+    const c = compile(MAIN).contract;
+    const s = shape(c);
+    if (s !== 'protect_region:NSW > reach_cash:15000 > control_region:VIC') return s;
+    if (c.constraints.loanPolicy === 'allowed') return `loan ${c.constraints.loanPolicy}`;
+    const g = live(c);
+    if (!g[2].dependsOn.includes(g[1].id)) return `deps ${JSON.stringify(g.map(x => x.dependsOn))}`;
+    return (c.status === 'draft' && c.primaryGoalId === g[0].id && c.scope === 'personal') || `${c.status} ${c.primaryGoalId} ${c.scope}`;
+  });
+  check('gi3_compile_paraphrase', 'Paraphrase: different wordings compile to the same strategy', () => {
+    const base = shape(compile(MAIN).contract);
+    const variants = [
+      "okay basically dont let nsw fall, i need like 15k first and then prob vic, no loans tho",
+      'Keep NSW safe, get me above $15K without new loans, then go after Victoria.',
+      'Defend NSW, build to $15K with no loans, after that take Victoria.'
+    ];
+    const diff = variants.map(v => [v, shape(compile(v).contract)]).filter(([, s]) => s !== base);
+    return !diff.length || diff.map(([v, s]) => `${v} => ${s}`).join(' | ');
+  });
+  check('gi3_compile_negation', "Negation: \"don't stop protecting NSW\" protects; \"don't go after Victoria\" never targets it", () => {
+    const a = compile("Don't stop protecting NSW, and reach $15K").contract;
+    const b = compile("Reach $15K and protect NSW. Don't go after Victoria.").contract;
+    if (!live(a).some(g => g.type === 'protect_region' && g.regionId === 'NSW')) return `a: ${shape(a)}`;
+    if (live(b).some(g => g.type === 'control_region' && g.regionId === 'VIC')) return `b: ${shape(b)}`;
+    return true;
+  });
+  check('gi3_repair_amount', 'Repair: "Make that $20K" changes only the cash target', () => {
+    const { w, st } = soloActive();
+    const r = compile('Make that $20K', w, st.active);
+    const before = live(st.active!).map(g => g.type === 'reach_cash' ? 'cash' : `${g.type}:${g.regionId}`).join(',');
+    const after = live(r.contract).map(g => g.type === 'reach_cash' ? 'cash' : `${g.type}:${g.regionId}`).join(',');
+    const cash = live(r.contract).find(g => g.type === 'reach_cash');
+    return (cash?.amount === 20000 && before === after && r.contract.constraints.loanPolicy === st.active!.constraints.loanPolicy) || `${cash?.amount} ${before} vs ${after}`;
+  });
+  check('gi3_repair_region', 'Repair: "Actually Queensland instead of Victoria" replaces only the future target', () => {
+    const { w, st } = soloActive();
+    const s = shape(compile('Actually Queensland instead of Victoria', w, st.active).contract);
+    return s === 'protect_region:NSW > reach_cash:15000 > control_region:QLD' || s;
+  });
+  check('gi3_repair_constraints', 'Repair: reserve and loan edits change only those fields', () => {
+    const { w, st } = soloActive();
+    const a = compile('Keep $10K instead', w, st.active).contract;
+    const b = compile('Remove the loan restriction', w, st.active).contract;
+    if (a.constraints.minimumCashReserve !== 10000 || shape(a) !== shape(st.active!)) return `reserve ${a.constraints.minimumCashReserve} ${shape(a)}`;
+    return (b.constraints.loanPolicy === 'allowed' && shape(b) === shape(st.active!)) || `loan ${b.constraints.loanPolicy} ${shape(b)}`;
+  });
+  check('gi3_preview_apply', 'Preview/apply: GI previews a draft; nothing is active until Activate', () => {
+    const w = solo();
+    const r = runGameIntelligenceCore(MAIN, w, createGIConversationContext());
+    if (r.understanding.primary !== 'strategy_preview') return `primary ${r.understanding.primary}`;
+    if (!r.context.pendingGI3Draft || w.gi3) return 'draft missing or world mutated';
+    const kinds = r.answer.buttons.map(b => b.kind);
+    if (!kinds.includes('gi3_activate') || !kinds.includes('gi3_cancel') || kinds.includes('do')) return kinds.join(',');
+    const st = activateGI3Strategy(createEmptyGI3StrategyState(), r.context.pendingGI3Draft.contract, w.turn, 'Activate');
+    return st.active?.status === 'active' || `status ${st.active?.status}`;
+  });
+
+  // Progress, phases, replanning
+  check('gi3_progress_canonical', 'Progress: comes only from canonical state (cash milestone = live money)', () => {
+    const { w, st } = soloActive();
+    const cashGoal = live(st.active!).find(g => g.type === 'reach_cash')!;
+    const p1 = st.progress!.goalProgress[cashGoal.id].progress;
+    const st2 = evaluateGI3Strategy(st, withMoney(w, 12000)).state;
+    const p2 = st2.progress!.goalProgress[cashGoal.id].progress;
+    return (st.progress!.resourceStatus.cash === w.player.money && p2 > p1) || `cash ${st.progress!.resourceStatus.cash} p ${p1}→${p2}`;
+  });
+  check('gi3_phase_transition', 'Phases: reaching the cash goal advances to the Victoria phase with an event', () => {
+    const w = secureNsw(solo());
+    const st = activate(compile(MAIN, w).contract, w);
+    const s1 = evaluateGI3Strategy(st, withTurn(withMoney(w, 16000), w.turn + 2)).state;
+    const g = live(s1.active!)[s1.progress!.phaseIndex];
+    return (g?.type === 'control_region' && g.regionId === 'VIC' && s1.events.some(e => e.kind === 'phase_changed')) || `phase ${s1.progress!.phaseIndex} ${g?.label} events ${s1.events.map(e => e.kind).join(',')}`;
+  });
+  check('gi3_replan_region_lost', 'Replan: losing a protected region triggers one revision (retake first)', () => {
+    const { w, st } = soloActive();
+    const e = evaluateGI3Strategy(st, withTurn(loseRegion(w, 'NSW'), w.turn + 1));
+    if (!e.replan.replan) return `no replan: ${e.replan.reason}`;
+    const c = e.state.active!;
+    const first = live(c)[0];
+    return (c.revision === st.active!.revision + 1 && first.regionId === 'NSW' && e.state.events.some(x => x.kind === 'region_lost')) || `rev ${c.revision} first ${first.label}`;
+  });
+  check('gi3_no_thrash', 'No thrashing: re-evaluating the same state is stable; cooldown blocks immediate replans', () => {
+    const { w, st } = soloActive();
+    let s = st;
+    const sigs = new Set<string>();
+    for (let i = 0; i < 5; i++) { s = evaluateGI3Strategy(s, w).state; sigs.add(gi3StrategySignature(s)); }
+    if (sigs.size !== 1 || s.active!.revision !== st.active!.revision) return `sigs ${sigs.size} rev ${s.active!.revision}`;
+    const lost = loseRegion(w, 'NSW');
+    const a = evaluateGI3Strategy(s, withTurn(lost, w.turn + 1)).state;
+    const b = evaluateGI3Strategy(a, withTurn(w, w.turn + 1)).state;
+    const c = evaluateGI3Strategy(b, withTurn(lost, w.turn + 1)).state;
+    return (c.active!.revision - a.active!.revision <= 0) || `revisions ${st.active!.revision}→${a.active!.revision}→${c.active!.revision}`;
+  });
+  check('gi3_runtime_loop_safe', 'Persistence: evaluate → commit → re-render settles (no dispatch loop)', () => {
+    const { w } = soloActive();
+    let stored = activateGI3Strategy(createEmptyGI3StrategyState(), compile(MAIN, w).contract, w.turn, 'x');
+    let commits = 0;
+    for (let i = 0; i < 8; i++) {
+      const next = evaluateGI3Strategy(stored, w).state;
+      if (gi3StrategySignature(next) === gi3StrategySignature(stored)) break;
+      stored = next; commits += 1;
+    }
+    return commits <= 2 || `${commits} commits`;
+  });
+
+  // Divergence / drift
+  check('gi3_divergence', 'Divergence: a loan under a no-loan strategy is flagged (never blocked); a sale is not', () => {
+    const { st } = soloActive();
+    const loan = checkGI3Divergence(st, { actionType: 'take_loan', cost: 0 }, 6000);
+    const sale = checkGI3Divergence(st, { actionType: 'sell', cost: 0 }, 6000);
+    const ans = buildGI3DivergenceAnswer(loan, { id: 'c_loan', label: 'Take Commercial Loan' }, st);
+    const kinds = ans.buttons.map(b => b.kind);
+    return (loan.conflict && !sale.conflict && kinds.includes('gi3_continue_action') && kinds.includes('gi3_cancel') && ans.buttons.some(b => b.label === 'Modify Strategy')) || `${loan.conflict} ${sale.conflict} ${kinds.join(',')}`;
+  });
+  check('gi3_drift', 'Drift: repeated off-plan actions raise one notice and never rewrite the strategy', () => {
+    const { st } = soloActive();
+    const acts = [1, 2, 3, 4, 5, 6].map(i => ({ id: `ev${i}`, turn: 7 + (i > 3 ? 1 : 0), summary: 'Invested in infrastructure project', eventType: 'invest_infrastructure' }));
+    const s = observeGI3PlayerActions(st, acts);
+    const again = observeGI3PlayerActions(s, [{ id: 'ev7', turn: 9, summary: 'Invested in infrastructure project' }]);
+    return (s.notices.filter(n => n.kind === 'drift').length === 1 && again.notices.filter(n => n.kind === 'drift').length === 1 && JSON.stringify(s.active) === JSON.stringify(st.active)) || JSON.stringify(s.notices);
+  });
+
+  // Team Mode
+  check('gi3_team_bridge', 'Team bridge: the team subset compiles into the ONE Team Strategy Contract', () => {
+    const w = team();
+    const c = compile(TEAM_MAIN, w).contract;
+    if (c.scope === 'personal') return `scope ${c.scope}`;
+    const intent = gi3TeamIntentForPhase(c, 0);
+    if (!intent) return 'no team intent';
+    if (intent.responsibilities.some(r => r.regionId === 'VIC')) return 'future VIC leaked into the current team phase';
+    if (!intent.responsibilities.some(r => r.actorId === 'mate' && r.focus === 'economy')) return JSON.stringify(intent.responsibilities);
+    const mine = compile('Keep NSW safe and reach $15K. My teammate can handle money while I defend.', w).contract;
+    if (!mine.responsibilities.some(r => r.actorId === 'mate' && r.focus === 'economy')) return `"my teammate" → ${JSON.stringify(mine.responsibilities)}`;
+    // Live start: NSW not yet held (compiles to "expand into NSW") and the player stands in QLD.
+    const away: GIWorld = { ...w, player: { ...w.player, location: 'QLD', locationName: 'Queensland' }, regions: { ...w.regions, NSW: { ...w.regions.NSW, controlledByPlayer: false, controllerId: null } } };
+    const defend = compile('Keep NSW safe and reach $15K. My teammate can handle money while I defend.', away).contract;
+    if (!defend.responsibilities.some(r => r.actorId === 'player' && r.regionId === 'NSW')) return `"I defend" → ${JSON.stringify(defend.responsibilities)}`;
+    const ins = createTeamOSFixtureInputs();
+    const tev = evaluateTeamOperatingSystem(w.team!.state, ins, intent);
+    return (tev.state.contract?.source === 'player_command' && Boolean(tev.state.contract?.taskGraph.length)) || `team contract ${tev.state.contract?.source}`;
+  });
+  check('gi3_team_feedback', 'Team feedback: Team OS responsibilities and cash feed GI3 progress', () => {
+    const w = team();
+    const st = activate(compile(TEAM_MAIN, w).contract, w);
+    const p = st.progress!;
+    return (p.resourceStatus.cashSource === 'team' && p.responsibilityStatus.some(r => r.actorId === 'mate')) || JSON.stringify({ src: p.resourceStatus.cashSource, resp: p.responsibilityStatus });
+  });
+  check('gi3_solo', 'Solo: personal scope, no team subset, player cash', () => {
+    const { st } = soloActive();
+    return (st.active!.scope === 'personal' && gi3TeamIntentForPhase(st.active!, 0) === null && st.progress!.resourceStatus.cashSource === 'player') || `${st.active!.scope}`;
+  });
+
+  // What-If
+  check('gi3_whatif_isolated', 'What-If: isolated comparison, adoption only by explicit Activate', () => {
+    const { w, st } = soloActive();
+    const before = JSON.stringify(st);
+    const alt = compile('Actually VIC first', w, st.active).contract;
+    const r = simulateGI3Alternative(st, w, alt);
+    return (JSON.stringify(st) === before && r.metrics.length >= 3 && Boolean(r.verdict)) || 'live strategy mutated or empty comparison';
+  });
+
+  // Controls, projection, ledger
+  check('gi3_controls', 'Controls: pause / resume / lock / abandon', () => {
+    const { st } = soloActive();
+    const p = controlGI3Strategy(st, 'pause', 8).state;
+    const r = controlGI3Strategy(p, 'resume', 8).state;
+    const l = controlGI3Strategy(r, 'lock', 8).state;
+    const a = controlGI3Strategy(l, 'abandon', 9).state;
+    return (p.active!.status === 'paused' && r.active!.status === 'active' && l.active!.locks.primaryGoal && a.active === null && a.history.some(h => h.status === 'abandoned')) || 'lifecycle mismatch';
+  });
+  check('gi3_objective_projection', 'Current Objective: the active phase is projected; a paused strategy is not', () => {
+    const { st } = soloActive();
+    const o = projectGI3CurrentObjective(st);
+    const paused = projectGI3CurrentObjective(controlGI3Strategy(st, 'pause', 8).state);
+    return (o?.title === live(st.active!)[st.progress!.phaseIndex].label && paused === null) || `${o?.title}`;
+  });
+  check('gi3_ledger', 'Ledger: activation is recorded once; unchanged evaluation adds nothing', () => {
+    const { w, st } = soloActive();
+    const act = gi3LedgerEvents(createEmptyGI3StrategyState(), st);
+    const same = gi3LedgerEvents(st, evaluateGI3Strategy(st, w).state);
+    return (act.filter(e => e.kind === 'strategy_activated').length === 1 && same.length === 0) || `${act.map(e => e.kind)} / ${same.map(e => e.kind)}`;
+  });
+
+  // Save / load / replay
+  check('gi3_save_load', 'Save/load: round-trip is lossless; old or corrupt saves load as an empty state', () => {
+    const { st } = soloActive();
+    const rt = sanitizeGI3StrategyState(JSON.parse(JSON.stringify(st)));
+    if (gi3StrategySignature(rt) !== gi3StrategySignature(st) || canon(rt) !== canon(st)) return 'round-trip changed the strategy';
+    const legacy = sanitizeGI3StrategyState(undefined);
+    const junk = sanitizeGI3StrategyState({ active: { id: 5, goals: 'x' }, events: 'nope' });
+    return (legacy.active === null && junk.active === null && junk.events.length === 0) || 'bad input survived';
+  });
+  check('gi3_replay_determinism', 'Replay: identical inputs give identical strategy state; Guardian stays silent in replays', () => {
+    const w = solo();
+    const a = JSON.stringify(activate(compile(MAIN, w).contract, w));
+    const b = JSON.stringify(activate(compile(MAIN, w).contract, w));
+    const st = JSON.parse(a);
+    const ctx: any = { gameState: { gi3Strategy: st }, actorId: 'player', actionType: 'take_loan', actionPayload: { amount: 1000 }, currentCash: 6000, turn: 7, isReplay: true };
+    return (a === b && evaluateGI3StrategyRisk(ctx).length === 0 && evaluateGI3StrategyRisk({ ...ctx, isReplay: false }).length === 1) || 'non-deterministic or replay leak';
+  });
+
+  // Authority
+  check('gi3_authority', 'Authority: alignment only re-ranks legal actions; illegal stays excluded; Guardian only informs', () => {
+    const { w, st } = soloActive();
+    const ctx = gi3RankingContext(st, w.player.money)!;
+    const cands = [
+      { id: 'c_sell', actionType: 'sell', title: 'Sell Gold at market', utilityScore: 60, riskFactor: 10, apCost: 1, costEstimate: 0, isValid: true, expectedStateDelta: { cashDelta: 1000 } },
+      { id: 'c_loan', actionType: 'take_loan', title: 'Take Commercial Loan', utilityScore: 70, riskFactor: 10, apCost: 1, costEstimate: 0, isValid: true, expectedStateDelta: { cashDelta: 1000 } },
+      { id: 'c_bad', actionType: 'buy_equipment', title: 'Illegal', utilityScore: 99, riskFactor: 0, apCost: 1, costEstimate: 0, isValid: false }
+    ];
+    const plain = rankContextualRecommendations(cands, null, { apRemaining: 3, cash: 6000, limit: 5 });
+    const ranked = rankContextualRecommendations(cands, null, { apRemaining: 3, cash: 6000, limit: 5, strategy: ctx });
+    if (ranked.some(r => r.id === 'c_bad')) return 'illegal candidate ranked';
+    if (plain[0].id !== 'c_loan' || ranked[0].id !== 'c_sell') return `order ${plain.map(r => r.id)} → ${ranked.map(r => r.id)}`;
+    if (ranked.find(r => r.id === 'c_loan')?.strategyAlignment?.label !== 'conflict') return 'loan not marked as a strategy conflict';
+    const risks = evaluateGI3StrategyRisk({ gameState: { gi3Strategy: st }, actorId: 'player', actionType: 'take_loan', actionPayload: {}, currentCash: 6000, turn: 7, isReplay: false } as any);
+    return risks.every(r => r.severity === 'caution' || r.severity === 'informational') || 'Guardian escalated beyond information';
+  });
+  check('gi3_conversation', 'GI conversation: status answers against the active strategy; ordinary questions stay ordinary', () => {
+    const { w, st } = soloActive();
+    const world = { ...w, gi3: st };
+    const s = runGameIntelligenceCore('How are we doing?', world, createGIConversationContext());
+    const g = runGameIntelligenceCore('Should I sell Gold?', world, createGIConversationContext());
+    if (s.understanding.primary !== 'strategy_status') return `status → ${s.understanding.primary}`;
+    if (!/phase/i.test(s.answer.lines.join(' '))) return 'status answer has no phase';
+    return !String(g.understanding.primary).startsWith('strategy') || `sell → ${g.understanding.primary}`;
+  });
+  return results;
+}
+
+// ---- GI3 UI: Strategic Command Center (INTELLIGENCE), compact PLAY strip, LAB inspector -------------
+// Information + buttons only. Every button routes through handleV9Button / Game Intelligence; nothing
+// here executes a game action or changes authority.
+
+const GI3_ONTRACK_META: Record<GI3OnTrack, { label: string; cls: string }> = {
+  on_track: { label: 'On track', cls: 'bg-emerald-600 text-white' },
+  ahead: { label: 'Ahead', cls: 'bg-emerald-700 text-white' },
+  at_risk: { label: 'At risk', cls: 'bg-amber-500 text-black' },
+  blocked: { label: 'Blocked', cls: 'bg-red-600 text-white' },
+  recovering: { label: 'Recovering', cls: 'bg-sky-600 text-white' },
+  needs_decision: { label: 'Needs decision', cls: 'bg-purple-600 text-white' },
+  completed: { label: 'Completed', cls: 'bg-emerald-800 text-white' },
+  failed: { label: 'Failed', cls: 'bg-red-800 text-white' }
+};
+
+const gi3GoalIcon = (s: GI3GoalStatus) => (s === 'completed' ? '✅' : s === 'maintained' ? '🛡️' : s === 'blocked' ? '⛔' : s === 'failed' ? '❌' : s === 'active' ? '▶️' : '⏳');
+
+export interface GI3PanelProps {
+  state: GI3StrategyState | null;
+  theme: V9Theme;
+  onAsk: (query: string) => void;
+  onButton: (button: GameIntelligenceButton) => void;
+}
+
+/** INTELLIGENCE layer: the full strategy at a glance (mission, phases, milestones, resources, team, next move). */
+export const GI3StrategicCommandCenter: React.FC<GI3PanelProps & { nameOf?: (id: string) => string }> = ({ state, theme, onAsk, onButton, nameOf }) => {
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70';
+  const c = state?.active || null;
+  const p = state?.progress || null;
+  const btn = `${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`;
+  if (!c) {
+    return (
+      <section aria-labelledby="gi3-center-heading" data-testid="gi3-command-center" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-2 text-sm`}>
+        <h2 id="gi3-center-heading" className="font-bold">🎯 Strategic Command Center</h2>
+        <p className="text-xs opacity-80">No active strategy. Tell Game Intelligence what you are trying to achieve over the next few turns — for example “Keep NSW safe, reach $15K without loans, then take Victoria.” You will see a preview before anything is saved.</p>
+        {(state?.history || []).length > 0 && <div className="text-xs opacity-70">Previous: {state!.history[state!.history.length - 1].summary} ({state!.history[state!.history.length - 1].status})</div>}
+        <button type="button" className={`${theme.button} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => onAsk('My strategy: keep my regions safe and reach $15K without loans')}>Try an example strategy</button>
+      </section>
+    );
+  }
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const phaseGoal = live[p?.phaseIndex ?? c.phaseIndex] || null;
+  const meta = p ? GI3_ONTRACK_META[p.onTrack] : null;
+  const notices = (state?.notices || []).filter(n => !n.dismissed);
+  const who = (id: string) => (id === 'player' ? 'You' : nameOf ? nameOf(id) : id);
+  return (
+    <section aria-labelledby="gi3-center-heading" data-testid="gi3-command-center" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-3 text-sm`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="gi3-center-heading" className="font-bold">🎯 Strategic Command Center</h2>
+        {c.status !== 'active' && <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-500 text-white">{c.status}</span>}
+        {meta && c.status === 'active' && <span data-testid="gi3-ontrack" className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${meta.cls}`}>{meta.label}</span>}
+        <span className="text-[11px] opacity-70">Rev {c.revision} • {c.scope}{p ? ` • trend ${p.trend}` : ''}</span>
+      </div>
+      <div>
+        <div className={label}>Mission</div>
+        <div className="font-bold" data-testid="gi3-mission">{c.mission.label}</div>
+        <div className="text-xs opacity-80">{c.summary}</div>
+      </div>
+      <div>
+        <div className={label}>Phases</div>
+        <ol className="text-xs space-y-0.5" aria-label="Strategy phases">
+          {live.map((g, i) => (
+            <li key={g.id} className={i === (p?.phaseIndex ?? c.phaseIndex) ? 'font-semibold' : ''}>
+              {gi3GoalIcon(g.status === 'active' && i > (p?.phaseIndex ?? c.phaseIndex) ? 'pending' : g.status)} Phase {i + 1}: {g.label}{p?.goalProgress[g.id] ? ` — ${Math.round(p.goalProgress[g.id].progress * 100)}%` : ''}{g.locked ? ' 🔒' : ''}
+            </li>
+          ))}
+        </ol>
+      </div>
+      {p && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className={label}>Resources</div>
+            <div className="font-bold">${Math.round(p.resourceStatus.cash).toLocaleString()}<span className="text-xs font-normal opacity-75"> {p.resourceStatus.cashSource === 'team' ? 'team free cash' : 'cash'}</span></div>
+            <div className="text-xs opacity-75">{p.resourceStatus.reserve ? `reserve $${Math.round(p.resourceStatus.reserve).toLocaleString()} • ` : ''}loans {p.resourceStatus.loanPolicy}</div>
+          </div>
+          <div>
+            <div className={label}>Progress</div>
+            <div className="font-bold">{Math.round(p.overallProgress * 100)}%</div>
+            <div className="text-xs opacity-75">{p.milestones.filter(m => m.status === 'reached').length}/{p.milestones.length} milestones</div>
+          </div>
+        </div>
+      )}
+      {p && p.milestones.some(m => m.goalId === phaseGoal?.id) && (
+        <div>
+          <div className={label}>Milestones — current phase</div>
+          <ul className="text-xs space-y-0.5">
+            {p.milestones.filter(m => m.goalId === phaseGoal?.id).slice(0, 4).map(m => <li key={m.id}>{m.status === 'reached' ? '✅' : '◻️'} {m.label}</li>)}
+          </ul>
+        </div>
+      )}
+      {c.responsibilities.length > 0 && (
+        <div>
+          <div className={label}>Team responsibilities</div>
+          <ul className="text-xs space-y-0.5">
+            {(p?.responsibilityStatus.length ? p.responsibilityStatus : c.responsibilities.map(r => ({ actorId: r.actorId, focus: r.focus, regionId: r.regionId, status: 'assigned' }))).map((r, i) => (
+              <li key={`${r.actorId}_${i}`}><span className="font-semibold">{who(r.actorId)}</span>: {r.focus}{r.regionId ? ` ${r.regionId}` : ''} ({r.status})</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {p && p.blockers.length > 0 && (
+        <div>
+          <div className={label}>Blockers</div>
+          <ul className="text-xs space-y-0.5">{p.blockers.slice(0, 3).map((b, i) => <li key={i}>⛔ {b.label}</li>)}</ul>
+        </div>
+      )}
+      {p?.nextMove && <div className="text-xs" data-testid="gi3-next-move"><span className="font-semibold">Next move:</span> {p.nextMove.label} <span className="opacity-75">— {p.nextMove.reason}</span></div>}
+      {notices.map(n => (
+        <div key={n.id} role="group" aria-label="Strategy notice" className={`rounded-lg border ${theme.border} px-2 py-1.5 text-xs flex flex-wrap items-center gap-2`}>
+          <span className="flex-1 min-w-[12rem]">{n.kind === 'drift' ? '🧭' : n.kind === 'impossible' ? '⚠️' : 'ℹ️'} {n.text}</span>
+          <button type="button" className={btn} onClick={() => onAsk('How do I change the strategy?')}>Update Strategy</button>
+          <button type="button" className={btn} onClick={() => onButton({ id: `gi3_dismiss_${n.id}`, label: 'Dismiss', kind: 'gi3_dismiss', candidateId: n.id })}>Dismiss</button>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={`${theme.button} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => onAsk('How are we doing with the strategy?')}>Ask</button>
+        <button type="button" className={btn} onClick={() => onAsk('How do I change the strategy?')}>Modify</button>
+        <button type="button" className={btn} onClick={() => onAsk('What if we focus on cash first instead?')}>What If?</button>
+        {c.status === 'active' && <button type="button" className={btn} onClick={() => onButton({ id: 'gi3_replan', label: 'Replan', kind: 'gi3_control', query: 'replan' })}>Replan</button>}
+        {c.status === 'active' && <button type="button" className={btn} onClick={() => onButton({ id: 'gi3_pause', label: 'Pause', kind: 'gi3_control', query: 'pause' })}>Pause</button>}
+        {c.status === 'paused' && <button type="button" className={btn} onClick={() => onButton({ id: 'gi3_resume', label: 'Resume', kind: 'gi3_control', query: 'resume' })}>Resume</button>}
+      </div>
+    </section>
+  );
+};
+
+/** PLAY layer: one compact line — goal · phase · status · next move, with Why? and View Strategy. */
+export const GI3PlayStrip: React.FC<GI3PanelProps & { onView: () => void }> = ({ state, theme, onAsk, onView }) => {
+  const c = state?.active;
+  const p = state?.progress;
+  if (!c || (c.status !== 'active' && c.status !== 'paused')) return null;
+  const live = c.goals.filter(g => g.status !== 'removed');
+  const idx = p?.phaseIndex ?? c.phaseIndex;
+  const g = live[idx];
+  const meta = p ? GI3_ONTRACK_META[p.onTrack] : null;
+  return (
+    <div data-testid="gi3-play-strip" className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 text-xs flex flex-wrap items-center gap-2`}>
+      <span className="font-bold truncate max-w-[16rem]" title={c.summary}>🎯 {g?.label || c.mission.label}</span>
+      <span className="opacity-80">Phase {Math.min(idx + 1, live.length)} of {live.length}</span>
+      {c.status === 'paused' ? <span className="px-2 py-0.5 rounded-full font-bold bg-slate-500 text-white">Paused</span> : meta && <span className={`px-2 py-0.5 rounded-full font-bold ${meta.cls}`}>{meta.label}</span>}
+      {p?.nextMove && c.status === 'active' && <span className="flex-1 min-w-[10rem] truncate" title={p.nextMove.reason}>Next: {p.nextMove.label}</span>}
+      <button type="button" className="underline" onClick={() => onAsk('Why is that the next move for my strategy?')}>Why?</button>
+      <button type="button" className="underline" onClick={onView}>View Strategy</button>
+    </div>
+  );
+};
+
+export interface GI3LabInspectorProps {
+  state: GI3StrategyState | null;
+  theme: V9Theme;
+  alignments: Array<{ id: string; label: string; alignment: GI3ActionAlignment | null | undefined }>;
+  teamOsContract: { id: string; revision: number; mission: string } | null;
+  coPilot: ReturnType<typeof gi3CoPilotContext>;
+}
+
+/** LAB: every GI3 structure, as data (no hidden reasoning — only what the contract and evaluator hold). */
+export const GI3LabInspector: React.FC<GI3LabInspectorProps> = ({ state, theme, alignments, teamOsContract, coPilot }) => {
+  const [open, setOpen] = React.useState(false);
+  const c = state?.active || null;
+  const p = state?.progress || null;
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70 mt-2';
+  const row = (k: string, v: React.ReactNode, key?: string | number) => <div key={key ?? k} className="flex gap-2"><span className="opacity-70 min-w-[9rem]">{k}</span><span className="break-words min-w-0">{v}</span></div>;
+  return (
+    <section aria-labelledby="gi3-lab-heading" data-testid="gi3-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`}>
+      <div className="flex items-center gap-2">
+        <h2 id="gi3-lab-heading" className="font-bold text-sm">🎯 GI3 Strategy Inspector</h2>
+        <span className="opacity-70">{c ? `${c.status} • rev ${c.revision}` : 'no active strategy'}</span>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && (
+        <div className="space-y-1 mt-2">
+          {!c && <div className="opacity-80">No active strategy. {state?.history.length ? `History: ${state.history.map(h => `${h.summary} (${h.status})`).join(' | ')}` : ''}</div>}
+          {c && (
+            <>
+              <div className={label}>Contract</div>
+              {row('id', c.id)}{row('source / scope', `${c.source} / ${c.scope}`)}{row('mission', `${c.mission.kind}: ${c.mission.label}`)}
+              {row('created / updated', `turn ${c.createdTurn} / turn ${c.updatedTurn}`)}{row('time horizon', `${c.timeHorizon.kind}${c.timeHorizon.turns ? ` (${c.timeHorizon.turns})` : ''}`)}{row('confidence', c.confidence)}
+              {row('original text', c.originalText || '—')}
+              <div className={label}>Goals</div>
+              {c.goals.map(g => row(`${g.id} (${g.role})`, `${g.type} • ${g.label} • ${g.status} • order ${g.order}${g.dependsOn.length ? ` • after ${g.dependsOn.join(',')}` : ''}${g.locked ? ' • locked' : ''}${g.deadlineTurn !== null ? ` • by turn ${g.deadlineTurn}` : ''}`))}
+              <div className={label}>Phase</div>
+              {row('phase index', `${c.phaseIndex} (entered turn ${c.phaseEnteredTurn}; last replan ${c.lastReplanTurn ?? 'never'})`)}
+              {p && row('evaluated', `${p.onTrack} • trend ${p.trend} • ${Math.round(p.overallProgress * 100)}% • turn ${p.updatedTurn}`)}
+              <div className={label}>Milestones</div>
+              {(p?.milestones || []).map(m => row(m.id, `${m.label} • ${m.status} • ${Math.round(m.progress * 100)}% (${m.current}/${m.target}${m.unit === '$' ? ' $' : ` ${m.unit}`})`))}
+              <div className={label}>Constraints & resources</div>
+              {row('loan policy', c.constraints.loanPolicy)}{row('reserve', c.constraints.minimumCashReserve ?? '—')}{row('max spend', c.constraints.maximumSpendFraction !== null ? `${Math.round(c.constraints.maximumSpendFraction * 100)}%` : '—')}
+              {row('deprioritised', c.constraints.deprioritizedRegions.join(', ') || '—')}
+              {p && row('resource status', `cash ${Math.round(p.resourceStatus.cash)} (${p.resourceStatus.cashSource}) • free above reserve ${Math.round(p.resourceStatus.freeAboveReserve)} • debt ${Math.round(p.resourceStatus.debt)}`)}
+              {p && row('regions', Object.entries(p.regionStatus).map(([k, v]) => `${k}:${v}`).join(', ') || '—')}
+              <div className={label}>Contingencies & assumptions</div>
+              {c.contingencies.map(x => row(x.id, `${x.label} • ${x.status} (${x.source})`))}
+              {c.assumptions.map(a => row(a.id, `${a.label} • ${a.status} (${a.confidence})`))}
+              <div className={label}>Blockers</div>
+              {(p?.blockers || []).length ? p!.blockers.map((b, i) => row(`${b.kind}`, `${b.label}${b.chain.length ? ` ← ${b.chain.join(' ← ')}` : ''}`, i)) : <div className="opacity-70">none</div>}
+              <div className={label}>Locks</div>
+              {row('locks', Object.entries(c.locks).filter(([, v]) => (Array.isArray(v) ? v.length : v)).map(([k, v]) => (Array.isArray(v) ? `${k}:${v.join('/')}` : k)).join(', ') || 'none')}
+              <div className={label}>Team OS mapping</div>
+              {row('team intent', c.teamIntent ? `${c.teamIntent.responsibilities.map(r => `${r.actorId}→${r.focus}${r.regionId ? ` ${r.regionId}` : ''}`).join('; ') || 'no responsibilities'}${c.teamIntent.reserveFloor ? ` • reserve ${c.teamIntent.reserveFloor}` : ''}` : c.scope === 'personal' ? 'personal strategy (no team subset)' : '—')}
+              {row('team contract', teamOsContract ? `${teamOsContract.id} rev ${teamOsContract.revision}: ${teamOsContract.mission}` : 'Team OS not active')}
+              {row('Co-Pilot context', coPilot ? coPilot.summary : '—')}
+              <div className={label}>Recommendation alignment</div>
+              {alignments.length ? alignments.slice(0, 8).map((a, i) => row(a.label, a.alignment ? `${a.alignment.label} (${a.alignment.score >= 0 ? '+' : ''}${a.alignment.score}) — ${a.alignment.reason}` : 'not scored', `${a.id}_${i}`)) : <div className="opacity-70">no ranked actions</div>}
+              <div className={label}>Revisions</div>
+              {c.revisions.slice(-8).map((r, i) => row(`rev ${r.revision} · t${r.turn}`, `${r.trigger} (${r.source}) — ${r.changes.join('; ')}`, i))}
+            </>
+          )}
+          <div className={label}>Events</div>
+          {(state?.events || []).slice(-10).map(e => row(`t${e.turn} ${e.kind}`, `${e.summary} (${e.significance})`, e.id))}
+          {!(state?.events || []).length && <div className="opacity-70">none</div>}
+        </div>
+      )}
+    </section>
+  );
+};
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -112692,6 +114744,10 @@ function AustraliaGame() {
   // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
   const teamOsStateRef = useRef<TeamOperatingSystemState | undefined>(undefined);
   teamOsStateRef.current = (gameState as any).teamOperatingSystem;
+  // Game Intelligence 3.0: latest (live-evaluated when a strategy is active) strategy state for
+  // callbacks and the GI world. Refreshed again below once the live evaluation has run.
+  const gi3StateRef = useRef<GI3StrategyState | null>(null);
+  gi3StateRef.current = ((gameState as any).gi3Strategy as GI3StrategyState | undefined) || null;
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -113756,7 +115812,12 @@ function dispatchGameSettingsChange(
         invalidCandidates: [] as any[]
       };
     }
-    const objective = resolveCurrentObjective(gameState, gameSettings, actor, gameState.playerTrackedObjective);
+    // GI3: an active strategy projects its current phase as the Current Objective — unless the player
+    // tracked an objective manually (their explicit choice wins).
+    const gi3Stored = (gameState as any).gi3Strategy as GI3StrategyState | undefined;
+    const gi3Objective = !gameState.playerTrackedObjective ? projectGI3CurrentObjective(gi3Stored) : null;
+    const objective = gi3Objective || resolveCurrentObjective(gameState, gameSettings, actor, gameState.playerTrackedObjective);
+    const gi3Ranking = gi3RankingContext(gi3Stored, actor?.money || 0);
     const apLeft = typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(actor, gameSettings) : 3;
     const recs = rankContextualRecommendations(intentRecCandidates, objective, {
       apRemaining: apLeft,
@@ -113764,7 +115825,8 @@ function dispatchGameSettingsChange(
       limit: 3,
       settings: gameSettings,
       actor,
-      state: gameState
+      state: gameState,
+      strategy: gi3Ranking
     });
     // V9 Contextual Action System: the same canonical ranking, widened so PLAY can show
     // Recommended / Useful Now and Game Intelligence can offer real alternatives.
@@ -113774,7 +115836,8 @@ function dispatchGameSettingsChange(
       limit: 12,
       settings: gameSettings,
       actor,
-      state: gameState
+      state: gameState,
+      strategy: gi3Ranking
     });
     return {
       actor,
@@ -114575,6 +116638,7 @@ function dispatchGameSettingsChange(
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
         teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
+        gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -142702,6 +144766,8 @@ function dispatchGameSettingsChange(
       })(),
       team_governance: (() => { const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null; return team ? [team.governanceMode || null, team.leaderId || null] : null; })(),
       approvals: (pendingApprovalRequests || []).map((r: any) => `${r?.id}:${r?.status || 'pending'}`),
+      // GI3 strategy: identity, revision, lifecycle, phase and tracked status (answers about the plan go stale on change).
+      strategy: (() => { const g3: any = (gameState as any).gi3Strategy; const c = g3?.active; return c ? [c.id, c.revision, c.status, c.phaseIndex, g3.progress?.onTrack || null, (g3.notices || []).filter((n: any) => !n.dismissed).length] : [(g3?.history || []).length]; })(),
       memory: [gameSettings.aiMemoryFullInspectionEnabled === true, ((gameState as any).aiMemory?.version ?? (gameState as any).aiMemoryVersion ?? null)],
       scenarios: (((gameState as any).scenarioObjectives || (gameState as any).activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
     });
@@ -142882,6 +144948,7 @@ function dispatchGameSettingsChange(
       session: takeoverSession,
       ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
       team: teamOsViewRef.current,
+      gi3: gi3StateRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -143232,6 +145299,119 @@ function dispatchGameSettingsChange(
     appendGameActivityLedgerEvent('plan', { actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_proposal', summary: `Team proposal ${proposalId} ${accept ? 'accepted' : 'rejected'}` } as any);
   }, [addNotification, appendGameActivityLedgerEvent, commitTeamOsState, gameSettings, gameState, player?.id, teamOsTeamId, teamsById]);
 
+  // ---- Game Intelligence 3.0: live strategy -----------------------------------------------------
+  // The player's persistent strategy (gameState.gi3Strategy — the ONE canonical GI3 state). Evaluated
+  // only from canonical state, event-driven through the GI fingerprint, and committed loop-safely by
+  // signature. It never executes actions: everything still goes through the normal action pipeline.
+  const gi3StoredRaw = (gameState as any).gi3Strategy as GI3StrategyState | undefined;
+  const gi3Stored = useMemo(() => sanitizeGI3StrategyState(gi3StoredRaw), [gi3StoredRaw]);
+  const gi3Evaluation = useMemo<GI3Evaluation | null>(() => {
+    if (!isLiveIntentMatch || gi3Stored.active?.status !== 'active') return null;
+    try {
+      return evaluateGI3Strategy(gi3Stored, giWorldBuilderRef.current());
+    } catch (err) {
+      console.warn('[GI3] strategy evaluation skipped:', err);
+      return null;
+    }
+    // v9GiFingerprint covers every canonical slice the evaluation reads; the Team OS view feeds team blockers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gi3Stored, v9GiFingerprint, teamOsView, isLiveIntentMatch]);
+  const gi3Live: GI3StrategyState = gi3Evaluation?.state || gi3Stored;
+  gi3StateRef.current = gi3Live;
+  const gi3CommitRef = useRef<{ lastSignature: string; turn: number; commits: number }>({ lastSignature: '', turn: -1, commits: 0 });
+
+  /** Loop-safe GI3 commit: identical signatures are skipped; at most 12 automatic commits per turn. */
+  const persistGI3State = useCallback((next: GI3StrategyState, source: 'live evaluation' | 'player'): GI3StrategyState => {
+    const prev = sanitizeGI3StrategyState((gameState as any).gi3Strategy);
+    const sig = gi3StrategySignature(next);
+    const tracker = gi3CommitRef.current;
+    const turn = Number(gameState.turnCounter || 0);
+    if (tracker.turn !== turn) { tracker.turn = turn; tracker.commits = 0; }
+    if (source === 'live evaluation' && (sig === gi3StrategySignature(prev) || sig === tracker.lastSignature || tracker.commits >= 12)) return prev;
+    tracker.lastSignature = sig;
+    tracker.commits += 1;
+    let committed = next;
+    // Team Intelligence 2.0 bridge: when the phase advances, the team-relevant subset for the new phase
+    // is recompiled into the existing Team Strategy Contract (never a second team plan).
+    const phaseChanged = Boolean(next.active && prev.active && next.active.id === prev.active.id && next.active.phaseIndex !== prev.active.phaseIndex);
+    if (phaseChanged && next.active!.scope !== 'personal' && teamOsEnabled) {
+      const intent = gi3TeamIntentForPhase(next.active!, next.active!.phaseIndex);
+      if (intent) {
+        committed = { ...next, active: { ...next.active!, teamIntent: intent } };
+        applyTeamOsCommand(intent, `Strategy phase ${next.active!.phaseIndex + 1}: ${next.active!.goals.filter(g => g.status !== 'removed')[next.active!.phaseIndex]?.label || next.active!.summary}`);
+      }
+    }
+    gi3StateRef.current = committed;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { gi3Strategy: committed } as any });
+    // Activity Ledger: meaningful strategy events only (never every evaluation).
+    if (!(gameState as any).isolatedReplayRuntime) {
+      const events = gi3LedgerEvents(prev, committed);
+      events.forEach(ev => appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: `gi3_${ev.kind}`, summary: ev.summary.slice(0, 200) } as any));
+      const notable = events.find(ev => /phase_changed|milestone_reached|contingency_triggered|region_lost|goal_failed|strategy_achieved|strategy_replan/.test(ev.kind));
+      if (notable && source === 'live evaluation') addNotification(`🎯 ${notable.summary}`.slice(0, 180), /region_lost|goal_failed/.test(notable.kind) ? 'warning' : 'info', false, 'system');
+    }
+    return committed;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState, addNotification, appendGameActivityLedgerEvent, teamOsEnabled, applyTeamOsCommand]);
+
+  // Event-driven: commit whenever the evaluated strategy changes meaningfully. The commit's own
+  // re-render re-evaluates to the same signature and stops.
+  const gi3LiveSig = gi3Evaluation ? gi3StrategySignature(gi3Evaluation.state) : '';
+  useEffect(() => {
+    if (gi3Evaluation) persistGI3State(gi3Evaluation.state, 'live evaluation');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gi3LiveSig]);
+
+  // Drift: new player actions from the Activity Ledger are observed (never silently rewrite the plan).
+  const gi3LedgerTail = ((gameState.gameActivityLedger?.events || []) as any[]);
+  const gi3LastLedgerId = gi3LedgerTail.length ? String(gi3LedgerTail[gi3LedgerTail.length - 1]?.id || '') : '';
+  useEffect(() => {
+    const st = gi3StateRef.current;
+    if (!st?.active || st.active.status !== 'active' || !gi3LastLedgerId || st.lastObservedLedgerId === gi3LastLedgerId) return;
+    const playerId = String(player?.id || 'player');
+    const events = gi3LedgerTail.slice(-20);
+    const seenIdx = st.lastObservedLedgerId ? events.findIndex(e => String(e?.id) === st.lastObservedLedgerId) : -1;
+    const startIdx = seenIdx >= 0 ? seenIdx + 1 : Math.max(0, events.length - 6);
+    const fresh = events.slice(startIdx).filter(e => e && e.category === 'action' && (String(e.actorId) === playerId || e.actorId === 'player'))
+      .map(e => ({ id: String(e.id), turn: Number(e.turn || 0), summary: String(e.summary || ''), eventType: String(e.eventType || '') }));
+    const observed = fresh.length ? observeGI3PlayerActions(st, fresh) : { ...st, lastObservedLedgerId: gi3LastLedgerId };
+    // Only commit when something the strategy tracks changed (a new action or a new drift notice).
+    if (fresh.length) persistGI3State({ ...observed, lastObservedLedgerId: gi3LastLedgerId }, 'player');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gi3LastLedgerId]);
+
+  /** Activate a previewed strategy (GI preview → Activate / Apply Changes / Adopt). */
+  const activateGI3Draft = useCallback(() => {
+    const draft = giContextRef.current.pendingGI3Draft;
+    if (!draft) { addNotification('That strategy preview has expired — ask again to rebuild it.', 'warning', false, 'system'); return; }
+    const turn = Number(gameState.turnCounter || 0);
+    const base = sanitizeGI3StrategyState(gi3StateRef.current);
+    const next = activateGI3Strategy(base, draft.contract, turn, draft.kind === 'adopt' ? 'What-If alternative adopted' : draft.changes.length ? `Player edit: ${draft.changes.slice(0, 2).join('; ')}` : 'Player activated the strategy');
+    const committed = persistGI3State(next, 'player');
+    giContextRef.current = { ...giContextRef.current, pendingGI3Draft: null, lastStrategyDomain: 'gi3' };
+    const c = committed.active;
+    if (c && c.scope !== 'personal' && teamOsEnabled) {
+      const intent = gi3TeamIntentForPhase(c, c.phaseIndex);
+      if (intent) applyTeamOsCommand(intent, `Strategy: ${c.summary}`);
+    }
+    addNotification(`🎯 Strategy ${draft.kind === 'adopt' ? 'adopted' : base.active?.id === draft.contract.id ? 'updated' : 'activated'}: ${c?.summary || ''}`.slice(0, 180), 'success', false, 'system');
+  }, [addNotification, applyTeamOsCommand, gameState.turnCounter, persistGI3State, teamOsEnabled]);
+
+  const controlGI3 = useCallback((control: GI3Control) => {
+    const base = sanitizeGI3StrategyState(gi3StateRef.current);
+    const result = controlGI3Strategy(base, control, Number(gameState.turnCounter || 0));
+    persistGI3State(result.state, 'player');
+    addNotification(`🎯 ${result.message}`.slice(0, 180), 'info', false, 'system');
+  }, [addNotification, gameState.turnCounter, persistGI3State]);
+
+  const dismissGI3Notice = useCallback((noticeId: string) => {
+    const base = sanitizeGI3StrategyState(gi3StateRef.current);
+    persistGI3State({ ...base, notices: base.notices.map(n => (n.id === noticeId ? { ...n, dismissed: true } : n)) }, 'player');
+  }, [persistGI3State]);
+
+  /** Co-Pilot context: the strategy is context for explanations and ranking — never extra authority. */
+  const gi3CoPilot = useMemo(() => gi3CoPilotContext(gi3Live), [gi3Live]);
+
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
@@ -143266,9 +145446,29 @@ function dispatchGameSettingsChange(
   const handleV9Button = useCallback((button: GameIntelligenceButton) => {
     const candidate = findContextualCandidate(v9ActionSet, button.candidateId);
     switch (button.kind) {
-      case 'do': {
+      case 'do':
+      case 'gi3_continue_action': {
         if (!candidate || !candidate.legal || candidate.execution?.kind !== 'copilot_candidate') return;
         const exec = candidate.execution;
+        // GI3 divergence: a material conflict with the active strategy shows a notice first. The player
+        // is never blocked — Continue runs the same canonical action and records a player override.
+        const gi3 = gi3StateRef.current;
+        if (gi3?.active?.status === 'active') {
+          const ec: any = exec.candidate || {};
+          const check = checkGI3Divergence(gi3, { actionType: candidate.actionType, cost: Number(candidate.costEstimate || 0), regionId: ec.regionId || ec.targetId || null, label: candidate.label }, Number(player?.money || 0));
+          if (check.conflict && button.kind === 'do') {
+            pushIntelAnswer(buildGI3DivergenceAnswer(check, candidate, gi3));
+            setExperienceLayer('intelligence');
+            return;
+          }
+          if (check.conflict) {
+            const base = sanitizeGI3StrategyState(gi3);
+            const turn = Number(gameState.turnCounter || 0);
+            const ev: GI3StrategyEvent = { id: `g3e_override_${turn}_${candidate.id}`.slice(0, 80), turn, kind: 'player_override', significance: 'meaningful', summary: `Player chose ${candidate.label} despite the strategy: ${check.message}`.slice(0, 200) };
+            persistGI3State({ ...base, events: [...base.events.filter(e => e.id !== ev.id), ev].slice(-GI3_LIMITS.events) }, 'player');
+            appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: 'gi3_player_override', summary: ev.summary } as any);
+          }
+        }
         requestManualAction(() => executeIntentRecommendation(exec.candidate));
         return;
       }
@@ -143327,10 +145527,23 @@ function dispatchGameSettingsChange(
       case 'team_proposal_reject':
         if (button.candidateId) resolveTeamOsProposal(button.candidateId, button.kind === 'team_proposal_accept');
         return;
+      case 'gi3_activate':
+        activateGI3Draft();
+        return;
+      case 'gi3_cancel':
+        giContextRef.current = { ...giContextRef.current, pendingGI3Draft: null };
+        addNotification('Strategy change cancelled — your current plan stays.', 'info', false, 'system');
+        return;
+      case 'gi3_control':
+        if (button.query && ['pause', 'resume', 'abandon', 'replan', 'lock', 'unlock'].includes(button.query)) controlGI3(button.query as GI3Control);
+        return;
+      case 'gi3_dismiss':
+        if (button.candidateId) dismissGI3Notice(button.candidateId);
+        return;
       default:
         return;
     }
-  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal]);
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money]);
 
   const handleV9ControlStart = useCallback(() => {
     requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
@@ -158902,6 +161115,14 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
+          <GI3PlayStrip
+            state={gi3Live}
+            theme={themeStyles}
+            onAsk={q => void submitIntelligenceQuery(q)}
+            onButton={handleV9Button}
+            onView={() => setExperienceLayer('intelligence')}
+          />
+
           {teamOsView && (
             <TeamMissionBoard
               view={teamOsView}
@@ -158982,6 +161203,14 @@ function dispatchGameSettingsChange(
                 </div>
               )}
             </section>
+
+            <GI3StrategicCommandCenter
+              state={gi3Live}
+              theme={themeStyles}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onButton={handleV9Button}
+              nameOf={id => { const a: any = (actorsById as any)?.[id]; return String(a?.displayName || a?.name || id); }}
+            />
 
             <section aria-label="Recommended">
               <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Recommended · with reasons</div>
@@ -159074,7 +161303,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -159097,6 +161326,13 @@ function dispatchGameSettingsChange(
           onToggleFullInspection={() => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamOsFullInspectionEnabled: prev.teamOsFullInspectionEnabled !== true }))}
           enemyView={gameSettings.teamOsFullInspectionEnabled === true ? teamOsEnemyView : null}
           enemyDiagnostics={gameSettings.teamOsFullInspectionEnabled === true ? teamOsDiagRef.current.byTeam[teamOsEnemyTeamId] || null : null}
+        />
+        <GI3LabInspector
+          state={gi3Live}
+          theme={themeStyles}
+          alignments={(v9ActionSet?.ranked || []).map(a => ({ id: a.id, label: a.label, alignment: a.strategyAlignment }))}
+          teamOsContract={teamOsView?.state.contract ? { id: teamOsView.state.contract.id, revision: teamOsView.state.contract.revision, mission: teamOsView.state.contract.mission.label } : null}
+          coPilot={gi3CoPilot}
         />
       </div>
     );
