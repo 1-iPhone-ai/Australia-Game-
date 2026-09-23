@@ -9203,6 +9203,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     aiMemoriesByActor: migrateAiMemoriesFromSave(save?.aiMemoriesByActor || gameState?.aiMemoriesByActor),
     aiCommunication: migrateCommunicationState(save?.aiCommunication || gameState?.aiCommunication),
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(save?.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
+    teamOperatingSystem: sanitizeTeamOperatingSystemState(save?.teamOperatingSystem || gameState?.teamOperatingSystem),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -9369,6 +9370,7 @@ export function canonicalStateFromLiveRuntime(
     aiMemoriesByActor: migrateAiMemoriesFromSave(liveState.aiMemoriesByActor || gameState?.aiMemoriesByActor),
     aiCommunication: migrateCommunicationState(liveState.aiCommunication || gameState?.aiCommunication),
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(liveState.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
+    teamOperatingSystem: sanitizeTeamOperatingSystemState(liveState.teamOperatingSystem || gameState?.teamOperatingSystem),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -12502,6 +12504,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   vaultCountProtectedCashTowardVictory: true,
   vaultTransparencyEnabled: true,
   teamEconomyGovernorEnabled: false,
+  // Team Intelligence 2.0: Team Operating System (planning layer only; never executes actions).
+  teamIntelligenceOsEnabled: true,
+  teamOsAuthorityLevel: 'advisor',
   economyCashFloor: 800,
   economyRecoveryTarget: 5000,
   economyMinimumChallengeProbability: 0.65,
@@ -20437,6 +20442,7 @@ interface SaveGameData {
   teamsById?: Record<string, TeamState>;
   gameState: GameStateSnapshot;
   gameSettings: GameSettingsState;
+  teamOperatingSystem?: TeamOperatingSystemState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -24838,6 +24844,9 @@ export type GameSettingsState = {
   // hysteresis-based recovery flag this system creates; a later Sync 2.0 phase reuses the same
   // flag rather than building a second, competing recovery system.
   teamEconomyGovernorEnabled: boolean;
+  // Team Intelligence 2.0 Team Operating System (optional for old saves).
+  teamIntelligenceOsEnabled?: boolean;
+  teamOsAuthorityLevel?: TeamOSAuthorityLevel;
   economyCashFloor: number;
   economyRecoveryTarget: number;
   economyMinimumChallengeProbability: number;
@@ -34420,7 +34429,8 @@ export const initialGameState = {
   aiMemoriesByActor: {} as AiMemoriesByActor,
   persistentMemorySnapshot: null as PersistentMemorySnapshot | null,
   aiCommunication: createEmptyCommunicationState(),
-  teamStrategicPlansByTeam: {} as Record<string, TeamStrategicPlan>
+  teamStrategicPlansByTeam: {} as Record<string, TeamStrategicPlan>,
+  teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -78300,6 +78310,7 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   const migratedPlans = sanitizeTeamStrategicPlansByTeam(migrated.teamStrategicPlansByTeam || migrated.gameState?.teamStrategicPlansByTeam);
   migrated.teamStrategicPlansByTeam = migratedPlans;
   if (migrated.gameState) migrated.gameState.teamStrategicPlansByTeam = migratedPlans;
+  if (migrated.gameState) migrated.gameState.teamOperatingSystem = sanitizeTeamOperatingSystemState(migrated.gameState.teamOperatingSystem || migrated.teamOperatingSystem);
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
 
@@ -99031,6 +99042,10 @@ export function findContextualCandidate(set: ContextualActionSet | null | undefi
 // ----------------------------------------------------------------------------
 
 export type GameIntelligenceButtonKind =
+  | 'team_apply'
+  | 'team_cancel'
+  | 'team_proposal_accept'
+  | 'team_proposal_reject'
   | 'do'
   | 'open'
   | 'why'
@@ -100579,6 +100594,8 @@ export interface GIWorld {
   ledgerEvents?: any[];
   /** GI 2.1: focused read-only adapters over other canonical systems (never duplicated state). */
   systems?: GISystemsView;
+  /** Team Intelligence 2.0: the Team Operating System view (Game Intelligence is its front door). */
+  team?: TeamOSView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -100772,6 +100789,12 @@ export interface GIConversationContext {
   lastHorizon?: { unit: 'action' | 'turn'; count: number } | null;
   /** GI 2.1: small topic stack so a detour ("what about NSW?") does not lose the earlier topic. */
   topicStack?: GITopicFrame[];
+  /** Team Intelligence 2.0: bounded team references ("why did he stop?", "swap us", "make that $15K"). */
+  lastTeamCommand?: TeamCommandIntent | null;
+  lastTeamActorId?: string | null;
+  lastTeamTaskId?: string | null;
+  /** A previewed team strategy waiting for Apply (never applied without an explicit click). */
+  pendingTeamDraft?: { kind: 'apply' | 'adopt'; command: TeamCommandIntent; summary: string } | null;
 }
 
 export interface GITopicFrame {
@@ -100802,7 +100825,11 @@ export function createGIConversationContext(): GIConversationContext {
     lastQuery: null,
     lastQueryEntities: [],
     lastHorizon: null,
-    topicStack: []
+    topicStack: [],
+    lastTeamCommand: null,
+    lastTeamActorId: null,
+    lastTeamTaskId: null,
+    pendingTeamDraft: null
   };
 }
 
@@ -100858,7 +100885,29 @@ export function sanitizeGIConversationContext(raw: unknown): GIConversationConte
         related: list(tf?.related).slice(0, 4),
         query: typeof tf?.query === 'string' ? tf.query.slice(0, 300) : ''
       })).filter((tf: GITopicFrame) => tf.topic)
-      : []
+      : [],
+    lastTeamCommand: sanitizeTeamCommandIntent(src.lastTeamCommand),
+    lastTeamActorId: typeof src.lastTeamActorId === 'string' ? src.lastTeamActorId.slice(0, 80) : null,
+    lastTeamTaskId: typeof src.lastTeamTaskId === 'string' ? src.lastTeamTaskId.slice(0, 80) : null,
+    pendingTeamDraft: src.pendingTeamDraft && (src.pendingTeamDraft.kind === 'apply' || src.pendingTeamDraft.kind === 'adopt') && sanitizeTeamCommandIntent(src.pendingTeamDraft.command)
+      ? { kind: src.pendingTeamDraft.kind, command: sanitizeTeamCommandIntent(src.pendingTeamDraft.command)!, summary: String(src.pendingTeamDraft.summary || '').slice(0, 300) }
+      : null
+  };
+}
+
+function sanitizeTeamCommandIntent(raw: any): TeamCommandIntent | null {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.responsibilities)) return null;
+  const focusOk = ['region', 'economy', 'contracts', 'recovery', 'support', 'expansion'];
+  return {
+    responsibilities: raw.responsibilities.filter((r: any) => r && typeof r.actorId === 'string' && focusOk.includes(r.focus)).slice(0, 6).map((r: any) => ({ actorId: r.actorId.slice(0, 80), focus: r.focus, regionId: typeof r.regionId === 'string' ? r.regionId.slice(0, 8) : undefined, untilCash: typeof r.untilCash === 'number' ? r.untilCash : null })),
+    reserveFloor: typeof raw.reserveFloor === 'number' && Number.isFinite(raw.reserveFloor) ? Math.max(0, raw.reserveFloor) : null,
+    contingencies: Array.isArray(raw.contingencies) ? raw.contingencies.slice(0, 4).filter((c: any) => c && typeof c.trigger === 'string') : [],
+    priorities: Array.isArray(raw.priorities) ? raw.priorities.filter((x: any) => ['contracts', 'expansion', 'defense', 'economy'].includes(x)).slice(0, 4) : [],
+    deprioritizedRegions: Array.isArray(raw.deprioritizedRegions) ? raw.deprioritizedRegions.filter((x: any) => typeof x === 'string').slice(0, 6) : [],
+    spendLocks: Array.isArray(raw.spendLocks) ? raw.spendLocks.filter((x: any) => typeof x === 'string').slice(0, 6) : [],
+    missionHint: typeof raw.missionHint === 'string' ? raw.missionHint.slice(0, 120) : null,
+    swap: Boolean(raw.swap),
+    evidence: Array.isArray(raw.evidence) ? raw.evidence.slice(0, 6).map(String) : []
   };
 }
 
@@ -101434,6 +101483,16 @@ export interface GIConceptHit {
   clause: number;
   weight: number;
   evidence: string;
+  /** GI 2.1 robustness: the proposition's polarity; negated propositions never activate reasoning. */
+  polarity?: GISemanticPolarity;
+  negated?: boolean;
+  /** Token span of the match inside its clause. */
+  start?: number;
+  end?: number;
+  /** Who the proposition is about ('player', an actor id, 'other', or unspecified). */
+  agentId?: string | null;
+  actorId?: string;
+  regionId?: string;
 }
 
 export type GIVerbFamily = 'sell' | 'travel' | 'defend' | 'borrow' | 'fund' | 'buy' | 'wait' | 'work' | 'leave' | 'take_control_region' | 'accept_contract' | 'challenge';
@@ -101450,6 +101509,19 @@ export interface GILanguageAction {
   amount?: GIQuantity | null;
   /** Order in a composed multi-action request ("… then …"). */
   step: number;
+  contractId?: string;
+  polarity?: GISemanticPolarity;
+  /** Token span of the verb phrase in its clause. */
+  startToken?: number;
+  endToken?: number;
+  /** Who performs it: 'player' by default, or a named actor ("have Riley defend VIC"). */
+  agentId?: string;
+  /** Nearest compatible entity candidates with binding scores (diagnostics). */
+  candidates?: string[];
+  /** How certain the action ↔ target binding is (separate from language confidence). */
+  attachmentConfidence?: number;
+  /** A per-step condition ("… then go Victoria if Riley backs off"). */
+  condition?: GICondition['trigger'] | null;
 }
 
 export type GIConstraintPolicy = 'required' | 'preferred' | 'allowed' | 'avoid' | 'forbidden' | 'fallback_only' | 'minimum' | 'maximum' | 'before' | 'after' | 'until' | 'unless';
@@ -101492,7 +101564,7 @@ export interface GITemporalConstraint {
 
 export interface GICondition {
   ifText: string;
-  trigger: { actorId?: string; regionId?: string; event: 'rival_moves' | 'rival_attacks' | 'cash' | 'region_lost' | 'contract' | 'other'; amount?: number };
+  trigger: { actorId?: string; regionId?: string; event: 'rival_moves' | 'rival_attacks' | 'rival_retreats' | 'pressure_critical' | 'cash' | 'region_lost' | 'contract' | 'other'; amount?: number };
   then: GILanguageAction[];
   otherwise: GILanguageAction[];
   /** True when the then-part is an instruction (a conditional strategy), not a hypothetical question. */
@@ -101512,6 +101584,8 @@ export interface GIGoal {
 export interface GIThreat {
   regionId: string | null;
   actorId: string | null;
+  /** 'uncertain' for "Riley might attack NSW" (a possible, not an asserted, threat). */
+  polarity?: GISemanticPolarity;
   /** True when the actor was inferred (e.g. "protect NSW" with only one rival). */
   inferredActor: boolean;
   urgency: 'immediate' | 'soon' | 'normal';
@@ -101552,6 +101626,8 @@ export interface GICandidateInterpretation {
 }
 
 export interface GIConfidenceDimensions {
+  /** GI 2.1 robustness: how certain the action ↔ entity bindings are (separate from wording). */
+  attachmentConfidence?: number;
   languageConfidence: number;
   entityConfidence: number;
   referenceConfidence: number;
@@ -101561,7 +101637,22 @@ export interface GIConfidenceDimensions {
   finalAnswerConfidence?: number;
 }
 
+/** A bound relation between a subject and a thing it affects ("Riley → threatens → NSW"). */
+export interface GILanguageRelation {
+  subjectId: string;
+  relation: 'threatens' | 'economy_task' | 'low_liquidity' | 'action';
+  objectId?: string | null;
+  family?: GIVerbFamily;
+  polarity: GISemanticPolarity;
+  negated: boolean;
+  clause: number;
+}
+
 export interface GISemanticFrame {
+  /** Every detected proposition with its polarity (negated ones stay available but never activate reasoning). */
+  propositions: GIConceptHit[];
+  /** Subject-bound relations — each actor is attached only to what it actually does. */
+  relations: GILanguageRelation[];
   originalQuery: string;
   normalizedText: string;
   /** Typo-corrected, contraction-expanded text (original case kept for untouched tokens). */
@@ -101624,7 +101715,8 @@ const GI_FILLER_WORDS = new Set(['bro', 'bruh', 'dude', 'man', 'mate', 'honestly
 
 /** Words never corrected by typo recovery (common English that sits close to game vocabulary). */
 const GI_ENGLISH_LEXICON = new Set((('a an the and or but if so as at by for from in into of on onto to up down out off over under with without about above after again against all almost also always am any are around away back be because been before being below between both can could did do does doing done each else enough ever every few first for get gets getting give go goes going gone good got great had has have having he her here him his how i if in is it its just keep kept know last least leave left less let like little long look lot make many may me might mine more most much must my need never new next no nor not now of off ok okay old once one only or other our out over own part put quite rather really right said same say see she should show since so some something soon still stop such sure take taken tell than that the their them then there these they thing things think this those though through till time to too try turn turns two under until up upon us use used very want was way we well were what when where which while who whom whose why will win with would yes yet you your yours ' +
-  'hold told sold cold bold fold gone done tone bone none home hole role whole goal coal load lead read real deal meal heal steal seal sell tell well fell bell cell shell spell yell sale self help held hell fill fall call wall tall ball mall hall cash case cast crash rash wash wish dish fish fail mail tail rain rail pain gain main wait want what went west best rest test next text lost cost most post host fund find fine mine line nine wine kind mind bind find wind band hand land sand stand plan plant play clay pay day way say stay may lay ray bay buy guy boy toy joy money honey funny sunny bunny above below broke broken spoke stroke smoke choke poke joke woke rival arrival trial trail train brain grain drain strain chain bank tank rank thank frank drink think thing things sing ring bring king wing ask task mask risk disk desk loan lean mean clean bean move more mode made make lake take sake cake wake fake bake came game name same flame frame blame claim chain plane lane sane cane vane region legion reason season teams team steam stream dream cream seem seen keen been green queen screen free tree three agree degree deep keep sleep steep sheep cheap chip ship shop stop top drop crop prop hop pop mop cop copy happy worth north south earth birth fourth forth victory story history plus minus bonus focus house horse course source force forces price prize pride ride side wide hide tide guide slide area idea ideas often after later early earlier soon sooner going doing being seeing saying playing paying losing using making taking having getting spending sending ending bending lending mending defending protecting selling buying travelling traveling borrowing building funding investing waiting working winning').split(/\s+/)));
+  'hold told sold cold bold fold gone done tone bone none home hole role whole goal coal load lead read real deal meal heal steal seal sell tell well fell bell cell shell spell yell sale self help held hell fill fall call wall tall ball mall hall cash case cast crash rash wash wish dish fish fail mail tail rain rail pain gain main wait want what went west best rest test next text lost cost most post host fund find fine mine line nine wine kind mind bind find wind band hand land sand stand plan plant play clay pay day way say stay may lay ray bay buy guy boy toy joy money honey funny sunny bunny above below broke broken spoke stroke smoke choke poke joke woke rival arrival trial trail train brain grain drain strain chain bank tank rank thank frank drink think thing things sing ring bring king wing ask task mask risk disk desk loan lean mean clean bean move more mode made make lake take sake cake wake fake bake came game name same flame frame blame claim chain plane lane sane cane vane region legion reason season teams team steam stream dream cream seem seen keen been green queen screen free tree three agree degree deep keep sleep steep sheep cheap chip ship shop stop top drop crop prop hop pop mop cop copy happy worth north south earth birth fourth forth victory story history plus minus bonus focus house horse course source force forces price prize pride ride side wide hide tide guide slide area idea ideas often after later early earlier soon sooner going doing being seeing saying playing paying losing using making taking having getting spending sending ending bending lending mending defending protecting selling buying travelling traveling borrowing building funding investing waiting working winning ' +
+  'change changes changed changing handle handles handled handling doing done allowed allow focus focused focusing spend spends spent earn earns earned farm farms farming switch swap swapped reserve reserved untouched safe safely team teams plan plans planned planning fallback allocated allocation track tracking still whole else help helps helped helping come comes coming push pushes pushed pushing both each other others someone something anything nothing everything whatever wherever whenever myself yourself himself herself itself ourselves themselves able unable ready steady about around across along among behind beside between beyond during except inside outside toward towards within without upon until unless whether either neither since though although because therefore however otherwise instead actually basically probably maybe perhaps really truly quite rather very much many more most less least few several enough plenty whole half quarter double triple single first second third last next previous current recent latest early late soon later now then today tonight tomorrow yesterday week weeks month months year years turn turns round rounds day days game games match matches player players partner partners teammate teammates rival rivals enemy enemies opponent opponents leader leaders member members role roles task tasks job jobs goal goals mission missions objective objectives strategy strategies region regions state states money cash income profit profits loss losses cost costs price prices value values budget budgets fund funds treasury governor governance overseer auditor contract contracts project projects resource resources market markets deposit deposits travel trip trips move moves action actions step steps order orders choice choices option options chance chances risk risks threat threats pressure pressures problem problems issue issues reason reasons idea ideas answer answers question questions').split(/\s+/)));
 
 /** Game vocabulary eligible as typo-recovery targets (static part; names are added per world). */
 const GI_STATIC_VOCAB = ('should would could what where which afford defend protect travel borrow loan loans sell selling build fund invest deposit compare better worth money cash region regions control rival teammate opponent strategy economy recommend happen happens simulate infrastructure contract contracts project projects expedition expeditions market resource resources inventory reserve broke threat autonomous assistant advisor manual rescue copilot autopilot guardian treasury governor overseer governance memory ledger objective objectives victory winning losing afford affordable enough recover recovery defending protecting travelling borrowing funding investing waiting explain because instead without anything everything something mining hydrogen railway rail island islands territory territories deposit deposits challenge challenges equipment scenario campaign').split(/\s+/);
@@ -101639,7 +101731,7 @@ const GI_VERB_FAMILY_PHRASES: Array<{ family: GIVerbFamily; phrases: string[] }>
   { family: 'sell', phrases: ['sell', 'selling', 'sold', 'dump', 'dumping', 'liquidate', 'liquidating', 'offload', 'offloading', 'unload', 'unloading', 'cash out', 'cash in', 'get rid of', 'convert to cash', 'flip my'] },
   { family: 'borrow', phrases: ['borrow', 'borrowing', 'take a loan', 'take out a loan', 'take another loan', 'take loans', 'loan', 'loans', 'debt', 'credit', 'financing', 'take out financing'] },
   { family: 'defend', phrases: ['defend', 'defending', 'defended', 'protect', 'protected', 'protecting', 'hold', 'holding', 'secure', 'save', 'keep', 'shore up', 'reinforce', 'stop them taking', 'stop them getting', 'deposit', 'put money into', 'put money in', 'put <money> into', 'put <money> in', 'drop <money> into', 'deposit <money> in'] },
-  { family: 'travel', phrases: ['travel', 'travelling', 'traveling', 'go to', 'go into', 'go', 'going to', 'move to', 'head to', 'head over to', 'head for', 'head over', 'leave for', 'get to', 'make my way to', 'bounce to', 'fly to', 'visit', 'try', 'go after', 'expand to', 'expand into', 'push into'] },
+  { family: 'travel', phrases: ['travel', 'travelling', 'traveling', 'go to', 'go into', 'go', 'going to', 'move to', 'head to', 'head over to', 'head for', 'head over', 'leave for', 'get to', 'make my way to', 'bounce to', 'fly to', 'visit', 'try', 'go after', 'expand to', 'expand into', 'push into', 'going', 'head', 'heading', 'bounce', 'fly', 'move', 'moving'] },
   { family: 'leave', phrases: ['leave', 'leaving', 'abandon', 'give up on', 'walk away from'] },
   { family: 'fund', phrases: ['build', 'building', 'construct', 'fund', 'funding', 'invest in', 'investing in', 'put money into', 'finish', 'finance', 'spend on', 'spending on', 'spending all that money on'] },
   { family: 'buy', phrases: ['buy', 'buying', 'purchase', 'pick up'] },
@@ -101663,6 +101755,7 @@ const GI_SEMANTIC_CONCEPTS: Array<{ id: GIConceptId; weight: number; patterns: s
     'only <money> left', 'only <money>', 'down to <money>', 'just <money> left', '<money> left', 'little cash|money', 'cash|money is * gone', 'can not afford anything'
   ] },
   { id: 'need_cash', weight: 0.9, patterns: [
+    'building|making|earning|farming|generating|raising cash|money|income', 'focus * on * making|earning|farming|generating money|cash|income', 'make|earn|farm the? money|cash|income',
     'need|want|get|make|raise|find|earn more? cash|money|funds', 'need <money>', 'make|get|raise|earn me? another|more|extra? <money>', 'get me above|over|to <money>',
     'money|cash asap', 'how do|can i make|get|raise|earn * money|cash|<money>', 'fastest way to get|make|raise'
   ] },
@@ -101672,7 +101765,8 @@ const GI_SEMANTIC_CONCEPTS: Array<{ id: GIConceptId; weight: number; patterns: s
     '<actor> * almost|nearly * own|owns|got|has|have|control|controls|controlling|there|getting', '<actor> * close|closing * in <region>',
     '<region> * slipping|trouble|danger|contested|threatened|exposed|risk|attack|almost|nearly|flipping|going', '<region> is almost|nearly <actor>',
     'losing|lose|lost * <region>', 'about to lose', 'getting overtaken', 'overtaken', 'losing control', 'stop <actor> * taking|getting|flipping|grabbing',
-    'stop them * taking|getting', '<actor> is catching * me', 'they|them|he|she * taking|flipping|stealing|grabbing|attacking|contesting <region>'
+    'stop them * taking|getting', '<actor> is catching * me', 'they|them|he|she * taking|flipping|stealing|grabbing|attacking|contesting <region>',
+    '<actor> * pressuring|pressures|pressure|pushing|pushes|squeezing|targeting|targets * <region>', '<region> is * under pressure', 'pressure on <region>'
   ] },
   { id: 'rival_advantage', weight: 0.9, patterns: [
     '<actor> * cooking|beating|crushing|destroying|smashing|outpacing|winning|ahead', '<actor> is * pulling ahead', 'behind <actor>', 'losing to <actor>',
@@ -102028,14 +102122,16 @@ function giTokenMatches(el: GIPatternEl, tok: GIToken, world: GIWorld): boolean 
   return el.alts.includes(tok.t);
 }
 
+interface GIPatternMatch { start: number; end: number; /** Token indices consumed by pattern elements (not gaps / wildcards). */ matched: number[] }
+
 /** Match a compiled pattern anywhere in a token list; fillers are free, one other gap is allowed. */
-function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { start: number; end: number } | null {
-  const tryAt = (ei: number, ti: number, started: number): { start: number; end: number } | null => {
-    if (ei >= els.length) return { start: started, end: ti };
+function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): GIPatternMatch | null {
+  const tryAt = (ei: number, ti: number, started: number, matched: number[]): GIPatternMatch | null => {
+    if (ei >= els.length) return { start: started, end: ti, matched };
     const el = els[ei];
     if (el.wildcard) {
       for (let skip = 0; skip <= 3 && ti + skip <= toks.length; skip++) {
-        const r = tryAt(ei + 1, ti + skip, started);
+        const r = tryAt(ei + 1, ti + skip, started, matched);
         if (r) return r;
       }
       return null;
@@ -102046,7 +102142,9 @@ function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { 
         // Multi-token entities (e.g. "new south wales") consume the whole tagged span.
         let next = k + 1;
         if (el.slot && toks[k].entity) while (next < toks.length && toks[next].entity && toks[next].entity!.id === toks[k].entity!.id && toks[next].entity!.matched === toks[k].entity!.matched && toks[next].t !== toks[k].t) next++;
-        const r = tryAt(ei + 1, next, started < 0 ? k : started);
+        const span: number[] = [];
+        for (let x = k; x < next; x++) span.push(x);
+        const r = tryAt(ei + 1, next, started < 0 ? k : started, [...matched, ...span]);
         if (r) return r;
       }
       if (started < 0) continue; // nothing matched yet: the pattern may start anywhere
@@ -102054,84 +102152,263 @@ function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { 
       gaps++;
       if (gaps > (el.strict ? 0 : 1)) break;
     }
-    if (el.optional) return tryAt(ei + 1, ti, started);
+    if (el.optional) return tryAt(ei + 1, ti, started, matched);
     return null;
   };
-  const r = tryAt(0, 0, -1);
+  const r = tryAt(0, 0, -1, []);
   return r && r.start >= 0 ? r : null;
 }
 
-function giDetectConcepts(clauses: GIClause[], world: GIWorld): GIConceptHit[] {
+// ---- Semantic polarity (A1–A3) -----------------------------------------------------------
+
+export type GISemanticPolarity = 'positive' | 'negative' | 'uncertain' | 'hypothetical';
+
+export interface GIPolarityReading {
+  polarity: GISemanticPolarity;
+  /** True when the proposition is asserted NOT to hold (odd number of scoped negators, or "I don't think…"). */
+  negated: boolean;
+  /** The words that decided it (for diagnostics). */
+  cues: string[];
+}
+
+const GI_NEGATORS = new Set(['not', 'no', 'never', 'none', 'nobody', 'nothing', 'neither', 'nor', 'without']);
+const GI_MODALS = new Set(['might', 'may', 'could', 'possibly', 'perhaps', 'maybe', 'probably', 'likely', 'unlikely']);
+
+/**
+ * Polarity of the proposition spanning tokens [start, end) of a clause. Negators are attached to the
+ * node they modify: only negators in the clause before the span, or inside the span but not part of
+ * the matched pattern ("Riley is NOT taking NSW"), count. Nested negation cancels ("don't not…");
+ * "I don't think X" / "I doubt X" negate the belief (uncertain); modals make it uncertain; an
+ * if-clause makes it hypothetical.
+ */
+export function giReadPolarity(clause: GIClause, start: number, end: number, matched: number[] = []): GIPolarityReading {
+  const toks = clause.tokens;
+  const scope = toks.slice(0, end).map((t, i) => ({ t, i })).filter(x => !matched.includes(x.i));
+  const text = ` ${scope.map(x => x.t.t).join(' ')} `;
+  const cues: string[] = [];
+  let count = 0;
+  const notSure = /\b(not sure|no idea|not certain)\b/.test(text);
+  const belief = /\b(do not|does not|did not) (think|believe|reckon|expect)\b|\b(doubt|doubtful)\b/.test(text);
+  // Attach each negator to the node it modifies:
+  //  • determiners ("no", "none", "without", "nothing") negate only the next couple of words;
+  //  • "not"/"never" negate the proposition they directly precede — not one after another content
+  //    verb ("I don't want to loan anything, Riley nearly got NSW") or another subject.
+  const isSubject = (t: GIToken) => t.entity?.kind === 'actor' || /^(i|we|he|she|they|you)$/.test(t.t);
+  const blocksVerb = (t: GIToken) => /^(want|need|like|try|plan|loan|borrow|sell|buy|go|travel|take|make|get|spend|use|avoid|mind)$/.test(t.t);
+  const belongsHere = (idx: number): boolean => {
+    if (idx >= start) return true;                                     // inside the span (a gap word)
+    const w = toks[idx].t;
+    if (/^(no|none|without|nothing|nobody)$/.test(w)) return start - idx <= 2;
+    for (let k = idx + 1; k < start; k++) {
+      if (isSubject(toks[k])) return false;
+      if (blocksVerb(toks[k])) return false;
+    }
+    return true;
+  };
+  scope.forEach(({ t, i }) => { if (GI_NEGATORS.has(t.t) && belongsHere(i)) { count++; cues.push(t.t); } });
+  if (notSure) count -= 1;
+  if (belief) count -= 1;           // the "not" belongs to the belief verb, handled below
+  count = Math.max(0, count);
+  const modal = scope.some(({ t }) => GI_MODALS.has(t.t)) || notSure;
+  if (modal) cues.push('modal');
+  let negated = count % 2 === 1;
+  if (belief) { negated = !negated; cues.push('belief'); }
+  const hypothetical = clause.marker === 'if' || /^\s*(if|suppose|supposing|what if|assuming)\b/.test(text);
+  const polarity: GISemanticPolarity = hypothetical ? 'hypothetical' : (belief || modal) ? 'uncertain' : negated ? 'negative' : 'positive';
+  void start;
+  return { polarity, negated, cues };
+}
+
+/** Propositional concepts are assertions about the world; requests and styles are not negatable facts. */
+const GI_PROPOSITIONAL_CONCEPTS: GIConceptId[] = ['liquidity_low', 'need_cash', 'region_threat', 'rival_advantage', 'debt_existing', 'wait_option'];
+/** Concepts that describe the PLAYER's own situation (a rival being broke is not the player's problem). */
+const GI_PLAYER_CONCEPTS: GIConceptId[] = ['liquidity_low', 'need_cash', 'debt_existing'];
+
+/**
+ * Who a clause is about: the player ("I", "my", "we"), a named actor ("Riley …", "have Riley …",
+ * "tell my teammate to …"), someone else (an unknown capitalised name), or unspecified.
+ */
+export function giClauseAgent(clause: GIClause, beforeIndex: number, world: GIWorld, ctx?: GIConversationContext | null): string | null {
+  const toks = clause.tokens.slice(0, Math.max(0, beforeIndex)).filter(t => !t.filler && t.kind === 'word');
+  // "have/let/tell/get <actor> (to) …" → the actor is the agent.
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i];
+    if (t.entity?.kind === 'actor' && i > 0 && /^(have|let|tell|get|ask|make|want)$/.test(toks[i - 1].t)) return t.entity.id;
+  }
+  // Nearest subject first: "riley nearly got nsw, i'm broke" → the player is broke.
+  for (const t of [...toks].reverse()) {
+    if (/^(i|me|my|we|our|us|myself)$/.test(t.t)) return 'player';
+    if (t.entity?.kind === 'actor') return t.entity.id;
+    if (/^(he|she|him|her|they|them)$/.test(t.t)) return ctx?.last?.actor?.id || world.primaryRivalId || 'other';
+    if (t.entity) continue;
+    // An unknown capitalised name as subject ("Jordan is building cash") is someone else.
+    if (/^[A-Z][a-z]{2,}$/.test(t.raw) && !GI_ENGLISH_LEXICON.has(t.t) && !GI_QUESTION_START.test(t.t) && !GI_FILLER_WORDS.has(t.t)) return 'other';
+  }
+  return null;
+}
+
+function giDetectConcepts(clauses: GIClause[], world: GIWorld, ctx?: GIConversationContext | null): GIConceptHit[] {
   const hits: GIConceptHit[] = [];
+  const add = (c: GIClause, id: GIConceptId, weight: number, m: GIPatternMatch, evidence?: string) => {
+    const pol = giReadPolarity(c, m.start, m.end, m.matched);
+    const span = c.tokens.slice(m.start, Math.max(m.end, m.start + 1));
+    const actor = span.find(t => t.entity?.kind === 'actor')?.entity?.id;
+    const region = span.find(t => t.entity?.kind === 'region')?.entity?.id;
+    hits.push({
+      id, clause: c.index, weight, evidence: evidence || span.map(t => t.raw).join(' '),
+      polarity: pol.polarity, negated: pol.negated, start: m.start, end: m.end,
+      agentId: actor || giClauseAgent(c, m.start, world, ctx), actorId: actor, regionId: region
+    });
+  };
   clauses.forEach(c => {
     GI_SEMANTIC_CONCEPTS.forEach(concept => {
       for (const p of concept.patterns) {
         const m = giMatchPattern(giCompilePattern(p), c.tokens, world);
-        if (m) {
-          hits.push({ id: concept.id, clause: c.index, weight: concept.weight, evidence: c.tokens.slice(m.start, Math.max(m.end, m.start + 1)).map(t => t.raw).join(' ') });
-          break;
-        }
+        if (m) { add(c, concept.id, concept.weight, m); break; }
       }
     });
   });
   // Bare status fragments: "ap?", "cash?", "my money".
   const content = clauses.flatMap(c => c.tokens).filter(t => !t.filler && t.kind === 'word');
-  if (content.length <= 2 && content.some(t => /^(ap|cash|money|balance)$/.test(t.t)) && !hits.some(h => h.id === 'status_request')) hits.push({ id: 'status_request', clause: 0, weight: 0.8, evidence: content.map(t => t.t).join(' ') });
-  // Whole-message patterns that cross clause boundaries (e.g. "Riley … NSW" split by a comma).
-  const all: GIClause = { index: -1, text: '', tokens: clauses.flatMap(c => c.tokens), marker: null, form: 'statement', sentence: 0 };
+  if (content.length <= 2 && content.some(t => /^(ap|cash|money|balance)$/.test(t.t)) && !hits.some(h => h.id === 'status_request')) hits.push({ id: 'status_request', clause: 0, weight: 0.8, evidence: content.map(t => t.t).join(' '), polarity: 'positive', negated: false });
+  // Region threats that no single pattern captured (clause-bounded, polarity-aware).
   if (!hits.some(h => h.id === 'region_threat')) {
-    const rival = all.tokens.find(t => t.entity?.kind === 'actor' && world.actors.find(a => a.id === t.entity!.id)?.relation === 'rival');
-    const region = all.tokens.find(t => t.entity?.kind === 'region');
-    const threatWord = all.tokens.find(t => /^(take|taking|takes|flip|flipping|steal|stealing|attack|attacking|threat|threatening|contest|almost|nearly|losing|lose|slipping|trouble|pressure|pushing|catching|getting)$/.test(t.t));
-    if (rival && region && threatWord) hits.push({ id: 'region_threat', clause: clauses.find(c => c.tokens.includes(region))?.index ?? 0, weight: 0.8, evidence: `${rival.raw} … ${region.raw}` });
-    else if (rival && region && all.tokens.filter(t => t.kind === 'word' && !t.filler).length <= 5) hits.push({ id: 'region_threat', clause: 0, weight: 0.55, evidence: `${rival.raw} ${region.raw}` });
-    else {
-      // "someone about to take NSW" with a name that isn't in this match: a threat by someone other than the player.
-      for (const c of clauses) {
-        const toks = c.tokens.filter(t => !t.filler);
-        const vi = toks.findIndex(t => /^(take|taking|takes|flip|flipping|grab|grabbing|steal|stealing|attack|attacking)$/.test(t.t));
-        if (vi < 0) continue;
-        const subject = toks.slice(Math.max(0, vi - 4), vi).map(t => t.t);
-        const reg = toks.slice(vi + 1, vi + 4).find(t => t.entity?.kind === 'region');
-        // The player's own intent ("I want to take NSW", "should I take NSW") is not a threat.
-        if (reg && subject.length && !subject.some(w => /^(i|we|me|my|us|our|should|can|could|how)$/.test(w))) { hits.push({ id: 'region_threat', clause: c.index, weight: 0.7, evidence: toks.slice(Math.max(0, vi - 3), vi + 3).map(t => t.raw).join(' ') }); break; }
+    const threatVerb = /^(take|taking|takes|flip|flipping|steal|stealing|attack|attacking|threat|threatening|contest|contesting|pressure|pressuring|pressures|pushing|grab|grabbing|catching|getting)$/;
+    for (const c of clauses) {
+      const vi = c.tokens.findIndex(t => threatVerb.test(t.t));
+      if (vi < 0) continue;
+      const reg = c.tokens.slice(vi + 1, vi + 5).find(t => t.entity?.kind === 'region');
+      if (!reg) continue;
+      const agent = giClauseAgent(c, vi, world, ctx);
+      // The player's own intent ("I want to take NSW", "should I take NSW") is not a threat.
+      const subject = c.tokens.slice(Math.max(0, vi - 4), vi).map(t => t.t);
+      if (agent === 'player' || subject.some(w => /^(should|can|could|how)$/.test(w))) continue;
+      if (!agent && !subject.length) continue;
+      const regIdx = c.tokens.indexOf(reg);
+      add(c, 'region_threat', 0.75, { start: Math.max(0, vi - 3), end: regIdx + 1, matched: [vi, regIdx] });
+      break;
+    }
+    // Two-word fragments ("riley nsw help"): a rival and a region with no other relation.
+    if (!hits.some(h => h.id === 'region_threat')) {
+      const all = clauses.flatMap(c => c.tokens);
+      const rival = all.find(t => t.entity?.kind === 'actor' && world.actors.find(a => a.id === t.entity!.id)?.relation === 'rival');
+      const region = all.find(t => t.entity?.kind === 'region');
+      const clause = clauses.find(c => c.tokens.includes(region!));
+      if (rival && region && clause && all.filter(t => t.kind === 'word' && !t.filler).length <= 5 && !all.some(t => GI_NEGATORS.has(t.t))) {
+        hits.push({ id: 'region_threat', clause: clause.index, weight: 0.55, evidence: `${rival.raw} ${region.raw}`, polarity: 'positive', negated: false, actorId: rival.entity!.id, regionId: region.entity!.id, agentId: rival.entity!.id });
       }
     }
   }
   return hits;
 }
 
-function giDetectActions(clauses: GIClause[], world: GIWorld): GILanguageAction[] {
+/** Is a concept hit an ACTIVE positive proposition about the player's situation? */
+export function giConceptActive(h: GIConceptHit): boolean {
+  if (!GI_PROPOSITIONAL_CONCEPTS.includes(h.id)) return true;
+  if (h.negated) return false;
+  if (GI_PLAYER_CONCEPTS.includes(h.id)) return !h.agentId || h.agentId === 'player';
+  if (h.id === 'region_threat' || h.id === 'rival_advantage') return h.agentId !== 'player';
+  return true;
+}
+
+// ---- Action spans + argument binding (A4–A8) ----------------------------------------------
+
+/** Which entity kinds each action family takes as its target (incompatible kinds are rejected). */
+const GI_ACTION_ARG_KINDS: Record<GIVerbFamily, GIEntityKind[]> = {
+  sell: ['resource'], buy: ['resource'], travel: ['region'], defend: ['region'], leave: ['region'], take_control_region: ['region'],
+  fund: ['project', 'region'], accept_contract: ['contract', 'region'], borrow: [], wait: [], work: [], challenge: ['region']
+};
+
+/**
+ * Deterministic argument binding: the compatible entity closest to the action's own span wins, with
+ * preference for entities after the verb (or linked by "to/into/in/for"), and a heavy penalty for
+ * entities that sit on the far side of another action or inside another actor's relation
+ * ("go VIC while Riley pressures NSW" → travel VIC, never NSW).
+ */
+function giBindActionArgument(
+  family: GIVerbFamily, clause: GIClause, span: { start: number; end: number }, otherSpans: Array<{ start: number; end: number }>, relationEntityIdx: Set<number>
+): { entity: GIEntityRef | null; confidence: number; candidates: string[] } {
+  const kinds = GI_ACTION_ARG_KINDS[family];
+  if (!kinds.length) return { entity: null, confidence: 1, candidates: [] };
+  const toks = clause.tokens;
+  const seen = new Set<string>();
+  const scored: Array<{ ref: GIEntityRef; score: number; idx: number }> = [];
+  toks.forEach((t, i) => {
+    if (!t.entity || !kinds.includes(t.entity.kind)) return;
+    const key = `${t.entity.kind}:${t.entity.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const after = i >= span.end;
+    const dist = after ? i - span.end : span.start - i;
+    let score = 1 / (1 + Math.max(0, dist));
+    if (!after) score *= (family === 'defend' || family === 'leave') ? 0.7 : 0.35;     // "NSW should be defended" is possible, rare otherwise
+    if (after && /^(to|into|in|at|for|over|towards?)$/.test(toks[i - 1]?.t || '')) score *= 1.3;
+    if (otherSpans.some(o => (after ? o.start >= span.end && o.start < i : o.end <= span.start && o.end > i))) score *= 0.15; // belongs to a nearer action
+    if (relationEntityIdx.has(i)) score *= 0.1;                                                  // object of another actor's relation
+    if (family === 'fund' && t.entity.kind === 'region') score *= 0.6;                          // a region only qualifies the project
+    if (family === 'accept_contract' && t.entity.kind === 'region') score *= 0.6;
+    scored.push({ ref: t.entity, score, idx: i });
+  });
+  scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  if (!scored.length) return { entity: null, confidence: 0.5, candidates: [] };
+  const top = scored[0];
+  const second = scored[1];
+  const confidence = second ? Math.max(0.3, Math.min(0.99, top.score / (top.score + second.score))) : 0.95;
+  return { entity: top.ref, confidence: Math.round(confidence * 100) / 100, candidates: scored.slice(0, 3).map(s => `${s.ref.id}:${Math.round(s.score * 100) / 100}`) };
+}
+
+function giDetectActions(clauses: GIClause[], world: GIWorld, concepts: GIConceptHit[] = [], ctx?: GIConversationContext | null): GILanguageAction[] {
   const out: GILanguageAction[] = [];
   let step = 0;
   clauses.forEach(c => {
-    if (c.marker === 'then' || (c.marker === 'and' && out.length && c.form === 'imperative')) step++;
+    if (out.length && (c.marker === 'then' || (c.marker === 'and' && c.form === 'imperative') || (c.marker === null && c.form === 'imperative' && out.some(a => a.clause === c.index - 1)))) step++;
     const toks = c.tokens;
-    const usedFamilies = new Set<GIVerbFamily>();
+    // Entities that belong to another actor's relation in this clause ("Riley pressures NSW").
+    const relationIdx = new Set<number>();
+    concepts.filter(h => h.clause === c.index && (h.id === 'region_threat' || h.id === 'rival_advantage') && h.agentId && h.agentId !== 'player' && typeof h.start === 'number')
+      .forEach(h => { for (let i = h.start!; i < (h.end ?? h.start!); i++) if (toks[i]?.entity?.kind === 'region') relationIdx.add(i); });
+    const found: Array<{ family: GIVerbFamily; p: string; m: GIPatternMatch }> = [];
     GI_VERB_FAMILY_PHRASES.forEach(({ family, phrases }) => {
       for (const p of phrases) {
-        const els = giCompilePattern(p);
-        const m = giMatchPattern(els, toks, world);
-        if (!m || usedFamilies.has(family)) continue;
-        // Disambiguation by grammar/entity context.
+        const m = giMatchPattern(giCompilePattern(p), toks, world);
+        if (!m || found.some(f => f.family === family)) continue;
         const after = toks.slice(m.end, m.end + 5);
         const before = toks.slice(Math.max(0, m.start - 4), m.start);
-        const region = after.find(t => t.entity?.kind === 'region')?.entity || (family === 'defend' || family === 'leave' ? before.find(t => t.entity?.kind === 'region')?.entity : undefined);
-        const resource = after.find(t => t.entity?.kind === 'resource')?.entity || toks.find(t => t.entity?.kind === 'resource')?.entity;
-        if (family === 'travel' && /^(go|try|going to)$/.test(p) && !region) continue;          // "go" alone / "try" alone are not travel
+        const regionNear = after.some(t => t.entity?.kind === 'region') || ((family === 'defend' || family === 'leave') && before.some(t => t.entity?.kind === 'region'));
+        if (family === 'travel' && /^(go|try|going to|going|head|heading|bounce|fly|move|moving)$/.test(p) && !after.slice(0, 2).some(t => t.entity?.kind === 'region')) continue; // "go"/"head" alone are not travel
         if (family === 'travel' && p === 'going to' && after[0] && !after[0].entity) continue;  // "going to attack" is not travel
-        if (family === 'defend' && ['keep', 'hold', 'save', 'secure'].includes(p) && !region) continue; // "keep at least $2K", "hold off"
+        if (family === 'defend' && ['keep', 'hold', 'save', 'secure'].includes(p) && !regionNear) continue; // "keep at least $2K", "hold off"
         if (family === 'leave' && after[0]?.t === 'me') continue;                              // "leave me with $5K"
         if (family === 'defend' && p === 'hold' && after[0]?.t === 'off') continue;
-        if (family === 'fund' && ['finish', 'finance', 'build', 'fund'].includes(p) && !toks.some(t => /rail|railway|project|hub|plant|farm|infrastructure|cable|terminal|hydrogen|wind|corridor|thing/.test(t.t)) && !region) continue;
-        if (family === 'fund' && p === 'put money into' && region) continue;                    // deposits, not projects
-        if (family === 'defend' && /^(put|drop|deposit) /.test(p) && !region) continue;
+        if (family === 'fund' && ['finish', 'finance', 'build', 'fund', 'building', 'funding', 'construct'].includes(p) && !toks.some(t => /rail|railway|project|hub|plant|farm|infrastructure|cable|terminal|hydrogen|wind|corridor|thing/.test(t.t))) continue; // "building cash" is not a project
+        if (family === 'fund' && p === 'put money into' && regionNear) continue;                // deposits, not projects
+        if (family === 'defend' && /^(put|drop|deposit) /.test(p) && !regionNear) continue;
         if (family === 'borrow' && ['debt', 'credit', 'loans'].includes(p) && before.some(t => /^(already|have|got|my|in)$/.test(t.t))) continue; // state, not action
-        const negated = before.some(t => /^(not|no|never|without|except)$/.test(t.t));
-        usedFamilies.add(family);
-        out.push({ family, clause: c.index, surface: p, negated, regionId: region?.id, resource: resource?.kind === 'resource' ? resource.id : undefined, step });
+        // A threat verb inside another actor's relation is not a player action ("Riley is pressuring NSW").
+        if (concepts.some(h => h.clause === c.index && h.id === 'region_threat' && typeof h.start === 'number' && m.start >= h.start! && m.start < (h.end ?? 0) && h.agentId !== 'player')) continue;
+        found.push({ family, p, m });
         break;
       }
+    });
+    found.sort((a, b) => a.m.start - b.m.start);
+    found.forEach((f, fi) => {
+      const others = found.filter((_, j) => j !== fi).map(x => ({ start: x.m.start, end: x.m.end }));
+      const bind = giBindActionArgument(f.family, c, { start: f.m.start, end: f.m.end }, others, relationIdx);
+      const pol = giReadPolarity(c, f.m.start, f.m.end, f.m.matched);
+      const agent = giClauseAgent(c, f.m.start, world, ctx);
+      const resource = bind.entity?.kind === 'resource' ? bind.entity.id : undefined;
+      const region = bind.entity?.kind === 'region' ? bind.entity.id : undefined;
+      const project = bind.entity?.kind === 'project' ? bind.entity.id : undefined;
+      const contract = bind.entity?.kind === 'contract' ? bind.entity.id : undefined;
+      // A second action in the same clause joined by "and"/"then" is the next step ("sell gold then go VIC").
+      if (fi > 0 && toks.slice(found[fi - 1].m.end, f.m.start).some(t => /^(then|and|after|afterwards|next)$/.test(t.t))) step++;
+      out.push({
+        family: f.family, clause: c.index, surface: f.p, negated: pol.negated, polarity: pol.polarity,
+        regionId: region || (f.family === 'fund' || f.family === 'accept_contract' ? toks.find(t => t.entity?.kind === 'region')?.entity?.id : undefined),
+        resource, projectId: project, contractId: contract, step,
+        startToken: f.m.start, endToken: f.m.end, agentId: agent || 'player',
+        candidates: bind.candidates, attachmentConfidence: bind.confidence
+      });
     });
   });
   return out;
@@ -102156,14 +102433,19 @@ function giPolicyFor(clause: GIClause, next: GIClause | undefined, targetIdx: nu
   // "Why not just take the loan?" suggests an option; it is not a ban.
   if (/\bwhy not\b/.test(beforeText)) return null;
   const necessity = /\b(if necessary|if needed|if i have to|if you have to|if we have to|if there is no other|no other (choice|option|way)|if nothing else|last resort|only if|as a last|if i must|if it comes to it|if all else fails)\b/;
-  const permissive = /\b(do not mind|fine with|okay with|ok with|happy to|can use|could use|allowed to|open to|no problem with)\b/.test(beforeText) || /^\s*(is|are) (fine|okay|ok|allowed|good|acceptable|on the table)\b/.test(afterText);
+  const permissive = /\b(do not mind|fine with|okay with|ok with|happy to|can use|could use|allowed to|open to|no problem with)\b/.test(beforeText)
+    || /^\s*(is|are) (fine|okay|ok|allowed|good|acceptable|on the table)\b/.test(afterText)
+    || /^\s*(is|are) not (a |an )?(problem|issue|big deal|an issue|off the table)\b/.test(afterText);
   const negatedAvoid = /\b(not|never) (want to |to )?avoid\b/.test(beforeText) || /\bdo not avoid\b/.test(beforeText);
   const except = /\b(except|other than|anything but|besides)\b/.test(beforeText);
   const unlessHere = /\bunless\b/.test(whole) || (next && (next.marker === 'unless' || (next.marker === 'if' && necessity.test(nextText))));
   const onlyBefore = /\bonly\b/.test(beforeText) && (necessity.test(whole) || necessity.test(nextText) || /\blast resort\b/.test(whole));
   // Negators that belong to a permissive / softening phrase ("do not mind", "rather not") are not bans.
   const stripped = beforeText.replace(/\b(do not mind|not avoid|rather not|prefer not|try not to|ideally not|preferably not|not really|not keen)\b/g, ' ');
-  const negator = /\b(not|no|never|without|none)\b/.test(stripped);
+  // Nested negation cancels: "don't not take a loan" is a positive instruction.
+  const negCount = (stripped.match(/\b(not|no|never|without|none)\b/g) || []).length;
+  const negator = negCount % 2 === 1;
+  if (negCount >= 2 && !negator && clause.form === 'imperative') return 'preferred';
   const softPhrase = /\b(rather not|prefer not|would rather not|try not to|ideally not|not really|preferably not|not keen|rather)\b/.test(beforeText);
   const avoidWord = /\bavoid(ing)?\b/.test(beforeText) || (/\bif possible\b/.test(afterText) && /\bavoid\b/.test(whole));
   if (negatedAvoid) return 'allowed';
@@ -102336,7 +102618,9 @@ function giExtractConditions(clauses: GIClause[], actions: GILanguageAction[], w
     const actor = toks.find(t => t.entity?.kind === 'actor')?.entity;
     const region = toks.find(t => t.entity?.kind === 'region')?.entity;
     const text = toks.map(t => t.t).join(' ');
-    const event: GICondition['trigger']['event'] = actor && /\b(attack|attacks|moves|move|goes|takes|take|contests|deposits|comes)\b/.test(text) ? (/\b(move|moves|goes|comes)\b/.test(text) ? 'rival_moves' : 'rival_attacks')
+    const event: GICondition['trigger']['event'] = /\b(backs? off|backing off|retreats?|pulls? back|gives? up|stops?|leaves?)\b/.test(text) ? 'rival_retreats'
+      : /\b(critical|really bad|gets bad|gets worse|really (pushes|pushing)|pushes hard|serious)\b/.test(text) ? 'pressure_critical'
+      : actor && /\b(attack|attacks|moves|move|goes|takes|take|contests|deposits|comes|pushes|pressures)\b/.test(text) ? (/\b(move|moves|goes|comes)\b/.test(text) ? 'rival_moves' : 'rival_attacks')
       : /\b(lose|lost)\b/.test(text) ? 'region_lost' : /\$|\bcash|money\b/.test(text) ? 'cash' : /\bcontract\b/.test(text) ? 'contract' : 'other';
     const thenClauses: GIClause[] = [];
     const elseClauses: GIClause[] = [];
@@ -102348,8 +102632,14 @@ function giExtractConditions(clauses: GIClause[], actions: GILanguageAction[], w
       if (j === i + 1 || cj.marker === 'then' || cj.marker === 'and') thenClauses.push(cj); else break;
     }
     const pick = (cs: GIClause[]) => actions.filter(a => cs.some(x => x.index === a.clause)).map(a => ({ ...a, regionId: a.regionId || (a.family === 'defend' && region ? region.id : undefined) }));
+    // A trailing condition ("… then go Victoria if Riley backs off") governs the step right before it.
+    const trailing = !thenClauses.length && i > 0 ? clauses[i - 1] : null;
+    if (trailing) {
+      actions.filter(a => a.clause === trailing.index).forEach(a => { a.condition = { actorId: actor?.id || world.primaryRivalId || undefined, regionId: region?.id, event }; });
+      thenClauses.push(trailing);
+    }
     const thenActs = pick(thenClauses);
-    const isStrategy = thenClauses.some(x => x.form === 'imperative') && thenActs.length > 0;
+    const isStrategy = trailing ? thenActs.length > 0 : (thenClauses.some(x => x.form === 'imperative') && thenActs.length > 0);
     out.push({
       ifText: c.text,
       trigger: { actorId: actor?.id || (event.startsWith('rival') ? world.primaryRivalId || undefined : undefined), regionId: region?.id, event },
@@ -102440,7 +102730,7 @@ function giDetectRepair(clauses: GIClause[], entities: GIEntityRef[], concepts: 
 
 // ---- 12. Goals, problems, threats, comparisons, hypotheses --------------------------------
 
-function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'>, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
+function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'> & { propositions?: GIConceptHit[] }, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
   const goals: GIGoal[] = [];
   const problems: GIProblem[] = [];
   const threats: GIThreat[] = [];
@@ -102456,26 +102746,32 @@ function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts
   const mentionedActor = frame.entities.find(e => e.kind === 'actor' && rivalIds.includes(e.id));
   const urgency: GIThreat['urgency'] = /\b(about to|right now|now|immediately|nearly|almost|close)\b/.test(lowerText) ? 'immediate' : /\bsoon|next turn\b/.test(lowerText) ? 'soon' : 'normal';
   const regionEnts = frame.entities.filter(e => e.kind === 'region');
-  if (has('region_threat')) {
-    const hit = frame.concepts.find(h => h.id === 'region_threat')!;
+  // Each ACTIVE threat proposition binds its own actor and region (relation binding, not global co-occurrence).
+  frame.concepts.filter(h => h.id === 'region_threat').forEach(hit => {
     const clauseRegion = frame.clauses[hit.clause]?.tokens.find(t => t.entity?.kind === 'region')?.entity;
-    const region = clauseRegion || regionEnts[0];
-    threats.push({ regionId: region?.id || null, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: hit.evidence });
-    problems.push({ kind: 'region_threat', evidence: hit.evidence });
-    if (region) goals.push({ kind: 'prevent_loss', regionId: region.id, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
-  }
-  // "Keep NSW no matter what" / "need to protect NSW" → retain goal (+ implied threat).
-  frame.actions.filter(a => a.family === 'defend' && a.regionId && !a.negated).forEach(a => {
+    const regionId = hit.regionId || clauseRegion?.id || regionEnts[0]?.id || null;
+    if (threats.some(t => t.regionId === regionId)) return;
+    const actorId = hit.actorId || (hit.agentId && hit.agentId !== 'other' && hit.agentId !== 'player' ? hit.agentId : null);
+    const clauseText = frame.clauses[hit.clause]?.tokens.map(t => t.t).join(' ') || lowerText;
+    const hitUrgency: GIThreat['urgency'] = hit.polarity === 'uncertain' ? 'normal' : /(about to|right now|now|immediately|nearly|almost|close)/.test(clauseText) ? 'immediate' : urgency;
+    threats.push({ regionId, actorId: actorId || mentionedActor?.id || world.primaryRivalId, inferredActor: !actorId && !mentionedActor, urgency: hitUrgency, evidence: hit.evidence, polarity: hit.polarity || 'positive' });
+    if (!problems.some(pr => pr.kind === 'region_threat')) problems.push({ kind: 'region_threat', evidence: hit.evidence });
+    if (regionId) goals.push({ kind: 'prevent_loss', regionId, priority: hitUrgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
+  });
+  // "Keep NSW no matter what" / "need to protect NSW" → retain goal (+ implied threat). Only the
+  // player's own, non-negated defend actions count ("Riley defends VIC" is Riley's job).
+  frame.actions.filter(a => a.family === 'defend' && a.regionId && !a.negated && (!a.agentId || a.agentId === 'player')).forEach(a => {
     const veryHigh = /\bno matter what|at all costs|whatever it takes|must\b/.test(lowerText);
     if (!goals.some(g => g.regionId === a.regionId)) goals.push({ kind: 'retain_region', regionId: a.regionId, priority: veryHigh ? 'very_high' : 'high', evidence: a.surface });
     const r = world.regions[a.regionId!];
     const isGoalStatement = /\b(need|have|got|want|must) to (protect|defend|hold|keep|save|secure)\b|\bno matter what\b|^(protect|defend|hold|keep|save|secure)\b/.test(lowerText) || /\bstop\b/.test(lowerText);
-    if (!threats.some(t => t.regionId === a.regionId) && isGoalStatement && (!r || r.controlledByPlayer || rivalIds.length)) {
+    if (!threats.length && isGoalStatement && (!r || r.controlledByPlayer || rivalIds.length)) {
       threats.push({ regionId: a.regionId!, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: a.surface });
     }
   });
-  // Cash goals.
-  const target = frame.quantities.find(q => q.unit === '$' && q.role === 'target');
+  // Cash goals (never from a negated need: "I don't need $10K" is not a goal).
+  const negatedNeedClauses = new Set((frame.propositions || []).filter(h => h.id === 'need_cash' && (h.negated || (h.agentId && h.agentId !== 'player'))).map(h => h.clause));
+  const target = frame.quantities.find(q => q.unit === '$' && q.role === 'target' && !negatedNeedClauses.has(q.clause));
   if (target) goals.push({ kind: target.additional || /\b(another|more|extra)\b/.test(lowerText) ? 'cash_increase' : (target.bound === 'min' || /\babove|over|reach\b/.test(lowerText) ? 'cash_reach' : 'cash_increase'), amount: target, priority: 'normal', evidence: target.raw });
   else if (has('need_cash')) goals.push({ kind: 'cash_increase', amount: null, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: ev('need_cash') });
   const regionsQ = frame.quantities.find(q => q.unit === 'regions');
@@ -102485,6 +102781,19 @@ function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts
   if (has('protect_long_term')) goals.push({ kind: 'recover', priority: 'normal', evidence: ev('protect_long_term') });
   if (has('win_path') && !goals.some(g => g.kind === 'regions_reach')) goals.push({ kind: 'win', priority: 'normal', evidence: ev('win_path') });
   return { goals, problems, threats };
+}
+
+function giBuildLanguageRelations(props: GIConceptHit[], actions: GILanguageAction[]): GILanguageRelation[] {
+  const out: GILanguageRelation[] = [];
+  props.forEach(h => {
+    const subject = h.actorId || h.agentId || (GI_PLAYER_CONCEPTS.includes(h.id) ? 'player' : null);
+    if (!subject) return;
+    const relation: GILanguageRelation['relation'] | null = h.id === 'region_threat' ? 'threatens'
+      : h.id === 'need_cash' ? (subject === 'player' ? null : 'economy_task') : h.id === 'liquidity_low' ? 'low_liquidity' : null;
+    if (relation) out.push({ subjectId: subject, relation, objectId: h.regionId || null, polarity: h.polarity || 'positive', negated: Boolean(h.negated), clause: h.clause });
+  });
+  actions.forEach(a => out.push({ subjectId: a.agentId || 'player', relation: 'action', family: a.family, objectId: a.regionId || a.resource || a.projectId || a.contractId || null, polarity: a.polarity || 'positive', negated: a.negated, clause: a.clause }));
+  return out.slice(0, 16);
 }
 
 // ---- 13. Language semantic graph (what the player MEANS — separate from the evidence graph) ---
@@ -102599,8 +102908,10 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   const entities: GIEntityRef[] = [...resolution.entities];
   tokens.forEach(t => { if (t.entity && !entities.some(e => e.kind === t.entity!.kind && e.id === t.entity!.id)) entities.push({ ...t.entity, confidence: t.correctedFrom ? Math.min(t.entity.confidence, 0.82) : t.entity.confidence }); });
 
-  const concepts = giDetectConcepts(clauses, world);
-  const actions = giDetectActions(clauses, world);
+  // Polarity-aware propositions: every hit keeps its polarity; only ACTIVE ones drive reasoning.
+  const propositions = giDetectConcepts(clauses, world, ctx);
+  const concepts = propositions.filter(giConceptActive);
+  const actions = giDetectActions(clauses, world, propositions, ctx);
   const allConstraints = giExtractConstraints(clauses, actions, world);
   const quantities = giExtractQuantities(clauses);
   // "my cash" inside a limit ("don't spend more than 25% of my cash") is not a status question.
@@ -102641,7 +102952,7 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   const impliedRequest = !isQuestion && (limitStated || needStated) && (concepts.some(h => h.id === 'liquidity_low' || h.id === 'region_threat' || h.id === 'need_cash') || actions.some(a => a.family === 'defend'));
   const implicit = !isQuestion && !impliedRequest && !concepts.some(h => ['recommendation_request', 'severity', 'diagnosis_request', 'afford_question', 'plan_request', 'status_request'].includes(h.id));
   const repair = giDetectRepair(clauses, entities, concepts, allConstraints, ctx, world, lowerText);
-  const base = { clauses, concepts, quantities, actions, time, entities };
+  const base = { clauses, concepts, quantities, actions, time, entities, propositions };
   const { goals, problems, threats } = giBuildGoalsProblems(base, world, lowerText);
 
   const requestKinds: GISemanticFrame['requestKinds'] = [];
@@ -102680,10 +102991,11 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   });
   optionText = optionText.replace(/\bleave\s+(\S+)\s+and\s+(travel to|try)\b/gi, 'travel to');
 
+  const relations = giBuildLanguageRelations(propositions, actions);
   const partial = {
     originalQuery: query, normalizedText, canonicalText, optionText, corrections, uncorrected, clauses, concepts, requestKinds, goals, problems, threats,
     entities, actions, constraints, preferences, conditions, time, quantities, comparisons, negations, references, hypotheses,
-    conversationRepair: repair, style, isQuestion, implicit
+    conversationRepair: repair, style, isQuestion, implicit, propositions, relations
   };
   const capabilityScores = giScoreCapabilities(partial, world, ctx);
 
@@ -102713,7 +103025,8 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
       languageConfidence: Math.round(languageConfidence * 100) / 100,
       entityConfidence: Math.round(entityConfidence * 100) / 100,
       referenceConfidence: Math.round(referenceConfidence * 100) / 100,
-      semanticFrameConfidence: Math.round(semanticFrameConfidence * 100) / 100
+      semanticFrameConfidence: Math.round(semanticFrameConfidence * 100) / 100,
+      attachmentConfidence: actions.length ? Math.min(...actions.map(a => a.attachmentConfidence ?? 1)) : 1
     }
   };
 }
@@ -102732,7 +103045,7 @@ export function summarizeGIFrame(f: GISemanticFrame): {
     loanPolicy: loan ? loan.policy : null,
     urgency: f.time.some(t => t.kind === 'urgency'),
     goals: Array.from(new Set(f.goals.map(g => `${g.kind}${g.regionId ? ':' + g.regionId : ''}`))).sort(),
-    actions: Array.from(new Set(f.actions.filter(a => !a.negated).map(a => `${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`))).sort(),
+    actions: Array.from(new Set(f.actions.filter(a => !a.negated).map(a => `${a.agentId && a.agentId !== 'player' ? a.agentId + '>' : ''}${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`))).sort(),
     constraints: [...f.constraints, ...f.preferences].map(c => `${c.subject}${c.target ? ':' + c.target : ''}=${c.policy}`).sort(),
     horizon: horizon ? `${horizon.count} ${horizon.unit}` : null,
     style: f.style
@@ -102747,7 +103060,7 @@ export type GICapability =
   | 'player_status' | 'objective_status' | 'economy_diagnosis' | 'strategic_diagnosis' | 'affordability' | 'action_validation'
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
-  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain';
+  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -102786,6 +103099,8 @@ export interface GIQueryUnderstanding {
   memoryEvidence?: boolean;
   /** GI 2.1: interpretations made from context that the player can correct ("Assuming you mean …"). */
   assumptions?: string[];
+  /** Team Intelligence 2.0: the structured team intent (command or what-if alternative). */
+  teamCommand?: TeamCommandIntent | null;
 }
 
 export interface GIUnderstoodConstraints {
@@ -102956,7 +103271,33 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     useRef('current topic', ctx.activeTopic);
   }
 
+  // A9: an action aimed at "it"/"there" binds to the conversation's region only when one region is
+  // clearly salient; two equally recent regions → ask instead of guessing (it changes gameplay).
+  frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && GI_ACTION_ARG_KINDS[a.family].includes('region') && !a.regionId).forEach(a => {
+    const clauseText = frame.clauses[a.clause]?.tokens.map(t => t.t).join(' ') || '';
+    if (!/\b(it|there|that one)\b/.test(clauseText) || entities.some(e => e.kind === 'region' && e.source === 'query')) return;
+    const seenR = new Set<string>();
+    const recentRegions = [ctx.activeTopic, ctx.last.region, ...ctx.lastComparison, ...ctx.recent]
+      .filter((r): r is GIEntityRef => Boolean(r && r.kind === 'region'))
+      .filter(r => (seenR.has(r.id) ? false : (seenR.add(r.id), true)));
+    if (ctx.activeTopic?.kind === 'region') { a.regionId = ctx.activeTopic.id; a.attachmentConfidence = 0.8; }
+    else if (recentRegions.length >= 2) { a.attachmentConfidence = 0.4; if (!ambiguous.some(x => x.kind === 'region')) ambiguous.push({ kind: 'region', phrase: 'it', options: recentRegions.slice(0, 3) }); }
+    else if (recentRegions.length === 1) { a.regionId = recentRegions[0].id; a.attachmentConfidence = 0.85; }
+  });
+
   let options = resolveGIOptions(frame.optionText || text, world, entities);
+  // GI 2.1 robustness: when the player isn't posing an "A or B" choice, each option comes from an
+  // action bound to ITS OWN target ("go VIC while Riley pressures NSW" → travel VIC, never NSW).
+  const posesChoice = splitGIOptionClauses(frame.optionText || text).length >= 2;
+  if (!posesChoice) {
+    const bound = frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && (a.regionId || a.resource || a.projectId));
+    const frameOpts: GIOption[] = [];
+    bound.forEach(a => { const o = giOptionForAction(a, world); if (o && !frameOpts.some(x => x.id === o.id)) frameOpts.push(o); });
+    if (frameOpts.length) {
+      const kinds = new Set(frameOpts.map(o => o.kind));
+      options = [...frameOpts, ...options.filter(o => !kinds.has(o.kind) && o.kind !== 'region' && !frameOpts.some(x => x.id === o.id))];
+    }
+  }
   options = extendGIOptionsFromFrame(options, frame, world, ctx, normalized);
   // "Would that actually be worth it?" → weigh the option under discussion against doing nothing.
   if (/\bworth\b/.test(normalized) && options.length < 2) {
@@ -103107,15 +103448,34 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     if (frame.problems.length || frame.concepts.some(h => h.id === 'severity' || h.id === 'diagnosis_request')) needs.diagnosis = true;
   }
   // Composed multi-action requests ("sell … then put $3K into NSW") → a validated sequence.
-  const composedSteps = frame.actions.filter(a => !a.negated && ['sell', 'defend', 'travel', 'buy', 'fund'].includes(a.family));
-  const isComposed = composedSteps.length >= 2 && new Set(composedSteps.map(a => a.step)).size >= 2 && !needs.comparison && primary !== 'control';
-  if (isComposed) { primary = 'sequence_plan'; addSupport('simulation'); }
+  const composedSteps = frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && ['sell', 'defend', 'travel', 'buy', 'fund'].includes(a.family));
+  const isComposed = composedSteps.length >= 2 && new Set(composedSteps.map(a => a.step)).size >= 2 && !posesChoice && primary !== 'control';
+  if (isComposed) { primary = 'sequence_plan'; addSupport('simulation'); needs.comparison = false; }
   // A conditional instruction ("if Riley attacks NSW, defend it; otherwise…") is a strategy to explain and validate.
   if (!isComposed && frame.conditions.some(c => c.isStrategy) && primary !== 'control') { primary = 'sequence_plan'; needs.prediction = false; addSupport('rival_assessment'); }
 
+  // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
+  let teamCommand: TeamCommandIntent | null = null;
+  const teamView = world.team && world.team.enabled ? world.team : null;
+  if (teamView && primary !== 'control') {
+    const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
+    const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
+      || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
+    const whatIf = /\b(what if|what happens if|what would happen if|suppose)\b/.test(normalized);
+    if (whatIf && teamWords) {
+      const alt = parseTeamCommandFromFrame(frame, world, ctx, true);
+      if (alt && (alt.responsibilities.length || alt.priorities.length || alt.swap || alt.reserveFloor !== null)) { teamCommand = alt; primary = 'team_whatif'; }
+    } else if (!frame.isQuestion || /^(swap|switch|make that|make it|actually)\b/.test(normalized)) {
+      const cmd = parseTeamCommandFromFrame(frame, world, ctx);
+      if (cmd) { teamCommand = cmd; primary = 'team_command'; }
+    }
+    if (!teamCommand && teamWords && (frame.isQuestion || /^(explain|show|tell me)\b/.test(normalized) || /\b(maybe|perhaps|should|shouldn't)\b/.test(normalized)) && !['comparison', 'simulation', 'control_explain'].includes(primary)) primary = 'team_explain';
+    if (primary === 'team_command' || primary === 'team_explain' || primary === 'team_whatif') { supporting.splice(0, supporting.length); needs.comparison = false; needs.simulation = false; needs.prediction = false; }
+  }
+
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -103128,7 +103488,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -103171,7 +103531,8 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain'].includes(primary)
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif'].includes(primary),
+    teamCommand
   };
 }
 
@@ -103294,7 +103655,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state';
 
 export interface GIPlanStep {
   id: string;
@@ -103329,7 +103690,10 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   settings_lookup: ['settings_search'],
   control: ['control_state'],
   control_explain: ['control_state'],
-  system_explain: ['system_state']
+  system_explain: ['system_state'],
+  team_command: ['team_state'],
+  team_explain: ['team_state'],
+  team_whatif: ['team_state']
 };
 
 export interface GIQueryPlan {
@@ -103353,7 +103717,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team'
 };
 
 function giHash(text: string): string {
@@ -103417,6 +103781,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('conflict_check') || u.queryType === 'compound') add('conflict_scan', {}, { dependsOn: rankId ? [rankId] : [], optional: true, purpose: 'Look for systems recommending conflicting behaviour' });
     if (want('control_state' as any)) add('control_state');
     if (want('system_explain')) add('system_state', {}, { purpose: 'Read-only summaries of team, treasury, governor, Guardian, Auto Mode and Co-Pilot' });
+    if (want('team_command') || want('team_explain') || want('team_whatif')) add('team_state', {}, { purpose: 'Team Operating System: mission, objectives, tasks, roles, resources, conflicts' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -103899,6 +104264,19 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
     }
     case 'conflict_scan':
       return { ...base, ok: true, data: null, facts: [] };
+    case 'team_state': {
+      const view = world.team;
+      if (!view || !view.enabled) return { ...base, ok: false, unavailable: true, error: 'Team Intelligence is not active in this match', data: null, facts: [] };
+      const ev = view.evaluation;
+      const facts: GIFact[] = [];
+      const push = (f: GIFact) => { facts.push(f); g.fact(f); };
+      push(fact('team.mission', 'Team mission', ev.state.contract?.mission.label || '—', 'Team Operating System', 'team'));
+      push(fact('team.freeCash', 'Team free cash', ev.resources.freeCash, 'Team Operating System (real balances)', 'team', { unit: '$', certainty: 'calculated' }));
+      if (ev.resources.strategyReserveFloor) push(fact('team.reserve', 'Team reserve floor', ev.resources.strategyReserveFloor, 'Team Strategy', 'team', { unit: '$' }));
+      push(fact('team.readiness', 'Team readiness', Math.round(ev.readiness.overall * 100), 'Team Operating System', 'team', { unit: '%', certainty: 'calculated' }));
+      ev.resources.envelopes.forEach(e => push(fact(`team.env.${e.category}`, `${e.category} allocation`, e.allocated, 'Team Resource Planner', 'team', { unit: '$', certainty: 'calculated' })));
+      return { ...base, ok: true, data: view, facts };
+    }
     case 'system_state': {
       const sys = world.systems;
       if (!sys) return { ...base, ok: false, unavailable: true, error: 'System summaries are unavailable in this view', data: null, facts: [] };
@@ -104480,6 +104858,11 @@ function giOptionForAction(a: GILanguageAction, world: GIWorld): GIOption | null
     case 'travel': return buildGIOption('travel', 'travel', world, reg);
     case 'sell': return buildGIOption('sell', 'sell', world, res);
     case 'buy': return buildGIOption('buy', 'buy', world, res);
+    case 'fund': {
+      const pid = a.projectId || (() => { const inRegion = world.projects.filter(p => p.regionId === a.regionId && p.remaining > 0); return inRegion.length === 1 ? inRegion[0].id : null; })();
+      const p = pid ? world.projects.find(x => x.id === pid) : null;
+      return p ? buildGIOption('fund_project', 'fund', world, [{ kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' }]) : null;
+    }
     default: return null;
   }
 }
@@ -104601,6 +104984,13 @@ export function composeGIComposedSequence(u: GIQueryUnderstanding, world: GIWorl
     }
     buttons.push(...optionButtons(opt, world).filter(b => b.kind !== 'do' && b.kind !== 'ask'));
   });
+  // Per-step conditions ("… then go Victoria if Riley backs off") are shown, not automated.
+  steps.forEach((a, i) => {
+    if (!a.condition) return;
+    const who = world.actors.find(x => x.id === a.condition!.actorId)?.name || 'your rival';
+    const when = a.condition.event === 'rival_retreats' ? `${who} backs off` : a.condition.event === 'pressure_critical' ? `the pressure becomes critical` : a.condition.event === 'rival_attacks' ? `${who} moves on ${a.condition.regionId ? getGILocationName(a.condition.regionId) : 'you'}` : 'its condition is met';
+    claims.push(claim(`Step ${i + 1} only applies if ${when} — check again before doing it.`, 'caveat', 'confirmed', [], { derived: [i + 1] }));
+  });
   const sections: GIAnswerSection[] = [{ id: 'steps', heading: 'Your sequence', claims }];
   if (allLegal && intents.length >= 2 && world.tools.simulate) {
     const sim = world.tools.simulate({ actionType: intents[0].actionType, chain: intents });
@@ -104663,6 +105053,209 @@ export function buildGIFrameFollowUps(u: GIQueryUnderstanding, world: GIWorld): 
   if (f.goals.some(g => g.kind === 'regions_reach')) add('Which region is cheapest to take next?');
   if (f.conditions.some(c => c.isStrategy)) add('What happens if I defend now instead?');
   return out;
+}
+
+
+// ---- Team Intelligence 2.0 answers (Game Intelligence as the team front door) --------------------
+
+const teamName = (world: GIWorld, id: string) => (id === 'player' || id === world.player.id ? 'You' : world.actors.find(a => a.id === id)?.name || id);
+const teamClaim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed', ids: string[] = []) => claim(text, kind, certainty, ids, { derived: giNumbersIn(text).map(n => n.value) });
+
+function describeResponsibility(world: GIWorld, r: TeamResponsibility): string {
+  const who = teamName(world, r.actorId);
+  const you = who === 'You';
+  switch (r.focus) {
+    case 'region': return `${who} ${you ? 'will focus on' : 'focuses on'} ${getGILocationName(r.regionId || '')}${r.regionId ? ` (${r.regionId})` : ''}.`;
+    case 'expansion': return `${who} ${you ? 'will push into' : 'pushes into'} ${getGILocationName(r.regionId || '')}.`;
+    case 'economy': return `${who} will prioritise team income.`;
+    case 'contracts': return `${who} will focus on contracts.`;
+    case 'recovery': return `${who} switches to recovery${r.untilCash ? ` until reaching ${money(r.untilCash)}` : ''}.`;
+    case 'support': return `${who} supports ${r.regionId || 'the team'}.`;
+  }
+}
+
+/** "I'll defend NSW. Riley gets the money." → a Team Strategy Preview (nothing changes until Apply). */
+export function composeTeamCommandPreview(u: GIQueryUnderstanding, world: GIWorld): GIComposePart & { draft: TeamCommandIntent | null } {
+  const view = world.team!;
+  const cmd = u.teamCommand!;
+  const preview = evaluateTeamOperatingSystem(view.state, view.inputs, cmd);
+  const c = preview.state.contract!;
+  const sections: GIAnswerSection[] = [];
+  const said: GIClaim[] = [teamClaim('Got it.')];
+  cmd.responsibilities.forEach(r => said.push(teamClaim(describeResponsibility(world, r))));
+  if (cmd.reserveFloor) said.push(teamClaim(`The team will keep at least ${money(cmd.reserveFloor)} untouched.`));
+  cmd.contingencies.forEach(x => said.push(teamClaim(`If ${x.regionId || 'that region'} becomes critical, ${teamName(world, x.actorId || '')} will temporarily switch to support it.`)));
+  cmd.priorities.forEach((p, i) => said.push(teamClaim(`${i === 0 ? 'First' : 'Then'}: ${p}.`)));
+  cmd.deprioritizedRegions.forEach(r => said.push(teamClaim(`${getGILocationName(r)} is set aside for now.`)));
+  cmd.spendLocks.forEach(a => said.push(teamClaim(`${teamName(world, a)}'s discretionary spending will be held back (the Economy Governor and Cash Vault still apply).`)));
+  sections.push({ id: 'said', heading: null, claims: said });
+  sections.push({ id: 'preview', heading: 'Team Strategy Preview', claims: [
+    teamClaim(`Mission: ${c.mission.label}.`),
+    ...c.roles.map(r => teamClaim(`${teamName(world, r.actorId)}: ${r.primaryRole.charAt(0).toUpperCase()}${r.primaryRole.slice(1)} — ${r.responsibility}.`)),
+    ...c.objectives.slice(0, 4).map((o, i) => teamClaim(`Objective ${i + 1}: ${o.description}.`)),
+    ...(c.constraints.reserveFloor ? [teamClaim(`Reserve: ${money(c.constraints.reserveFloor)} minimum.`)] : []),
+    ...c.contingencies.filter(x => x.source === 'player').map(x => teamClaim(`Contingency: ${x.label}.`))
+  ] });
+  const envs = preview.resources.envelopes.filter(e => e.target > 0).slice(0, 4);
+  sections.push({ id: 'resources', heading: 'Resource policy', claims: [
+    teamClaim(`Team free cash: ${money(preview.resources.freeCash)}${preview.resources.protectedCash ? ` (plus ${money(preview.resources.protectedCash)} protected in Cash Vaults)` : ''}.`, 'fact', 'confirmed', ['team.freeCash']),
+    ...envs.map(e => teamClaim(`${e.category.charAt(0).toUpperCase()}${e.category.slice(1)}: ${money(e.allocated)} planned${e.hardFloor ? ' (hard floor)' : ''}.`, 'inference', 'high')),
+    teamClaim('These are planning allocations, not new money — the Treasury and each actor still hold the cash.', 'caveat')
+  ] });
+  const auth = TEAM_OS_AUTHORITY_META[view.authority];
+  sections.push({ id: 'authority', heading: 'Authority', claims: [
+    teamClaim(`Team authority: ${auth.label} — ${auth.summary}`),
+    teamClaim('Applying this changes the team strategy only. Your own actions stay yours; AI teammates still act through Strategic Command, Sequences, Requirements, Cash Vault, Economy Governor, Treasury, Overseer, Approval and the Auditor.', 'caveat'),
+    ...(/CONSENSUS|WEIGHTED/i.test(view.inputs.governanceMode) ? [teamClaim(`Team Governance (${view.inputs.governanceMode.replace(/_/g, ' ').toLowerCase()}) decides whether the change goes through.`, 'caveat')] : [])
+  ] });
+  sections.push({ id: 'systems', heading: null, claims: [teamClaim('Affected systems: Strategic Command, Economy Governor, Treasury, Task Graph, Overseer.', 'caveat')] });
+  const buttons: GameIntelligenceButton[] = [
+    { id: 'team_apply', label: 'Apply Strategy', kind: 'team_apply', tone: 'primary' },
+    { id: 'team_edit', label: 'Modify', kind: 'ask', query: 'Change the team plan', tone: 'secondary' },
+    { id: 'team_explain', label: 'Explain', kind: 'ask', query: 'Explain this team strategy', tone: 'secondary' },
+    { id: 'team_cancel', label: 'Cancel', kind: 'team_cancel', tone: 'secondary' }
+  ];
+  return { title: 'Team Strategy Preview', sections, buttons, draft: cmd };
+}
+
+/** Team what-if: compare the current responsibilities with an alternative (analytic, no mutation). */
+export function composeTeamWhatIf(u: GIQueryUnderstanding, world: GIWorld): GIComposePart & { draft: TeamCommandIntent | null } {
+  const view = world.team!;
+  const current: TeamCommandIntent = view.state.contract?.commandIntent || { responsibilities: (view.state.contract?.roles || []).map(r => ({ actorId: r.actorId === world.player.id ? 'player' : r.actorId, focus: r.primaryRole === 'earner' ? 'economy' as const : r.primaryRole === 'recovery' ? 'recovery' as const : 'region' as const, regionId: r.responsibility.match(/\b([A-Z]{2,4})\b/)?.[1] })), reserveFloor: view.state.contract?.constraints.reserveFloor ?? null, contingencies: [], priorities: [], deprioritizedRegions: [], spendLocks: [], missionHint: null, swap: false, evidence: [] };
+  const alt: TeamCommandIntent = { ...current, ...u.teamCommand!, reserveFloor: u.teamCommand!.reserveFloor ?? current.reserveFloor };
+  const sim = simulateTeamStrategyAlternative(view.inputs, current, alt);
+  const sections: GIAnswerSection[] = [
+    { id: 'compare', heading: 'Current vs alternative', claims: [
+      teamClaim(`Current — regions: ${sim.current.holds}; expansion: ${sim.current.expansion}.`, 'fact'),
+      teamClaim(`Alternative — regions: ${sim.alternative.holds}; expansion: ${sim.alternative.expansion}.`, 'projection', 'moderate')
+    ] },
+    { id: 'metrics', heading: 'Measured on the current state', claims: sim.metrics.map(m => teamClaim(`${m.metric}: ${m.current} now vs ${m.alternative} with the alternative${m.better === 'same' ? '' : ` (${m.better === 'alternative' ? 'alternative' : 'current'} better)`}.`, 'projection', 'moderate')) },
+    { id: 'verdict', heading: null, claims: [teamClaim(sim.verdict, 'inference', 'moderate'), ...sim.uncertain.map(x => teamClaim(x, 'caveat'))] }
+  ];
+  return { title: 'Team What-If', sections, buttons: [{ id: 'team_adopt', label: 'Adopt Strategy', kind: 'team_apply', tone: 'primary' }, { id: 'team_cancel', label: 'Keep current plan', kind: 'team_cancel', tone: 'secondary' }], draft: alt };
+}
+
+/** Team questions answered from Team OS evidence (mission, tasks, conflicts, blockers, allocations…). */
+export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, convo: GIConversationContext): GIComposePart & { actorId: string | null } {
+  const view = world.team!;
+  const ev = view.evaluation;
+  const c = ev.state.contract;
+  const q = u.normalizedQuery;
+  const mates = world.actors.filter(a => a.relation === 'teammate');
+  const mate = mates.find(m => new RegExp(`\\b${giEscape(m.name.toLowerCase())}\\b`).test(q)) || (/\b(he|him|his|she|her|teammate|partner)\b/.test(q) ? mates.find(m => m.id === convo.lastTeamActorId) || mates[0] : null);
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const say = (id: string, heading: string | null, texts: Array<string | GIClaim>) => { const claims = texts.filter(Boolean).map(t => (typeof t === 'string' ? teamClaim(t) : t)); if (claims.length) sections.push({ id, heading, claims }); };
+  if (!c) return { title: 'Team plan', sections: [{ id: 'none', heading: null, claims: [teamClaim('There is no team strategy yet. Tell me who should do what, e.g. “I’ll hold NSW, Riley makes money.”', 'caveat')] }], buttons, actorId: null };
+  const draft = convo.pendingTeamDraft;
+  if (/\bexplain (this|the) team strategy\b/.test(q) && draft) {
+    const prev = evaluateTeamOperatingSystem(view.state, view.inputs, draft.command);
+    say('explain', 'How this strategy would work', [
+      `Mission: ${prev.state.contract!.mission.label}.`,
+      ...prev.state.contract!.taskGraph.filter(t => t.type !== 'monitor_rival').slice(0, 5).map(t => `${t.assignedActorIds.map(a => teamName(world, a)).join(' + ') || 'Team'}: ${t.label}${t.dependencies.length ? ` (after ${t.dependencies.map(d => prev.state.contract!.taskGraph.find(x => x.id === d)?.label || d).join(', ')})` : ''}.`),
+      teamClaim('Nothing is applied until you press Apply Strategy.', 'caveat')
+    ]);
+    buttons.push({ id: 'team_apply', label: 'Apply Strategy', kind: 'team_apply', tone: 'primary' });
+    return { title: 'Explaining the proposed strategy', sections, buttons, actorId: null };
+  }
+  const blockedChain = (objId: string) => flattenTeamBlockerTree(buildTeamBlockerTree(c, objId, ev.resources));
+  if (/\b(lose|lost|debrief|coordination break|replan too late|worked best|how often)\b/.test(q)) {
+    say('debrief', 'Team debrief', buildTeamDebrief(ev.state));
+    return { title: 'Team debrief', sections, buttons, actorId: null };
+  }
+  if (/\b(postpone|delay|delayed|postponed|pause|paused|put off|stop(ped)? (working on|caring))\b/.test(q)) {
+    const conflict = ev.state.conflicts.find(x => x.type === 'objective_vs_objective') || ev.state.conflicts[0];
+    const paused = c.objectives.filter(o => o.status === 'paused');
+    say('why', null, conflict ? [teamClaim(conflict.reason, 'inference', 'high'), ...conflict.evidence.map(e => teamClaim(`Evidence: ${e}.`))] : paused.length ? paused.map(o => `${o.description} is paused: ${o.pausedReason}.`) : ['Nothing in the current plan is postponed.']);
+    return { title: 'Why the team postponed it', sections, buttons, actorId: null };
+  }
+  if (/\b(block|blocking|blocked|waiting for|holding (us|it) up|stuck)\b/.test(q)) {
+    const region = u.entities.find(e => e.kind === 'region')?.id;
+    const obj = c.objectives.find(o => region && o.regionId === region) || c.objectives.find(o => o.status === 'blocked' || o.status === 'paused') || c.objectives.find(o => o.id === c.primaryObjectiveId) || c.objectives[0];
+    const chain = obj ? blockedChain(obj.id) : [];
+    say('blockers', 'What is blocking the plan', chain.length > 1 ? [`${chain.join(' ← blocked by ')}.`] : [`Nothing is blocking “${obj?.description || c.mission.label}” right now.`]);
+    return { title: 'Blockers', sections, buttons, actorId: null };
+  }
+  if (/\b(allocated|allocation|where is our money|wasting money|budget|envelope)\b/.test(q)) {
+    say('money', 'Where the team’s money is planned', [
+      teamClaim(`Team free cash: ${money(ev.resources.freeCash)}; protected in Cash Vaults: ${money(ev.resources.protectedCash)}; Treasury reserve: ${money(ev.resources.treasuryReserve)}.`, 'fact', 'confirmed', ['team.freeCash']),
+      ...ev.resources.envelopes.map(e => teamClaim(`${e.category}: ${money(e.allocated)} of ${money(e.target)} planned${e.hardFloor ? ' (hard floor)' : ''}.`, 'inference', 'high')),
+      ...(ev.resources.shortfall ? [teamClaim(`The plan is short by ${money(ev.resources.shortfall)}.`, 'inference', 'high')] : []),
+      teamClaim('Allocations are planning intentions; no money moves until a canonical action runs.', 'caveat')
+    ]);
+    return { title: 'Team money', sections, buttons, actorId: null };
+  }
+  if (/\bwho should (handle|take|defend|hold|cover)\b/.test(q)) {
+    const region = u.entities.find(e => e.kind === 'region')?.id;
+    const cands = view.inputs.actors.map(a => {
+      let s = 0; const why: string[] = [];
+      if (region && a.location === region) { s += 3; why.push('already there'); }
+      if (!a.inRecovery) { s += 2; } else why.push('in recovery');
+      if (a.money - a.protectedCash > 2000) { s += 1; why.push(`${money(a.money - a.protectedCash)} spendable`); }
+      if (c.roles.find(r => r.actorId === a.id)?.primaryRole === 'earner') { s -= 1; why.push('currently the earner'); }
+      return { a, s, why };
+    }).sort((x, y) => y.s - x.s || x.a.id.localeCompare(y.a.id));
+    say('who', null, cands.slice(0, 2).map((x, i) => teamClaim(`${i === 0 ? 'Best fit' : 'Alternative'}: ${x.a.isHuman ? 'you' : x.a.name}${x.why.length ? ` (${x.why.join(', ')})` : ''}.`, 'inference', 'moderate')));
+    return { title: `Who should handle ${region || 'it'}`, sections, buttons, actorId: cands[0]?.a.isHuman ? null : cands[0]?.a.id || null };
+  }
+  if (mate && /\b(role|roles|switch(ed)?)\b/.test(q)) {
+    const r = c.roles.find(x => x.actorId === mate.id);
+    const change = ev.state.revisions.slice().reverse().find(x => x.changes.some(ch => ch.startsWith(mate.name)));
+    say('role', null, [r ? `${mate.name} is ${r.primaryRole} (${r.responsibility}): ${r.reason}` : `${mate.name} has no role yet.`, change ? `Last change (turn ${change.turn}): ${change.changes.find(ch => ch.startsWith(mate.name))} — ${change.trigger}.` : '']);
+    return { title: `${mate.name}'s role`, sections, buttons, actorId: mate.id };
+  }
+  if (mate) {
+    const tasks = c.taskGraph.filter(t => t.assignedActorIds.includes(mate.id) && !['completed', 'cancelled', 'superseded'].includes(t.status));
+    const r = c.roles.find(x => x.actorId === mate.id);
+    const actor = view.inputs.actors.find(a => a.id === mate.id);
+    const lines: Array<string | GIClaim> = [r ? `${mate.name}'s role: ${r.primaryRole} — ${r.responsibility}.` : ''];
+    tasks.slice(0, 3).forEach(t => lines.push(`${t.label}: ${t.status}${t.blockers.length ? ` (${t.blockers[0]})` : ''}.`));
+    if (!tasks.length) lines.push(`${mate.name} has no active task in the team plan.`);
+    if (actor?.inRecovery) lines.push(`${mate.name} is in economic recovery, so it saves rather than spends.`);
+    if (/\b(spend|spending|money|not doing|isn't doing|anything|follow|following)\b/.test(q)) {
+      if (view.inputs.governorEnabled) lines.push('The Economy Governor is on: it blocks spending that would break an AI teammate’s reserve.');
+      const spendTask = tasks.find(t => t.resourceRequirement > 0);
+      if (spendTask && view.inputs.governorCheck) {
+        const g = explainGovernorWithMission(spendTask, view.inputs.governorCheck(mate.id, 'region_deposit', spendTask.resourceRequirement), view.inputs, ev.resources);
+        lines.push(teamClaim(`Governor on “${g.purpose}” (${money(g.requested)}): ${g.ruling.replace(/_/g, ' ')} — ${g.governorReason}${g.alternatives.length ? ` Options: ${g.alternatives.join('; ')}.` : ''}`, 'fact', 'confirmed'));
+      }
+      if (c.constraints.spendLockedActorIds.includes(mate.id)) lines.push(`You asked to hold back ${mate.name}'s discretionary spending.`);
+      if (view.inputs.pendingApprovals) lines.push(`${view.inputs.pendingApprovals} AI action approval(s) are waiting for you.`);
+    }
+    say('mate', null, lines);
+    return { title: `${mate.name} — team plan`, sections, buttons, actorId: mate.id };
+  }
+  if (/\b(overseer)\b/.test(q)) {
+    const rev = ev.state.revisions.slice().reverse().find(x => /overseer/i.test(x.trigger));
+    say('overseer', null, [`The Overseer's strategy mode is ${view.inputs.overseer.mode || 'not set'}${view.inputs.overseer.safeMode ? ', with Safe Mode active' : ''}.`, rev ? `Team OS replanned on turn ${rev.turn} after: ${rev.trigger}.` : 'No Overseer shift has triggered a team replan.', teamClaim('The Overseer checks whether the strategy is still appropriate; it does not execute actions.', 'caveat')]);
+    return { title: 'Overseer', sections, buttons, actorId: null };
+  }
+  if (/\b(fallback|if .* fails|contingenc|plan b)\b/.test(q)) {
+    say('fallback', 'Contingencies', c.contingencies.map(x => `${x.label} — ${x.authority.replace(/_/g, ' ')}, ${x.status}.`));
+    return { title: 'Fallbacks', sections, buttons, actorId: null };
+  }
+  if (/\b(what should we change|should we change|improve)\b/.test(q)) {
+    const weakest = (Object.entries(ev.readiness) as Array<[string, any]>).filter(([k, v]) => typeof v === 'number' && k !== 'overall').sort((a, b) => a[1] - b[1])[0];
+    const partName: Record<string, string> = { resources: 'funding', positioning: 'positioning', actors: 'actor readiness', tasks: 'task readiness', threatExposure: 'exposure to rival pressure', viability: 'plan viability' };
+    say('change', null, [...ev.state.proposals.filter(p => p.status === 'open').map(p => teamClaim(`Proposal: ${p.reason}`, 'recommendation', 'moderate')), weakest ? teamClaim(`The weakest part of the plan is ${partName[weakest[0]] || weakest[0]} (${Math.round(weakest[1] * 100)}%).`, 'inference', 'high') : '', ...ev.state.conflicts.slice(0, 2).map(x => teamClaim(x.reason, 'inference', 'moderate'))]);
+    return { title: 'What to change', sections, buttons, actorId: null };
+  }
+  // Default: "What is our team actually trying to do?" / "Are we on track?"
+  say('mission', null, [
+    `Mission: ${c.mission.label} (${c.source === 'player_command' ? 'your strategy' : `from ${c.mission.source.replace(/_/g, ' ')}`}).`,
+    ...c.roles.map(r => `${teamName(world, r.actorId)}: ${r.primaryRole} — ${r.responsibility}.`),
+    ...c.objectives.filter(o => o.status !== 'completed').slice(0, 3).map(o => `${o.status === 'paused' ? 'Paused' : 'Objective'}: ${o.description}${o.status === 'paused' && o.pausedReason ? ` (${o.pausedReason})` : ''}.`)
+  ]);
+  const healthText: Record<TeamPlanHealth, string> = { on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked', recovering: 'Recovering', needs_decision: 'Needs your decision', obsolete: 'Obsolete', completed: 'Completed' };
+  say('health', 'Plan status', [
+    teamClaim(`${healthText[ev.health.health]}: ${ev.health.reason}`, 'inference', 'high'),
+    teamClaim(`Readiness ${Math.round(ev.readiness.overall * 100)}% (resources ${Math.round(ev.readiness.resources * 100)}%, positioning ${Math.round(ev.readiness.positioning * 100)}%, actors ${Math.round(ev.readiness.actors * 100)}%). Plan confidence: ${ev.confidence.label} — ${ev.confidence.reasons[0]}.`, 'inference', 'high', ['team.readiness'])
+  ]);
+  ev.state.proposals.filter(p => p.status === 'open').slice(0, 1).forEach(p => {
+    say('proposal', `${teamName(world, p.proposerActorId)} proposes`, [teamClaim(p.reason, 'recommendation', 'moderate'), ...p.proposedChanges.map(x => teamClaim(`• ${x}`, 'recommendation', 'moderate'))]);
+    buttons.push({ id: `team_accept_${p.id}`, label: 'Accept', kind: 'team_proposal_accept', candidateId: p.id, tone: 'primary' }, { id: `team_reject_${p.id}`, label: 'Reject', kind: 'team_proposal_reject', candidateId: p.id, tone: 'secondary' }, { id: `team_why_${p.id}`, label: 'Why?', kind: 'ask', query: 'What should we change?', tone: 'secondary' });
+  });
+  return { title: 'Team plan', sections, buttons, actorId: null };
 }
 
 export interface GIComposed {
@@ -105302,6 +105895,34 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       if (teamish && sys.team) buttons.push({ id: 'open_team', label: 'Team plan settings (LAB)', kind: 'open', nav: navAction('assistant_advanced', 'Team plan settings', { section: 'teamModeAi.teamPlans' }), tone: 'secondary' });
       break;
     }
+    case 'team_command':
+    case 'team_whatif':
+    case 'team_explain': {
+      kind = 'next_step';
+      if (!world.team || !world.team.enabled) { section('answer', null, [claim('Team Intelligence is only available in Team Mode.', 'caveat', 'confirmed', [])]); break; }
+      if (u.primary === 'team_explain') {
+        const part = composeTeamExplain(u, world, convo);
+        title = part.title || 'Team plan';
+        shape = 'explanation';
+        sections.push(...part.sections);
+        buttons.push(...part.buttons);
+        if (part.actorId) ctx.lastTeamActorId = part.actorId;
+        break;
+      }
+      const part = u.primary === 'team_command' ? composeTeamCommandPreview(u, world) : composeTeamWhatIf(u, world);
+      title = part.title || 'Team strategy';
+      shape = u.primary === 'team_command' ? 'plan' : 'comparison';
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      if (part.draft) {
+        ctx.pendingTeamDraft = { kind: u.primary === 'team_command' ? 'apply' : 'adopt', command: part.draft, summary: u.originalQuery.slice(0, 200) };
+        // Only real commands are remembered for repairs ("swap us", "make that $15K"), never a what-if.
+        if (u.primary === 'team_command') ctx.lastTeamCommand = part.draft;
+        const mateResp = part.draft.responsibilities.find(r => r.actorId !== 'player');
+        if (mateResp) ctx.lastTeamActorId = mateResp.actorId;
+      }
+      break;
+    }
     case 'settings_lookup': {
       kind = 'ask_engine';
       const res = giResult(exec, 'settings_search')?.data;
@@ -105468,6 +106089,10 @@ function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, c
     if (cu.lastSimulation !== undefined) next.lastSimulation = cu.lastSimulation;
     if (cu.lastDeficit !== undefined) next.lastDeficit = cu.lastDeficit;
     if (cu.pendingClarification !== undefined) next.pendingClarification = cu.pendingClarification;
+    if (cu.pendingTeamDraft !== undefined) next.pendingTeamDraft = cu.pendingTeamDraft;
+    if (cu.lastTeamCommand !== undefined) next.lastTeamCommand = cu.lastTeamCommand;
+    if (cu.lastTeamActorId !== undefined) next.lastTeamActorId = cu.lastTeamActorId;
+    if (cu.lastTeamTaskId !== undefined) next.lastTeamTaskId = cu.lastTeamTaskId;
   }
   next.lastUnresolvedQuestion = u.unresolvedReferences.length ? u.originalQuery : null;
   // GI 2.1: previous question + entities (corrections / fragments), plan horizon, bounded topic stack.
@@ -105736,9 +106361,10 @@ export const GI_STATE_BOUND_BUTTON_KINDS: GameIntelligenceButtonKind[] = ['do', 
 
 // ---- Dependency-aware fingerprints -------------------------------------------
 
-export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history';
+export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history'
+  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios';
 export type GIFingerprintMap = Partial<Record<GIFingerprintDomain, string>>;
-export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history'];
+export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios'];
 
 /** Which state domains each grounded tool reads. 'turn' (actor/turn/day) is always included. */
 const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
@@ -105760,17 +106386,47 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   threat_scan: ['world', 'actors'],
   conflict_scan: ['objectives', 'assistance'],
   settings_search: ['assistance'],
-  system_state: ['assistance', 'actors', 'objectives'],
+  system_state: ['assistance', 'actors', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'scenarios'],
+  team_state: ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors', 'world', 'player'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
 export function giPlanFingerprintDomains(steps: GIPlanStep[], u: GIQueryUnderstanding): GIFingerprintDomain[] {
   const set = new Set<GIFingerprintDomain>(['turn']);
-  steps.forEach(s => (GI_TOOL_FINGERPRINT_DOMAINS[s.tool] || GI_FINGERPRINT_DOMAINS).forEach(d => set.add(d)));
+  // The Ask-the-Game step depends on what was asked (intent), not on the whole game.
+  steps.forEach(s => (s.tool === 'ask_engine' ? giAskIntentFingerprintDomains(u.askIntent) : (GI_TOOL_FINGERPRINT_DOMAINS[s.tool] || GI_FINGERPRINT_DOMAINS)).forEach(d => set.add(d)));
   if (u.options.length) { set.add('player'); set.add('world'); }
   if (u.primary === 'control' || u.primary === 'control_explain') set.add('assistance');
-  if (u.primary === 'ask_engine') GI_FINGERPRINT_DOMAINS.forEach(d => set.add(d));
+  if (u.primary === 'ask_engine') giAskIntentFingerprintDomains(u.askIntent).forEach(d => set.add(d));
+  if (u.primary === 'teammate_status') { set.add('team_strategy'); set.add('team_resources'); }
+  if (u.memoryEvidence) set.add('memory');
   return GI_FINGERPRINT_DOMAINS.filter(d => set.has(d));
+}
+
+/**
+ * What an Ask-the-Game answer depends on. A static rules question does not go stale because a
+ * market price moved; team and memory questions track their own systems; unknown intents stay
+ * conservative (everything).
+ */
+export function giAskIntentFingerprintDomains(intent: AskGameIntent): GIFingerprintDomain[] {
+  switch (intent) {
+    case 'GAME_RULES': case 'GENERAL_HELP': return ['assistance', 'scenarios'];
+    case 'SETTINGS_INSPECT': case 'SETTINGS_SEARCH': case 'AUTOMODE_EXPLAIN': return ['assistance'];
+    case 'MARKET_PRICES': return ['market', 'player'];
+    case 'REGION_INFO': case 'WHY_REGION': case 'DOMINANCE_TRACKER': return ['world', 'player', 'actors'];
+    case 'CONTRACT_INSPECT': return ['contracts', 'player'];
+    case 'INFRASTRUCTURE_STATUS': return ['projects', 'player'];
+    case 'EXPEDITION_STATUS': return ['player', 'scenarios'];
+    case 'CREDIT_LOAN_STATUS': case 'ECONOMY_DIAGNOSE': case 'PLAYER_STATUS': case 'AFFORDABILITY_CHECK': return ['player', 'market', 'assistance'];
+    case 'GOVERNANCE_INSPECT': return ['team_governance', 'approvals'];
+    case 'TEAMMATE_DIAGNOSE': case 'TEAM_PLAN_UPDATE': case 'PLAN_STATUS': case 'PLAN_CHANGE': case 'CURRENT_PLAN':
+      return ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors'];
+    case 'MEMORY_RECALL': case 'RELATIONSHIP_EXPLAIN': case 'STRATEGIC_PATTERN': case 'DECISION_MEMORY': case 'PLAYSTYLE_LEARNED': case 'RIVAL_RECENT': case 'RIVAL_PREDICT':
+      return ['memory', 'actors', 'history'];
+    case 'ACTIVITY_LEDGER': case 'REPLAY_BRANCH_QUERY': return ['history'];
+    case 'AUTOMODE_INSPECT': case 'AUTOMODE_SIMULATE': case 'AUTOMODE_GOAL_PROMPT': return ['assistance', 'player', 'objectives'];
+    default: return GI_FINGERPRINT_DOMAINS;
+  }
 }
 
 /** Stable per-domain hashes from compact, already-extracted state slices (never the whole game state). */
@@ -106531,6 +107187,115 @@ export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
     return (a.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai') && b.threats.some(t => t.regionId === 'NSW') && !c.threats.length) || JSON.stringify([a.threats, b.threats, c.threats]);
   });
 
+  // ---- Semantic robustness: polarity, attachment, dependency precision -----------------------
+  const frameOf = (q: string, w?: GIWorld, ctx?: GIConversationContext) => parseGILanguage(q, w || W(), ctx || createGIConversationContext());
+
+  check('gi21_polarity_negatives', 'Negated propositions never activate threats, problems or cash goals', () => {
+    const cases: Array<[string, 'threat' | 'liquidity' | 'need']> = [
+      ['Riley is not taking NSW.', 'threat'], ['NSW is not in trouble.', 'threat'], ["Riley isn't pressuring NSW.", 'threat'],
+      ["I don't think Riley will attack NSW", 'threat'], ['Riley might not attack NSW', 'threat'],
+      ["I'm not broke.", 'liquidity'], ["I don't need money.", 'need'], ["I don't need $10K", 'need']
+    ];
+    const bad = cases.filter(([q, kind]) => {
+      const f = frameOf(q);
+      if (kind === 'threat') return f.threats.length > 0 || f.problems.some(p => p.kind === 'region_threat');
+      if (kind === 'liquidity') return f.problems.some(p => p.kind === 'low_liquidity');
+      return f.goals.some(g => g.kind === 'cash_increase' || g.kind === 'cash_reach');
+    }).map(c => c[0]);
+    // …while the negative proposition itself stays available for conversation.
+    const kept = frameOf('Riley is not taking NSW.').propositions.some(p => p.id === 'region_threat' && p.polarity === 'negative');
+    return (!bad.length && kept) || `activated: ${bad.join(' | ')} kept=${kept}`;
+  });
+
+  check('gi21_polarity_positives', 'Positive counterparts still activate (no over-suppression)', () => {
+    const t = frameOf('Riley is taking NSW.'); const l = frameOf("I'm broke."); const n = frameOf('I need money.'); const m = frameOf('Riley might attack NSW');
+    return (t.threats.some(x => x.regionId === 'NSW' && x.polarity === 'positive') && l.problems.some(p => p.kind === 'low_liquidity') && n.goals.some(g => g.kind === 'cash_increase')
+      && m.threats.some(x => x.regionId === 'NSW' && x.polarity === 'uncertain' && x.urgency === 'normal')) || 'suppressed';
+  });
+
+  check('gi21_polarity_answers', 'A negated threat does not produce urgent defence or threat escalation', () => {
+    const r = run("Riley is not taking NSW, I'm fine on cash. What should I do next?");
+    const t = text(r);
+    return (!/bigger strategic risk|answers the threat|immediate problem is cash/.test(t) && !r.understanding.frame!.threats.length) || t;
+  });
+
+  check('gi21_negation_nested', 'Nested / double negation and negated preferences', () => {
+    const errs: string[] = [];
+    const want: Array<[string, GIConstraintPolicy]> = [["don't not take a loan", 'preferred'], ["I don't want to avoid loans", 'allowed'], ["Loans aren't a problem.", 'allowed'], ["Don't take a loan.", 'forbidden']];
+    want.forEach(([q, p]) => { const got = und(q).constraints.loanPolicy; if (got !== p) errs.push(`${q} → ${got}`); });
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_polarity_agent', "Another actor's situation is not the player's problem (\"Riley is broke\")", () => {
+    const f = frameOf('Riley is broke and Riley is making money');
+    return (!f.problems.some(p => p.kind === 'low_liquidity') && !f.goals.some(g => g.kind === 'cash_increase')) || JSON.stringify(summarizeGIFrame(f));
+  });
+
+  const bindings = (q: string, w?: GIWorld) => frameOf(q, w).actions.filter(a => !a.negated).map(a => `${a.agentId && a.agentId !== 'player' ? a.agentId + '>' : ''}${a.family}:${a.regionId || a.resource || a.projectId || a.contractId || '-'}`).sort().join(',');
+  check('gi21_binding_cases', 'Action ↔ entity binding with several entities in one message', () => {
+    const tw = createGIFixtureWorld({ withTeam: true }).world;
+    const cases: Array<[string, string]> = [
+      ['go VIC while Riley pressures NSW', 'travel:VIC'],
+      ['What do you think about going VIC while Riley pressures NSW?', 'travel:VIC'],
+      ['head Victoria then defend NSW', 'defend:NSW,travel:VIC'],
+      ['head over to Victoria and then shore up NSW', 'defend:NSW,travel:VIC'],
+      ['sell Gold and travel WA', 'sell:Gold,travel:WA'],
+      ['defend NSW while Riley moves VIC', 'defend:NSW'],
+      ['sell Iron Ore then fund the NSW project', 'fund:NSW,sell:Iron Ore'],
+      ['Riley defend VIC while I hold NSW', 'ai>defend:VIC,defend:NSW'],
+      ['take the WA contract then go SA', 'accept_contract:WA,travel:SA'],
+      ['go to VIC, not NSW', 'travel:VIC']
+    ];
+    const bad = cases.map(([q, want]) => ({ q, want, got: bindings(q, tw) })).filter(x => x.got !== x.want);
+    return bad.length ? bad.map(x => `"${x.q}" → ${x.got} (want ${x.want})`).join('; ') : true;
+  });
+
+  check('gi21_binding_order', 'Binding is word-order independent (permutations keep each target)', () => {
+    const groups = [['sell Gold and travel WA', 'travel WA and sell Gold', 'travel to WA, then sell Gold'], ['head Victoria then defend NSW', 'defend NSW then head Victoria', 'shore up NSW and head over to Victoria']];
+    for (const g of groups) { const base = bindings(g[0]); const off = g.find(q => bindings(q) !== base); if (off) return `"${off}" → ${bindings(off)} vs ${base}`; }
+    return true;
+  });
+
+  check('gi21_binding_options', 'Options follow bound targets ("go VIC while Riley pressures NSW" → travel VIC, never NSW)', () => {
+    const u = und('What do you think about going VIC while Riley pressures NSW?');
+    return (u.options.some(o => o.id === 'opt_travel_VIC') && !u.options.some(o => o.id === 'opt_travel_NSW') && u.frame!.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai')) || `${u.options.map(o => o.id)}`;
+  });
+
+  check('gi21_relation_binding', 'Relations bind per subject ("Riley is pressuring NSW but Sam is building cash")', () => {
+    const f = frameOf('Riley is pressuring NSW but Sam is building cash', createGIFixtureWorld({ withTeam: true }).world);
+    return (f.relations.some(r => r.subjectId === 'ai' && r.relation === 'threatens' && r.objectId === 'NSW') && f.relations.some(r => r.subjectId === 'mate' && r.relation === 'economy_task')
+      && !f.relations.some(r => r.subjectId === 'mate' && r.relation === 'threatens') && !f.goals.some(g => g.kind === 'cash_increase')) || JSON.stringify(f.relations);
+  });
+
+  check('gi21_multistep_condition', 'Multi-step with a trailing condition keeps each target and the step condition', () => {
+    const f = frameOf('Sell Iron Ore, then defend NSW, then go Victoria if Riley backs off.');
+    const s = f.actions.filter(a => !a.negated).sort((a, b) => a.step - b.step);
+    return (s.length === 3 && s[0].family === 'sell' && s[0].resource === 'Iron Ore' && s[1].family === 'defend' && s[1].regionId === 'NSW' && s[2].family === 'travel' && s[2].regionId === 'VIC'
+      && s[2].condition?.event === 'rival_retreats' && new Set(s.map(a => a.step)).size === 3) || JSON.stringify(s.map(a => [a.family, a.regionId || a.resource, a.step, a.condition?.event]));
+  });
+
+  check('gi21_attachment_ambiguity', 'Pronoun targets: ask when two regions are equally salient, bind when one is the topic', () => {
+    const two = { ...createGIConversationContext(), lastComparison: [{ kind: 'region' as const, id: 'NSW', label: 'New South Wales', confidence: 1, source: 'context' as const }, { kind: 'region' as const, id: 'VIC', label: 'Victoria', confidence: 1, source: 'context' as const }] };
+    const a = run('Defend it and send Riley there', two);
+    const one = noteGIContextEntity(createGIConversationContext(), { kind: 'region', id: 'NSW', label: 'New South Wales', confidence: 1, source: 'context' });
+    const b = und('Defend it', one);
+    return (a.understanding.needs.clarification && (a.understanding.confidences?.attachmentConfidence ?? 1) < 0.6 && b.options.some(o => o.id === 'opt_deposit_NSW') && !b.needs.clarification)
+      || `${a.understanding.needs.clarification}/${a.understanding.confidences?.attachmentConfidence}/${b.options.map(o => o.id)}`;
+  });
+
+  check('gi21_attachment_confidence', 'attachmentConfidence is reported separately from language confidence', () => {
+    const u = und('sell Gold and travel WA');
+    return (typeof u.confidences?.attachmentConfidence === 'number' && typeof u.confidences?.languageConfidence === 'number') || JSON.stringify(u.confidences);
+  });
+
+  check('gi21_dependency_precision', 'Freshness domains: rules ignore market; team questions track team systems', () => {
+    const rules = run('How do AP points work?').plan.fingerprintDomains;
+    const team = run("Why won't my teammate spend money on this?", undefined, createGIFixtureWorld({ withTeam: true }).world).plan.fingerprintDomains;
+    const cash = run('How much money do I have?').plan.fingerprintDomains;
+    return (!rules.includes('market') && ['team_resources', 'team_strategy', 'approvals'].every(d => team.includes(d as GIFingerprintDomain)) && !team.includes('market') && !cash.includes('team_strategy'))
+      || `rules=${rules} team=${team} cash=${cash}`;
+  });
+
   check('gi21_diagnostics', 'LAB diagnostics expose structured language metadata (no reasoning trace)', () => {
     const r = run('shuld i defned nsw or go victora');
     const l = r.diagnostics.language;
@@ -106569,8 +107334,12 @@ export async function runGameIntelligence21AsyncSelfTests(): Promise<V9SelfTestR
     // Delegated path goes through the same bounded contract.
     const a = withMaps(createGIFixtureWorld().world, base);
     let calls = 0;
-    const r = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, market: 'm2' }) });
+    const r = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, assistance: 'a2' }) });
     push('gi21_fresh_delegated', 'Delegated answers are also recomputed once when relevant state changes', r.answer.gi?.freshness === 'updated' && calls === 2, `${r.answer.gi?.freshness}/${calls}`);
+    // …but a market move does not invalidate a static rules answer.
+    let calls2 = 0;
+    const r2 = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls2++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, market: 'm2' }) });
+    push('gi21_fresh_rules_market', 'A market price change does not make a rules answer stale', r2.answer.gi?.freshness === 'current' && calls2 === 1, `${r2.answer.gi?.freshness}/${calls2}`);
   } catch (e) { push('gi21_fresh_delegated', 'Delegated freshness', false, String(e)); }
   try {
     // Memory is one evidence provider inside a compound strategic answer (Ask-the-Game enforces visibility).
@@ -106582,6 +107351,2092 @@ export async function runGameIntelligence21AsyncSelfTests(): Promise<V9SelfTestR
     const memory = (r.answer.sections || []).some(s => s.id === 'memory');
     push('gi21_memory_composition', 'Compound memory + strategy questions stay in Game Intelligence with memory as evidence', !r.delegateToAskEngine && (memory || !r.understanding.memoryEvidence), `${r.understanding.primary}/${r.understanding.memoryEvidence}/${memory}`);
   } catch (e) { push('gi21_memory_composition', 'Memory composition', false, String(e)); }
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20D: TEAM INTELLIGENCE 2.0 — TEAM OPERATING SYSTEM
+// ----------------------------------------------------------------------------
+// A coordination layer ABOVE the existing specialist team systems. It describes WHAT the team is
+// trying to do (mission → objectives → task graph → roles → resource envelopes → contingencies)
+// and explains it; it never executes gameplay actions. Actual AI decisions keep flowing through the
+// canonical 11-stage pipeline (Algorithm → Strategic Command → Sequence → Requirements → Cash Vault
+// → Economy Governor → Treasury → Overseer → Approval → Execution → Auditor).
+//
+//  • Team Brain (chooseTeamObjective / assignTeamAiRole) stays the fallback planning engine.
+//  • Strategic Command reads the contract's per-actor goal (teamOsGoalForActor) only when a strategy
+//    was explicitly applied or team authority allows it; otherwise it behaves exactly as before.
+//  • Treasury and the Economy Governor stay authoritative: envelopes are planning intentions, never
+//    money, and Governor rulings are explained with mission context, never overridden.
+//  • Governance resolves strategy changes that need votes/approval (routeTeamStrategyChange).
+//  • The Overseer remains strategic oversight; the Auditor remains operational oversight (Team OS
+//    adds operational checks only — never strategic judgments).
+//
+// Pure and deterministic: no Math.random, no clocks; ids derive from team + turn + revision.
+// ============================================================================
+
+export type TeamOSAuthorityLevel = 'manual' | 'advisor' | 'assisted' | 'delegated' | 'autonomous';
+
+export const TEAM_OS_AUTHORITY_META: Record<TeamOSAuthorityLevel, { label: string; summary: string }> = {
+  manual: { label: 'Manual Coordination', summary: 'Team AI can analyse, but never changes the team strategy.' },
+  advisor: { label: 'Advisor', summary: 'Team AI recommends plan, role and resource changes; you decide.' },
+  assisted: { label: 'Assisted', summary: 'Minor plan changes (priorities, pausing) may be made inside your constraints.' },
+  delegated: { label: 'Strategic Delegation', summary: 'Team OS manages tasks and roles inside the approved mission.' },
+  autonomous: { label: 'Autonomous Team', summary: 'Team OS may replan inside your explicit locks and constraints.' }
+};
+
+/**
+ * Explicit conflict-resolution framework (lower number wins). Derived from the game's existing
+ * authority order: rules/validators first, then the player's locks, Governance, mandatory safety and
+ * approvals, then the strategy's hard constraints, then win-critical and recovery needs.
+ */
+export const TEAM_OS_PRIORITY_FRAMEWORK: Array<{ tier: number; key: string; label: string }> = [
+  { tier: 1, key: 'legality', label: 'Game rules and canonical validators (AP, legality, requirements)' },
+  { tier: 2, key: 'player_authority', label: 'Player authority and player locks' },
+  { tier: 3, key: 'governance', label: 'Hard Governance decisions (votes, vetoes, leader rulings)' },
+  { tier: 4, key: 'safety', label: 'Safety systems and mandatory approvals (Cash Vault, Guardian, Approval)' },
+  { tier: 5, key: 'strategy_constraint', label: 'Hard Team Strategy constraints (reserve floors, forbidden categories)' },
+  { tier: 6, key: 'win_critical', label: 'Win-condition-critical objectives (holding threatened regions)' },
+  { tier: 7, key: 'recovery', label: 'Emergency economic recovery' },
+  { tier: 8, key: 'mission', label: 'Active mission priorities' },
+  { tier: 9, key: 'efficiency', label: 'Resource efficiency' },
+  { tier: 10, key: 'optional', label: 'Optional objectives' }
+];
+
+export type TeamMissionKind = 'control_regions' | 'secure_region' | 'expand_region' | 'protect_lead' | 'recover_economy' | 'net_worth' | 'money' | 'challenges' | 'infrastructure' | 'support_teammate' | 'scenario';
+export type TeamMissionSource = 'player_command' | 'player_plan' | 'scenario' | 'win_condition' | 'strategic_command' | 'team_brain';
+
+/** Mission sources in explicit priority order (first available wins). */
+export const TEAM_MISSION_SOURCE_ORDER: TeamMissionSource[] = ['player_command', 'player_plan', 'scenario', 'win_condition', 'strategic_command', 'team_brain'];
+
+export interface TeamMission {
+  kind: TeamMissionKind;
+  label: string;
+  regionIds: string[];
+  source: TeamMissionSource;
+  targetRegions?: number | null;
+}
+
+export type TeamObjectiveType = 'hold_region' | 'take_region' | 'raise_cash' | 'preserve_reserve' | 'position_actor' | 'support_teammate' | 'recover_economy' | 'complete_contract' | 'grow_metric';
+export type TeamObjectiveStatus = 'active' | 'paused' | 'blocked' | 'completed' | 'failed';
+
+export interface TeamObjective {
+  id: string;
+  description: string;
+  type: TeamObjectiveType;
+  priority: number;            // 1 (highest) … 5
+  tier: number;                // TEAM_OS_PRIORITY_FRAMEWORK tier it belongs to
+  status: TeamObjectiveStatus;
+  progress: number;            // 0..1, derived from real state
+  dependencies: string[];
+  completionCondition: string;
+  failureCondition: string;
+  horizonTurns: number;
+  assignedActorIds: string[];
+  requiredCash: number;
+  reason: string;
+  regionId?: string;
+  amount?: number;
+  pausedReason?: string;
+}
+
+export type TeamTaskStatus = 'proposed' | 'ready' | 'active' | 'waiting' | 'blocked' | 'completed' | 'failed' | 'superseded' | 'cancelled';
+export type TeamTaskType = 'defend_region' | 'take_region' | 'reach_region' | 'generate_cash' | 'request_treasury' | 'preserve_reserve' | 'support_actor' | 'recover' | 'complete_contract' | 'monitor_rival';
+export type TeamHumanTaskStatus = 'suggested' | 'accepted' | 'active' | 'completed' | 'ignored' | 'declined';
+
+export interface TeamTaskNode {
+  id: string;
+  objectiveId: string;
+  type: TeamTaskType;
+  label: string;
+  assignedActorIds: string[];
+  status: TeamTaskStatus;
+  priority: number;
+  dependencies: string[];
+  blockers: string[];
+  fallbackTaskIds: string[];
+  deadlineTurn: number | null;
+  resourceRequirement: number;
+  completionPredicate: string;
+  actionHints: string[];
+  createdTurn: number;
+  updatedTurn: number;
+  confidence: number;
+  regionId?: string;
+  amount?: number;
+  /** Tasks for the human are suggestions until the player commits — never auto-executed. */
+  humanStatus?: TeamHumanTaskStatus;
+}
+
+export type TeamRole = 'earner' | 'explorer' | 'crafter' | 'support' | 'controller' | 'saboteur' | 'recovery';
+
+export interface ActorRoleAssignment {
+  actorId: string;
+  primaryRole: TeamRole;
+  secondaryRole: TeamRole | null;
+  responsibility: string;
+  reason: string;
+  objectiveIds: string[];
+  taskIds: string[];
+  startTurn: number;
+  reviewCondition: string;
+  temporary: boolean;
+  confidence: number;
+  /** Set by an explicit player instruction; Team OS never changes it without the player. */
+  explicit: boolean;
+}
+
+export type TeamEnvelopeCategory = 'defense' | 'expansion' | 'economy' | 'contracts' | 'infrastructure' | 'support' | 'emergency' | 'flexible';
+
+export interface TeamResourceEnvelope {
+  category: TeamEnvelopeCategory;
+  target: number;
+  allocated: number;
+  hardFloor: boolean;
+  priority: number;
+  forObjectiveIds: string[];
+}
+
+/** Planning allocations over REAL balances — never a second pool of money. */
+export interface TeamResourcePlan {
+  actorCash: number;
+  protectedCash: number;
+  treasuryBalance: number;
+  treasuryReserve: number;
+  /** Money any team member could actually spend right now (cash − protected + treasury above reserve). */
+  freeCash: number;
+  strategyReserveFloor: number;
+  envelopes: TeamResourceEnvelope[];
+  unallocated: number;
+  shortfall: number;
+  notes: string[];
+}
+
+export type TeamConflictType = 'objective_vs_objective' | 'treasury_vs_objective' | 'governor_vs_task' | 'overseer_vs_plan' | 'role_collision' | 'resource_collision' | 'governance_veto' | 'approval_delay' | 'scenario_vs_side' | 'recovery_vs_expansion' | 'reserve_vs_spending';
+
+export interface TeamStrategicConflict {
+  id: string;
+  type: TeamConflictType;
+  parties: string[];
+  conflictingGoals: string[];
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  evidence: string[];
+  candidateResolutions: string[];
+  selectedResolution: string | null;
+  reason: string;
+  requiresPlayerDecision: boolean;
+  status: 'open' | 'resolved' | 'awaiting_player';
+  winnerTier?: number;
+  loserTier?: number;
+}
+
+export type TeamContingencyTrigger = 'region_margin_below' | 'free_cash_below' | 'rival_contests' | 'pressure_critical' | 'actor_recovery_exit';
+export type TeamContingencyEffect =
+  | { kind: 'pause_objective_type'; objectiveType: TeamObjectiveType }
+  | { kind: 'raise_region_priority'; regionId: string }
+  | { kind: 'assign_support'; actorId: string; regionId: string }
+  | { kind: 'switch_role'; actorId: string; role: TeamRole }
+  | { kind: 'pause_capital_spending' };
+
+export interface TeamContingency {
+  id: string;
+  label: string;
+  trigger: { kind: TeamContingencyTrigger; regionId?: string; threshold?: number; actorId?: string };
+  effects: TeamContingencyEffect[];
+  priority: number;
+  authority: 'advisory' | 'requires_approval' | 'automatic';
+  status: 'armed' | 'triggered' | 'resolved';
+  firedRevision: number | null;
+  source: 'player' | 'default';
+}
+
+export interface TeamStrategyRevision {
+  revision: number;
+  turn: number;
+  trigger: string;
+  changes: string[];
+  reason: string;
+  kind: 'created' | 'objective_changed' | 'role_changed' | 'contingency_triggered' | 'resource_policy_changed' | 'task_completed' | 'task_failed' | 'replan' | 'player_override' | 'governance_decision';
+}
+
+export interface TeamPlanProposal {
+  id: string;
+  proposerActorId: string;
+  reason: string;
+  trigger: string;
+  currentPlanImpact: string;
+  proposedChanges: string[];
+  resourceImpact: string;
+  roleChanges: Array<{ actorId: string; from: TeamRole | null; to: TeamRole; responsibility: string }>;
+  constraints: string[];
+  confidence: number;
+  requiresApproval: boolean;
+  expiresTurn: number;
+  status: 'open' | 'accepted' | 'rejected' | 'modified' | 'expired';
+}
+
+export interface TeamResponsibility {
+  actorId: string;       // 'player' or an actor id
+  focus: 'region' | 'economy' | 'contracts' | 'recovery' | 'support' | 'expansion';
+  regionId?: string;
+  untilCash?: number | null;
+}
+
+/** What the player asked for, in structured form (from GI 2.1 language or the Team Plan). */
+export interface TeamCommandIntent {
+  responsibilities: TeamResponsibility[];
+  reserveFloor: number | null;
+  contingencies: Array<{ trigger: TeamContingencyTrigger; regionId?: string; actorId?: string; supportRegionId?: string }>;
+  priorities: Array<'contracts' | 'expansion' | 'defense' | 'economy'>;
+  deprioritizedRegions: string[];
+  spendLocks: string[];            // actor ids whose discretionary spending the player wants stopped
+  missionHint: string | null;
+  swap: boolean;
+  evidence: string[];
+}
+
+export interface TeamStrategyContract {
+  id: string;
+  teamId: string;
+  status: 'draft' | 'active' | 'superseded';
+  revision: number;
+  createdTurn: number;
+  updatedTurn: number;
+  mission: TeamMission;
+  primaryObjectiveId: string | null;
+  objectives: TeamObjective[];
+  priorities: string[];
+  constraints: { reserveFloor: number | null; spendLockedActorIds: string[]; deprioritizedRegions: string[] };
+  preferences: string[];
+  targetRegions: string[];
+  protectedRegions: string[];
+  roles: ActorRoleAssignment[];
+  assignments: TeamResponsibility[];
+  resourcePolicy: { reserveFloor: number | null; envelopes: TeamResourceEnvelope[] };
+  milestones: string[];
+  taskGraph: TeamTaskNode[];
+  contingencies: TeamContingency[];
+  replanConditions: string[];
+  timeHorizonTurns: number;
+  authorityPolicy: TeamOSAuthorityLevel;
+  confidence: number;
+  source: TeamMissionSource;
+  locks: { mission: boolean; roles: string[]; reserve: boolean; regions: string[] };
+  /** The player's structured intent this contract was compiled from (kept so replans honour it). */
+  commandIntent?: TeamCommandIntent | null;
+}
+
+export interface TeamOSTeamState {
+  contract: TeamStrategyContract | null;
+  conflicts: TeamStrategicConflict[];
+  proposals: TeamPlanProposal[];
+  revisions: TeamStrategyRevision[];
+  lastReplanTurn: number | null;
+  lastSignificance: string | null;
+  roleSince: Record<string, number>;
+  feedback: string[];
+}
+
+export interface TeamOperatingSystemState {
+  version: 1;
+  byTeam: Record<string, TeamOSTeamState>;
+}
+
+export const TEAM_OS_LIMITS = { objectives: 6, tasks: 14, revisions: 30, conflicts: 8, proposals: 4, contingencies: 6, feedback: 6, roleMinTurns: 2, replanCooldownTurns: 2 };
+
+// ---- Inputs + Team Situation Snapshot (B21) -------------------------------------------------
+
+export interface TeamOSActorInput {
+  id: string;
+  name: string;
+  isHuman: boolean;
+  money: number;
+  protectedCash: number;
+  inRecovery: boolean;
+  location: string | null;
+  apRemaining: number | null;
+  brainRole: TeamRole | null;
+}
+
+export interface TeamOSRegionInput {
+  code: string;
+  name: string;
+  controlledByTeam: boolean;
+  controlledByOpponent: boolean;
+  /** Deposit the opponent needs to take it from the team (null when not the team's). */
+  opponentCostToTake: number | null;
+  /** Deposit the team needs to take it (0 when already held). */
+  teamCostToTake: number | null;
+  travelCostFor: Record<string, number | null>;
+}
+
+export interface TeamOSInputs {
+  teamId: string;
+  teamName: string;
+  turn: number;
+  day: number;
+  totalDays: number;
+  actors: TeamOSActorInput[];
+  opponents: Array<{ id: string; name: string; money: number | null; location: string | null; visible: boolean }>;
+  regions: TeamOSRegionInput[];
+  treasury: { balance: number; reserve: number; pendingRequests: number } | null;
+  governorEnabled: boolean;
+  governanceMode: string;
+  overseer: { mode: string | null; safeMode: boolean; lockedActorIds: string[] };
+  pendingApprovals: number;
+  win: { metric: string; label: string; teamValue: number; opponentValue: number; regionsTarget: number | null; teamRegions: number; opponentRegions: number } | null;
+  scenarioObjectives: string[];
+  playerPlan: { objective: string; secondary: string | null; regions: string[]; status: string } | null;
+  brainGoal: { kind: string; description: string; targetRegion?: string } | null;
+  fogOfWar: boolean;
+  authority: TeamOSAuthorityLevel;
+  /** Optional canonical Economy Governor check (evaluateEconomySpendingApproval) for explanations. */
+  governorCheck?: (actorId: string, category: string, cost: number) => { approved: boolean; reason: string };
+  /** Authorized AI Memory tendencies (only when inspection is permitted). */
+  observedTendencies?: string[];
+}
+
+export interface TeamSituationSnapshot {
+  teamId: string;
+  turn: number;
+  mission: TeamMission;
+  topObjectives: string[];
+  winProgress: { label: string; team: number; opponent: number; target: number | null } | null;
+  controlledRegions: string[];
+  threatenedRegions: Array<{ code: string; opponentCostToTake: number; opponentCanAfford: boolean | null }>;
+  opportunities: Array<{ code: string; cost: number }>;
+  liquidity: TeamResourcePlan;
+  activeTasks: number;
+  blockedTasks: number;
+  actorReadiness: Array<{ actorId: string; name: string; ready: boolean; reason: string }>;
+  roles: Array<{ actorId: string; role: TeamRole; responsibility: string }>;
+  recoveringActors: string[];
+  rivalPressure: 'low' | 'medium' | 'high' | 'critical';
+  activeContingencies: string[];
+  strategyMode: string | null;
+  planConfidence: number;
+  hash: string;
+}
+
+function teamOsHash(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+const tosMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
+/** Threat level per held region from observable information only (fog of war respected). */
+export function assessTeamThreats(inputs: TeamOSInputs): TeamSituationSnapshot['threatenedRegions'] {
+  const bestRival = inputs.opponents.filter(o => o.visible && o.money !== null).sort((a, b) => (b.money || 0) - (a.money || 0) || a.id.localeCompare(b.id))[0] || null;
+  return inputs.regions
+    .filter(r => r.controlledByTeam && r.opponentCostToTake !== null)
+    .map(r => ({ code: r.code, opponentCostToTake: r.opponentCostToTake as number, opponentCanAfford: bestRival ? (bestRival.money || 0) >= (r.opponentCostToTake as number) : null }))
+    .filter(t => t.opponentCanAfford !== false)
+    .sort((a, b) => a.opponentCostToTake - b.opponentCostToTake || a.code.localeCompare(b.code));
+}
+
+// ---- Mission (B3) --------------------------------------------------------------------------
+
+function missionFromText(text: string, source: TeamMissionSource, inputs: TeamOSInputs): TeamMission | null {
+  const t = String(text || '').toLowerCase();
+  if (!t.trim()) return null;
+  const regionIds = inputs.regions.filter(r => new RegExp(`\\b(${giEscape(r.code.toLowerCase())}|${giEscape(r.name.toLowerCase())})\\b`).test(t)).map(r => r.code);
+  const count = t.match(/\b(\d+|two|three|four|five|six)\s+regions?\b/);
+  const n = count ? (GI_NUMBER_WORDS[count[1]] ?? parseInt(count[1], 10)) : null;
+  if (n) return { kind: 'control_regions', label: `Control ${n} regions`, regionIds, source, targetRegions: n };
+  if (/\b(recover|recovery|rebuild)\b/.test(t)) return { kind: 'recover_economy', label: 'Recover the team economy', regionIds, source };
+  if (/\b(expand|take|push into|go after)\b/.test(t) && regionIds.length) return { kind: 'expand_region', label: `Expand into ${regionIds.join(' & ')}`, regionIds, source };
+  if (regionIds.length) return { kind: 'secure_region', label: `Secure ${regionIds.join(' & ')}`, regionIds, source };
+  if (/\b(net worth)\b/.test(t)) return { kind: 'net_worth', label: 'Win by net worth', regionIds, source };
+  if (/\b(money|cash|income|economy)\b/.test(t)) return { kind: 'money', label: 'Build the team’s cash', regionIds, source };
+  if (/\b(lead|protect)\b/.test(t)) return { kind: 'protect_lead', label: 'Protect the current lead', regionIds, source };
+  if (/\b(rail|project|infrastructure|build)\b/.test(t)) return { kind: 'infrastructure', label: 'Complete a major infrastructure objective', regionIds, source };
+  return { kind: 'scenario', label: text.slice(0, 80), regionIds, source };
+}
+
+/** Mission from the first available source in TEAM_MISSION_SOURCE_ORDER. */
+export function deriveTeamMission(inputs: TeamOSInputs, command?: TeamCommandIntent | null): TeamMission {
+  if (command && (command.missionHint || command.responsibilities.length)) {
+    const regionResp = command.responsibilities.filter(r => r.regionId);
+    const regions = Array.from(new Set(regionResp.map(r => r.regionId!)));
+    const expanding = command.responsibilities.some(r => r.focus === 'expansion');
+    const economyOnly = !regions.length && command.responsibilities.some(r => r.focus === 'economy' || r.focus === 'recovery');
+    const label = command.missionHint
+      || (regions.length ? `${expanding ? 'Hold and expand' : 'Secure'} ${regions.join(' & ')}${command.responsibilities.some(r => r.focus === 'economy') ? ' while building team cash' : ''}` : economyOnly ? 'Build the team economy' : 'Coordinate the team');
+    return { kind: regions.length ? (expanding && regionResp.every(r => r.focus === 'expansion') ? 'expand_region' : 'secure_region') : economyOnly ? 'money' : 'protect_lead', label, regionIds: regions, source: 'player_command' };
+  }
+  if (inputs.playerPlan && !/paused|completed|cancel|supersed/i.test(inputs.playerPlan.status)) {
+    const m = missionFromText(`${inputs.playerPlan.objective} ${inputs.playerPlan.regions.join(' ')}`, 'player_plan', inputs);
+    if (m) return { ...m, label: inputs.playerPlan.objective.slice(0, 80) || m.label };
+  }
+  if (inputs.scenarioObjectives.length) {
+    const m = missionFromText(inputs.scenarioObjectives[0], 'scenario', inputs);
+    if (m) return { ...m, label: inputs.scenarioObjectives[0].slice(0, 80) };
+  }
+  if (inputs.win) {
+    if (inputs.win.regionsTarget) return { kind: 'control_regions', label: `Control ${inputs.win.regionsTarget} regions`, regionIds: [], source: 'win_condition', targetRegions: inputs.win.regionsTarget };
+    if (/net/i.test(inputs.win.metric)) return { kind: 'net_worth', label: 'Win by net worth', regionIds: [], source: 'win_condition' };
+    if (/challenge/i.test(inputs.win.metric)) return { kind: 'challenges', label: 'Win on challenges', regionIds: [], source: 'win_condition' };
+    if (/money|cash/i.test(inputs.win.metric)) return { kind: 'money', label: 'Finish with the most money', regionIds: [], source: 'win_condition' };
+  }
+  if (inputs.brainGoal) {
+    const k = inputs.brainGoal.kind;
+    return {
+      kind: k === 'control' || k === 'regions' ? 'secure_region' : k === 'support' ? 'support_teammate' : k === 'recovery' ? 'recover_economy' : k === 'netWorth' ? 'net_worth' : 'money',
+      label: inputs.brainGoal.description, regionIds: inputs.brainGoal.targetRegion ? [inputs.brainGoal.targetRegion] : [], source: 'strategic_command'
+    };
+  }
+  return { kind: 'money', label: 'Build the team’s cash', regionIds: [], source: 'team_brain' };
+}
+
+// ---- Resource planner (B10–B11) -----------------------------------------------------------
+
+export function planTeamResources(inputs: TeamOSInputs, objectives: TeamObjective[], reserveFloor: number | null): TeamResourcePlan {
+  const actorCash = inputs.actors.reduce((s, a) => s + Math.max(0, a.money), 0);
+  const protectedCash = inputs.actors.reduce((s, a) => s + Math.max(0, a.protectedCash), 0);
+  const treasuryBalance = inputs.treasury?.balance || 0;
+  const treasuryReserve = inputs.treasury?.reserve || 0;
+  const freeCash = Math.max(0, actorCash - protectedCash) + Math.max(0, treasuryBalance - treasuryReserve);
+  const floor = Math.max(0, reserveFloor || 0);
+  const envelopes: TeamResourceEnvelope[] = [];
+  const add = (category: TeamEnvelopeCategory, target: number, priority: number, ids: string[], hardFloor = false) => {
+    if (target <= 0) return;
+    const e = envelopes.find(x => x.category === category);
+    if (e) { e.target += target; e.forObjectiveIds.push(...ids); e.priority = Math.min(e.priority, priority); }
+    else envelopes.push({ category, target, allocated: 0, hardFloor, priority, forObjectiveIds: [...ids] });
+  };
+  if (floor) add('emergency', floor, 0, [], true);
+  objectives.filter(o => o.status === 'active' || o.status === 'blocked').forEach(o => {
+    const cat: TeamEnvelopeCategory = o.type === 'hold_region' ? 'defense' : o.type === 'take_region' || o.type === 'position_actor' ? 'expansion' : o.type === 'complete_contract' ? 'contracts' : o.type === 'support_teammate' || o.type === 'recover_economy' ? 'support' : 'flexible';
+    if (o.requiredCash > 0 && o.type !== 'raise_cash' && o.type !== 'preserve_reserve') add(cat, o.requiredCash, o.priority, [o.id]);
+  });
+  // Allocate in priority order against what actually exists; nothing here moves or creates money.
+  let left = freeCash;
+  envelopes.sort((a, b) => a.priority - b.priority || a.category.localeCompare(b.category)).forEach(e => { const take = Math.min(left, e.target); e.allocated = take; left -= take; });
+  const need = envelopes.reduce((s, e) => s + e.target, 0);
+  const notes = [
+    'Envelopes are planning intentions over real balances — the Treasury and each actor still hold the money.',
+    ...(protectedCash ? [`${tosMoney(protectedCash)} is physically protected in Cash Vaults and never planned for spending.`] : []),
+    ...(treasuryReserve ? [`${tosMoney(treasuryReserve)} is the Treasury's own reserve.`] : [])
+  ];
+  if (left > 0) envelopes.push({ category: 'flexible', target: left, allocated: left, hardFloor: false, priority: 9, forObjectiveIds: [] });
+  return { actorCash, protectedCash, treasuryBalance, treasuryReserve, freeCash, strategyReserveFloor: floor, envelopes, unallocated: Math.max(0, left), shortfall: Math.max(0, need - freeCash), notes };
+}
+
+// ---- Objective decomposition (B4) -------------------------------------------------------------
+
+export function decomposeTeamMission(inputs: TeamOSInputs, mission: TeamMission, command: TeamCommandIntent | null, reserveFloor: number | null): TeamObjective[] {
+  const out: TeamObjective[] = [];
+  const turn = inputs.turn;
+  const threats = assessTeamThreats(inputs);
+  const add = (o: Omit<TeamObjective, 'id' | 'status' | 'progress' | 'dependencies' | 'assignedActorIds' | 'horizonTurns'> & { dependencies?: string[]; horizonTurns?: number }) => {
+    if (out.length >= TEAM_OS_LIMITS.objectives) return null;
+    const id = `obj_${o.type}_${o.regionId || out.length}`;
+    if (out.some(x => x.id === id)) return out.find(x => x.id === id)!.id;
+    out.push({ ...o, id, status: 'active', progress: 0, dependencies: o.dependencies || [], assignedActorIds: [], horizonTurns: o.horizonTurns ?? 3 });
+    return id;
+  };
+  const deprioritized = new Set(command?.deprioritizedRegions || []);
+  const regionById = (code: string) => inputs.regions.find(r => r.code === code) || null;
+  const holdRegion = (code: string, reason: string, priority: number) => {
+    const r = regionById(code);
+    if (!r) return null;
+    const threat = threats.find(t => t.code === code);
+    if (r.controlledByTeam) {
+      const need = threat ? Math.max(1000, Math.round(threat.opponentCostToTake * 0.5)) : 0;
+      return add({ type: 'hold_region', description: `Hold ${r.name}`, priority, tier: threat ? 6 : 8, completionCondition: `${r.name} stays under team control through the horizon`, failureCondition: `${r.name} is lost`, requiredCash: need, reason, regionId: code });
+    }
+    return add({ type: 'take_region', description: `Take ${r.name}`, priority, tier: 8, completionCondition: `The team controls ${r.name}`, failureCondition: `${r.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, r.teamCostToTake || 0), reason, regionId: code });
+  };
+  // Player responsibilities first (explicit intent is the strategy's backbone).
+  (command?.responsibilities || []).forEach(res => {
+    if (res.regionId && !deprioritized.has(res.regionId)) {
+      if (res.focus === 'expansion') {
+        const r = regionById(res.regionId);
+        if (r && !r.controlledByTeam) add({ type: 'take_region', description: `Expand into ${r.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${r.name}`, failureCondition: `${r.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, r.teamCostToTake || 0), reason: 'You asked for this expansion.', regionId: r.code });
+        else holdRegion(res.regionId, 'You asked for this region.', 1);
+      } else holdRegion(res.regionId, 'You took responsibility for this region.', 1);
+    }
+  });
+  // Mission-driven objectives.
+  if (mission.kind === 'secure_region' || mission.kind === 'expand_region') {
+    mission.regionIds.filter(c => !deprioritized.has(c)).forEach(c => holdRegion(c, `The mission is to ${mission.label.toLowerCase()}.`, 1));
+  }
+  // Threatened held regions are win-critical whenever the win condition counts regions.
+  threats.slice(0, 2).forEach(t => { if (!deprioritized.has(t.code)) holdRegion(t.code, t.opponentCanAfford ? 'The opponent can afford to take it right now.' : 'It is the team’s most exposed region.', 1); });
+  if (mission.kind === 'control_regions' && inputs.win) {
+    const target = mission.targetRegions || inputs.win.regionsTarget || 0;
+    if (inputs.win.teamRegions < target) {
+      const cheapest = inputs.regions.filter(r => !r.controlledByTeam && r.teamCostToTake !== null && !deprioritized.has(r.code))
+        .sort((a, b) => (a.teamCostToTake || 0) - (b.teamCostToTake || 0) || a.code.localeCompare(b.code))[0];
+      if (cheapest) add({ type: 'take_region', description: `Take ${cheapest.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${cheapest.name}`, failureCondition: `${cheapest.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, cheapest.teamCostToTake || 0), reason: `The team holds ${inputs.win.teamRegions} of ${target} regions; this is the cheapest next one.`, regionId: cheapest.code });
+    }
+  }
+  const recovering = inputs.actors.filter(a => a.inRecovery && !a.isHuman);
+  if (mission.kind === 'recover_economy' || recovering.length) {
+    add({ type: 'recover_economy', description: recovering.length ? `Recover ${recovering.map(a => a.name).join(', ')}` : 'Recover the team economy', priority: mission.kind === 'recover_economy' ? 1 : 3, tier: 7, completionCondition: 'No team member is in economic recovery', failureCondition: 'A member stays in recovery for 3 turns', requiredCash: 0, reason: 'An actor in recovery cannot contribute to the plan.' });
+  }
+  // Cash: what the spending objectives need beyond free cash (+ the reserve floor).
+  const spendNeed = out.reduce((s, o) => s + (o.type === 'hold_region' || o.type === 'take_region' ? o.requiredCash : 0), 0);
+  const plan = planTeamResources(inputs, out, reserveFloor);
+  const cashGap = Math.max(0, spendNeed + (reserveFloor || 0) - plan.freeCash);
+  const topPriority = (command?.priorities || [])[0] || null;
+  if (topPriority === 'defense') {
+    // "Focus on defense": every held region gets a hold objective; expansion waits (never deleted).
+    inputs.regions.filter(r => r.controlledByTeam && !deprioritized.has(r.code)).slice(0, 3).forEach(r => holdRegion(r.code, 'You asked the team to focus on defense.', 1));
+    out.forEach(o => { if (o.type === 'take_region') { o.status = 'paused'; o.pausedReason = 'paused: you prioritised defense'; } });
+  } else if (topPriority === 'expansion') {
+    out.forEach(o => { if (o.type === 'take_region') o.priority = 1; });
+  }
+  const wantsEconomy = (command?.responsibilities || []).some(r => r.focus === 'economy') || topPriority === 'economy' || ['money', 'net_worth', 'recover_economy', 'protect_lead'].includes(mission.kind);
+  if (cashGap > 0 || wantsEconomy) {
+    const amount = Math.max(cashGap, wantsEconomy ? Math.max(1000, Math.round((reserveFloor || 0) * 0.5)) : 0);
+    add({ type: 'raise_cash', description: `Generate ${tosMoney(amount)} of team liquidity`, priority: cashGap > 0 ? 2 : 3, tier: 8, completionCondition: `Team free cash rises by ${tosMoney(amount)}`, failureCondition: 'No cash progress for 3 turns', requiredCash: 0, reason: cashGap > 0 ? `The plan's spending needs ${tosMoney(cashGap)} more than the team can spend.` : 'Your strategy asks for team income.', amount });
+  }
+  if (reserveFloor) add({ type: 'preserve_reserve', description: `Keep at least ${tosMoney(reserveFloor)} untouched`, priority: 1, tier: 5, completionCondition: 'Team free cash never drops below the floor', failureCondition: 'Free cash falls below the floor', requiredCash: 0, reason: 'You set this reserve as a hard constraint.', amount: reserveFloor, horizonTurns: 99 });
+  if ((command?.priorities || []).includes('contracts')) add({ type: 'complete_contract', description: 'Finish active contracts first', priority: 2, tier: 8, completionCondition: 'Active contracts are completed', failureCondition: 'A contract expires', requiredCash: 0, reason: 'You asked to focus contracts first.' });
+  if (!out.length) add({ type: 'grow_metric', description: mission.label, priority: 2, tier: 8, completionCondition: 'The win metric improves', failureCondition: 'No progress for 3 turns', requiredCash: 0, reason: 'Default mission objective.' });
+  // Deterministic order: priority, then tier, then id.
+  out.sort((a, b) => a.priority - b.priority || a.tier - b.tier || a.id.localeCompare(b.id));
+  // Expansion depends on cash when cash is short.
+  const cash = out.find(o => o.type === 'raise_cash');
+  if (cash && cashGap > 0) out.filter(o => o.type === 'take_region').forEach(o => { if (!o.dependencies.includes(cash.id)) o.dependencies.push(cash.id); });
+  void turn;
+  return out;
+}
+
+// ---- Roles (B7–B9) ---------------------------------------------------------------------------
+
+const TASK_ROLE: Partial<Record<TeamTaskType, TeamRole>> = {
+  defend_region: 'controller', take_region: 'controller', reach_region: 'explorer', generate_cash: 'earner', request_treasury: 'earner',
+  support_actor: 'support', recover: 'recovery', complete_contract: 'earner', monitor_rival: 'controller', preserve_reserve: 'earner'
+};
+
+// ---- Task graph (B5–B6) + assignment + parallel conflicts (B45–B46) ---------------------------
+
+export function validateTeamTaskGraph(tasks: TeamTaskNode[], actorIds: string[]): string[] {
+  const issues: string[] = [];
+  const ids = new Set(tasks.map(t => t.id));
+  if (tasks.length > TEAM_OS_LIMITS.tasks) issues.push(`task graph exceeds ${TEAM_OS_LIMITS.tasks} tasks`);
+  tasks.forEach(t => {
+    t.dependencies.forEach(d => { if (!ids.has(d)) issues.push(`dangling dependency ${t.id} → ${d}`); });
+    t.assignedActorIds.forEach(a => { if (!actorIds.includes(a)) issues.push(`task ${t.id} assigned to unknown actor ${a}`); });
+  });
+  // Cycle detection (iterative DFS, bounded).
+  const state: Record<string, 0 | 1 | 2> = {};
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  const visit = (id: string, depth: number): boolean => {
+    if (depth > 32) return true;
+    if (state[id] === 1) return true;
+    if (state[id] === 2) return false;
+    state[id] = 1;
+    for (const d of byId.get(id)?.dependencies || []) if (byId.has(d) && visit(d, depth + 1)) return true;
+    state[id] = 2;
+    return false;
+  };
+  tasks.forEach(t => { if (visit(t.id, 0) && !issues.some(i => i.startsWith('cycle'))) issues.push(`cycle through ${t.id}`); });
+  return issues;
+}
+
+export function buildTeamTaskGraph(inputs: TeamOSInputs, objectives: TeamObjective[], command: TeamCommandIntent | null, resources: TeamResourcePlan, previous: TeamTaskNode[] = []): TeamTaskNode[] {
+  const tasks: TeamTaskNode[] = [];
+  const turn = inputs.turn;
+  const actors = inputs.actors;
+  const human = actors.find(a => a.isHuman) || null;
+  const ai = actors.filter(a => !a.isHuman);
+  const explicit = command?.responsibilities || [];
+  const prevById = new Map(previous.map(t => [t.id, t]));
+  const make = (t: Omit<TeamTaskNode, 'createdTurn' | 'updatedTurn' | 'status' | 'blockers' | 'fallbackTaskIds' | 'confidence'> & { confidence?: number }) => {
+    if (tasks.length >= TEAM_OS_LIMITS.tasks || tasks.some(x => x.id === t.id)) return tasks.find(x => x.id === t.id)?.id || null;
+    const prev = prevById.get(t.id);
+    tasks.push({ ...t, status: 'proposed', blockers: [], fallbackTaskIds: [], confidence: t.confidence ?? 0.8, createdTurn: prev?.createdTurn ?? turn, updatedTurn: turn, humanStatus: prev?.humanStatus ?? t.humanStatus });
+    return t.id;
+  };
+  const responsibleFor = (regionId: string): string | null => explicit.find(r => r.regionId === regionId && (r.focus === 'region' || r.focus === 'expansion'))?.actorId || null;
+  const economyActor = (): string | null => explicit.find(r => r.focus === 'economy')?.actorId || null;
+  // Suitability-scored assignment (greedy, bounded — no factorial search). Humans only by explicit choice
+  // or as a suggestion; AI actors in recovery are left for recovery tasks.
+  const busy = new Map<string, number>();
+  const pick = (type: TeamTaskType, regionId?: string): string[] => {
+    const forced = regionId ? responsibleFor(regionId) : type === 'generate_cash' ? economyActor() : null;
+    if (forced) return [forced === 'player' ? (human?.id || 'player') : forced];
+    const candidates = ai.filter(a => !a.inRecovery || type === 'recover' || type === 'generate_cash');
+    // The human already standing in a region they could defend gets it as a suggestion (never auto-run).
+    if (regionId && type === 'defend_region' && human && human.location === regionId && !candidates.some(a => a.location === regionId)) return [human.id];
+    const scored = candidates.map(a => {
+      let s = 0;
+      if (type === 'generate_cash' && (a.brainRole === 'earner' || a.brainRole === 'crafter')) s += 30;
+      if ((type === 'defend_region' || type === 'take_region') && a.brainRole === 'controller') s += 30;
+      if (regionId && a.location === regionId) s += 25;
+      if (type === 'generate_cash') s += 10;
+      s -= (busy.get(a.id) || 0) * 20;
+      return { a, s };
+    }).sort((x, y) => y.s - x.s || x.a.id.localeCompare(y.a.id));
+    if (scored[0]) return [scored[0].a.id];
+    return human ? [human.id] : [];
+  };
+  const assign = (ids: string[]) => { ids.forEach(id => busy.set(id, (busy.get(id) || 0) + 1)); return ids; };
+  const cashTaskId = (() => {
+    const o = objectives.find(x => x.type === 'raise_cash');
+    if (!o) return null;
+    const who = assign(pick('generate_cash'));
+    return make({ id: `task_cash_${o.id}`, objectiveId: o.id, type: 'generate_cash', label: `Generate ${tosMoney(o.amount || 0)}`, assignedActorIds: who, priority: o.priority, dependencies: [], deadlineTurn: turn + o.horizonTurns, resourceRequirement: 0, completionPredicate: `team free cash ≥ ${Math.round(resources.freeCash + (o.amount || 0))}`, actionHints: ['sell idle resources', 'complete contracts', 'work', 'low-risk challenges'], amount: o.amount });
+  })();
+  objectives.forEach(o => {
+    if (o.type === 'hold_region' && o.regionId) {
+      const who = assign(pick('defend_region', o.regionId));
+      const deps: string[] = [];
+      if (o.requiredCash > resources.freeCash && cashTaskId) deps.push(cashTaskId);
+      if (inputs.treasury && inputs.treasury.balance - inputs.treasury.reserve > 0 && o.requiredCash > 0) {
+        const tr = make({ id: `task_treasury_${o.regionId}`, objectiveId: o.id, type: 'request_treasury', label: `Request Treasury funding for ${o.regionId} defense`, assignedActorIds: who, priority: o.priority, dependencies: cashTaskId && o.requiredCash > resources.freeCash ? [cashTaskId] : [], deadlineTurn: turn + 1, resourceRequirement: 0, completionPredicate: 'a funding request is resolved by the Treasury', actionHints: ['Treasury funding request'], humanStatus: who[0] === human?.id ? 'suggested' : undefined, amount: Math.min(o.requiredCash, inputs.treasury.balance - inputs.treasury.reserve) });
+        if (tr) deps.push(tr);
+      }
+      make({ id: `task_defend_${o.regionId}`, objectiveId: o.id, type: 'defend_region', label: `Defend ${o.regionId}`, assignedActorIds: who, priority: o.priority, dependencies: deps, deadlineTurn: turn + 1, resourceRequirement: o.requiredCash, completionPredicate: `${o.regionId} held with a safe margin`, actionHints: ['region deposit'], regionId: o.regionId, humanStatus: who[0] === human?.id ? 'suggested' : undefined });
+      make({ id: `task_watch_${o.regionId}`, objectiveId: o.id, type: 'monitor_rival', label: `Watch rival pressure on ${o.regionId}`, assignedActorIds: [], priority: o.priority + 1, dependencies: [], deadlineTurn: null, resourceRequirement: 0, completionPredicate: 'pressure subsides', actionHints: ['observable rival deposits'], regionId: o.regionId });
+    } else if ((o.type === 'take_region' || o.type === 'position_actor') && o.regionId) {
+      const who = assign(pick('take_region', o.regionId));
+      const actor = actors.find(a => a.id === who[0]);
+      const deps: string[] = o.dependencies.map(d => objectives.find(x => x.id === d)?.type === 'raise_cash' ? cashTaskId : null).filter(Boolean) as string[];
+      let reach: string | null = null;
+      if (actor && actor.location !== o.regionId) {
+        reach = make({ id: `task_reach_${o.regionId}`, objectiveId: o.id, type: 'reach_region', label: `Reach ${o.regionId}`, assignedActorIds: who, priority: o.priority, dependencies: [], deadlineTurn: turn + 2, resourceRequirement: inputs.regions.find(r => r.code === o.regionId)?.travelCostFor[actor.id] || 0, completionPredicate: `${actor.name} is in ${o.regionId}`, actionHints: ['travel'], regionId: o.regionId, humanStatus: actor.isHuman ? 'suggested' : undefined });
+      }
+      make({ id: `task_take_${o.regionId}`, objectiveId: o.id, type: 'take_region', label: `Take ${o.regionId}`, assignedActorIds: who, priority: o.priority, dependencies: [...deps, ...(reach ? [reach] : [])], deadlineTurn: turn + o.horizonTurns, resourceRequirement: o.requiredCash, completionPredicate: `the team controls ${o.regionId}`, actionHints: ['region deposit'], regionId: o.regionId, humanStatus: actor?.isHuman ? 'suggested' : undefined });
+    } else if (o.type === 'recover_economy') {
+      inputs.actors.filter(a => a.inRecovery && !a.isHuman).forEach(a => make({ id: `task_recover_${a.id}`, objectiveId: o.id, type: 'recover', label: `${a.name} recovers`, assignedActorIds: [a.id], priority: o.priority, dependencies: [], deadlineTurn: turn + 3, resourceRequirement: 0, completionPredicate: `${a.name} exits economic recovery`, actionHints: ['income actions'] }));
+    } else if (o.type === 'preserve_reserve') {
+      make({ id: 'task_reserve', objectiveId: o.id, type: 'preserve_reserve', label: `Keep ${tosMoney(o.amount || 0)} untouched`, assignedActorIds: [], priority: o.priority, dependencies: [], deadlineTurn: null, resourceRequirement: 0, completionPredicate: 'standing constraint', actionHints: ['Treasury reserve', 'Economy Governor context'] });
+    } else if (o.type === 'complete_contract') {
+      make({ id: 'task_contracts', objectiveId: o.id, type: 'complete_contract', label: 'Finish active contracts', assignedActorIds: assign(pick('complete_contract')), priority: o.priority, dependencies: [], deadlineTurn: turn + 3, resourceRequirement: 0, completionPredicate: 'no active contract left unfinished', actionHints: ['contract actions'] });
+    }
+  });
+  // Support contingencies prepared as fallbacks.
+  (command?.contingencies || []).forEach(c => {
+    if (c.actorId && c.supportRegionId) {
+      const id = make({ id: `task_support_${c.actorId}_${c.supportRegionId}`, objectiveId: objectives.find(o => o.regionId === c.supportRegionId)?.id || objectives[0]?.id || 'obj', type: 'support_actor', label: `Support ${c.supportRegionId} if pressure turns critical`, assignedActorIds: [c.actorId], priority: 4, dependencies: [], deadlineTurn: null, resourceRequirement: 0, completionPredicate: 'contingency not needed or pressure subsides', actionHints: ['travel', 'region deposit'], regionId: c.supportRegionId });
+      const defend = tasks.find(t => t.type === 'defend_region' && t.regionId === c.supportRegionId);
+      if (id && defend) defend.fallbackTaskIds.push(id);
+      const sup = tasks.find(t => t.id === id);
+      if (sup) sup.status = 'waiting';
+    }
+  });
+  return tasks;
+}
+
+/** Update task statuses from real state (completion predicates, dependencies, resources). */
+export function updateTeamTaskStatuses(tasks: TeamTaskNode[], inputs: TeamOSInputs, resources: TeamResourcePlan, objectives: TeamObjective[]): TeamTaskNode[] {
+  const byId = new Map(tasks.map(t => [t.id, t]));
+  const paused = new Set(objectives.filter(o => o.status === 'paused').map(o => o.id));
+  const done = (t: TeamTaskNode): boolean => {
+    const r = t.regionId ? inputs.regions.find(x => x.code === t.regionId) : null;
+    switch (t.type) {
+      case 'take_region': return Boolean(r?.controlledByTeam);
+      case 'reach_region': return t.assignedActorIds.every(id => inputs.actors.find(a => a.id === id)?.location === t.regionId);
+      case 'recover': return t.assignedActorIds.every(id => !inputs.actors.find(a => a.id === id)?.inRecovery);
+      case 'generate_cash': { const target = Number((t.completionPredicate.match(/≥ (\d+)/) || [])[1]); return Number.isFinite(target) && target > 0 && resources.freeCash >= target; }
+      default: return false;
+    }
+  };
+  return tasks.map(t => {
+    if (['completed', 'failed', 'superseded', 'cancelled'].includes(t.status)) return t;
+    const next = { ...t, blockers: [] as string[] };
+    if (paused.has(t.objectiveId)) { next.status = 'waiting'; next.blockers = [objectives.find(o => o.id === t.objectiveId)?.pausedReason || 'objective paused']; return next; }
+    if (t.type === 'support_actor' && t.status === 'waiting') return next;
+    if (done(t)) { next.status = 'completed'; return next; }
+    const openDeps = t.dependencies.filter(d => byId.get(d) && byId.get(d)!.status !== 'completed');
+    if (openDeps.length) { next.status = 'waiting'; next.blockers = openDeps.map(d => `waiting on ${byId.get(d)!.label}`); return next; }
+    if (t.resourceRequirement > 0 && resources.freeCash - resources.strategyReserveFloor < t.resourceRequirement) {
+      next.status = 'blocked';
+      next.blockers = [`needs ${tosMoney(t.resourceRequirement)}; the team can spend ${tosMoney(Math.max(0, resources.freeCash - resources.strategyReserveFloor))} above its ${tosMoney(resources.strategyReserveFloor)} reserve`];
+      return next;
+    }
+    if (t.assignedActorIds.some(id => inputs.actors.find(a => a.id === id)?.inRecovery) && t.type !== 'recover' && t.type !== 'generate_cash') { next.status = 'blocked'; next.blockers = ['the assigned actor is in economic recovery']; return next; }
+    next.status = t.humanStatus && t.humanStatus !== 'accepted' && t.humanStatus !== 'active' ? 'ready' : (t.type === 'monitor_rival' || t.type === 'preserve_reserve' ? 'active' : 'ready');
+    return next;
+  });
+}
+
+// ---- Roles with hysteresis ----------------------------------------------------------------
+
+export function assignTeamRoles(inputs: TeamOSInputs, tasks: TeamTaskNode[], command: TeamCommandIntent | null, previous: ActorRoleAssignment[], roleSince: Record<string, number>, lockedRoles: string[]): ActorRoleAssignment[] {
+  return inputs.actors.map(a => {
+    const prev = previous.find(p => p.actorId === a.id) || null;
+    const explicitResp = (command?.responsibilities || []).find(r => r.actorId === a.id || (a.isHuman && r.actorId === 'player'));
+    const mine = tasks.filter(t => t.assignedActorIds.includes(a.id) && !['completed', 'cancelled', 'superseded'].includes(t.status) && t.type !== 'support_actor');
+    const top = mine.slice().sort((x, y) => x.priority - y.priority || x.id.localeCompare(y.id))[0];
+    let role: TeamRole = a.inRecovery && !a.isHuman ? 'recovery' : top ? (TASK_ROLE[top.type] || 'earner') : (a.brainRole || 'earner');
+    if (explicitResp) role = explicitResp.focus === 'economy' ? 'earner' : explicitResp.focus === 'recovery' ? 'recovery' : explicitResp.focus === 'support' ? 'support' : explicitResp.focus === 'expansion' ? 'explorer' : explicitResp.focus === 'contracts' ? 'earner' : 'controller';
+    const responsibility = explicitResp
+      ? (explicitResp.regionId ? `${explicitResp.focus === 'expansion' ? 'Expand into' : 'Hold'} ${explicitResp.regionId}` : explicitResp.focus === 'economy' ? 'Team income' : explicitResp.focus === 'recovery' ? `Recover${explicitResp.untilCash ? ` until ${tosMoney(explicitResp.untilCash)}` : ''}` : explicitResp.focus)
+      : top ? top.label : 'No active task';
+    // Hysteresis: a non-explicit role holds for TEAM_OS_LIMITS.roleMinTurns unless recovery forces a change.
+    const since = roleSince[a.id] ?? inputs.turn;
+    const locked = lockedRoles.includes(a.id) || Boolean(prev?.explicit && !explicitResp && command === null);
+    if (prev && !explicitResp && (locked || (prev.primaryRole !== role && inputs.turn - since < TEAM_OS_LIMITS.roleMinTurns && role !== 'recovery'))) {
+      return { ...prev, taskIds: mine.map(t => t.id), objectiveIds: Array.from(new Set(mine.map(t => t.objectiveId))) };
+    }
+    return {
+      actorId: a.id,
+      primaryRole: role,
+      secondaryRole: mine[1] ? (TASK_ROLE[mine[1].type] || null) : null,
+      responsibility,
+      reason: explicitResp ? 'You assigned this responsibility.' : a.inRecovery && !a.isHuman ? 'Economic recovery comes first.' : top ? `Assigned to “${top.label}”.` : 'Team Brain default role.',
+      objectiveIds: Array.from(new Set(mine.map(t => t.objectiveId))),
+      taskIds: mine.map(t => t.id),
+      startTurn: prev && prev.primaryRole === role ? prev.startTurn : inputs.turn,
+      reviewCondition: role === 'recovery' ? 'exits economic recovery' : top ? `“${top.label}” completes or is blocked` : 'next replan',
+      temporary: role === 'recovery' || Boolean(explicitResp?.untilCash),
+      confidence: explicitResp ? 0.95 : top ? 0.8 : 0.6,
+      explicit: Boolean(explicitResp)
+    };
+  });
+}
+
+// ---- Conflicts + resolution (B13–B15) -------------------------------------------------------
+
+export function detectTeamConflicts(inputs: TeamOSInputs, objectives: TeamObjective[], tasks: TeamTaskNode[], resources: TeamResourcePlan): { conflicts: TeamStrategicConflict[]; objectives: TeamObjective[] } {
+  const conflicts: TeamStrategicConflict[] = [];
+  const objs = objectives.map(o => ({ ...o }));
+  const add = (c: Omit<TeamStrategicConflict, 'id'>) => { if (conflicts.length < TEAM_OS_LIMITS.conflicts) conflicts.push({ ...c, id: `conflict_${c.type}_${conflicts.length}` }); };
+  // Resource conflict between defense and expansion under the reserve floor.
+  const spendable = Math.max(0, resources.freeCash - resources.strategyReserveFloor);
+  const defense = objs.filter(o => o.type === 'hold_region' && o.requiredCash > 0 && o.status === 'active');
+  const expansion = objs.filter(o => o.type === 'take_region' && o.requiredCash > 0 && o.status === 'active');
+  const defenseNeed = defense.reduce((s, o) => s + o.requiredCash, 0);
+  const expansionNeed = expansion.reduce((s, o) => s + o.requiredCash, 0);
+  if (defense.length && expansion.length && defenseNeed + expansionNeed > spendable) {
+    // Tier framework: win-critical defense (6) beats mission expansion (8).
+    const loser = defense.some(o => o.tier <= 6) ? expansion : defense;
+    const winner = loser === expansion ? defense : expansion;
+    loser.forEach(o => { o.status = 'paused'; o.pausedReason = `postponed: funding both would break the ${tosMoney(resources.strategyReserveFloor)} reserve`; });
+    add({
+      type: 'objective_vs_objective', parties: [...winner.map(o => o.description), ...loser.map(o => o.description)], conflictingGoals: [`${winner[0].description} (${tosMoney(defenseNeed)})`, `${loser[0].description} (${tosMoney(expansionNeed)})`],
+      severity: 'high', evidence: [`spendable above reserve: ${tosMoney(spendable)}`, `defense needs ${tosMoney(defenseNeed)}`, `expansion needs ${tosMoney(expansionNeed)}`],
+      candidateResolutions: [`delay ${loser[0].description}`, 'request Treasury funding', 'reduce the deposit size', 'lower the reserve (your decision)'],
+      selectedResolution: `delay ${loser.map(o => o.description).join(' and ')}`,
+      reason: `${winner[0].description} is ${winner[0].tier <= 6 ? 'win-critical (the region is threatened)' : 'the higher mission priority'}, and funding both would have broken the team's ${tosMoney(resources.strategyReserveFloor)} reserve, so ${loser.map(o => o.description).join(' and ')} is temporarily delayed.`,
+      requiresPlayerDecision: false, status: 'resolved', winnerTier: winner[0].tier, loserTier: loser[0].tier
+    });
+  }
+  // Treasury vs objective.
+  if (inputs.treasury && resources.shortfall > 0) {
+    add({ type: 'treasury_vs_objective', parties: ['Team Treasury', 'Team Strategy'], conflictingGoals: ['Treasury reserve', 'Planned spending'], severity: resources.shortfall > spendable ? 'high' : 'medium', evidence: [`planned needs exceed free cash by ${tosMoney(resources.shortfall)}`, `Treasury reserve ${tosMoney(inputs.treasury.reserve)}`], candidateResolutions: ['raise cash first', 'delay the lowest-priority spending', 'request a governed Treasury exception'], selectedResolution: 'raise cash first', reason: `The plan needs ${tosMoney(resources.shortfall)} more than the team can spend; the Treasury keeps its own reserve, so income comes first.`, requiresPlayerDecision: false, status: 'resolved' });
+  }
+  // Governor vs task (canonical Governor ruling, explained — never overridden).
+  if (inputs.governorCheck) {
+    tasks.filter(t => t.resourceRequirement > 0 && !['completed', 'cancelled'].includes(t.status)).slice(0, 4).forEach(t => {
+      t.assignedActorIds.forEach(actorId => {
+        const actor = inputs.actors.find(a => a.id === actorId);
+        if (!actor || actor.isHuman) return;
+        const cat = t.type === 'defend_region' || t.type === 'take_region' ? 'region_deposit' : t.type === 'reach_region' ? 'travel' : 'investment';
+        const ruling = inputs.governorCheck!(actorId, cat, t.resourceRequirement);
+        if (!ruling.approved) add({ type: 'governor_vs_task', parties: ['Economy Governor', actor.name], conflictingGoals: [t.label, 'actor reserve'], severity: t.priority <= 1 ? 'high' : 'medium', evidence: [ruling.reason], candidateResolutions: ['request Treasury funding', 'reduce the amount', 'delay a lower-priority allocation', 'wait one turn'], selectedResolution: 'request Treasury funding', reason: `The Economy Governor blocks ${actor.name}'s ${tosMoney(t.resourceRequirement)} for “${t.label}”: ${ruling.reason} The Governor stays authoritative; a Treasury-assisted action is the suggested path.`, requiresPlayerDecision: false, status: 'resolved' });
+      });
+    });
+  }
+  // Recovery vs expansion.
+  const rec = objs.find(o => o.type === 'recover_economy' && o.status === 'active');
+  if (rec && expansion.some(o => o.status === 'active')) {
+    add({ type: 'recovery_vs_expansion', parties: ['Recovery', 'Expansion'], conflictingGoals: [rec.description, expansion[0].description], severity: 'medium', evidence: ['an AI teammate is in economic recovery'], candidateResolutions: ['recover first', 'expand with the healthy actor only'], selectedResolution: 'expand with the healthy actor only', reason: 'Recovery (tier 7) outranks mission expansion (tier 8), so only healthy actors are assigned to expansion.', requiresPlayerDecision: false, status: 'resolved' });
+  }
+  // Role / resource collisions between parallel tasks (duplicate targets).
+  const seenTarget = new Map<string, TeamTaskNode>();
+  tasks.filter(t => (t.type === 'defend_region' || t.type === 'take_region') && t.regionId).forEach(t => {
+    const other = seenTarget.get(t.regionId!);
+    if (other && other.assignedActorIds.join() !== t.assignedActorIds.join() && other.type === t.type) add({ type: 'resource_collision', parties: [...other.assignedActorIds, ...t.assignedActorIds], conflictingGoals: [other.label, t.label], severity: 'medium', evidence: [`two actors target ${t.regionId}`], candidateResolutions: ['one actor leads, the other supports'], selectedResolution: 'one actor leads, the other supports', reason: 'Two actors depositing into the same region wastes cash; one leads.', requiresPlayerDecision: false, status: 'resolved' });
+    seenTarget.set(t.regionId!, t);
+  });
+  // Governance: strategy changes need a vote in consensus / weighted modes.
+  if (/CONSENSUS|WEIGHTED/i.test(inputs.governanceMode)) {
+    add({ type: 'governance_veto', parties: ['Team Governance'], conflictingGoals: ['strategy changes'], severity: 'low', evidence: [`governance mode: ${inputs.governanceMode}`], candidateResolutions: ['route strategy changes through Governance'], selectedResolution: 'route strategy changes through Governance', reason: 'Team Governance decides strategy changes in this mode; Team OS only proposes.', requiresPlayerDecision: false, status: 'resolved' });
+  }
+  if (inputs.pendingApprovals > 0) add({ type: 'approval_delay', parties: ['AI Action Approval'], conflictingGoals: ['pending approvals'], severity: 'low', evidence: [`${inputs.pendingApprovals} approval(s) pending`], candidateResolutions: ['answer the pending approvals'], selectedResolution: null, reason: 'Some AI actions are waiting for your approval.', requiresPlayerDecision: true, status: 'awaiting_player' });
+  return { conflicts, objectives: objs };
+}
+
+// ---- Contingencies (B16–B17) --------------------------------------------------------------
+
+export function buildTeamContingencies(inputs: TeamOSInputs, command: TeamCommandIntent | null, objectives: TeamObjective[], authority: TeamOSAuthorityLevel): TeamContingency[] {
+  const out: TeamContingency[] = [];
+  const auth = (effects: TeamContingencyEffect[]): TeamContingency['authority'] => {
+    if (authority === 'manual' || authority === 'advisor') return 'advisory';
+    if (authority === 'assisted') return effects.some(e => e.kind === 'switch_role' || e.kind === 'assign_support') ? 'requires_approval' : 'automatic';
+    return 'automatic';
+  };
+  const push = (c: Omit<TeamContingency, 'id' | 'status' | 'firedRevision' | 'authority'>) => {
+    if (out.length >= TEAM_OS_LIMITS.contingencies) return;
+    out.push({ ...c, id: `cont_${c.trigger.kind}_${c.trigger.regionId || c.trigger.actorId || out.length}`, status: 'armed', firedRevision: null, authority: auth(c.effects) });
+  };
+  (command?.contingencies || []).forEach(c => {
+    const effects: TeamContingencyEffect[] = [];
+    if (c.actorId && c.supportRegionId) effects.push({ kind: 'assign_support', actorId: c.actorId, regionId: c.supportRegionId });
+    if (c.supportRegionId) effects.push({ kind: 'raise_region_priority', regionId: c.supportRegionId });
+    effects.push({ kind: 'pause_objective_type', objectiveType: 'take_region' });
+    push({ label: `If ${c.regionId || c.supportRegionId || 'the region'} becomes critical, ${c.actorId ? inputs.actors.find(a => a.id === c.actorId)?.name || 'a teammate' : 'the team'} helps defend it`, trigger: { kind: c.trigger, regionId: c.regionId || c.supportRegionId, actorId: c.actorId }, effects, priority: 1, source: 'player' });
+  });
+  const held = objectives.find(o => o.type === 'hold_region' && o.regionId);
+  if (held && !out.some(c => c.trigger.regionId === held.regionId)) {
+    const earner = inputs.actors.find(a => !a.isHuman && !a.inRecovery);
+    push({ label: `If ${held.regionId}'s control margin falls below $1,000, pause expansion and focus ${held.regionId}`, trigger: { kind: 'region_margin_below', regionId: held.regionId, threshold: 1000 }, effects: [{ kind: 'pause_objective_type', objectiveType: 'take_region' }, { kind: 'raise_region_priority', regionId: held.regionId! }, ...(earner ? [{ kind: 'assign_support' as const, actorId: earner.id, regionId: held.regionId! }] : [])], priority: 2, source: 'default' });
+  }
+  // Default liquidity guard: the player's floor, else half of today's free cash (it must be able to FALL
+  // below — a guard that is already breached when the plan is made would only spam proposals).
+  const floor = command?.reserveFloor || Math.max(500, Math.min(5000, Math.round(planTeamResources(inputs, objectives, null).freeCash * 0.5 / 100) * 100));
+  push({ label: `If team free cash falls below ${tosMoney(floor)}, pause non-essential capital spending`, trigger: { kind: 'free_cash_below', threshold: floor }, effects: [{ kind: 'pause_capital_spending' }, { kind: 'pause_objective_type', objectiveType: 'take_region' }], priority: 3, source: 'default' });
+  return out.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+}
+
+/**
+ * Evaluate contingencies once per arming: a triggered contingency does not re-fire until it resolves,
+ * and effects never re-trigger other contingencies in the same pass (non-recursive, priority order).
+ */
+export function evaluateTeamContingencies(contingencies: TeamContingency[], inputs: TeamOSInputs, resources: TeamResourcePlan, revision: number): { contingencies: TeamContingency[]; fired: TeamContingency[] } {
+  const threats = assessTeamThreats(inputs);
+  const fired: TeamContingency[] = [];
+  const next = contingencies.map(c => {
+    const r = c.trigger.regionId ? inputs.regions.find(x => x.code === c.trigger.regionId) : null;
+    const active = (() => {
+      switch (c.trigger.kind) {
+        case 'region_margin_below': return Boolean(r?.controlledByTeam && r.opponentCostToTake !== null && r.opponentCostToTake < (c.trigger.threshold || 0));
+        case 'pressure_critical': { const t = threats.find(x => x.code === c.trigger.regionId); return Boolean(t && t.opponentCanAfford); }
+        case 'rival_contests': return Boolean(r && !r.controlledByTeam && r.controlledByOpponent);
+        case 'free_cash_below': return resources.freeCash < (c.trigger.threshold || 0);
+        case 'actor_recovery_exit': return Boolean(c.trigger.actorId && !inputs.actors.find(a => a.id === c.trigger.actorId)?.inRecovery);
+        default: return false;
+      }
+    })();
+    if (active && c.status === 'armed') { const f = { ...c, status: 'triggered' as const, firedRevision: revision }; fired.push(f); return f; }
+    if (!active && c.status === 'triggered') return { ...c, status: 'armed' as const };
+    return c;
+  });
+  return { contingencies: next, fired: fired.sort((a, b) => a.priority - b.priority) };
+}
+
+function applyContingencyEffects(fired: TeamContingency[], objectives: TeamObjective[], tasks: TeamTaskNode[], roles: ActorRoleAssignment[]): { objectives: TeamObjective[]; tasks: TeamTaskNode[]; roles: ActorRoleAssignment[]; changes: string[] } {
+  const changes: string[] = [];
+  let objs = objectives.map(o => ({ ...o }));
+  let tks = tasks.map(t => ({ ...t }));
+  let rls = roles.map(r => ({ ...r }));
+  fired.filter(c => c.authority === 'automatic').forEach(c => c.effects.forEach(e => {
+    if (e.kind === 'pause_objective_type' || e.kind === 'pause_capital_spending') {
+      const type = e.kind === 'pause_objective_type' ? e.objectiveType : 'take_region';
+      objs = objs.map(o => (o.type === type && o.status === 'active' ? (changes.push(`paused “${o.description}”`), { ...o, status: 'paused' as const, pausedReason: `contingency: ${c.label}` }) : o));
+    }
+    if (e.kind === 'raise_region_priority') objs = objs.map(o => (o.regionId === e.regionId && o.priority > 1 ? (changes.push(`raised ${e.regionId} to priority 1`), { ...o, priority: 1 }) : o));
+    if (e.kind === 'assign_support') {
+      tks = tks.map(t => (t.type === 'support_actor' && t.assignedActorIds.includes(e.actorId) && t.regionId === e.regionId ? (changes.push(`activated support of ${e.regionId}`), { ...t, status: 'ready' as const }) : t));
+      rls = rls.map(r => (r.actorId === e.actorId && !r.explicit ? { ...r, primaryRole: 'support' as TeamRole, responsibility: `Support ${e.regionId}`, reason: `Contingency: ${c.label}`, temporary: true } : r));
+    }
+    if (e.kind === 'switch_role') rls = rls.map(r => (r.actorId === e.actorId && !r.explicit ? { ...r, primaryRole: e.role, reason: `Contingency: ${c.label}`, temporary: true } : r));
+  }));
+  return { objectives: objs, tasks: tks, roles: rls, changes };
+}
+
+// ---- Replanning (B18–B20) -----------------------------------------------------------------
+
+export interface TeamReplanTrigger { key: string; label: string; severity: number }
+
+/** Material-change triggers between two evaluations; tiny changes (a $100 swing) never qualify. */
+export function detectTeamReplanTriggers(prev: TeamSituationSnapshot | null, next: TeamSituationSnapshot): TeamReplanTrigger[] {
+  if (!prev) return [{ key: 'initial', label: 'Strategy created', severity: 3 }];
+  const out: TeamReplanTrigger[] = [];
+  const lost = prev.controlledRegions.filter(c => !next.controlledRegions.includes(c));
+  const gained = next.controlledRegions.filter(c => !prev.controlledRegions.includes(c));
+  if (lost.length) out.push({ key: `lost:${lost.join(',')}`, label: `Region lost: ${lost.join(', ')}`, severity: 5 });
+  if (gained.length) out.push({ key: `gained:${gained.join(',')}`, label: `Region secured: ${gained.join(', ')}`, severity: 3 });
+  const newThreats = next.threatenedRegions.filter(t => t.opponentCanAfford && !prev.threatenedRegions.some(p => p.code === t.code && p.opponentCanAfford));
+  if (newThreats.length) out.push({ key: `threat:${newThreats.map(t => t.code).join(',')}`, label: `Major opponent pressure on ${newThreats.map(t => t.code).join(', ')}`, severity: 4 });
+  const enteredRec = next.recoveringActors.filter(a => !prev.recoveringActors.includes(a));
+  const exitedRec = prev.recoveringActors.filter(a => !next.recoveringActors.includes(a));
+  if (enteredRec.length) out.push({ key: `rec+:${enteredRec.join(',')}`, label: 'An actor entered economic recovery', severity: 3 });
+  if (exitedRec.length) out.push({ key: `rec-:${exitedRec.join(',')}`, label: 'An actor exited economic recovery', severity: 2 });
+  const cashSwing = Math.abs(next.liquidity.freeCash - prev.liquidity.freeCash);
+  if (cashSwing >= Math.max(2000, prev.liquidity.freeCash * 0.25)) out.push({ key: `cash:${Math.round(next.liquidity.freeCash / 1000)}`, label: `Team liquidity changed by ${tosMoney(cashSwing)}`, severity: 2 });
+  if (next.liquidity.strategyReserveFloor && next.liquidity.freeCash < next.liquidity.strategyReserveFloor && prev.liquidity.freeCash >= prev.liquidity.strategyReserveFloor) out.push({ key: 'reserve_violation', label: 'Team reserve violated', severity: 4 });
+  if (next.blockedTasks >= 2 && prev.blockedTasks < 2) out.push({ key: 'blocked', label: 'Tasks repeatedly blocked', severity: 2 });
+  if (next.strategyMode !== prev.strategyMode && next.strategyMode) out.push({ key: `overseer:${next.strategyMode}`, label: `Overseer strategy shifted to ${next.strategyMode}`, severity: 2 });
+  if (next.winProgress && next.winProgress.target && next.winProgress.team >= next.winProgress.target - 1 && !(prev.winProgress && prev.winProgress.team >= (prev.winProgress.target || 0) - 1)) out.push({ key: 'near_win', label: 'Win condition nearly complete', severity: 3 });
+  return out;
+}
+
+export function shouldTeamReplan(triggers: TeamReplanTrigger[], lastReplanTurn: number | null, turn: number): { replan: boolean; reason: string } {
+  if (!triggers.length) return { replan: false, reason: 'no material change' };
+  const top = triggers.reduce((m, t) => Math.max(m, t.severity), 0);
+  const total = triggers.reduce((s, t) => s + t.severity, 0);
+  const cooling = lastReplanTurn !== null && turn - lastReplanTurn < TEAM_OS_LIMITS.replanCooldownTurns;
+  if (top >= 5) return { replan: true, reason: `critical: ${triggers[0].label}` };
+  if (cooling) return { replan: false, reason: `cooldown (last replan turn ${lastReplanTurn})` };
+  if (total >= 3) return { replan: true, reason: triggers.map(t => t.label).join('; ') };
+  return { replan: false, reason: 'below significance threshold' };
+}
+
+// ---- Readiness, confidence, health (B23–B24, B51) -------------------------------------------
+
+export interface TeamReadiness { overall: number; resources: number; positioning: number; actors: number; tasks: number; threatExposure: number; viability: number; label: string }
+
+export function computeTeamReadiness(inputs: TeamOSInputs, tasks: TeamTaskNode[], resources: TeamResourcePlan): TeamReadiness {
+  const live = tasks.filter(t => !['cancelled', 'superseded'].includes(t.status) && t.type !== 'support_actor' && t.type !== 'monitor_rival');
+  const need = live.reduce((s, t) => s + (t.status === 'completed' ? 0 : t.resourceRequirement), 0) + resources.strategyReserveFloor;
+  const resourcesScore = need <= 0 ? 1 : Math.min(1, resources.freeCash / need);
+  const positional = live.filter(t => t.regionId && (t.type === 'defend_region' || t.type === 'take_region'));
+  const positioning = positional.length ? positional.filter(t => t.assignedActorIds.every(id => inputs.actors.find(a => a.id === id)?.location === t.regionId)).length / positional.length : 1;
+  const aiActors = inputs.actors.filter(a => !a.isHuman);
+  const actorsScore = aiActors.length ? aiActors.filter(a => !a.inRecovery && (a.apRemaining === null || a.apRemaining > 0)).length / aiActors.length : 1;
+  const tasksScore = live.length ? live.filter(t => ['ready', 'active', 'completed'].includes(t.status)).length / live.length : 1;
+  const held = inputs.regions.filter(r => r.controlledByTeam).length;
+  const threatened = assessTeamThreats(inputs).filter(t => t.opponentCanAfford).length;
+  const threatExposure = held ? 1 - threatened / held : 1;
+  const viability = live.length ? 1 - live.filter(t => t.status === 'blocked' || t.status === 'failed').length / live.length : 1;
+  const overall = resourcesScore * 0.25 + positioning * 0.15 + actorsScore * 0.15 + tasksScore * 0.15 + threatExposure * 0.15 + viability * 0.15;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { overall: r2(overall), resources: r2(resourcesScore), positioning: r2(positioning), actors: r2(actorsScore), tasks: r2(tasksScore), threatExposure: r2(threatExposure), viability: r2(viability), label: overall >= 0.75 ? 'Ready' : overall >= 0.5 ? 'Partly ready' : 'Not ready' };
+}
+
+export function computeTeamPlanConfidence(inputs: TeamOSInputs, tasks: TeamTaskNode[]): { value: number; label: string; reasons: string[] } {
+  let v = 0.9;
+  const reasons: string[] = [];
+  if (inputs.fogOfWar || inputs.opponents.some(o => !o.visible)) { v -= 0.2; reasons.push('rival cash and plans are hidden (fog of war)'); }
+  const blocked = tasks.filter(t => t.status === 'blocked').length;
+  if (blocked) { v -= Math.min(0.3, blocked * 0.1); reasons.push(`${blocked} task(s) blocked`); }
+  if (assessTeamThreats(inputs).some(t => t.opponentCanAfford === null)) { v -= 0.05; reasons.push('rival intentions are inferred, not known'); }
+  if (!reasons.length) reasons.push('the plan relies only on visible state');
+  const value = Math.max(0.1, Math.round(v * 100) / 100);
+  return { value, label: value >= 0.75 ? 'High' : value >= 0.5 ? 'Moderate' : 'Low', reasons };
+}
+
+export type TeamPlanHealth = 'on_track' | 'at_risk' | 'blocked' | 'recovering' | 'needs_decision' | 'obsolete' | 'completed';
+
+export function computeTeamPlanHealth(contract: TeamStrategyContract | null, readiness: TeamReadiness, conflicts: TeamStrategicConflict[], proposals: TeamPlanProposal[], inputs: TeamOSInputs): { health: TeamPlanHealth; reason: string } {
+  if (!contract) return { health: 'obsolete', reason: 'No team strategy yet.' };
+  const live = contract.objectives.filter(o => o.status !== 'paused');
+  if (live.length && live.every(o => o.status === 'completed')) return { health: 'completed', reason: 'Every objective is complete.' };
+  if (proposals.some(p => p.status === 'open') || conflicts.some(c => c.requiresPlayerDecision && c.status === 'awaiting_player')) return { health: 'needs_decision', reason: 'A proposal or approval is waiting for you.' };
+  const primary = contract.objectives.find(o => o.id === contract.primaryObjectiveId) || contract.objectives[0];
+  const primaryTasks = contract.taskGraph.filter(t => t.objectiveId === primary?.id && t.type !== 'monitor_rival');
+  if (primaryTasks.length && primaryTasks.every(t => t.status === 'blocked')) return { health: 'blocked', reason: primaryTasks[0].blockers[0] || 'The main objective is blocked.' };
+  if (contract.objectives.some(o => o.type === 'recover_economy' && o.status === 'active') && inputs.actors.some(a => a.inRecovery)) return { health: 'recovering', reason: 'A teammate is recovering before the plan can push.' };
+  const blockedTask = contract.taskGraph.find(t => t.status === 'blocked');
+  if (readiness.overall < 0.5 || blockedTask) return { health: 'at_risk', reason: blockedTask ? `${blockedTask.label} ${blockedTask.blockers[0] ? `— ${blockedTask.blockers[0]}` : 'is blocked'}.` : 'Readiness is low.' };
+  return { health: 'on_track', reason: 'Tasks are ready and resources cover the plan.' };
+}
+
+// ---- Blocker tree, timeline, explanation graph (B25, B30, B52) ---------------------------------
+
+export interface TeamBlockerNode { label: string; children: TeamBlockerNode[] }
+
+export function buildTeamBlockerTree(contract: TeamStrategyContract, taskOrObjectiveId: string, resources: TeamResourcePlan, depth = 0): TeamBlockerNode | null {
+  if (depth > 5) return null;
+  const obj = contract.objectives.find(o => o.id === taskOrObjectiveId);
+  const task = contract.taskGraph.find(t => t.id === taskOrObjectiveId) || (obj ? contract.taskGraph.filter(t => t.objectiveId === obj.id && t.status !== 'completed' && t.type !== 'monitor_rival').sort((a, b) => (a.status === 'blocked' ? -1 : 1) - (b.status === 'blocked' ? -1 : 1))[0] : null);
+  const label = obj ? obj.description : task?.label || taskOrObjectiveId;
+  const node: TeamBlockerNode = { label, children: [] };
+  if (obj?.status === 'paused') node.children.push({ label: obj.pausedReason || 'paused', children: [] });
+  if (!task) return node;
+  task.dependencies.forEach(d => {
+    const dep = contract.taskGraph.find(t => t.id === d);
+    if (dep && dep.status !== 'completed') { const child = buildTeamBlockerTree(contract, dep.id, resources, depth + 1); if (child) node.children.push(child); }
+  });
+  if (task.resourceRequirement > 0 && resources.freeCash - resources.strategyReserveFloor < task.resourceRequirement) {
+    node.children.push({ label: `Funding: needs ${tosMoney(task.resourceRequirement)}`, children: [{ label: `Team free balance ${tosMoney(resources.freeCash)}`, children: resources.strategyReserveFloor ? [{ label: `${tosMoney(resources.strategyReserveFloor)} reserve floor`, children: [] }] : [] }] });
+  }
+  task.blockers.filter(b => !/^waiting on|^needs/.test(b)).forEach(b => node.children.push({ label: b, children: [] }));
+  return node;
+}
+
+export function flattenTeamBlockerTree(node: TeamBlockerNode | null): string[] {
+  const out: string[] = [];
+  let cur = node;
+  let guard = 0;
+  while (cur && guard++ < 8) { out.push(cur.label); cur = cur.children[0] || null; }
+  return out;
+}
+
+export interface TeamTimelineEntry { phase: 'NOW' | 'NEXT' | 'AFTER' | 'CONDITION'; who: string; what: string }
+
+export function buildTeamTimeline(contract: TeamStrategyContract, inputs: TeamOSInputs): TeamTimelineEntry[] {
+  const name = (id: string) => inputs.actors.find(a => a.id === id)?.isHuman ? 'You' : inputs.actors.find(a => a.id === id)?.name || id;
+  const out: TeamTimelineEntry[] = [];
+  const tasks = contract.taskGraph.filter(t => t.type !== 'monitor_rival' && t.type !== 'preserve_reserve');
+  tasks.filter(t => t.status === 'ready' || t.status === 'active' || t.status === 'blocked').slice(0, 4).forEach(t => out.push({ phase: 'NOW', who: t.assignedActorIds.map(name).join(' + ') || 'Team', what: `${t.label}${t.status === 'blocked' ? ' (blocked)' : ''}` }));
+  tasks.filter(t => t.status === 'waiting' && t.type !== 'support_actor').slice(0, 3).forEach(t => out.push({ phase: 'NEXT', who: t.assignedActorIds.map(name).join(' + ') || 'Team', what: t.label }));
+  contract.objectives.filter(o => o.status === 'paused').forEach(o => out.push({ phase: 'AFTER', who: 'Team', what: `Resume: ${o.description}` }));
+  contract.roles.filter(r => r.temporary).forEach(r => out.push({ phase: 'AFTER', who: name(r.actorId), what: `Review role (${r.reviewCondition})` }));
+  contract.contingencies.filter(c => c.status === 'armed').slice(0, 2).forEach(c => out.push({ phase: 'CONDITION', who: 'Team', what: c.label }));
+  return out;
+}
+
+export interface TeamExplanationEdge { from: string; to: string; relation: 'decomposes_into' | 'realised_by' | 'assigned_to' | 'funded_by' | 'blocked_by' }
+
+export function buildTeamExplanationGraph(contract: TeamStrategyContract, resources: TeamResourcePlan): TeamExplanationEdge[] {
+  const edges: TeamExplanationEdge[] = [];
+  contract.objectives.forEach(o => edges.push({ from: `mission:${contract.mission.label}`, to: `objective:${o.id}`, relation: 'decomposes_into' }));
+  contract.taskGraph.forEach(t => {
+    edges.push({ from: `objective:${t.objectiveId}`, to: `task:${t.id}`, relation: 'realised_by' });
+    t.assignedActorIds.forEach(a => edges.push({ from: `task:${t.id}`, to: `actor:${a}`, relation: 'assigned_to' }));
+    const env = resources.envelopes.find(e => e.forObjectiveIds.includes(t.objectiveId));
+    if (env && t.resourceRequirement > 0) edges.push({ from: `task:${t.id}`, to: `envelope:${env.category}`, relation: 'funded_by' });
+    t.dependencies.forEach(d => edges.push({ from: `task:${t.id}`, to: `task:${d}`, relation: 'blocked_by' }));
+  });
+  return edges.slice(0, 80);
+}
+
+// ---- Governor + Treasury integration (B12, B37–B38) ---------------------------------------------
+
+export interface TeamGovernorExplanation {
+  requested: number;
+  purpose: string;
+  ruling: 'allow' | 'allow_with_modification' | 'block' | 'request_treasury' | 'suggest_alternative';
+  governorReason: string;
+  missionImportance: 'critical' | 'high' | 'normal' | 'low';
+  alternatives: string[];
+  result: string;
+}
+
+/**
+ * Structured reasoning around the CANONICAL Governor ruling: mission importance is context only —
+ * it never bypasses the Governor, the Cash Vault or the Treasury reserve.
+ */
+export function explainGovernorWithMission(task: TeamTaskNode, ruling: { approved: boolean; reason: string }, inputs: TeamOSInputs, resources: TeamResourcePlan): TeamGovernorExplanation {
+  const importance: TeamGovernorExplanation['missionImportance'] = task.priority <= 1 ? 'critical' : task.priority === 2 ? 'high' : task.priority <= 3 ? 'normal' : 'low';
+  const treasuryFree = inputs.treasury ? Math.max(0, inputs.treasury.balance - inputs.treasury.reserve) : 0;
+  if (ruling.approved) return { requested: task.resourceRequirement, purpose: task.label, ruling: 'allow', governorReason: ruling.reason, missionImportance: importance, alternatives: [], result: 'Allowed by the Economy Governor.' };
+  const alternatives: string[] = [];
+  if (treasuryFree > 0) alternatives.push(`Request ${tosMoney(Math.min(treasuryFree, task.resourceRequirement))} from the Treasury`);
+  alternatives.push(`Reduce the amount to what the actor can spend above its reserve`);
+  const lower = resources.envelopes.filter(e => e.priority > task.priority && e.allocated > 0 && !e.hardFloor)[0];
+  if (lower) alternatives.push(`Delay the ${lower.category} allocation (${tosMoney(lower.allocated)})`);
+  alternatives.push('Wait one turn for income');
+  const rulingKind: TeamGovernorExplanation['ruling'] = treasuryFree > 0 && importance !== 'low' ? 'request_treasury' : 'suggest_alternative';
+  return {
+    requested: task.resourceRequirement, purpose: task.label, ruling: rulingKind, governorReason: ruling.reason, missionImportance: importance, alternatives,
+    result: rulingKind === 'request_treasury' ? 'Treasury-assisted action recommended (the Treasury still decides the amount).' : 'The Governor’s block stands; an alternative is suggested.'
+  };
+}
+
+// ---- Governance routing (B36) ------------------------------------------------------------------
+
+/** Route a strategy change through the canonical Governance evaluation. Team OS proposes; Governance decides. */
+export function routeTeamStrategyChange(change: { summary: string; teamId: string; proposerActorId: string }, teamState: any, settings: any, gameState?: any): { approved: boolean; status: 'approved' | 'awaiting_governance' | 'rejected'; reason: string; mode: string } {
+  try {
+    const res = evaluateTeamGovernanceApproval({ id: `team_strategy_${change.teamId}`, type: 'team_strategy_change', actorId: change.proposerActorId, teamId: change.teamId, data: { summary: change.summary } }, teamState, change.proposerActorId, settings, gameState);
+    const pending = /pending|await|vote/i.test(String(res.resolution?.status || ''));
+    return { approved: res.approved, status: res.approved ? 'approved' : pending ? 'awaiting_governance' : 'rejected', reason: res.reason, mode: String(res.mode) };
+  } catch (err) {
+    return { approved: false, status: 'awaiting_governance', reason: `Governance could not evaluate the change (${err instanceof Error ? err.message : String(err)}).`, mode: 'unknown' };
+  }
+}
+
+// ---- Main evaluation: build / update the contract ----------------------------------------------
+
+function teamSituationFromContract(inputs: TeamOSInputs, contract: TeamStrategyContract, resources: TeamResourcePlan, confidence: number): TeamSituationSnapshot {
+  const threats = assessTeamThreats(inputs);
+  const rivalPressure: TeamSituationSnapshot['rivalPressure'] = threats.some(t => t.opponentCanAfford && t.opponentCostToTake < 1000) ? 'critical' : threats.some(t => t.opponentCanAfford) ? 'high' : threats.length ? 'medium' : 'low';
+  const snap: Omit<TeamSituationSnapshot, 'hash'> = {
+    teamId: inputs.teamId,
+    turn: inputs.turn,
+    mission: contract.mission,
+    topObjectives: contract.objectives.filter(o => o.status !== 'completed').slice(0, 3).map(o => o.description),
+    winProgress: inputs.win ? { label: inputs.win.label, team: inputs.win.regionsTarget ? inputs.win.teamRegions : inputs.win.teamValue, opponent: inputs.win.regionsTarget ? inputs.win.opponentRegions : inputs.win.opponentValue, target: inputs.win.regionsTarget } : null,
+    controlledRegions: inputs.regions.filter(r => r.controlledByTeam).map(r => r.code).sort(),
+    threatenedRegions: threats,
+    opportunities: inputs.regions.filter(r => !r.controlledByTeam && r.teamCostToTake !== null).sort((a, b) => (a.teamCostToTake || 0) - (b.teamCostToTake || 0) || a.code.localeCompare(b.code)).slice(0, 3).map(r => ({ code: r.code, cost: r.teamCostToTake || 0 })),
+    liquidity: resources,
+    activeTasks: contract.taskGraph.filter(t => t.status === 'active' || t.status === 'ready').length,
+    blockedTasks: contract.taskGraph.filter(t => t.status === 'blocked').length,
+    actorReadiness: inputs.actors.map(a => ({ actorId: a.id, name: a.name, ready: !a.inRecovery && (a.apRemaining === null || a.apRemaining > 0), reason: a.inRecovery ? 'in economic recovery' : a.apRemaining === 0 ? 'no AP left' : 'ready' })),
+    roles: contract.roles.map(r => ({ actorId: r.actorId, role: r.primaryRole, responsibility: r.responsibility })),
+    recoveringActors: inputs.actors.filter(a => a.inRecovery).map(a => a.id).sort(),
+    rivalPressure,
+    activeContingencies: contract.contingencies.filter(c => c.status === 'triggered').map(c => c.label),
+    strategyMode: inputs.overseer.mode,
+    planConfidence: confidence
+  };
+  return { ...snap, hash: teamOsHash(JSON.stringify([snap.controlledRegions, snap.threatenedRegions.map(t => [t.code, t.opponentCanAfford]), Math.round(resources.freeCash / 1000), snap.recoveringActors, snap.blockedTasks, snap.strategyMode])) };
+}
+
+export interface TeamOSEvaluation {
+  state: TeamOSTeamState;
+  snapshot: TeamSituationSnapshot;
+  resources: TeamResourcePlan;
+  readiness: TeamReadiness;
+  confidence: { value: number; label: string; reasons: string[] };
+  health: { health: TeamPlanHealth; reason: string };
+  timeline: TeamTimelineEntry[];
+  graphIssues: string[];
+  replan: { replan: boolean; reason: string; triggers: TeamReplanTrigger[] };
+  fired: TeamContingency[];
+}
+
+export function createEmptyTeamOSTeamState(): TeamOSTeamState {
+  return { contract: null, conflicts: [], proposals: [], revisions: [], lastReplanTurn: null, lastSignificance: null, roleSince: {}, feedback: [] };
+}
+
+/** Compose a full contract from inputs (+ optional explicit player command and previous contract). */
+export function composeTeamStrategyContract(inputs: TeamOSInputs, command: TeamCommandIntent | null, previous: TeamStrategyContract | null, revision: number, roleSince: Record<string, number>): { contract: TeamStrategyContract; resources: TeamResourcePlan; conflicts: TeamStrategicConflict[]; graphIssues: string[] } {
+  const reserveFloor = command?.reserveFloor ?? previous?.constraints.reserveFloor ?? null;
+  const mission = previous?.locks.mission && previous.mission ? previous.mission : deriveTeamMission(inputs, command);
+  const decomposed = decomposeTeamMission(inputs, mission, command, reserveFloor);
+  let resources = planTeamResources(inputs, decomposed, reserveFloor);
+  let tasks = buildTeamTaskGraph(inputs, decomposed, command, resources, previous?.taskGraph || []);
+  const detected = detectTeamConflicts(inputs, decomposed, tasks, resources);
+  let objectives = detected.objectives;
+  resources = planTeamResources(inputs, objectives, reserveFloor);
+  tasks = updateTeamTaskStatuses(tasks, inputs, resources, objectives);
+  const graphIssues = validateTeamTaskGraph(tasks, inputs.actors.map(a => a.id));
+  if (graphIssues.some(i => i.startsWith('cycle'))) tasks = tasks.map(t => ({ ...t, dependencies: [] }));   // never activate a cyclic graph
+  const roles = assignTeamRoles(inputs, tasks, command, previous?.roles || [], roleSince, previous?.locks.roles || []);
+  const contingencies = previous && !command ? previous.contingencies : buildTeamContingencies(inputs, command, objectives, inputs.authority);
+  // Objective progress + assigned actors from tasks.
+  objectives = objectives.map(o => {
+    const ts = tasks.filter(t => t.objectiveId === o.id && t.type !== 'monitor_rival');
+    const done = ts.filter(t => t.status === 'completed').length;
+    return { ...o, assignedActorIds: Array.from(new Set(ts.flatMap(t => t.assignedActorIds))), progress: ts.length ? Math.round((done / ts.length) * 100) / 100 : o.progress, status: o.status === 'paused' ? 'paused' : ts.length && done === ts.length ? 'completed' : ts.length && ts.every(t => t.status === 'blocked') ? 'blocked' : o.status };
+  });
+  // The primary objective is mission work, not a standing constraint or a funding step.
+  const primary = objectives.find(o => o.status !== 'completed' && o.status !== 'paused' && o.type !== 'preserve_reserve' && o.type !== 'raise_cash')
+    || objectives.find(o => o.status !== 'completed' && o.status !== 'paused') || objectives[0] || null;
+  const conf = computeTeamPlanConfidence(inputs, tasks);
+  const contract: TeamStrategyContract = {
+    id: previous?.id || `tsc_${inputs.teamId}_${inputs.turn}`,
+    teamId: inputs.teamId,
+    status: 'active',
+    revision,
+    createdTurn: previous?.createdTurn ?? inputs.turn,
+    updatedTurn: inputs.turn,
+    mission,
+    primaryObjectiveId: primary?.id || null,
+    objectives,
+    priorities: (command?.priorities?.length ? command.priorities : previous?.priorities) || [],
+    constraints: { reserveFloor, spendLockedActorIds: command?.spendLocks || previous?.constraints.spendLockedActorIds || [], deprioritizedRegions: command?.deprioritizedRegions || previous?.constraints.deprioritizedRegions || [] },
+    preferences: previous?.preferences || [],
+    targetRegions: Array.from(new Set(objectives.filter(o => o.type === 'take_region').map(o => o.regionId!).filter(Boolean))),
+    protectedRegions: Array.from(new Set(objectives.filter(o => o.type === 'hold_region').map(o => o.regionId!).filter(Boolean))),
+    roles,
+    assignments: command?.responsibilities || previous?.assignments || [],
+    resourcePolicy: { reserveFloor, envelopes: resources.envelopes },
+    milestones: objectives.slice(0, 3).map(o => o.completionCondition),
+    taskGraph: tasks,
+    contingencies,
+    replanConditions: ['region lost or secured', 'major opponent pressure', 'reserve violated', 'actor enters/exits recovery', 'tasks repeatedly blocked', 'Overseer strategy shift', 'player changes the plan'],
+    timeHorizonTurns: 3,
+    authorityPolicy: inputs.authority,
+    confidence: conf.value,
+    source: command ? 'player_command' : mission.source,
+    locks: previous?.locks || { mission: Boolean(command), roles: (command?.responsibilities || []).map(r => r.actorId).filter(id => id !== 'player'), reserve: Boolean(command?.reserveFloor), regions: [] }
+  };
+  return { contract, resources, conflicts: detected.conflicts, graphIssues };
+}
+
+/**
+ * One bounded Team OS evaluation (event-driven: call when the turn changes or the player applies a
+ * strategy). Status updates happen every evaluation; a new revision only on material change.
+ */
+export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | undefined, inputs: TeamOSInputs, command: TeamCommandIntent | null = null): TeamOSEvaluation {
+  const prev = prevIn || createEmptyTeamOSTeamState();
+  const prevContract = prev.contract;
+  const prevRevision = prevContract?.revision || 0;
+  // Snapshot of the previous plan against CURRENT state (for trigger detection).
+  const prevResources = prevContract ? planTeamResources(inputs, prevContract.objectives, prevContract.constraints.reserveFloor) : null;
+  const prevSnap = prevContract && prev.lastSignificance ? (JSON.parse(prev.lastSignificance) as TeamSituationSnapshot) : null;
+  // The player's applied intent keeps shaping every later replan (never silently dropped).
+  const effectiveCommand = command || prevContract?.commandIntent || null;
+  let composed = composeTeamStrategyContract(inputs, effectiveCommand, command ? prevContract && { ...prevContract, locks: { ...prevContract.locks, mission: false } } : prevContract, prevRevision + (command || !prevContract ? 1 : 0), prev.roleSince);
+  composed.contract.commandIntent = effectiveCommand;
+  if (effectiveCommand) composed.contract.source = 'player_command';
+  const draftSnap = teamSituationFromContract(inputs, composed.contract, composed.resources, composed.contract.confidence);
+  const triggers = command ? [{ key: 'player', label: 'You changed the team plan', severity: 5 }] : detectTeamReplanTriggers(prevSnap, draftSnap);
+  const decision = command || !prevContract ? { replan: true, reason: command ? 'player command' : 'initial strategy' } : shouldTeamReplan(triggers, prev.lastReplanTurn, inputs.turn);
+  let contract: TeamStrategyContract;
+  let revisionRecord: TeamStrategyRevision | null = null;
+  if (decision.replan) {
+    contract = composed.contract;
+    if (prevContract && !command) contract.revision = prevRevision + 1;
+    const changes: string[] = [];
+    if (prevContract) {
+      const before = new Map(prevContract.objectives.map(o => [o.id, o]));
+      contract.objectives.forEach(o => { const b = before.get(o.id); if (!b) changes.push(`added “${o.description}”`); else if (b.priority !== o.priority || b.status !== o.status) changes.push(`“${o.description}”: priority ${b.priority}→${o.priority}, ${b.status}→${o.status}`); });
+      prevContract.objectives.forEach(o => { if (!contract.objectives.some(x => x.id === o.id)) changes.push(`dropped “${o.description}”`); });
+      contract.roles.forEach(r => { const b = prevContract.roles.find(x => x.actorId === r.actorId); if (b && b.primaryRole !== r.primaryRole) changes.push(`${inputs.actors.find(a => a.id === r.actorId)?.name || r.actorId}: ${b.primaryRole} → ${r.primaryRole}`); });
+    } else changes.push(`mission: ${contract.mission.label}`, ...contract.objectives.map(o => `objective: ${o.description}`));
+    revisionRecord = { revision: contract.revision, turn: inputs.turn, trigger: triggers.map(t => t.label).join('; ') || decision.reason, changes: changes.slice(0, 8), reason: composed.conflicts.find(c => c.selectedResolution)?.reason || decision.reason, kind: command ? 'player_override' : prevContract ? 'replan' : 'created' };
+  } else {
+    // Keep the plan; refresh statuses only (no thrashing).
+    const resources = planTeamResources(inputs, prevContract!.objectives, prevContract!.constraints.reserveFloor);
+    contract = { ...prevContract!, updatedTurn: inputs.turn, taskGraph: updateTeamTaskStatuses(prevContract!.taskGraph, inputs, resources, prevContract!.objectives), authorityPolicy: inputs.authority };
+    composed = { ...composed, contract, resources, conflicts: prev.conflicts };
+  }
+  // Contingencies (once per arming, non-recursive, authority-aware).
+  const cont = evaluateTeamContingencies(contract.contingencies, inputs, composed.resources, contract.revision);
+  contract = { ...contract, contingencies: cont.contingencies };
+  const proposals = [...prev.proposals.filter(p => p.status === 'open' && p.expiresTurn >= inputs.turn)];
+  if (cont.fired.length) {
+    const applied = applyContingencyEffects(cont.fired, contract.objectives, contract.taskGraph, contract.roles);
+    contract = { ...contract, objectives: applied.objectives, taskGraph: updateTeamTaskStatuses(applied.tasks, inputs, composed.resources, applied.objectives), roles: applied.roles };
+    cont.fired.filter(c => c.authority !== 'automatic').forEach(c => {
+      if (proposals.length < TEAM_OS_LIMITS.proposals && !proposals.some(p => p.id === `prop_${c.id}`)) proposals.push({
+        id: `prop_${c.id}`, proposerActorId: c.effects.find((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support')?.actorId || 'team_os', reason: `Contingency triggered: ${c.label}`, trigger: c.trigger.kind,
+        currentPlanImpact: 'Expansion pauses while the threatened region is defended.', proposedChanges: c.effects.map(e => e.kind === 'assign_support' ? `support ${e.regionId}` : e.kind === 'raise_region_priority' ? `prioritise ${e.regionId}` : e.kind === 'pause_objective_type' ? `pause ${e.objectiveType.replace('_', ' ')}` : e.kind.replace(/_/g, ' ')),
+        resourceImpact: 'No money moves until canonical actions run.', roleChanges: c.effects.filter((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support').map(e => ({ actorId: e.actorId, from: contract.roles.find(r => r.actorId === e.actorId)?.primaryRole || null, to: 'support' as TeamRole, responsibility: `Support ${e.regionId}` })),
+        constraints: contract.constraints.reserveFloor ? [`keep ${tosMoney(contract.constraints.reserveFloor)} reserve`] : [], confidence: 0.7, requiresApproval: true, expiresTurn: inputs.turn + 2, status: 'open'
+      });
+    });
+    if (!revisionRecord) revisionRecord = { revision: contract.revision, turn: inputs.turn, trigger: cont.fired.map(c => c.label).join('; '), changes: applied.changes.slice(0, 6), reason: 'Contingency conditions were met.', kind: 'contingency_triggered' };
+  }
+  // AI teammate proposals: handoff when the human's economy collapses (B33).
+  const human = inputs.actors.find(a => a.isHuman);
+  const helper = inputs.actors.find(a => !a.isHuman && !a.inRecovery);
+  const humanRegionRole = contract.roles.find(r => r.actorId === human?.id && r.primaryRole === 'controller');
+  if (human && helper && humanRegionRole && human.money < 500 && proposals.length < TEAM_OS_LIMITS.proposals && !proposals.some(p => p.id === `prop_handoff_${human.id}`)) {
+    proposals.push({ id: `prop_handoff_${human.id}`, proposerActorId: helper.id, reason: `${helper.name} can temporarily take over “${humanRegionRole.responsibility}” while you recover.`, trigger: 'human economy collapsed', currentPlanImpact: 'Responsibilities swap until you recover; the mission is unchanged.', proposedChanges: [`${helper.name}: controller (${humanRegionRole.responsibility})`, 'You: recovery / earner'], resourceImpact: 'No money moves until canonical actions run.', roleChanges: [{ actorId: helper.id, from: contract.roles.find(r => r.actorId === helper.id)?.primaryRole || null, to: 'controller', responsibility: humanRegionRole.responsibility }, { actorId: human.id, from: 'controller', to: 'recovery', responsibility: 'Recover your cash' }], constraints: [], confidence: 0.7, requiresApproval: true, expiresTurn: inputs.turn + 2, status: 'open' });
+  }
+  const resources = planTeamResources(inputs, contract.objectives, contract.constraints.reserveFloor);
+  const readiness = computeTeamReadiness(inputs, contract.taskGraph, resources);
+  const confidence = computeTeamPlanConfidence(inputs, contract.taskGraph);
+  contract = { ...contract, confidence: confidence.value, resourcePolicy: { ...contract.resourcePolicy, envelopes: resources.envelopes } };
+  const conflicts = decision.replan ? composed.conflicts : prev.conflicts;
+  const health = computeTeamPlanHealth(contract, readiness, conflicts, proposals, inputs);
+  const snapshot = teamSituationFromContract(inputs, contract, resources, confidence.value);
+  const roleSince = { ...prev.roleSince };
+  contract.roles.forEach(r => { const b = prevContract?.roles.find(x => x.actorId === r.actorId); if (!b || b.primaryRole !== r.primaryRole) roleSince[r.actorId] = inputs.turn; });
+  // Progress feedback with significance thresholds (no spam).
+  const feedback: string[] = [];
+  if (prevContract) {
+    contract.taskGraph.forEach(t => { const b = prevContract.taskGraph.find(x => x.id === t.id); if (b && b.status !== 'completed' && t.status === 'completed') feedback.push(`Completed: ${t.label}.`); });
+    const prevReadiness = prevResources ? computeTeamReadiness(inputs, prevContract.taskGraph, prevResources) : null;
+    if (prevReadiness && Math.abs(prevReadiness.overall - readiness.overall) >= 0.1) feedback.push(`Team readiness ${Math.round(prevReadiness.overall * 100)}% → ${Math.round(readiness.overall * 100)}%.`);
+  }
+  const state: TeamOSTeamState = {
+    contract,
+    conflicts: conflicts.slice(0, TEAM_OS_LIMITS.conflicts),
+    proposals: proposals.slice(0, TEAM_OS_LIMITS.proposals),
+    revisions: revisionRecord ? [...prev.revisions, revisionRecord].slice(-TEAM_OS_LIMITS.revisions) : prev.revisions,
+    lastReplanTurn: decision.replan ? inputs.turn : prev.lastReplanTurn,
+    lastSignificance: decision.replan || !prev.lastSignificance ? JSON.stringify(snapshot) : prev.lastSignificance,
+    roleSince,
+    feedback: [...feedback, ...prev.feedback].slice(0, TEAM_OS_LIMITS.feedback)
+  };
+  return { state, snapshot, resources, readiness, confidence, health, timeline: buildTeamTimeline(contract, inputs), graphIssues: composed.graphIssues, replan: { ...decision, triggers }, fired: cont.fired };
+}
+
+// ---- Strategic Command integration (B39) ----------------------------------------------------
+
+/**
+ * The actor's goal from the Team Strategy Contract, as a canonical TeamGoal for generateTeamDirective.
+ * Returns null (→ Strategic Command's own chooseTeamObjective, unchanged) unless a strategy was
+ * explicitly applied by the player or team authority is Strategic Delegation / Autonomous.
+ */
+export function teamOsGoalForActor(osState: TeamOperatingSystemState | null | undefined, teamId: string, actorId: string, settings: { teamIntelligenceOsEnabled?: boolean; teamOsAuthorityLevel?: string } | null | undefined): TeamGoal | null {
+  if (!settings || settings.teamIntelligenceOsEnabled === false) return null;
+  const contract = osState?.byTeam?.[teamId]?.contract;
+  if (!contract || contract.status !== 'active') return null;
+  const delegated = settings.teamOsAuthorityLevel === 'delegated' || settings.teamOsAuthorityLevel === 'autonomous';
+  if (contract.source !== 'player_command' && !delegated) return null;
+  const task = contract.taskGraph
+    .filter(t => t.assignedActorIds.includes(actorId) && !t.humanStatus && ['ready', 'active', 'blocked'].includes(t.status) && t.type !== 'monitor_rival' && t.type !== 'preserve_reserve')
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))[0];
+  if (!task) return null;
+  const kind: TeamGoal['kind'] = task.type === 'defend_region' || task.type === 'take_region' || task.type === 'reach_region' ? 'control' : task.type === 'recover' ? 'recovery' : task.type === 'support_actor' ? 'support' : task.type === 'complete_contract' ? 'netWorth' : 'money';
+  return { id: `teamos_${task.id}`, kind, description: task.label, priority: Math.max(1, 6 - task.priority), status: 'active', ownerActorId: actorId, targetRegion: task.regionId, reason: `Team Strategy task (${contract.mission.label}).` };
+}
+
+// ---- Plan negotiation (B31–B33) --------------------------------------------------------------
+
+/** Accept / reject an AI teammate proposal. Acceptance rewrites the player's intent; nothing executes. */
+export function resolveTeamProposal(state: TeamOSTeamState, proposalId: string, accept: boolean): { state: TeamOSTeamState; command: TeamCommandIntent | null } {
+  const p = state.proposals.find(x => x.id === proposalId);
+  if (!p || p.status !== 'open') return { state, command: null };
+  const proposals = state.proposals.map(x => (x.id === proposalId ? { ...x, status: accept ? 'accepted' as const : 'rejected' as const } : x));
+  if (!accept) return { state: { ...state, proposals }, command: null };
+  const base: TeamCommandIntent = state.contract?.commandIntent || { responsibilities: [], reserveFloor: state.contract?.constraints.reserveFloor ?? null, contingencies: [], priorities: [], deprioritizedRegions: [], spendLocks: [], missionHint: null, swap: false, evidence: [] };
+  let responsibilities = [...base.responsibilities];
+  p.roleChanges.forEach(rc => {
+    const actorKey = rc.actorId;
+    responsibilities = responsibilities.filter(r => r.actorId !== actorKey && !(r.actorId === 'player' && rc.to === 'recovery' && actorKey !== 'player' && false));
+    const region = rc.responsibility.match(/\b([A-Z]{2,4})\b/)?.[1];
+    responsibilities.push(rc.to === 'recovery' ? { actorId: actorKey, focus: 'recovery' } : rc.to === 'support' ? { actorId: actorKey, focus: 'support', regionId: region } : region ? { actorId: actorKey, focus: 'region', regionId: region } : { actorId: actorKey, focus: 'economy' });
+  });
+  return { state: { ...state, proposals }, command: { ...base, responsibilities, evidence: [`accepted proposal: ${p.reason}`] } };
+}
+
+// ---- Team What-If (B47–B48) -------------------------------------------------------------------
+
+export interface TeamWhatIfResult {
+  current: Record<string, string>;
+  alternative: Record<string, string>;
+  metrics: Array<{ metric: string; current: string; alternative: string; better: 'current' | 'alternative' | 'same' }>;
+  verdict: string;
+  alternativeCommand: TeamCommandIntent;
+  uncertain: string[];
+}
+
+/** Analytic comparison of two responsibility sets on the same snapshot. Never mutates game state. */
+export function simulateTeamStrategyAlternative(inputs: TeamOSInputs, current: TeamCommandIntent, alternative: TeamCommandIntent): TeamWhatIfResult {
+  const evalOne = (cmd: TeamCommandIntent) => {
+    const composed = composeTeamStrategyContract(inputs, cmd, null, 1, {});
+    const readiness = computeTeamReadiness(inputs, composed.contract.taskGraph, composed.resources);
+    const pausedObj = new Set(composed.contract.objectives.filter(o => o.status === 'paused').map(o => o.id));
+    const live = composed.contract.taskGraph.filter(t => !pausedObj.has(t.objectiveId));
+    const travel = live.filter(t => t.type === 'reach_region').reduce((s, t) => s + t.resourceRequirement, 0);
+    const ap = live.filter(t => ['reach_region', 'defend_region', 'take_region'].includes(t.type)).length;
+    const holds = composed.contract.taskGraph.filter(t => t.type === 'defend_region').map(t => {
+      const who = inputs.actors.find(a => a.id === t.assignedActorIds[0]);
+      return who ? `${t.regionId}: ${who.isHuman ? 'you' : who.name}${who.location === t.regionId ? ' (in place)' : ' (must travel)'}` : `${t.regionId}: unassigned`;
+    });
+    const expand = composed.contract.taskGraph.filter(t => t.type === 'take_region').map(t => { const who = inputs.actors.find(a => a.id === t.assignedActorIds[0]); return `${t.regionId}: ${who ? (who.isHuman ? 'you' : who.name) : 'unassigned'}${pausedObj.has(t.objectiveId) ? ' (paused)' : ''}`; });
+    return { composed, readiness, travel, ap, holds, expand };
+  };
+  const a = evalOne(current);
+  const b = evalOne(alternative);
+  const cmp = (x: number, y: number, higherBetter = true): 'current' | 'alternative' | 'same' => (Math.abs(x - y) < 1e-6 ? 'same' : (x > y) === higherBetter ? 'current' : 'alternative');
+  const metrics: TeamWhatIfResult['metrics'] = [
+    { metric: 'Region security (positioning)', current: `${Math.round(a.readiness.positioning * 100)}%`, alternative: `${Math.round(b.readiness.positioning * 100)}%`, better: cmp(a.readiness.positioning, b.readiness.positioning) },
+    { metric: 'Liquidity coverage', current: `${Math.round(a.readiness.resources * 100)}%`, alternative: `${Math.round(b.readiness.resources * 100)}%`, better: cmp(a.readiness.resources, b.readiness.resources) },
+    { metric: 'Travel cost', current: tosMoney(a.travel), alternative: tosMoney(b.travel), better: cmp(a.travel, b.travel, false) },
+    { metric: 'AP-consuming tasks', current: String(a.ap), alternative: String(b.ap), better: cmp(a.ap, b.ap, false) },
+    { metric: 'Overall readiness', current: `${Math.round(a.readiness.overall * 100)}%`, alternative: `${Math.round(b.readiness.overall * 100)}%`, better: cmp(a.readiness.overall, b.readiness.overall) }
+  ];
+  const score = (side: 'current' | 'alternative') => metrics.filter(m => m.better === side).length;
+  const verdict = score('alternative') > score('current') ? 'The alternative looks stronger on the measurable factors.' : score('current') > score('alternative') ? 'The current strategy looks stronger on the measurable factors.' : 'Both strategies are about even on the measurable factors.';
+  return {
+    current: { holds: a.holds.join('; ') || '—', expansion: a.expand.join('; ') || '—' },
+    alternative: { holds: b.holds.join('; ') || '—', expansion: b.expand.join('; ') || '—' },
+    metrics, verdict, alternativeCommand: alternative,
+    uncertain: ['Rival moves are not predicted — only current observable pressure is used.', ...(inputs.fogOfWar ? ['Fog of war hides rival cash.'] : [])]
+  };
+}
+
+// ---- Auditor integration (B41): operational checks only ---------------------------------------
+
+export function auditTeamOperatingSystem(state: TeamOSTeamState | null | undefined, inputs: TeamOSInputs): Array<{ id: string; severity: 'info' | 'warning' | 'error'; message: string }> {
+  const out: Array<{ id: string; severity: 'info' | 'warning' | 'error'; message: string }> = [];
+  const c = state?.contract;
+  if (!c) return out;
+  const actorIds = inputs.actors.map(a => a.id);
+  validateTeamTaskGraph(c.taskGraph, actorIds).forEach((m, i) => out.push({ id: `graph_${i}`, severity: m.startsWith('cycle') || m.startsWith('dangling') ? 'error' : 'warning', message: m }));
+  c.objectives.filter(o => o.status === 'active' && !c.taskGraph.some(t => t.objectiveId === o.id)).forEach(o => out.push({ id: `orphan_obj_${o.id}`, severity: 'warning', message: `objective “${o.description}” has no viable task` }));
+  c.taskGraph.filter(t => ['ready', 'waiting'].includes(t.status) && inputs.turn - t.createdTurn >= 12).forEach(t => out.push({ id: `stall_${t.id}`, severity: 'warning', message: `task “${t.label}” has not transitioned for ${inputs.turn - t.createdTurn} turns` }));
+  const leads = new Map<string, string[]>();
+  c.roles.filter(r => r.primaryRole === 'controller').forEach(r => { const key = r.responsibility; leads.set(key, [...(leads.get(key) || []), r.actorId]); });
+  leads.forEach((ids, key) => { if (ids.length > 1) out.push({ id: `role_${key}`, severity: 'info', message: `several actors lead “${key}”` }); });
+  if (c.contingencies.filter(x => x.status === 'triggered').length > 3) out.push({ id: 'contingency_loop', severity: 'warning', message: 'more than three contingencies triggered at once' });
+  if (inputs.turn - c.updatedTurn > 10) out.push({ id: 'stale_strategy', severity: 'warning', message: `strategy revision not refreshed for ${inputs.turn - c.updatedTurn} turns` });
+  c.resourcePolicy.envelopes.filter(e => e.forObjectiveIds.length && !e.forObjectiveIds.some(id => c.objectives.some(o => o.id === id))).forEach(e => out.push({ id: `orphan_env_${e.category}`, severity: 'warning', message: `the ${e.category} allocation belongs to no objective` }));
+  return out;
+}
+
+// ---- Debrief (B55) -------------------------------------------------------------------------------
+
+export function buildTeamDebrief(state: TeamOSTeamState | null | undefined): string[] {
+  if (!state?.revisions.length) return ['No team strategy history was recorded this match.'];
+  const r = state.revisions;
+  const replans = r.filter(x => x.kind === 'replan').length;
+  const cont = r.filter(x => x.kind === 'contingency_triggered');
+  const roleChanges = r.flatMap(x => x.changes.filter(c => /→/.test(c) && !/priority/.test(c)));
+  const treasuryBlocks = (state.conflicts || []).filter(c => c.type === 'treasury_vs_objective' || c.type === 'governor_vs_task').length;
+  return [
+    `The strategy was revised ${r.length} time(s): ${replans} replan(s), ${cont.length} contingency trigger(s), ${r.filter(x => x.kind === 'player_override').length} player change(s).`,
+    ...(cont[0] ? [`First contingency: turn ${cont[0].turn} — ${cont[0].trigger}.`] : []),
+    ...(roleChanges.length ? [`Role changes: ${roleChanges.slice(0, 4).join('; ')}.`] : ['Roles stayed stable.']),
+    `Treasury / Governor conflicts in the latest plan: ${treasuryBlocks}.`,
+    ...(r.length ? [`Latest revision (turn ${r[r.length - 1].turn}): ${r[r.length - 1].trigger}.`] : [])
+  ];
+}
+
+// ---- Save/load sanitisation (B64) ---------------------------------------------------------------
+
+export function sanitizeTeamOperatingSystemState(raw: unknown): TeamOperatingSystemState {
+  const out: TeamOperatingSystemState = { version: 1, byTeam: {} };
+  if (!raw || typeof raw !== 'object') return out;
+  const byTeam = (raw as any).byTeam;
+  if (!byTeam || typeof byTeam !== 'object') return out;
+  Object.keys(byTeam).slice(0, 8).forEach(teamId => {
+    const t = byTeam[teamId];
+    if (!t || typeof t !== 'object') return;
+    const c = t.contract;
+    const contract: TeamStrategyContract | null = c && typeof c === 'object' && typeof c.id === 'string' && c.mission && Array.isArray(c.objectives) && Array.isArray(c.taskGraph)
+      ? {
+        ...c,
+        objectives: c.objectives.slice(0, TEAM_OS_LIMITS.objectives),
+        taskGraph: c.taskGraph.slice(0, TEAM_OS_LIMITS.tasks).map((x: any) => ({ ...x, dependencies: Array.isArray(x.dependencies) ? x.dependencies.slice(0, 6) : [], assignedActorIds: Array.isArray(x.assignedActorIds) ? x.assignedActorIds.slice(0, 4) : [], blockers: Array.isArray(x.blockers) ? x.blockers.slice(0, 4) : [], fallbackTaskIds: Array.isArray(x.fallbackTaskIds) ? x.fallbackTaskIds.slice(0, 4) : [] })),
+        roles: Array.isArray(c.roles) ? c.roles.slice(0, 8) : [],
+        contingencies: Array.isArray(c.contingencies) ? c.contingencies.slice(0, TEAM_OS_LIMITS.contingencies) : [],
+        assignments: Array.isArray(c.assignments) ? c.assignments.slice(0, 8) : [],
+        constraints: { reserveFloor: typeof c.constraints?.reserveFloor === 'number' ? c.constraints.reserveFloor : null, spendLockedActorIds: Array.isArray(c.constraints?.spendLockedActorIds) ? c.constraints.spendLockedActorIds : [], deprioritizedRegions: Array.isArray(c.constraints?.deprioritizedRegions) ? c.constraints.deprioritizedRegions : [] },
+        resourcePolicy: { reserveFloor: typeof c.resourcePolicy?.reserveFloor === 'number' ? c.resourcePolicy.reserveFloor : null, envelopes: Array.isArray(c.resourcePolicy?.envelopes) ? c.resourcePolicy.envelopes.slice(0, 10) : [] },
+        locks: { mission: Boolean(c.locks?.mission), roles: Array.isArray(c.locks?.roles) ? c.locks.roles : [], reserve: Boolean(c.locks?.reserve), regions: Array.isArray(c.locks?.regions) ? c.locks.regions : [] },
+        revision: Math.max(0, Math.floor(Number(c.revision) || 0))
+      }
+      : null;
+    out.byTeam[teamId] = {
+      contract,
+      conflicts: Array.isArray(t.conflicts) ? t.conflicts.slice(0, TEAM_OS_LIMITS.conflicts) : [],
+      proposals: Array.isArray(t.proposals) ? t.proposals.slice(0, TEAM_OS_LIMITS.proposals) : [],
+      revisions: Array.isArray(t.revisions) ? t.revisions.slice(-TEAM_OS_LIMITS.revisions) : [],
+      lastReplanTurn: typeof t.lastReplanTurn === 'number' ? t.lastReplanTurn : null,
+      lastSignificance: typeof t.lastSignificance === 'string' ? t.lastSignificance.slice(0, 20000) : null,
+      roleSince: t.roleSince && typeof t.roleSince === 'object' ? t.roleSince : {},
+      feedback: Array.isArray(t.feedback) ? t.feedback.slice(0, TEAM_OS_LIMITS.feedback).map(String) : []
+    };
+  });
+  return out;
+}
+
+/** Deterministic serialisation for replay comparison (stable key order). */
+export function serializeTeamOperatingSystemState(state: TeamOperatingSystemState): string {
+  const sortKeys = (v: any): any => (Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.keys(v).sort().reduce((o: any, k) => { o[k] = sortKeys(v[k]); return o; }, {}) : v);
+  return JSON.stringify(sortKeys(state));
+}
+
+// ---- Natural-language team commands via GI 2.1 (B26–B28, B58–B61) ------------------------------
+
+/**
+ * Turn a GI 2.1 semantic frame into a structured team command. GI 2.1 does the language work
+ * (typos, polarity, agents, bindings, quantities, conditions); this only maps meaning to team terms.
+ * Returns null when the message is not a team command (questions and musings never are).
+ */
+export function parseTeamCommandFromFrame(frame: GISemanticFrame, world: GIWorld, ctx?: GIConversationContext | null, hypothetical = false): TeamCommandIntent | null {
+  const text = frame.clauses.map(c => c.tokens.map(t => t.t).join(' ')).join(' | ');
+  const mates = world.actors.filter(a => a.relation === 'teammate');
+  if (!mates.length) return null;
+  // Discussion / information is never a command ("why is Riley allowed to spend?", "maybe Riley shouldn't spend").
+  const musing = /\b(maybe|perhaps|might|should he|should she|shouldn't|should not|why|what if|would it|do you think)\b/.test(text) && !/\b(i will|i'll|have|let|make|keep|switch|stop|tell)\b/.test(text.split('|')[0]);
+  if (!hypothetical && musing && !/^(have|let|make|keep|switch|stop|tell)\b/.test(text)) return null;
+  // Repair of a previous team command's reserve: "make that $15K".
+  if (ctx?.lastTeamCommand && /^(make (that|it)|change (that|it) to|actually)\b/.test(text)) {
+    const q = frame.quantities.find(x => x.unit === '$');
+    if (q) return { ...ctx.lastTeamCommand, reserveFloor: resolveGIQuantityAmount(q, world), evidence: [`reserve → ${q.raw}`] };
+  }
+  const mateByToken = (t: GIToken) => (t.entity?.kind === 'actor' && mates.some(m => m.id === t.entity!.id) ? t.entity.id : /^(teammate|partner|ally|him|her|he|she)$/.test(t.t) ? (ctx?.lastTeamActorId && mates.some(m => m.id === ctx.lastTeamActorId) ? ctx.lastTeamActorId : mates[0].id) : null);
+  const responsibilities: TeamResponsibility[] = [];
+  const addResp = (r: TeamResponsibility) => { const i = responsibilities.findIndex(x => x.actorId === r.actorId && x.focus === r.focus && x.regionId === r.regionId); if (i < 0) responsibilities.push(r); };
+  const economyWords = /^(money|cash|income|economy|earn|earns|earning|farm|farming|making|make|makes|economic|earner)$/;
+  const regionFocusWords = /^(handle|handles|defend|defends|hold|holds|protect|protects|cover|covers|guard|secure|keep|regions|region|map|mine|stay|take|takes|expand|go|going|travel)$/;
+  frame.clauses.forEach(c => {
+    const toks = c.tokens.filter(t => !t.filler && t.kind !== 'punct');
+    const ct = c.tokens.filter(t => t.kind !== 'punct').map(t => t.t).join(' ');
+    // Agent of this clause: explicit teammate token, "I/me/my", or possessive "NSW is mine / money is Riley's job".
+    let agent: string | null = null;
+    const mateTok = toks.find(t => mateByToken(t));
+    if (/\b(i|me|my|mine|myself)\b/.test(ct) && !(mateTok && toks.indexOf(mateTok) < toks.findIndex(t => /^(i|me|my|mine)$/.test(t.t)) && /^(have|let|make|tell)/.test(ct))) agent = 'player';
+    if (mateTok && (!agent || /^(have|let|make|tell|get|switch)\b/.test(ct) || toks.indexOf(mateTok) === 0)) agent = mateByToken(mateTok)!;
+    if (/\bwe both\b|\bboth of us\b/.test(ct)) agent = 'both';
+    if (!agent) return;
+    const region = toks.find(t => t.entity?.kind === 'region')?.entity?.id;
+    const economy = toks.some(t => economyWords.test(t.t)) && !/\bspend(ing)?\b/.test(ct);
+    const recovery = /\brecover(y|ing)?\b/.test(ct);
+    const contracts = /\bcontracts?\b/.test(ct);
+    const expansion = /\b(take|takes|expand|expansion|go after|push into)\b/.test(ct) && region;
+    const who = agent === 'both' ? ['player', mates[0].id] : [agent];
+    who.forEach(a => {
+      if (recovery) { const until = frame.quantities.find(q => q.clause === c.index && q.unit === '$'); addResp({ actorId: a, focus: 'recovery', untilCash: until ? resolveGIQuantityAmount(until, world) : null }); return; }
+      if (region && (toks.some(t => regionFocusWords.test(t.t)) || /\b(is|are) (mine|his|hers|yours)\b/.test(ct))) { addResp({ actorId: a, focus: expansion ? 'expansion' : 'region', regionId: region }); return; }
+      if (/\bregions?\b|\bmap\b/.test(ct) && !region) { const held = world.player.location; addResp({ actorId: a, focus: 'region', regionId: world.regions[held] ? held : undefined }); return; }
+      if (contracts) { addResp({ actorId: a, focus: 'contracts' }); return; }
+      if (economy) { addResp({ actorId: a, focus: 'economy' }); return; }
+      if (/\bstay here\b|\bstay put\b/.test(ct) && a === 'player') { addResp({ actorId: 'player', focus: 'region', regionId: world.player.location }); return; }
+      // "I'll defend." with no region named → the region you're in (or the most exposed one you hold).
+      if (/\b(defend|defending|hold|holding|protect|protecting|guard|cover)\b/.test(ct) && !region) {
+        const here = world.regions[a === 'player' ? world.player.location : (world.actors.find(x => x.id === a)?.location || '')];
+        const exposed = Object.values(world.regions).filter(r => r.controlledByPlayer && r.rivalCostToControl !== null).sort((x, y) => (x.rivalCostToControl || 0) - (y.rivalCostToControl || 0))[0];
+        const target = here?.controlledByPlayer ? here : exposed || here;
+        if (target) addResp({ actorId: a, focus: 'region', regionId: target.code });
+      }
+    });
+    // "money is Riley's job" — possessive agent after the focus word.
+    if (/\b(job|thing|responsibility)\b/.test(ct) && economy && mateTok) addResp({ actorId: mateByToken(mateTok)!, focus: 'economy' });
+  });
+  // "Riley economy, me regions" shorthand (adjacent agent + focus pairs across a comma).
+  const flat = frame.clauses.flatMap(c => c.tokens.filter(t => !t.filler && t.kind !== 'punct'));
+  flat.forEach((t, i) => {
+    const mateId = mateByToken(t);
+    const nxt = flat[i + 1];
+    if (mateId && nxt && economyWords.test(nxt.t)) addResp({ actorId: mateId, focus: 'economy' });
+    if (/^(me|i)$/.test(t.t) && nxt && /^(regions?|defense|defend|map)$/.test(nxt.t)) addResp({ actorId: 'player', focus: 'region', regionId: responsibilities.find(r => r.actorId === 'player')?.regionId || (world.regions[world.player.location] ? world.player.location : undefined) });
+  });
+  // Reserve floor: "keep at least $8K safe/untouched", "don't let the team spend below $10K".
+  const floorQ = frame.quantities.find(q => q.role === 'floor') || (/\b(spend below|go below|drop below|dip below)\b/.test(text) ? frame.quantities.find(q => q.unit === '$') : null);
+  const reserveFloor = floorQ ? resolveGIQuantityAmount(floorQ, world) : null;
+  // Contingencies: "if NSW gets really bad, have my teammate help me".
+  const contingencies: TeamCommandIntent['contingencies'] = [];
+  frame.clauses.forEach((c, i) => {
+    if (c.marker !== 'if') return;
+    const ct = c.tokens.map(t => t.t).join(' ');
+    const region = c.tokens.find(t => t.entity?.kind === 'region')?.entity?.id || responsibilities.find(r => r.actorId === 'player' && r.regionId)?.regionId;
+    const next = frame.clauses[i + 1] ? frame.clauses[i + 1].tokens.map(t => t.t).join(' ') : '';
+    const helper = [...(frame.clauses[i + 1]?.tokens || []), ...c.tokens].map(mateByToken).find(Boolean) || mates[0].id;
+    if (/\b(help|support|come|assist|back me up|cover)\b/.test(`${ct} ${next}`) || /\b(bad|critical|pushes|push|attack|pressure|worse)\b/.test(ct)) {
+      contingencies.push({ trigger: /\b(bad|critical|worse|really|hard)\b/.test(ct) ? 'pressure_critical' : 'rival_contests', regionId: region, actorId: helper, supportRegionId: region });
+    }
+  });
+  const priorities: TeamCommandIntent['priorities'] = [];
+  const firstThen = text.match(/\bfocus (on )?(contracts?|expansion|defen[cs]e|economy|money)\b.*?\bthen\b.*?\b(contracts?|expansion|defen[cs]e|economy|money)\b/);
+  if (firstThen) {
+    const norm = (w: string): TeamCommandIntent['priorities'][number] => (/contract/.test(w) ? 'contracts' : /expan/.test(w) ? 'expansion' : /defen/.test(w) ? 'defense' : 'economy');
+    priorities.push(norm(firstThen[2]), norm(firstThen[3]));
+  } else {
+    const single = text.match(/\b(?:focus (?:on )?|prioriti[sz]e )(contracts?|expansion|expanding|defen[cs]e|defending|economy|money)\b/);
+    if (single) priorities.push(/contract/.test(single[1]) ? 'contracts' : /expan/.test(single[1]) ? 'expansion' : /defen/.test(single[1]) ? 'defense' : 'economy');
+    else if (/\b(we|us|team) (all )?(defend|hold|protect) (our|the team'?s?) regions\b/.test(text)) priorities.push('defense');
+  }
+  const deprioritizedRegions = frame.clauses.filter(c => /\b(stop caring about|forget about|ignore|drop|abandon)\b/.test(c.tokens.map(t => t.t).join(' '))).flatMap(c => c.tokens.filter(t => t.entity?.kind === 'region').map(t => t.entity!.id));
+  const spendLocks = /\bstop\b.*\bspend/.test(text) ? flat.map(mateByToken).filter(Boolean) as string[] : [];
+  const swap = /\b(swap|switch) (us|roles|our roles|them)\b/.test(text);
+  // Swap the responsibilities in force: the last command, the applied intent, or the contract's own roles.
+  const swapBase: TeamCommandIntent | null = ctx?.lastTeamCommand || world.team?.state.contract?.commandIntent || (() => {
+    const c = world.team?.state.contract;
+    if (!c) return null;
+    const resp: TeamResponsibility[] = c.roles.map(r => {
+      const task = c.taskGraph.find(t => r.taskIds.includes(t.id) && t.regionId && (t.type === 'defend_region' || t.type === 'take_region' || t.type === 'reach_region'));
+      const actorId = world.team!.inputs.actors.find(a => a.id === r.actorId)?.isHuman ? 'player' : r.actorId;
+      if (task?.regionId) return { actorId, focus: task.type === 'defend_region' ? 'region' as const : 'expansion' as const, regionId: task.regionId };
+      return { actorId, focus: r.primaryRole === 'recovery' ? 'recovery' as const : 'economy' as const };
+    });
+    return resp.length ? { responsibilities: resp, reserveFloor: c.constraints.reserveFloor || null, contingencies: [], priorities: [], deprioritizedRegions: [], spendLocks: [], missionHint: null, swap: false, evidence: [] } : null;
+  })();
+  if (swap && swapBase && mates[0]) {
+    const prev = swapBase;
+    const mateId = mates[0].id;
+    return { ...prev, responsibilities: prev.responsibilities.map(r => ({ ...r, actorId: r.actorId === 'player' ? mateId : r.actorId === mateId ? 'player' : r.actorId })), swap: true, evidence: ['swap us'] };
+  }
+  if (!responsibilities.length && reserveFloor === null && !contingencies.length && !priorities.length && !deprioritizedRegions.length && !spendLocks.length) return null;
+  // A partial command refines the strategy in force: new responsibilities replace only the actors they
+  // name; the reserve, contingencies and other assignments carry over ("Riley handles VIC", "make that $15K").
+  const base = ctx?.lastTeamCommand || world.team?.state.contract?.commandIntent || null;
+  const named = new Set(responsibilities.map(r => r.actorId));
+  const merged = [...responsibilities, ...(base?.responsibilities || []).filter(r => !named.has(r.actorId))];
+  return {
+    responsibilities: merged,
+    reserveFloor: reserveFloor ?? base?.reserveFloor ?? null,
+    contingencies: contingencies.length ? contingencies : (base?.contingencies || []),
+    priorities: priorities.length ? priorities : (base?.priorities || []),
+    deprioritizedRegions: deprioritizedRegions.length ? deprioritizedRegions : (base?.deprioritizedRegions || []),
+    spendLocks: spendLocks.length ? spendLocks : (base?.spendLocks || []),
+    missionHint: null,
+    swap: false,
+    evidence: frame.clauses.map(c => c.text).slice(0, 6)
+  };
+}
+
+/** Compact, comparable summary of a team command (for convergence tests and diagnostics). */
+export function summarizeTeamCommand(c: TeamCommandIntent | null): string {
+  if (!c) return 'none';
+  return JSON.stringify({
+    resp: c.responsibilities.map(r => `${r.actorId}:${r.focus}${r.regionId ? ':' + r.regionId : ''}`).sort(),
+    floor: c.reserveFloor, cont: c.contingencies.map(x => `${x.trigger}:${x.regionId || ''}:${x.actorId || ''}`).sort(),
+    pri: c.priorities, dep: [...c.deprioritizedRegions].sort(), locks: [...c.spendLocks].sort()
+  });
+}
+
+// ---- Compact view for Game Intelligence + the Mission Board --------------------------------------
+
+export interface TeamOSView {
+  enabled: boolean;
+  teamId: string;
+  authority: TeamOSAuthorityLevel;
+  inputs: TeamOSInputs;
+  state: TeamOSTeamState;
+  evaluation: TeamOSEvaluation;
+  audit: Array<{ id: string; severity: 'info' | 'warning' | 'error'; message: string }>;
+}
+
+export function buildTeamOSView(inputs: TeamOSInputs, stored: TeamOSTeamState | null | undefined, enabled = true): TeamOSView {
+  const evaluation = evaluateTeamOperatingSystem(stored, inputs, null);
+  return { enabled, teamId: inputs.teamId, authority: inputs.authority, inputs, state: evaluation.state, evaluation, audit: auditTeamOperatingSystem(evaluation.state, inputs) };
+}
+
+// ---- Team Mission Board (PLAY) + Team OS inspector (LAB) ----------------------------------------
+
+const TEAM_OS_HEALTH_META: Record<TeamPlanHealth, { label: string; cls: string }> = {
+  on_track: { label: 'On track', cls: 'bg-emerald-600 text-white' },
+  at_risk: { label: 'At risk', cls: 'bg-amber-500 text-black' },
+  blocked: { label: 'Blocked', cls: 'bg-red-600 text-white' },
+  recovering: { label: 'Recovering', cls: 'bg-sky-600 text-white' },
+  needs_decision: { label: 'Needs your decision', cls: 'bg-violet-600 text-white' },
+  obsolete: { label: 'No plan yet', cls: 'bg-slate-500 text-white' },
+  completed: { label: 'Completed', cls: 'bg-emerald-700 text-white' }
+};
+
+export interface TeamMissionBoardProps {
+  view: TeamOSView;
+  theme: V9Theme;
+  onAsk: (query: string) => void;
+  onButton: (button: GameIntelligenceButton) => void;
+  onOpenLab: () => void;
+}
+
+/** PLAY-layer summary of the Team Strategy Contract. Information + buttons only; nothing executes here. */
+export const TeamMissionBoard: React.FC<TeamMissionBoardProps> = ({ view, theme, onAsk, onButton, onOpenLab }) => {
+  const [showPlan, setShowPlan] = React.useState(false);
+  const c = view.state.contract;
+  const ev = view.evaluation;
+  const nameOf = (id: string) => { const a = view.inputs.actors.find(x => x.id === id); return a ? (a.isHuman ? 'You' : a.name) : id; };
+  const health = TEAM_OS_HEALTH_META[ev.health.health];
+  const threat = ev.snapshot.threatenedRegions[0] || null;
+  const opportunity = ev.snapshot.opportunities[0] || null;
+  const openProposals = view.state.proposals.filter(p => p.status === 'open');
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70';
+  if (!c) return null;
+  return (
+    <section aria-labelledby="team-mission-heading" data-testid="team-mission-board" className={`${theme.card} ${theme.border} border rounded-xl p-3 ${theme.shadow} space-y-2 text-sm`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="team-mission-heading" className="font-bold">🧭 Team Mission: <span data-testid="team-mission-label">{c.mission.label}</span></h2>
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${health.cls}`} title={ev.health.reason}>{health.label}</span>
+        <span className="text-[11px] opacity-70">Authority: {TEAM_OS_AUTHORITY_META[view.authority].label} • Rev {c.revision}</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="col-span-2 min-w-0">
+          <div className={label}>Strategy</div>
+          <ul className="text-xs space-y-0.5">
+            {c.objectives.filter(o => o.status !== 'completed').slice(0, 3).map(o => (
+              <li key={o.id} className="truncate" title={o.reason}>{o.status === 'paused' ? '⏸ ' : o.status === 'blocked' ? '⛔ ' : '• '}{o.description}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="col-span-2 min-w-0">
+          <div className={label}>Roles</div>
+          <ul className="text-xs space-y-0.5">
+            {c.roles.slice(0, 4).map(r => (
+              <li key={r.actorId} className="truncate" title={r.reason}><span className="font-semibold">{nameOf(r.actorId)}</span>: {r.primaryRole} — {r.responsibility}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className={label}>Resources</div>
+          <div className="font-bold">${Math.round(ev.resources.freeCash).toLocaleString()} free</div>
+          <div className="text-xs opacity-75">{ev.resources.protectedCash ? `$${Math.round(ev.resources.protectedCash).toLocaleString()} protected • ` : ''}{c.constraints.reserveFloor ? `reserve $${Math.round(c.constraints.reserveFloor).toLocaleString()}` : 'no reserve floor'}</div>
+        </div>
+        <div>
+          <div className={label}>Threat</div>
+          <div className="text-xs">{threat ? `${threat.code}: rival needs $${Math.round(threat.opponentCostToTake).toLocaleString()}${threat.opponentCanAfford === true ? ' (can afford)' : threat.opponentCanAfford === null ? ' (rival cash hidden)' : ''}` : 'No held region under visible threat'}</div>
+        </div>
+        <div>
+          <div className={label}>Opportunity</div>
+          <div className="text-xs">{opportunity ? `${opportunity.code} for $${Math.round(opportunity.cost).toLocaleString()}` : 'None affordable now'}</div>
+        </div>
+        <div>
+          <div className={label}>Readiness</div>
+          <div className="font-bold">{Math.round(ev.readiness.overall * 100)}% <span className="text-xs font-normal opacity-75">{ev.readiness.label}</span></div>
+          <div className="text-xs opacity-75">Confidence: {ev.confidence.label}</div>
+        </div>
+      </div>
+      {c.milestones[0] && <div className="text-xs"><span className="font-semibold">Next milestone:</span> {c.milestones[0]}</div>}
+      {ev.timeline.length > 0 && (
+        <ol className="text-xs space-y-0.5" aria-label="Team timeline">
+          {ev.timeline.slice(0, showPlan ? 10 : 3).map((t, i) => (
+            <li key={`${t.phase}_${i}`}><span className="font-mono font-bold">{t.phase}</span> — {t.who}: {t.what}</li>
+          ))}
+        </ol>
+      )}
+      {showPlan && (
+        <div className="text-xs space-y-0.5" data-testid="team-mission-plan">
+          <div className={label}>Task graph</div>
+          {c.taskGraph.map(t => (
+            <div key={t.id}>{t.status === 'completed' ? '✅' : t.status === 'blocked' ? '⛔' : t.status === 'waiting' ? '⏳' : '▶️'} {t.label} — {t.assignedActorIds.map(nameOf).join(' + ') || 'Team'} ({t.status}{t.blockers.length ? `: ${t.blockers[0]}` : ''}{t.humanStatus ? `, suggestion for you` : ''})</div>
+          ))}
+          {view.state.revisions.length > 0 && <div className="opacity-75">Last change (rev {view.state.revisions[view.state.revisions.length - 1].revision}): {view.state.revisions[view.state.revisions.length - 1].trigger}</div>}
+        </div>
+      )}
+      {openProposals.map(p => (
+        <div key={p.id} role="group" aria-label="Team proposal" className={`rounded-lg border ${theme.border} px-2 py-1.5 text-xs flex flex-wrap items-center gap-2`}>
+          <span className="flex-1 min-w-[12rem]"><span className="font-semibold">{nameOf(p.proposerActorId) === 'team_os' ? 'Team AI' : nameOf(p.proposerActorId)} proposes:</span> {p.reason} ({p.proposedChanges.slice(0, 2).join('; ')})</span>
+          <button type="button" className={`${theme.button} px-2 py-1 rounded font-semibold`} onClick={() => onButton({ id: `team_accept_${p.id}`, label: 'Accept', kind: 'team_proposal_accept', candidateId: p.id })}>Accept</button>
+          <button type="button" className={`${theme.buttonSecondary} px-2 py-1 rounded`} onClick={() => onButton({ id: `team_reject_${p.id}`, label: 'Reject', kind: 'team_proposal_reject', candidateId: p.id })}>Reject</button>
+          <button type="button" className={`${theme.buttonSecondary} px-2 py-1 rounded`} onClick={() => onAsk('What should we change?')}>Why?</button>
+        </div>
+      ))}
+      {view.state.feedback.length > 0 && <div className="text-xs opacity-80">{view.state.feedback.slice(0, 2).join(' ')}</div>}
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={`${theme.button} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => onAsk("How is our team plan going?")}>Ask Team Intelligence</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('What should we change?')}>Change Strategy</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} aria-expanded={showPlan} onClick={() => setShowPlan(v => !v)}>{showPlan ? 'Hide Plan' : 'View Plan'}</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('What if we focus on defense?')}>What If?</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={onOpenLab}>Advanced Team Systems</button>
+      </div>
+    </section>
+  );
+};
+
+export interface TeamOSInspectorProps {
+  view: TeamOSView | null;
+  theme: V9Theme;
+  enabled: boolean;
+  isTeamMode: boolean;
+  authority: TeamOSAuthorityLevel;
+  onToggleEnabled: () => void;
+  onSetAuthority: (level: TeamOSAuthorityLevel) => void;
+}
+
+/** LAB diagnostics for the Team Operating System: priority framework, contract, tasks, conflicts, audit. */
+export const TeamOSInspector: React.FC<TeamOSInspectorProps> = ({ view, theme, enabled, isTeamMode, authority, onToggleEnabled, onSetAuthority }) => {
+  const c = view?.state.contract || null;
+  const h = 'font-semibold text-xs uppercase tracking-wider opacity-75 mt-2';
+  return (
+    <section aria-labelledby="team-os-inspector-heading" data-testid="team-os-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 mt-4 space-y-1 text-xs`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="team-os-inspector-heading" className="font-bold text-base">🧭 Team Intelligence 2.0 — Team Operating System</h2>
+        <button type="button" className={`${enabled ? theme.button : theme.buttonSecondary} px-2.5 py-1 rounded text-xs font-semibold`} aria-pressed={enabled} onClick={onToggleEnabled}>{enabled ? 'ON' : 'OFF'}</button>
+        <label className="flex items-center gap-1">Authority
+          <select value={authority} onChange={e => onSetAuthority(e.target.value as TeamOSAuthorityLevel)} className={`${theme.border} border rounded px-1 py-0.5 bg-transparent`}>
+            {(Object.keys(TEAM_OS_AUTHORITY_META) as TeamOSAuthorityLevel[]).map(k => <option key={k} value={k}>{TEAM_OS_AUTHORITY_META[k].label}</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="opacity-75">{TEAM_OS_AUTHORITY_META[authority].summary} Planning authority is not action authority: every action still runs through the canonical pipeline.</p>
+      {!isTeamMode && <p className="opacity-75">Team OS is active in Team Mode matches only.</p>}
+      <div className={h}>Priority framework (lower tier wins)</div>
+      <ol className="list-decimal pl-5">{TEAM_OS_PRIORITY_FRAMEWORK.map(t => <li key={t.key}>{t.label}</li>)}</ol>
+      {view && c && (
+        <>
+          <div className={h}>Contract</div>
+          <div>{c.id} • revision {c.revision} • {c.status} • source {c.source.replace(/_/g, ' ')} • mission “{c.mission.label}” ({c.mission.source.replace(/_/g, ' ')}) • confidence {Math.round(c.confidence * 100)}%</div>
+          <div>Constraints: reserve floor ${Math.round(c.constraints.reserveFloor || 0).toLocaleString()}; spend locks {c.constraints.spendLockedActorIds.join(', ') || 'none'}; deprioritised {c.constraints.deprioritizedRegions.join(', ') || 'none'}; locks: mission {String(c.locks.mission)}, roles {c.locks.roles.join(', ') || 'none'}</div>
+          <div className={h}>Objectives</div>
+          {c.objectives.map(o => <div key={o.id}>P{o.priority} / tier {o.tier} — {o.description} [{o.status}{o.pausedReason ? `: ${o.pausedReason}` : ''}] {Math.round(o.progress * 100)}%</div>)}
+          <div className={h}>Task graph ({c.taskGraph.length}){view.evaluation.graphIssues.length ? ` — issues: ${view.evaluation.graphIssues.join('; ')}` : ''}</div>
+          {c.taskGraph.map(t => <div key={t.id}>{t.id}: {t.label} → {t.assignedActorIds.join('+') || '—'} [{t.status}] deps {t.dependencies.join(',') || '—'}{t.blockers.length ? ` blockers: ${t.blockers.join('; ')}` : ''}</div>)}
+          <div className={h}>Resource envelopes (planning allocations only)</div>
+          <div>Free ${Math.round(view.evaluation.resources.freeCash).toLocaleString()} • protected ${Math.round(view.evaluation.resources.protectedCash).toLocaleString()} • treasury ${Math.round(view.evaluation.resources.treasuryBalance).toLocaleString()} (reserve ${Math.round(view.evaluation.resources.treasuryReserve).toLocaleString()}) • shortfall ${Math.round(view.evaluation.resources.shortfall).toLocaleString()}</div>
+          {view.evaluation.resources.envelopes.map(e => <div key={e.category}>{e.category}: ${Math.round(e.allocated).toLocaleString()} / ${Math.round(e.target).toLocaleString()}{e.hardFloor ? ' (hard floor)' : ''}</div>)}
+          <div className={h}>Conflicts</div>
+          {view.state.conflicts.length ? view.state.conflicts.map(x => <div key={x.id}>{x.type.replace(/_/g, ' ')} [{x.severity}, {x.status}] — {x.selectedResolution || 'unresolved'} ({x.reason}{x.winnerTier ? `; tier ${x.winnerTier} beats tier ${x.loserTier}` : ''})</div>) : <div>None</div>}
+          <div className={h}>Contingencies</div>
+          {c.contingencies.map(x => <div key={x.id}>{x.label} [{x.status}, {x.authority}, {x.source}]</div>)}
+          <div className={h}>Replanning</div>
+          <div>{view.evaluation.replan.replan ? 'Replan' : 'Hold'} — {view.evaluation.replan.reason}; last replan turn {view.state.lastReplanTurn ?? '—'}</div>
+          <div className={h}>Revisions</div>
+          {view.state.revisions.slice(-6).reverse().map(r => <div key={`${r.revision}_${r.turn}_${r.kind}`}>rev {r.revision} (turn {r.turn}, {r.kind.replace(/_/g, ' ')}): {r.trigger} — {r.changes.slice(0, 3).join('; ')}</div>)}
+          <div className={h}>Auditor findings (facts only)</div>
+          {view.audit.length ? view.audit.map(a => <div key={a.id}>[{a.severity}] {a.message}</div>) : <div>No findings</div>}
+        </>
+      )}
+    </section>
+  );
+};
+
+
+// ---- Team OS fixtures (deterministic) ----------------------------------------------------------
+
+/** A small deterministic team: you (in NSW) + an AI teammate; one visible rival; NSW held, VIC rival-held. */
+export function createTeamOSFixtureInputs(overrides?: Partial<TeamOSInputs> & { mateName?: string; mateMoney?: number; humanMoney?: number; nswOpponentCost?: number; rivalMoney?: number; mateInRecovery?: boolean }): TeamOSInputs {
+  const mateName = overrides?.mateName || 'Riley';
+  const actors: TeamOSActorInput[] = [
+    { id: 'player', name: 'Adam', isHuman: true, money: overrides?.humanMoney ?? 6000, protectedCash: 0, inRecovery: false, location: 'NSW', apRemaining: 3, brainRole: null },
+    { id: 'mate', name: mateName, isHuman: false, money: overrides?.mateMoney ?? 2500, protectedCash: 500, inRecovery: Boolean(overrides?.mateInRecovery), location: 'QLD', apRemaining: 3, brainRole: 'earner' }
+  ];
+  const regions: TeamOSRegionInput[] = Object.keys(REGIONS).map(code => ({
+    code, name: REGIONS[code].name || code,
+    controlledByTeam: code === 'NSW', controlledByOpponent: code === 'VIC',
+    opponentCostToTake: code === 'NSW' ? (overrides?.nswOpponentCost ?? 1501) : null,
+    teamCostToTake: code === 'NSW' ? 0 : code === 'VIC' ? 2001 : 1,
+    travelCostFor: Object.fromEntries(actors.map(a => [a.id, a.location === code ? 0 : 150]))
+  }));
+  return {
+    teamId: 'team_player', teamName: 'Team Adam', turn: 7, day: 4, totalDays: 30, actors,
+    opponents: [{ id: 'ai', name: 'Jordan', money: overrides?.rivalMoney ?? 9000, location: 'VIC', visible: true }],
+    regions, treasury: { balance: 4000, reserve: 2500, pendingRequests: 1 }, governorEnabled: true, governanceMode: 'LEADER_DECIDES',
+    overseer: { mode: 'balanced', safeMode: false, lockedActorIds: [] }, pendingApprovals: 0,
+    win: { metric: 'regions', label: 'Most regions', teamValue: 1, opponentValue: 2, regionsTarget: 5, teamRegions: 1, opponentRegions: 2 },
+    scenarioObjectives: [], playerPlan: null, brainGoal: { kind: 'control', description: 'Control NSW', targetRegion: 'NSW' }, fogOfWar: false, authority: 'advisor',
+    ...overrides
+  } as TeamOSInputs;
+}
+
+/** GI fixture world for team commands: teammate "Riley" (AI), rival "Jordan", with a Team OS view attached. */
+export function createTeamGIFixtureWorld(inputs?: TeamOSInputs, stored?: TeamOSTeamState | null): GIWorld {
+  const w = createGIFixtureWorld({ withTeam: true }).world;
+  const ins = inputs || createTeamOSFixtureInputs();
+  const actors = w.actors.map(a => (a.id === 'mate' ? { ...a, name: ins.actors.find(x => x.id === 'mate')?.name || 'Riley' } : a.id === 'ai' ? { ...a, name: 'Jordan' } : a));
+  const world: GIWorld = { ...w, actors, systems: w.systems ? { ...w.systems, teammates: w.systems.teammates.map(m => ({ ...m, name: ins.actors.find(x => x.id === 'mate')?.name || 'Riley' })) } : w.systems };
+  world.team = buildTeamOSView(ins, stored || null, true);
+  return world;
+}
+
+// ---- Team Intelligence 2.0 deterministic self-tests ---------------------------------------------
+
+export function runTeamIntelligence2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const I = createTeamOSFixtureInputs;
+  const ev = (inputs = I(), prev: TeamOSTeamState | null = null, cmd: TeamCommandIntent | null = null) => evaluateTeamOperatingSystem(prev, inputs, cmd);
+  const cmdOf = (q: string, w?: GIWorld, ctx?: GIConversationContext) => {
+    const world = w || createTeamGIFixtureWorld();
+    return parseTeamCommandFromFrame(parseGILanguage(q, world, ctx || createGIConversationContext()), world, ctx || createGIConversationContext());
+  };
+  const MAIN = "I'm going to hold NSW. Have Riley focus on making money. Keep at least $8K safe, and if Jordan really pushes NSW, have my teammate come help me.";
+
+  // Strategy
+  check('tos_strategy_contract', 'Strategy: one contract compiled from state (mission, objectives, tasks, roles, envelopes)', () => {
+    const c = ev().state.contract;
+    if (!c) return 'no contract';
+    if (!c.mission.label || !c.objectives.length || !c.taskGraph.length || c.roles.length !== 2) return JSON.stringify({ m: c.mission, o: c.objectives.length, t: c.taskGraph.length, r: c.roles.length });
+    return c.status === 'active' && c.revision === 1 || `status ${c.status} rev ${c.revision}`;
+  });
+  check('tos_strategy_determinism', 'Strategy: identical inputs → identical serialized contract (no randomness)', () => {
+    const a = JSON.stringify(ev().state); const b = JSON.stringify(ev().state);
+    return a === b || 'contracts differ';
+  });
+  check('tos_strategy_mission_priority', 'Strategy: mission source priority — command > player plan > win condition', () => {
+    const base = deriveTeamMission(I());
+    const plan = deriveTeamMission(I({ playerPlan: { objective: 'Build team cash', secondary: null, regions: [], status: 'active' } }));
+    const cmd = cmdOf(MAIN);
+    const withCmd = deriveTeamMission(I({ playerPlan: { objective: 'Build team cash', secondary: null, regions: [], status: 'active' } }), cmd);
+    if (base.source !== 'win_condition') return `base ${base.source}`;
+    if (plan.source !== 'player_plan') return `plan ${plan.source}`;
+    return withCmd.source === 'player_command' || `cmd ${withCmd.source}`;
+  });
+
+  // Decomposition + task graph
+  check('tos_decomposition_bounded', 'Decomposition: threatened NSW → hold objective; bounded objectives/tasks', () => {
+    const c = ev().state.contract!;
+    if (!c.objectives.some(o => o.type === 'hold_region' && o.regionId === 'NSW')) return 'no NSW hold objective';
+    return (c.objectives.length <= TEAM_OS_LIMITS.objectives && c.taskGraph.length <= TEAM_OS_LIMITS.tasks) || 'limits exceeded';
+  });
+  check('tos_decomposition_reserve', 'Decomposition: a player reserve becomes a hard preserve-reserve objective', () => {
+    const c = ev(I(), null, cmdOf(MAIN)).state.contract!;
+    const o = c.objectives.find(x => x.type === 'preserve_reserve');
+    return (o && o.amount === 8000 && o.tier === 5) || JSON.stringify(o || null);
+  });
+  check('tos_task_graph_dag', 'Task graph: built graph is a valid DAG; cycles and dangling deps are detected', () => {
+    const c = ev(I(), null, cmdOf(MAIN)).state.contract!;
+    const ok = validateTeamTaskGraph(c.taskGraph, ['player', 'mate']);
+    if (ok.some(m => m.startsWith('cycle') || m.startsWith('dangling'))) return ok.join('; ');
+    const t0 = { ...c.taskGraph[0], id: 'a', dependencies: ['b'] };
+    const t1 = { ...c.taskGraph[0], id: 'b', dependencies: ['a'] };
+    const bad = validateTeamTaskGraph([t0, t1], ['player', 'mate']);
+    return bad.some(m => m.startsWith('cycle')) || `cycle not detected: ${bad.join('; ')}`;
+  });
+  check('tos_human_tasks_suggested', 'Human participation: tasks for the human are suggestions, never auto-executed', () => {
+    const c = ev(I(), null, cmdOf(MAIN)).state.contract!;
+    const human = c.taskGraph.filter(t => t.assignedActorIds.includes('player') && ['defend_region', 'take_region', 'reach_region', 'request_treasury'].includes(t.type));
+    if (!human.length) return 'no human task';
+    if (!human.every(t => t.humanStatus === 'suggested')) return 'human task not marked suggested';
+    return teamOsGoalForActor({ version: 1, byTeam: { team_player: ev(I(), null, cmdOf(MAIN)).state } }, 'team_player', 'player', { teamIntelligenceOsEnabled: true, teamOsAuthorityLevel: 'advisor' }) === null || 'human received an AI directive goal';
+  });
+
+  // Roles
+  check('tos_roles_explicit', 'Roles: explicit player assignments are honoured (Riley earner, you controller)', () => {
+    const c = ev(I(), null, cmdOf(MAIN)).state.contract!;
+    const mate = c.roles.find(r => r.actorId === 'mate'); const me = c.roles.find(r => r.actorId === 'player');
+    return (mate?.primaryRole === 'earner' && mate.explicit && me?.primaryRole === 'controller') || JSON.stringify(c.roles.map(r => [r.actorId, r.primaryRole, r.explicit]));
+  });
+  check('tos_roles_hysteresis', 'Roles: no thrashing — a non-explicit role holds for the minimum turns', () => {
+    const first = ev(I({ turn: 7 }));
+    const mateRole = first.state.contract!.roles.find(r => r.actorId === 'mate')!.primaryRole;
+    // Riley moves into NSW next turn (which would favour a different role) — role must hold.
+    const moved = I({ turn: 8 });
+    moved.actors = moved.actors.map(a => (a.id === 'mate' ? { ...a, location: 'NSW' } : a));
+    const second = ev(moved, first.state);
+    const after = second.state.contract!.roles.find(r => r.actorId === 'mate')!.primaryRole;
+    return after === mateRole || `${mateRole} → ${after}`;
+  });
+  check('tos_roles_recovery', 'Roles: an AI teammate in economic recovery is assigned recovery', () => {
+    const c = ev(I({ mateInRecovery: true })).state.contract!;
+    return c.roles.find(r => r.actorId === 'mate')?.primaryRole === 'recovery' || JSON.stringify(c.roles.find(r => r.actorId === 'mate'));
+  });
+
+  // Resources
+  check('tos_resources_no_duplicate_money', 'Resources: envelopes never exceed real free cash (planning allocations only)', () => {
+    const e = ev(I(), null, cmdOf(MAIN));
+    const r = e.resources;
+    const expectedFree = 6000 + (2500 - 500) + (4000 - 2500);
+    if (r.freeCash !== expectedFree) return `freeCash ${r.freeCash} ≠ ${expectedFree}`;
+    const allocated = r.envelopes.reduce((s, x) => s + x.allocated, 0);
+    return allocated <= r.freeCash + 1e-6 || `allocated ${allocated} > free ${r.freeCash}`;
+  });
+
+  // Governor
+  check('tos_governor_authoritative', 'Governor: a block stays a block; Team OS only adds mission context and alternatives', () => {
+    const e = ev(I(), null, cmdOf(MAIN));
+    const task = e.state.contract!.taskGraph.find(t => t.type === 'defend_region')!;
+    const x = explainGovernorWithMission({ ...task, resourceRequirement: 3000 }, { approved: false, reason: 'Below cash floor' }, I(), e.resources);
+    if (x.ruling === 'allow') return 'Team OS overrode the Governor';
+    return (x.governorReason === 'Below cash floor' && x.alternatives.length > 0) || JSON.stringify(x);
+  });
+
+  // Conflicts
+  check('tos_conflicts_framework', 'Conflicts: defense (tier 6) beats expansion (tier 8) under the reserve; loser paused with reason', () => {
+    const cmd = cmdOf('I defend NSW while Riley takes VIC. Keep at least $9K safe.');
+    if (!cmd) return 'no command';
+    const e = ev(I(), null, cmd);
+    const conflict = e.state.conflicts.find(c => c.type === 'resource_collision' || c.type === 'reserve_vs_spending' || c.type === 'objective_vs_objective');
+    if (!conflict) return `no conflict: ${e.state.conflicts.map(c => c.type).join(',')}`;
+    const vic = e.state.contract!.objectives.find(o => o.regionId === 'VIC');
+    return (vic?.status === 'paused' && Boolean(vic.pausedReason) && (conflict.winnerTier || 0) < (conflict.loserTier || 99)) || JSON.stringify({ vic, conflict });
+  });
+
+  // Contingency
+  check('tos_contingency_once', 'Contingency: fires once when its condition holds, never recursively', () => {
+    const cmd = cmdOf(MAIN)!;
+    const hot = I({ nswOpponentCost: 400 });
+    const a = ev(hot, null, cmd);
+    const fired = a.state.contract!.contingencies.filter(c => c.status === 'triggered').length;
+    if (!fired) return 'did not fire';
+    const b = ev(I({ nswOpponentCost: 400, turn: 8 }), a.state);
+    return b.fired.length === 0 || `re-fired ${b.fired.map(c => c.id).join(',')}`;
+  });
+  check('tos_contingency_authority', 'Contingency: player contingencies surface as proposals (advisory) — no silent strategy change', () => {
+    const a = ev(I({ nswOpponentCost: 400 }), null, cmdOf(MAIN)!);
+    return a.state.proposals.some(p => p.status === 'open' && p.requiresApproval) || 'no proposal';
+  });
+
+  // Replanning
+  check('tos_replan_stable', 'Replanning: nothing material changed → no new revision (no churn)', () => {
+    const a = ev(I({ turn: 7 }));
+    const b = ev(I({ turn: 8 }), a.state);
+    return (b.state.revisions.length === a.state.revisions.length && b.state.contract!.revision === a.state.contract!.revision) || `revisions ${a.state.revisions.length}→${b.state.revisions.length}`;
+  });
+  check('tos_replan_event', 'Replanning: losing a held region triggers a new revision with a reason', () => {
+    const a = ev(I({ turn: 7 }));
+    const lost = I({ turn: 10 });
+    lost.regions = lost.regions.map(r => (r.code === 'NSW' ? { ...r, controlledByTeam: false, controlledByOpponent: true, opponentCostToTake: null, teamCostToTake: 1600 } : r));
+    lost.win = { ...lost.win!, teamRegions: 0, opponentRegions: 3 };
+    const b = ev(lost, a.state);
+    const rev = b.state.revisions[b.state.revisions.length - 1];
+    return (b.state.contract!.revision > a.state.contract!.revision && Boolean(rev?.trigger)) || `rev ${a.state.contract!.revision}→${b.state.contract!.revision}`;
+  });
+  check('tos_replan_player_override', 'Replanning: a player command always creates a player_override revision and persists as intent', () => {
+    const a = ev();
+    const b = ev(I(), a.state, cmdOf(MAIN));
+    const c2 = ev(I({ turn: 8 }), b.state);
+    return (b.state.revisions[b.state.revisions.length - 1].kind === 'player_override' && c2.state.contract!.source === 'player_command' && c2.state.contract!.constraints.reserveFloor === 8000) || 'override not persisted';
+  });
+
+  // Parallel planning
+  check('tos_parallel', 'Parallel: human and AI work in parallel (both have NOW entries, no shared exclusive task)', () => {
+    const e = ev(I(), null, cmdOf(MAIN));
+    const now = e.timeline.filter(t => t.phase === 'NOW');
+    const whos = new Set(now.map(t => t.who));
+    const exclusive = e.state.contract!.taskGraph.filter(t => ['defend_region', 'take_region', 'generate_cash'].includes(t.type) && t.assignedActorIds.length > 1);
+    return (whos.size >= 2 && !exclusive.length) || JSON.stringify({ now, exclusive: exclusive.map(t => t.id) });
+  });
+
+  // Natural language convergence + repairs
+  check('tos_nl_convergence', 'NL: paraphrases converge on the same team command', () => {
+    const qs = ['Riley earns, I defend NSW', 'I defend NSW while Riley makes money', 'Let my teammate farm cash while I protect NSW.', 'Riley economy, me regions'];
+    const base = summarizeTeamCommand(cmdOf(qs[0]));
+    for (const q of qs.slice(1)) { const s = summarizeTeamCommand(cmdOf(q)); if (s !== base) return `"${q}": ${s} ≠ ${base}`; }
+    return true;
+  });
+  check('tos_nl_routes', 'NL: team command → preview with Apply/Modify/Explain/Cancel; questions → explanation', () => {
+    const w = createTeamGIFixtureWorld();
+    const r = runGameIntelligenceCore(MAIN, w, createGIConversationContext());
+    if (r.understanding.primary !== 'team_command') return `primary ${r.understanding.primary}`;
+    const kinds = r.answer.buttons.map(b => b.kind);
+    if (!kinds.includes('team_apply') || !kinds.includes('team_cancel')) return kinds.join(',');
+    if (!r.context.pendingTeamDraft) return 'no draft stored';
+    const q = runGameIntelligenceCore('What is our team actually trying to do?', w, r.context);
+    return q.understanding.primary === 'team_explain' || `question → ${q.understanding.primary}`;
+  });
+  check('tos_repair', 'Repair: "make that $15K", "actually NSW" and "swap us" edit only the referenced part', () => {
+    const w = createTeamGIFixtureWorld();
+    let ctx = createGIConversationContext();
+    const step = (q: string) => { const r = runGameIntelligenceCore(q, w, ctx); ctx = r.context; return ctx.pendingTeamDraft?.command || null; };
+    step(MAIN);
+    step('Keep $10K reserved');
+    const c1 = step('Make that $15K');
+    if (c1?.reserveFloor !== 15000) return `floor ${c1?.reserveFloor}`;
+    if (!c1.responsibilities.some(r => r.actorId === 'mate' && r.focus === 'economy')) return 'responsibilities lost';
+    const c2 = step('Riley handles VIC');
+    const c3 = step('actually NSW');
+    if (!c3?.responsibilities.some(r => r.actorId === 'mate' && r.regionId === 'NSW') || c3.reserveFloor !== 15000) return summarizeTeamCommand(c3);
+    void c2;
+    step('Riley earns, I defend NSW');
+    const c4 = step('swap us');
+    return (Boolean(c4?.responsibilities.some(r => r.actorId === 'player' && r.focus === 'economy')) && Boolean(c4?.responsibilities.some(r => r.actorId === 'mate' && r.regionId === 'NSW'))) || summarizeTeamCommand(c4);
+  });
+
+  // What-If
+  check('tos_whatif_pure', 'What-If: compares strategies without mutating state; offers Adopt', () => {
+    const w = createTeamGIFixtureWorld();
+    const before = JSON.stringify(w.team!.state);
+    const r = runGameIntelligenceCore('What if Riley handles NSW and I go Victoria?', w, createGIConversationContext());
+    if (r.understanding.primary !== 'team_whatif') return `primary ${r.understanding.primary}`;
+    if (JSON.stringify(w.team!.state) !== before) return 'state mutated';
+    return r.answer.buttons.some(b => b.kind === 'team_apply') || 'no Adopt button';
+  });
+  check('tos_whatif_defense', 'What-If: "focus on defense" pauses expansion in the alternative only', () => {
+    const inputs = I();
+    const cur = cmdOf('Riley earns, I defend NSW')!;
+    const res = simulateTeamStrategyAlternative(inputs, cur, { ...cur, priorities: ['defense'] });
+    return (/paused/.test(res.alternative.expansion) || res.alternative.expansion === '—') && !/paused/.test(res.current.expansion) || JSON.stringify(res.alternative);
+  });
+
+  // Governance
+  check('tos_governance_route', 'Governance: strategy changes go through Team Governance (well-formed ruling)', () => {
+    const team = createDefaultTeamState(TEAM_PLAYER_ID, 'Blue Team', ['player', 'mate'], '#3b82f6');
+    const r = routeTeamStrategyChange({ summary: 'test', teamId: TEAM_PLAYER_ID, proposerActorId: 'player' }, team, DEFAULT_GAME_SETTINGS, null);
+    return (typeof r.approved === 'boolean' && ['approved', 'awaiting_governance', 'rejected'].includes(r.status) && r.reason.length > 0) || JSON.stringify(r);
+  });
+
+  // Execution / authority
+  check('tos_execution_authority', 'Execution: planning ≠ action authority — Strategic Command goal only after an applied strategy or delegation', () => {
+    const auto = { version: 1 as const, byTeam: { team_player: ev().state } };
+    const settings = { teamIntelligenceOsEnabled: true, teamOsAuthorityLevel: 'advisor' };
+    if (teamOsGoalForActor(auto, 'team_player', 'mate', settings) !== null) return 'advisor + automatic plan changed AI goals';
+    if (teamOsGoalForActor(auto, 'team_player', 'mate', { ...settings, teamIntelligenceOsEnabled: false }) !== null) return 'disabled Team OS changed AI goals';
+    const applied = { version: 1 as const, byTeam: { team_player: ev(I(), null, cmdOf(MAIN)).state } };
+    const g = teamOsGoalForActor(applied, 'team_player', 'mate', settings);
+    return (g !== null && g.ownerActorId === 'mate' && g.kind === 'money') || JSON.stringify(g);
+  });
+  check('tos_disabled_no_routing', 'Backward compatibility: with Team OS disabled GI never routes to team primaries', () => {
+    const w = createTeamGIFixtureWorld();
+    w.team = null;
+    const r = runGameIntelligenceCore(MAIN, w, createGIConversationContext());
+    return !['team_command', 'team_explain', 'team_whatif'].includes(r.understanding.primary) || r.understanding.primary;
+  });
+
+  // Auditor
+  check('tos_auditor_facts', 'Auditor: operational findings only (no strategic judgments)', () => {
+    const e = ev();
+    const s = e.state;
+    const bad = { ...s, contract: { ...s.contract!, taskGraph: [...s.contract!.taskGraph, { ...s.contract!.taskGraph[0], id: 'x1', dependencies: ['missing_task'] }] } };
+    const f = auditTeamOperatingSystem(bad, I());
+    if (!f.some(x => /dangling|missing/.test(x.message))) return f.map(x => x.message).join('; ') || 'no finding';
+    return !f.some(x => /\b(should|better|recommend)\b/i.test(x.message)) || 'judgmental finding';
+  });
+
+  // Fog of war
+  check('tos_fog_of_war', 'Fog of war: hidden rival cash is never used or revealed', () => {
+    const inputs = I({ fogOfWar: true, opponents: [{ id: 'ai', name: 'Jordan', money: null, location: null, visible: false }] });
+    const e = ev(inputs);
+    if (e.snapshot.threatenedRegions.some(t => t.opponentCanAfford !== null)) return 'affordability claimed under fog';
+    const w = createTeamGIFixtureWorld(inputs);
+    const r = runGameIntelligenceCore('Are we still on track?', w, createGIConversationContext());
+    return !/9,000|\$9K/.test(r.answer.lines.join(' ')) || 'rival cash leaked';
+  });
+
+  // Replay / save-load serialisation
+  check('tos_serialization_roundtrip', 'Save/load: Team OS state round-trips through sanitize(serialize()) exactly', () => {
+    const state: TeamOperatingSystemState = { version: 1, byTeam: { team_player: ev(I(), null, cmdOf(MAIN)).state } };
+    const back = sanitizeTeamOperatingSystemState(JSON.parse(serializeTeamOperatingSystemState(state)));
+    return serializeTeamOperatingSystemState(back) === serializeTeamOperatingSystemState(state) || 'round trip differs';
+  });
+  check('tos_old_save', 'Save/load: old saves (no Team OS) and corrupt data load as an empty state', () => {
+    const a = sanitizeTeamOperatingSystemState(undefined);
+    const b = sanitizeTeamOperatingSystemState({ version: 99, byTeam: { x: { contract: 'garbage', revisions: 5 } } });
+    return (a.version === 1 && !Object.keys(a.byTeam).length && b.version === 1 && Object.values(b.byTeam).every(t => t.contract === null || typeof t.contract === 'object')) || JSON.stringify({ a, b });
+  });
+  check('tos_replay_evaluation', 'Replay: replaying the same inputs over a restored state reproduces the same contract', () => {
+    const s1 = ev(I(), null, cmdOf(MAIN)).state;
+    const restored = sanitizeTeamOperatingSystemState(JSON.parse(serializeTeamOperatingSystemState({ version: 1, byTeam: { t: s1 } }))).byTeam.t;
+    const a = ev(I({ turn: 8 }), s1); const b = ev(I({ turn: 8 }), restored);
+    const ser = (x: TeamOSTeamState) => serializeTeamOperatingSystemState({ version: 1, byTeam: { t: x } });
+    return ser(a.state) === ser(b.state) || 'replay diverged';
+  });
+  check('tos_debrief', 'History: debrief summarises revisions from the ledger of changes', () => {
+    const s = ev(I(), ev().state, cmdOf(MAIN)).state;
+    const d = buildTeamDebrief(s);
+    return (d.length >= 2 && d.some(l => /revision|strategy|mission/i.test(l))) || d.join(' | ');
+  });
   return results;
 }
 
@@ -107776,6 +110631,9 @@ function AustraliaGame() {
   }, [actorsById, teamsById, gameSettings, gameState.selectedMode, gameState.aiDifficulty]);
 
   const isTeamMode = useMemo(() => isTeamModeSelection(gameState.selectedMode), [gameState.selectedMode]);
+  // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
+  const teamOsStateRef = useRef<TeamOperatingSystemState | undefined>(undefined);
+  teamOsStateRef.current = (gameState as any).teamOperatingSystem;
   const effectiveTeamOverviewDensity = teamOverviewDensitySessionOverride ?? gameSettings.teamOverviewDensity ?? 'comfortable';
   const isCompactOverview = effectiveTeamOverviewDensity === 'compact';
   const isCompetitiveMode = useMemo(() => isCompetitiveModeSelection(gameState.selectedMode), [gameState.selectedMode]);
@@ -109652,6 +112510,7 @@ function dispatchGameSettingsChange(
         persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
         aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
+        teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -110409,6 +113268,12 @@ function dispatchGameSettingsChange(
         teamEconomyGovernorEnabled: typeof settingsData.teamEconomyGovernorEnabled === 'boolean'
           ? settingsData.teamEconomyGovernorEnabled
           : DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
+        teamIntelligenceOsEnabled: typeof settingsData.teamIntelligenceOsEnabled === 'boolean'
+          ? settingsData.teamIntelligenceOsEnabled
+          : DEFAULT_GAME_SETTINGS.teamIntelligenceOsEnabled,
+        teamOsAuthorityLevel: (['manual', 'advisor', 'assisted', 'delegated', 'autonomous'] as string[]).includes(settingsData.teamOsAuthorityLevel)
+          ? settingsData.teamOsAuthorityLevel
+          : DEFAULT_GAME_SETTINGS.teamOsAuthorityLevel,
         economyCashFloor: clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
         // Never sanitized below economyCashFloor (post-clamp), so the recovery target can never
         // be misconfigured lower than the floor it's supposed to be above.
@@ -126804,7 +129669,10 @@ function dispatchGameSettingsChange(
               }
               return;
             }
-            const directive = generateTeamDirective(actor, team, goal, directiveContext, newDay, projectedTurnCounter);
+            // Team Intelligence 2.0: when the player applied a team strategy (or delegated authority),
+            // the actor's Team Strategy task becomes the goal. Everything downstream is unchanged.
+            const teamOsGoal = teamId === (player?.teamId || TEAM_PLAYER_ID) ? teamOsGoalForActor(teamOsStateRef.current, teamId, actorId, gameSettings) : null;
+            const directive = generateTeamDirective(actor, team, teamOsGoal || goal, directiveContext, newDay, projectedTurnCounter);
 
             // Team AI Overseer System Phase O6: real 4-way authority-mode dispatch, mirroring
             // Phase O3's exact branching for Adaptive Overseer overlays. Shadow logs only; Advisory
@@ -137728,9 +140596,26 @@ function dispatchGameSettingsChange(
         cp?.spendingCaps?.minimumCashReserve ?? null, gameSettings.fogOfWarEnabled, gameSettings.negotiationMode, regionDepositInput
       ],
       actors: (Object.values(actorsById || {}) as any[]).filter(a => a && String(a.id) !== String(player?.id || 'player')).map(a => [a.id, a.money, a.currentRegion]),
-      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length]
+      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length],
+      // Team systems (compact, stable slices — never the whole team state).
+      team_strategy: (() => {
+        const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
+        const plan: any = team?.activeTeamPlan;
+        const os: any = (gameState as any).teamOperatingSystem?.byTeam?.[player?.teamId || ''];
+        return team ? [plan ? [plan.id, plan.status, plan.objective, (plan.assignedActorIds || []).join(',')] : null, team.overseer?.currentAdaptiveStrategyMode || null, Boolean(team.overseer?.safeModeActive),
+          (team.overseer?.strategicDirectives || []).length, os ? [os.contract?.id, os.contract?.revision, os.contract?.status, (os.contract?.taskGraph || []).map((t: any) => `${t.id}:${t.status}`).join(','), (os.proposals || []).filter((p: any) => p.status === 'open').length] : null] : null;
+      })(),
+      team_resources: (() => {
+        const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
+        return team ? [team.treasury?.balance ?? null, team.treasury?.reserve ?? null, (team.treasury?.pendingFundingRequestIds || []).length, (team.governorExceptions || []).length,
+          gameSettings.teamEconomyGovernorEnabled === true, (team.actorIds || []).map((id: string) => { const a: any = (actorsById as any)?.[id]; return a ? `${id}:${a.protectedCash || 0}:${a.inEconomicRecovery ? 1 : 0}` : id; }).join(',')] : null;
+      })(),
+      team_governance: (() => { const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null; return team ? [team.governanceMode || null, team.leaderId || null] : null; })(),
+      approvals: (pendingApprovalRequests || []).map((r: any) => `${r?.id}:${r?.status || 'pending'}`),
+      memory: [gameSettings.aiMemoryFullInspectionEnabled === true, ((gameState as any).aiMemory?.version ?? (gameState as any).aiMemoryVersion ?? null)],
+      scenarios: (((gameState as any).scenarioObjectives || (gameState as any).activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
     });
-  }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications]);
+  }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications, teamsById, pendingApprovalRequests]);
   const v9GiFingerprint = useMemo(() => composeGIFingerprint(v9GiFingerprints), [v9GiFingerprints]);
 
   /** Authorized, focused snapshot for one question. Built on demand — never on every render. */
@@ -137906,6 +140791,7 @@ function dispatchGameSettingsChange(
       settings: { fogOfWar: fog, aiMemoryFullInspection: gameSettings.aiMemoryFullInspectionEnabled === true, experienceLevel: getIntentPresentationLevel(gameSettings) },
       session: takeoverSession,
       ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
+      team: teamOsViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -137956,6 +140842,174 @@ function dispatchGameSettingsChange(
   };
   const giWorldBuilderRef = useRef(buildV9GIWorld);
   giWorldBuilderRef.current = buildV9GIWorld;
+
+  // ---- Team Intelligence 2.0: Team Operating System --------------------------------------------
+  // A planning layer ABOVE Team Brain / Strategic Command / Treasury / Governor / Governance. It only
+  // reads canonical state (fog-of-war filtered) and stores the Team Strategy Contract; every action
+  // still goes through the existing executor, validators, approvals and Overseer.
+  const teamOsEnabled = isTeamMode && gameSettings.teamIntelligenceOsEnabled !== false;
+  const teamOsTeamId = String(player?.teamId || TEAM_PLAYER_ID);
+  const teamOsAuthority: TeamOSAuthorityLevel = (gameSettings.teamOsAuthorityLevel as TeamOSAuthorityLevel) || 'advisor';
+  const buildTeamOsInputs = (): TeamOSInputs | null => {
+    const team: any = (teamsById as any)?.[teamOsTeamId];
+    if (!team) return null;
+    const playerId = String(player?.id || 'player');
+    const fog = Boolean(gameSettings.fogOfWarEnabled);
+    const teamActorIds: string[] = Array.from(new Set([playerId, ...((team.actorIds || []) as string[]).map(String)]));
+    const rawActor = (id: string): any => (id === playerId ? player : (actorsById as any)?.[id]);
+    const actors: TeamOSActorInput[] = teamActorIds.map(id => rawActor(id)).filter(Boolean).map((a: any) => {
+      const isHuman = String(a.id) === playerId;
+      return {
+        id: String(a.id),
+        name: String(a.displayName || a.name || a.id),
+        isHuman,
+        money: Number(a.money || 0),
+        protectedCash: Number(a.protectedCash || 0),
+        inRecovery: a.inEconomicRecovery === true,
+        location: a.currentRegion || null,
+        apRemaining: isHuman ? (v9ApFinite ? v9RawApRemaining : null) : null,
+        brainRole: null
+      };
+    });
+    const opponentTeamId = teamOsTeamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    const opponentTeam: any = (teamsById as any)?.[opponentTeamId];
+    const opponents = ((opponentTeam?.actorIds || []) as string[]).map(id => (actorsById as any)?.[id]).filter(Boolean).map((a: any) => ({
+      id: String(a.id), name: String(a.displayName || a.name || a.id), money: fog ? null : Number(a.money || 0), location: fog ? null : (a.currentRegion || null), visible: !fog
+    }));
+    const regions: TeamOSRegionInput[] = Object.keys(REGIONS).map(code => {
+      const info = getRegionControlInfo(code);
+      const mine = info.controllerId === playerControlKey;
+      const theirs = Boolean(info.controllerId && info.controllerId !== playerControlKey);
+      const travelCostFor: Record<string, number | null> = {};
+      actors.forEach(a => {
+        if (!a.location) { travelCostFor[a.id] = null; return; }
+        try { travelCostFor[a.id] = a.location === code ? 0 : Number(calculateTravelCost(a.location, code)); } catch { travelCostFor[a.id] = null; }
+      });
+      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? info.minimumAiDeposit : null, teamCostToTake: mine ? 0 : info.minimumPlayerDeposit, travelCostFor };
+    });
+    const metric = gameSettings.winCondition;
+    const plan: any = sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamOsTeamId] || null;
+    const gs: any = gameState;
+    return {
+      teamId: teamOsTeamId,
+      teamName: String(team.name || teamOsTeamId),
+      turn: Number(gameState.turnCounter || 0),
+      day: Number(gameState.day || 1),
+      totalDays: Number(gameSettings.totalDays || 0),
+      actors,
+      opponents,
+      regions,
+      treasury: gameSettings.teamTreasuryEnabled !== false && team.treasury ? { balance: Number(team.treasury.balance || 0), reserve: Number(team.treasury.reserve || 0), pendingRequests: Array.isArray(team.treasury.pendingFundingRequestIds) ? team.treasury.pendingFundingRequestIds.length : 0 } : null,
+      governorEnabled: Boolean(gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled),
+      governanceMode: String(getTeamGovernanceMode(teamOsTeamId, gameSettings) || team.governanceMode || 'LEADER_DECIDES'),
+      overseer: { mode: typeof team.overseer?.currentAdaptiveStrategyMode === 'string' ? team.overseer.currentAdaptiveStrategyMode : null, safeMode: Boolean(team.overseer?.safeModeActive), lockedActorIds: ((team.overseer?.lockedDirectiveActorIds || []) as string[]).map(String) },
+      pendingApprovals: (pendingApprovalRequests || []).filter((r: any) => !r?.status || r.status === 'pending').length,
+      win: {
+        metric: String(metric),
+        label: winConditionLabel,
+        teamValue: getCompetitiveMetricValue(metric, { side: 'player', teamMode: true }),
+        opponentValue: getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: true }),
+        regionsTarget: metric === 'regions' ? REGION_CONTROL_MAJORITY : null,
+        teamRegions: playerControlledRegions,
+        opponentRegions: aiControlledRegions
+      },
+      scenarioObjectives: ((gs.scenarioObjectives || gs.activeScenarioConfig?.objectives || []) as any[]).slice(0, 5).map(o => String(o?.label || o?.description || o?.id || '')).filter(Boolean),
+      playerPlan: plan && plan.status !== 'cancelled' && plan.status !== 'completed' ? { objective: String(plan.primaryObjective || plan.title || ''), secondary: plan.secondaryObjective ? String(plan.secondaryObjective) : null, regions: Array.isArray(plan.regions) ? plan.regions.map(String) : [], status: String(plan.status || 'active') } : null,
+      brainGoal: (() => {
+        const d: any = ((team.overseer?.strategicDirectives || []) as any[]).find((x: any) => x?.status === 'active');
+        return d ? { kind: String(d.goalKind || d.kind || 'control'), description: String(d.objective || ''), targetRegion: d.targetRegion || undefined } : null;
+      })(),
+      fogOfWar: fog,
+      authority: teamOsAuthority,
+      governorCheck: (actorId, category, cost) => {
+        const a = rawActor(actorId);
+        if (!a) return { approved: true, reason: 'Unknown actor.' };
+        const r = evaluateEconomySpendingApproval(a, category as EconomySpendCategory, cost, gameSettings, Number(gameState.day || 1), { gameState });
+        return { approved: r.approved, reason: r.reason };
+      }
+    };
+  };
+  const teamOsView = useMemo<TeamOSView | null>(() => {
+    if (!teamOsEnabled) return null;
+    try {
+      const inputs = buildTeamOsInputs();
+      return inputs ? buildTeamOSView(inputs, (gameState as any).teamOperatingSystem?.byTeam?.[teamOsTeamId] || null, true) : null;
+    } catch (err) {
+      console.warn('[Team OS] evaluation skipped:', err);
+      return null;
+    }
+    // v9GiFingerprint covers every canonical slice the inputs read (turn, actors, world, team systems).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamOsEnabled, teamOsTeamId, teamOsAuthority, v9GiFingerprint, (gameState as any).teamOperatingSystem]);
+  const teamOsViewRef = useRef<TeamOSView | null>(null);
+  teamOsViewRef.current = teamOsView;
+
+  // Event-driven persistence: once per turn, store the evaluated contract (revisions, contingencies,
+  // proposals). Planning state only — no money, AP or actor state is touched.
+  const teamOsPersistedKeyRef = useRef('');
+  useEffect(() => {
+    if (!teamOsView || (gameState as any).isolatedReplayRuntime) return;
+    const key = `${teamOsTeamId}:${gameState.turnCounter}`;
+    if (teamOsPersistedKeyRef.current === key) return;
+    teamOsPersistedKeyRef.current = key;
+    const current: TeamOperatingSystemState = sanitizeTeamOperatingSystemState((gameState as any).teamOperatingSystem);
+    const stored = current.byTeam[teamOsTeamId] || null;
+    const next = teamOsView.state;
+    if (stored && JSON.stringify(stored) === JSON.stringify(next)) return;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { teamOperatingSystem: { version: 1, byTeam: { ...current.byTeam, [teamOsTeamId]: next } } } });
+    const newRevisions = next.revisions.slice(stored ? stored.revisions.length : 0);
+    newRevisions.slice(-2).forEach(r => appendGameActivityLedgerEvent('plan', {
+      actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_revision',
+      summary: `Team Strategy rev ${r.revision} (${r.kind.replace(/_/g, ' ')}): ${r.trigger}`.slice(0, 200),
+      diagnostics: { changes: r.changes.slice(0, 6), reason: r.reason }
+    } as any));
+    const notable = newRevisions.filter(r => r.kind === 'replan' || r.kind === 'contingency_triggered').slice(-1)[0];
+    if (notable && stored) addNotification(`🧭 Team strategy ${notable.kind === 'contingency_triggered' ? 'contingency' : 'updated'}: ${notable.trigger}`.slice(0, 180), 'info', false, 'system');
+    const newProposals = next.proposals.filter(p => p.status === 'open' && !(stored?.proposals || []).some(q => q.id === p.id));
+    if (newProposals[0]) addNotification(`🧭 Team proposal: ${newProposals[0].reason}`.slice(0, 180), 'info', false, 'system');
+  }, [teamOsView, teamOsTeamId, gameState.turnCounter, addNotification, appendGameActivityLedgerEvent]);
+
+  const commitTeamOsState = useCallback((nextTeamState: TeamOSTeamState) => {
+    const current: TeamOperatingSystemState = sanitizeTeamOperatingSystemState((gameState as any).teamOperatingSystem);
+    dispatchGameState({ type: 'LOAD_STATE', payload: { teamOperatingSystem: { version: 1, byTeam: { ...current.byTeam, [teamOsTeamId]: nextTeamState } } } });
+  }, [gameState, teamOsTeamId]);
+
+  /** Apply a player-authored team strategy (GI preview → Apply). Governance decides; nothing executes. */
+  const applyTeamOsCommand = useCallback((command: TeamCommandIntent, summary: string) => {
+    const view = teamOsViewRef.current;
+    const inputs = view?.inputs || null;
+    if (!view || !inputs) { addNotification('Team Intelligence is not active in this match.', 'warning', false, 'system'); return false; }
+    const team: any = (teamsById as any)?.[teamOsTeamId];
+    const route = routeTeamStrategyChange({ summary, teamId: teamOsTeamId, proposerActorId: String(player?.id || 'player') }, team, gameSettings, gameState);
+    if (!route.approved) {
+      addNotification(`🧭 Team strategy change ${route.status === 'awaiting_governance' ? 'is waiting for Team Governance' : 'was rejected by Team Governance'}: ${route.reason}`.slice(0, 200), 'warning', false, 'system');
+      appendGameActivityLedgerEvent('plan', { actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_governance', summary: `Team strategy change ${route.status}: ${summary}`.slice(0, 200) } as any);
+      return false;
+    }
+    const evaluation = evaluateTeamOperatingSystem(view.state, inputs, command);
+    commitTeamOsState(evaluation.state);
+    const c = evaluation.state.contract;
+    appendGameActivityLedgerEvent('plan', { actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_applied', summary: `Team strategy applied (rev ${c?.revision}): ${c?.mission.label || summary}`.slice(0, 200) } as any);
+    addNotification(`🧭 Team strategy applied: ${c?.mission.label || summary}`.slice(0, 180), 'success', false, 'system');
+    return true;
+  }, [addNotification, appendGameActivityLedgerEvent, commitTeamOsState, gameSettings, gameState, player?.id, teamOsTeamId, teamsById]);
+
+  const resolveTeamOsProposal = useCallback((proposalId: string, accept: boolean) => {
+    const view = teamOsViewRef.current;
+    if (!view) return;
+    const resolved = resolveTeamProposal(view.state, proposalId, accept);
+    if (accept && resolved.command) {
+      const team: any = (teamsById as any)?.[teamOsTeamId];
+      const route = routeTeamStrategyChange({ summary: `Accept proposal ${proposalId}`, teamId: teamOsTeamId, proposerActorId: String(player?.id || 'player') }, team, gameSettings, gameState);
+      if (!route.approved) { addNotification(`🧭 Proposal needs Team Governance: ${route.reason}`.slice(0, 200), 'warning', false, 'system'); return; }
+      commitTeamOsState(evaluateTeamOperatingSystem(resolved.state, view.inputs, resolved.command).state);
+      addNotification('🧭 Team proposal accepted — the team plan was updated.', 'success', false, 'system');
+    } else {
+      commitTeamOsState(resolved.state);
+      addNotification(`🧭 Team proposal ${accept ? 'accepted' : 'rejected'}.`, 'info', false, 'system');
+    }
+    appendGameActivityLedgerEvent('plan', { actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_proposal', summary: `Team proposal ${proposalId} ${accept ? 'accepted' : 'rejected'}` } as any);
+  }, [addNotification, appendGameActivityLedgerEvent, commitTeamOsState, gameSettings, gameState, player?.id, teamOsTeamId, teamsById]);
 
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
@@ -138034,10 +141088,28 @@ function dispatchGameSettingsChange(
       case 'deeplink':
         if (button.deepLink) askAI.applyDeepLink(button.deepLink);
         return;
+      case 'team_apply': {
+        // Team strategy only: the preview's structured draft is routed through Team Governance, then
+        // compiled into the Team Strategy Contract. No action is executed from here.
+        const draft = giContextRef.current.pendingTeamDraft;
+        if (!draft) { addNotification('That team plan preview has expired — ask again to rebuild it.', 'warning', false, 'system'); return; }
+        if (applyTeamOsCommand(draft.command, draft.summary)) {
+          giContextRef.current = { ...giContextRef.current, pendingTeamDraft: null, lastTeamCommand: draft.command };
+        }
+        return;
+      }
+      case 'team_cancel':
+        giContextRef.current = { ...giContextRef.current, pendingTeamDraft: null };
+        addNotification('Team plan change cancelled — the current strategy stays.', 'info', false, 'system');
+        return;
+      case 'team_proposal_accept':
+      case 'team_proposal_reject':
+        if (button.candidateId) resolveTeamOsProposal(button.candidateId, button.kind === 'team_proposal_accept');
+        return;
       default:
         return;
     }
-  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI]);
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal]);
 
   const handleV9ControlStart = useCallback(() => {
     requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
@@ -153609,6 +156681,16 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
+          {teamOsView && (
+            <TeamMissionBoard
+              view={teamOsView}
+              theme={themeStyles}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onButton={handleV9Button}
+              onOpenLab={() => setExperienceLayer('lab')}
+            />
+          )}
+
           <ContextualActionPanel
             actionSet={v9ActionSet}
             control={playerControlState}
@@ -153771,12 +156853,21 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
           selfTestResults={v9SelfTestResults}
           giDiagnostics={giDiagnostics}
+        />
+        <TeamOSInspector
+          view={teamOsView}
+          theme={themeStyles}
+          enabled={gameSettings.teamIntelligenceOsEnabled !== false}
+          isTeamMode={isTeamMode}
+          authority={teamOsAuthority}
+          onToggleEnabled={() => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamIntelligenceOsEnabled: prev.teamIntelligenceOsEnabled === false }))}
+          onSetAuthority={level => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamOsAuthorityLevel: level }))}
         />
       </div>
     );
