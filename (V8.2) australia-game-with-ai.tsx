@@ -2800,7 +2800,7 @@ const KEYBOARD_SHORTCUTS = {
 };
 
 export const VERSION_CONSTANTS = {
-  GAME_VERSION: "8.4.0",
+  GAME_VERSION: "8.6.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -12507,6 +12507,10 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   // Team Intelligence 2.0: Team Operating System (planning layer only; never executes actions).
   teamIntelligenceOsEnabled: true,
   teamOsAuthorityLevel: 'advisor',
+  // Enemy / AI-run teams use the same Team OS (planning quality from difficulty, never extra information).
+  teamOsEnemyEnabled: true,
+  // Full Inspection: show the enemy Team Strategy in LAB (debug only).
+  teamOsFullInspectionEnabled: false,
   economyCashFloor: 800,
   economyRecoveryTarget: 5000,
   economyMinimumChallengeProbability: 0.65,
@@ -24847,6 +24851,8 @@ export type GameSettingsState = {
   // Team Intelligence 2.0 Team Operating System (optional for old saves).
   teamIntelligenceOsEnabled?: boolean;
   teamOsAuthorityLevel?: TeamOSAuthorityLevel;
+  teamOsEnemyEnabled?: boolean;
+  teamOsFullInspectionEnabled?: boolean;
   economyCashFloor: number;
   economyRecoveryTarget: number;
   economyMinimumChallengeProbability: number;
@@ -84069,6 +84075,8 @@ interface TeamDirective {
   relatedSequenceId?: string;
   status: TeamDirectiveStatus;
   completionResult?: string;
+  /** Set when the directive's goal came from a Team OS task (so a changed task supersedes it). */
+  teamOsTaskId?: string | null;
 }
 // Reserved for Phase O3 (Adaptive Overseer overlay engine); not read anywhere until then.
 interface PolicyOverlay {
@@ -103459,13 +103467,15 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   const teamView = world.team && world.team.enabled ? world.team : null;
   if (teamView && primary !== 'control') {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
-    const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
+    const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
     const whatIf = /\b(what if|what happens if|what would happen if|suppose)\b/.test(normalized);
     if (whatIf && teamWords) {
       const alt = parseTeamCommandFromFrame(frame, world, ctx, true);
       if (alt && (alt.responsibilities.length || alt.priorities.length || alt.swap || alt.reserveFloor !== null)) { teamCommand = alt; primary = 'team_whatif'; }
-    } else if (!frame.isQuestion || /^(swap|switch|make that|make it|actually)\b/.test(normalized)) {
+    }
+    // "What happens if NSW becomes critical?" is a question about the team's contingencies.
+    if (!teamCommand && whatIf && /\b(critical|dangerous|under (attack|pressure)|falls?|lost)\b/.test(normalized) && (teamWords || world.team?.state.contract?.contingencies.length)) primary = 'team_explain'; else if (!frame.isQuestion || /^(swap|switch|make that|make it|actually)\b/.test(normalized)) {
       const cmd = parseTeamCommandFromFrame(frame, world, ctx);
       if (cmd) { teamCommand = cmd; primary = 'team_command'; }
     }
@@ -105163,7 +105173,75 @@ export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, conv
     say('debrief', 'Team debrief', buildTeamDebrief(ev.state));
     return { title: 'Team debrief', sections, buttons, actorId: null };
   }
+  // ---- Live Team OS questions (actual system evidence: Task Graph, Governor, Treasury, approvals) ----
+  if (/\b(enemy|rival|opposing|other) team\b/.test(q) || (/\b(enemy|rivals?|opponents?)\b/.test(q) && /\b(trying|plan|planning|strategy|up to|going for)\b/.test(q))) {
+    // Observable behaviour only — never the enemy's internal Team Strategy Contract.
+    const held = Object.values(world.regions).filter(r => r.controlledByRival).map(r => r.code);
+    const rivalIds = new Set(world.actors.filter(a => a.relation === 'rival').map(a => a.id));
+    const seen = world.observed.filter(o => o.actorId && rivalIds.has(o.actorId)).slice(-12);
+    const counts = new Map<string, number>();
+    seen.forEach(o => counts.set(o.kind, (counts.get(o.kind) || 0) + 1));
+    const regionMentions = new Map<string, number>();
+    seen.forEach(o => Object.keys(world.regions).forEach(code => { if (new RegExp(`\\b${code}\\b`).test(o.summary)) regionMentions.set(code, (regionMentions.get(code) || 0) + 1); }));
+    const topKind = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    const topRegion = Array.from(regionMentions.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    say('enemy', 'What the enemy team appears to be doing', [
+      teamClaim(`They hold ${held.length ? held.join(', ') : 'no regions'}.`, 'fact', 'confirmed'),
+      topKind ? teamClaim(`Most of their recent visible actions were ${topKind[0]} (${topKind[1]} of ${seen.length}).`, 'fact', 'confirmed') : teamClaim('No enemy actions are visible to you yet.', 'caveat'),
+      topRegion ? teamClaim(`The enemy team appears to be concentrating on ${topRegion[0]}.`, 'inference', 'moderate') : '',
+      teamClaim('This is inferred from what you can observe; their internal plan is not visible to you.', 'caveat')
+    ]);
+    return { title: 'Enemy team (observed)', sections, buttons, actorId: null };
+  }
+  if (/\b(what changed|changed this turn|why did we replan|why (was|did) (the plan|our plan|the strategy|we) (change|replan)|replan(ned)?)\b/.test(q)) {
+    const turn = view.inputs.turn;
+    const recent = ev.state.revisions.filter(r => r.turn >= turn - 1).slice(-3);
+    say('changes', 'What changed', [
+      ...recent.map(r => teamClaim(`Revision ${r.revision} (turn ${r.turn}, ${r.kind.replace(/_/g, ' ')}): ${r.trigger}${r.changes.length ? ` — ${r.changes.slice(0, 3).join('; ')}` : ''}.`, 'fact', 'confirmed')),
+      ...ev.state.feedback.slice(0, 3).map(f => teamClaim(f, 'fact', 'confirmed')),
+      !recent.length && !ev.state.feedback.length ? teamClaim(`Nothing material changed recently; the plan was last revised on turn ${ev.state.revisions[ev.state.revisions.length - 1]?.turn ?? '—'}. Live status is refreshed continuously without a new revision.`, 'fact', 'confirmed') : '',
+      teamClaim(`Replanning only happens on material changes (lost/secured regions, major pressure, reserve breaches, recovery changes, contingencies, your commands). Last decision: ${ev.replan.reason}.`, 'caveat')
+    ]);
+    return { title: 'What changed', sections, buttons, actorId: null };
+  }
+  if (/\btreasury\b/.test(q) && /\b(why|won'?t|not|fund|funding|refuse)\b/.test(q)) {
+    const t = view.inputs.treasury;
+    const intents = ev.fundingIntents;
+    say('treasury', 'Treasury', [
+      t ? teamClaim(`Treasury: ${money(t.balance)} with a ${money(t.reserve)} reserve, so ${money(Math.max(0, t.balance - t.reserve))} is available; ${t.pendingRequests} request(s) pending.`, 'fact', 'confirmed') : teamClaim('This team has no Treasury in this match.', 'fact', 'confirmed'),
+      ...intents.map(f => teamClaim(`“${f.purpose}” needs ${money(f.required)}; ${teamName(world, f.actorId)} can safely fund ${money(f.actorSafe)}, leaving a ${money(f.gap)} gap — ${f.treasuryCanCover ? 'a Treasury request is the suggested path (the Treasury still decides)' : 'more than the Treasury can release above its reserve right now'}.`, 'inference', 'high')),
+      !intents.length ? teamClaim('No team task currently needs Treasury funding.', 'fact', 'confirmed') : '',
+      teamClaim('Team OS never moves Treasury money; it only suggests requests.', 'caveat')
+    ]);
+    return { title: 'Treasury funding', sections, buttons, actorId: null };
+  }
+  if (/\b(money first|funded first|gets? (the )?money|first (claim|call) on|which objective)\b/.test(q)) {
+    const envs = ev.resources.envelopes.filter(e => e.target > 0).slice().sort((a, b) => a.priority - b.priority);
+    say('priority', 'Funding order', [
+      ...envs.map((e, i) => teamClaim(`${i + 1}. ${e.category}${e.hardFloor ? ' (your reserve — hard floor)' : ''}: ${money(e.allocated)} of ${money(e.target)}${e.allocated < e.target ? ' — partial' : ''}.`, 'inference', 'high')),
+      teamClaim('Order follows the priority framework: your reserve and win-critical defense before mission expansion; scarce cash is never counted twice.', 'caveat')
+    ]);
+    return { title: 'Which objective gets the money first', sections, buttons, actorId: null };
+  }
+  if (/\b(biggest|main|largest) (coordination )?(problem|issue|risk|weakness)\b|\bcoordination problem\b/.test(q)) {
+    const blocked = c.taskGraph.filter(t => t.status === 'blocked').sort((a, b) => a.priority - b.priority)[0];
+    const conflict = ev.state.conflicts.find(x => x.severity === 'high' || x.severity === 'critical') || ev.state.conflicts[0];
+    say('problem', null, [
+      blocked ? teamClaim(`Biggest problem: “${blocked.label}” (${teamName(world, blocked.assignedActorIds[0] || '')}) is blocked — ${blocked.blockers[0] || 'no reason recorded'}.`, 'inference', 'high')
+        : conflict ? teamClaim(`Biggest problem: ${conflict.reason}`, 'inference', 'high')
+        : teamClaim(`No blocking coordination problem: ${ev.health.reason}`, 'inference', 'high'),
+      ...(blocked && conflict ? [teamClaim(`Also: ${conflict.reason}`, 'inference', 'moderate')] : [])
+    ]);
+    return { title: 'Biggest coordination problem', sections, buttons, actorId: null };
+  }
   if (/\b(postpone|delay|delayed|postponed|pause|paused|put off|stop(ped)? (working on|caring))\b/.test(q)) {
+    const askedRegion = u.entities.find(e => e.kind === 'region')?.id;
+    const regionObj = askedRegion ? c.objectives.find(o => o.regionId === askedRegion && o.status === 'paused') : null;
+    if (regionObj) {
+      const conflictFor = ev.state.conflicts.find(x => x.parties.includes(regionObj.description));
+      say('why', null, [teamClaim(`${regionObj.description} is paused: ${regionObj.pausedReason || 'no reason recorded'}.`, 'fact', 'confirmed'), conflictFor ? teamClaim(conflictFor.reason, 'inference', 'high') : '']);
+      return { title: `Why ${askedRegion} is paused`, sections, buttons, actorId: null };
+    }
     const conflict = ev.state.conflicts.find(x => x.type === 'objective_vs_objective') || ev.state.conflicts[0];
     const paused = c.objectives.filter(o => o.status === 'paused');
     say('why', null, conflict ? [teamClaim(conflict.reason, 'inference', 'high'), ...conflict.evidence.map(e => teamClaim(`Evidence: ${e}.`))] : paused.length ? paused.map(o => `${o.description} is paused: ${o.pausedReason}.`) : ['Nothing in the current plan is postponed.']);
@@ -105176,7 +105254,7 @@ export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, conv
     say('blockers', 'What is blocking the plan', chain.length > 1 ? [`${chain.join(' ← blocked by ')}.`] : [`Nothing is blocking “${obj?.description || c.mission.label}” right now.`]);
     return { title: 'Blockers', sections, buttons, actorId: null };
   }
-  if (/\b(allocated|allocation|where is our money|wasting money|budget|envelope)\b/.test(q)) {
+  if (/\b(allocated|allocation|where is our money|wasting money|budget|envelope|reserved|set aside)\b/.test(q)) {
     say('money', 'Where the team’s money is planned', [
       teamClaim(`Team free cash: ${money(ev.resources.freeCash)}; protected in Cash Vaults: ${money(ev.resources.protectedCash)}; Treasury reserve: ${money(ev.resources.treasuryReserve)}.`, 'fact', 'confirmed', ['team.freeCash']),
       ...ev.resources.envelopes.map(e => teamClaim(`${e.category}: ${money(e.allocated)} of ${money(e.target)} planned${e.hardFloor ? ' (hard floor)' : ''}.`, 'inference', 'high')),
@@ -105209,7 +105287,14 @@ export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, conv
     const r = c.roles.find(x => x.actorId === mate.id);
     const actor = view.inputs.actors.find(a => a.id === mate.id);
     const lines: Array<string | GIClaim> = [r ? `${mate.name}'s role: ${r.primaryRole} — ${r.responsibility}.` : ''];
-    tasks.slice(0, 3).forEach(t => lines.push(`${t.label}: ${t.status}${t.blockers.length ? ` (${t.blockers[0]})` : ''}.`));
+    const live = teamOsActiveTaskForActor(c, mate.id);
+    if (live) {
+      const why = r?.reason && /contingency/i.test(r.reason) ? ` (${r.reason})` : '';
+      lines.push(teamClaim(`Current Team Strategy task for Strategic Command: ${live.label} — ${live.status}${why}.`, 'fact', 'confirmed'));
+    }
+    tasks.filter(t => t !== live).slice(0, 3).forEach(t => lines.push(`${t.label}: ${t.status}${t.blockers.length ? ` (${t.blockers[0]})` : ''}.`));
+    if (live?.blockers.length) lines.push(teamClaim(`Blocked because: ${live.blockers[0]}`, 'fact', 'confirmed'));
+    ev.fundingIntents.filter(f => f.actorId === mate.id).slice(0, 1).forEach(f => lines.push(teamClaim(`${mate.name} can safely fund ${money(f.actorSafe)} of the ${money(f.required)} for “${f.purpose}”; the team is ${money(f.gap)} short of the safe actor-funded amount, so the fallback is ${f.treasuryCanCover ? 'Treasury assistance (the Treasury decides)' : 'waiting for income — the Treasury cannot cover it yet'}.`, 'inference', 'high')));
     if (!tasks.length) lines.push(`${mate.name} has no active task in the team plan.`);
     if (actor?.inRecovery) lines.push(`${mate.name} is in economic recovery, so it saves rather than spends.`);
     if (/\b(spend|spending|money|not doing|isn't doing|anything|follow|following)\b/.test(q)) {
@@ -105230,7 +105315,7 @@ export function composeTeamExplain(u: GIQueryUnderstanding, world: GIWorld, conv
     say('overseer', null, [`The Overseer's strategy mode is ${view.inputs.overseer.mode || 'not set'}${view.inputs.overseer.safeMode ? ', with Safe Mode active' : ''}.`, rev ? `Team OS replanned on turn ${rev.turn} after: ${rev.trigger}.` : 'No Overseer shift has triggered a team replan.', teamClaim('The Overseer checks whether the strategy is still appropriate; it does not execute actions.', 'caveat')]);
     return { title: 'Overseer', sections, buttons, actorId: null };
   }
-  if (/\b(fallback|if .* fails|contingenc|plan b)\b/.test(q)) {
+  if (/\b(fallback|if .* fails|contingenc|plan b|becomes? (critical|dangerous)|gets? dangerous|under (attack|pressure))\b/.test(q)) {
     say('fallback', 'Contingencies', c.contingencies.map(x => `${x.label} — ${x.authority.replace(/_/g, ' ')}, ${x.status}.`));
     return { title: 'Fallbacks', sections, buttons, actorId: null };
   }
@@ -106830,7 +106915,7 @@ export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
     return true;
   };
 
-  check('gi21_version', 'GAME_VERSION reports 8.4.0', () => GAME_VERSION === '8.4.0' || GAME_VERSION);
+  check('gi21_version', 'GAME_VERSION reports 8.6.0', () => GAME_VERSION === '8.6.0' || GAME_VERSION);
 
   check('gi21_paraphrase_family', 'Part 34 paraphrases → equivalent frames (recommendation, NSW threat)', () => {
     const qs = [
@@ -107695,6 +107780,8 @@ export interface TeamOSInputs {
   governorCheck?: (actorId: string, category: string, cost: number) => { approved: boolean; reason: string };
   /** Authorized AI Memory tendencies (only when inspection is permitted). */
   observedTendencies?: string[];
+  /** Planning QUALITY for AI-run teams (difficulty) — never extra information. */
+  planningDepth?: 'basic' | 'standard' | 'deep';
 }
 
 export interface TeamSituationSnapshot {
@@ -107961,8 +108048,11 @@ export function buildTeamTaskGraph(inputs: TeamOSInputs, objectives: TeamObjecti
   const busy = new Map<string, number>();
   const pick = (type: TeamTaskType, regionId?: string): string[] => {
     const forced = regionId ? responsibleFor(regionId) : type === 'generate_cash' ? economyActor() : null;
-    if (forced) return [forced === 'player' ? (human?.id || 'player') : forced];
-    const candidates = ai.filter(a => !a.inRecovery || type === 'recover' || type === 'generate_cash');
+    const spendingType = type === 'defend_region' || type === 'take_region' || type === 'reach_region';
+    if (forced && !(spendingType && (command?.spendLocks || []).includes(forced))) return [forced === 'player' ? (human?.id || 'player') : forced];
+    // Live spend locks: a locked actor is never handed a Team OS spending task.
+    const spends = type === 'defend_region' || type === 'take_region' || type === 'reach_region';
+    const candidates = ai.filter(a => (!a.inRecovery || type === 'recover' || type === 'generate_cash') && !(spends && (command?.spendLocks || []).includes(a.id)));
     // The human already standing in a region they could defend gets it as a suggestion (never auto-run).
     if (regionId && type === 'defend_region' && human && human.location === regionId && !candidates.some(a => a.location === regionId)) return [human.id];
     const scored = candidates.map(a => {
@@ -108120,6 +108210,25 @@ export function detectTeamConflicts(inputs: TeamOSInputs, objectives: TeamObject
       requiresPlayerDecision: false, status: 'resolved', winnerTier: winner[0].tier, loserTier: loser[0].tier
     });
   }
+  // Envelope competition: scarce cash goes to the higher-priority envelope first (never double-claimed).
+  if (!conflicts.some(c => c.type === 'objective_vs_objective')) {
+    const env = resources.envelopes.filter(e => e.category !== 'flexible' && e.target > 0);
+    const starved = env.filter(e => e.allocated < e.target && !e.hardFloor);
+    const funded = env.filter(e => e.allocated >= e.target || e.hardFloor);
+    if (starved.length && funded.length) {
+      const loserObjectives = objs.filter(o => starved.some(e => e.forObjectiveIds.includes(o.id)));
+      add({
+        type: 'resource_collision', parties: [...funded.map(e => e.category), ...starved.map(e => e.category)],
+        conflictingGoals: [...funded.map(e => `${e.category} ${tosMoney(e.target)}`), ...starved.map(e => `${e.category} ${tosMoney(e.target)}`)],
+        severity: starved.some(e => e.allocated === 0) ? 'high' : 'medium',
+        evidence: [`free cash ${tosMoney(resources.freeCash)}`, ...env.map(e => `${e.category}: ${tosMoney(e.allocated)} of ${tosMoney(e.target)}`)],
+        candidateResolutions: ['fund the higher priority first', 'request Treasury funding', 'raise cash', 'reduce a target'],
+        selectedResolution: `fund ${funded.map(e => e.category).join(' + ')} first; ${starved.map(e => `${e.category} ${e.allocated > 0 ? 'partially allocated' : 'waits'}`).join(', ')}`,
+        reason: `The team cannot fund ${env.map(e => `${e.category} (${tosMoney(e.target)})`).join(' + ')} from ${tosMoney(resources.freeCash)}; ${funded.map(e => e.category).join(' and ')} ranks higher, so ${starved.map(e => `${e.category} gets ${tosMoney(e.allocated)} of ${tosMoney(e.target)}`).join(' and ')}${loserObjectives.length ? ` (${loserObjectives.map(o => o.description).join(', ')})` : ''}.`,
+        requiresPlayerDecision: false, status: 'resolved'
+      });
+    }
+  }
   // Treasury vs objective.
   if (inputs.treasury && resources.shortfall > 0) {
     add({ type: 'treasury_vs_objective', parties: ['Team Treasury', 'Team Strategy'], conflictingGoals: ['Treasury reserve', 'Planned spending'], severity: resources.shortfall > spendable ? 'high' : 'medium', evidence: [`planned needs exceed free cash by ${tosMoney(resources.shortfall)}`, `Treasury reserve ${tosMoney(inputs.treasury.reserve)}`], candidateResolutions: ['raise cash first', 'delay the lowest-priority spending', 'request a governed Treasury exception'], selectedResolution: 'raise cash first', reason: `The plan needs ${tosMoney(resources.shortfall)} more than the team can spend; the Treasury keeps its own reserve, so income comes first.`, requiresPlayerDecision: false, status: 'resolved' });
@@ -108167,7 +108276,9 @@ export function buildTeamContingencies(inputs: TeamOSInputs, command: TeamComman
   };
   const push = (c: Omit<TeamContingency, 'id' | 'status' | 'firedRevision' | 'authority'>) => {
     if (out.length >= TEAM_OS_LIMITS.contingencies) return;
-    out.push({ ...c, id: `cont_${c.trigger.kind}_${c.trigger.regionId || c.trigger.actorId || out.length}`, status: 'armed', firedRevision: null, authority: auth(c.effects) });
+    // A contingency the player wrote is the player's own decision made in advance (priority tier 2),
+    // so it applies as soon as its condition holds; Team OS defaults follow the authority level.
+    out.push({ ...c, id: `cont_${c.trigger.kind}_${c.trigger.regionId || c.trigger.actorId || out.length}`, status: 'armed', firedRevision: null, authority: c.source === 'player' ? 'automatic' : auth(c.effects) });
   };
   (command?.contingencies || []).forEach(c => {
     const effects: TeamContingencyEffect[] = [];
@@ -108177,8 +108288,10 @@ export function buildTeamContingencies(inputs: TeamOSInputs, command: TeamComman
     push({ label: `If ${c.regionId || c.supportRegionId || 'the region'} becomes critical, ${c.actorId ? inputs.actors.find(a => a.id === c.actorId)?.name || 'a teammate' : 'the team'} helps defend it`, trigger: { kind: c.trigger, regionId: c.regionId || c.supportRegionId, actorId: c.actorId }, effects, priority: 1, source: 'player' });
   });
   const held = objectives.find(o => o.type === 'hold_region' && o.regionId);
-  if (held && !out.some(c => c.trigger.regionId === held.regionId)) {
-    const earner = inputs.actors.find(a => !a.isHuman && !a.inRecovery);
+  if (held && inputs.planningDepth !== 'basic' && !out.some(c => c.trigger.regionId === held.regionId)) {
+    const earner = inputs.actors.filter(a => !a.isHuman && !a.inRecovery && a.location !== held.regionId)
+      .sort((a, b) => Number(b.brainRole === 'earner') - Number(a.brainRole === 'earner') || a.id.localeCompare(b.id))[0]
+      || inputs.actors.find(a => !a.isHuman && !a.inRecovery);
     push({ label: `If ${held.regionId}'s control margin falls below $1,000, pause expansion and focus ${held.regionId}`, trigger: { kind: 'region_margin_below', regionId: held.regionId, threshold: 1000 }, effects: [{ kind: 'pause_objective_type', objectiveType: 'take_region' }, { kind: 'raise_region_priority', regionId: held.regionId! }, ...(earner ? [{ kind: 'assign_support' as const, actorId: earner.id, regionId: held.regionId! }] : [])], priority: 2, source: 'default' });
   }
   // Default liquidity guard: the player's floor, else half of today's free cash (it must be able to FALL
@@ -108192,26 +108305,28 @@ export function buildTeamContingencies(inputs: TeamOSInputs, command: TeamComman
  * Evaluate contingencies once per arming: a triggered contingency does not re-fire until it resolves,
  * and effects never re-trigger other contingencies in the same pass (non-recursive, priority order).
  */
-export function evaluateTeamContingencies(contingencies: TeamContingency[], inputs: TeamOSInputs, resources: TeamResourcePlan, revision: number): { contingencies: TeamContingency[]; fired: TeamContingency[] } {
+export function evaluateTeamContingencies(contingencies: TeamContingency[], inputs: TeamOSInputs, resources: TeamResourcePlan, revision: number): { contingencies: TeamContingency[]; fired: TeamContingency[]; resolved: TeamContingency[] } {
   const threats = assessTeamThreats(inputs);
   const fired: TeamContingency[] = [];
+  const resolved: TeamContingency[] = [];
   const next = contingencies.map(c => {
     const r = c.trigger.regionId ? inputs.regions.find(x => x.code === c.trigger.regionId) : null;
     const active = (() => {
       switch (c.trigger.kind) {
         case 'region_margin_below': return Boolean(r?.controlledByTeam && r.opponentCostToTake !== null && r.opponentCostToTake < (c.trigger.threshold || 0));
         case 'pressure_critical': { const t = threats.find(x => x.code === c.trigger.regionId); return Boolean(t && t.opponentCanAfford); }
-        case 'rival_contests': return Boolean(r && !r.controlledByTeam && r.controlledByOpponent);
+        // The rival is actively contesting: it can (visibly) afford to take the region, or already took it.
+        case 'rival_contests': { const t = threats.find(x => x.code === c.trigger.regionId); return Boolean((r && !r.controlledByTeam && r.controlledByOpponent) || (t && t.opponentCanAfford)); }
         case 'free_cash_below': return resources.freeCash < (c.trigger.threshold || 0);
         case 'actor_recovery_exit': return Boolean(c.trigger.actorId && !inputs.actors.find(a => a.id === c.trigger.actorId)?.inRecovery);
         default: return false;
       }
     })();
-    if (active && c.status === 'armed') { const f = { ...c, status: 'triggered' as const, firedRevision: revision }; fired.push(f); return f; }
-    if (!active && c.status === 'triggered') return { ...c, status: 'armed' as const };
+    if (active && (c.status === 'armed' || c.status === 'resolved')) { const f = { ...c, status: 'triggered' as const, firedRevision: revision }; fired.push(f); return f; }
+    if (!active && c.status === 'triggered') { const r = { ...c, status: 'resolved' as const }; resolved.push(r); return r; }
     return c;
   });
-  return { contingencies: next, fired: fired.sort((a, b) => a.priority - b.priority) };
+  return { contingencies: next, fired: fired.sort((a, b) => a.priority - b.priority), resolved };
 }
 
 function applyContingencyEffects(fired: TeamContingency[], objectives: TeamObjective[], tasks: TeamTaskNode[], roles: ActorRoleAssignment[]): { objectives: TeamObjective[]; tasks: TeamTaskNode[]; roles: ActorRoleAssignment[]; changes: string[] } {
@@ -108225,11 +108340,21 @@ function applyContingencyEffects(fired: TeamContingency[], objectives: TeamObjec
       objs = objs.map(o => (o.type === type && o.status === 'active' ? (changes.push(`paused “${o.description}”`), { ...o, status: 'paused' as const, pausedReason: `contingency: ${c.label}` }) : o));
     }
     if (e.kind === 'raise_region_priority') objs = objs.map(o => (o.regionId === e.regionId && o.priority > 1 ? (changes.push(`raised ${e.regionId} to priority 1`), { ...o, priority: 1 }) : o));
+    // A player-written contingency may temporarily override the player's own explicit role.
+    const mayOverride = (r: ActorRoleAssignment) => !r.explicit || c.source === 'player';
     if (e.kind === 'assign_support') {
-      tks = tks.map(t => (t.type === 'support_actor' && t.assignedActorIds.includes(e.actorId) && t.regionId === e.regionId ? (changes.push(`activated support of ${e.regionId}`), { ...t, status: 'ready' as const }) : t));
-      rls = rls.map(r => (r.actorId === e.actorId && !r.explicit ? { ...r, primaryRole: 'support' as TeamRole, responsibility: `Support ${e.regionId}`, reason: `Contingency: ${c.label}`, temporary: true } : r));
+      // An active support task carries the region's defense need, so the Governor / Treasury path applies.
+      const need = objs.find(o => o.type === 'hold_region' && o.regionId === e.regionId)?.requiredCash || 0;
+      if (!tks.some(t => t.type === 'support_actor' && t.assignedActorIds.includes(e.actorId) && t.regionId === e.regionId)) {
+        const objectiveId = objs.find(o => o.regionId === e.regionId)?.id || objs[0]?.id || 'obj';
+        const turn = tks[0]?.updatedTurn ?? 0;
+        tks = [...tks, { id: `task_support_${e.actorId}_${e.regionId}`, objectiveId, type: 'support_actor', label: `Support ${e.regionId} if pressure turns critical`, assignedActorIds: [e.actorId], status: 'waiting', priority: 4, dependencies: [], blockers: [], fallbackTaskIds: [], deadlineTurn: null, resourceRequirement: 0, completionPredicate: 'contingency not needed or pressure subsides', actionHints: ['travel', 'region deposit'], createdTurn: turn, updatedTurn: turn, confidence: 0.7, regionId: e.regionId }];
+      }
+      tks = tks.map(t => (t.type === 'support_actor' && t.assignedActorIds.includes(e.actorId) && t.regionId === e.regionId && (t.status === 'waiting' || t.priority > 1 || t.resourceRequirement !== need)
+        ? (changes.push(`activated support of ${e.regionId}`), { ...t, status: t.status === 'waiting' ? 'ready' as const : t.status, priority: 1, resourceRequirement: need, label: `Support ${e.regionId} defense (contingency active)` }) : t));
+      rls = rls.map(r => (r.actorId === e.actorId && mayOverride(r) && r.primaryRole !== 'support' ? (changes.push(`${r.actorId} → support`), { ...r, primaryRole: 'support' as TeamRole, responsibility: `Support ${e.regionId}`, reason: `Contingency: ${c.label}`, temporary: true }) : r));
     }
-    if (e.kind === 'switch_role') rls = rls.map(r => (r.actorId === e.actorId && !r.explicit ? { ...r, primaryRole: e.role, reason: `Contingency: ${c.label}`, temporary: true } : r));
+    if (e.kind === 'switch_role') rls = rls.map(r => (r.actorId === e.actorId && mayOverride(r) && r.primaryRole !== e.role ? { ...r, primaryRole: e.role, reason: `Contingency: ${c.label}`, temporary: true } : r));
   }));
   return { objectives: objs, tasks: tks, roles: rls, changes };
 }
@@ -108247,7 +108372,7 @@ export function detectTeamReplanTriggers(prev: TeamSituationSnapshot | null, nex
   if (lost.length) out.push({ key: `lost:${lost.join(',')}`, label: `Region lost: ${lost.join(', ')}`, severity: 5 });
   if (gained.length) out.push({ key: `gained:${gained.join(',')}`, label: `Region secured: ${gained.join(', ')}`, severity: 3 });
   const newThreats = next.threatenedRegions.filter(t => t.opponentCanAfford && !prev.threatenedRegions.some(p => p.code === t.code && p.opponentCanAfford));
-  if (newThreats.length) out.push({ key: `threat:${newThreats.map(t => t.code).join(',')}`, label: `Major opponent pressure on ${newThreats.map(t => t.code).join(', ')}`, severity: 4 });
+  if (newThreats.length) out.push({ key: `threat:${newThreats.map(t => t.code).join(',')}`, label: `Major opponent pressure on ${newThreats.map(t => t.code).join(', ')}`, severity: 5 });   // a held region suddenly takeable is critical: bypasses the cooldown
   const enteredRec = next.recoveringActors.filter(a => !prev.recoveringActors.includes(a));
   const exitedRec = prev.recoveringActors.filter(a => !next.recoveringActors.includes(a));
   if (enteredRec.length) out.push({ key: `rec+:${enteredRec.join(',')}`, label: 'An actor entered economic recovery', severity: 3 });
@@ -108261,11 +108386,11 @@ export function detectTeamReplanTriggers(prev: TeamSituationSnapshot | null, nex
   return out;
 }
 
-export function shouldTeamReplan(triggers: TeamReplanTrigger[], lastReplanTurn: number | null, turn: number): { replan: boolean; reason: string } {
+export function shouldTeamReplan(triggers: TeamReplanTrigger[], lastReplanTurn: number | null, turn: number, cooldownTurns: number = TEAM_OS_LIMITS.replanCooldownTurns): { replan: boolean; reason: string } {
   if (!triggers.length) return { replan: false, reason: 'no material change' };
   const top = triggers.reduce((m, t) => Math.max(m, t.severity), 0);
   const total = triggers.reduce((s, t) => s + t.severity, 0);
-  const cooling = lastReplanTurn !== null && turn - lastReplanTurn < TEAM_OS_LIMITS.replanCooldownTurns;
+  const cooling = lastReplanTurn !== null && turn - lastReplanTurn < cooldownTurns;
   if (top >= 5) return { replan: true, reason: `critical: ${triggers[0].label}` };
   if (cooling) return { replan: false, reason: `cooldown (last replan turn ${lastReplanTurn})` };
   if (total >= 3) return { replan: true, reason: triggers.map(t => t.label).join('; ') };
@@ -108430,6 +108555,23 @@ export function routeTeamStrategyChange(change: { summary: string; teamId: strin
 
 // ---- Main evaluation: build / update the contract ----------------------------------------------
 
+/** Objective progress/status from its tasks and real balances (a status refresh — never a replan). */
+export function refreshTeamObjectives(objectives: TeamObjective[], tasks: TeamTaskNode[], resources: TeamResourcePlan): TeamObjective[] {
+  return objectives.map(o => {
+    const ts = tasks.filter(t => t.objectiveId === o.id && t.type !== 'monitor_rival');
+    const done = ts.filter(t => t.status === 'completed').length;
+    let progress = ts.length ? Math.round((done / ts.length) * 100) / 100 : o.progress;
+    if (o.type === 'raise_cash' && o.amount) {
+      // Cash progress is measured against the target the task was created with.
+      const cashTask = ts.find(t => t.type === 'generate_cash');
+      const target = Number(((cashTask?.completionPredicate || '').match(/≥ (\d+)/) || [])[1]);
+      if (Number.isFinite(target) && target > 0) progress = Math.max(0, Math.min(1, Math.round(((resources.freeCash - (target - o.amount)) / o.amount) * 100) / 100));
+    }
+    const status: TeamObjectiveStatus = o.status === 'paused' ? 'paused' : ts.length && done === ts.length ? 'completed' : ts.length && ts.every(t => t.status === 'blocked') ? 'blocked' : o.status === 'blocked' || o.status === 'completed' ? 'active' : o.status;
+    return { ...o, assignedActorIds: Array.from(new Set(ts.flatMap(t => t.assignedActorIds))), progress, status };
+  });
+}
+
 function teamSituationFromContract(inputs: TeamOSInputs, contract: TeamStrategyContract, resources: TeamResourcePlan, confidence: number): TeamSituationSnapshot {
   const threats = assessTeamThreats(inputs);
   const rivalPressure: TeamSituationSnapshot['rivalPressure'] = threats.some(t => t.opponentCanAfford && t.opponentCostToTake < 1000) ? 'critical' : threats.some(t => t.opponentCanAfford) ? 'high' : threats.length ? 'medium' : 'low';
@@ -108467,6 +108609,8 @@ export interface TeamOSEvaluation {
   graphIssues: string[];
   replan: { replan: boolean; reason: string; triggers: TeamReplanTrigger[] };
   fired: TeamContingency[];
+  resolved: TeamContingency[];
+  fundingIntents: TeamFundingIntent[];
 }
 
 export function createEmptyTeamOSTeamState(): TeamOSTeamState {
@@ -108487,13 +108631,11 @@ export function composeTeamStrategyContract(inputs: TeamOSInputs, command: TeamC
   const graphIssues = validateTeamTaskGraph(tasks, inputs.actors.map(a => a.id));
   if (graphIssues.some(i => i.startsWith('cycle'))) tasks = tasks.map(t => ({ ...t, dependencies: [] }));   // never activate a cyclic graph
   const roles = assignTeamRoles(inputs, tasks, command, previous?.roles || [], roleSince, previous?.locks.roles || []);
-  const contingencies = previous && !command ? previous.contingencies : buildTeamContingencies(inputs, command, objectives, inputs.authority);
+  const builtContingencies = previous && !command ? previous.contingencies : buildTeamContingencies(inputs, command, objectives, inputs.authority);
+  // Lifecycle survives replans: a contingency already triggered stays triggered (no duplicate firing).
+  const contingencies = builtContingencies.map(c => { const p = previous?.contingencies.find(x => x.id === c.id); return p ? { ...c, status: p.status, firedRevision: p.firedRevision } : c; });
   // Objective progress + assigned actors from tasks.
-  objectives = objectives.map(o => {
-    const ts = tasks.filter(t => t.objectiveId === o.id && t.type !== 'monitor_rival');
-    const done = ts.filter(t => t.status === 'completed').length;
-    return { ...o, assignedActorIds: Array.from(new Set(ts.flatMap(t => t.assignedActorIds))), progress: ts.length ? Math.round((done / ts.length) * 100) / 100 : o.progress, status: o.status === 'paused' ? 'paused' : ts.length && done === ts.length ? 'completed' : ts.length && ts.every(t => t.status === 'blocked') ? 'blocked' : o.status };
-  });
+  objectives = refreshTeamObjectives(objectives, tasks, resources);
   // The primary objective is mission work, not a standing constraint or a funding step.
   const primary = objectives.find(o => o.status !== 'completed' && o.status !== 'paused' && o.type !== 'preserve_reserve' && o.type !== 'raise_cash')
     || objectives.find(o => o.status !== 'completed' && o.status !== 'paused') || objectives[0] || null;
@@ -108546,8 +108688,14 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
   composed.contract.commandIntent = effectiveCommand;
   if (effectiveCommand) composed.contract.source = 'player_command';
   const draftSnap = teamSituationFromContract(inputs, composed.contract, composed.resources, composed.contract.confidence);
-  const triggers = command ? [{ key: 'player', label: 'You changed the team plan', severity: 5 }] : detectTeamReplanTriggers(prevSnap, draftSnap);
-  const decision = command || !prevContract ? { replan: true, reason: command ? 'player command' : 'initial strategy' } : shouldTeamReplan(triggers, prev.lastReplanTurn, inputs.turn);
+  const triggers: TeamReplanTrigger[] = command ? [{ key: 'player', label: 'You changed the team plan', severity: 5 }] : detectTeamReplanTriggers(prevSnap, draftSnap);
+  // A contingency that stops holding restores the underlying strategy (a material change).
+  if (prevContract && prevResources && !command) {
+    const pre = evaluateTeamContingencies(prevContract.contingencies, inputs, prevResources, prevRevision);
+    pre.resolved.forEach(c => triggers.push({ key: `resolved:${c.id}`, label: `Contingency resolved: ${c.label}`, severity: 5 }));
+  }
+  const cooldown = inputs.planningDepth === 'basic' ? TEAM_OS_LIMITS.replanCooldownTurns + 1 : inputs.planningDepth === 'deep' ? Math.max(1, TEAM_OS_LIMITS.replanCooldownTurns - 1) : TEAM_OS_LIMITS.replanCooldownTurns;
+  const decision = command || !prevContract ? { replan: true, reason: command ? 'player command' : 'initial strategy' } : shouldTeamReplan(triggers, prev.lastReplanTurn, inputs.turn, cooldown);
   let contract: TeamStrategyContract;
   let revisionRecord: TeamStrategyRevision | null = null;
   if (decision.replan) {
@@ -108562,34 +108710,70 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
     } else changes.push(`mission: ${contract.mission.label}`, ...contract.objectives.map(o => `objective: ${o.description}`));
     revisionRecord = { revision: contract.revision, turn: inputs.turn, trigger: triggers.map(t => t.label).join('; ') || decision.reason, changes: changes.slice(0, 8), reason: composed.conflicts.find(c => c.selectedResolution)?.reason || decision.reason, kind: command ? 'player_override' : prevContract ? 'replan' : 'created' };
   } else {
-    // Keep the plan; refresh statuses only (no thrashing).
+    // STATUS REFRESH: keep the plan's structure; refresh tasks, objective progress and envelopes only.
     const resources = planTeamResources(inputs, prevContract!.objectives, prevContract!.constraints.reserveFloor);
-    contract = { ...prevContract!, updatedTurn: inputs.turn, taskGraph: updateTeamTaskStatuses(prevContract!.taskGraph, inputs, resources, prevContract!.objectives), authorityPolicy: inputs.authority };
+    const taskGraph = updateTeamTaskStatuses(prevContract!.taskGraph, inputs, resources, prevContract!.objectives);
+    contract = { ...prevContract!, updatedTurn: inputs.turn, taskGraph, objectives: refreshTeamObjectives(prevContract!.objectives, taskGraph, resources), authorityPolicy: inputs.authority };
     composed = { ...composed, contract, resources, conflicts: prev.conflicts };
   }
-  // Contingencies (once per arming, non-recursive, authority-aware).
+  // Contingencies: fire once per arming; the effects of every triggered automatic contingency are
+  // (re)applied idempotently so they survive replans and disappear when the contingency resolves.
   const cont = evaluateTeamContingencies(contract.contingencies, inputs, composed.resources, contract.revision);
   contract = { ...contract, contingencies: cont.contingencies };
   const proposals = [...prev.proposals.filter(p => p.status === 'open' && p.expiresTurn >= inputs.turn)];
-  if (cont.fired.length) {
-    const applied = applyContingencyEffects(cont.fired, contract.objectives, contract.taskGraph, contract.roles);
-    contract = { ...contract, objectives: applied.objectives, taskGraph: updateTeamTaskStatuses(applied.tasks, inputs, composed.resources, applied.objectives), roles: applied.roles };
-    cont.fired.filter(c => c.authority !== 'automatic').forEach(c => {
-      if (proposals.length < TEAM_OS_LIMITS.proposals && !proposals.some(p => p.id === `prop_${c.id}`)) proposals.push({
-        id: `prop_${c.id}`, proposerActorId: c.effects.find((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support')?.actorId || 'team_os', reason: `Contingency triggered: ${c.label}`, trigger: c.trigger.kind,
-        currentPlanImpact: 'Expansion pauses while the threatened region is defended.', proposedChanges: c.effects.map(e => e.kind === 'assign_support' ? `support ${e.regionId}` : e.kind === 'raise_region_priority' ? `prioritise ${e.regionId}` : e.kind === 'pause_objective_type' ? `pause ${e.objectiveType.replace('_', ' ')}` : e.kind.replace(/_/g, ' ')),
-        resourceImpact: 'No money moves until canonical actions run.', roleChanges: c.effects.filter((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support').map(e => ({ actorId: e.actorId, from: contract.roles.find(r => r.actorId === e.actorId)?.primaryRole || null, to: 'support' as TeamRole, responsibility: `Support ${e.regionId}` })),
-        constraints: contract.constraints.reserveFloor ? [`keep ${tosMoney(contract.constraints.reserveFloor)} reserve`] : [], confidence: 0.7, requiresApproval: true, expiresTurn: inputs.turn + 2, status: 'open'
-      });
-    });
-    if (!revisionRecord) revisionRecord = { revision: contract.revision, turn: inputs.turn, trigger: cont.fired.map(c => c.label).join('; '), changes: applied.changes.slice(0, 6), reason: 'Contingency conditions were met.', kind: 'contingency_triggered' };
+  const triggered = cont.contingencies.filter(c => c.status === 'triggered');
+  if (triggered.length) {
+    const applied = applyContingencyEffects(triggered, contract.objectives, contract.taskGraph, contract.roles);
+    const res = planTeamResources(inputs, applied.objectives, contract.constraints.reserveFloor);
+    const tasks = updateTeamTaskStatuses(applied.tasks, inputs, res, applied.objectives);
+    contract = { ...contract, objectives: refreshTeamObjectives(applied.objectives, tasks, res), taskGraph: tasks, roles: applied.roles };
+    if (cont.fired.length && !revisionRecord) revisionRecord = { revision: contract.revision, turn: inputs.turn, trigger: cont.fired.map(c => c.label).join('; '), changes: applied.changes.slice(0, 6), reason: 'Contingency conditions were met.', kind: 'contingency_triggered' };
   }
+  cont.fired.filter(c => c.authority !== 'automatic').forEach(c => {
+    if (proposals.length < TEAM_OS_LIMITS.proposals && !proposals.some(p => p.id === `prop_${c.id}`)) proposals.push({
+      id: `prop_${c.id}`, proposerActorId: c.effects.find((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support')?.actorId || 'team_os', reason: `Contingency triggered: ${c.label}`, trigger: c.trigger.kind,
+      currentPlanImpact: 'Expansion pauses while the threatened region is defended.', proposedChanges: c.effects.map(e => e.kind === 'assign_support' ? `support ${e.regionId}` : e.kind === 'raise_region_priority' ? `prioritise ${e.regionId}` : e.kind === 'pause_objective_type' ? `pause ${e.objectiveType.replace('_', ' ')}` : e.kind.replace(/_/g, ' ')),
+      resourceImpact: 'No money moves until canonical actions run.', roleChanges: c.effects.filter((e): e is Extract<TeamContingencyEffect, { kind: 'assign_support' }> => e.kind === 'assign_support').map(e => ({ actorId: e.actorId, from: contract.roles.find(r => r.actorId === e.actorId)?.primaryRole || null, to: 'support' as TeamRole, responsibility: `Support ${e.regionId}` })),
+      constraints: contract.constraints.reserveFloor ? [`keep ${tosMoney(contract.constraints.reserveFloor)} reserve`] : [], confidence: 0.7, requiresApproval: true, expiresTurn: inputs.turn + 2, status: 'open'
+    });
+  });
   // AI teammate proposals: handoff when the human's economy collapses (B33).
   const human = inputs.actors.find(a => a.isHuman);
   const helper = inputs.actors.find(a => !a.isHuman && !a.inRecovery);
   const humanRegionRole = contract.roles.find(r => r.actorId === human?.id && r.primaryRole === 'controller');
   if (human && helper && humanRegionRole && human.money < 500 && proposals.length < TEAM_OS_LIMITS.proposals && !proposals.some(p => p.id === `prop_handoff_${human.id}`)) {
     proposals.push({ id: `prop_handoff_${human.id}`, proposerActorId: helper.id, reason: `${helper.name} can temporarily take over “${humanRegionRole.responsibility}” while you recover.`, trigger: 'human economy collapsed', currentPlanImpact: 'Responsibilities swap until you recover; the mission is unchanged.', proposedChanges: [`${helper.name}: controller (${humanRegionRole.responsibility})`, 'You: recovery / earner'], resourceImpact: 'No money moves until canonical actions run.', roleChanges: [{ actorId: helper.id, from: contract.roles.find(r => r.actorId === helper.id)?.primaryRole || null, to: 'controller', responsibility: humanRegionRole.responsibility }, { actorId: human.id, from: 'controller', to: 'recovery', responsibility: 'Recover your cash' }], constraints: [], confidence: 0.7, requiresApproval: true, expiresTurn: inputs.turn + 2, status: 'open' });
+  }
+  // No idle AI teammates: an AI actor with nothing actionable keeps generating income for the plan.
+  {
+    const graph = contract.taskGraph;
+    const pausedObj = new Set(contract.objectives.filter(o => o.status === 'paused').map(o => o.id));
+    const idle = inputs.actors.filter(a => !a.isHuman && !a.inRecovery && !graph.some(t => t.assignedActorIds.includes(a.id) && ['ready', 'active'].includes(t.status) && !pausedObj.has(t.objectiveId) && t.type !== 'monitor_rival'));
+    const anchor = contract.objectives.find(o => o.type === 'raise_cash') || contract.objectives.find(o => o.status === 'active') || contract.objectives[0];
+    if (idle.length && anchor) contract = { ...contract, taskGraph: [...graph, ...idle.filter(a => !graph.some(t => t.id === `task_income_${a.id}`)).map(a => ({ id: `task_income_${a.id}`, objectiveId: anchor.id, type: 'generate_cash' as TeamTaskType, label: `${a.name}: generate income while other work waits`, assignedActorIds: [a.id], status: 'ready' as TeamTaskStatus, priority: 4, dependencies: [], blockers: [], fallbackTaskIds: [], deadlineTurn: null, resourceRequirement: 0, completionPredicate: 'standing task (income)', actionHints: ['sell', 'work', 'contracts'], createdTurn: inputs.turn, updatedTurn: inputs.turn, confidence: 0.6 }))] };
+  }
+  // Governor-aware funding: a task the canonical Governor will not let its actor fund is blocked with a
+  // Treasury-assisted path (so Strategic Command does not keep issuing the impossible action).
+  const fundingIntents = buildTeamFundingIntents(contract, inputs);
+  if (fundingIntents.length) {
+    contract = { ...contract, taskGraph: contract.taskGraph.map(t => {
+      const f = fundingIntents.find(x => x.taskId === t.id);
+      if (!f || !f.governorReason || t.status === 'completed') return t;
+      return { ...t, status: 'blocked' as const, blockers: [`Economy Governor: ${f.governorReason} ${f.actorSafe > 0 ? `${tosMoney(f.actorSafe)} is safe to spend; ` : ''}${tosMoney(f.gap)} gap → ${f.treasuryCanCover ? 'Treasury request suggested' : 'the Treasury cannot cover it yet'}`] };
+    }) };
+  }
+  // Treasury-assisted path: the blocked actor's next task is the (suggested) funding request — the
+  // Treasury still decides. When the Governor no longer blocks, the request task is complete.
+  {
+    const graph = contract.taskGraph.slice();
+    fundingIntents.filter(f => f.governorReason && f.treasuryCanCover).forEach(f => {
+      const parent = graph.find(t => t.id === f.taskId);
+      const id = `task_fund_${f.taskId}`;
+      if (!parent || graph.some(t => t.id === id) || graph.length >= TEAM_OS_LIMITS.tasks + 2) return;
+      graph.push({ id, objectiveId: parent.objectiveId, type: 'request_treasury', label: `Request ${tosMoney(f.gap)} Treasury funding for ${parent.label}`, assignedActorIds: [f.actorId], status: 'ready', priority: parent.priority, dependencies: [], blockers: [], fallbackTaskIds: [], deadlineTurn: inputs.turn + 1, resourceRequirement: 0, completionPredicate: 'the Treasury resolves the funding request', actionHints: ['Treasury funding request'], createdTurn: inputs.turn, updatedTurn: inputs.turn, confidence: 0.7, regionId: parent.regionId, amount: f.gap });
+    });
+    const stillNeeded = new Set(fundingIntents.filter(f => f.governorReason && f.treasuryCanCover).map(f => `task_fund_${f.taskId}`));
+    contract = { ...contract, taskGraph: graph.map(t => (t.id.startsWith('task_fund_') && !stillNeeded.has(t.id) && t.status !== 'completed' ? { ...t, status: 'completed' as const, blockers: [] } : t)) };
   }
   const resources = planTeamResources(inputs, contract.objectives, contract.constraints.reserveFloor);
   const readiness = computeTeamReadiness(inputs, contract.taskGraph, resources);
@@ -108604,6 +108788,8 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
   const feedback: string[] = [];
   if (prevContract) {
     contract.taskGraph.forEach(t => { const b = prevContract.taskGraph.find(x => x.id === t.id); if (b && b.status !== 'completed' && t.status === 'completed') feedback.push(`Completed: ${t.label}.`); });
+    cont.fired.forEach(c => feedback.push(`Contingency triggered: ${c.label}.`));
+    cont.resolved.forEach(c => feedback.push(`Contingency resolved: ${c.label}.`));
     const prevReadiness = prevResources ? computeTeamReadiness(inputs, prevContract.taskGraph, prevResources) : null;
     if (prevReadiness && Math.abs(prevReadiness.overall - readiness.overall) >= 0.1) feedback.push(`Team readiness ${Math.round(prevReadiness.overall * 100)}% → ${Math.round(readiness.overall * 100)}%.`);
   }
@@ -108615,9 +108801,9 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
     lastReplanTurn: decision.replan ? inputs.turn : prev.lastReplanTurn,
     lastSignificance: decision.replan || !prev.lastSignificance ? JSON.stringify(snapshot) : prev.lastSignificance,
     roleSince,
-    feedback: [...feedback, ...prev.feedback].slice(0, TEAM_OS_LIMITS.feedback)
+    feedback: Array.from(new Set([...feedback, ...prev.feedback])).slice(0, TEAM_OS_LIMITS.feedback)
   };
-  return { state, snapshot, resources, readiness, confidence, health, timeline: buildTeamTimeline(contract, inputs), graphIssues: composed.graphIssues, replan: { ...decision, triggers }, fired: cont.fired };
+  return { state, snapshot, resources, readiness, confidence, health, timeline: buildTeamTimeline(contract, inputs), graphIssues: composed.graphIssues, replan: { ...decision, triggers }, fired: cont.fired, resolved: cont.resolved, fundingIntents };
 }
 
 // ---- Strategic Command integration (B39) ----------------------------------------------------
@@ -108625,20 +108811,288 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
 /**
  * The actor's goal from the Team Strategy Contract, as a canonical TeamGoal for generateTeamDirective.
  * Returns null (→ Strategic Command's own chooseTeamObjective, unchanged) unless a strategy was
- * explicitly applied by the player or team authority is Strategic Delegation / Autonomous.
+ * explicitly applied by the player, team authority is Strategic Delegation / Autonomous, or the team is
+ * AI-run (enemy / AI-only) with its own Team OS. Live constraints apply: spend-locked actors never get
+ * spending tasks and deprioritised regions never get expansion goals.
  */
-export function teamOsGoalForActor(osState: TeamOperatingSystemState | null | undefined, teamId: string, actorId: string, settings: { teamIntelligenceOsEnabled?: boolean; teamOsAuthorityLevel?: string } | null | undefined): TeamGoal | null {
+export function teamOsGoalForActor(osState: TeamOperatingSystemState | null | undefined, teamId: string, actorId: string, settings: { teamIntelligenceOsEnabled?: boolean; teamOsAuthorityLevel?: string; teamOsEnemyEnabled?: boolean } | null | undefined, options?: { aiTeam?: boolean }): TeamGoal | null {
   if (!settings || settings.teamIntelligenceOsEnabled === false) return null;
+  if (options?.aiTeam && settings.teamOsEnemyEnabled === false) return null;
   const contract = osState?.byTeam?.[teamId]?.contract;
-  if (!contract || contract.status !== 'active') return null;
-  const delegated = settings.teamOsAuthorityLevel === 'delegated' || settings.teamOsAuthorityLevel === 'autonomous';
+  if (!contract || contract.status !== 'active' || contract.teamId !== teamId) return null;
+  const delegated = Boolean(options?.aiTeam) || settings.teamOsAuthorityLevel === 'delegated' || settings.teamOsAuthorityLevel === 'autonomous';
   if (contract.source !== 'player_command' && !delegated) return null;
-  const task = contract.taskGraph
-    .filter(t => t.assignedActorIds.includes(actorId) && !t.humanStatus && ['ready', 'active', 'blocked'].includes(t.status) && t.type !== 'monitor_rival' && t.type !== 'preserve_reserve')
-    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))[0];
+  const task = teamOsActiveTaskForActor(contract, actorId);
   if (!task) return null;
   const kind: TeamGoal['kind'] = task.type === 'defend_region' || task.type === 'take_region' || task.type === 'reach_region' ? 'control' : task.type === 'recover' ? 'recovery' : task.type === 'support_actor' ? 'support' : task.type === 'complete_contract' ? 'netWorth' : 'money';
-  return { id: `teamos_${task.id}`, kind, description: task.label, priority: Math.max(1, 6 - task.priority), status: 'active', ownerActorId: actorId, targetRegion: task.regionId, reason: `Team Strategy task (${contract.mission.label}).` };
+  const objective = contract.objectives.find(o => o.id === task.objectiveId);
+  const importance = task.priority <= 1 ? 'critical' : task.priority === 2 ? 'high' : task.priority <= 3 ? 'normal' : 'low';
+  const contingency = contract.contingencies.find(c => c.status === 'triggered' && c.effects.some(e => e.kind === 'assign_support' && e.actorId === actorId && e.regionId === task.regionId));
+  const reason = [
+    `Team Strategy task “${task.label}” (${importance}${objective ? `; objective: ${objective.description}` : ''})`,
+    task.resourceRequirement > 0 ? `needs ${tosMoney(task.resourceRequirement)}${contract.constraints.reserveFloor ? ` while keeping the ${tosMoney(contract.constraints.reserveFloor)} team reserve` : ''}` : '',
+    contingency ? `contingency active: ${contingency.label}` : '',
+    `mission: ${contract.mission.label}`
+  ].filter(Boolean).join('; ') + '.';
+  return { id: `teamos_${task.id}`, kind, description: task.label, priority: Math.max(1, 6 - task.priority), status: 'active', ownerActorId: actorId, targetRegion: task.regionId, reason };
+}
+
+/** The task Strategic Command should use for this AI actor right now (live constraints applied). */
+export function teamOsActiveTaskForActor(contract: TeamStrategyContract, actorId: string): TeamTaskNode | null {
+  const locked = contract.constraints.spendLockedActorIds.includes(actorId);
+  const deprioritized = new Set(contract.constraints.deprioritizedRegions);
+  const pausedObjectives = new Set(contract.objectives.filter(o => o.status === 'paused').map(o => o.id));
+  return contract.taskGraph
+    .filter(t => t.assignedActorIds.includes(actorId) && !t.humanStatus && ['ready', 'active', 'blocked'].includes(t.status) && t.type !== 'monitor_rival' && t.type !== 'preserve_reserve')
+    .filter(t => !pausedObjectives.has(t.objectiveId))
+    .filter(t => !(locked && t.resourceRequirement > 0))
+    .filter(t => !(t.regionId && deprioritized.has(t.regionId) && (t.type === 'take_region' || t.type === 'reach_region')))
+    // Ready work first, then priority: a blocked task never starves a ready one (no repeated impossible directive).
+    .sort((a, b) => Number(a.status === 'blocked') - Number(b.status === 'blocked') || a.priority - b.priority || a.id.localeCompare(b.id))[0] || null;
+}
+
+/** A live Strategic Command directive built from an older Team OS task must be replaced (never stale). */
+export function shouldSupersedeTeamOsDirective(directive: { teamOsTaskId?: string | null; status?: string }, goal: TeamGoal | null): boolean {
+  if (!directive.teamOsTaskId) return false;
+  return !goal || goal.id !== `teamos_${directive.teamOsTaskId}`;
+}
+
+export function teamOsTaskIdFromGoal(goal: TeamGoal | null | undefined): string | null {
+  return goal && goal.id.startsWith('teamos_') ? goal.id.slice('teamos_'.length) : null;
+}
+
+// ---- Live persistence: meaningful signatures, loop-safe commits ---------------------------------
+
+/**
+ * Compact deterministic signature of the strategically meaningful Team OS state. Cash is bucketed
+ * ($500) so small balance moves never cause a write; UI renders never change it.
+ */
+export function teamOsStateSignature(state: TeamOSTeamState | null | undefined): string {
+  if (!state?.contract) return 'none';
+  const c = state.contract;
+  return teamOsHash([
+    c.id, c.revision, c.status, c.source, c.mission.label, c.constraints.reserveFloor ?? '', c.constraints.spendLockedActorIds.join('+'), c.constraints.deprioritizedRegions.join('+'),
+    c.objectives.map(o => `${o.id}:${o.status}:${o.priority}:${Math.round(o.progress * 10)}`).join(','),
+    c.taskGraph.map(t => `${t.id}:${t.status}:${t.assignedActorIds.join('+')}:${t.priority}:${t.blockers.length}`).join(','),
+    c.roles.map(r => `${r.actorId}:${r.primaryRole}:${r.responsibility}`).join(','),
+    c.contingencies.map(x => `${x.id}:${x.status}`).join(','),
+    state.proposals.map(p => `${p.id}:${p.status}`).join(','),
+    c.resourcePolicy.envelopes.map(e => `${e.category}:${Math.round(e.allocated / 500)}:${Math.round(e.target / 500)}`).join(','),
+    state.conflicts.map(x => `${x.type}:${x.status}`).join(','),
+    state.revisions.length, state.lastReplanTurn ?? ''
+  ].join('|'));
+}
+
+export const TEAM_OS_MAX_COMMITS_PER_TURN = 12;
+
+export interface TeamOsPersistenceDecision { commit: boolean; signature: string; reason: string }
+
+/**
+ * Loop-safe persistence: commit only when the evaluated state differs meaningfully from what is stored
+ * AND from what was just committed (the commit's own re-render re-evaluates to the same signature and
+ * stops). A per-turn budget is a last-resort guard against any oscillation.
+ */
+export function decideTeamOsPersistence(stored: TeamOSTeamState | null | undefined, evaluated: TeamOSTeamState, lastCommittedSignature: string | null, commitsThisTurn: number): TeamOsPersistenceDecision {
+  const signature = teamOsStateSignature(evaluated);
+  if (signature === teamOsStateSignature(stored)) return { commit: false, signature, reason: 'no meaningful change' };
+  if (signature === lastCommittedSignature) return { commit: false, signature, reason: 'already committed — waiting for the stored state' };
+  if (commitsThisTurn >= TEAM_OS_MAX_COMMITS_PER_TURN) return { commit: false, signature, reason: 'persistence budget reached this turn (loop guard)' };
+  const s = stored?.contract;
+  const e = evaluated.contract!;
+  const reason = !s ? 'strategy created'
+    : e.revision !== s.revision ? `strategy revision ${s.revision} → ${e.revision}`
+    : e.contingencies.some(c => c.status !== s.contingencies.find(x => x.id === c.id)?.status) ? 'contingency state changed'
+    : e.taskGraph.some(t => t.status !== s.taskGraph.find(x => x.id === t.id)?.status) ? 'task status refresh'
+    : e.roles.some(r => r.primaryRole !== s.roles.find(x => x.actorId === r.actorId)?.primaryRole) ? 'role change'
+    : 'status refresh (progress / resources / proposals)';
+  return { commit: true, signature, reason };
+}
+
+/** Runtime diagnostics for the LAB inspector (never saved; per team). */
+export interface TeamOsRuntimeDiagnostics {
+  byTeam: Record<string, { evaluationReason: string | null; signature: string | null; persistence: string | null; replanTrigger: string | null; contingencyTrigger: string | null; directive: string | null; updatedAt: number }>;
+}
+
+export function createTeamOsRuntimeDiagnostics(): TeamOsRuntimeDiagnostics { return { byTeam: {} }; }
+
+export function recordTeamOsDiagnostics(diag: TeamOsRuntimeDiagnostics, teamId: string, patch: Partial<{ evaluationReason: string; signature: string; persistence: string; replanTrigger: string; contingencyTrigger: string; directive: string }>): void {
+  const cur = diag.byTeam[teamId] || { evaluationReason: null, signature: null, persistence: null, replanTrigger: null, contingencyTrigger: null, directive: null, updatedAt: 0 };
+  diag.byTeam[teamId] = { ...cur, ...patch, updatedAt: cur.updatedAt + 1 };
+}
+
+/** Difficulty changes planning QUALITY (depth, contingencies, replan sensitivity) — never information. */
+export function teamOsPlanningDepthFor(difficulty: string | null | undefined): 'basic' | 'standard' | 'deep' {
+  const d = String(difficulty || '').toLowerCase();
+  if (/easy|casual|beginner|relaxed/.test(d)) return 'basic';
+  if (/hard|expert|elite|competitive|brutal/.test(d)) return 'deep';
+  return 'standard';
+}
+
+/** Meaningful Team OS changes for the Activity Ledger (never identical recomputations). */
+export function teamOsLedgerEvents(prev: TeamOSTeamState | null | undefined, next: TeamOSTeamState): Array<{ kind: string; summary: string }> {
+  const out: Array<{ kind: string; summary: string }> = [];
+  const p = prev?.contract || null;
+  const n = next.contract;
+  if (!n) return out;
+  next.revisions.slice(prev ? prev.revisions.length : 0).forEach(r => out.push({
+    kind: r.kind === 'created' ? 'strategy_created' : r.kind === 'player_override' ? 'strategy_overridden' : r.kind === 'contingency_triggered' ? 'contingency_revision' : r.kind === 'governance_decision' ? 'governance_changed_strategy' : 'major_replan',
+    summary: `Team Strategy rev ${r.revision} (${r.kind.replace(/_/g, ' ')}): ${r.trigger}`
+  }));
+  if (!p) return out.slice(0, 8);
+  n.objectives.forEach(o => {
+    const b = p.objectives.find(x => x.id === o.id);
+    if (b && b.status !== 'completed' && o.status === 'completed') out.push({ kind: 'objective_completed', summary: `Objective completed: ${o.description}` });
+    if (b && b.status !== 'failed' && o.status === 'failed') out.push({ kind: 'objective_failed', summary: `Objective failed: ${o.description}` });
+  });
+  n.roles.forEach(r => { const b = p.roles.find(x => x.actorId === r.actorId); if (b && b.primaryRole !== r.primaryRole) out.push({ kind: 'role_changed', summary: `${r.actorId}: ${b.primaryRole} → ${r.primaryRole} (${r.reason})` }); });
+  n.contingencies.forEach(c => {
+    const b = p.contingencies.find(x => x.id === c.id);
+    if (c.status === 'triggered' && b?.status !== 'triggered') out.push({ kind: 'contingency_activated', summary: `Contingency activated: ${c.label}` });
+    if (c.status === 'resolved' && b?.status === 'triggered') out.push({ kind: 'contingency_resolved', summary: `Contingency resolved: ${c.label}` });
+  });
+  const resourceConflict = (s: TeamOSTeamState | null | undefined) => (s?.conflicts || []).filter(x => x.type === 'objective_vs_objective' || x.type === 'resource_collision' || x.type === 'treasury_vs_objective').map(x => x.type);
+  const before = resourceConflict(prev); const after = resourceConflict(next);
+  after.filter(t => !before.includes(t)).forEach(t => out.push({ kind: 'resource_conflict_created', summary: `Resource conflict: ${t.replace(/_/g, ' ')}` }));
+  before.filter(t => !after.includes(t)).forEach(t => out.push({ kind: 'resource_conflict_resolved', summary: `Resource conflict resolved: ${t.replace(/_/g, ' ')}` }));
+  next.proposals.forEach(pr => { const b = prev?.proposals.find(x => x.id === pr.id); if (b && b.status === 'open' && (pr.status === 'accepted' || pr.status === 'rejected')) out.push({ kind: `proposal_${pr.status}`, summary: `Team proposal ${pr.status}: ${pr.reason}` }); });
+  const done = (c: TeamStrategyContract | null) => Boolean(c && c.objectives.length && c.objectives.every(o => o.status === 'completed' || o.type === 'preserve_reserve'));
+  if (done(n) && !done(p)) out.push({ kind: 'strategy_completed', summary: `Team strategy completed: ${n.mission.label}` });
+  return out.slice(0, 8);
+}
+
+// ---- Strategic spend context (Economy Governor / Treasury integration) --------------------------
+
+export interface TeamStrategicSpendContext {
+  teamId: string;
+  contractId: string;
+  contractRevision: number;
+  mission: string;
+  objectiveId: string | null;
+  taskId: string | null;
+  taskLabel: string | null;
+  taskPriority: number | null;
+  category: string;
+  missionImportance: 'critical' | 'high' | 'normal' | 'low' | 'none';
+  resourceEnvelope: TeamEnvelopeCategory | null;
+  resourceEnvelopeAllocated: number;
+  resourceEnvelopeTarget: number;
+  strategyReserveFloor: number;
+  actorSpendLocked: boolean;
+  deprioritizedRegion: boolean;
+  isMissionCritical: boolean;
+  isContingencyResponse: boolean;
+  lowerPriorityAllocations: Array<{ category: TeamEnvelopeCategory; allocated: number }>;
+  reason: string;
+}
+
+const TEAM_OS_SPEND_TASKS: Record<string, TeamTaskType[]> = {
+  region_deposit: ['defend_region', 'take_region', 'support_actor'],
+  travel: ['reach_region', 'support_actor'],
+  investment: ['generate_cash', 'complete_contract'],
+  equipment: ['generate_cash'],
+  support: ['support_actor']
+};
+
+/** Derived (never stored) context: why is this actor spending, under the active Team Strategy? */
+export function buildTeamStrategicSpendContext(osState: TeamOperatingSystemState | null | undefined, teamId: string, actorId: string, category: string, regionId?: string | null): TeamStrategicSpendContext | null {
+  const contract = osState?.byTeam?.[teamId]?.contract;
+  if (!contract || contract.status !== 'active') return null;
+  const types = TEAM_OS_SPEND_TASKS[category] || [];
+  const task = contract.taskGraph
+    .filter(t => t.assignedActorIds.includes(actorId) && types.includes(t.type) && !['completed', 'cancelled', 'superseded'].includes(t.status) && (!regionId || !t.regionId || t.regionId === regionId))
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))[0] || null;
+  const envCat: TeamEnvelopeCategory | null = task ? (task.type === 'take_region' || task.type === 'reach_region' ? 'expansion' : task.type === 'defend_region' || task.type === 'support_actor' ? 'defense' : task.type === 'complete_contract' ? 'contracts' : 'economy') : null;
+  const env = envCat ? contract.resourcePolicy.envelopes.find(e => e.category === envCat) || null : null;
+  const importance: TeamStrategicSpendContext['missionImportance'] = !task ? 'none' : task.priority <= 1 ? 'critical' : task.priority === 2 ? 'high' : task.priority <= 3 ? 'normal' : 'low';
+  const contingency = task ? contract.contingencies.some(c => c.status === 'triggered' && c.effects.some(e => (e.kind === 'assign_support' && e.actorId === actorId) || (e.kind === 'raise_region_priority' && e.regionId === task.regionId))) : false;
+  const locked = contract.constraints.spendLockedActorIds.includes(actorId);
+  const deprioritized = Boolean(regionId && contract.constraints.deprioritizedRegions.includes(regionId));
+  return {
+    teamId, contractId: contract.id, contractRevision: contract.revision, mission: contract.mission.label,
+    objectiveId: task?.objectiveId || null, taskId: task?.id || null, taskLabel: task?.label || null, taskPriority: task?.priority ?? null, category,
+    missionImportance: importance,
+    resourceEnvelope: envCat, resourceEnvelopeAllocated: env?.allocated || 0, resourceEnvelopeTarget: env?.target || 0,
+    strategyReserveFloor: contract.constraints.reserveFloor || 0,
+    actorSpendLocked: locked, deprioritizedRegion: deprioritized,
+    isMissionCritical: importance === 'critical', isContingencyResponse: contingency,
+    lowerPriorityAllocations: contract.resourcePolicy.envelopes.filter(e => env && e.priority > env.priority && e.allocated > 0 && !e.hardFloor).map(e => ({ category: e.category, allocated: e.allocated })),
+    reason: task ? `${task.label} (${importance}) for “${contract.mission.label}”` : locked ? 'the player locked this actor’s discretionary spending' : deprioritized ? `${regionId} is deprioritised by the team strategy` : 'not part of the team strategy'
+  };
+}
+
+export interface TeamStrategyAwareRuling { approved: boolean; reason: string; phase?: string; strategyNote: string | null; alternatives: string[]; strategy: TeamStrategicSpendContext | null }
+
+/**
+ * Decorate a canonical Economy Governor ruling with Team Strategy context. The approval is NEVER
+ * changed here — a block stays a block; the strategy only adds purpose and legitimate alternatives.
+ */
+export function annotateGovernorRulingWithStrategy(ruling: { approved: boolean; reason: string; phase?: string }, ctx: TeamStrategicSpendContext | null, amount: number, treasuryFree: number | null): TeamStrategyAwareRuling {
+  if (!ctx || !ctx.taskId) return { ...ruling, strategyNote: null, alternatives: [], strategy: ctx };
+  const note = `Team Strategy: ${ctx.reason}${ctx.resourceEnvelope ? `; ${ctx.resourceEnvelope} envelope ${tosMoney(ctx.resourceEnvelopeAllocated)} of ${tosMoney(ctx.resourceEnvelopeTarget)}` : ''}${ctx.strategyReserveFloor ? `; team reserve ${tosMoney(ctx.strategyReserveFloor)}` : ''}.`;
+  const alternatives: string[] = [];
+  if (!ruling.approved) {
+    if (treasuryFree && treasuryFree > 0 && ctx.missionImportance !== 'low') alternatives.push(`Request ${tosMoney(Math.min(treasuryFree, amount))} from the Treasury for “${ctx.taskLabel}” (the Treasury decides)`);
+    alternatives.push('Reduce the amount to what the Governor allows');
+    if (ctx.lowerPriorityAllocations[0]) alternatives.push(`Delay the ${ctx.lowerPriorityAllocations[0].category} allocation (${tosMoney(ctx.lowerPriorityAllocations[0].allocated)})`);
+    alternatives.push('Wait for income, or let another teammate take the task');
+  }
+  return { approved: ruling.approved, reason: ruling.approved ? ruling.reason : `${ruling.reason} ${note}`, phase: ruling.phase, strategyNote: note, alternatives, strategy: ctx };
+}
+
+/** Live scoring context for AI decisions: strategy constraints make actions strategically unavailable. */
+export function teamStrategicSpendBias(ctx: TeamStrategicSpendContext | null, amount: number, teamFreeCash: number | null): { bias: number; reason: string | null } {
+  if (!ctx) return { bias: 0, reason: null };
+  if (ctx.actorSpendLocked && !ctx.isContingencyResponse) return { bias: -250, reason: 'spending locked by the team strategy' };
+  if (ctx.deprioritizedRegion && !ctx.taskId) return { bias: -150, reason: 'region deprioritised by the team strategy' };
+  if (ctx.strategyReserveFloor && teamFreeCash !== null && teamFreeCash - amount < ctx.strategyReserveFloor && !ctx.isContingencyResponse) return { bias: -200, reason: `would break the ${tosMoney(ctx.strategyReserveFloor)} team reserve` };
+  if (ctx.taskId) return { bias: ctx.missionImportance === 'critical' ? 60 : ctx.missionImportance === 'high' ? 40 : ctx.missionImportance === 'normal' ? 20 : 5, reason: `team strategy task: ${ctx.taskLabel}` };
+  return { bias: 0, reason: null };
+}
+
+export interface TeamFundingIntent {
+  taskId: string;
+  actorId: string;
+  purpose: string;
+  objective: string;
+  priority: 'critical' | 'high' | 'normal' | 'low';
+  required: number;
+  actorSafe: number;
+  gap: number;
+  treasuryCanCover: boolean;
+  governorReason: string | null;
+}
+
+/**
+ * Strategic funding intents: where an AI actor cannot safely fund its task (Economy Governor ruling on
+ * real balances), the gap becomes a SUGGESTED Treasury request. Nothing is requested automatically.
+ */
+export function buildTeamFundingIntents(contract: TeamStrategyContract | null, inputs: TeamOSInputs): TeamFundingIntent[] {
+  if (!contract) return [];
+  const treasuryFree = inputs.treasury ? Math.max(0, inputs.treasury.balance - inputs.treasury.reserve) : 0;
+  const out: TeamFundingIntent[] = [];
+  contract.taskGraph.filter(t => t.resourceRequirement > 0 && ['ready', 'active', 'blocked'].includes(t.status)).slice(0, 6).forEach(t => {
+    const actor = inputs.actors.find(a => a.id === t.assignedActorIds[0]);
+    if (!actor || actor.isHuman) return;
+    const cat = t.type === 'reach_region' ? 'travel' : 'region_deposit';
+    const spendable = Math.max(0, actor.money - actor.protectedCash);
+    let safe = Math.min(spendable, t.resourceRequirement);
+    let governorReason: string | null = null;
+    if (inputs.governorCheck) {
+      const full = inputs.governorCheck(actor.id, cat, t.resourceRequirement);
+      if (!full.approved) {
+        governorReason = full.reason;
+        // Largest amount the canonical Governor allows (bounded bisection — the Governor decides).
+        let lo = 0; let hi = safe;
+        for (let i = 0; i < 10 && hi - lo > 50; i++) { const mid = Math.floor((lo + hi) / 2); if (inputs.governorCheck(actor.id, cat, mid).approved) lo = mid; else hi = mid; }
+        safe = lo;
+      }
+    }
+    const gap = Math.max(0, t.resourceRequirement - safe);
+    if (gap <= 0) return;
+    const objective = contract.objectives.find(o => o.id === t.objectiveId);
+    out.push({ taskId: t.id, actorId: actor.id, purpose: t.label, objective: objective?.description || '', priority: t.priority <= 1 ? 'critical' : t.priority === 2 ? 'high' : t.priority <= 3 ? 'normal' : 'low', required: t.resourceRequirement, actorSafe: safe, gap, treasuryCanCover: treasuryFree >= gap, governorReason });
+  });
+  return out;
 }
 
 // ---- Plan negotiation (B31–B33) --------------------------------------------------------------
@@ -108867,7 +109321,7 @@ export function parseTeamCommandFromFrame(frame: GISemanticFrame, world: GIWorld
     const next = frame.clauses[i + 1] ? frame.clauses[i + 1].tokens.map(t => t.t).join(' ') : '';
     const helper = [...(frame.clauses[i + 1]?.tokens || []), ...c.tokens].map(mateByToken).find(Boolean) || mates[0].id;
     if (/\b(help|support|come|assist|back me up|cover)\b/.test(`${ct} ${next}`) || /\b(bad|critical|pushes|push|attack|pressure|worse)\b/.test(ct)) {
-      contingencies.push({ trigger: /\b(bad|critical|worse|really|hard)\b/.test(ct) ? 'pressure_critical' : 'rival_contests', regionId: region, actorId: helper, supportRegionId: region });
+      contingencies.push({ trigger: /\b(bad|critical|worse|really|hard|dangerous|danger|risky|threatened|serious)\b/.test(ct) ? 'pressure_critical' : 'rival_contests', regionId: region, actorId: helper, supportRegionId: region });
     }
   });
   const priorities: TeamCommandIntent['priorities'] = [];
@@ -109058,6 +109512,8 @@ export const TeamMissionBoard: React.FC<TeamMissionBoardProps> = ({ view, theme,
   );
 };
 
+export interface TeamOSIntegrationStatus { system: string; connected: boolean; detail: string }
+
 export interface TeamOSInspectorProps {
   view: TeamOSView | null;
   theme: V9Theme;
@@ -109066,12 +109522,58 @@ export interface TeamOSInspectorProps {
   authority: TeamOSAuthorityLevel;
   onToggleEnabled: () => void;
   onSetAuthority: (level: TeamOSAuthorityLevel) => void;
+  integrations?: TeamOSIntegrationStatus[];
+  diagnostics?: TeamOsRuntimeDiagnostics['byTeam'][string] | null;
+  enemyEnabled?: boolean;
+  onToggleEnemy?: () => void;
+  fullInspection?: boolean;
+  onToggleFullInspection?: () => void;
+  /** Only passed when Full Inspection is on (debug) — the enemy strategy is otherwise never shown. */
+  enemyView?: TeamOSView | null;
+  enemyDiagnostics?: TeamOsRuntimeDiagnostics['byTeam'][string] | null;
 }
 
-/** LAB diagnostics for the Team Operating System: priority framework, contract, tasks, conflicts, audit. */
-export const TeamOSInspector: React.FC<TeamOSInspectorProps> = ({ view, theme, enabled, isTeamMode, authority, onToggleEnabled, onSetAuthority }) => {
-  const c = view?.state.contract || null;
-  const h = 'font-semibold text-xs uppercase tracking-wider opacity-75 mt-2';
+/** LAB diagnostics for the Team Operating System: canonical strategy vs live status vs constraints. */
+export const TeamOSInspector: React.FC<TeamOSInspectorProps> = ({ view, theme, enabled, isTeamMode, authority, onToggleEnabled, onSetAuthority, integrations, diagnostics, enemyEnabled, onToggleEnemy, fullInspection, onToggleFullInspection, enemyView, enemyDiagnostics }) => {
+  const h = 'font-semibold text-xs uppercase tracking-wider opacity-75 mt-3';
+  const renderTeam = (v: TeamOSView, diag: TeamOSInspectorProps['diagnostics'], label: string) => {
+    const c = v.state.contract;
+    if (!c) return <div>No contract yet.</div>;
+    const r = v.evaluation.resources;
+    return (
+      <div className="space-y-0.5" data-testid={`team-os-inspector-${label}`}>
+        <div className={h}>Canonical strategy</div>
+        <div>{c.id} • revision {c.revision} • {c.status} • source {c.source.replace(/_/g, ' ')} • mission “{c.mission.label}” ({c.mission.source.replace(/_/g, ' ')}) • authority {TEAM_OS_AUTHORITY_META[v.authority].label}</div>
+        {c.objectives.map(o => <div key={o.id}>P{o.priority} / tier {o.tier} — {o.description} [{o.status}{o.pausedReason ? `: ${o.pausedReason}` : ''}] {Math.round(o.progress * 100)}%</div>)}
+        <div className={h}>Live status</div>
+        <div>Health: {v.evaluation.health.health.replace(/_/g, ' ')} — {v.evaluation.health.reason} • readiness {Math.round(v.evaluation.readiness.overall * 100)}% • confidence {v.evaluation.confidence.label}</div>
+        <div>Threats: {v.evaluation.snapshot.threatenedRegions.map(t => `${t.code} (rival needs $${Math.round(t.opponentCostToTake).toLocaleString()}${t.opponentCanAfford === null ? ', cash hidden' : t.opponentCanAfford ? ', affordable' : ''})`).join('; ') || 'none'} • pressure {v.evaluation.snapshot.rivalPressure}</div>
+        {c.taskGraph.map(t => <div key={t.id}>{t.id}: {t.label} → {t.assignedActorIds.join('+') || '—'} [{t.status}{t.humanStatus ? `, ${t.humanStatus}` : ''}] P{t.priority}{t.dependencies.length ? ` deps ${t.dependencies.join(',')}` : ''}{t.blockers.length ? ` — ${t.blockers.join('; ')}` : ''}</div>)}
+        {v.evaluation.graphIssues.length > 0 && <div>Graph issues: {v.evaluation.graphIssues.join('; ')}</div>}
+        <div className={h}>Constraints</div>
+        <div>Reserve floor ${Math.round(c.constraints.reserveFloor || 0).toLocaleString()} • spend locks {c.constraints.spendLockedActorIds.join(', ') || 'none'} • protected {c.protectedRegions.join(', ') || 'none'} • deprioritised {c.constraints.deprioritizedRegions.join(', ') || 'none'} • role locks {c.locks.roles.join(', ') || 'none'} • mission lock {String(c.locks.mission)}</div>
+        <div className={h}>Resource policy (planning allocations over real balances)</div>
+        <div>Free ${Math.round(r.freeCash).toLocaleString()} • actor cash ${Math.round(r.actorCash).toLocaleString()} • protected ${Math.round(r.protectedCash).toLocaleString()} • Treasury ${Math.round(r.treasuryBalance).toLocaleString()} (reserve ${Math.round(r.treasuryReserve).toLocaleString()}) • shortfall ${Math.round(r.shortfall).toLocaleString()}</div>
+        {r.envelopes.map(e => <div key={e.category}>{e.category}: ${Math.round(e.allocated).toLocaleString()} / ${Math.round(e.target).toLocaleString()}{e.allocated < e.target ? ' (partial)' : ''}{e.hardFloor ? ' (hard floor)' : ''} • priority {e.priority}</div>)}
+        {v.evaluation.fundingIntents.map(f => <div key={f.taskId}>Funding intent: {f.purpose} — needs ${Math.round(f.required).toLocaleString()}, {f.actorId} can safely fund ${Math.round(f.actorSafe).toLocaleString()}, gap ${Math.round(f.gap).toLocaleString()} → {f.treasuryCanCover ? 'suggested Treasury request' : 'Treasury cannot cover yet'}{f.governorReason ? ` (Governor: ${f.governorReason})` : ''}</div>)}
+        <div className={h}>Conflicts</div>
+        {v.state.conflicts.length ? v.state.conflicts.map(x => <div key={x.id}>{x.type.replace(/_/g, ' ')} [{x.severity}, {x.status}] — {x.selectedResolution || 'unresolved'} ({x.reason}{x.winnerTier ? `; tier ${x.winnerTier} beats tier ${x.loserTier}` : ''})</div>) : <div>None</div>}
+        <div className={h}>Contingencies</div>
+        {c.contingencies.map(x => <div key={x.id}>{x.label} [{x.status}, {x.authority}, {x.source}]</div>)}
+        <div className={h}>Revisions</div>
+        {v.state.revisions.slice(-6).reverse().map(rv => <div key={`${rv.revision}_${rv.turn}_${rv.kind}`}>rev {rv.revision} (turn {rv.turn}, {rv.kind.replace(/_/g, ' ')}): {rv.trigger} — {rv.changes.slice(0, 3).join('; ')}</div>)}
+        <div className={h}>Event debugging</div>
+        <div>Last evaluation: {v.evaluation.replan.reason}{diag?.evaluationReason ? ` (last committed: ${diag.evaluationReason})` : ''}</div>
+        <div>Last meaningful signature: {diag?.signature || teamOsStateSignature(v.state)}</div>
+        <div>Last persistence: {diag?.persistence || '—'}</div>
+        <div>Last replan trigger: {diag?.replanTrigger || v.state.revisions[v.state.revisions.length - 1]?.trigger || '—'}</div>
+        <div>Last contingency trigger: {diag?.contingencyTrigger || '—'}</div>
+        <div>Last Strategic Command directive from Team OS: {diag?.directive || '—'}</div>
+        <div className={h}>Auditor findings (facts only)</div>
+        {v.audit.length ? v.audit.map(a => <div key={a.id}>[{a.severity}] {a.message}</div>) : <div>No findings</div>}
+      </div>
+    );
+  };
   return (
     <section aria-labelledby="team-os-inspector-heading" data-testid="team-os-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 mt-4 space-y-1 text-xs`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -109082,33 +109584,24 @@ export const TeamOSInspector: React.FC<TeamOSInspectorProps> = ({ view, theme, e
             {(Object.keys(TEAM_OS_AUTHORITY_META) as TeamOSAuthorityLevel[]).map(k => <option key={k} value={k}>{TEAM_OS_AUTHORITY_META[k].label}</option>)}
           </select>
         </label>
+        {onToggleEnemy && <button type="button" className={`${enemyEnabled ? theme.button : theme.buttonSecondary} px-2.5 py-1 rounded text-xs`} aria-pressed={Boolean(enemyEnabled)} onClick={onToggleEnemy}>Enemy Team OS: {enemyEnabled ? 'ON' : 'OFF'}</button>}
+        {onToggleFullInspection && <button type="button" className={`${fullInspection ? theme.button : theme.buttonSecondary} px-2.5 py-1 rounded text-xs`} aria-pressed={Boolean(fullInspection)} onClick={onToggleFullInspection}>Full Inspection (debug): {fullInspection ? 'ON' : 'OFF'}</button>}
       </div>
       <p className="opacity-75">{TEAM_OS_AUTHORITY_META[authority].summary} Planning authority is not action authority: every action still runs through the canonical pipeline.</p>
       {!isTeamMode && <p className="opacity-75">Team OS is active in Team Mode matches only.</p>}
       <div className={h}>Priority framework (lower tier wins)</div>
       <ol className="list-decimal pl-5">{TEAM_OS_PRIORITY_FRAMEWORK.map(t => <li key={t.key}>{t.label}</li>)}</ol>
-      {view && c && (
+      {integrations && integrations.length > 0 && (
         <>
-          <div className={h}>Contract</div>
-          <div>{c.id} • revision {c.revision} • {c.status} • source {c.source.replace(/_/g, ' ')} • mission “{c.mission.label}” ({c.mission.source.replace(/_/g, ' ')}) • confidence {Math.round(c.confidence * 100)}%</div>
-          <div>Constraints: reserve floor ${Math.round(c.constraints.reserveFloor || 0).toLocaleString()}; spend locks {c.constraints.spendLockedActorIds.join(', ') || 'none'}; deprioritised {c.constraints.deprioritizedRegions.join(', ') || 'none'}; locks: mission {String(c.locks.mission)}, roles {c.locks.roles.join(', ') || 'none'}</div>
-          <div className={h}>Objectives</div>
-          {c.objectives.map(o => <div key={o.id}>P{o.priority} / tier {o.tier} — {o.description} [{o.status}{o.pausedReason ? `: ${o.pausedReason}` : ''}] {Math.round(o.progress * 100)}%</div>)}
-          <div className={h}>Task graph ({c.taskGraph.length}){view.evaluation.graphIssues.length ? ` — issues: ${view.evaluation.graphIssues.join('; ')}` : ''}</div>
-          {c.taskGraph.map(t => <div key={t.id}>{t.id}: {t.label} → {t.assignedActorIds.join('+') || '—'} [{t.status}] deps {t.dependencies.join(',') || '—'}{t.blockers.length ? ` blockers: ${t.blockers.join('; ')}` : ''}</div>)}
-          <div className={h}>Resource envelopes (planning allocations only)</div>
-          <div>Free ${Math.round(view.evaluation.resources.freeCash).toLocaleString()} • protected ${Math.round(view.evaluation.resources.protectedCash).toLocaleString()} • treasury ${Math.round(view.evaluation.resources.treasuryBalance).toLocaleString()} (reserve ${Math.round(view.evaluation.resources.treasuryReserve).toLocaleString()}) • shortfall ${Math.round(view.evaluation.resources.shortfall).toLocaleString()}</div>
-          {view.evaluation.resources.envelopes.map(e => <div key={e.category}>{e.category}: ${Math.round(e.allocated).toLocaleString()} / ${Math.round(e.target).toLocaleString()}{e.hardFloor ? ' (hard floor)' : ''}</div>)}
-          <div className={h}>Conflicts</div>
-          {view.state.conflicts.length ? view.state.conflicts.map(x => <div key={x.id}>{x.type.replace(/_/g, ' ')} [{x.severity}, {x.status}] — {x.selectedResolution || 'unresolved'} ({x.reason}{x.winnerTier ? `; tier ${x.winnerTier} beats tier ${x.loserTier}` : ''})</div>) : <div>None</div>}
-          <div className={h}>Contingencies</div>
-          {c.contingencies.map(x => <div key={x.id}>{x.label} [{x.status}, {x.authority}, {x.source}]</div>)}
-          <div className={h}>Replanning</div>
-          <div>{view.evaluation.replan.replan ? 'Replan' : 'Hold'} — {view.evaluation.replan.reason}; last replan turn {view.state.lastReplanTurn ?? '—'}</div>
-          <div className={h}>Revisions</div>
-          {view.state.revisions.slice(-6).reverse().map(r => <div key={`${r.revision}_${r.turn}_${r.kind}`}>rev {r.revision} (turn {r.turn}, {r.kind.replace(/_/g, ' ')}): {r.trigger} — {r.changes.slice(0, 3).join('; ')}</div>)}
-          <div className={h}>Auditor findings (facts only)</div>
-          {view.audit.length ? view.audit.map(a => <div key={a.id}>[{a.severity}] {a.message}</div>) : <div>No findings</div>}
+          <div className={h}>Integrations (live configuration)</div>
+          {integrations.map(i => <div key={i.system}>{i.connected ? '🟢' : '⚪'} {i.system}: {i.connected ? 'connected' : 'not active'} — {i.detail}</div>)}
+        </>
+      )}
+      {view && renderTeam(view, diagnostics || null, 'friendly')}
+      {fullInspection && enemyView && (
+        <>
+          <div className="font-bold text-sm mt-4">Enemy team strategy (Full Inspection — debug only)</div>
+          {renderTeam(enemyView, enemyDiagnostics || null, 'enemy')}
         </>
       )}
     </section>
@@ -109223,8 +109716,9 @@ export function runTeamIntelligence2SelfTests(): V9SelfTestResult[] {
   });
 
   // Roles
+  const CALM = () => I({ rivalMoney: 1000 });   // the rival cannot afford NSW: no contingency fires
   check('tos_roles_explicit', 'Roles: explicit player assignments are honoured (Riley earner, you controller)', () => {
-    const c = ev(I(), null, cmdOf(MAIN)).state.contract!;
+    const c = ev(CALM(), null, cmdOf(MAIN)).state.contract!;
     const mate = c.roles.find(r => r.actorId === 'mate'); const me = c.roles.find(r => r.actorId === 'player');
     return (mate?.primaryRole === 'earner' && mate.explicit && me?.primaryRole === 'controller') || JSON.stringify(c.roles.map(r => [r.actorId, r.primaryRole, r.explicit]));
   });
@@ -109283,9 +109777,15 @@ export function runTeamIntelligence2SelfTests(): V9SelfTestResult[] {
     const b = ev(I({ nswOpponentCost: 400, turn: 8 }), a.state);
     return b.fired.length === 0 || `re-fired ${b.fired.map(c => c.id).join(',')}`;
   });
-  check('tos_contingency_authority', 'Contingency: player contingencies surface as proposals (advisory) — no silent strategy change', () => {
+  check('tos_contingency_authority', 'Contingency: the player’s own contingency applies at once; Team OS defaults only propose (advisor)', () => {
     const a = ev(I({ nswOpponentCost: 400 }), null, cmdOf(MAIN)!);
-    return a.state.proposals.some(p => p.status === 'open' && p.requiresApproval) || 'no proposal';
+    const own = a.state.contract!.contingencies.find(c => c.source === 'player');
+    if (!own || own.authority !== 'automatic' || own.status !== 'triggered') return `own: ${JSON.stringify(own)}`;
+    if (a.state.contract!.roles.find(r => r.actorId === 'mate')?.primaryRole !== 'support') return 'support role not applied';
+    const b = ev(I({ nswOpponentCost: 400, humanMoney: 500, mateMoney: 600 }));   // free cash below the default liquidity guard
+    const def = b.state.contract!.contingencies.find(c => c.source === 'default' && c.status === 'triggered');
+    if (!def) return 'default contingency did not fire';
+    return (def.authority === 'advisory' && b.state.proposals.some(p => p.status === 'open' && p.requiresApproval)) || JSON.stringify(def);
   });
 
   // Replanning
@@ -109383,7 +109883,7 @@ export function runTeamIntelligence2SelfTests(): V9SelfTestResult[] {
     const settings = { teamIntelligenceOsEnabled: true, teamOsAuthorityLevel: 'advisor' };
     if (teamOsGoalForActor(auto, 'team_player', 'mate', settings) !== null) return 'advisor + automatic plan changed AI goals';
     if (teamOsGoalForActor(auto, 'team_player', 'mate', { ...settings, teamIntelligenceOsEnabled: false }) !== null) return 'disabled Team OS changed AI goals';
-    const applied = { version: 1 as const, byTeam: { team_player: ev(I(), null, cmdOf(MAIN)).state } };
+    const applied = { version: 1 as const, byTeam: { team_player: ev(CALM(), null, cmdOf(MAIN)).state } };
     const g = teamOsGoalForActor(applied, 'team_player', 'mate', settings);
     return (g !== null && g.ownerActorId === 'mate' && g.kind === 'money') || JSON.stringify(g);
   });
@@ -109437,6 +109937,406 @@ export function runTeamIntelligence2SelfTests(): V9SelfTestResult[] {
     const d = buildTeamDebrief(s);
     return (d.length >= 2 && d.some(l => /revision|strategy|mission/i.test(l))) || d.join(' | ');
   });
+  return results;
+}
+
+// ---- Team OS live-integration + multi-turn scenario tests (V8.6) --------------------------------
+
+/** Deterministic AI-run team fixture (the enemy's perspective): two AI actors, no human. */
+export function createEnemyTeamOSFixtureInputs(overrides?: Partial<TeamOSInputs>): TeamOSInputs {
+  const actors: TeamOSActorInput[] = [
+    { id: 'ai', name: 'Jordan', isHuman: false, money: 9000, protectedCash: 0, inRecovery: false, location: 'VIC', apRemaining: null, brainRole: 'controller' },
+    { id: 'enemy_ai_2', name: 'Morgan', isHuman: false, money: 3000, protectedCash: 0, inRecovery: false, location: 'SA', apRemaining: null, brainRole: 'earner' }
+  ];
+  const regions: TeamOSRegionInput[] = Object.keys(REGIONS).map(code => ({
+    code, name: REGIONS[code].name || code,
+    controlledByTeam: code === 'VIC' || code === 'TAS', controlledByOpponent: code === 'NSW',
+    opponentCostToTake: code === 'VIC' ? 2001 : code === 'TAS' ? 800 : null,
+    teamCostToTake: code === 'VIC' || code === 'TAS' ? 0 : code === 'NSW' ? 1501 : 1,
+    travelCostFor: Object.fromEntries(actors.map(a => [a.id, a.location === code ? 0 : 150]))
+  }));
+  return {
+    teamId: 'team_opponent', teamName: 'Rose Team', turn: 7, day: 4, totalDays: 30, actors,
+    // Fog of war from the enemy's side: the human team's cash and positions are hidden.
+    opponents: [{ id: 'player', name: 'Adam', money: null, location: null, visible: false }, { id: 'mate', name: 'Riley', money: null, location: null, visible: false }],
+    regions, treasury: { balance: 3000, reserve: 1000, pendingRequests: 0 }, governorEnabled: true, governanceMode: 'LEADER_DECIDES',
+    overseer: { mode: 'aggressive', safeMode: false, lockedActorIds: [] }, pendingApprovals: 0,
+    win: { metric: 'regions', label: 'Most regions', teamValue: 2, opponentValue: 1, regionsTarget: 5, teamRegions: 2, opponentRegions: 1 },
+    scenarioObjectives: [], playerPlan: null, brainGoal: null, fogOfWar: true, authority: 'autonomous', planningDepth: 'standard',
+    ...overrides
+  } as TeamOSInputs;
+}
+
+export function runTeamOsScenarioSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const I = createTeamOSFixtureInputs;
+  const MAIN = "I'll defend NSW. Riley makes money. Keep $8K safe. If NSW gets dangerous, have Riley help me.";
+  const cmdOf = (q: string, inputs?: TeamOSInputs) => {
+    const w = createTeamGIFixtureWorld(inputs || I({ rivalMoney: 1000 }));
+    return parseTeamCommandFromFrame(parseGILanguage(q, w, createGIConversationContext()), w, createGIConversationContext());
+  };
+  const SET = { teamIntelligenceOsEnabled: true, teamOsAuthorityLevel: 'advisor', teamOsEnemyEnabled: true };
+  // Governor stand-in with the canonical shape: blocks spends that would leave the actor under $1,500.
+  const governorFor = (inputs: TeamOSInputs) => (actorId: string, _cat: string, cost: number) => {
+    const a = inputs.actors.find(x => x.id === actorId);
+    return a && a.money - a.protectedCash - cost >= 1500 ? { approved: true, reason: 'approved' } : { approved: false, reason: 'accumulation phase reserve of $1500 would be breached.' };
+  };
+  const withGov = (inputs: TeamOSInputs) => { inputs.governorCheck = governorFor(inputs); return inputs; };
+  const calm = (o?: any) => withGov(I({ rivalMoney: 1000, ...o }));
+  const hot = (o?: any) => withGov(I({ rivalMoney: 9000, nswOpponentCost: 900, ...o }));
+  /** Mirrors the component: evaluate → signature → loop-safe commit → the commit re-renders. */
+  const runtime = () => {
+    let stored: TeamOperatingSystemState = { version: 1, byTeam: {} };
+    const last: Record<string, string> = {};
+    let dispatches = 0; let turnSeen = -1; let commits = 0;
+    const render = (inputs: TeamOSInputs, command: TeamCommandIntent | null = null) => {
+      if (inputs.turn !== turnSeen) { turnSeen = inputs.turn; commits = 0; }
+      const ev = evaluateTeamOperatingSystem(stored.byTeam[inputs.teamId] || null, inputs, command);
+      const d = decideTeamOsPersistence(stored.byTeam[inputs.teamId] || null, ev.state, last[inputs.teamId] || null, commits);
+      if (d.commit) { stored = { version: 1, byTeam: { ...stored.byTeam, [inputs.teamId]: ev.state } }; last[inputs.teamId] = d.signature; dispatches += 1; commits += 1; }
+      return { ev, d };
+    };
+    /** Re-render (as React would after a commit) until nothing more is committed. */
+    const settle = (inputs: TeamOSInputs, command: TeamCommandIntent | null = null) => {
+      const before = dispatches;
+      render(inputs, command);
+      for (let i = 0; i < 6; i++) { const n = dispatches; render(inputs); if (dispatches === n) break; }
+      return dispatches - before;
+    };
+    return { render, settle, get stored() { return stored; }, get dispatches() { return dispatches; } };
+  };
+  const goal = (os: TeamOperatingSystemState, actorId: string, teamId = 'team_player', aiTeam = false) => teamOsGoalForActor(os, teamId, actorId, SET, { aiTeam });
+  const ser = (s: TeamOSTeamState | null | undefined) => serializeTeamOperatingSystemState({ version: 1, byTeam: s ? { t: s } : {} });
+
+  // ---- Persistence ----
+  check('tosl_persist_loop_safe', 'Persistence: a commit re-evaluates to the same signature — no render loop', () => {
+    const rt = runtime();
+    const first = rt.settle(calm(), cmdOf(MAIN));
+    if (first !== 1) return `strategy creation took ${first} dispatches`;
+    for (let i = 0; i < 10; i++) rt.render(calm());
+    return rt.dispatches === 1 || `${rt.dispatches} dispatches for identical renders`;
+  });
+  check('tosl_persist_identical', 'Persistence: identical evaluation never dispatches; a $100 change does not either', () => {
+    const rt = runtime();
+    rt.settle(calm(), cmdOf(MAIN));
+    const n = rt.dispatches;
+    rt.settle(calm({ humanMoney: 6100 }));
+    return rt.dispatches === n || `dispatched ${rt.dispatches - n} time(s) for a $100 change`;
+  });
+  check('tosl_persist_same_turn_resource', 'Persistence: a same-turn resource change persists without a new revision', () => {
+    const rt = runtime();
+    rt.settle(calm(), cmdOf(MAIN));
+    const rev = rt.stored.byTeam.team_player.contract!.revision;
+    const cashBefore = rt.stored.byTeam.team_player.contract!.objectives.find(o => o.type === 'raise_cash')!.progress;
+    const n = rt.settle(calm({ mateMoney: 5500 }));   // same turn: Riley earned $3,000
+    const s = rt.stored.byTeam.team_player;
+    const cashAfter = s.contract!.objectives.find(o => o.type === 'raise_cash')!.progress;
+    if (n < 1) return 'resource change was not persisted';
+    if (s.contract!.revision !== rev) return `unnecessary revision ${rev} → ${s.contract!.revision}`;
+    return cashAfter > cashBefore || `cash progress ${cashBefore} → ${cashAfter}`;
+  });
+  check('tosl_persist_same_turn_contingency', 'Persistence: a same-turn contingency persists and reaches Strategic Command', () => {
+    const rt = runtime();
+    rt.settle(calm({ mateMoney: 6000 }), cmdOf(MAIN));
+    const g1 = goal(rt.stored, 'mate');
+    rt.settle(hot({ mateMoney: 6000 }));   // same turn 7: NSW becomes critical
+    const s = rt.stored.byTeam.team_player;
+    const c = s.contract!.contingencies.find(x => x.source === 'player');
+    const g2 = goal(rt.stored, 'mate');
+    if (c?.status !== 'triggered') return `contingency ${c?.status}`;
+    if (!g2 || !/support/i.test(g2.description)) return `goal after: ${g2?.description}`;
+    return (g1?.id !== g2.id && shouldSupersedeTeamOsDirective({ teamOsTaskId: teamOsTaskIdFromGoal(g1) }, g2)) || 'old directive not superseded';
+  });
+  check('tosl_persist_same_turn_task', 'Persistence: a same-turn task completion persists', () => {
+    const rt = runtime();
+    rt.settle(calm(), cmdOf('I defend NSW while Riley takes ACT'));
+    const reach = rt.stored.byTeam.team_player.contract!.taskGraph.find(t => t.type === 'reach_region');
+    if (!reach) return 'no reach task';
+    const moved = calm(); moved.actors = moved.actors.map(a => (a.id === 'mate' ? { ...a, location: 'ACT' } : a)); moved.governorCheck = governorFor(moved);
+    const n = rt.settle(moved);
+    const after = rt.stored.byTeam.team_player.contract!.taskGraph.find(t => t.id === reach.id);
+    return (n >= 1 && after?.status === 'completed') || `status ${after?.status}, dispatches ${n}`;
+  });
+  check('tosl_persist_budget', 'Persistence: the per-turn commit budget stops any oscillation', () => {
+    const s = evaluateTeamOperatingSystem(null, calm(), cmdOf(MAIN)).state;
+    const d = decideTeamOsPersistence(null, s, null, TEAM_OS_MAX_COMMITS_PER_TURN);
+    return (!d.commit && /budget/.test(d.reason)) || JSON.stringify(d);
+  });
+
+  // ---- Strategic Command ----
+  check('tosl_sc_player_command_persists', 'Strategic Command: the player command survives a contingency replan cycle', () => {
+    const rt = runtime();
+    rt.settle(calm({ mateMoney: 6000 }), cmdOf(MAIN));
+    rt.settle(hot({ mateMoney: 6000, turn: 8 }));
+    rt.settle(calm({ mateMoney: 6000, turn: 9 }));
+    const c = rt.stored.byTeam.team_player.contract!;
+    return (c.source === 'player_command' && c.constraints.reserveFloor === 8000 && c.roles.find(r => r.actorId === 'mate')?.primaryRole === 'earner') || JSON.stringify({ src: c.source, floor: c.constraints.reserveFloor, roles: c.roles.map(r => r.primaryRole) });
+  });
+  check('tosl_sc_never_stale', 'Strategic Command: never receives the previous assignment after a strategy change', () => {
+    const rt = runtime();
+    rt.settle(calm(), cmdOf('I defend NSW while Riley takes ACT'));
+    const g1 = goal(rt.stored, 'mate');
+    rt.settle(calm(), cmdOf('Riley earns, I defend NSW'));
+    const g2 = goal(rt.stored, 'mate');
+    return (g1 !== null && g2 !== null && g1.id !== g2.id && g2.kind === 'money' && shouldSupersedeTeamOsDirective({ teamOsTaskId: teamOsTaskIdFromGoal(g1) }, g2)) || `${g1?.description} → ${g2?.description}`;
+  });
+
+  // ---- Resources ----
+  check('tosl_resources_conflict', 'Resources: $12K defense + $10K expansion + $8K reserve from $20K → explicit conflict, no double allocation', () => {
+    const inputs = I({ humanMoney: 16500 });
+    const objectives: TeamObjective[] = [
+      { id: 'obj_hold', description: 'Hold New South Wales', type: 'hold_region', priority: 1, tier: 6, status: 'active', progress: 0, dependencies: [], completionCondition: '', failureCondition: '', horizonTurns: 3, assignedActorIds: [], requiredCash: 12000, reason: '', regionId: 'NSW' },
+      { id: 'obj_take', description: 'Take Victoria', type: 'take_region', priority: 2, tier: 8, status: 'active', progress: 0, dependencies: [], completionCondition: '', failureCondition: '', horizonTurns: 3, assignedActorIds: [], requiredCash: 10000, reason: '', regionId: 'VIC' }
+    ];
+    const res = planTeamResources(inputs, objectives, 8000);
+    if (res.freeCash !== 20000) return `free ${res.freeCash}`;
+    const allocated = res.envelopes.reduce((s, e) => s + e.allocated, 0);
+    if (allocated > res.freeCash) return `allocated ${allocated} > ${res.freeCash}`;
+    const def = res.envelopes.find(e => e.category === 'defense'); const exp = res.envelopes.find(e => e.category === 'expansion'); const em = res.envelopes.find(e => e.category === 'emergency');
+    if (em?.allocated !== 8000 || def?.allocated !== 12000 || (exp?.allocated || 0) !== 0) return JSON.stringify(res.envelopes);
+    const det = detectTeamConflicts(inputs, objectives, [], res);
+    const vic = det.objectives.find(o => o.id === 'obj_take');
+    return (det.conflicts.some(c => c.type === 'objective_vs_objective' || c.type === 'resource_collision') && vic?.status === 'paused') || JSON.stringify({ c: det.conflicts.map(c => c.type), vic: vic?.status });
+  });
+  check('tosl_resources_partial', 'Resources: a lower-priority envelope is partially allocated and the competition is explicit', () => {
+    const inputs = I({ humanMoney: 16500 });
+    const objectives: TeamObjective[] = [
+      { id: 'obj_hold', description: 'Hold New South Wales', type: 'hold_region', priority: 1, tier: 8, status: 'active', progress: 0, dependencies: [], completionCondition: '', failureCondition: '', horizonTurns: 3, assignedActorIds: [], requiredCash: 12000, reason: '', regionId: 'NSW' },
+      { id: 'obj_contract', description: 'Finish contracts', type: 'complete_contract', priority: 2, tier: 8, status: 'active', progress: 0, dependencies: [], completionCondition: '', failureCondition: '', horizonTurns: 3, assignedActorIds: [], requiredCash: 10000, reason: '' }
+    ];
+    const res = planTeamResources(inputs, objectives, null);
+    const det = detectTeamConflicts(inputs, objectives, [], res);
+    const cont = res.envelopes.find(e => e.category === 'contracts');
+    return (cont?.allocated === 8000 && det.conflicts.some(c => c.type === 'resource_collision' && /partially allocated/.test(c.selectedResolution || ''))) || JSON.stringify({ env: res.envelopes, c: det.conflicts.map(c => c.selectedResolution) });
+  });
+  check('tosl_resources_reserve_floor', 'Resources: the strategy reserve makes spending that breaks it strategically unavailable', () => {
+    const noTreasury = hot({ humanMoney: 1500, mateMoney: 1000 }); noTreasury.treasury = null;
+    const s = evaluateTeamOperatingSystem(null, noTreasury, cmdOf(MAIN)).state;
+    const defend = s.contract!.taskGraph.find(t => t.type === 'defend_region');
+    if (!defend || defend.status !== 'blocked' || !/reserve/.test(defend.blockers[0] || '')) return JSON.stringify(defend);
+    const ctx = buildTeamStrategicSpendContext({ version: 1, byTeam: { team_player: s } }, 'team_player', 'mate', 'region_deposit', 'NSW');
+    const b = teamStrategicSpendBias(ctx ? { ...ctx, isContingencyResponse: false } : null, 1000, 3500);
+    return (b.bias < 0 && /reserve/.test(b.reason || '')) || JSON.stringify(b);
+  });
+  check('tosl_resources_spend_lock', 'Resources: a spend lock removes Team OS spending tasks, goals and bias for that actor', () => {
+    const cmd = cmdOf('I defend NSW while Riley takes ACT. Stop Riley from spending.');
+    if (!cmd?.spendLocks.includes('mate')) return `locks: ${JSON.stringify(cmd?.spendLocks)}`;
+    const s = evaluateTeamOperatingSystem(null, calm(), cmd).state;
+    const spend = s.contract!.taskGraph.filter(t => t.assignedActorIds.includes('mate') && t.resourceRequirement > 0 && t.type !== 'support_actor');
+    const g = goal({ version: 1, byTeam: { team_player: s } }, 'mate');
+    const ctx = buildTeamStrategicSpendContext({ version: 1, byTeam: { team_player: s } }, 'team_player', 'mate', 'region_deposit', 'ACT');
+    const bias = teamStrategicSpendBias(ctx, 500, 9000);
+    return (!spend.length && (!g || g.kind !== 'control') && bias.bias < 0) || JSON.stringify({ spend: spend.map(t => t.id), g: g?.description, bias });
+  });
+  check('tosl_resources_treasury_canonical', 'Resources: Team OS never changes Treasury or actor balances (planning only)', () => {
+    const inputs = hot({ mateMoney: 1800 });
+    const before = JSON.stringify({ t: inputs.treasury, a: inputs.actors });
+    const e = evaluateTeamOperatingSystem(null, inputs, cmdOf(MAIN));
+    const after = JSON.stringify({ t: inputs.treasury, a: inputs.actors });
+    return (before === after && e.resources.treasuryBalance === 4000) || 'inputs mutated';
+  });
+  check('tosl_deprioritized_region', 'Constraints: “Stop caring about VIC” generates no VIC expansion goal', () => {
+    const cmd = cmdOf('Stop caring about VIC for now. Riley takes VIC.');
+    const s = evaluateTeamOperatingSystem(null, calm(), cmd).state;
+    const vicTasks = s.contract!.taskGraph.filter(t => t.regionId === 'VIC' && (t.type === 'take_region' || t.type === 'reach_region'));
+    const g = goal({ version: 1, byTeam: { team_player: s } }, 'mate');
+    return (!vicTasks.length && g?.targetRegion !== 'VIC') || JSON.stringify({ vic: vicTasks.map(t => t.id), g: g?.description });
+  });
+
+  // ---- Governor ----
+  check('tosl_governor_context', 'Governor: mission context is supplied; the block remains authoritative; Treasury alternative offered', () => {
+    const s = evaluateTeamOperatingSystem(null, hot({ mateMoney: 2000 }), cmdOf(MAIN)).state;
+    const ctx = buildTeamStrategicSpendContext({ version: 1, byTeam: { team_player: s } }, 'team_player', 'mate', 'region_deposit', 'NSW');
+    if (!ctx?.taskId || ctx.missionImportance !== 'critical' || !ctx.isContingencyResponse) return JSON.stringify(ctx);
+    const r = annotateGovernorRulingWithStrategy({ approved: false, reason: 'accumulation phase reserve of $1500 would be breached.' }, ctx, 1000, 1500);
+    if (r.approved) return 'Team OS approved a blocked spend';
+    return (/Team Strategy/.test(r.reason) && r.alternatives.some(a => /Treasury/.test(a))) || JSON.stringify(r);
+  });
+  check('tosl_governor_no_spam', 'Governor: a Governor-blocked task is not handed to Strategic Command repeatedly; no revision churn', () => {
+    const inputs = hot({ mateMoney: 2000, humanMoney: 12000 });
+    inputs.treasury = { balance: 2500, reserve: 2500, pendingRequests: 0 };   // Treasury cannot help
+    const rt = runtime();
+    rt.settle(inputs, cmdOf(MAIN));
+    const s = rt.stored.byTeam.team_player;
+    const support = s.contract!.taskGraph.find(t => t.type === 'support_actor');
+    if (support?.status !== 'blocked') return `support ${support?.status}`;
+    const g = goal(rt.stored, 'mate');
+    if (g && g.id === `teamos_${support.id}`) return 'blocked task handed to Strategic Command';
+    const n = rt.dispatches; const revs = s.revisions.length;
+    for (let i = 0; i < 5; i++) rt.settle(inputs);
+    return (rt.dispatches === n && rt.stored.byTeam.team_player.revisions.length === revs) || `dispatches +${rt.dispatches - n}, revisions +${rt.stored.byTeam.team_player.revisions.length - revs}`;
+  });
+  check('tosl_governor_treasury_resolution', 'Treasury resolution: funding makes the task executable; no duplicate money', () => {
+    const rt = runtime();
+    const blocked = hot({ mateMoney: 2000 });
+    rt.settle(blocked, cmdOf(MAIN));
+    const s1 = rt.stored.byTeam.team_player;
+    const fund = s1.contract!.taskGraph.find(t => t.id.startsWith('task_fund_'));
+    if (!fund || fund.status !== 'ready') return `fund task ${fund?.status}`;
+    const free1 = evaluateTeamOperatingSystem(s1, blocked).resources.freeCash;
+    // The Treasury (canonical) approves $1,000 to Riley: balance moves from Treasury to Riley.
+    const funded = hot({ mateMoney: 3000 }); funded.treasury = { balance: 3000, reserve: 2500, pendingRequests: 0 }; funded.governorCheck = governorFor(funded);
+    rt.settle(funded);
+    const s2 = rt.stored.byTeam.team_player;
+    const support = s2.contract!.taskGraph.find(t => t.type === 'support_actor');
+    const fund2 = s2.contract!.taskGraph.find(t => t.id === fund.id);
+    const free2 = evaluateTeamOperatingSystem(s2, funded).resources.freeCash;
+    if (free2 !== free1) return `free cash ${free1} → ${free2} (money duplicated or lost)`;
+    return (support?.status === 'ready' && fund2?.status === 'completed' && /support/i.test(goal(rt.stored, 'mate')?.description || '')) || JSON.stringify({ support: support?.status, fund: fund2?.status });
+  });
+
+  // ---- Longitudinal scenario ----
+  const scenario = () => {
+    const rt = runtime();
+    const log: string[] = [];
+    const snap = (label: string) => { const s = rt.stored.byTeam.team_player; log.push(`${label}|${ser(s)}`); return s; };
+    rt.settle(calm(), cmdOf(MAIN)); snap('t1');
+    rt.settle(calm({ turn: 8, mateMoney: 5500 })); snap('t2');
+    rt.settle(hot({ turn: 9, mateMoney: 2000 })); snap('t3');
+    const t4 = hot({ turn: 10, mateMoney: 3500 }); t4.treasury = { balance: 3000, reserve: 2500, pendingRequests: 0 }; t4.governorCheck = governorFor(t4);
+    rt.settle(t4); snap('t4');
+    rt.settle(calm({ turn: 11, mateMoney: 3500 })); snap('t5');
+    return { rt, log };
+  };
+  check('tosl_scenario_defend_recover_expand', 'Scenario: defend → earn → pressure → Treasury → stabilise', () => {
+    const rt = runtime();
+    rt.settle(calm(), cmdOf(MAIN));
+    let s = rt.stored.byTeam.team_player;
+    const c1 = s.contract!;
+    if (c1.roles.find(r => r.actorId === 'player')?.primaryRole !== 'controller' || c1.roles.find(r => r.actorId === 'mate')?.primaryRole !== 'earner' || c1.constraints.reserveFloor !== 8000) return 'turn 1 roles/reserve';
+    if (!['defend_region', 'generate_cash', 'preserve_reserve'].every(t => c1.taskGraph.some(x => x.type === t))) return `turn 1 tasks: ${c1.taskGraph.map(t => t.type).join(',')}`;
+    const rev1 = c1.revision;
+    rt.settle(calm({ turn: 8, mateMoney: 5500 }));
+    s = rt.stored.byTeam.team_player;
+    if (s.contract!.revision !== rev1) return 'turn 2 created an unnecessary revision';
+    if (!(s.contract!.objectives.find(o => o.type === 'raise_cash')!.progress > 0)) return 'turn 2 cash progress did not move';
+    rt.settle(hot({ turn: 9, mateMoney: 2000 }));
+    s = rt.stored.byTeam.team_player;
+    if (s.contract!.contingencies.find(c => c.source === 'player')?.status !== 'triggered') return 'turn 3 contingency did not trigger';
+    if (s.contract!.roles.find(r => r.actorId === 'mate')?.primaryRole !== 'support') return 'turn 3 Riley not on support';
+    if (s.contract!.taskGraph.find(t => t.type === 'support_actor')?.status !== 'blocked') return 'turn 3 support should be Governor-blocked';
+    const t4 = hot({ turn: 10, mateMoney: 3500 }); t4.treasury = { balance: 3000, reserve: 2500, pendingRequests: 0 }; t4.governorCheck = governorFor(t4);
+    rt.settle(t4);
+    s = rt.stored.byTeam.team_player;
+    if (s.contract!.taskGraph.find(t => t.type === 'support_actor')?.status !== 'ready') return `turn 4 support ${s.contract!.taskGraph.find(t => t.type === 'support_actor')?.status}`;
+    rt.settle(calm({ turn: 11, mateMoney: 3500 }));
+    s = rt.stored.byTeam.team_player;
+    const own = s.contract!.contingencies.find(c => c.source === 'player');
+    if (own?.status !== 'resolved') return `turn 5 contingency ${own?.status}`;
+    if (s.contract!.roles.find(r => r.actorId === 'mate')?.primaryRole !== 'earner') return 'turn 5 Riley did not return to earning';
+    return s.revisions.some(r => /resolved/i.test(r.trigger)) || s.revisions.map(r => r.trigger).join(' | ');
+  });
+  check('tosl_scenario_replay', 'Replay: the same scenario reproduces identical revisions, roles, tasks and contingencies', () => {
+    const a = scenario().log; const b = scenario().log;
+    return (a.length === b.length && a.every((x, i) => x === b[i])) || `diverged at ${a.findIndex((x, i) => x !== b[i])}`;
+  });
+  check('tosl_scenario_save_load', 'Save/load mid-plan: identical strategy and no duplicate contingency firing', () => {
+    const { rt } = scenario();
+    const mid = runtime();
+    mid.settle(calm(), cmdOf(MAIN));
+    mid.settle(hot({ turn: 9, mateMoney: 2000 }));
+    const s = mid.stored.byTeam.team_player;
+    const loaded = sanitizeTeamOperatingSystemState(JSON.parse(JSON.stringify(serializeTeamOperatingSystemState(mid.stored)) && serializeTeamOperatingSystemState(mid.stored))).byTeam.team_player;
+    if (ser(loaded) !== ser(s)) return 'loaded state differs';
+    const again = evaluateTeamOperatingSystem(loaded, hot({ turn: 9, mateMoney: 2000 }));
+    void rt;
+    return (again.fired.length === 0 && teamOsStateSignature(again.state) === teamOsStateSignature(s)) || `fired ${again.fired.map(c => c.id)}`;
+  });
+  check('tosl_role_hysteresis', 'Roles: mild fluctuation never flips roles every turn; a major trigger can', () => {
+    const rt = runtime();
+    const roles: string[] = [];
+    for (let t = 0; t < 6; t++) {
+      const inputs = calm({ turn: 7 + t, mateMoney: 2500 + (t % 2) * 300 });
+      inputs.actors = inputs.actors.map(a => (a.id === 'mate' ? { ...a, location: t % 2 ? 'ACT' : 'QLD' } : a));
+      inputs.governorCheck = governorFor(inputs);
+      rt.settle(inputs);
+      roles.push(rt.stored.byTeam.team_player.contract!.roles.find(r => r.actorId === 'mate')!.primaryRole);
+    }
+    const flips = roles.filter((r, i) => i && r !== roles[i - 1]).length;
+    return flips <= 1 || roles.join(' → ');
+  });
+
+  // ---- Enemy Team OS / AI vs AI ----
+  check('tosl_enemy_same_architecture', 'Enemy Team OS: same evaluator, coordinated roles, no human tasks, own goals', () => {
+    const e = evaluateTeamOperatingSystem(null, createEnemyTeamOSFixtureInputs());
+    const c = e.state.contract!;
+    if (c.teamId !== 'team_opponent') return `teamId ${c.teamId}`;
+    if (c.taskGraph.some(t => t.humanStatus)) return 'enemy has human tasks';
+    const exclusive = c.taskGraph.filter(t => ['defend_region', 'take_region', 'generate_cash'].includes(t.type) && t.assignedActorIds.length > 1);
+    if (exclusive.length) return 'duplicate scarce-resource assignment';
+    const os = { version: 1 as const, byTeam: { team_opponent: e.state } };
+    const g1 = goal(os, 'ai', 'team_opponent', true); const g2 = goal(os, 'enemy_ai_2', 'team_opponent', true);
+    return (g1 !== null && g2 !== null && g1.id !== g2.id) || JSON.stringify({ g1: g1?.description, g2: g2?.description, tasks: c.taskGraph.map(t => `${t.id}<${t.assignedActorIds}>${t.status}`) });
+  });
+  check('tosl_enemy_no_hidden_info', 'Enemy Team OS: fog of war hides the human team — no affordability claims, no player cash', () => {
+    const inputs = createEnemyTeamOSFixtureInputs();
+    const e = evaluateTeamOperatingSystem(null, inputs);
+    if (inputs.opponents.some(o => o.money !== null || o.visible)) return 'hidden opponent data present';
+    if (e.snapshot.threatenedRegions.some(t => t.opponentCanAfford !== null)) return 'claimed to know the human team can afford a region';
+    return !/6,000|\$6000/.test(JSON.stringify(e.state)) || 'human cash leaked into the enemy plan';
+  });
+  check('tosl_enemy_difficulty_quality', 'Enemy Team OS: difficulty changes planning quality, not information', () => {
+    const basic = createEnemyTeamOSFixtureInputs({ planningDepth: 'basic' });
+    const deep = createEnemyTeamOSFixtureInputs({ planningDepth: 'deep' });
+    const strip = (x: TeamOSInputs) => JSON.stringify({ ...x, planningDepth: null, governorCheck: null });
+    if (strip(basic) !== strip(deep)) return 'information differs between difficulties';
+    const cb = evaluateTeamOperatingSystem(null, basic).state.contract!.contingencies.length;
+    const cd = evaluateTeamOperatingSystem(null, deep).state.contract!.contingencies.length;
+    return (cd > cb && teamOsPlanningDepthFor('expert') === 'deep' && teamOsPlanningDepthFor('easy') === 'basic') || `contingencies basic ${cb}, deep ${cd}`;
+  });
+  check('tosl_enemy_adjusts', 'Enemy Team OS: a material player action (enemy loses TAS) replans the enemy strategy', () => {
+    const a = evaluateTeamOperatingSystem(null, createEnemyTeamOSFixtureInputs());
+    const lost = createEnemyTeamOSFixtureInputs({ turn: 8 });
+    lost.regions = lost.regions.map(r => (r.code === 'TAS' ? { ...r, controlledByTeam: false, controlledByOpponent: true, opponentCostToTake: null, teamCostToTake: 900 } : r));
+    lost.win = { ...lost.win!, teamRegions: 1, opponentRegions: 2 };
+    const b = evaluateTeamOperatingSystem(a.state, lost);
+    return (b.state.contract!.revision > a.state.contract!.revision && /TAS/.test(b.state.revisions[b.state.revisions.length - 1].trigger)) || b.state.revisions.map(r => r.trigger).join(' | ');
+  });
+  check('tosl_ai_vs_ai', 'AI vs AI: two independent Team Operating Systems — separate state, actors, missions; deterministic', () => {
+    const run = () => {
+      const rt = runtime();
+      const friendly = I({ rivalMoney: 1000, authority: 'autonomous', planningDepth: 'deep' } as any);
+      friendly.actors = friendly.actors.map(a => ({ ...a, isHuman: false }));
+      rt.settle(friendly); rt.settle(createEnemyTeamOSFixtureInputs());
+      return rt.stored;
+    };
+    const s = run();
+    const a = s.byTeam.team_player?.contract; const b = s.byTeam.team_opponent?.contract;
+    if (!a || !b) return 'missing a team';
+    const aActors = new Set(['player', 'mate']); const bActors = new Set(['ai', 'enemy_ai_2']);
+    if (a.taskGraph.some(t => t.assignedActorIds.some(id => !aActors.has(id)))) return 'team A task assigned to a team B actor';
+    if (b.taskGraph.some(t => t.assignedActorIds.some(id => !bActors.has(id)))) return 'team B task assigned to a team A actor';
+    if (a.id === b.id) return 'shared contract id';
+    if (goal(s, 'mate', 'team_opponent', true) !== null) return 'cross-team goal lookup succeeded';
+    return serializeTeamOperatingSystemState(run()) === serializeTeamOperatingSystemState(s) || 'non-deterministic';
+  });
+  check('tosl_ledger_events', 'Ledger: meaningful events only — contingency activation logged once, identical recomputation logs nothing', () => {
+    const s1 = evaluateTeamOperatingSystem(null, calm({ mateMoney: 6000 }), cmdOf(MAIN)).state;
+    const s2 = evaluateTeamOperatingSystem(s1, hot({ mateMoney: 6000 })).state;
+    const ev = teamOsLedgerEvents(s1, s2);
+    const s3 = evaluateTeamOperatingSystem(s2, hot({ mateMoney: 6000 })).state;
+    const again = teamOsLedgerEvents(s2, s3);
+    return (ev.some(e => e.kind === 'contingency_activated') && again.length === 0 && teamOsLedgerEvents(null, s1).some(e => e.kind === 'strategy_overridden' || e.kind === 'strategy_created')) || JSON.stringify({ ev, again });
+  });
+  check('tosl_gi_live_blocker', 'Game Intelligence: explains a live blocker with Governor + Treasury evidence', () => {
+    const inputs = hot({ mateMoney: 2000 });
+    const s = evaluateTeamOperatingSystem(null, inputs, cmdOf(MAIN)).state;
+    const w = createTeamGIFixtureWorld(inputs, s);
+    const r = runGameIntelligenceCore("Why isn't Riley defending NSW?", w, createGIConversationContext());
+    const text = r.answer.lines.join(' ');
+    return (r.understanding.primary === 'team_explain' && /Governor/.test(text) && /Treasury/.test(text) && /support/i.test(text)) || text.slice(0, 400);
+  });
+  check('tosl_gi_enemy_boundary', 'Game Intelligence: enemy questions use observable evidence only', () => {
+    const w = createTeamGIFixtureWorld();
+    const r = runGameIntelligenceCore('What is the enemy team probably trying to do?', w, createGIConversationContext());
+    const text = r.answer.lines.join(' ');
+    return (r.understanding.primary === 'team_explain' && /observe/.test(text) && !/envelope|task #|priority 1/i.test(text)) || text.slice(0, 300);
+  });
+  check('tosl_version', 'GAME_VERSION reports 8.6.0', () => GAME_VERSION === '8.6.0' || GAME_VERSION);
   return results;
 }
 
@@ -110634,6 +111534,12 @@ function AustraliaGame() {
   // Latest stored Team Operating System state for callbacks that run outside render (Strategic Command).
   const teamOsStateRef = useRef<TeamOperatingSystemState | undefined>(undefined);
   teamOsStateRef.current = (gameState as any).teamOperatingSystem;
+  // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
+  // section below has been evaluated for this render).
+  const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
+  const teamOsLiveBiasRef = useRef<(actor: any, category: string, amount: number, regionId: string | null) => { bias: number; reason: string | null; ctx: TeamStrategicSpendContext | null }>(() => ({ bias: 0, reason: null, ctx: null }));
+  const teamOsGovernorNoteRef = useRef<(actor: any, category: string, amount: number, regionId: string | null, reason: string) => string>((_a, _c, _m, _r, reason) => reason);
+  const syncTeamOsForDirectivesRef = useRef<(teamId: string, live: { actors?: Record<string, any>; teams?: Record<string, any>; turn?: number; day?: number }) => TeamOperatingSystemState | undefined>(() => undefined);
   const effectiveTeamOverviewDensity = teamOverviewDensitySessionOverride ?? gameSettings.teamOverviewDensity ?? 'comfortable';
   const isCompactOverview = effectiveTeamOverviewDensity === 'compact';
   const isCompetitiveMode = useMemo(() => isCompetitiveModeSelection(gameState.selectedMode), [gameState.selectedMode]);
@@ -113274,6 +114180,8 @@ function dispatchGameSettingsChange(
         teamOsAuthorityLevel: (['manual', 'advisor', 'assisted', 'delegated', 'autonomous'] as string[]).includes(settingsData.teamOsAuthorityLevel)
           ? settingsData.teamOsAuthorityLevel
           : DEFAULT_GAME_SETTINGS.teamOsAuthorityLevel,
+        teamOsEnemyEnabled: typeof settingsData.teamOsEnemyEnabled === 'boolean' ? settingsData.teamOsEnemyEnabled : DEFAULT_GAME_SETTINGS.teamOsEnemyEnabled,
+        teamOsFullInspectionEnabled: typeof settingsData.teamOsFullInspectionEnabled === 'boolean' ? settingsData.teamOsFullInspectionEnabled : DEFAULT_GAME_SETTINGS.teamOsFullInspectionEnabled,
         economyCashFloor: clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
         // Never sanitized below economyCashFloor (post-clamp), so the recovery target can never
         // be misconfigured lower than the floor it's supposed to be above.
@@ -129654,10 +130562,28 @@ function dispatchGameSettingsChange(
             currentTurn: projectedTurnCounter
           };
           const goal = chooseTeamObjective(team, opponentTeamState || null, directiveContext);
+          // Team Intelligence 2.0: bring this team's Team OS up to date with everything that happened so
+          // far (same-turn events included) and commit it BEFORE any directive is generated.
+          const teamOsLive = syncTeamOsForDirectivesRef.current(teamId, { actors: projectedActors, teams: teamsByIdRef.current, turn: projectedTurnCounter, day: newDay });
+          const teamOsAiTeam = teamId !== (player?.teamId || TEAM_PLAYER_ID) || gameState.selectedMode === 'team_ai_vs_ai';
 
           (team.actorIds || []).forEach(actorId => {
             const actor = projectedActors[actorId];
             if (!actor || actor.kind !== 'ai') return;
+            const teamOsGoal = teamOsGoalForActor(teamOsLive, teamId, actorId, gameSettings, { aiTeam: teamOsAiTeam });
+            // A live directive built from an older Team OS task is superseded (never act on a stale task).
+            const staleTeamOsDirective = stillLive.find(d => d.assignedActorId === actorId && shouldSupersedeTeamOsDirective(d, teamOsGoal));
+            if (staleTeamOsDirective) {
+              stillLive.splice(stillLive.indexOf(staleTeamOsDirective), 1);
+              updateTeamState(teamId, (prev: any) => ({
+                ...prev,
+                overseer: {
+                  ...prev.overseer,
+                  strategicDirectives: prev.overseer.strategicDirectives.filter((d: any) => d.id !== staleTeamOsDirective.id),
+                  directiveHistory: [...prev.overseer.directiveHistory, { ...staleTeamOsDirective, status: 'reassigned' as TeamDirectiveStatus, completionResult: 'Team Strategy task changed' }].slice(-30)
+                }
+              }));
+            }
             if (stillLive.some(d => d.assignedActorId === actorId)) return;
             // Team AI Overseer System Phase O9 (GD6): user lock — a locked actor never gets a NEW
             // directive generated for them; other, non-locked actors on the same team are unaffected.
@@ -129669,10 +130595,10 @@ function dispatchGameSettingsChange(
               }
               return;
             }
-            // Team Intelligence 2.0: when the player applied a team strategy (or delegated authority),
-            // the actor's Team Strategy task becomes the goal. Everything downstream is unchanged.
-            const teamOsGoal = teamId === (player?.teamId || TEAM_PLAYER_ID) ? teamOsGoalForActor(teamOsStateRef.current, teamId, actorId, gameSettings) : null;
-            const directive = generateTeamDirective(actor, team, teamOsGoal || goal, directiveContext, newDay, projectedTurnCounter);
+            // Team Intelligence 2.0: when the player applied a team strategy (or delegated authority, or the
+            // team is AI-run), the actor's Team Strategy task becomes the goal. Everything downstream is unchanged.
+            const directive: TeamDirective = { ...generateTeamDirective(actor, team, teamOsGoal || goal, directiveContext, newDay, projectedTurnCounter), teamOsTaskId: teamOsTaskIdFromGoal(teamOsGoal) };
+            if (teamOsGoal) recordTeamOsDiagnostics(teamOsDiagRef.current, teamId, { directive: `${actorId}: ${teamOsGoal.description} (day ${newDay})` });
 
             // Team AI Overseer System Phase O6: real 4-way authority-mode dispatch, mirroring
             // Phase O3's exact branching for Adaptive Overseer overlays. Shadow logs only; Advisory
@@ -133736,10 +134662,15 @@ function dispatchGameSettingsChange(
       ? { approved: true, reason: `Governor exception (${regionDepositException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
       : evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { gameState });
     if (regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
-      recordGovernorBlock(actor.id, 'region_deposit', regionDepositGovernorResult.reason);
+      // The Governor's block stands; Team OS only adds the strategic purpose and legitimate alternatives.
+      recordGovernorBlock(actor.id, 'region_deposit', teamOsGovernorNoteRef.current(actor, 'region_deposit', minimalDeposit, actor.currentRegion, regionDepositGovernorResult.reason));
     }
     if (regionDepositAffordable && !gameSettings.negotiationMode && regionDepositGovernorResult.approved) {
       let score = WIN_METRIC_PROFILES[gameSettings.winCondition]?.aiActionScoreBaseline ?? 80;
+      // Team Intelligence 2.0: live strategy context (task priority, reserve floor, spend locks,
+      // deprioritised regions) as a scoring input only — canonical validation still decides.
+      const depositTeamOs = teamOsLiveBiasRef.current(actor, 'region_deposit', minimalDeposit, actor.currentRegion);
+      score += depositTeamOs.bias;
       if (preferredRegion === actor.currentRegion) score += 70;
       if (hasReservationConflict('region', actor.currentRegion)) score -= 160;
       if (followLeadDirective?.payload?.region === actor.currentRegion) score += 55;
@@ -133791,8 +134722,9 @@ function dispatchGameSettingsChange(
       const travelGovernorResult = travelException
         ? { approved: true, reason: `Governor exception (${travelException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
         : evaluateEconomySpendingApproval(actor, 'travel', cost, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { gameState });
-      if (!travelGovernorResult.approved) { recordGovernorBlock(actor.id, 'travel', travelGovernorResult.reason); return; }
+      if (!travelGovernorResult.approved) { recordGovernorBlock(actor.id, 'travel', teamOsGovernorNoteRef.current(actor, 'travel', cost, region, travelGovernorResult.reason)); return; }
       let score = 40 + (((REGIONAL_RESOURCES[region] || []).reduce((sum, resource) => sum + (gameState.resourcePrices[resource] || 100), 0)) / Math.max(1, (REGIONAL_RESOURCES[region] || []).length));
+      score += teamOsLiveBiasRef.current(actor, 'travel', cost, region).bias;
       score += (REGIONS[region]?.challenges || []).filter((challenge: any) => !(actor.completedThisSeason || []).includes(challenge.name)).length * 35;
       if (!actor.visitedRegions.includes(region)) score += 55;
       if (preferredRegion === region) score += 130;
@@ -140845,20 +141777,29 @@ function dispatchGameSettingsChange(
 
   // ---- Team Intelligence 2.0: Team Operating System --------------------------------------------
   // A planning layer ABOVE Team Brain / Strategic Command / Treasury / Governor / Governance. It only
-  // reads canonical state (fog-of-war filtered) and stores the Team Strategy Contract; every action
-  // still goes through the existing executor, validators, approvals and Overseer.
+  // reads canonical state (fog-of-war filtered, per team perspective) and stores the Team Strategy
+  // Contract in gameState.teamOperatingSystem — the ONE canonical Team OS state. Every action still goes
+  // through the existing executor, validators, approvals and Overseer.
   const teamOsEnabled = isTeamMode && gameSettings.teamIntelligenceOsEnabled !== false;
   const teamOsTeamId = String(player?.teamId || TEAM_PLAYER_ID);
+  const teamOsEnemyTeamId = teamOsTeamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+  const teamOsAiOnlyMatch = gameState.selectedMode === 'team_ai_vs_ai';
+  const teamOsEnemyEnabled = teamOsEnabled && gameSettings.teamOsEnemyEnabled !== false;
   const teamOsAuthority: TeamOSAuthorityLevel = (gameSettings.teamOsAuthorityLevel as TeamOSAuthorityLevel) || 'advisor';
-  const buildTeamOsInputs = (): TeamOSInputs | null => {
-    const team: any = (teamsById as any)?.[teamOsTeamId];
+  /** AI-run teams (the enemy, or both teams in AI vs AI) run their own Team OS with delegated authority. */
+  const teamOsIsAiTeam = (teamId: string) => teamId !== teamOsTeamId || teamOsAiOnlyMatch;
+  const buildTeamOsInputs = (teamId: string = teamOsTeamId, live?: { actors?: Record<string, any>; teams?: Record<string, any>; turn?: number; day?: number }): TeamOSInputs | null => {
+    const teamsSrc: any = live?.teams || teamsById;
+    const team: any = teamsSrc?.[teamId];
     if (!team) return null;
     const playerId = String(player?.id || 'player');
     const fog = Boolean(gameSettings.fogOfWarEnabled);
-    const teamActorIds: string[] = Array.from(new Set([playerId, ...((team.actorIds || []) as string[]).map(String)]));
-    const rawActor = (id: string): any => (id === playerId ? player : (actorsById as any)?.[id]);
+    const aiTeam = teamOsIsAiTeam(teamId);
+    const isFriendly = teamId === teamOsTeamId;
+    const teamActorIds: string[] = Array.from(new Set([...(isFriendly ? [playerId] : []), ...((team.actorIds || []) as string[]).map(String)]));
+    const rawActor = (id: string): any => live?.actors?.[id] || (id === playerId ? player : (actorsById as any)?.[id]);
     const actors: TeamOSActorInput[] = teamActorIds.map(id => rawActor(id)).filter(Boolean).map((a: any) => {
-      const isHuman = String(a.id) === playerId;
+      const isHuman = isFriendly && !teamOsAiOnlyMatch && String(a.id) === playerId;
       return {
         id: String(a.id),
         name: String(a.displayName || a.name || a.id),
@@ -140871,108 +141812,230 @@ function dispatchGameSettingsChange(
         brainRole: null
       };
     });
-    const opponentTeamId = teamOsTeamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
-    const opponentTeam: any = (teamsById as any)?.[opponentTeamId];
-    const opponents = ((opponentTeam?.actorIds || []) as string[]).map(id => (actorsById as any)?.[id]).filter(Boolean).map((a: any) => ({
+    const opponentTeamId = teamId === TEAM_PLAYER_ID ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID;
+    const opponentTeam: any = teamsSrc?.[opponentTeamId];
+    // Same information boundary for every team: under fog of war, rival cash and location are hidden.
+    const opponents = ((opponentTeam?.actorIds || []) as string[]).map(id => rawActor(id)).filter(Boolean).map((a: any) => ({
       id: String(a.id), name: String(a.displayName || a.name || a.id), money: fog ? null : Number(a.money || 0), location: fog ? null : (a.currentRegion || null), visible: !fog
     }));
+    const teamKey = teamId === TEAM_PLAYER_ID ? playerControlKey : opponentControlKey;
     const regions: TeamOSRegionInput[] = Object.keys(REGIONS).map(code => {
       const info = getRegionControlInfo(code);
-      const mine = info.controllerId === playerControlKey;
-      const theirs = Boolean(info.controllerId && info.controllerId !== playerControlKey);
+      const mine = info.controllerId === teamKey;
+      const theirs = Boolean(info.controllerId && info.controllerId !== teamKey);
+      const ownCost = teamKey === playerControlKey ? info.minimumPlayerDeposit : info.minimumAiDeposit;
+      const rivalCost = teamKey === playerControlKey ? info.minimumAiDeposit : info.minimumPlayerDeposit;
       const travelCostFor: Record<string, number | null> = {};
       actors.forEach(a => {
         if (!a.location) { travelCostFor[a.id] = null; return; }
         try { travelCostFor[a.id] = a.location === code ? 0 : Number(calculateTravelCost(a.location, code)); } catch { travelCostFor[a.id] = null; }
       });
-      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? info.minimumAiDeposit : null, teamCostToTake: mine ? 0 : info.minimumPlayerDeposit, travelCostFor };
+      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? rivalCost : null, teamCostToTake: mine ? 0 : ownCost, travelCostFor };
     });
     const metric = gameSettings.winCondition;
-    const plan: any = sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamOsTeamId] || null;
+    const plan: any = isFriendly && !aiTeam ? sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamId] || null : null;
     const gs: any = gameState;
+    const teamSettings = getEffectiveGameSettingsForTeam(teamId);
+    const side = teamId === TEAM_PLAYER_ID ? 'player' : 'opponent';
+    const otherSide = side === 'player' ? 'opponent' : 'player';
+    const difficulty = String((gameSettings.teamDifficultyOverrides || {})[teamId] || gameSettings.teamModeAiDifficultyPreset || '');
     return {
-      teamId: teamOsTeamId,
-      teamName: String(team.name || teamOsTeamId),
-      turn: Number(gameState.turnCounter || 0),
-      day: Number(gameState.day || 1),
+      teamId,
+      teamName: String(team.name || teamId),
+      turn: Number(live?.turn ?? gameState.turnCounter ?? 0),
+      day: Number(live?.day ?? gameState.day ?? 1),
       totalDays: Number(gameSettings.totalDays || 0),
       actors,
       opponents,
       regions,
       treasury: gameSettings.teamTreasuryEnabled !== false && team.treasury ? { balance: Number(team.treasury.balance || 0), reserve: Number(team.treasury.reserve || 0), pendingRequests: Array.isArray(team.treasury.pendingFundingRequestIds) ? team.treasury.pendingFundingRequestIds.length : 0 } : null,
-      governorEnabled: Boolean(gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled),
-      governanceMode: String(getTeamGovernanceMode(teamOsTeamId, gameSettings) || team.governanceMode || 'LEADER_DECIDES'),
+      governorEnabled: Boolean(teamSettings.teamCompetitiveAiEnabled && teamSettings.teamEconomyGovernorEnabled),
+      governanceMode: String(getTeamGovernanceMode(teamId, gameSettings) || team.governanceMode || 'LEADER_DECIDES'),
       overseer: { mode: typeof team.overseer?.currentAdaptiveStrategyMode === 'string' ? team.overseer.currentAdaptiveStrategyMode : null, safeMode: Boolean(team.overseer?.safeModeActive), lockedActorIds: ((team.overseer?.lockedDirectiveActorIds || []) as string[]).map(String) },
-      pendingApprovals: (pendingApprovalRequests || []).filter((r: any) => !r?.status || r.status === 'pending').length,
+      pendingApprovals: isFriendly ? (pendingApprovalRequests || []).filter((r: any) => !r?.status || r.status === 'pending').length : 0,
       win: {
         metric: String(metric),
         label: winConditionLabel,
-        teamValue: getCompetitiveMetricValue(metric, { side: 'player', teamMode: true }),
-        opponentValue: getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: true }),
+        teamValue: getCompetitiveMetricValue(metric, { side, teamMode: true }),
+        opponentValue: getCompetitiveMetricValue(metric, { side: otherSide, teamMode: true }),
         regionsTarget: metric === 'regions' ? REGION_CONTROL_MAJORITY : null,
-        teamRegions: playerControlledRegions,
-        opponentRegions: aiControlledRegions
+        teamRegions: teamId === TEAM_PLAYER_ID ? playerControlledRegions : aiControlledRegions,
+        opponentRegions: teamId === TEAM_PLAYER_ID ? aiControlledRegions : playerControlledRegions
       },
-      scenarioObjectives: ((gs.scenarioObjectives || gs.activeScenarioConfig?.objectives || []) as any[]).slice(0, 5).map(o => String(o?.label || o?.description || o?.id || '')).filter(Boolean),
+      scenarioObjectives: isFriendly ? ((gs.scenarioObjectives || gs.activeScenarioConfig?.objectives || []) as any[]).slice(0, 5).map(o => String(o?.label || o?.description || o?.id || '')).filter(Boolean) : [],
       playerPlan: plan && plan.status !== 'cancelled' && plan.status !== 'completed' ? { objective: String(plan.primaryObjective || plan.title || ''), secondary: plan.secondaryObjective ? String(plan.secondaryObjective) : null, regions: Array.isArray(plan.regions) ? plan.regions.map(String) : [], status: String(plan.status || 'active') } : null,
       brainGoal: (() => {
-        const d: any = ((team.overseer?.strategicDirectives || []) as any[]).find((x: any) => x?.status === 'active');
+        const d: any = ((team.overseer?.strategicDirectives || []) as any[]).find((x: any) => x?.status === 'active' && !x?.teamOsTaskId);
         return d ? { kind: String(d.goalKind || d.kind || 'control'), description: String(d.objective || ''), targetRegion: d.targetRegion || undefined } : null;
       })(),
       fogOfWar: fog,
-      authority: teamOsAuthority,
+      authority: aiTeam ? 'autonomous' : teamOsAuthority,
+      planningDepth: aiTeam ? teamOsPlanningDepthFor(difficulty) : 'standard',
       governorCheck: (actorId, category, cost) => {
         const a = rawActor(actorId);
         if (!a) return { approved: true, reason: 'Unknown actor.' };
-        const r = evaluateEconomySpendingApproval(a, category as EconomySpendCategory, cost, gameSettings, Number(gameState.day || 1), { gameState });
+        const r = evaluateEconomySpendingApproval(a, category as EconomySpendCategory, cost, teamSettings, Number(gameState.day || 1), { gameState });
         return { approved: r.approved, reason: r.reason };
       }
     };
   };
+  const storedTeamOs: TeamOperatingSystemState | undefined = (gameState as any).teamOperatingSystem;
   const teamOsView = useMemo<TeamOSView | null>(() => {
     if (!teamOsEnabled) return null;
     try {
-      const inputs = buildTeamOsInputs();
-      return inputs ? buildTeamOSView(inputs, (gameState as any).teamOperatingSystem?.byTeam?.[teamOsTeamId] || null, true) : null;
+      const inputs = buildTeamOsInputs(teamOsTeamId);
+      return inputs ? buildTeamOSView(inputs, storedTeamOs?.byTeam?.[teamOsTeamId] || null, true) : null;
     } catch (err) {
       console.warn('[Team OS] evaluation skipped:', err);
       return null;
     }
     // v9GiFingerprint covers every canonical slice the inputs read (turn, actors, world, team systems).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamOsEnabled, teamOsTeamId, teamOsAuthority, v9GiFingerprint, (gameState as any).teamOperatingSystem]);
+  }, [teamOsEnabled, teamOsTeamId, teamOsAuthority, v9GiFingerprint, storedTeamOs]);
+  // The enemy team's Team OS: same evaluator, its own perspective, never shown outside Full Inspection.
+  const teamOsEnemyView = useMemo<TeamOSView | null>(() => {
+    if (!teamOsEnemyEnabled) return null;
+    try {
+      const inputs = buildTeamOsInputs(teamOsEnemyTeamId);
+      return inputs ? buildTeamOSView(inputs, storedTeamOs?.byTeam?.[teamOsEnemyTeamId] || null, true) : null;
+    } catch (err) {
+      console.warn('[Team OS] enemy evaluation skipped:', err);
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamOsEnemyEnabled, teamOsEnemyTeamId, v9GiFingerprint, storedTeamOs]);
   const teamOsViewRef = useRef<TeamOSView | null>(null);
   teamOsViewRef.current = teamOsView;
+  const buildTeamOsInputsRef = useRef(buildTeamOsInputs);
+  buildTeamOsInputsRef.current = buildTeamOsInputs;
+  const teamOsCommitRef = useRef<{ lastSignature: Record<string, string>; turn: number; commits: number }>({ lastSignature: {}, turn: -1, commits: 0 });
 
-  // Event-driven persistence: once per turn, store the evaluated contract (revisions, contingencies,
-  // proposals). Planning state only — no money, AP or actor state is touched.
-  const teamOsPersistedKeyRef = useRef('');
+  /** Loop-safe commit of evaluated Team OS states (one dispatch for all teams). */
+  const persistTeamOsStates = useCallback((evaluated: Array<{ teamId: string; state: TeamOSTeamState; evaluationReason: string }>, source: string): TeamOperatingSystemState => {
+    const current: TeamOperatingSystemState = sanitizeTeamOperatingSystemState(teamOsStateRef.current);
+    const tracker = teamOsCommitRef.current;
+    const turn = Number(gameState.turnCounter || 0);
+    if (tracker.turn !== turn) { tracker.turn = turn; tracker.commits = 0; }
+    const byTeam = { ...current.byTeam };
+    let changed = false;
+    evaluated.forEach(({ teamId, state, evaluationReason }) => {
+      const stored = current.byTeam[teamId] || null;
+      const decision = decideTeamOsPersistence(stored, state, tracker.lastSignature[teamId] || null, tracker.commits);
+      recordTeamOsDiagnostics(teamOsDiagRef.current, teamId, { evaluationReason, signature: decision.signature, persistence: `${decision.commit ? 'committed' : 'skipped'}: ${decision.reason} (${source})` });
+      if (!decision.commit) return;
+      byTeam[teamId] = state;
+      tracker.lastSignature[teamId] = decision.signature;
+      tracker.commits += 1;
+      changed = true;
+      const friendly = teamId === teamOsTeamId;
+      const lastRev = state.revisions[state.revisions.length - 1];
+      if (lastRev && lastRev.revision !== stored?.revisions[stored.revisions.length - 1]?.revision) recordTeamOsDiagnostics(teamOsDiagRef.current, teamId, { replanTrigger: `rev ${lastRev.revision}: ${lastRev.trigger}` });
+      const fired = state.contract?.contingencies.find(c => c.status === 'triggered' && stored?.contract?.contingencies.find(x => x.id === c.id)?.status !== 'triggered');
+      if (fired) recordTeamOsDiagnostics(teamOsDiagRef.current, teamId, { contingencyTrigger: fired.label });
+      // Activity Ledger: meaningful Team OS events only (enemy events are kept for replay/debrief but
+      // summarised without internal detail).
+      const isolated = Boolean((gameState as any).isolatedReplayRuntime);
+      if (!isolated) teamOsLedgerEvents(stored, state).forEach(ev => appendGameActivityLedgerEvent('plan', {
+        actorId: friendly ? 'player' : teamId, teamId, eventType: `team_os_${ev.kind}`,
+        summary: (friendly ? ev.summary : `Enemy team strategy event: ${ev.kind.replace(/_/g, ' ')}`).slice(0, 200)
+      } as any));
+      if (friendly && stored && !isolated) {
+        const notable = teamOsLedgerEvents(stored, state).find(ev => ['major_replan', 'contingency_activated', 'contingency_resolved', 'objective_completed', 'strategy_completed'].includes(ev.kind));
+        if (notable) addNotification(`🧭 ${notable.summary}`.slice(0, 180), 'info', false, 'system');
+        const newProposal = state.proposals.find(p => p.status === 'open' && !(stored.proposals || []).some(q => q.id === p.id));
+        if (newProposal) addNotification(`🧭 Team proposal: ${newProposal.reason}`.slice(0, 180), 'info', false, 'system');
+      }
+    });
+    if (!changed) return current;
+    const next: TeamOperatingSystemState = { version: 1, byTeam };
+    teamOsStateRef.current = next;   // Strategic Command in the same callback sees the commit immediately
+    dispatchGameState({ type: 'LOAD_STATE', payload: { teamOperatingSystem: next } });
+    return next;
+  }, [addNotification, appendGameActivityLedgerEvent, gameState, teamOsTeamId]);
+
+  // Event-driven persistence: whenever the evaluated strategy changes MEANINGFULLY (any time in a turn),
+  // commit it. The commit's own re-render re-evaluates to the same signature and stops.
+  const teamOsFriendlySig = teamOsView ? teamOsStateSignature(teamOsView.state) : '';
+  const teamOsEnemySig = teamOsEnemyView ? teamOsStateSignature(teamOsEnemyView.state) : '';
   useEffect(() => {
-    if (!teamOsView || (gameState as any).isolatedReplayRuntime) return;
-    const key = `${teamOsTeamId}:${gameState.turnCounter}`;
-    if (teamOsPersistedKeyRef.current === key) return;
-    teamOsPersistedKeyRef.current = key;
-    const current: TeamOperatingSystemState = sanitizeTeamOperatingSystemState((gameState as any).teamOperatingSystem);
-    const stored = current.byTeam[teamOsTeamId] || null;
-    const next = teamOsView.state;
-    if (stored && JSON.stringify(stored) === JSON.stringify(next)) return;
-    dispatchGameState({ type: 'LOAD_STATE', payload: { teamOperatingSystem: { version: 1, byTeam: { ...current.byTeam, [teamOsTeamId]: next } } } });
-    const newRevisions = next.revisions.slice(stored ? stored.revisions.length : 0);
-    newRevisions.slice(-2).forEach(r => appendGameActivityLedgerEvent('plan', {
-      actorId: 'player', teamId: teamOsTeamId, eventType: 'team_os_revision',
-      summary: `Team Strategy rev ${r.revision} (${r.kind.replace(/_/g, ' ')}): ${r.trigger}`.slice(0, 200),
-      diagnostics: { changes: r.changes.slice(0, 6), reason: r.reason }
-    } as any));
-    const notable = newRevisions.filter(r => r.kind === 'replan' || r.kind === 'contingency_triggered').slice(-1)[0];
-    if (notable && stored) addNotification(`🧭 Team strategy ${notable.kind === 'contingency_triggered' ? 'contingency' : 'updated'}: ${notable.trigger}`.slice(0, 180), 'info', false, 'system');
-    const newProposals = next.proposals.filter(p => p.status === 'open' && !(stored?.proposals || []).some(q => q.id === p.id));
-    if (newProposals[0]) addNotification(`🧭 Team proposal: ${newProposals[0].reason}`.slice(0, 180), 'info', false, 'system');
-  }, [teamOsView, teamOsTeamId, gameState.turnCounter, addNotification, appendGameActivityLedgerEvent]);
+    // Planning state is persisted in isolated replays too (AI scoring reads it); only the ledger and
+    // notifications are suppressed there.
+    const evaluated: Array<{ teamId: string; state: TeamOSTeamState; evaluationReason: string }> = [];
+    if (teamOsView) evaluated.push({ teamId: teamOsTeamId, state: teamOsView.state, evaluationReason: teamOsView.evaluation.replan.reason });
+    if (teamOsEnemyView) evaluated.push({ teamId: teamOsEnemyTeamId, state: teamOsEnemyView.state, evaluationReason: teamOsEnemyView.evaluation.replan.reason });
+    if (evaluated.length) persistTeamOsStates(evaluated, 'live evaluation');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamOsFriendlySig, teamOsEnemySig]);
+
+  /**
+   * Strategic Command sync: re-evaluate a team's Team OS against the freshest canonical state available
+   * in the directive callback and commit it before any directive is generated (never a stale task).
+   */
+  const syncTeamOsForDirectives = useCallback((teamId: string, live: { actors?: Record<string, any>; teams?: Record<string, any>; turn?: number; day?: number }): TeamOperatingSystemState | undefined => {
+    if (gameSettings.teamIntelligenceOsEnabled === false || !isTeamMode) return teamOsStateRef.current;
+    if (teamOsIsAiTeam(teamId) && gameSettings.teamOsEnemyEnabled === false) return teamOsStateRef.current;
+    try {
+      const inputs = buildTeamOsInputsRef.current(teamId, live);
+      if (!inputs) return teamOsStateRef.current;
+      const stored = sanitizeTeamOperatingSystemState(teamOsStateRef.current).byTeam[teamId] || null;
+      const evaluation = evaluateTeamOperatingSystem(stored, inputs, null);
+      return persistTeamOsStates([{ teamId, state: evaluation.state, evaluationReason: `Strategic Command sync: ${evaluation.replan.reason}` }], 'Strategic Command');
+    } catch (err) {
+      console.warn('[Team OS] directive sync skipped:', err);
+      return teamOsStateRef.current;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameSettings.teamIntelligenceOsEnabled, gameSettings.teamOsEnemyEnabled, isTeamMode, persistTeamOsStates, teamOsTeamId, teamOsAiOnlyMatch]);
+  syncTeamOsForDirectivesRef.current = syncTeamOsForDirectives;
+
+  /** Integration status, derived from the real runtime configuration (never assumed). */
+  const teamOsIntegrations: TeamOSIntegrationStatus[] = (() => {
+    const c = teamOsView?.state.contract || null;
+    const drives = Boolean(c && (c.source === 'player_command' || teamOsAuthority === 'delegated' || teamOsAuthority === 'autonomous' || teamOsAiOnlyMatch));
+    const sc = Boolean(gameSettings.teamCompetitiveAiEnabled && gameSettings.teamAiOverseerSystemEnabled && gameSettings.teamAiStrategicCommandEnabled && gameSettings.teamAiStrategicCommandEnabledForFriendlyTeam);
+    const gov = Boolean(gameSettings.teamCompetitiveAiEnabled && gameSettings.teamEconomyGovernorEnabled);
+    const treasury = gameSettings.teamTreasuryEnabled !== false && gameSettings.teamTreasuryEnabledForFriendlyTeam !== false;
+    return [
+      { system: 'Strategic Command', connected: sc && drives, detail: !sc ? 'Strategic Command is off in Team Mode AI settings' : drives ? 'AI teammates receive their Team Strategy task as their directive goal (synced before every directive)' : 'waiting for an applied strategy or delegated authority' },
+      { system: 'AI decision scoring', connected: drives, detail: drives ? 'reserve floor, spend locks, deprioritised regions and task priority feed AI scoring (canonical validation still decides)' : 'the automatic plan only advises until you apply a strategy' },
+      { system: 'Economy Governor', connected: gov, detail: gov ? 'rulings stay authoritative; Team OS adds mission context, alternatives and blocks Governor-refused tasks' : 'the Economy Governor is off' },
+      { system: 'Treasury', connected: treasury && Boolean(teamOsView?.inputs.treasury), detail: treasury ? (teamOsView?.inputs.treasury ? 'real balance/reserve feed the resource plan; funding gaps become suggested requests' : 'this team has no treasury state yet') : 'Team Treasury is off' },
+      { system: 'Governance', connected: true, detail: `strategy changes are routed through Team Governance (${teamOsView?.inputs.governanceMode || 'LEADER_DECIDES'})` },
+      { system: 'Overseer', connected: Boolean(gameSettings.teamAiOverseerSystemEnabled), detail: gameSettings.teamAiOverseerSystemEnabled ? `strategy mode ${teamOsView?.inputs.overseer.mode || 'default'} is a replan trigger` : 'the Overseer system is off' },
+      { system: 'Auditor', connected: Boolean(gameSettings.teamAiAuditorSystemEnabled), detail: gameSettings.teamAiAuditorSystemEnabled ? 'the AI Operations Auditor is on; Team OS runs its own factual checks below' : 'the AI Operations Auditor is off; Team OS factual checks still run below' },
+      { system: 'Enemy Team OS', connected: Boolean(teamOsEnemyView), detail: teamOsEnemyView ? `the enemy team plans with the same Team OS (${teamOsEnemyView.inputs.planningDepth} planning); hidden from you outside Full Inspection` : 'disabled' }
+    ];
+  })();
+
+  /** Live AI decision context from the team strategy (constraints/priorities as scoring context only). */
+  teamOsLiveBiasRef.current = (actor: any, category: string, amount: number, regionId: string | null) => {
+    const none = { bias: 0, reason: null as string | null, ctx: null as TeamStrategicSpendContext | null };
+    if (!isTeamMode || gameSettings.teamIntelligenceOsEnabled === false || !actor?.teamId) return none;
+    const teamId = String(actor.teamId);
+    const aiTeam = teamOsIsAiTeam(teamId);
+    if (aiTeam && gameSettings.teamOsEnemyEnabled === false) return none;
+    const os = teamOsStateRef.current;
+    const contract = os?.byTeam?.[teamId]?.contract;
+    if (!contract) return none;
+    const delegated = aiTeam || teamOsAuthority === 'delegated' || teamOsAuthority === 'autonomous';
+    if (contract.source !== 'player_command' && !delegated) return none;
+    const ctx = buildTeamStrategicSpendContext(os, teamId, String(actor.id), category, regionId);
+    const view = teamId === teamOsTeamId ? teamOsViewRef.current : null;
+    const teamFree = view ? view.evaluation.resources.freeCash : null;
+    return { ...teamStrategicSpendBias(ctx, amount, teamFree), ctx };
+  };
+  teamOsGovernorNoteRef.current = (actor: any, category: string, amount: number, regionId: string | null, reason: string) => {
+    const live = teamOsLiveBiasRef.current(actor, category, amount, regionId);
+    if (!live.ctx?.taskId) return reason;
+    const team: any = (teamsById as any)?.[String(actor.teamId)];
+    const treasuryFree = team?.treasury ? Math.max(0, Number(team.treasury.balance || 0) - Number(team.treasury.reserve || 0)) : null;
+    const annotated = annotateGovernorRulingWithStrategy({ approved: false, reason }, live.ctx, amount, treasuryFree);
+    return `${annotated.reason}${annotated.alternatives[0] ? ` Alternative: ${annotated.alternatives[0]}.` : ''}`.slice(0, 400);
+  };
 
   const commitTeamOsState = useCallback((nextTeamState: TeamOSTeamState) => {
-    const current: TeamOperatingSystemState = sanitizeTeamOperatingSystemState((gameState as any).teamOperatingSystem);
-    dispatchGameState({ type: 'LOAD_STATE', payload: { teamOperatingSystem: { version: 1, byTeam: { ...current.byTeam, [teamOsTeamId]: nextTeamState } } } });
-  }, [gameState, teamOsTeamId]);
+    persistTeamOsStates([{ teamId: teamOsTeamId, state: nextTeamState, evaluationReason: 'player decision' }], 'player decision');
+  }, [persistTeamOsStates, teamOsTeamId]);
 
   /** Apply a player-authored team strategy (GI preview → Apply). Governance decides; nothing executes. */
   const applyTeamOsCommand = useCallback((command: TeamCommandIntent, summary: string) => {
@@ -156853,7 +157916,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -156868,6 +157931,14 @@ function dispatchGameSettingsChange(
           authority={teamOsAuthority}
           onToggleEnabled={() => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamIntelligenceOsEnabled: prev.teamIntelligenceOsEnabled === false }))}
           onSetAuthority={level => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamOsAuthorityLevel: level }))}
+          integrations={teamOsIntegrations}
+          diagnostics={teamOsDiagRef.current.byTeam[teamOsTeamId] || null}
+          enemyEnabled={gameSettings.teamOsEnemyEnabled !== false}
+          onToggleEnemy={() => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamOsEnemyEnabled: prev.teamOsEnemyEnabled === false }))}
+          fullInspection={gameSettings.teamOsFullInspectionEnabled === true}
+          onToggleFullInspection={() => trackedSetGameSettings('direct_player_change', 'Team Intelligence 2.0', prev => ({ ...prev, teamOsFullInspectionEnabled: prev.teamOsFullInspectionEnabled !== true }))}
+          enemyView={gameSettings.teamOsFullInspectionEnabled === true ? teamOsEnemyView : null}
+          enemyDiagnostics={gameSettings.teamOsFullInspectionEnabled === true ? teamOsDiagRef.current.byTeam[teamOsEnemyTeamId] || null : null}
         />
       </div>
     );
