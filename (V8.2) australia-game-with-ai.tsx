@@ -2,107 +2,1265 @@
 // SECTION 1: IMPORTS
 // ============================================================================
 import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef, useContext, createContext, ChangeEvent, useLayoutEffect } from 'react';
-import {
-  AI_MEMORY_EVENT_CAP,
-  applyAiMemoryInfluence,
-  applyCommittedActionToAiMemories,
-  applyTurnDecayToAiMemories,
-  clearAllAiMemories,
-  computeNegotiationThresholdShift,
-  createFreshAiMemories,
-  ensureAiMemoriesForActors,
-  getFilteredAiMemoryInspectionView,
-  isAiActor,
-  migrateAiMemoriesFromSave,
-  recordTeamInstructionMemory,
-  resolveAiMemoryActorId,
-  runAiMemoryPhase1SelfTests,
-  runAiMemoryPhase2SelfTests,
-  runAiMemoryPhase3SelfTests,
-  type AiMemoriesByActor,
-  type AiMemoryPersonalityScale,
-  type CommittedMemoryAction,
-  type MemoryActorRef
-} from './src/aiMemory';
-import {
-  applyPersistencePolicyToSettings,
-  applyPriorsToFreshMemories,
-  assertPersistenceWriteAllowed,
-  confirmEnableAndVerifyPersistentMemory,
-  createPersistentMatchId,
-  DELETE_PERSISTENT_MEMORY_BODY,
-  DELETE_PERSISTENT_MEMORY_TITLE,
-  didRestorePersistentProfilesThisLoad,
-  didRestorePersistentStoreThisLoad,
-  disablePersistentMemory,
-  deletePersistentAiMemory,
-  DISABLE_PERSISTENT_MEMORY_BODY,
-  DISABLE_PERSISTENT_MEMORY_TITLE,
-  ENABLE_PERSISTENT_MEMORY_BODY,
-  ENABLE_PERSISTENT_MEMORY_TITLE,
-  exportPersistentMemoryBackup,
-  IMPORT_PERSISTENT_MEMORY_BODY,
-  IMPORT_PERSISTENT_MEMORY_TITLE,
-  extractMatchSummary,
-  freezePersistentSnapshot,
-  getPersistenceGeneration,
-  HUMAN_PROFILE_ID,
-  importPersistentMemoryBackup,
-  isPersistenceConsentActive,
-  loadPersistencePolicy,
-  loadPersistentStore,
-  peekLegacyProfileCount,
-  persistResetAll,
-  persistResetProfile,
-  PERSISTENCE_POLICY_STORAGE_KEY,
-  PERSISTENT_MEMORY_STORAGE_KEY,
-  persistenceStatusFromPolicy,
-  persistenceStatusLabel,
-  previewPersistentMemoryBackup,
-  profileToPriorSeed,
-  resolveActorIdentity,
-  reverifyPersistentStorage,
-  runAiMemoryPhase4SelfTests,
-  runAiMemoryPhase6SelfTests,
-  runAiMemoryPhase61SelfTests,
-  sanitizePersistentSnapshot,
-  savePersistentStore,
-  shouldApplyPersistentPriors,
-  shouldAskPersistentAbandon,
-  shouldCommitPersistentMemory,
-  consolidateProfile,
-  commitMatchToStore,
-  isMatchAlreadyCommitted,
-  type PersistentMemorySnapshot
-} from './src/aiPersistentMemory';
-import {
-  answerMemoryAwareQuery,
-  appendCommunicationMessage,
-  applyProactiveResults,
-  buildAuthorizedSnapshotFromGame,
-  classifyCommunicationIntent,
-  communicationToAskGameAnswer,
-  createEmptyCommunicationState,
-  describeSuggestedActionOutcome,
-  editTeamStrategicPlan,
-  evaluateProactiveIntelligence,
-  evaluateSuggestedActionGate,
-  isMemoryAwareAskIntent,
-  markSuggestedAction,
-  migrateCommunicationState,
-  parseTeamPlanInstruction,
-  planToActiveDirectives,
-  runAiMemoryPhase5SelfTests,
-  sanitizeTeamStrategicPlansByTeam,
-  setTeamPlanStatus,
-  shouldEmitLiveCommunication,
-  type AiCommunicationResponse,
-  type AiCommunicationState,
-  type AiSuggestedAction,
-  type CommunicationAutonomyLevel,
-  type CommunicationProactiveFrequency,
-  type TeamStrategicPlan
-} from './src/aiCommunication';
+
+// ============================================================================
+// SECTION 1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
+// ----------------------------------------------------------------------------
+// These used to be separate local modules (AI memory, persistent AI memory and
+// AI communication). They live here so the game is ONE self-contained file
+// (it must run as a single-file artifact with no local modules). Everything is
+// deterministic, bounded, fog-of-war aware and never executes actions.
+// ============================================================================
+
+// ---- AI Memory (match memory) ------------------------------------------------------------------
+
+export const AI_MEMORY_EVENT_CAP = 60;
+
+export interface MemoryActorRef { id: string; teamId?: string | null; kind?: string; isAi?: boolean; isHuman?: boolean }
+
+export interface AiMemoryPersonalityScale { hostilityReaction: number; supportReaction: number; respectSensitivity: number; aggressionBias: number }
+
+export interface CommittedMemoryAction {
+  actionType: string;
+  actorId: string;
+  targetId?: string | null;
+  regionId?: string | null;
+  success?: boolean;
+  turn?: number;
+  summary: string;
+  stableKey?: string;
+  amount?: number;
+  [key: string]: unknown;
+}
+
+export interface AiMemoryEvent {
+  id: string;
+  turn: number;
+  actionType: string;
+  actorId: string;
+  targetId: string | null;
+  regionId: string | null;
+  summary: string;
+  importance: number;
+  valence: number;      // -1 hostile … +1 helpful, from the owner's point of view
+  stableKey: string;
+}
+
+export interface AiRelationship {
+  actorId: string;
+  trust: number;
+  respect: number;
+  rivalry: number;
+  reliability: number;
+  cooperation: number;
+  threat: number;
+  grievance: number;
+  gratitude: number;
+  lastUpdatedTurn: number;
+}
+
+export interface AiBelief { key: string; value: number; confidence: number; observations: number; opportunityCount: number; source: 'match' | 'persistent_prior' }
+
+export interface AiOpponentModel {
+  actorId: string;
+  totalOpportunities: number;
+  beliefs: Record<string, AiBelief>;
+  regionalInterest: Record<string, number>;
+  predictedObjectives: Array<{ objectiveId: string; probability: number; confidence: number }>;
+}
+
+export interface AiActorMemory {
+  ownerActorId: string;
+  events: AiMemoryEvent[];
+  relationships: Record<string, AiRelationship>;
+  opponentModels: Record<string, AiOpponentModel>;
+  adaptivePlan: { objectiveId: string; status: 'active' | 'revised' | 'abandoned'; revisionReason: string | null } | null;
+  seenKeys: string[];
+  lastDecayTurn: number;
+}
+
+export type AiMemoriesByActor = Record<string, AiActorMemory>;
+
+const MEM_BELIEF_KEYS = ['aggressive', 'expansion', 'economic', 'cooperative'] as const;
+const memClamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, Math.round(n * 100) / 100));
+const memNum = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+export function resolveAiMemoryActorId(actorId?: string | null): string {
+  if (actorId === null || actorId === undefined) return '';
+  return String(actorId).trim();
+}
+
+export function isAiActor(actor: { id?: string | number; kind?: string; isAi?: boolean; isHuman?: boolean } | null | undefined): boolean {
+  if (!actor) return false;
+  if (actor.isHuman === true || actor.kind === 'human') return false;
+  if (actor.isAi === true || actor.kind === 'ai') return true;
+  return String(actor.id) !== 'player';
+}
+
+function createEmptyAiActorMemory(ownerActorId: string): AiActorMemory {
+  return { ownerActorId, events: [], relationships: {}, opponentModels: {}, adaptivePlan: null, seenKeys: [], lastDecayTurn: 0 };
+}
+
+function createRelationship(actorId: string, turn: number): AiRelationship {
+  return { actorId, trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, grievance: 0, gratitude: 0, lastUpdatedTurn: turn };
+}
+
+function createOpponentModel(actorId: string): AiOpponentModel {
+  return { actorId, totalOpportunities: 0, beliefs: {}, regionalInterest: {}, predictedObjectives: [] };
+}
+
+export function createFreshAiMemories(actorIds: string[]): AiMemoriesByActor {
+  const out: AiMemoriesByActor = {};
+  (actorIds || []).forEach(id => { const key = resolveAiMemoryActorId(id); if (key) out[key] = createEmptyAiActorMemory(key); });
+  return out;
+}
+
+export function clearAllAiMemories(actorIds: string[]): AiMemoriesByActor {
+  return createFreshAiMemories(actorIds);
+}
+
+export function ensureAiMemoriesForActors(memories: AiMemoriesByActor | null | undefined, actorIds: string[]): AiMemoriesByActor {
+  const out: AiMemoriesByActor = { ...(memories || {}) };
+  (actorIds || []).forEach(id => { const key = resolveAiMemoryActorId(id); if (key && !out[key]) out[key] = createEmptyAiActorMemory(key); });
+  return out;
+}
+
+/** Save/load safe: anything malformed becomes an empty memory; sizes stay bounded. */
+export function migrateAiMemoriesFromSave(raw: unknown): AiMemoriesByActor {
+  const out: AiMemoriesByActor = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw as Record<string, any>).slice(0, 12).forEach(([id, m]) => {
+    if (!m || typeof m !== 'object') return;
+    const mem = createEmptyAiActorMemory(String(m.ownerActorId || id));
+    mem.events = (Array.isArray(m.events) ? m.events : []).filter((e: any) => e && typeof e === 'object').slice(-AI_MEMORY_EVENT_CAP).map((e: any, i: number) => ({
+      id: String(e.id || `mem_${id}_${i}`), turn: memNum(e.turn), actionType: String(e.actionType || 'event'), actorId: String(e.actorId || ''), targetId: e.targetId ? String(e.targetId) : null,
+      regionId: e.regionId ? String(e.regionId) : null, summary: String(e.summary || ''), importance: memNum(e.importance, 1), valence: memNum(e.valence), stableKey: String(e.stableKey || e.id || `${id}_${i}`)
+    }));
+    if (m.relationships && typeof m.relationships === 'object') {
+      Object.entries(m.relationships as Record<string, any>).slice(0, 12).forEach(([rid, r]) => {
+        if (!r || typeof r !== 'object') return;
+        const base = createRelationship(rid, memNum(r.lastUpdatedTurn));
+        mem.relationships[rid] = { ...base, ...Object.fromEntries(['trust', 'respect', 'rivalry', 'reliability', 'cooperation', 'threat', 'grievance', 'gratitude'].map(k => [k, memClamp(memNum(r[k], (base as any)[k]))])), actorId: rid };
+      });
+    }
+    if (m.opponentModels && typeof m.opponentModels === 'object') {
+      Object.entries(m.opponentModels as Record<string, any>).slice(0, 12).forEach(([oid, om]) => {
+        if (!om || typeof om !== 'object') return;
+        const model = createOpponentModel(oid);
+        model.totalOpportunities = memNum(om.totalOpportunities);
+        if (om.beliefs && typeof om.beliefs === 'object') Object.entries(om.beliefs as Record<string, any>).forEach(([k, b]) => { if (b && typeof b === 'object') model.beliefs[k] = { key: k, value: memClamp(memNum(b.value), 0, 1), confidence: memClamp(memNum(b.confidence), 0, 1), observations: memNum(b.observations), opportunityCount: memNum(b.opportunityCount), source: b.source === 'persistent_prior' ? 'persistent_prior' : 'match' }; });
+        if (om.regionalInterest && typeof om.regionalInterest === 'object') Object.entries(om.regionalInterest as Record<string, any>).slice(0, 12).forEach(([r, v]) => { model.regionalInterest[r] = memNum(v); });
+        model.predictedObjectives = (Array.isArray(om.predictedObjectives) ? om.predictedObjectives : []).slice(0, 4).map((p: any) => ({ objectiveId: String(p?.objectiveId || ''), probability: memClamp(memNum(p?.probability), 0, 1), confidence: memClamp(memNum(p?.confidence), 0, 1) }));
+        mem.opponentModels[oid] = model;
+      });
+    }
+    if (m.adaptivePlan && typeof m.adaptivePlan === 'object') mem.adaptivePlan = { objectiveId: String(m.adaptivePlan.objectiveId || ''), status: ['active', 'revised', 'abandoned'].includes(m.adaptivePlan.status) ? m.adaptivePlan.status : 'active', revisionReason: m.adaptivePlan.revisionReason ? String(m.adaptivePlan.revisionReason) : null };
+    mem.seenKeys = (Array.isArray(m.seenKeys) ? m.seenKeys : mem.events.map(e => e.stableKey)).map(String).slice(-AI_MEMORY_EVENT_CAP * 2);
+    mem.lastDecayTurn = memNum(m.lastDecayTurn);
+    out[resolveAiMemoryActorId(id)] = mem;
+  });
+  return out;
+}
+
+/** How an action reads from an observer's point of view (hostile, helpful, neutral). */
+function classifyMemoryAction(actionType: string): { category: typeof MEM_BELIEF_KEYS[number] | null; hostility: number; support: number } {
+  const t = String(actionType || '').toLowerCase();
+  if (/sabotag|steal|attack|hostile|undercut|block/.test(t)) return { category: 'aggressive', hostility: 1, support: 0 };
+  if (/challenge/.test(t)) return { category: 'aggressive', hostility: 0.3, support: 0 };
+  if (/deposit|region|control|expand|claim|travel|expedition/.test(t)) return { category: 'expansion', hostility: 0.35, support: 0 };
+  if (/support|gift|fund|assist|help|proposal_accepted|share|donat/.test(t)) return { category: 'cooperative', hostility: 0, support: 1 };
+  if (/proposal_declined|reject|revoke/.test(t)) return { category: 'cooperative', hostility: 0.25, support: 0 };
+  if (/sell|buy|invest|work|craft|trade|contract|market|loan|cash/.test(t)) return { category: 'economic', hostility: 0, support: 0 };
+  return { category: null, hostility: 0, support: 0 };
+}
+
+function updateBelief(model: AiOpponentModel, category: string | null, regionId: string | null) {
+  model.totalOpportunities += 1;
+  MEM_BELIEF_KEYS.forEach(key => {
+    const b = model.beliefs[key] || { key, value: 0.25, confidence: 0, observations: 0, opportunityCount: 0, source: 'match' as const };
+    const hit = key === category ? 1 : 0;
+    const opp = b.opportunityCount + 1;
+    const obs = b.observations + hit;
+    // Deterministic running estimate with a weak prior so early observations do not swing wildly.
+    const value = (obs + 1) / (opp + 4);
+    model.beliefs[key] = { key, value: memClamp(value, 0, 1), confidence: memClamp(1 - 1 / Math.sqrt(opp + 1), 0, 1), observations: obs, opportunityCount: opp, source: b.source === 'persistent_prior' && opp < 4 ? 'persistent_prior' : 'match' };
+  });
+  if (regionId) model.regionalInterest[regionId] = (model.regionalInterest[regionId] || 0) + 1;
+  const ranked = MEM_BELIEF_KEYS.map(k => model.beliefs[k]).filter(Boolean).sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+  const topRegion = Object.entries(model.regionalInterest).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  model.predictedObjectives = ranked.slice(0, 2).map(b => ({
+    objectiveId: b.key === 'expansion' && topRegion ? `expand_${topRegion[0]}` : b.key === 'aggressive' ? 'pressure_rivals' : b.key === 'economic' ? 'build_cash' : 'coordinate_team',
+    probability: b.value, confidence: b.confidence
+  }));
+}
+
+/** Record one committed action in every AI observer's memory (the actor never "remembers" itself). */
+export function applyCommittedActionToAiMemories(
+  memories: AiMemoriesByActor,
+  action: CommittedMemoryAction,
+  observers: MemoryActorRef[],
+  context?: { actorTeamId?: string | null; personalityByActor?: Record<string, AiMemoryPersonalityScale> }
+): AiMemoriesByActor {
+  const actorId = resolveAiMemoryActorId(action.actorId);
+  if (!actorId) return memories;
+  const turn = memNum(action.turn);
+  const cls = classifyMemoryAction(action.actionType);
+  const stableKey = String(action.stableKey || `${action.actionType}:${actorId}:${action.targetId || ''}:${action.regionId || ''}:${turn}`);
+  const out: AiMemoriesByActor = { ...memories };
+  (observers || []).filter(o => isAiActor(o)).forEach(observer => {
+    const ownerId = resolveAiMemoryActorId(observer.id);
+    if (!ownerId || ownerId === actorId) return;
+    const prev = out[ownerId] || createEmptyAiActorMemory(ownerId);
+    if (prev.seenKeys.includes(stableKey)) return;   // idempotent: the same action is never remembered twice
+    const sameTeam = Boolean(context?.actorTeamId && observer.teamId && context.actorTeamId === observer.teamId);
+    const targetsObserver = resolveAiMemoryActorId(action.targetId || '') === ownerId;
+    const p = context?.personalityByActor?.[ownerId] || { hostilityReaction: 1, supportReaction: 1, respectSensitivity: 1, aggressionBias: 1 };
+    // Valence from the observer's side: a rival's expansion is mildly hostile, a teammate's is helpful.
+    let valence = cls.support - cls.hostility * (targetsObserver ? 1 : sameTeam ? -0.5 : 0.5);
+    if (sameTeam && cls.category === 'expansion') valence = 0.3;
+    if (action.success === false) valence *= 0.5;
+    const importance = Math.max(1, Math.round((Math.abs(valence) * 3 + (targetsObserver ? 2 : 0) + (memNum(action.amount) >= 1000 ? 1 : 0)) * 10) / 10);
+    const event: AiMemoryEvent = { id: `mem_${ownerId}_${stableKey}`.slice(0, 120), turn, actionType: String(action.actionType), actorId, targetId: action.targetId ? String(action.targetId) : null, regionId: action.regionId ? String(action.regionId) : null, summary: String(action.summary || action.actionType).slice(0, 200), importance, valence: Math.round(valence * 100) / 100, stableKey };
+    const rel = { ...(prev.relationships[actorId] || createRelationship(actorId, turn)) };
+    if (valence < 0) {
+      const h = -valence * p.hostilityReaction;
+      rel.trust = memClamp(rel.trust - 6 * h); rel.rivalry = memClamp(rel.rivalry + 8 * h); rel.threat = memClamp(rel.threat + 6 * h); rel.grievance = memClamp(rel.grievance + (targetsObserver ? 10 : 4) * h);
+    } else if (valence > 0) {
+      const s = valence * p.supportReaction;
+      rel.trust = memClamp(rel.trust + 5 * s); rel.cooperation = memClamp(rel.cooperation + 6 * s); rel.gratitude = memClamp(rel.gratitude + (targetsObserver ? 8 : 3) * s); rel.reliability = memClamp(rel.reliability + 3 * s);
+    }
+    if (action.success === true && cls.category) rel.respect = memClamp(rel.respect + 2 * p.respectSensitivity);
+    rel.lastUpdatedTurn = turn;
+    const models = { ...prev.opponentModels };
+    if (!sameTeam) { const m = JSON.parse(JSON.stringify(models[actorId] || createOpponentModel(actorId))) as AiOpponentModel; updateBelief(m, cls.category, event.regionId); models[actorId] = m; }
+    const events = [...prev.events, event].slice(-AI_MEMORY_EVENT_CAP);
+    const top = models[actorId]?.predictedObjectives[0];
+    const adaptivePlan = !sameTeam && top ? { objectiveId: `counter_${top.objectiveId}`, status: (prev.adaptivePlan && prev.adaptivePlan.objectiveId !== `counter_${top.objectiveId}` ? 'revised' : 'active') as 'active' | 'revised', revisionReason: prev.adaptivePlan && prev.adaptivePlan.objectiveId !== `counter_${top.objectiveId}` ? `${actorId} now looks focused on ${top.objectiveId.replace(/_/g, ' ')}` : null } : prev.adaptivePlan;
+    out[ownerId] = { ...prev, events, relationships: { ...prev.relationships, [actorId]: rel }, opponentModels: models, adaptivePlan, seenKeys: [...prev.seenKeys, stableKey].slice(-AI_MEMORY_EVENT_CAP * 2) };
+  });
+  return out;
+}
+
+/** Emotional scores fade over time; idempotent per turn. */
+export function applyTurnDecayToAiMemories(memories: AiMemoriesByActor, turn: number): AiMemoriesByActor {
+  const out: AiMemoriesByActor = {};
+  Object.entries(memories || {}).forEach(([id, m]) => {
+    if (!m) return;
+    const elapsed = Math.max(0, memNum(turn) - memNum(m.lastDecayTurn));
+    if (!elapsed) { out[id] = m; return; }
+    const f = Math.pow(0.95, Math.min(elapsed, 20));
+    const relationships: Record<string, AiRelationship> = {};
+    Object.entries(m.relationships || {}).forEach(([rid, r]) => { relationships[rid] = { ...r, grievance: memClamp(r.grievance * f), gratitude: memClamp(r.gratitude * f), threat: memClamp(r.threat * f), rivalry: memClamp(r.rivalry * Math.pow(0.98, Math.min(elapsed, 20))) }; });
+    out[id] = { ...m, relationships, lastDecayTurn: memNum(turn) };
+  });
+  return out;
+}
+
+export function recordTeamInstructionMemory(memories: AiMemoriesByActor, params: { actorId: string; targetId?: string; teamId?: string | null; status: 'issued' | 'accepted' | 'rejected' | 'revoked' | 'expired'; summary: string; regionId?: string; stableKey: string; turn?: number; observers?: MemoryActorRef[] }): AiMemoriesByActor {
+  const target = resolveAiMemoryActorId(params.targetId || '');
+  const observers = (params.observers || []).filter(o => isAiActor(o) && (!target || resolveAiMemoryActorId(o.id) === target));
+  const type = params.status === 'accepted' ? 'instruction_accepted' : params.status === 'rejected' || params.status === 'revoked' ? 'instruction_revoked' : 'instruction_issued';
+  return applyCommittedActionToAiMemories(memories, { actionType: params.status === 'accepted' ? 'support_instruction' : type, actorId: params.actorId, targetId: params.targetId, regionId: params.regionId, turn: params.turn, summary: params.summary, stableKey: `instruction:${params.stableKey}` }, observers.length ? observers : (params.observers || []), { actorTeamId: params.teamId || null });
+}
+
+/** Memory as a bounded scoring input (never a veto). Directives from the team plan add small bonuses. */
+export function applyAiMemoryInfluence<T extends { type?: string; score?: number; data?: any; plan?: any }>(decisions: T[], ctx: {
+  actorId: string;
+  memory?: AiActorMemory | null;
+  settings?: { aiMemoryEnabled?: boolean; aiMemoryInfluenceStrength?: number; aiStrategicLearningEnabled?: boolean; aiStrategicLearningStrength?: number; aiPersistentMemoryEnabled?: boolean };
+  activeDirectives?: Array<{ type?: string; assignedActorId?: string | null; regionId?: string; targetActorId?: string }>;
+  personality?: AiMemoryPersonalityScale;
+}): T[] {
+  if (!Array.isArray(decisions) || !decisions.length) return decisions;
+  const enabled = ctx.settings?.aiMemoryEnabled !== false;
+  const strengthRaw = memNum(ctx.settings?.aiMemoryInfluenceStrength, 1);
+  const strength = Math.max(0, Math.min(2, strengthRaw > 2 ? strengthRaw / 100 : strengthRaw));
+  const learning = ctx.settings?.aiStrategicLearningEnabled === false ? 0 : Math.max(0, Math.min(2, memNum(ctx.settings?.aiStrategicLearningStrength, 1)));
+  const directives = (ctx.activeDirectives || []).filter(d => !d.assignedActorId || d.assignedActorId === ctx.actorId);
+  const mem = enabled ? ctx.memory || null : null;
+  if (!mem && !directives.length) return decisions;
+  return decisions.map(d => {
+    const data = d.data || {};
+    const region: string | undefined = data.region || data.regionId || data.targetRegion || d.plan?.target;
+    const target: string | undefined = data.targetActorId || data.targetId || data.target;
+    let bonus = 0;
+    directives.forEach(dir => { if (dir.regionId && region === dir.regionId) bonus += 25; if (dir.targetActorId && target === dir.targetActorId) bonus += 15; });
+    if (mem) {
+      const rel = target ? mem.relationships[resolveAiMemoryActorId(target)] : undefined;
+      const hostile = /sabotag|challenge|attack|steal/.test(String(d.type || ''));
+      const helpful = /support|gift|fund|proposal|assist/.test(String(d.type || ''));
+      if (rel && hostile) bonus += ((rel.rivalry + rel.grievance) / 10 - rel.gratitude / 8) * strength * (ctx.personality?.hostilityReaction ?? 1);
+      if (rel && helpful) bonus += ((rel.trust - 50) / 5 + rel.gratitude / 10) * strength * (ctx.personality?.supportReaction ?? 1);
+      if (learning && region) {
+        // Contest regions the most likely rival is focused on (learned from observation, not hidden data).
+        const interest = Object.values(mem.opponentModels).reduce((s, m) => s + (m.regionalInterest[region] || 0), 0);
+        bonus += Math.min(20, interest * 3) * learning * 0.5;
+      }
+    }
+    if (!bonus) return d;
+    return { ...d, score: Math.round(((d.score || 0) + bonus) * 100) / 100 };
+  });
+}
+
+/** Negotiation: trust/gratitude lower the acceptance bar, grievance raises it; a shared threat helps. */
+export function computeNegotiationThresholdShift(rel: Partial<AiRelationship> | null | undefined, ctx: { dealAffordable?: boolean; thirdPartyThreat?: number }): { shift: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let shift = 0;
+  if (rel) {
+    const trust = memNum(rel.trust, 50); const grievance = memNum(rel.grievance); const gratitude = memNum(rel.gratitude);
+    if (trust > 60) { shift -= (trust - 60) / 400; reasons.push('trusts this counterpart'); }
+    if (trust < 40) { shift += (40 - trust) / 400; reasons.push('distrusts this counterpart'); }
+    if (grievance > 10) { shift += Math.min(0.1, grievance / 300); reasons.push('holds a grievance'); }
+    if (gratitude > 10) { shift -= Math.min(0.08, gratitude / 400); reasons.push('is grateful for past help'); }
+  }
+  if (memNum(ctx.thirdPartyThreat) > 40 && ctx.dealAffordable) { shift -= 0.04; reasons.push('a common threat makes a deal attractive'); }
+  return { shift: Math.max(-0.2, Math.min(0.2, Math.round(shift * 1000) / 1000)), reasons };
+}
+
+export interface AiMemoryInspectionView {
+  ownerActorId: string;
+  isRedacted: boolean;
+  eventCount: number;
+  influenceSummary: string | null;
+  recentEvents: AiMemoryEvent[];
+  relationships: AiRelationship[];
+  majorGrievances?: AiMemoryEvent[];
+  majorGratitude?: AiMemoryEvent[];
+  strategicProfiles: Array<{ actorId: string; aggressionPreference: number; expansionPreference: number; economicPreference: number; cooperationPreference: number; confidence: number; observationCount: number }>;
+  opponentModels?: AiOpponentModel[];
+  adaptivePlan: AiActorMemory['adaptivePlan'];
+}
+
+/** Inspection respects authority: rivals' private beliefs stay hidden without Full Inspection. */
+export function getFilteredAiMemoryInspectionView(memory: AiActorMemory | null | undefined, opts: { viewerId?: string; viewerTeamId?: string | null; ownerTeamId?: string | null; teammateIds?: string[]; fullInspection?: boolean }): AiMemoryInspectionView {
+  const m = memory || createEmptyAiActorMemory('');
+  const ally = Boolean(opts.fullInspection) || Boolean(opts.viewerTeamId && opts.ownerTeamId && opts.viewerTeamId === opts.ownerTeamId);
+  const redacted = !ally;
+  const rels = Object.values(m.relationships).sort((a, b) => a.actorId.localeCompare(b.actorId));
+  const profiles = Object.values(m.opponentModels).map(om => ({
+    actorId: om.actorId,
+    aggressionPreference: om.beliefs.aggressive?.value ?? 0, expansionPreference: om.beliefs.expansion?.value ?? 0, economicPreference: om.beliefs.economic?.value ?? 0, cooperationPreference: om.beliefs.cooperative?.value ?? 0,
+    confidence: Math.max(0, ...Object.values(om.beliefs).map(b => b.confidence)), observationCount: om.totalOpportunities
+  }));
+  const strongest = rels.slice().sort((a, b) => (b.rivalry + b.grievance) - (a.rivalry + a.grievance))[0];
+  return {
+    ownerActorId: m.ownerActorId,
+    isRedacted: redacted,
+    eventCount: m.events.length,
+    influenceSummary: strongest && (strongest.rivalry + strongest.grievance) > 10 ? `Most wary of ${strongest.actorId} (rivalry ${strongest.rivalry}, grievance ${strongest.grievance}).` : m.events.length ? 'Memory is shaping choices only lightly so far.' : null,
+    recentEvents: (redacted ? m.events.filter(e => Math.abs(e.valence) >= 0.3) : m.events).slice(-8).reverse(),
+    relationships: redacted ? rels.filter(r => (opts.teammateIds || []).includes(r.actorId) || r.actorId === opts.viewerId) : rels,
+    majorGrievances: m.events.filter(e => e.valence <= -0.6).slice(-4).reverse(),
+    majorGratitude: m.events.filter(e => e.valence >= 0.6).slice(-4).reverse(),
+    strategicProfiles: redacted ? [] : profiles,
+    opponentModels: redacted ? [] : Object.values(m.opponentModels),
+    adaptivePlan: redacted ? null : m.adaptivePlan
+  };
+}
+
+type MemTestResult = { id: string; name: string; passed: boolean; detail?: string };
+const memTests = (cases: Array<[string, string, () => boolean | string]>): { results: MemTestResult[] } => ({
+  results: cases.map(([id, name, fn]) => { try { const r = fn(); return { id, name, passed: r === true, detail: r === true ? undefined : String(r) }; } catch (e) { return { id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }; } })
+});
+const MEM_OBS: MemoryActorRef[] = [{ id: 'player', kind: 'human', teamId: 'team_player' }, { id: 'ai', kind: 'ai', teamId: 'team_opponent' }, { id: 'ally_ai', kind: 'ai', teamId: 'team_player' }];
+
+export function runAiMemoryPhase1SelfTests() {
+  return memTests([
+    ['p1_fresh', 'Fresh memories are empty and keyed by actor', () => { const m = createFreshAiMemories(['ai', 'ally_ai']); return Object.keys(m).join(',') === 'ai,ally_ai' && m.ai.events.length === 0 || JSON.stringify(Object.keys(m)); }],
+    ['p1_record', 'A committed action is remembered by AI observers only', () => { const m = applyCommittedActionToAiMemories(createFreshAiMemories(['ai', 'ally_ai']), { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 3, summary: 'player sabotaged ai', stableKey: 'k1' }, MEM_OBS); return m.ai.events.length === 1 && !m.player || 'not recorded'; }],
+    ['p1_idempotent', 'The same action is never remembered twice', () => { let m = createFreshAiMemories(['ai']); const a = { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 3, summary: 's', stableKey: 'dup' }; m = applyCommittedActionToAiMemories(m, a, MEM_OBS); m = applyCommittedActionToAiMemories(m, a, MEM_OBS); return m.ai.events.length === 1 || `${m.ai.events.length} events`; }],
+    ['p1_cap', 'Event history is bounded', () => { let m = createFreshAiMemories(['ai']); for (let i = 0; i < AI_MEMORY_EVENT_CAP + 10; i++) m = applyCommittedActionToAiMemories(m, { actionType: 'sell', actorId: 'player', turn: i, summary: 's', stableKey: `c${i}` }, MEM_OBS); return m.ai.events.length === AI_MEMORY_EVENT_CAP || `${m.ai.events.length}`; }]
+  ]);
+}
+
+export function runAiMemoryPhase2SelfTests() {
+  return memTests([
+    ['p2_hostile', 'Hostility lowers trust and raises grievance', () => { const m = applyCommittedActionToAiMemories(createFreshAiMemories(['ai']), { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 1, summary: 's', stableKey: 'h' }, MEM_OBS); const r = m.ai.relationships.player; return r.trust < 50 && r.grievance > 0 || JSON.stringify(r); }],
+    ['p2_support', 'Support raises trust and gratitude', () => { const m = applyCommittedActionToAiMemories(createFreshAiMemories(['ally_ai']), { actionType: 'support', actorId: 'player', targetId: 'ally_ai', turn: 1, summary: 's', stableKey: 's' }, MEM_OBS, { actorTeamId: 'team_player' }); const r = m.ally_ai.relationships.player; return r.trust > 50 && r.gratitude > 0 || JSON.stringify(r); }],
+    ['p2_decay', 'Grievance decays over turns and decay is idempotent per turn', () => { let m = applyCommittedActionToAiMemories(createFreshAiMemories(['ai']), { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 1, summary: 's', stableKey: 'd' }, MEM_OBS); const g0 = m.ai.relationships.player.grievance; m = applyTurnDecayToAiMemories(m, 10); const g1 = m.ai.relationships.player.grievance; m = applyTurnDecayToAiMemories(m, 10); return g1 < g0 && m.ai.relationships.player.grievance === g1 || `${g0} → ${g1}`; }],
+    ['p2_negotiation', 'Negotiation shift is bounded and follows trust', () => { const hi = computeNegotiationThresholdShift({ trust: 90 }, {}); const lo = computeNegotiationThresholdShift({ trust: 10, grievance: 50 }, {}); return hi.shift < 0 && lo.shift > 0 && Math.abs(lo.shift) <= 0.2 || JSON.stringify({ hi, lo }); }]
+  ]);
+}
+
+export function runAiMemoryPhase3SelfTests() {
+  return memTests([
+    ['p3_model', 'Opponent models learn tendencies from observed actions', () => { let m = createFreshAiMemories(['ai']); for (let i = 0; i < 5; i++) m = applyCommittedActionToAiMemories(m, { actionType: 'region_deposit', actorId: 'player', regionId: 'NSW', turn: i, summary: 'd', stableKey: `m${i}` }, MEM_OBS); const om = m.ai.opponentModels.player; return om.beliefs.expansion.value > om.beliefs.economic.value && om.regionalInterest.NSW === 5 || JSON.stringify(om.beliefs); }],
+    ['p3_redaction', 'Rival memory inspection hides private beliefs without Full Inspection', () => { let m = createFreshAiMemories(['ai']); m = applyCommittedActionToAiMemories(m, { actionType: 'region_deposit', actorId: 'player', regionId: 'NSW', turn: 1, summary: 'd', stableKey: 'r' }, MEM_OBS); const v = getFilteredAiMemoryInspectionView(m.ai, { viewerId: 'player', viewerTeamId: 'team_player', ownerTeamId: 'team_opponent' }); const f = getFilteredAiMemoryInspectionView(m.ai, { viewerId: 'player', viewerTeamId: 'team_player', ownerTeamId: 'team_opponent', fullInspection: true }); return v.isRedacted && v.strategicProfiles.length === 0 && !f.isRedacted && f.strategicProfiles.length === 1 || 'redaction failed'; }],
+    ['p3_influence', 'Memory influence is bounded and never removes options', () => { let m = createFreshAiMemories(['ai']); m = applyCommittedActionToAiMemories(m, { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 1, summary: 's', stableKey: 'i' }, MEM_OBS); const out = applyAiMemoryInfluence([{ type: 'sabotage', score: 10, data: { targetActorId: 'player' } }, { type: 'sell', score: 10 }], { actorId: 'ai', memory: m.ai }); return out.length === 2 && (out[0].score || 0) > 10 && out[1].score === 10 || JSON.stringify(out); }],
+    ['p3_migrate', 'Save migration tolerates garbage', () => { const m = migrateAiMemoriesFromSave({ ai: { events: [null, { summary: 'x' }], relationships: { player: { trust: 'bad' } } }, bad: 5 }); return m.ai.events.length === 1 && m.ai.relationships.player.trust === 50 && !m.bad || JSON.stringify(m); }]
+  ]);
+}
+
+// ---- Persistent AI Memory (cross-match, opt-in, local storage only) -------------------------------
+
+export const PERSISTENT_MEMORY_STORAGE_KEY = 'australia-game.persistent-ai-memory.v1';
+export const PERSISTENCE_POLICY_STORAGE_KEY = 'australia-game.persistent-ai-memory-policy.v1';
+export const HUMAN_PROFILE_ID = 'human_player';
+export const ENABLE_PERSISTENT_MEMORY_TITLE = 'Enable persistent AI memory?';
+export const ENABLE_PERSISTENT_MEMORY_BODY = 'AI opponents will keep a small summary of how you play (tendencies, relationship scores, notable moments) in this browser’s local storage and use it as a capped prior in future matches. Nothing leaves your device. You can export, delete or turn this off at any time.';
+export const DISABLE_PERSISTENT_MEMORY_TITLE = 'Disable persistent AI memory?';
+export const DISABLE_PERSISTENT_MEMORY_BODY = 'Future matches will stop reading and writing persistent AI memory. Current-match memory is not erased. You can also delete the saved profiles now.';
+export const DELETE_PERSISTENT_MEMORY_TITLE = 'Delete all persistent AI memory?';
+export const DELETE_PERSISTENT_MEMORY_BODY = 'This permanently deletes every saved AI profile on this device. Current-match memory is not affected. This cannot be undone.';
+export const IMPORT_PERSISTENT_MEMORY_TITLE = 'Import persistent AI memory?';
+export const IMPORT_PERSISTENT_MEMORY_BODY = 'Importing replaces (or merges into) the AI profiles saved on this device. Automatic persistence is not switched on by importing.';
+
+export interface PersistencePolicy {
+  consent: boolean;
+  storageMode: 'local_browser' | 'unavailable' | 'unverified';
+  storageVerifiedAt?: number;
+  profileSaveVerifiedAt?: number;
+  profileLoadVerifiedAt?: number;
+  lastSuccessfulWriteAt?: number;
+  lastSuccessfulReadAt?: number;
+  lastError: string | null;
+}
+
+export interface PersistentTendency { estimate: number; confidence: number; observations: number }
+
+export interface PersistentProfile {
+  profileId: string;
+  actorId: string;
+  rivalIdentityId: string;
+  subjectProfileId: string;
+  matchesObserved: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  observationCount: number;
+  confidence: number;
+  aggressionPreference: number;
+  expansionPreference: number;
+  economicPreference: number;
+  cooperationPreference: number;
+  strategicTendencies: Record<string, PersistentTendency>;
+  relationshipHistory: { trust: number; respect: number; rivalry: number; reliability: number; cooperation: number };
+  notableMemories: Array<{ id: string; summary: string; importance: number; count: number }>;
+  preferredTeamCoordination: string[];
+  committedMatchIds: string[];
+  lastUpdatedAt: number;
+}
+
+export interface PersistentStore { version: 1; profiles: Record<string, PersistentProfile>; committedMatchIds: string[]; updatedAt: number }
+
+export interface PersistentActorIdentity { actorId: string; rivalIdentityId: string; profileKey: string; identityMode: 'recurring' | 'anonymous' }
+
+export interface PersistentPriorSeed { beliefs: Record<string, { value: number; confidence: number }>; relationship: { trust: number; respect: number; rivalry: number; reliability: number; cooperation: number }; matchesObserved: number; preferredTeamCoordination?: string[] }
+
+export interface PersistentMemorySnapshot {
+  matchId: string;
+  identityByActor: Record<string, PersistentActorIdentity>;
+  priorsByActor: Record<string, PersistentPriorSeed>;
+  importedProfileIds: string[];
+  frozenAt: number;
+}
+
+let persistenceGeneration = 0;
+let restoredStoreThisLoad = false;
+let restoredProfilesThisLoad = false;
+
+function persistStorage(): Storage | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return window.localStorage;
+  } catch { return null; }
+}
+
+function defaultPersistencePolicy(): PersistencePolicy {
+  return { consent: false, storageMode: 'unverified', storageVerifiedAt: undefined, profileSaveVerifiedAt: undefined, profileLoadVerifiedAt: undefined, lastSuccessfulWriteAt: undefined, lastSuccessfulReadAt: undefined, lastError: null };
+}
+
+export function loadPersistencePolicy(storage?: Storage | null, opts?: { markRestored?: boolean }): PersistencePolicy {
+  const s = storage === undefined ? persistStorage() : storage;
+  if (!s) return { ...defaultPersistencePolicy(), storageMode: 'unavailable' };
+  try {
+    const raw = s.getItem(PERSISTENCE_POLICY_STORAGE_KEY);
+    if (!raw) return defaultPersistencePolicy();
+    const p = JSON.parse(raw);
+    const policy: PersistencePolicy = { ...defaultPersistencePolicy(), ...Object.fromEntries(Object.entries(p || {}).filter(([k, v]) => k in defaultPersistencePolicy() && v !== null)) } as PersistencePolicy;
+    policy.consent = p?.consent === true;
+    if (!['local_browser', 'unavailable', 'unverified'].includes(policy.storageMode)) policy.storageMode = 'unverified';
+    if (opts?.markRestored && policy.consent) restoredProfilesThisLoad = true;
+    return policy;
+  } catch (e) {
+    return { ...defaultPersistencePolicy(), lastError: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function savePersistencePolicy(policy: PersistencePolicy, storage?: Storage | null): boolean {
+  const s = storage === undefined ? persistStorage() : storage;
+  if (!s) return false;
+  try { s.setItem(PERSISTENCE_POLICY_STORAGE_KEY, JSON.stringify(policy)); return true; } catch { return false; }
+}
+
+export function isPersistenceConsentActive(policy: PersistencePolicy | null | undefined): boolean {
+  return Boolean(policy && policy.consent && policy.storageMode === 'local_browser' && policy.storageVerifiedAt);
+}
+
+/** Persistence is ON only with explicit, verified consent — settings can never switch it on alone. */
+export function applyPersistencePolicyToSettings<T extends { aiPersistentMemoryEnabled?: boolean }>(settings: T, policy: PersistencePolicy): T {
+  if (!settings) return settings;
+  if (!isPersistenceConsentActive(policy) && settings.aiPersistentMemoryEnabled) return { ...settings, aiPersistentMemoryEnabled: false };
+  return settings;
+}
+
+export type PersistenceStatus = 'off' | 'on' | 'unavailable' | 'error' | 'warning' | 'write_failed' | 'read_failed' | 'verifying' | 'disabling' | 'deleting' | 'consent_required';
+
+export function persistenceStatusFromPolicy(policy: PersistencePolicy): PersistenceStatus {
+  if (policy.storageMode === 'unavailable') return 'unavailable';
+  if (policy.lastError && !policy.consent) return 'error';
+  if (isPersistenceConsentActive(policy)) return 'on';
+  if (policy.consent) return 'consent_required';
+  return 'off';
+}
+
+export function persistenceStatusLabel(status: string): string {
+  switch (status) {
+    case 'on': return 'ON — verified local storage';
+    case 'unavailable': return 'Unavailable — this browser blocks storage';
+    case 'error': return 'Error — see details';
+    case 'warning': return 'Warning — see details';
+    case 'write_failed': return 'Write failed';
+    case 'read_failed': return 'Read failed';
+    case 'verifying': return 'Verifying storage…';
+    case 'disabling': return 'Disabling…';
+    case 'deleting': return 'Deleting…';
+    case 'consent_required': return 'Needs verification';
+    default: return 'OFF';
+  }
+}
+
+function emptyPersistentStore(): PersistentStore { return { version: 1, profiles: {}, committedMatchIds: [], updatedAt: 0 }; }
+
+function sanitizePersistentProfile(key: string, p: any): PersistentProfile | null {
+  if (!p || typeof p !== 'object') return null;
+  const n = (v: unknown, d = 0) => memNum(v, d);
+  const rh = p.relationshipHistory || {};
+  return {
+    profileId: String(p.profileId || key), actorId: String(p.actorId || ''), rivalIdentityId: String(p.rivalIdentityId || key), subjectProfileId: String(p.subjectProfileId || HUMAN_PROFILE_ID),
+    matchesObserved: n(p.matchesObserved), wins: n(p.wins), losses: n(p.losses), draws: n(p.draws), observationCount: n(p.observationCount), confidence: memClamp(n(p.confidence), 0, 1),
+    aggressionPreference: memClamp(n(p.aggressionPreference), 0, 1), expansionPreference: memClamp(n(p.expansionPreference), 0, 1), economicPreference: memClamp(n(p.economicPreference), 0, 1), cooperationPreference: memClamp(n(p.cooperationPreference), 0, 1),
+    strategicTendencies: Object.fromEntries(Object.entries(p.strategicTendencies && typeof p.strategicTendencies === 'object' ? p.strategicTendencies : {}).slice(0, 8).map(([k, t]: [string, any]) => [k, { estimate: memClamp(n(t?.estimate), 0, 1), confidence: memClamp(n(t?.confidence), 0, 1), observations: n(t?.observations) }])),
+    relationshipHistory: { trust: memClamp(n(rh.trust, 50)), respect: memClamp(n(rh.respect, 50)), rivalry: memClamp(n(rh.rivalry)), reliability: memClamp(n(rh.reliability, 50)), cooperation: memClamp(n(rh.cooperation, 50)) },
+    notableMemories: (Array.isArray(p.notableMemories) ? p.notableMemories : []).slice(0, 8).map((m: any, i: number) => ({ id: String(m?.id || `nm_${i}`), summary: String(m?.summary || '').slice(0, 200), importance: n(m?.importance, 1), count: Math.max(1, n(m?.count, 1)) })),
+    preferredTeamCoordination: (Array.isArray(p.preferredTeamCoordination) ? p.preferredTeamCoordination : []).slice(0, 6).map(String),
+    committedMatchIds: (Array.isArray(p.committedMatchIds) ? p.committedMatchIds : []).slice(-50).map(String),
+    lastUpdatedAt: n(p.lastUpdatedAt)
+  };
+}
+
+function sanitizePersistentStore(raw: any): PersistentStore {
+  const store = emptyPersistentStore();
+  if (!raw || typeof raw !== 'object') return store;
+  Object.entries(raw.profiles && typeof raw.profiles === 'object' ? raw.profiles : {}).slice(0, 50).forEach(([k, p]) => { const s = sanitizePersistentProfile(k, p); if (s) store.profiles[k] = s; });
+  store.committedMatchIds = (Array.isArray(raw.committedMatchIds) ? raw.committedMatchIds : []).slice(-200).map(String);
+  store.updatedAt = memNum(raw.updatedAt);
+  return store;
+}
+
+export function loadPersistentStore(storage?: Storage | null): PersistentStore {
+  const s = storage === undefined ? persistStorage() : storage;
+  if (!s) return emptyPersistentStore();
+  try {
+    const raw = s.getItem(PERSISTENT_MEMORY_STORAGE_KEY);
+    if (!raw) return emptyPersistentStore();
+    const store = sanitizePersistentStore(JSON.parse(raw));
+    if (Object.keys(store.profiles).length) restoredStoreThisLoad = true;
+    return store;
+  } catch { return emptyPersistentStore(); }
+}
+
+export function getPersistenceGeneration(): number { return persistenceGeneration; }
+export function didRestorePersistentStoreThisLoad(): boolean { return restoredStoreThisLoad; }
+export function didRestorePersistentProfilesThisLoad(): boolean { return restoredProfilesThisLoad; }
+
+/** A write is only allowed while consent holds and no disable/delete happened since the commit began. */
+export function assertPersistenceWriteAllowed(storage?: Storage | null, opts?: { purpose?: string; generation?: number }): boolean {
+  const policy = loadPersistencePolicy(storage);
+  if (opts?.purpose === 'commit' && !isPersistenceConsentActive(policy)) return false;
+  if (typeof opts?.generation === 'number' && opts.generation !== persistenceGeneration) return false;
+  return policy.storageMode !== 'unavailable';
+}
+
+export function savePersistentStore(store: PersistentStore, storage?: Storage | null, opts?: { purpose?: string; generation?: number }): boolean {
+  const s = storage === undefined ? persistStorage() : storage;
+  if (!s || !assertPersistenceWriteAllowed(s, opts)) return false;
+  try {
+    s.setItem(PERSISTENT_MEMORY_STORAGE_KEY, JSON.stringify({ ...store, updatedAt: Date.now() }));
+    const policy = loadPersistencePolicy(s);
+    savePersistencePolicy({ ...policy, lastSuccessfulWriteAt: Date.now(), lastError: null }, s);
+    return true;
+  } catch (e) {
+    const policy = loadPersistencePolicy(s);
+    savePersistencePolicy({ ...policy, lastError: e instanceof Error ? e.message : String(e) }, s);
+    return false;
+  }
+}
+
+function verifyStorageRoundTrip(s: Storage | null): { ok: boolean; error?: string } {
+  if (!s) return { ok: false, error: 'This browser does not allow local storage here, so persistent AI memory cannot be used.' };
+  try {
+    const key = `${PERSISTENT_MEMORY_STORAGE_KEY}.probe`;
+    const value = `probe:${Date.now()}`;
+    s.setItem(key, value);
+    const back = s.getItem(key);
+    s.removeItem(key);
+    return back === value ? { ok: true } : { ok: false, error: 'Storage read-back did not match.' };
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+}
+
+export function confirmEnableAndVerifyPersistentMemory(storage?: Storage | null): { policy: PersistencePolicy; verification: { ok: boolean; error?: string } } {
+  const s = storage === undefined ? persistStorage() : storage;
+  const verification = verifyStorageRoundTrip(s);
+  const now = Date.now();
+  const policy: PersistencePolicy = verification.ok
+    ? { ...loadPersistencePolicy(s), consent: true, storageMode: 'local_browser', storageVerifiedAt: now, profileSaveVerifiedAt: now, profileLoadVerifiedAt: now, lastSuccessfulReadAt: now, lastSuccessfulWriteAt: now, lastError: null }
+    : { ...loadPersistencePolicy(s), consent: false, storageMode: s ? 'unverified' : 'unavailable', lastError: verification.error || 'Verification failed.' };
+  savePersistencePolicy(policy, s);
+  persistenceGeneration += 1;
+  return { policy, verification };
+}
+
+export function reverifyPersistentStorage(storage?: Storage | null): { policy: PersistencePolicy; verification: { ok: boolean; error?: string } } {
+  const s = storage === undefined ? persistStorage() : storage;
+  const verification = verifyStorageRoundTrip(s);
+  const now = Date.now();
+  const prev = loadPersistencePolicy(s);
+  const policy: PersistencePolicy = verification.ok
+    ? { ...prev, storageMode: 'local_browser', storageVerifiedAt: now, lastSuccessfulReadAt: now, lastError: null }
+    : { ...prev, storageMode: s ? 'unverified' : 'unavailable', lastError: verification.error || 'Verification failed.' };
+  savePersistencePolicy(policy, s);
+  return { policy, verification };
+}
+
+export function disablePersistentMemory(storage?: Storage | null, opts?: { deleteProfiles?: boolean }): PersistencePolicy {
+  const s = storage === undefined ? persistStorage() : storage;
+  persistenceGeneration += 1;   // any in-flight commit is now stale and will not write
+  const policy: PersistencePolicy = { ...loadPersistencePolicy(s), consent: false };
+  savePersistencePolicy(policy, s);
+  if (opts?.deleteProfiles && s) { try { s.removeItem(PERSISTENT_MEMORY_STORAGE_KEY); } catch { /* storage blocked */ } }
+  return policy;
+}
+
+export function deletePersistentAiMemory(storage?: Storage | null): { ok: boolean; removed: number; error?: string } {
+  const s = storage === undefined ? persistStorage() : storage;
+  const removed = Object.keys(loadPersistentStore(s).profiles).length;
+  persistenceGeneration += 1;
+  if (!s) return { ok: false, removed: 0, error: 'Storage is unavailable.' };
+  try { s.removeItem(PERSISTENT_MEMORY_STORAGE_KEY); return { ok: true, removed }; } catch (e) { return { ok: false, removed: 0, error: e instanceof Error ? e.message : String(e) }; }
+}
+
+export function persistResetAll(storage?: Storage | null) { return deletePersistentAiMemory(storage); }
+
+export function persistResetProfile(profileId: string, storage?: Storage | null): boolean {
+  const s = storage === undefined ? persistStorage() : storage;
+  const store = loadPersistentStore(s);
+  if (!store.profiles[profileId]) return false;
+  delete store.profiles[profileId];
+  persistenceGeneration += 1;
+  if (!s) return false;
+  try { s.setItem(PERSISTENT_MEMORY_STORAGE_KEY, JSON.stringify({ ...store, updatedAt: Date.now() })); return true; } catch { return false; }
+}
+
+export function peekLegacyProfileCount(storage?: Storage | null): number {
+  return Object.keys(loadPersistentStore(storage).profiles).length;
+}
+
+function stableIdHash(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+export function createPersistentMatchId(seed: string): string { return `match_${stableIdHash(String(seed))}`; }
+
+export function resolveActorIdentity(params: { actorId: string; characterName?: string; personality?: string; matchId: string; identityMode?: string; subjectProfileId?: string }): PersistentActorIdentity {
+  const recurring = params.identityMode === 'recurring' && Boolean(params.characterName);
+  const rivalIdentityId = recurring ? `rival:${String(params.characterName).toLowerCase().replace(/[^a-z0-9]+/g, '_')}:${params.personality || 'balanced'}` : `anon:${params.matchId}:${params.actorId}`;
+  return { actorId: params.actorId, rivalIdentityId, profileKey: `${rivalIdentityId}|${params.subjectProfileId || HUMAN_PROFILE_ID}`, identityMode: recurring ? 'recurring' : 'anonymous' };
+}
+
+interface PersistCtx { settings?: any; selectedMode?: string; identityMode?: string; gameMode?: string; gameOver?: boolean; isLiveIntentMatch?: boolean; isolatedReplayRuntime?: boolean; isWhatIf?: boolean; policy?: PersistencePolicy }
+
+function persistenceUsable(ctx: PersistCtx): boolean {
+  return Boolean(ctx.settings?.aiPersistentMemoryEnabled) && ctx.identityMode === 'recurring' && ctx.isLiveIntentMatch !== false && !ctx.isolatedReplayRuntime && !ctx.isWhatIf && isPersistenceConsentActive(ctx.policy || loadPersistencePolicy());
+}
+
+export function shouldApplyPersistentPriors(ctx: PersistCtx): boolean { return persistenceUsable(ctx) && ctx.settings?.aiPersistentLearningEnabled !== false; }
+export function shouldCommitPersistentMemory(ctx: PersistCtx): boolean { return persistenceUsable(ctx); }
+export function shouldAskPersistentAbandon(ctx: PersistCtx): boolean {
+  return persistenceUsable({ ...ctx, isLiveIntentMatch: true }) && ctx.gameMode === 'game' && !ctx.gameOver && ctx.settings?.aiPersistentAskOnAbandon !== false;
+}
+
+export function isMatchAlreadyCommitted(store: PersistentStore, matchId: string): boolean { return store.committedMatchIds.includes(matchId); }
+
+/** Priors are capped so a previous match can only nudge, never dictate, this match's beliefs. */
+export function profileToPriorSeed(profile: PersistentProfile, _subjectActorId: string): PersistentPriorSeed {
+  const cap = (c: number) => Math.min(0.5, c);
+  return {
+    beliefs: {
+      aggressive: { value: profile.aggressionPreference, confidence: cap(profile.confidence) },
+      expansion: { value: profile.expansionPreference, confidence: cap(profile.confidence) },
+      economic: { value: profile.economicPreference, confidence: cap(profile.confidence) },
+      cooperative: { value: profile.cooperationPreference, confidence: cap(profile.confidence) }
+    },
+    relationship: { ...profile.relationshipHistory },
+    matchesObserved: profile.matchesObserved,
+    preferredTeamCoordination: profile.preferredTeamCoordination.slice(0, 3)
+  };
+}
+
+export function applyPriorsToFreshMemories(memories: AiMemoriesByActor, priorsByActor: Record<string, PersistentPriorSeed>): AiMemoriesByActor {
+  const out: AiMemoriesByActor = { ...memories };
+  Object.entries(priorsByActor || {}).forEach(([actorId, prior]) => {
+    const mem = out[actorId] ? { ...out[actorId] } : createEmptyAiActorMemory(actorId);
+    const model = createOpponentModel('player');
+    Object.entries(prior.beliefs).forEach(([key, b]) => { model.beliefs[key] = { key, value: memClamp(b.value, 0, 1), confidence: memClamp(b.confidence, 0, 1), observations: 0, opportunityCount: 0, source: 'persistent_prior' }; });
+    mem.opponentModels = { ...mem.opponentModels, player: model };
+    mem.relationships = { ...mem.relationships, player: { ...createRelationship('player', 0), ...prior.relationship, actorId: 'player' } };
+    out[actorId] = mem;
+  });
+  return out;
+}
+
+export function freezePersistentSnapshot(params: { matchId: string; identityByActor: Record<string, PersistentActorIdentity>; priorsByActor: Record<string, PersistentPriorSeed>; importedProfileIds: string[] }): PersistentMemorySnapshot {
+  return JSON.parse(JSON.stringify({ ...params, frozenAt: 0 }));
+}
+
+export function sanitizePersistentSnapshot(raw: unknown): PersistentMemorySnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as any;
+  if (typeof r.matchId !== 'string' || !r.matchId) return null;
+  return {
+    matchId: r.matchId,
+    identityByActor: r.identityByActor && typeof r.identityByActor === 'object' ? r.identityByActor : {},
+    priorsByActor: r.priorsByActor && typeof r.priorsByActor === 'object' ? r.priorsByActor : {},
+    importedProfileIds: Array.isArray(r.importedProfileIds) ? r.importedProfileIds.map(String).slice(0, 12) : [],
+    frozenAt: memNum(r.frozenAt)
+  };
+}
+
+export interface PersistentMatchSummary { subjectProfileId: string; rivalIdentityId: string; profileKey: string; actorId: string; outcome: 'win' | 'loss' | 'draw'; beliefs: Record<string, { value: number; confidence: number; observations: number }>; relationship: PersistentProfile['relationshipHistory']; notable: Array<{ summary: string; importance: number }>; observations: number }
+
+export function extractMatchSummary(memory: AiActorMemory | null | undefined, subjectActorId: string, meta: { subjectProfileId: string; rivalIdentityId: string; profileKey: string; outcome: 'win' | 'loss' | 'draw' }): PersistentMatchSummary {
+  const m = memory || createEmptyAiActorMemory('');
+  const model = m.opponentModels[subjectActorId];
+  const rel = m.relationships[subjectActorId] || createRelationship(subjectActorId, 0);
+  return {
+    ...meta,
+    actorId: m.ownerActorId,
+    beliefs: Object.fromEntries(Object.entries(model?.beliefs || {}).map(([k, b]) => [k, { value: b.value, confidence: b.confidence, observations: b.observations }])),
+    relationship: { trust: rel.trust, respect: rel.respect, rivalry: rel.rivalry, reliability: rel.reliability, cooperation: rel.cooperation },
+    notable: m.events.filter(e => e.actorId === subjectActorId && e.importance >= 3).slice(-5).map(e => ({ summary: e.summary, importance: e.importance })),
+    observations: model?.totalOpportunities || 0
+  };
+}
+
+/** Blend a match summary into a long-term profile (running average weighted by matches observed). */
+export function consolidateProfile(existing: PersistentProfile | null | undefined, summary: PersistentMatchSummary, meta: { matchId: string }): PersistentProfile {
+  const base: PersistentProfile = existing || {
+    profileId: summary.profileKey, actorId: summary.actorId, rivalIdentityId: summary.rivalIdentityId, subjectProfileId: summary.subjectProfileId,
+    matchesObserved: 0, wins: 0, losses: 0, draws: 0, observationCount: 0, confidence: 0,
+    aggressionPreference: 0.25, expansionPreference: 0.25, economicPreference: 0.25, cooperationPreference: 0.25,
+    strategicTendencies: {}, relationshipHistory: { trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50 },
+    notableMemories: [], preferredTeamCoordination: [], committedMatchIds: [], lastUpdatedAt: 0
+  };
+  if (base.committedMatchIds.includes(meta.matchId)) return base;
+  const n = base.matchesObserved;
+  const blend = (old: number, next: number | undefined) => (typeof next === 'number' ? Math.round(((old * n + next) / (n + 1)) * 1000) / 1000 : old);
+  const tendencies = { ...base.strategicTendencies };
+  Object.entries(summary.beliefs).forEach(([k, b]) => {
+    const t = tendencies[k] || { estimate: 0.25, confidence: 0, observations: 0 };
+    tendencies[k] = { estimate: blend(t.estimate, b.value), confidence: Math.min(0.9, Math.round((t.confidence + b.confidence * 0.3) * 100) / 100), observations: t.observations + b.observations };
+  });
+  const notable = [...base.notableMemories];
+  summary.notable.forEach((m, i) => {
+    const hit = notable.find(x => x.summary === m.summary);
+    if (hit) hit.count += 1; else notable.push({ id: `nm_${meta.matchId}_${i}`, summary: m.summary, importance: m.importance, count: 1 });
+  });
+  return {
+    ...base,
+    matchesObserved: n + 1,
+    wins: base.wins + (summary.outcome === 'win' ? 1 : 0),
+    losses: base.losses + (summary.outcome === 'loss' ? 1 : 0),
+    draws: base.draws + (summary.outcome === 'draw' ? 1 : 0),
+    observationCount: base.observationCount + summary.observations,
+    confidence: Math.min(0.9, Math.round((base.confidence + 0.15) * 100) / 100),
+    aggressionPreference: blend(base.aggressionPreference, summary.beliefs.aggressive?.value),
+    expansionPreference: blend(base.expansionPreference, summary.beliefs.expansion?.value),
+    economicPreference: blend(base.economicPreference, summary.beliefs.economic?.value),
+    cooperationPreference: blend(base.cooperationPreference, summary.beliefs.cooperative?.value),
+    strategicTendencies: tendencies,
+    relationshipHistory: {
+      trust: blend(base.relationshipHistory.trust, summary.relationship.trust), respect: blend(base.relationshipHistory.respect, summary.relationship.respect),
+      rivalry: blend(base.relationshipHistory.rivalry, summary.relationship.rivalry), reliability: blend(base.relationshipHistory.reliability, summary.relationship.reliability),
+      cooperation: blend(base.relationshipHistory.cooperation, summary.relationship.cooperation)
+    },
+    notableMemories: notable.sort((a, b) => b.importance * b.count - a.importance * a.count).slice(0, 8),
+    committedMatchIds: [...base.committedMatchIds, meta.matchId].slice(-50),
+    lastUpdatedAt: Date.now()
+  };
+}
+
+export function commitMatchToStore(store: PersistentStore, profile: PersistentProfile, matchId: string): PersistentStore {
+  return { ...store, profiles: { ...store.profiles, [profile.profileId]: profile }, committedMatchIds: Array.from(new Set([...store.committedMatchIds, matchId])).slice(-200), updatedAt: Date.now() };
+}
+
+export function exportPersistentMemoryBackup(storage?: Storage | null, opts?: { profileId?: string }): { format: string; version: 1; exportedAt: number; profiles: Record<string, PersistentProfile> } {
+  const store = loadPersistentStore(storage);
+  const profiles = opts?.profileId ? (store.profiles[opts.profileId] ? { [opts.profileId]: store.profiles[opts.profileId] } : {}) : store.profiles;
+  return { format: 'australia-game-persistent-ai-memory', version: 1, exportedAt: Date.now(), profiles };
+}
+
+export function previewPersistentMemoryBackup(raw: string): { ok: boolean; error?: string; profileCount: number; identities: string[]; lastUpdatedAt: number | null } {
+  try {
+    const parsed = JSON.parse(raw);
+    const store = sanitizePersistentStore({ profiles: parsed?.profiles || {} });
+    const profiles = Object.values(store.profiles);
+    if (!profiles.length) return { ok: false, error: 'The file contains no AI profiles.', profileCount: 0, identities: [], lastUpdatedAt: null };
+    return { ok: true, profileCount: profiles.length, identities: profiles.map(p => p.rivalIdentityId).slice(0, 10), lastUpdatedAt: Math.max(...profiles.map(p => p.lastUpdatedAt)) || null };
+  } catch (e) {
+    return { ok: false, error: `The file is not a valid backup (${e instanceof Error ? e.message : String(e)}).`, profileCount: 0, identities: [], lastUpdatedAt: null };
+  }
+}
+
+export function importPersistentMemoryBackup(raw: string, storage?: Storage | null, opts?: { confirmed?: boolean; mode?: 'replace' | 'merge' }): { ok: boolean; error?: string; imported: number } {
+  if (!opts?.confirmed) return { ok: false, error: 'Import needs confirmation.', imported: 0 };
+  const preview = previewPersistentMemoryBackup(raw);
+  if (!preview.ok) return { ok: false, error: preview.error, imported: 0 };
+  const s = storage === undefined ? persistStorage() : storage;
+  if (!s) return { ok: false, error: 'Storage is unavailable in this browser.', imported: 0 };
+  try {
+    const incoming = sanitizePersistentStore({ profiles: JSON.parse(raw).profiles });
+    const current = loadPersistentStore(s);
+    const next: PersistentStore = opts.mode === 'merge' ? { ...current, profiles: { ...current.profiles, ...incoming.profiles } } : { ...current, profiles: incoming.profiles };
+    s.setItem(PERSISTENT_MEMORY_STORAGE_KEY, JSON.stringify({ ...next, updatedAt: Date.now() }));
+    persistenceGeneration += 1;
+    return { ok: true, imported: Object.keys(incoming.profiles).length };
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e), imported: 0 }; }
+}
+
+/** In-memory Storage stand-in used by the self-tests (never touches the real browser storage). */
+function createMemoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() { return data.size; },
+    clear: () => data.clear(),
+    getItem: (k: string) => (data.has(k) ? data.get(k)! : null),
+    key: (i: number) => Array.from(data.keys())[i] ?? null,
+    removeItem: (k: string) => { data.delete(k); },
+    setItem: (k: string, v: string) => { data.set(k, String(v)); }
+  } as Storage;
+}
+
+export function runAiMemoryPhase4SelfTests() {
+  return memTests([
+    ['p4_default_off', 'Persistence is off without explicit verified consent', () => { const s = createMemoryStorage(); const p = loadPersistencePolicy(s); return !isPersistenceConsentActive(p) && applyPersistencePolicyToSettings({ aiPersistentMemoryEnabled: true } as { aiPersistentMemoryEnabled?: boolean }, p).aiPersistentMemoryEnabled === false || 'persisted without consent'; }],
+    ['p4_enable', 'Enabling verifies a storage round-trip', () => { const s = createMemoryStorage(); const r = confirmEnableAndVerifyPersistentMemory(s); return r.verification.ok && isPersistenceConsentActive(loadPersistencePolicy(s)) || JSON.stringify(r); }],
+    ['p4_disable', 'Disabling stops writes immediately (stale commits cannot write)', () => { const s = createMemoryStorage(); confirmEnableAndVerifyPersistentMemory(s); const gen = getPersistenceGeneration(); disablePersistentMemory(s); return !savePersistentStore(emptyPersistentStore(), s, { purpose: 'commit', generation: gen }) || 'stale write allowed'; }]
+  ]);
+}
+
+export function runAiMemoryPhase6SelfTests() {
+  return memTests([
+    ['p6_consolidate', 'A match summary consolidates into a profile once per match', () => { const sum: PersistentMatchSummary = { subjectProfileId: HUMAN_PROFILE_ID, rivalIdentityId: 'rival:x', profileKey: 'rival:x|human_player', actorId: 'ai', outcome: 'win', beliefs: { aggressive: { value: 0.8, confidence: 0.5, observations: 4 } }, relationship: { trust: 40, respect: 50, rivalry: 30, reliability: 50, cooperation: 50 }, notable: [], observations: 4 }; const a = consolidateProfile(null, sum, { matchId: 'm1' }); const b = consolidateProfile(a, sum, { matchId: 'm1' }); return a.matchesObserved === 1 && b.matchesObserved === 1 && a.wins === 1 || JSON.stringify({ a: a.matchesObserved, b: b.matchesObserved }); }],
+    ['p6_prior_cap', 'Priors are capped (a past match only nudges)', () => { const p = consolidateProfile(null, { subjectProfileId: HUMAN_PROFILE_ID, rivalIdentityId: 'r', profileKey: 'r|h', actorId: 'ai', outcome: 'loss', beliefs: {}, relationship: { trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50 }, notable: [], observations: 0 }, { matchId: 'm' }); const seed = profileToPriorSeed({ ...p, confidence: 0.9 }, 'player'); return Object.values(seed.beliefs).every(b => b.confidence <= 0.5) || 'cap exceeded'; }],
+    ['p6_identity', 'Anonymous identities never persist', () => resolveActorIdentity({ actorId: 'ai', matchId: 'm', identityMode: 'anonymous' }).rivalIdentityId.startsWith('anon:') || 'not anonymous']
+  ]);
+}
+
+export function runAiMemoryPhase61SelfTests() {
+  return memTests([
+    ['p61_backup', 'Export → preview → import round-trips profiles', () => { const s = createMemoryStorage(); confirmEnableAndVerifyPersistentMemory(s); const prof = consolidateProfile(null, { subjectProfileId: HUMAN_PROFILE_ID, rivalIdentityId: 'rival:y', profileKey: 'rival:y|human_player', actorId: 'ai', outcome: 'draw', beliefs: {}, relationship: { trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50 }, notable: [], observations: 0 }, { matchId: 'm2' }); savePersistentStore(commitMatchToStore(emptyPersistentStore(), prof, 'm2'), s, { generation: getPersistenceGeneration() }); const raw = JSON.stringify(exportPersistentMemoryBackup(s)); const t = createMemoryStorage(); const r = importPersistentMemoryBackup(raw, t, { confirmed: true, mode: 'replace' }); return r.ok && previewPersistentMemoryBackup(raw).profileCount === 1 && Object.keys(loadPersistentStore(t).profiles).length === 1 || JSON.stringify(r); }],
+    ['p61_bad_backup', 'A corrupt backup is rejected without changes', () => !previewPersistentMemoryBackup('{not json').ok && !importPersistentMemoryBackup('{"profiles":{}}', createMemoryStorage(), { confirmed: true }).ok || 'accepted a bad backup'],
+    ['p61_no_storage', 'No storage (sandboxed browser) never throws', () => { const r = confirmEnableAndVerifyPersistentMemory(null); return !r.verification.ok && loadPersistentStore(null).version === 1 || 'threw or enabled'; }]
+  ]);
+}
+
+// ---- AI Communication + player-authored Team Plans -------------------------------------------------
+
+export type CommunicationAutonomyLevel = 'advisory' | 'assisted' | 'delegated';
+export type CommunicationProactiveFrequency = 'off' | 'low' | 'normal' | 'high';
+
+export interface AiSuggestedAction {
+  id: string;
+  type: string;
+  label: string;
+  regionId?: string;
+  estimatedCost?: number;
+  status: 'proposed' | 'approved' | 'rejected' | 'blocked' | 'executed';
+}
+
+export interface AiCommunicationEvidence { type: string; summary: string; referenceId?: string }
+
+export interface AiCommunicationResponse {
+  id: string;
+  turn: number;
+  speakerActorId: string;
+  recipientActorId: string;
+  text: string;
+  kind: 'answer' | 'warning' | 'team_request' | 'plan_update' | 'info';
+  stance: 'supportive' | 'neutral' | 'wary' | 'hostile' | 'cautious';
+  confidence: number;
+  evidence: AiCommunicationEvidence[];
+  suggestedActions?: AiSuggestedAction[];
+  followUps?: string[];
+  proactiveKey?: string;
+}
+
+export interface AiCommunicationState {
+  messages: AiCommunicationResponse[];
+  selectedSpeakerId: string | null;
+  committedActionIds: string[];
+  lastProactiveTurnByKey: Record<string, number>;
+}
+
+export interface TeamStrategicPlan {
+  id: string;
+  teamId: string;
+  title: string;
+  primaryObjective: string;
+  secondaryObjective: string | null;
+  constraints: string[];
+  assignments: Array<{ actorId: string; task: string }>;
+  regions: string[];
+  milestones: string[];
+  status: 'draft' | 'active' | 'paused' | 'completed' | 'cancelled';
+  createdByActorId: string;
+  createdTurn: number;
+  updatedTurn: number;
+  history: Array<{ turn: number; note: string }>;
+}
+
+const COMM_MESSAGE_CAP = 40;
+const COMM_REGION_CODES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+const COMM_REGION_NAMES: Record<string, string> = { 'new south wales': 'NSW', victoria: 'VIC', queensland: 'QLD', 'western australia': 'WA', 'south australia': 'SA', tasmania: 'TAS', 'northern territory': 'NT', 'australian capital territory': 'ACT', canberra: 'ACT', sydney: 'NSW', melbourne: 'VIC', brisbane: 'QLD', perth: 'WA', adelaide: 'SA', hobart: 'TAS', darwin: 'NT' };
+
+export function createEmptyCommunicationState(): AiCommunicationState {
+  return { messages: [], selectedSpeakerId: null, committedActionIds: [], lastProactiveTurnByKey: {} };
+}
+
+function sanitizeSuggestedAction(a: any, i: number): AiSuggestedAction | null {
+  if (!a || typeof a !== 'object') return null;
+  return { id: String(a.id || `sa_${i}`), type: String(a.type || 'reserve_region'), label: String(a.label || 'Suggested action').slice(0, 160), regionId: a.regionId ? String(a.regionId) : undefined, estimatedCost: typeof a.estimatedCost === 'number' ? a.estimatedCost : undefined, status: ['proposed', 'approved', 'rejected', 'blocked', 'executed'].includes(a.status) ? a.status : 'proposed' };
+}
+
+export function migrateCommunicationState(raw: unknown): AiCommunicationState {
+  const base = createEmptyCommunicationState();
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as any;
+  base.messages = (Array.isArray(r.messages) ? r.messages : []).filter((m: any) => m && typeof m === 'object' && typeof m.text === 'string').slice(-COMM_MESSAGE_CAP).map((m: any, i: number) => ({
+    id: String(m.id || `msg_${i}`), turn: memNum(m.turn), speakerActorId: String(m.speakerActorId || 'ai'), recipientActorId: String(m.recipientActorId || 'player'), text: String(m.text).slice(0, 1200),
+    kind: ['answer', 'warning', 'team_request', 'plan_update', 'info'].includes(m.kind) ? m.kind : 'answer', stance: ['supportive', 'neutral', 'wary', 'hostile', 'cautious'].includes(m.stance) ? m.stance : 'neutral',
+    confidence: memClamp(memNum(m.confidence, 0.5), 0, 1), evidence: (Array.isArray(m.evidence) ? m.evidence : []).slice(0, 8).map((e: any) => ({ type: String(e?.type || 'fact'), summary: String(e?.summary || ''), referenceId: e?.referenceId ? String(e.referenceId) : undefined })),
+    suggestedActions: (Array.isArray(m.suggestedActions) ? m.suggestedActions : []).map(sanitizeSuggestedAction).filter(Boolean) as AiSuggestedAction[],
+    followUps: Array.isArray(m.followUps) ? m.followUps.map(String).slice(0, 4) : undefined, proactiveKey: m.proactiveKey ? String(m.proactiveKey) : undefined
+  }));
+  base.selectedSpeakerId = typeof r.selectedSpeakerId === 'string' ? r.selectedSpeakerId : null;
+  base.committedActionIds = (Array.isArray(r.committedActionIds) ? r.committedActionIds : []).map(String).slice(-100);
+  base.lastProactiveTurnByKey = r.lastProactiveTurnByKey && typeof r.lastProactiveTurnByKey === 'object' ? Object.fromEntries(Object.entries(r.lastProactiveTurnByKey).slice(0, 50).map(([k, v]) => [k, memNum(v)])) : {};
+  return base;
+}
+
+export function appendCommunicationMessage(state: AiCommunicationState, message: AiCommunicationResponse): AiCommunicationState {
+  return { ...state, messages: [...state.messages, message].slice(-COMM_MESSAGE_CAP) };
+}
+
+export function applyProactiveResults(state: AiCommunicationState, messages: AiCommunicationResponse[], turn: number): AiCommunicationState {
+  const lastProactiveTurnByKey = { ...state.lastProactiveTurnByKey };
+  messages.forEach(m => { if (m.proactiveKey) lastProactiveTurnByKey[m.proactiveKey] = turn; });
+  return { ...state, messages: [...state.messages, ...messages].slice(-COMM_MESSAGE_CAP), lastProactiveTurnByKey };
+}
+
+export function shouldEmitLiveCommunication(ctx: { isLiveIntentMatch?: boolean; isolatedReplayRuntime?: boolean }): boolean {
+  return Boolean(ctx.isLiveIntentMatch) && !ctx.isolatedReplayRuntime;
+}
+
+const MEMORY_AWARE_INTENTS = new Set(['MEMORY_RECALL', 'RIVAL_RECENT', 'RELATIONSHIP_EXPLAIN', 'STRATEGIC_PATTERN', 'RIVAL_PREDICT', 'PLAN_STATUS', 'PLAN_CHANGE', 'DECISION_MEMORY', 'PLAYSTYLE_LEARNED', 'TEAM_PLAN_UPDATE', 'NEXT_STEP', 'WHY_REGION', 'CURRENT_PLAN']);
+
+export function isMemoryAwareAskIntent(intent: string | null | undefined): boolean {
+  return Boolean(intent && MEMORY_AWARE_INTENTS.has(String(intent)));
+}
+
+/** Deterministic keyword classifier for memory / plan questions. */
+export function classifyCommunicationIntent(text: string): string {
+  const q = String(text || '').toLowerCase();
+  if (/\b(new plan|update (the |our )?plan|change (the |our )?plan|plan:|our plan is|let'?s (focus|hold|take|defend))\b/.test(q)) return 'TEAM_PLAN_UPDATE';
+  if (/\b(current plan|what'?s (the |our )?plan|plan status|team plan)\b/.test(q)) return 'CURRENT_PLAN';
+  if (/\b(predict|going to do|will (they|he|she|the rival)|next move)\b/.test(q)) return 'RIVAL_PREDICT';
+  if (/\b(playstyle|learned about me|how do i play|my habits)\b/.test(q)) return 'PLAYSTYLE_LEARNED';
+  if (/\b(trust|distrust|respect|relationship|like me|hate|grudge)\b/.test(q)) return 'RELATIONSHIP_EXPLAIN';
+  if (/\b(pattern|tendenc|usually|always)\b/.test(q)) return 'STRATEGIC_PATTERN';
+  if (/\b(remember|recall|last time|earlier)\b/.test(q)) return 'MEMORY_RECALL';
+  if (/\b(rival|opponent).*(recent|lately|just did)|what did (the )?(rival|opponent|ai)\b/.test(q)) return 'RIVAL_RECENT';
+  if (/\bwhy .*\b(region|nsw|vic|qld|wa|sa|tas|nt|act)\b/.test(q)) return 'WHY_REGION';
+  if (/\b(why did you|why did the ai|decision)\b/.test(q)) return 'DECISION_MEMORY';
+  if (/\b(what should we do|next step|help me win)\b/.test(q)) return 'NEXT_STEP';
+  return 'GENERAL_HELP';
+}
+
+export interface AuthorizedCommunicationSnapshot {
+  turn: number;
+  day: number | null;
+  selectedMode: string | null;
+  playerCash: number | null;
+  teammateCash: number | null;
+  treasuryCash: number | null;
+  playerRegions: string[];
+  rivalRegions: string[];
+  rivalVictoryProgress: number | null;
+  victoryThreshold: number;
+  threatenedRegions: string[];
+  lastDecision: string | null;
+  actors: Array<{ id: string; teamId?: string; kind?: string; name?: string; money?: number | null; currentRegion?: string | null }>;
+}
+
+/** Only authorised, already-visible facts go into communication (no hidden rival data). */
+export function buildAuthorizedSnapshotFromGame(gameState: any, overrides: Record<string, any> = {}): AuthorizedCommunicationSnapshot {
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const treasury = overrides.treasuryCash;
+  return {
+    turn: memNum(overrides.turn ?? gameState?.turnCounter ?? gameState?.day, 1),
+    day: num(overrides.day ?? gameState?.day),
+    selectedMode: overrides.selectedMode ?? gameState?.selectedMode ?? null,
+    playerCash: num(overrides.playerCash),
+    teammateCash: num(overrides.teammateCash),
+    treasuryCash: typeof treasury === 'object' && treasury ? num((treasury as any).balance) : num(treasury),
+    playerRegions: arr(overrides.playerRegions),
+    rivalRegions: arr(overrides.rivalRegions),
+    rivalVictoryProgress: num(overrides.rivalVictoryProgress),
+    victoryThreshold: memNum(overrides.victoryThreshold, 0.8),
+    threatenedRegions: arr(overrides.threatenedRegions),
+    lastDecision: overrides.lastDecision ? String(overrides.lastDecision) : null,
+    actors: (Array.isArray(overrides.actors) ? overrides.actors : []).map((a: any) => ({ id: String(a?.id || ''), teamId: a?.teamId, kind: a?.kind, name: a?.name, money: num(a?.money), currentRegion: a?.currentRegion || null }))
+  };
+}
+
+function commRegionsIn(text: string): string[] {
+  const q = ` ${String(text || '').toLowerCase()} `;
+  const out: string[] = [];
+  COMM_REGION_CODES.forEach(code => { if (new RegExp(`[^a-z]${code.toLowerCase()}[^a-z]`).test(q)) out.push(code); });
+  Object.entries(COMM_REGION_NAMES).forEach(([name, code]) => { if (q.includes(name) && !out.includes(code)) out.push(code); });
+  return out;
+}
+
+function commId(prefix: string, ...parts: Array<string | number | undefined | null>): string {
+  return `${prefix}_${stableIdHash(parts.map(p => String(p ?? '')).join('|'))}`;
+}
+
+export function answerMemoryAwareQuery(params: {
+  query: string;
+  speakerActorId: string;
+  recipientActorId: string;
+  turn: number;
+  memory?: AiActorMemory | null;
+  memoriesByActor?: AiMemoriesByActor;
+  snapshot: AuthorizedCommunicationSnapshot;
+  plan?: TeamStrategicPlan | null;
+  persistentPrior?: PersistentPriorSeed | null;
+  persistEnabled?: boolean;
+  settings?: any;
+  viewerTeamId?: string;
+  speakerTeamId?: string;
+  teammateIds?: string[];
+  fullInspection?: boolean;
+  isLiveIntentMatch?: boolean;
+  isolatedReplayRuntime?: boolean;
+}): AiCommunicationResponse {
+  const intent = classifyCommunicationIntent(params.query);
+  const mem = params.memory || null;
+  const ally = Boolean(params.speakerTeamId && params.viewerTeamId && params.speakerTeamId === params.viewerTeamId);
+  const rel = mem?.relationships?.[params.recipientActorId] || null;
+  const model = mem?.opponentModels?.[params.recipientActorId] || null;
+  const evidence: AiCommunicationEvidence[] = [];
+  const lines: string[] = [];
+  const suggestedActions: AiSuggestedAction[] = [];
+  let kind: AiCommunicationResponse['kind'] = 'answer';
+  const stance: AiCommunicationResponse['stance'] = !rel ? 'neutral' : rel.grievance + rel.rivalry > 60 ? 'hostile' : rel.grievance > 20 || rel.trust < 35 ? 'wary' : rel.trust > 65 || rel.gratitude > 20 ? 'supportive' : 'neutral';
+  const plan = params.plan && params.plan.status !== 'cancelled' ? params.plan : null;
+  if (intent === 'CURRENT_PLAN' || intent === 'PLAN_STATUS' || intent === 'TEAM_PLAN_UPDATE') {
+    kind = intent === 'TEAM_PLAN_UPDATE' ? 'plan_update' : 'answer';
+    if (plan) {
+      lines.push(`Our plan (${plan.status}): ${plan.primaryObjective}.`);
+      if (plan.secondaryObjective) lines.push(`Secondary: ${plan.secondaryObjective}.`);
+      if (plan.regions.length) lines.push(`Regions: ${plan.regions.join(', ')}.`);
+      evidence.push({ type: 'plan', summary: plan.title, referenceId: plan.id });
+    } else lines.push('We do not have a team plan yet. Tell me what to focus on and I will set one up.');
+    if (intent === 'TEAM_PLAN_UPDATE') lines.push('I have prepared the plan change from your message; it applies as a player-authored team plan.');
+  } else if (intent === 'RELATIONSHIP_EXPLAIN') {
+    if (rel && (ally || params.fullInspection)) { lines.push(`Trust ${rel.trust}, respect ${rel.respect}, rivalry ${rel.rivalry}, grievance ${rel.grievance}, gratitude ${rel.gratitude}.`); evidence.push({ type: 'relationship', summary: `scores toward ${params.recipientActorId}` }); }
+    else if (rel) lines.push(stance === 'hostile' || stance === 'wary' ? 'I remember what you have done to me, and I am wary of you.' : 'We have no quarrel right now.');
+    else lines.push('I have not formed a view of you yet.');
+  } else if (intent === 'RIVAL_PREDICT' || intent === 'STRATEGIC_PATTERN' || intent === 'PLAYSTYLE_LEARNED') {
+    const models = Object.values(mem?.opponentModels || {}).filter(m => m.totalOpportunities > 0);
+    if (!ally && !params.fullInspection) lines.push('I will keep my read on you to myself.');
+    else if (models.length) models.slice(0, 2).forEach(m => {
+      const top = Object.values(m.beliefs).sort((a, b) => b.value - a.value)[0];
+      const region = Object.entries(m.regionalInterest).sort((a, b) => b[1] - a[1])[0];
+      lines.push(`${m.actorId} looks ${top ? `mostly ${top.key} (${Math.round(top.value * 100)}%, ${Math.round(top.confidence * 100)}% confident)` : 'unpredictable'}${region ? `, focused on ${region[0]}` : ''}.`);
+      evidence.push({ type: 'opponent_model', summary: `${m.totalOpportunities} observed actions`, referenceId: m.actorId });
+    });
+    else lines.push('I have not observed enough to predict anything yet.');
+    if (params.persistEnabled && params.persistentPrior && (ally || params.fullInspection)) lines.push(`I also remember ${params.persistentPrior.matchesObserved} previous match(es) against you (a capped prior).`);
+  } else if (intent === 'MEMORY_RECALL' || intent === 'RIVAL_RECENT' || intent === 'DECISION_MEMORY') {
+    const events = (mem?.events || []).slice(-3).reverse();
+    if (events.length) events.forEach(e => { lines.push(`Turn ${e.turn}: ${e.summary}`); evidence.push({ type: 'memory_event', summary: e.summary, referenceId: e.id }); });
+    else lines.push('Nothing notable has happened that I remember yet.');
+  } else {
+    const threatened = params.snapshot.threatenedRegions;
+    if (threatened.length) {
+      lines.push(`${threatened.slice(0, 2).join(' and ')} ${threatened.length > 1 ? 'are' : 'is'} contested — protecting ${threatened[0]} matters most.`);
+      evidence.push({ type: 'region', summary: `contested: ${threatened.join(', ')}` });
+      if (ally) suggestedActions.push({ id: commId('sa', params.turn, threatened[0], params.speakerActorId), type: 'reserve_region', label: `Reserve ${threatened[0]} for the team`, regionId: threatened[0], estimatedCost: 0, status: 'proposed' });
+    }
+    if (params.snapshot.rivalVictoryProgress !== null && params.snapshot.rivalVictoryProgress >= params.snapshot.victoryThreshold * 0.75) lines.push(`The rival is at ${Math.round(params.snapshot.rivalVictoryProgress * 100)}% of the victory threshold — we need to slow them down.`);
+    if (plan) lines.push(`Stick to our plan: ${plan.primaryObjective}.`);
+    if (!lines.length) lines.push(ally ? 'Nothing urgent from my side. Keep building cash and hold what we have.' : 'I have nothing to tell you.');
+  }
+  return {
+    id: commId('msg', params.turn, params.speakerActorId, params.query), turn: params.turn, speakerActorId: params.speakerActorId, recipientActorId: params.recipientActorId,
+    text: lines.join(' '), kind, stance, confidence: evidence.length ? 0.75 : 0.45, evidence, suggestedActions: suggestedActions.length ? suggestedActions : undefined,
+    followUps: ['What is our current plan?', 'What will the rival do next?', 'What do you remember about me?']
+  };
+}
+
+export function communicationToAskGameAnswer(comm: AiCommunicationResponse): { mainAnswer: string; confidence: number; suggestedFollowUps: string[] } {
+  return { mainAnswer: comm.text, confidence: comm.confidence, suggestedFollowUps: comm.followUps || [] };
+}
+
+/** Proactive warnings: deduplicated per key with a frequency-based cooldown; nothing executes. */
+export function evaluateProactiveIntelligence(params: {
+  speakerActorId: string;
+  recipientActorId: string;
+  turn: number;
+  memory?: AiActorMemory | null;
+  snapshot: AuthorizedCommunicationSnapshot;
+  plan?: TeamStrategicPlan | null;
+  comms: AiCommunicationState;
+  settings?: any;
+  isLiveIntentMatch?: boolean;
+  isolatedReplayRuntime?: boolean;
+}): AiCommunicationResponse[] {
+  if (!shouldEmitLiveCommunication(params)) return [];
+  const freq: CommunicationProactiveFrequency = params.settings?.aiCommunicationProactiveFrequency || 'normal';
+  if (freq === 'off') return [];
+  const cooldown = freq === 'high' ? 2 : freq === 'low' ? 6 : 4;
+  const out: AiCommunicationResponse[] = [];
+  const emit = (key: string, text: string, kind: AiCommunicationResponse['kind'], evidence: AiCommunicationEvidence[], regionId?: string) => {
+    const last = params.comms.lastProactiveTurnByKey[key];
+    if (typeof last === 'number' && params.turn - last < cooldown) return;
+    if (out.length >= 2) return;
+    out.push({
+      id: commId('pro', params.turn, key), turn: params.turn, speakerActorId: params.speakerActorId, recipientActorId: params.recipientActorId, text, kind, stance: 'cautious', confidence: 0.7, evidence, proactiveKey: key,
+      suggestedActions: regionId ? [{ id: commId('sa', params.turn, key), type: 'reserve_region', label: `Reserve ${regionId} for the team`, regionId, estimatedCost: 0, status: 'proposed' }] : undefined
+    });
+  };
+  const s = params.snapshot;
+  if (s.rivalVictoryProgress !== null && s.rivalVictoryProgress >= s.victoryThreshold * 0.85) emit('rival_near_victory', `Warning: the rival is at ${Math.round(s.rivalVictoryProgress * 100)}% of the victory threshold.`, 'warning', [{ type: 'dominance', summary: `rival share ${Math.round(s.rivalVictoryProgress * 100)}%` }]);
+  s.threatenedRegions.slice(0, 1).forEach(r => emit(`threat_${r}`, `${r} is contested — want me to cover it?`, 'team_request', [{ type: 'region', summary: `${r} contested` }], r));
+  if (s.teammateCash !== null && s.teammateCash < 300) emit('teammate_low_cash', 'I am almost out of cash — I will focus on income for a while.', 'team_request', [{ type: 'cash', summary: `teammate cash ${s.teammateCash}` }]);
+  const grudge = Object.values(params.memory?.relationships || {}).find(r => r.grievance >= 40);
+  if (grudge) emit(`grudge_${grudge.actorId}`, `I have not forgotten what ${grudge.actorId} did — expect me to push back.`, 'warning', [{ type: 'relationship', summary: `grievance ${grudge.grievance}` }]);
+  return out;
+}
+
+// ---- Suggested actions (never executed without the Co-Pilot / directive path) ----
+
+export function evaluateSuggestedActionGate(params: { autonomy: CommunicationAutonomyLevel | string; copilotEnabled: boolean; copilotAuthority?: string; plan?: TeamStrategicPlan | null; action: AiSuggestedAction; alreadyCommittedIds: string[] }): { allowed: boolean; needsApproval: boolean; reason: string | null } {
+  if (params.alreadyCommittedIds.includes(params.action.id)) return { allowed: false, needsApproval: false, reason: 'This suggested action was already handled.' };
+  if (params.action.status === 'rejected' || params.action.status === 'executed') return { allowed: false, needsApproval: false, reason: `This suggestion is already ${params.action.status}.` };
+  if (params.autonomy === 'advisory') return { allowed: false, needsApproval: false, reason: 'Advisory communication only explains — it never acts. Switch autonomy to Assisted to approve suggestions.' };
+  if (params.plan && (params.plan.status === 'paused' || params.plan.status === 'cancelled')) return { allowed: false, needsApproval: false, reason: `The team plan is ${params.plan.status}, so plan-driven suggestions are on hold.` };
+  if (params.autonomy === 'assisted') return { allowed: true, needsApproval: true, reason: null };
+  if (!params.copilotEnabled) return { allowed: true, needsApproval: true, reason: 'Delegated actions still need the Co-Pilot; approval required while it is off.' };
+  return { allowed: true, needsApproval: false, reason: null };
+}
+
+export function markSuggestedAction(action: AiSuggestedAction, status: AiSuggestedAction['status'], committedIds: string[]): { action: AiSuggestedAction; committedIds: string[]; executed: boolean } {
+  const already = committedIds.includes(action.id);
+  if (status === 'executed' && already) return { action, committedIds, executed: false };
+  const commit = status === 'executed' || status === 'rejected';
+  return { action: { ...action, status }, committedIds: commit && !already ? [...committedIds, action.id].slice(-100) : committedIds, executed: status === 'executed' };
+}
+
+export function describeSuggestedActionOutcome(action: AiSuggestedAction): string {
+  switch (action.status) {
+    case 'executed': return `Done: ${action.label}. It went through the normal team-directive path.`;
+    case 'approved': return `Sent for approval: ${action.label}. Nothing happens until you confirm in Co-Pilot.`;
+    case 'rejected': return `Rejected: ${action.label}. Nothing was changed.`;
+    case 'blocked': return `Not executed: ${action.label}. Advisory communication never acts on its own.`;
+    default: return `Suggestion: ${action.label}. Approve or reject it; nothing happens automatically.`;
+  }
+}
+
+// ---- Player-authored team plans ----
+
+const PLAN_STATUSES: TeamStrategicPlan['status'][] = ['draft', 'active', 'paused', 'completed', 'cancelled'];
+
+export function parseTeamPlanInstruction(instruction: string, ctx: { teamId: string; createdByActorId: string; turn: number; assigneeId?: string }): TeamStrategicPlan {
+  const text = String(instruction || '').trim().replace(/\s+/g, ' ');
+  const sentences = text.split(/[.!?;]+\s*|\bthen\b/i).map(s => s.trim()).filter(Boolean);
+  const regions = commRegionsIn(text);
+  const constraints: string[] = [];
+  const low = text.toLowerCase();
+  if (/\b(no|don'?t|do not|avoid)\b[^.]*\b(loan|loans|borrow|debt)\b/.test(low)) constraints.push('No new loans');
+  const keep = low.match(/\bkeep\b[^.$\d]*\$?\s?(\d+(?:\.\d+)?)\s?(k|thousand)?/);
+  if (keep) constraints.push(`Keep at least $${Math.round(Number(keep[1]) * (keep[2] ? 1000 : 1)).toLocaleString()} in reserve`);
+  if (/\b(no|don'?t|avoid)\b[^.]*\bsabotage\b/.test(low)) constraints.push('No sabotage');
+  const primary = (sentences[0] || text || 'Coordinate the team').replace(/[.!?;]+$/, '').slice(0, 140);
+  const secondary = sentences[1] ? sentences[1].replace(/[.!?;]+$/, '').slice(0, 140) : null;
+  const assignments = ctx.assigneeId ? [{ actorId: ctx.assigneeId, task: (sentences.find(s => /\b(you|teammate|partner|ally)\b/i.test(s)) || primary).replace(/[.!?;]+$/, '').slice(0, 140) }] : [];
+  return {
+    id: commId('plan', ctx.teamId, ctx.turn, text), teamId: ctx.teamId, title: primary.slice(0, 60) || 'Team plan', primaryObjective: primary || 'Coordinate the team', secondaryObjective: secondary,
+    constraints, assignments, regions, milestones: regions.map(r => `Hold ${r}`), status: 'active', createdByActorId: ctx.createdByActorId, createdTurn: ctx.turn, updatedTurn: ctx.turn, history: [{ turn: ctx.turn, note: 'Created from a player instruction' }]
+  };
+}
+
+export function editTeamStrategicPlan(plan: TeamStrategicPlan, patch: Partial<Pick<TeamStrategicPlan, 'title' | 'primaryObjective' | 'secondaryObjective' | 'constraints' | 'assignments' | 'regions' | 'milestones'>>, turn: number, note: string): TeamStrategicPlan {
+  return { ...plan, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), updatedTurn: turn, history: [...plan.history, { turn, note }].slice(-20) } as TeamStrategicPlan;
+}
+
+export function setTeamPlanStatus(plan: TeamStrategicPlan, status: TeamStrategicPlan['status'], turn: number, note: string): TeamStrategicPlan {
+  return { ...plan, status: PLAN_STATUSES.includes(status) ? status : plan.status, updatedTurn: turn, history: [...plan.history, { turn, note }].slice(-20) };
+}
+
+export function sanitizeTeamStrategicPlansByTeam(raw: unknown): Record<string, TeamStrategicPlan> {
+  const out: Record<string, TeamStrategicPlan> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw as Record<string, any>).slice(0, 6).forEach(([teamId, p]) => {
+    if (!p || typeof p !== 'object' || typeof p.primaryObjective !== 'string') return;
+    const arr = (v: unknown) => (Array.isArray(v) ? v.map(String).slice(0, 12) : []);
+    out[teamId] = {
+      id: String(p.id || `plan_${teamId}`), teamId: String(p.teamId || teamId), title: String(p.title || p.primaryObjective).slice(0, 80), primaryObjective: p.primaryObjective.slice(0, 200),
+      secondaryObjective: typeof p.secondaryObjective === 'string' && p.secondaryObjective ? p.secondaryObjective.slice(0, 200) : null,
+      constraints: arr(p.constraints), assignments: (Array.isArray(p.assignments) ? p.assignments : []).filter((a: any) => a && a.actorId).slice(0, 6).map((a: any) => ({ actorId: String(a.actorId), task: String(a.task || '') })),
+      regions: arr(p.regions).filter(r => COMM_REGION_CODES.includes(r)), milestones: arr(p.milestones),
+      status: PLAN_STATUSES.includes(p.status) ? p.status : 'active', createdByActorId: String(p.createdByActorId || 'player'), createdTurn: memNum(p.createdTurn), updatedTurn: memNum(p.updatedTurn),
+      history: (Array.isArray(p.history) ? p.history : []).slice(-20).map((h: any) => ({ turn: memNum(h?.turn), note: String(h?.note || '') }))
+    };
+  });
+  return out;
+}
+
+/** An active plan becomes lightweight region directives for AI scoring (never commands). */
+export function planToActiveDirectives(plan: TeamStrategicPlan | null | undefined): Array<{ type: string; assignedActorId: string | null; regionId?: string }> {
+  if (!plan || plan.status !== 'active') return [];
+  const assignee = plan.assignments[0]?.actorId || null;
+  return plan.regions.slice(0, 4).map(regionId => ({ type: 'team_plan_region', assignedActorId: assignee, regionId }));
+}
+
+export function runAiMemoryPhase5SelfTests() {
+  return memTests([
+    ['p5_plan_parse', 'A player instruction becomes a structured team plan', () => { const p = parseTeamPlanInstruction('Hold NSW and take Victoria. Keep $5K in reserve, no loans.', { teamId: 'team_player', createdByActorId: 'player', turn: 3, assigneeId: 'ally_ai' }); return p.regions.includes('NSW') && p.regions.includes('VIC') && p.constraints.includes('No new loans') && p.constraints.some(c => /5,000/.test(c)) || JSON.stringify(p); }],
+    ['p5_plan_sanitize', 'Plans survive save/load and junk is dropped', () => { const p = parseTeamPlanInstruction('Hold NSW', { teamId: 't', createdByActorId: 'player', turn: 1 }); const s = sanitizeTeamStrategicPlansByTeam(JSON.parse(JSON.stringify({ t: p, bad: 7 }))); return Boolean(s.t) && !s.bad && s.t.regions[0] === 'NSW' || JSON.stringify(s); }],
+    ['p5_advisory', 'Advisory autonomy never executes a suggestion', () => { const g = evaluateSuggestedActionGate({ autonomy: 'advisory', copilotEnabled: true, action: { id: 'a', type: 'reserve_region', label: 'x', status: 'proposed' }, alreadyCommittedIds: [] }); return !g.allowed || 'advisory allowed execution'; }],
+    ['p5_once', 'A suggested action executes at most once', () => { const a: AiSuggestedAction = { id: 'a', type: 'reserve_region', label: 'x', status: 'proposed' }; const first = markSuggestedAction(a, 'executed', []); const second = markSuggestedAction(first.action, 'executed', first.committedIds); return first.executed && !second.executed || 'executed twice'; }],
+    ['p5_proactive_dedupe', 'Proactive warnings respect their cooldown', () => { const snap = buildAuthorizedSnapshotFromGame({}, { turn: 5, rivalVictoryProgress: 0.9, victoryThreshold: 0.8 }); const comms = createEmptyCommunicationState(); const m1 = evaluateProactiveIntelligence({ speakerActorId: 'ally_ai', recipientActorId: 'player', turn: 5, snapshot: snap, comms, isLiveIntentMatch: true }); const next = applyProactiveResults(comms, m1, 5); const m2 = evaluateProactiveIntelligence({ speakerActorId: 'ally_ai', recipientActorId: 'player', turn: 6, snapshot: snap, comms: next, isLiveIntentMatch: true }); return m1.length === 1 && m2.length === 0 || `${m1.length} then ${m2.length}`; }],
+    ['p5_replay_silent', 'Isolated replays never emit live communication', () => !shouldEmitLiveCommunication({ isLiveIntentMatch: true, isolatedReplayRuntime: true }) || 'emitted in replay']
+  ]);
+}
+
 
 
 // ============================================================================
