@@ -101434,6 +101434,16 @@ export interface GIConceptHit {
   clause: number;
   weight: number;
   evidence: string;
+  /** GI 2.1 robustness: the proposition's polarity; negated propositions never activate reasoning. */
+  polarity?: GISemanticPolarity;
+  negated?: boolean;
+  /** Token span of the match inside its clause. */
+  start?: number;
+  end?: number;
+  /** Who the proposition is about ('player', an actor id, 'other', or unspecified). */
+  agentId?: string | null;
+  actorId?: string;
+  regionId?: string;
 }
 
 export type GIVerbFamily = 'sell' | 'travel' | 'defend' | 'borrow' | 'fund' | 'buy' | 'wait' | 'work' | 'leave' | 'take_control_region' | 'accept_contract' | 'challenge';
@@ -101450,6 +101460,19 @@ export interface GILanguageAction {
   amount?: GIQuantity | null;
   /** Order in a composed multi-action request ("… then …"). */
   step: number;
+  contractId?: string;
+  polarity?: GISemanticPolarity;
+  /** Token span of the verb phrase in its clause. */
+  startToken?: number;
+  endToken?: number;
+  /** Who performs it: 'player' by default, or a named actor ("have Riley defend VIC"). */
+  agentId?: string;
+  /** Nearest compatible entity candidates with binding scores (diagnostics). */
+  candidates?: string[];
+  /** How certain the action ↔ target binding is (separate from language confidence). */
+  attachmentConfidence?: number;
+  /** A per-step condition ("… then go Victoria if Riley backs off"). */
+  condition?: GICondition['trigger'] | null;
 }
 
 export type GIConstraintPolicy = 'required' | 'preferred' | 'allowed' | 'avoid' | 'forbidden' | 'fallback_only' | 'minimum' | 'maximum' | 'before' | 'after' | 'until' | 'unless';
@@ -101492,7 +101515,7 @@ export interface GITemporalConstraint {
 
 export interface GICondition {
   ifText: string;
-  trigger: { actorId?: string; regionId?: string; event: 'rival_moves' | 'rival_attacks' | 'cash' | 'region_lost' | 'contract' | 'other'; amount?: number };
+  trigger: { actorId?: string; regionId?: string; event: 'rival_moves' | 'rival_attacks' | 'rival_retreats' | 'pressure_critical' | 'cash' | 'region_lost' | 'contract' | 'other'; amount?: number };
   then: GILanguageAction[];
   otherwise: GILanguageAction[];
   /** True when the then-part is an instruction (a conditional strategy), not a hypothetical question. */
@@ -101512,6 +101535,8 @@ export interface GIGoal {
 export interface GIThreat {
   regionId: string | null;
   actorId: string | null;
+  /** 'uncertain' for "Riley might attack NSW" (a possible, not an asserted, threat). */
+  polarity?: GISemanticPolarity;
   /** True when the actor was inferred (e.g. "protect NSW" with only one rival). */
   inferredActor: boolean;
   urgency: 'immediate' | 'soon' | 'normal';
@@ -101552,6 +101577,8 @@ export interface GICandidateInterpretation {
 }
 
 export interface GIConfidenceDimensions {
+  /** GI 2.1 robustness: how certain the action ↔ entity bindings are (separate from wording). */
+  attachmentConfidence?: number;
   languageConfidence: number;
   entityConfidence: number;
   referenceConfidence: number;
@@ -101561,7 +101588,22 @@ export interface GIConfidenceDimensions {
   finalAnswerConfidence?: number;
 }
 
+/** A bound relation between a subject and a thing it affects ("Riley → threatens → NSW"). */
+export interface GILanguageRelation {
+  subjectId: string;
+  relation: 'threatens' | 'economy_task' | 'low_liquidity' | 'action';
+  objectId?: string | null;
+  family?: GIVerbFamily;
+  polarity: GISemanticPolarity;
+  negated: boolean;
+  clause: number;
+}
+
 export interface GISemanticFrame {
+  /** Every detected proposition with its polarity (negated ones stay available but never activate reasoning). */
+  propositions: GIConceptHit[];
+  /** Subject-bound relations — each actor is attached only to what it actually does. */
+  relations: GILanguageRelation[];
   originalQuery: string;
   normalizedText: string;
   /** Typo-corrected, contraction-expanded text (original case kept for untouched tokens). */
@@ -101639,7 +101681,7 @@ const GI_VERB_FAMILY_PHRASES: Array<{ family: GIVerbFamily; phrases: string[] }>
   { family: 'sell', phrases: ['sell', 'selling', 'sold', 'dump', 'dumping', 'liquidate', 'liquidating', 'offload', 'offloading', 'unload', 'unloading', 'cash out', 'cash in', 'get rid of', 'convert to cash', 'flip my'] },
   { family: 'borrow', phrases: ['borrow', 'borrowing', 'take a loan', 'take out a loan', 'take another loan', 'take loans', 'loan', 'loans', 'debt', 'credit', 'financing', 'take out financing'] },
   { family: 'defend', phrases: ['defend', 'defending', 'defended', 'protect', 'protected', 'protecting', 'hold', 'holding', 'secure', 'save', 'keep', 'shore up', 'reinforce', 'stop them taking', 'stop them getting', 'deposit', 'put money into', 'put money in', 'put <money> into', 'put <money> in', 'drop <money> into', 'deposit <money> in'] },
-  { family: 'travel', phrases: ['travel', 'travelling', 'traveling', 'go to', 'go into', 'go', 'going to', 'move to', 'head to', 'head over to', 'head for', 'head over', 'leave for', 'get to', 'make my way to', 'bounce to', 'fly to', 'visit', 'try', 'go after', 'expand to', 'expand into', 'push into'] },
+  { family: 'travel', phrases: ['travel', 'travelling', 'traveling', 'go to', 'go into', 'go', 'going to', 'move to', 'head to', 'head over to', 'head for', 'head over', 'leave for', 'get to', 'make my way to', 'bounce to', 'fly to', 'visit', 'try', 'go after', 'expand to', 'expand into', 'push into', 'going', 'head', 'heading', 'bounce', 'fly', 'move', 'moving'] },
   { family: 'leave', phrases: ['leave', 'leaving', 'abandon', 'give up on', 'walk away from'] },
   { family: 'fund', phrases: ['build', 'building', 'construct', 'fund', 'funding', 'invest in', 'investing in', 'put money into', 'finish', 'finance', 'spend on', 'spending on', 'spending all that money on'] },
   { family: 'buy', phrases: ['buy', 'buying', 'purchase', 'pick up'] },
@@ -101663,6 +101705,7 @@ const GI_SEMANTIC_CONCEPTS: Array<{ id: GIConceptId; weight: number; patterns: s
     'only <money> left', 'only <money>', 'down to <money>', 'just <money> left', '<money> left', 'little cash|money', 'cash|money is * gone', 'can not afford anything'
   ] },
   { id: 'need_cash', weight: 0.9, patterns: [
+    'building|making|earning|farming|generating|raising cash|money|income', 'focus * on * making|earning|farming|generating money|cash|income', 'make|earn|farm the? money|cash|income',
     'need|want|get|make|raise|find|earn more? cash|money|funds', 'need <money>', 'make|get|raise|earn me? another|more|extra? <money>', 'get me above|over|to <money>',
     'money|cash asap', 'how do|can i make|get|raise|earn * money|cash|<money>', 'fastest way to get|make|raise'
   ] },
@@ -101672,7 +101715,8 @@ const GI_SEMANTIC_CONCEPTS: Array<{ id: GIConceptId; weight: number; patterns: s
     '<actor> * almost|nearly * own|owns|got|has|have|control|controls|controlling|there|getting', '<actor> * close|closing * in <region>',
     '<region> * slipping|trouble|danger|contested|threatened|exposed|risk|attack|almost|nearly|flipping|going', '<region> is almost|nearly <actor>',
     'losing|lose|lost * <region>', 'about to lose', 'getting overtaken', 'overtaken', 'losing control', 'stop <actor> * taking|getting|flipping|grabbing',
-    'stop them * taking|getting', '<actor> is catching * me', 'they|them|he|she * taking|flipping|stealing|grabbing|attacking|contesting <region>'
+    'stop them * taking|getting', '<actor> is catching * me', 'they|them|he|she * taking|flipping|stealing|grabbing|attacking|contesting <region>',
+    '<actor> * pressuring|pressures|pressure|pushing|pushes|squeezing|targeting|targets * <region>', '<region> is * under pressure', 'pressure on <region>'
   ] },
   { id: 'rival_advantage', weight: 0.9, patterns: [
     '<actor> * cooking|beating|crushing|destroying|smashing|outpacing|winning|ahead', '<actor> is * pulling ahead', 'behind <actor>', 'losing to <actor>',
@@ -102028,14 +102072,16 @@ function giTokenMatches(el: GIPatternEl, tok: GIToken, world: GIWorld): boolean 
   return el.alts.includes(tok.t);
 }
 
+interface GIPatternMatch { start: number; end: number; /** Token indices consumed by pattern elements (not gaps / wildcards). */ matched: number[] }
+
 /** Match a compiled pattern anywhere in a token list; fillers are free, one other gap is allowed. */
-function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { start: number; end: number } | null {
-  const tryAt = (ei: number, ti: number, started: number): { start: number; end: number } | null => {
-    if (ei >= els.length) return { start: started, end: ti };
+function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): GIPatternMatch | null {
+  const tryAt = (ei: number, ti: number, started: number, matched: number[]): GIPatternMatch | null => {
+    if (ei >= els.length) return { start: started, end: ti, matched };
     const el = els[ei];
     if (el.wildcard) {
       for (let skip = 0; skip <= 3 && ti + skip <= toks.length; skip++) {
-        const r = tryAt(ei + 1, ti + skip, started);
+        const r = tryAt(ei + 1, ti + skip, started, matched);
         if (r) return r;
       }
       return null;
@@ -102046,7 +102092,9 @@ function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { 
         // Multi-token entities (e.g. "new south wales") consume the whole tagged span.
         let next = k + 1;
         if (el.slot && toks[k].entity) while (next < toks.length && toks[next].entity && toks[next].entity!.id === toks[k].entity!.id && toks[next].entity!.matched === toks[k].entity!.matched && toks[next].t !== toks[k].t) next++;
-        const r = tryAt(ei + 1, next, started < 0 ? k : started);
+        const span: number[] = [];
+        for (let x = k; x < next; x++) span.push(x);
+        const r = tryAt(ei + 1, next, started < 0 ? k : started, [...matched, ...span]);
         if (r) return r;
       }
       if (started < 0) continue; // nothing matched yet: the pattern may start anywhere
@@ -102054,84 +102102,263 @@ function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { 
       gaps++;
       if (gaps > (el.strict ? 0 : 1)) break;
     }
-    if (el.optional) return tryAt(ei + 1, ti, started);
+    if (el.optional) return tryAt(ei + 1, ti, started, matched);
     return null;
   };
-  const r = tryAt(0, 0, -1);
+  const r = tryAt(0, 0, -1, []);
   return r && r.start >= 0 ? r : null;
 }
 
-function giDetectConcepts(clauses: GIClause[], world: GIWorld): GIConceptHit[] {
+// ---- Semantic polarity (A1–A3) -----------------------------------------------------------
+
+export type GISemanticPolarity = 'positive' | 'negative' | 'uncertain' | 'hypothetical';
+
+export interface GIPolarityReading {
+  polarity: GISemanticPolarity;
+  /** True when the proposition is asserted NOT to hold (odd number of scoped negators, or "I don't think…"). */
+  negated: boolean;
+  /** The words that decided it (for diagnostics). */
+  cues: string[];
+}
+
+const GI_NEGATORS = new Set(['not', 'no', 'never', 'none', 'nobody', 'nothing', 'neither', 'nor', 'without']);
+const GI_MODALS = new Set(['might', 'may', 'could', 'possibly', 'perhaps', 'maybe', 'probably', 'likely', 'unlikely']);
+
+/**
+ * Polarity of the proposition spanning tokens [start, end) of a clause. Negators are attached to the
+ * node they modify: only negators in the clause before the span, or inside the span but not part of
+ * the matched pattern ("Riley is NOT taking NSW"), count. Nested negation cancels ("don't not…");
+ * "I don't think X" / "I doubt X" negate the belief (uncertain); modals make it uncertain; an
+ * if-clause makes it hypothetical.
+ */
+export function giReadPolarity(clause: GIClause, start: number, end: number, matched: number[] = []): GIPolarityReading {
+  const toks = clause.tokens;
+  const scope = toks.slice(0, end).map((t, i) => ({ t, i })).filter(x => !matched.includes(x.i));
+  const text = ` ${scope.map(x => x.t.t).join(' ')} `;
+  const cues: string[] = [];
+  let count = 0;
+  const notSure = /\b(not sure|no idea|not certain)\b/.test(text);
+  const belief = /\b(do not|does not|did not) (think|believe|reckon|expect)\b|\b(doubt|doubtful)\b/.test(text);
+  // Attach each negator to the node it modifies:
+  //  • determiners ("no", "none", "without", "nothing") negate only the next couple of words;
+  //  • "not"/"never" negate the proposition they directly precede — not one after another content
+  //    verb ("I don't want to loan anything, Riley nearly got NSW") or another subject.
+  const isSubject = (t: GIToken) => t.entity?.kind === 'actor' || /^(i|we|he|she|they|you)$/.test(t.t);
+  const blocksVerb = (t: GIToken) => /^(want|need|like|try|plan|loan|borrow|sell|buy|go|travel|take|make|get|spend|use|avoid|mind)$/.test(t.t);
+  const belongsHere = (idx: number): boolean => {
+    if (idx >= start) return true;                                     // inside the span (a gap word)
+    const w = toks[idx].t;
+    if (/^(no|none|without|nothing|nobody)$/.test(w)) return start - idx <= 2;
+    for (let k = idx + 1; k < start; k++) {
+      if (isSubject(toks[k])) return false;
+      if (blocksVerb(toks[k])) return false;
+    }
+    return true;
+  };
+  scope.forEach(({ t, i }) => { if (GI_NEGATORS.has(t.t) && belongsHere(i)) { count++; cues.push(t.t); } });
+  if (notSure) count -= 1;
+  if (belief) count -= 1;           // the "not" belongs to the belief verb, handled below
+  count = Math.max(0, count);
+  const modal = scope.some(({ t }) => GI_MODALS.has(t.t)) || notSure;
+  if (modal) cues.push('modal');
+  let negated = count % 2 === 1;
+  if (belief) { negated = !negated; cues.push('belief'); }
+  const hypothetical = clause.marker === 'if' || /^\s*(if|suppose|supposing|what if|assuming)\b/.test(text);
+  const polarity: GISemanticPolarity = hypothetical ? 'hypothetical' : (belief || modal) ? 'uncertain' : negated ? 'negative' : 'positive';
+  void start;
+  return { polarity, negated, cues };
+}
+
+/** Propositional concepts are assertions about the world; requests and styles are not negatable facts. */
+const GI_PROPOSITIONAL_CONCEPTS: GIConceptId[] = ['liquidity_low', 'need_cash', 'region_threat', 'rival_advantage', 'debt_existing', 'wait_option'];
+/** Concepts that describe the PLAYER's own situation (a rival being broke is not the player's problem). */
+const GI_PLAYER_CONCEPTS: GIConceptId[] = ['liquidity_low', 'need_cash', 'debt_existing'];
+
+/**
+ * Who a clause is about: the player ("I", "my", "we"), a named actor ("Riley …", "have Riley …",
+ * "tell my teammate to …"), someone else (an unknown capitalised name), or unspecified.
+ */
+export function giClauseAgent(clause: GIClause, beforeIndex: number, world: GIWorld, ctx?: GIConversationContext | null): string | null {
+  const toks = clause.tokens.slice(0, Math.max(0, beforeIndex)).filter(t => !t.filler && t.kind === 'word');
+  // "have/let/tell/get <actor> (to) …" → the actor is the agent.
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i];
+    if (t.entity?.kind === 'actor' && i > 0 && /^(have|let|tell|get|ask|make|want)$/.test(toks[i - 1].t)) return t.entity.id;
+  }
+  // Nearest subject first: "riley nearly got nsw, i'm broke" → the player is broke.
+  for (const t of [...toks].reverse()) {
+    if (/^(i|me|my|we|our|us|myself)$/.test(t.t)) return 'player';
+    if (t.entity?.kind === 'actor') return t.entity.id;
+    if (/^(he|she|him|her|they|them)$/.test(t.t)) return ctx?.last?.actor?.id || world.primaryRivalId || 'other';
+    if (t.entity) continue;
+    // An unknown capitalised name as subject ("Jordan is building cash") is someone else.
+    if (/^[A-Z][a-z]{2,}$/.test(t.raw) && !GI_ENGLISH_LEXICON.has(t.t) && !GI_QUESTION_START.test(t.t) && !GI_FILLER_WORDS.has(t.t)) return 'other';
+  }
+  return null;
+}
+
+function giDetectConcepts(clauses: GIClause[], world: GIWorld, ctx?: GIConversationContext | null): GIConceptHit[] {
   const hits: GIConceptHit[] = [];
+  const add = (c: GIClause, id: GIConceptId, weight: number, m: GIPatternMatch, evidence?: string) => {
+    const pol = giReadPolarity(c, m.start, m.end, m.matched);
+    const span = c.tokens.slice(m.start, Math.max(m.end, m.start + 1));
+    const actor = span.find(t => t.entity?.kind === 'actor')?.entity?.id;
+    const region = span.find(t => t.entity?.kind === 'region')?.entity?.id;
+    hits.push({
+      id, clause: c.index, weight, evidence: evidence || span.map(t => t.raw).join(' '),
+      polarity: pol.polarity, negated: pol.negated, start: m.start, end: m.end,
+      agentId: actor || giClauseAgent(c, m.start, world, ctx), actorId: actor, regionId: region
+    });
+  };
   clauses.forEach(c => {
     GI_SEMANTIC_CONCEPTS.forEach(concept => {
       for (const p of concept.patterns) {
         const m = giMatchPattern(giCompilePattern(p), c.tokens, world);
-        if (m) {
-          hits.push({ id: concept.id, clause: c.index, weight: concept.weight, evidence: c.tokens.slice(m.start, Math.max(m.end, m.start + 1)).map(t => t.raw).join(' ') });
-          break;
-        }
+        if (m) { add(c, concept.id, concept.weight, m); break; }
       }
     });
   });
   // Bare status fragments: "ap?", "cash?", "my money".
   const content = clauses.flatMap(c => c.tokens).filter(t => !t.filler && t.kind === 'word');
-  if (content.length <= 2 && content.some(t => /^(ap|cash|money|balance)$/.test(t.t)) && !hits.some(h => h.id === 'status_request')) hits.push({ id: 'status_request', clause: 0, weight: 0.8, evidence: content.map(t => t.t).join(' ') });
-  // Whole-message patterns that cross clause boundaries (e.g. "Riley … NSW" split by a comma).
-  const all: GIClause = { index: -1, text: '', tokens: clauses.flatMap(c => c.tokens), marker: null, form: 'statement', sentence: 0 };
+  if (content.length <= 2 && content.some(t => /^(ap|cash|money|balance)$/.test(t.t)) && !hits.some(h => h.id === 'status_request')) hits.push({ id: 'status_request', clause: 0, weight: 0.8, evidence: content.map(t => t.t).join(' '), polarity: 'positive', negated: false });
+  // Region threats that no single pattern captured (clause-bounded, polarity-aware).
   if (!hits.some(h => h.id === 'region_threat')) {
-    const rival = all.tokens.find(t => t.entity?.kind === 'actor' && world.actors.find(a => a.id === t.entity!.id)?.relation === 'rival');
-    const region = all.tokens.find(t => t.entity?.kind === 'region');
-    const threatWord = all.tokens.find(t => /^(take|taking|takes|flip|flipping|steal|stealing|attack|attacking|threat|threatening|contest|almost|nearly|losing|lose|slipping|trouble|pressure|pushing|catching|getting)$/.test(t.t));
-    if (rival && region && threatWord) hits.push({ id: 'region_threat', clause: clauses.find(c => c.tokens.includes(region))?.index ?? 0, weight: 0.8, evidence: `${rival.raw} … ${region.raw}` });
-    else if (rival && region && all.tokens.filter(t => t.kind === 'word' && !t.filler).length <= 5) hits.push({ id: 'region_threat', clause: 0, weight: 0.55, evidence: `${rival.raw} ${region.raw}` });
-    else {
-      // "someone about to take NSW" with a name that isn't in this match: a threat by someone other than the player.
-      for (const c of clauses) {
-        const toks = c.tokens.filter(t => !t.filler);
-        const vi = toks.findIndex(t => /^(take|taking|takes|flip|flipping|grab|grabbing|steal|stealing|attack|attacking)$/.test(t.t));
-        if (vi < 0) continue;
-        const subject = toks.slice(Math.max(0, vi - 4), vi).map(t => t.t);
-        const reg = toks.slice(vi + 1, vi + 4).find(t => t.entity?.kind === 'region');
-        // The player's own intent ("I want to take NSW", "should I take NSW") is not a threat.
-        if (reg && subject.length && !subject.some(w => /^(i|we|me|my|us|our|should|can|could|how)$/.test(w))) { hits.push({ id: 'region_threat', clause: c.index, weight: 0.7, evidence: toks.slice(Math.max(0, vi - 3), vi + 3).map(t => t.raw).join(' ') }); break; }
+    const threatVerb = /^(take|taking|takes|flip|flipping|steal|stealing|attack|attacking|threat|threatening|contest|contesting|pressure|pressuring|pressures|pushing|grab|grabbing|catching|getting)$/;
+    for (const c of clauses) {
+      const vi = c.tokens.findIndex(t => threatVerb.test(t.t));
+      if (vi < 0) continue;
+      const reg = c.tokens.slice(vi + 1, vi + 5).find(t => t.entity?.kind === 'region');
+      if (!reg) continue;
+      const agent = giClauseAgent(c, vi, world, ctx);
+      // The player's own intent ("I want to take NSW", "should I take NSW") is not a threat.
+      const subject = c.tokens.slice(Math.max(0, vi - 4), vi).map(t => t.t);
+      if (agent === 'player' || subject.some(w => /^(should|can|could|how)$/.test(w))) continue;
+      if (!agent && !subject.length) continue;
+      const regIdx = c.tokens.indexOf(reg);
+      add(c, 'region_threat', 0.75, { start: Math.max(0, vi - 3), end: regIdx + 1, matched: [vi, regIdx] });
+      break;
+    }
+    // Two-word fragments ("riley nsw help"): a rival and a region with no other relation.
+    if (!hits.some(h => h.id === 'region_threat')) {
+      const all = clauses.flatMap(c => c.tokens);
+      const rival = all.find(t => t.entity?.kind === 'actor' && world.actors.find(a => a.id === t.entity!.id)?.relation === 'rival');
+      const region = all.find(t => t.entity?.kind === 'region');
+      const clause = clauses.find(c => c.tokens.includes(region!));
+      if (rival && region && clause && all.filter(t => t.kind === 'word' && !t.filler).length <= 5 && !all.some(t => GI_NEGATORS.has(t.t))) {
+        hits.push({ id: 'region_threat', clause: clause.index, weight: 0.55, evidence: `${rival.raw} ${region.raw}`, polarity: 'positive', negated: false, actorId: rival.entity!.id, regionId: region.entity!.id, agentId: rival.entity!.id });
       }
     }
   }
   return hits;
 }
 
-function giDetectActions(clauses: GIClause[], world: GIWorld): GILanguageAction[] {
+/** Is a concept hit an ACTIVE positive proposition about the player's situation? */
+export function giConceptActive(h: GIConceptHit): boolean {
+  if (!GI_PROPOSITIONAL_CONCEPTS.includes(h.id)) return true;
+  if (h.negated) return false;
+  if (GI_PLAYER_CONCEPTS.includes(h.id)) return !h.agentId || h.agentId === 'player';
+  if (h.id === 'region_threat' || h.id === 'rival_advantage') return h.agentId !== 'player';
+  return true;
+}
+
+// ---- Action spans + argument binding (A4–A8) ----------------------------------------------
+
+/** Which entity kinds each action family takes as its target (incompatible kinds are rejected). */
+const GI_ACTION_ARG_KINDS: Record<GIVerbFamily, GIEntityKind[]> = {
+  sell: ['resource'], buy: ['resource'], travel: ['region'], defend: ['region'], leave: ['region'], take_control_region: ['region'],
+  fund: ['project', 'region'], accept_contract: ['contract', 'region'], borrow: [], wait: [], work: [], challenge: ['region']
+};
+
+/**
+ * Deterministic argument binding: the compatible entity closest to the action's own span wins, with
+ * preference for entities after the verb (or linked by "to/into/in/for"), and a heavy penalty for
+ * entities that sit on the far side of another action or inside another actor's relation
+ * ("go VIC while Riley pressures NSW" → travel VIC, never NSW).
+ */
+function giBindActionArgument(
+  family: GIVerbFamily, clause: GIClause, span: { start: number; end: number }, otherSpans: Array<{ start: number; end: number }>, relationEntityIdx: Set<number>
+): { entity: GIEntityRef | null; confidence: number; candidates: string[] } {
+  const kinds = GI_ACTION_ARG_KINDS[family];
+  if (!kinds.length) return { entity: null, confidence: 1, candidates: [] };
+  const toks = clause.tokens;
+  const seen = new Set<string>();
+  const scored: Array<{ ref: GIEntityRef; score: number; idx: number }> = [];
+  toks.forEach((t, i) => {
+    if (!t.entity || !kinds.includes(t.entity.kind)) return;
+    const key = `${t.entity.kind}:${t.entity.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const after = i >= span.end;
+    const dist = after ? i - span.end : span.start - i;
+    let score = 1 / (1 + Math.max(0, dist));
+    if (!after) score *= (family === 'defend' || family === 'leave') ? 0.7 : 0.35;     // "NSW should be defended" is possible, rare otherwise
+    if (after && /^(to|into|in|at|for|over|towards?)$/.test(toks[i - 1]?.t || '')) score *= 1.3;
+    if (otherSpans.some(o => (after ? o.start >= span.end && o.start < i : o.end <= span.start && o.end > i))) score *= 0.15; // belongs to a nearer action
+    if (relationEntityIdx.has(i)) score *= 0.1;                                                  // object of another actor's relation
+    if (family === 'fund' && t.entity.kind === 'region') score *= 0.6;                          // a region only qualifies the project
+    if (family === 'accept_contract' && t.entity.kind === 'region') score *= 0.6;
+    scored.push({ ref: t.entity, score, idx: i });
+  });
+  scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  if (!scored.length) return { entity: null, confidence: 0.5, candidates: [] };
+  const top = scored[0];
+  const second = scored[1];
+  const confidence = second ? Math.max(0.3, Math.min(0.99, top.score / (top.score + second.score))) : 0.95;
+  return { entity: top.ref, confidence: Math.round(confidence * 100) / 100, candidates: scored.slice(0, 3).map(s => `${s.ref.id}:${Math.round(s.score * 100) / 100}`) };
+}
+
+function giDetectActions(clauses: GIClause[], world: GIWorld, concepts: GIConceptHit[] = [], ctx?: GIConversationContext | null): GILanguageAction[] {
   const out: GILanguageAction[] = [];
   let step = 0;
   clauses.forEach(c => {
-    if (c.marker === 'then' || (c.marker === 'and' && out.length && c.form === 'imperative')) step++;
+    if (out.length && (c.marker === 'then' || (c.marker === 'and' && c.form === 'imperative') || (c.marker === null && c.form === 'imperative' && out.some(a => a.clause === c.index - 1)))) step++;
     const toks = c.tokens;
-    const usedFamilies = new Set<GIVerbFamily>();
+    // Entities that belong to another actor's relation in this clause ("Riley pressures NSW").
+    const relationIdx = new Set<number>();
+    concepts.filter(h => h.clause === c.index && (h.id === 'region_threat' || h.id === 'rival_advantage') && h.agentId && h.agentId !== 'player' && typeof h.start === 'number')
+      .forEach(h => { for (let i = h.start!; i < (h.end ?? h.start!); i++) if (toks[i]?.entity?.kind === 'region') relationIdx.add(i); });
+    const found: Array<{ family: GIVerbFamily; p: string; m: GIPatternMatch }> = [];
     GI_VERB_FAMILY_PHRASES.forEach(({ family, phrases }) => {
       for (const p of phrases) {
-        const els = giCompilePattern(p);
-        const m = giMatchPattern(els, toks, world);
-        if (!m || usedFamilies.has(family)) continue;
-        // Disambiguation by grammar/entity context.
+        const m = giMatchPattern(giCompilePattern(p), toks, world);
+        if (!m || found.some(f => f.family === family)) continue;
         const after = toks.slice(m.end, m.end + 5);
         const before = toks.slice(Math.max(0, m.start - 4), m.start);
-        const region = after.find(t => t.entity?.kind === 'region')?.entity || (family === 'defend' || family === 'leave' ? before.find(t => t.entity?.kind === 'region')?.entity : undefined);
-        const resource = after.find(t => t.entity?.kind === 'resource')?.entity || toks.find(t => t.entity?.kind === 'resource')?.entity;
-        if (family === 'travel' && /^(go|try|going to)$/.test(p) && !region) continue;          // "go" alone / "try" alone are not travel
+        const regionNear = after.some(t => t.entity?.kind === 'region') || ((family === 'defend' || family === 'leave') && before.some(t => t.entity?.kind === 'region'));
+        if (family === 'travel' && /^(go|try|going to|going|head|heading|bounce|fly|move|moving)$/.test(p) && !after.slice(0, 2).some(t => t.entity?.kind === 'region')) continue; // "go"/"head" alone are not travel
         if (family === 'travel' && p === 'going to' && after[0] && !after[0].entity) continue;  // "going to attack" is not travel
-        if (family === 'defend' && ['keep', 'hold', 'save', 'secure'].includes(p) && !region) continue; // "keep at least $2K", "hold off"
+        if (family === 'defend' && ['keep', 'hold', 'save', 'secure'].includes(p) && !regionNear) continue; // "keep at least $2K", "hold off"
         if (family === 'leave' && after[0]?.t === 'me') continue;                              // "leave me with $5K"
         if (family === 'defend' && p === 'hold' && after[0]?.t === 'off') continue;
-        if (family === 'fund' && ['finish', 'finance', 'build', 'fund'].includes(p) && !toks.some(t => /rail|railway|project|hub|plant|farm|infrastructure|cable|terminal|hydrogen|wind|corridor|thing/.test(t.t)) && !region) continue;
-        if (family === 'fund' && p === 'put money into' && region) continue;                    // deposits, not projects
-        if (family === 'defend' && /^(put|drop|deposit) /.test(p) && !region) continue;
+        if (family === 'fund' && ['finish', 'finance', 'build', 'fund', 'building', 'funding', 'construct'].includes(p) && !toks.some(t => /rail|railway|project|hub|plant|farm|infrastructure|cable|terminal|hydrogen|wind|corridor|thing/.test(t.t))) continue; // "building cash" is not a project
+        if (family === 'fund' && p === 'put money into' && regionNear) continue;                // deposits, not projects
+        if (family === 'defend' && /^(put|drop|deposit) /.test(p) && !regionNear) continue;
         if (family === 'borrow' && ['debt', 'credit', 'loans'].includes(p) && before.some(t => /^(already|have|got|my|in)$/.test(t.t))) continue; // state, not action
-        const negated = before.some(t => /^(not|no|never|without|except)$/.test(t.t));
-        usedFamilies.add(family);
-        out.push({ family, clause: c.index, surface: p, negated, regionId: region?.id, resource: resource?.kind === 'resource' ? resource.id : undefined, step });
+        // A threat verb inside another actor's relation is not a player action ("Riley is pressuring NSW").
+        if (concepts.some(h => h.clause === c.index && h.id === 'region_threat' && typeof h.start === 'number' && m.start >= h.start! && m.start < (h.end ?? 0) && h.agentId !== 'player')) continue;
+        found.push({ family, p, m });
         break;
       }
+    });
+    found.sort((a, b) => a.m.start - b.m.start);
+    found.forEach((f, fi) => {
+      const others = found.filter((_, j) => j !== fi).map(x => ({ start: x.m.start, end: x.m.end }));
+      const bind = giBindActionArgument(f.family, c, { start: f.m.start, end: f.m.end }, others, relationIdx);
+      const pol = giReadPolarity(c, f.m.start, f.m.end, f.m.matched);
+      const agent = giClauseAgent(c, f.m.start, world, ctx);
+      const resource = bind.entity?.kind === 'resource' ? bind.entity.id : undefined;
+      const region = bind.entity?.kind === 'region' ? bind.entity.id : undefined;
+      const project = bind.entity?.kind === 'project' ? bind.entity.id : undefined;
+      const contract = bind.entity?.kind === 'contract' ? bind.entity.id : undefined;
+      // A second action in the same clause joined by "and"/"then" is the next step ("sell gold then go VIC").
+      if (fi > 0 && toks.slice(found[fi - 1].m.end, f.m.start).some(t => /^(then|and|after|afterwards|next)$/.test(t.t))) step++;
+      out.push({
+        family: f.family, clause: c.index, surface: f.p, negated: pol.negated, polarity: pol.polarity,
+        regionId: region || (f.family === 'fund' || f.family === 'accept_contract' ? toks.find(t => t.entity?.kind === 'region')?.entity?.id : undefined),
+        resource, projectId: project, contractId: contract, step,
+        startToken: f.m.start, endToken: f.m.end, agentId: agent || 'player',
+        candidates: bind.candidates, attachmentConfidence: bind.confidence
+      });
     });
   });
   return out;
@@ -102156,14 +102383,19 @@ function giPolicyFor(clause: GIClause, next: GIClause | undefined, targetIdx: nu
   // "Why not just take the loan?" suggests an option; it is not a ban.
   if (/\bwhy not\b/.test(beforeText)) return null;
   const necessity = /\b(if necessary|if needed|if i have to|if you have to|if we have to|if there is no other|no other (choice|option|way)|if nothing else|last resort|only if|as a last|if i must|if it comes to it|if all else fails)\b/;
-  const permissive = /\b(do not mind|fine with|okay with|ok with|happy to|can use|could use|allowed to|open to|no problem with)\b/.test(beforeText) || /^\s*(is|are) (fine|okay|ok|allowed|good|acceptable|on the table)\b/.test(afterText);
+  const permissive = /\b(do not mind|fine with|okay with|ok with|happy to|can use|could use|allowed to|open to|no problem with)\b/.test(beforeText)
+    || /^\s*(is|are) (fine|okay|ok|allowed|good|acceptable|on the table)\b/.test(afterText)
+    || /^\s*(is|are) not (a |an )?(problem|issue|big deal|an issue|off the table)\b/.test(afterText);
   const negatedAvoid = /\b(not|never) (want to |to )?avoid\b/.test(beforeText) || /\bdo not avoid\b/.test(beforeText);
   const except = /\b(except|other than|anything but|besides)\b/.test(beforeText);
   const unlessHere = /\bunless\b/.test(whole) || (next && (next.marker === 'unless' || (next.marker === 'if' && necessity.test(nextText))));
   const onlyBefore = /\bonly\b/.test(beforeText) && (necessity.test(whole) || necessity.test(nextText) || /\blast resort\b/.test(whole));
   // Negators that belong to a permissive / softening phrase ("do not mind", "rather not") are not bans.
   const stripped = beforeText.replace(/\b(do not mind|not avoid|rather not|prefer not|try not to|ideally not|preferably not|not really|not keen)\b/g, ' ');
-  const negator = /\b(not|no|never|without|none)\b/.test(stripped);
+  // Nested negation cancels: "don't not take a loan" is a positive instruction.
+  const negCount = (stripped.match(/\b(not|no|never|without|none)\b/g) || []).length;
+  const negator = negCount % 2 === 1;
+  if (negCount >= 2 && !negator && clause.form === 'imperative') return 'preferred';
   const softPhrase = /\b(rather not|prefer not|would rather not|try not to|ideally not|not really|preferably not|not keen|rather)\b/.test(beforeText);
   const avoidWord = /\bavoid(ing)?\b/.test(beforeText) || (/\bif possible\b/.test(afterText) && /\bavoid\b/.test(whole));
   if (negatedAvoid) return 'allowed';
@@ -102336,7 +102568,9 @@ function giExtractConditions(clauses: GIClause[], actions: GILanguageAction[], w
     const actor = toks.find(t => t.entity?.kind === 'actor')?.entity;
     const region = toks.find(t => t.entity?.kind === 'region')?.entity;
     const text = toks.map(t => t.t).join(' ');
-    const event: GICondition['trigger']['event'] = actor && /\b(attack|attacks|moves|move|goes|takes|take|contests|deposits|comes)\b/.test(text) ? (/\b(move|moves|goes|comes)\b/.test(text) ? 'rival_moves' : 'rival_attacks')
+    const event: GICondition['trigger']['event'] = /\b(backs? off|backing off|retreats?|pulls? back|gives? up|stops?|leaves?)\b/.test(text) ? 'rival_retreats'
+      : /\b(critical|really bad|gets bad|gets worse|really (pushes|pushing)|pushes hard|serious)\b/.test(text) ? 'pressure_critical'
+      : actor && /\b(attack|attacks|moves|move|goes|takes|take|contests|deposits|comes|pushes|pressures)\b/.test(text) ? (/\b(move|moves|goes|comes)\b/.test(text) ? 'rival_moves' : 'rival_attacks')
       : /\b(lose|lost)\b/.test(text) ? 'region_lost' : /\$|\bcash|money\b/.test(text) ? 'cash' : /\bcontract\b/.test(text) ? 'contract' : 'other';
     const thenClauses: GIClause[] = [];
     const elseClauses: GIClause[] = [];
@@ -102348,8 +102582,14 @@ function giExtractConditions(clauses: GIClause[], actions: GILanguageAction[], w
       if (j === i + 1 || cj.marker === 'then' || cj.marker === 'and') thenClauses.push(cj); else break;
     }
     const pick = (cs: GIClause[]) => actions.filter(a => cs.some(x => x.index === a.clause)).map(a => ({ ...a, regionId: a.regionId || (a.family === 'defend' && region ? region.id : undefined) }));
+    // A trailing condition ("… then go Victoria if Riley backs off") governs the step right before it.
+    const trailing = !thenClauses.length && i > 0 ? clauses[i - 1] : null;
+    if (trailing) {
+      actions.filter(a => a.clause === trailing.index).forEach(a => { a.condition = { actorId: actor?.id || world.primaryRivalId || undefined, regionId: region?.id, event }; });
+      thenClauses.push(trailing);
+    }
     const thenActs = pick(thenClauses);
-    const isStrategy = thenClauses.some(x => x.form === 'imperative') && thenActs.length > 0;
+    const isStrategy = trailing ? thenActs.length > 0 : (thenClauses.some(x => x.form === 'imperative') && thenActs.length > 0);
     out.push({
       ifText: c.text,
       trigger: { actorId: actor?.id || (event.startsWith('rival') ? world.primaryRivalId || undefined : undefined), regionId: region?.id, event },
@@ -102440,7 +102680,7 @@ function giDetectRepair(clauses: GIClause[], entities: GIEntityRef[], concepts: 
 
 // ---- 12. Goals, problems, threats, comparisons, hypotheses --------------------------------
 
-function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'>, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
+function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'> & { propositions?: GIConceptHit[] }, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
   const goals: GIGoal[] = [];
   const problems: GIProblem[] = [];
   const threats: GIThreat[] = [];
@@ -102456,26 +102696,32 @@ function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts
   const mentionedActor = frame.entities.find(e => e.kind === 'actor' && rivalIds.includes(e.id));
   const urgency: GIThreat['urgency'] = /\b(about to|right now|now|immediately|nearly|almost|close)\b/.test(lowerText) ? 'immediate' : /\bsoon|next turn\b/.test(lowerText) ? 'soon' : 'normal';
   const regionEnts = frame.entities.filter(e => e.kind === 'region');
-  if (has('region_threat')) {
-    const hit = frame.concepts.find(h => h.id === 'region_threat')!;
+  // Each ACTIVE threat proposition binds its own actor and region (relation binding, not global co-occurrence).
+  frame.concepts.filter(h => h.id === 'region_threat').forEach(hit => {
     const clauseRegion = frame.clauses[hit.clause]?.tokens.find(t => t.entity?.kind === 'region')?.entity;
-    const region = clauseRegion || regionEnts[0];
-    threats.push({ regionId: region?.id || null, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: hit.evidence });
-    problems.push({ kind: 'region_threat', evidence: hit.evidence });
-    if (region) goals.push({ kind: 'prevent_loss', regionId: region.id, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
-  }
-  // "Keep NSW no matter what" / "need to protect NSW" → retain goal (+ implied threat).
-  frame.actions.filter(a => a.family === 'defend' && a.regionId && !a.negated).forEach(a => {
+    const regionId = hit.regionId || clauseRegion?.id || regionEnts[0]?.id || null;
+    if (threats.some(t => t.regionId === regionId)) return;
+    const actorId = hit.actorId || (hit.agentId && hit.agentId !== 'other' && hit.agentId !== 'player' ? hit.agentId : null);
+    const clauseText = frame.clauses[hit.clause]?.tokens.map(t => t.t).join(' ') || lowerText;
+    const hitUrgency: GIThreat['urgency'] = hit.polarity === 'uncertain' ? 'normal' : /(about to|right now|now|immediately|nearly|almost|close)/.test(clauseText) ? 'immediate' : urgency;
+    threats.push({ regionId, actorId: actorId || mentionedActor?.id || world.primaryRivalId, inferredActor: !actorId && !mentionedActor, urgency: hitUrgency, evidence: hit.evidence, polarity: hit.polarity || 'positive' });
+    if (!problems.some(pr => pr.kind === 'region_threat')) problems.push({ kind: 'region_threat', evidence: hit.evidence });
+    if (regionId) goals.push({ kind: 'prevent_loss', regionId, priority: hitUrgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
+  });
+  // "Keep NSW no matter what" / "need to protect NSW" → retain goal (+ implied threat). Only the
+  // player's own, non-negated defend actions count ("Riley defends VIC" is Riley's job).
+  frame.actions.filter(a => a.family === 'defend' && a.regionId && !a.negated && (!a.agentId || a.agentId === 'player')).forEach(a => {
     const veryHigh = /\bno matter what|at all costs|whatever it takes|must\b/.test(lowerText);
     if (!goals.some(g => g.regionId === a.regionId)) goals.push({ kind: 'retain_region', regionId: a.regionId, priority: veryHigh ? 'very_high' : 'high', evidence: a.surface });
     const r = world.regions[a.regionId!];
     const isGoalStatement = /\b(need|have|got|want|must) to (protect|defend|hold|keep|save|secure)\b|\bno matter what\b|^(protect|defend|hold|keep|save|secure)\b/.test(lowerText) || /\bstop\b/.test(lowerText);
-    if (!threats.some(t => t.regionId === a.regionId) && isGoalStatement && (!r || r.controlledByPlayer || rivalIds.length)) {
+    if (!threats.length && isGoalStatement && (!r || r.controlledByPlayer || rivalIds.length)) {
       threats.push({ regionId: a.regionId!, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: a.surface });
     }
   });
-  // Cash goals.
-  const target = frame.quantities.find(q => q.unit === '$' && q.role === 'target');
+  // Cash goals (never from a negated need: "I don't need $10K" is not a goal).
+  const negatedNeedClauses = new Set((frame.propositions || []).filter(h => h.id === 'need_cash' && (h.negated || (h.agentId && h.agentId !== 'player'))).map(h => h.clause));
+  const target = frame.quantities.find(q => q.unit === '$' && q.role === 'target' && !negatedNeedClauses.has(q.clause));
   if (target) goals.push({ kind: target.additional || /\b(another|more|extra)\b/.test(lowerText) ? 'cash_increase' : (target.bound === 'min' || /\babove|over|reach\b/.test(lowerText) ? 'cash_reach' : 'cash_increase'), amount: target, priority: 'normal', evidence: target.raw });
   else if (has('need_cash')) goals.push({ kind: 'cash_increase', amount: null, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: ev('need_cash') });
   const regionsQ = frame.quantities.find(q => q.unit === 'regions');
@@ -102485,6 +102731,19 @@ function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts
   if (has('protect_long_term')) goals.push({ kind: 'recover', priority: 'normal', evidence: ev('protect_long_term') });
   if (has('win_path') && !goals.some(g => g.kind === 'regions_reach')) goals.push({ kind: 'win', priority: 'normal', evidence: ev('win_path') });
   return { goals, problems, threats };
+}
+
+function giBuildLanguageRelations(props: GIConceptHit[], actions: GILanguageAction[]): GILanguageRelation[] {
+  const out: GILanguageRelation[] = [];
+  props.forEach(h => {
+    const subject = h.actorId || h.agentId || (GI_PLAYER_CONCEPTS.includes(h.id) ? 'player' : null);
+    if (!subject) return;
+    const relation: GILanguageRelation['relation'] | null = h.id === 'region_threat' ? 'threatens'
+      : h.id === 'need_cash' ? (subject === 'player' ? null : 'economy_task') : h.id === 'liquidity_low' ? 'low_liquidity' : null;
+    if (relation) out.push({ subjectId: subject, relation, objectId: h.regionId || null, polarity: h.polarity || 'positive', negated: Boolean(h.negated), clause: h.clause });
+  });
+  actions.forEach(a => out.push({ subjectId: a.agentId || 'player', relation: 'action', family: a.family, objectId: a.regionId || a.resource || a.projectId || a.contractId || null, polarity: a.polarity || 'positive', negated: a.negated, clause: a.clause }));
+  return out.slice(0, 16);
 }
 
 // ---- 13. Language semantic graph (what the player MEANS — separate from the evidence graph) ---
@@ -102599,8 +102858,10 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   const entities: GIEntityRef[] = [...resolution.entities];
   tokens.forEach(t => { if (t.entity && !entities.some(e => e.kind === t.entity!.kind && e.id === t.entity!.id)) entities.push({ ...t.entity, confidence: t.correctedFrom ? Math.min(t.entity.confidence, 0.82) : t.entity.confidence }); });
 
-  const concepts = giDetectConcepts(clauses, world);
-  const actions = giDetectActions(clauses, world);
+  // Polarity-aware propositions: every hit keeps its polarity; only ACTIVE ones drive reasoning.
+  const propositions = giDetectConcepts(clauses, world, ctx);
+  const concepts = propositions.filter(giConceptActive);
+  const actions = giDetectActions(clauses, world, propositions, ctx);
   const allConstraints = giExtractConstraints(clauses, actions, world);
   const quantities = giExtractQuantities(clauses);
   // "my cash" inside a limit ("don't spend more than 25% of my cash") is not a status question.
@@ -102641,7 +102902,7 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   const impliedRequest = !isQuestion && (limitStated || needStated) && (concepts.some(h => h.id === 'liquidity_low' || h.id === 'region_threat' || h.id === 'need_cash') || actions.some(a => a.family === 'defend'));
   const implicit = !isQuestion && !impliedRequest && !concepts.some(h => ['recommendation_request', 'severity', 'diagnosis_request', 'afford_question', 'plan_request', 'status_request'].includes(h.id));
   const repair = giDetectRepair(clauses, entities, concepts, allConstraints, ctx, world, lowerText);
-  const base = { clauses, concepts, quantities, actions, time, entities };
+  const base = { clauses, concepts, quantities, actions, time, entities, propositions };
   const { goals, problems, threats } = giBuildGoalsProblems(base, world, lowerText);
 
   const requestKinds: GISemanticFrame['requestKinds'] = [];
@@ -102680,10 +102941,11 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
   });
   optionText = optionText.replace(/\bleave\s+(\S+)\s+and\s+(travel to|try)\b/gi, 'travel to');
 
+  const relations = giBuildLanguageRelations(propositions, actions);
   const partial = {
     originalQuery: query, normalizedText, canonicalText, optionText, corrections, uncorrected, clauses, concepts, requestKinds, goals, problems, threats,
     entities, actions, constraints, preferences, conditions, time, quantities, comparisons, negations, references, hypotheses,
-    conversationRepair: repair, style, isQuestion, implicit
+    conversationRepair: repair, style, isQuestion, implicit, propositions, relations
   };
   const capabilityScores = giScoreCapabilities(partial, world, ctx);
 
@@ -102713,7 +102975,8 @@ export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversa
       languageConfidence: Math.round(languageConfidence * 100) / 100,
       entityConfidence: Math.round(entityConfidence * 100) / 100,
       referenceConfidence: Math.round(referenceConfidence * 100) / 100,
-      semanticFrameConfidence: Math.round(semanticFrameConfidence * 100) / 100
+      semanticFrameConfidence: Math.round(semanticFrameConfidence * 100) / 100,
+      attachmentConfidence: actions.length ? Math.min(...actions.map(a => a.attachmentConfidence ?? 1)) : 1
     }
   };
 }
@@ -102732,7 +102995,7 @@ export function summarizeGIFrame(f: GISemanticFrame): {
     loanPolicy: loan ? loan.policy : null,
     urgency: f.time.some(t => t.kind === 'urgency'),
     goals: Array.from(new Set(f.goals.map(g => `${g.kind}${g.regionId ? ':' + g.regionId : ''}`))).sort(),
-    actions: Array.from(new Set(f.actions.filter(a => !a.negated).map(a => `${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`))).sort(),
+    actions: Array.from(new Set(f.actions.filter(a => !a.negated).map(a => `${a.agentId && a.agentId !== 'player' ? a.agentId + '>' : ''}${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`))).sort(),
     constraints: [...f.constraints, ...f.preferences].map(c => `${c.subject}${c.target ? ':' + c.target : ''}=${c.policy}`).sort(),
     horizon: horizon ? `${horizon.count} ${horizon.unit}` : null,
     style: f.style
@@ -102956,7 +103219,33 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     useRef('current topic', ctx.activeTopic);
   }
 
+  // A9: an action aimed at "it"/"there" binds to the conversation's region only when one region is
+  // clearly salient; two equally recent regions → ask instead of guessing (it changes gameplay).
+  frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && GI_ACTION_ARG_KINDS[a.family].includes('region') && !a.regionId).forEach(a => {
+    const clauseText = frame.clauses[a.clause]?.tokens.map(t => t.t).join(' ') || '';
+    if (!/\b(it|there|that one)\b/.test(clauseText) || entities.some(e => e.kind === 'region' && e.source === 'query')) return;
+    const seenR = new Set<string>();
+    const recentRegions = [ctx.activeTopic, ctx.last.region, ...ctx.lastComparison, ...ctx.recent]
+      .filter((r): r is GIEntityRef => Boolean(r && r.kind === 'region'))
+      .filter(r => (seenR.has(r.id) ? false : (seenR.add(r.id), true)));
+    if (ctx.activeTopic?.kind === 'region') { a.regionId = ctx.activeTopic.id; a.attachmentConfidence = 0.8; }
+    else if (recentRegions.length >= 2) { a.attachmentConfidence = 0.4; if (!ambiguous.some(x => x.kind === 'region')) ambiguous.push({ kind: 'region', phrase: 'it', options: recentRegions.slice(0, 3) }); }
+    else if (recentRegions.length === 1) { a.regionId = recentRegions[0].id; a.attachmentConfidence = 0.85; }
+  });
+
   let options = resolveGIOptions(frame.optionText || text, world, entities);
+  // GI 2.1 robustness: when the player isn't posing an "A or B" choice, each option comes from an
+  // action bound to ITS OWN target ("go VIC while Riley pressures NSW" → travel VIC, never NSW).
+  const posesChoice = splitGIOptionClauses(frame.optionText || text).length >= 2;
+  if (!posesChoice) {
+    const bound = frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && (a.regionId || a.resource || a.projectId));
+    const frameOpts: GIOption[] = [];
+    bound.forEach(a => { const o = giOptionForAction(a, world); if (o && !frameOpts.some(x => x.id === o.id)) frameOpts.push(o); });
+    if (frameOpts.length) {
+      const kinds = new Set(frameOpts.map(o => o.kind));
+      options = [...frameOpts, ...options.filter(o => !kinds.has(o.kind) && o.kind !== 'region' && !frameOpts.some(x => x.id === o.id))];
+    }
+  }
   options = extendGIOptionsFromFrame(options, frame, world, ctx, normalized);
   // "Would that actually be worth it?" → weigh the option under discussion against doing nothing.
   if (/\bworth\b/.test(normalized) && options.length < 2) {
@@ -103107,9 +103396,9 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     if (frame.problems.length || frame.concepts.some(h => h.id === 'severity' || h.id === 'diagnosis_request')) needs.diagnosis = true;
   }
   // Composed multi-action requests ("sell … then put $3K into NSW") → a validated sequence.
-  const composedSteps = frame.actions.filter(a => !a.negated && ['sell', 'defend', 'travel', 'buy', 'fund'].includes(a.family));
-  const isComposed = composedSteps.length >= 2 && new Set(composedSteps.map(a => a.step)).size >= 2 && !needs.comparison && primary !== 'control';
-  if (isComposed) { primary = 'sequence_plan'; addSupport('simulation'); }
+  const composedSteps = frame.actions.filter(a => !a.negated && (!a.agentId || a.agentId === 'player') && ['sell', 'defend', 'travel', 'buy', 'fund'].includes(a.family));
+  const isComposed = composedSteps.length >= 2 && new Set(composedSteps.map(a => a.step)).size >= 2 && !posesChoice && primary !== 'control';
+  if (isComposed) { primary = 'sequence_plan'; addSupport('simulation'); needs.comparison = false; }
   // A conditional instruction ("if Riley attacks NSW, defend it; otherwise…") is a strategy to explain and validate.
   if (!isComposed && frame.conditions.some(c => c.isStrategy) && primary !== 'control') { primary = 'sequence_plan'; needs.prediction = false; addSupport('rival_assessment'); }
 
@@ -104480,6 +104769,11 @@ function giOptionForAction(a: GILanguageAction, world: GIWorld): GIOption | null
     case 'travel': return buildGIOption('travel', 'travel', world, reg);
     case 'sell': return buildGIOption('sell', 'sell', world, res);
     case 'buy': return buildGIOption('buy', 'buy', world, res);
+    case 'fund': {
+      const pid = a.projectId || (() => { const inRegion = world.projects.filter(p => p.regionId === a.regionId && p.remaining > 0); return inRegion.length === 1 ? inRegion[0].id : null; })();
+      const p = pid ? world.projects.find(x => x.id === pid) : null;
+      return p ? buildGIOption('fund_project', 'fund', world, [{ kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' }]) : null;
+    }
     default: return null;
   }
 }
@@ -104600,6 +104894,13 @@ export function composeGIComposedSequence(u: GIQueryUnderstanding, world: GIWorl
       if (ap !== null) ap -= Math.max(0, opt.apCost);
     }
     buttons.push(...optionButtons(opt, world).filter(b => b.kind !== 'do' && b.kind !== 'ask'));
+  });
+  // Per-step conditions ("… then go Victoria if Riley backs off") are shown, not automated.
+  steps.forEach((a, i) => {
+    if (!a.condition) return;
+    const who = world.actors.find(x => x.id === a.condition!.actorId)?.name || 'your rival';
+    const when = a.condition.event === 'rival_retreats' ? `${who} backs off` : a.condition.event === 'pressure_critical' ? `the pressure becomes critical` : a.condition.event === 'rival_attacks' ? `${who} moves on ${a.condition.regionId ? getGILocationName(a.condition.regionId) : 'you'}` : 'its condition is met';
+    claims.push(claim(`Step ${i + 1} only applies if ${when} — check again before doing it.`, 'caveat', 'confirmed', [], { derived: [i + 1] }));
   });
   const sections: GIAnswerSection[] = [{ id: 'steps', heading: 'Your sequence', claims }];
   if (allLegal && intents.length >= 2 && world.tools.simulate) {
@@ -105736,9 +106037,10 @@ export const GI_STATE_BOUND_BUTTON_KINDS: GameIntelligenceButtonKind[] = ['do', 
 
 // ---- Dependency-aware fingerprints -------------------------------------------
 
-export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history';
+export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history'
+  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios';
 export type GIFingerprintMap = Partial<Record<GIFingerprintDomain, string>>;
-export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history'];
+export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios'];
 
 /** Which state domains each grounded tool reads. 'turn' (actor/turn/day) is always included. */
 const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
@@ -105760,17 +106062,46 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   threat_scan: ['world', 'actors'],
   conflict_scan: ['objectives', 'assistance'],
   settings_search: ['assistance'],
-  system_state: ['assistance', 'actors', 'objectives'],
+  system_state: ['assistance', 'actors', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'scenarios'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
 export function giPlanFingerprintDomains(steps: GIPlanStep[], u: GIQueryUnderstanding): GIFingerprintDomain[] {
   const set = new Set<GIFingerprintDomain>(['turn']);
-  steps.forEach(s => (GI_TOOL_FINGERPRINT_DOMAINS[s.tool] || GI_FINGERPRINT_DOMAINS).forEach(d => set.add(d)));
+  // The Ask-the-Game step depends on what was asked (intent), not on the whole game.
+  steps.forEach(s => (s.tool === 'ask_engine' ? giAskIntentFingerprintDomains(u.askIntent) : (GI_TOOL_FINGERPRINT_DOMAINS[s.tool] || GI_FINGERPRINT_DOMAINS)).forEach(d => set.add(d)));
   if (u.options.length) { set.add('player'); set.add('world'); }
   if (u.primary === 'control' || u.primary === 'control_explain') set.add('assistance');
-  if (u.primary === 'ask_engine') GI_FINGERPRINT_DOMAINS.forEach(d => set.add(d));
+  if (u.primary === 'ask_engine') giAskIntentFingerprintDomains(u.askIntent).forEach(d => set.add(d));
+  if (u.primary === 'teammate_status') { set.add('team_strategy'); set.add('team_resources'); }
+  if (u.memoryEvidence) set.add('memory');
   return GI_FINGERPRINT_DOMAINS.filter(d => set.has(d));
+}
+
+/**
+ * What an Ask-the-Game answer depends on. A static rules question does not go stale because a
+ * market price moved; team and memory questions track their own systems; unknown intents stay
+ * conservative (everything).
+ */
+export function giAskIntentFingerprintDomains(intent: AskGameIntent): GIFingerprintDomain[] {
+  switch (intent) {
+    case 'GAME_RULES': case 'GENERAL_HELP': return ['assistance', 'scenarios'];
+    case 'SETTINGS_INSPECT': case 'SETTINGS_SEARCH': case 'AUTOMODE_EXPLAIN': return ['assistance'];
+    case 'MARKET_PRICES': return ['market', 'player'];
+    case 'REGION_INFO': case 'WHY_REGION': case 'DOMINANCE_TRACKER': return ['world', 'player', 'actors'];
+    case 'CONTRACT_INSPECT': return ['contracts', 'player'];
+    case 'INFRASTRUCTURE_STATUS': return ['projects', 'player'];
+    case 'EXPEDITION_STATUS': return ['player', 'scenarios'];
+    case 'CREDIT_LOAN_STATUS': case 'ECONOMY_DIAGNOSE': case 'PLAYER_STATUS': case 'AFFORDABILITY_CHECK': return ['player', 'market', 'assistance'];
+    case 'GOVERNANCE_INSPECT': return ['team_governance', 'approvals'];
+    case 'TEAMMATE_DIAGNOSE': case 'TEAM_PLAN_UPDATE': case 'PLAN_STATUS': case 'PLAN_CHANGE': case 'CURRENT_PLAN':
+      return ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors'];
+    case 'MEMORY_RECALL': case 'RELATIONSHIP_EXPLAIN': case 'STRATEGIC_PATTERN': case 'DECISION_MEMORY': case 'PLAYSTYLE_LEARNED': case 'RIVAL_RECENT': case 'RIVAL_PREDICT':
+      return ['memory', 'actors', 'history'];
+    case 'ACTIVITY_LEDGER': case 'REPLAY_BRANCH_QUERY': return ['history'];
+    case 'AUTOMODE_INSPECT': case 'AUTOMODE_SIMULATE': case 'AUTOMODE_GOAL_PROMPT': return ['assistance', 'player', 'objectives'];
+    default: return GI_FINGERPRINT_DOMAINS;
+  }
 }
 
 /** Stable per-domain hashes from compact, already-extracted state slices (never the whole game state). */
@@ -106531,6 +106862,115 @@ export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
     return (a.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai') && b.threats.some(t => t.regionId === 'NSW') && !c.threats.length) || JSON.stringify([a.threats, b.threats, c.threats]);
   });
 
+  // ---- Semantic robustness: polarity, attachment, dependency precision -----------------------
+  const frameOf = (q: string, w?: GIWorld, ctx?: GIConversationContext) => parseGILanguage(q, w || W(), ctx || createGIConversationContext());
+
+  check('gi21_polarity_negatives', 'Negated propositions never activate threats, problems or cash goals', () => {
+    const cases: Array<[string, 'threat' | 'liquidity' | 'need']> = [
+      ['Riley is not taking NSW.', 'threat'], ['NSW is not in trouble.', 'threat'], ["Riley isn't pressuring NSW.", 'threat'],
+      ["I don't think Riley will attack NSW", 'threat'], ['Riley might not attack NSW', 'threat'],
+      ["I'm not broke.", 'liquidity'], ["I don't need money.", 'need'], ["I don't need $10K", 'need']
+    ];
+    const bad = cases.filter(([q, kind]) => {
+      const f = frameOf(q);
+      if (kind === 'threat') return f.threats.length > 0 || f.problems.some(p => p.kind === 'region_threat');
+      if (kind === 'liquidity') return f.problems.some(p => p.kind === 'low_liquidity');
+      return f.goals.some(g => g.kind === 'cash_increase' || g.kind === 'cash_reach');
+    }).map(c => c[0]);
+    // …while the negative proposition itself stays available for conversation.
+    const kept = frameOf('Riley is not taking NSW.').propositions.some(p => p.id === 'region_threat' && p.polarity === 'negative');
+    return (!bad.length && kept) || `activated: ${bad.join(' | ')} kept=${kept}`;
+  });
+
+  check('gi21_polarity_positives', 'Positive counterparts still activate (no over-suppression)', () => {
+    const t = frameOf('Riley is taking NSW.'); const l = frameOf("I'm broke."); const n = frameOf('I need money.'); const m = frameOf('Riley might attack NSW');
+    return (t.threats.some(x => x.regionId === 'NSW' && x.polarity === 'positive') && l.problems.some(p => p.kind === 'low_liquidity') && n.goals.some(g => g.kind === 'cash_increase')
+      && m.threats.some(x => x.regionId === 'NSW' && x.polarity === 'uncertain' && x.urgency === 'normal')) || 'suppressed';
+  });
+
+  check('gi21_polarity_answers', 'A negated threat does not produce urgent defence or threat escalation', () => {
+    const r = run("Riley is not taking NSW, I'm fine on cash. What should I do next?");
+    const t = text(r);
+    return (!/bigger strategic risk|answers the threat|immediate problem is cash/.test(t) && !r.understanding.frame!.threats.length) || t;
+  });
+
+  check('gi21_negation_nested', 'Nested / double negation and negated preferences', () => {
+    const errs: string[] = [];
+    const want: Array<[string, GIConstraintPolicy]> = [["don't not take a loan", 'preferred'], ["I don't want to avoid loans", 'allowed'], ["Loans aren't a problem.", 'allowed'], ["Don't take a loan.", 'forbidden']];
+    want.forEach(([q, p]) => { const got = und(q).constraints.loanPolicy; if (got !== p) errs.push(`${q} → ${got}`); });
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_polarity_agent', "Another actor's situation is not the player's problem (\"Riley is broke\")", () => {
+    const f = frameOf('Riley is broke and Riley is making money');
+    return (!f.problems.some(p => p.kind === 'low_liquidity') && !f.goals.some(g => g.kind === 'cash_increase')) || JSON.stringify(summarizeGIFrame(f));
+  });
+
+  const bindings = (q: string, w?: GIWorld) => frameOf(q, w).actions.filter(a => !a.negated).map(a => `${a.agentId && a.agentId !== 'player' ? a.agentId + '>' : ''}${a.family}:${a.regionId || a.resource || a.projectId || a.contractId || '-'}`).sort().join(',');
+  check('gi21_binding_cases', 'Action ↔ entity binding with several entities in one message', () => {
+    const tw = createGIFixtureWorld({ withTeam: true }).world;
+    const cases: Array<[string, string]> = [
+      ['go VIC while Riley pressures NSW', 'travel:VIC'],
+      ['What do you think about going VIC while Riley pressures NSW?', 'travel:VIC'],
+      ['head Victoria then defend NSW', 'defend:NSW,travel:VIC'],
+      ['head over to Victoria and then shore up NSW', 'defend:NSW,travel:VIC'],
+      ['sell Gold and travel WA', 'sell:Gold,travel:WA'],
+      ['defend NSW while Riley moves VIC', 'defend:NSW'],
+      ['sell Iron Ore then fund the NSW project', 'fund:NSW,sell:Iron Ore'],
+      ['Riley defend VIC while I hold NSW', 'ai>defend:VIC,defend:NSW'],
+      ['take the WA contract then go SA', 'accept_contract:WA,travel:SA'],
+      ['go to VIC, not NSW', 'travel:VIC']
+    ];
+    const bad = cases.map(([q, want]) => ({ q, want, got: bindings(q, tw) })).filter(x => x.got !== x.want);
+    return bad.length ? bad.map(x => `"${x.q}" → ${x.got} (want ${x.want})`).join('; ') : true;
+  });
+
+  check('gi21_binding_order', 'Binding is word-order independent (permutations keep each target)', () => {
+    const groups = [['sell Gold and travel WA', 'travel WA and sell Gold', 'travel to WA, then sell Gold'], ['head Victoria then defend NSW', 'defend NSW then head Victoria', 'shore up NSW and head over to Victoria']];
+    for (const g of groups) { const base = bindings(g[0]); const off = g.find(q => bindings(q) !== base); if (off) return `"${off}" → ${bindings(off)} vs ${base}`; }
+    return true;
+  });
+
+  check('gi21_binding_options', 'Options follow bound targets ("go VIC while Riley pressures NSW" → travel VIC, never NSW)', () => {
+    const u = und('What do you think about going VIC while Riley pressures NSW?');
+    return (u.options.some(o => o.id === 'opt_travel_VIC') && !u.options.some(o => o.id === 'opt_travel_NSW') && u.frame!.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai')) || `${u.options.map(o => o.id)}`;
+  });
+
+  check('gi21_relation_binding', 'Relations bind per subject ("Riley is pressuring NSW but Sam is building cash")', () => {
+    const f = frameOf('Riley is pressuring NSW but Sam is building cash', createGIFixtureWorld({ withTeam: true }).world);
+    return (f.relations.some(r => r.subjectId === 'ai' && r.relation === 'threatens' && r.objectId === 'NSW') && f.relations.some(r => r.subjectId === 'mate' && r.relation === 'economy_task')
+      && !f.relations.some(r => r.subjectId === 'mate' && r.relation === 'threatens') && !f.goals.some(g => g.kind === 'cash_increase')) || JSON.stringify(f.relations);
+  });
+
+  check('gi21_multistep_condition', 'Multi-step with a trailing condition keeps each target and the step condition', () => {
+    const f = frameOf('Sell Iron Ore, then defend NSW, then go Victoria if Riley backs off.');
+    const s = f.actions.filter(a => !a.negated).sort((a, b) => a.step - b.step);
+    return (s.length === 3 && s[0].family === 'sell' && s[0].resource === 'Iron Ore' && s[1].family === 'defend' && s[1].regionId === 'NSW' && s[2].family === 'travel' && s[2].regionId === 'VIC'
+      && s[2].condition?.event === 'rival_retreats' && new Set(s.map(a => a.step)).size === 3) || JSON.stringify(s.map(a => [a.family, a.regionId || a.resource, a.step, a.condition?.event]));
+  });
+
+  check('gi21_attachment_ambiguity', 'Pronoun targets: ask when two regions are equally salient, bind when one is the topic', () => {
+    const two = { ...createGIConversationContext(), lastComparison: [{ kind: 'region' as const, id: 'NSW', label: 'New South Wales', confidence: 1, source: 'context' as const }, { kind: 'region' as const, id: 'VIC', label: 'Victoria', confidence: 1, source: 'context' as const }] };
+    const a = run('Defend it and send Riley there', two);
+    const one = noteGIContextEntity(createGIConversationContext(), { kind: 'region', id: 'NSW', label: 'New South Wales', confidence: 1, source: 'context' });
+    const b = und('Defend it', one);
+    return (a.understanding.needs.clarification && (a.understanding.confidences?.attachmentConfidence ?? 1) < 0.6 && b.options.some(o => o.id === 'opt_deposit_NSW') && !b.needs.clarification)
+      || `${a.understanding.needs.clarification}/${a.understanding.confidences?.attachmentConfidence}/${b.options.map(o => o.id)}`;
+  });
+
+  check('gi21_attachment_confidence', 'attachmentConfidence is reported separately from language confidence', () => {
+    const u = und('sell Gold and travel WA');
+    return (typeof u.confidences?.attachmentConfidence === 'number' && typeof u.confidences?.languageConfidence === 'number') || JSON.stringify(u.confidences);
+  });
+
+  check('gi21_dependency_precision', 'Freshness domains: rules ignore market; team questions track team systems', () => {
+    const rules = run('How do AP points work?').plan.fingerprintDomains;
+    const team = run("Why won't my teammate spend money on this?", undefined, createGIFixtureWorld({ withTeam: true }).world).plan.fingerprintDomains;
+    const cash = run('How much money do I have?').plan.fingerprintDomains;
+    return (!rules.includes('market') && ['team_resources', 'team_strategy', 'approvals'].every(d => team.includes(d as GIFingerprintDomain)) && !team.includes('market') && !cash.includes('team_strategy'))
+      || `rules=${rules} team=${team} cash=${cash}`;
+  });
+
   check('gi21_diagnostics', 'LAB diagnostics expose structured language metadata (no reasoning trace)', () => {
     const r = run('shuld i defned nsw or go victora');
     const l = r.diagnostics.language;
@@ -106569,8 +107009,12 @@ export async function runGameIntelligence21AsyncSelfTests(): Promise<V9SelfTestR
     // Delegated path goes through the same bounded contract.
     const a = withMaps(createGIFixtureWorld().world, base);
     let calls = 0;
-    const r = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, market: 'm2' }) });
+    const r = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, assistance: 'a2' }) });
     push('gi21_fresh_delegated', 'Delegated answers are also recomputed once when relevant state changes', r.answer.gi?.freshness === 'updated' && calls === 2, `${r.answer.gi?.freshness}/${calls}`);
+    // …but a market move does not invalidate a static rules answer.
+    let calls2 = 0;
+    const r2 = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls2++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, market: 'm2' }) });
+    push('gi21_fresh_rules_market', 'A market price change does not make a rules answer stale', r2.answer.gi?.freshness === 'current' && calls2 === 1, `${r2.answer.gi?.freshness}/${calls2}`);
   } catch (e) { push('gi21_fresh_delegated', 'Delegated freshness', false, String(e)); }
   try {
     // Memory is one evidence provider inside a compound strategic answer (Ask-the-Game enforces visibility).
@@ -137728,9 +138172,26 @@ function dispatchGameSettingsChange(
         cp?.spendingCaps?.minimumCashReserve ?? null, gameSettings.fogOfWarEnabled, gameSettings.negotiationMode, regionDepositInput
       ],
       actors: (Object.values(actorsById || {}) as any[]).filter(a => a && String(a.id) !== String(player?.id || 'player')).map(a => [a.id, a.money, a.currentRegion]),
-      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length]
+      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length],
+      // Team systems (compact, stable slices — never the whole team state).
+      team_strategy: (() => {
+        const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
+        const plan: any = team?.activeTeamPlan;
+        const os: any = (gameState as any).teamOperatingSystem?.byTeam?.[player?.teamId || ''];
+        return team ? [plan ? [plan.id, plan.status, plan.objective, (plan.assignedActorIds || []).join(',')] : null, team.overseer?.currentAdaptiveStrategyMode || null, Boolean(team.overseer?.safeModeActive),
+          (team.overseer?.strategicDirectives || []).length, os ? [os.contract?.id, os.contract?.revision, os.contract?.status, (os.tasks || []).map((t: any) => `${t.id}:${t.status}`).join(',')] : null] : null;
+      })(),
+      team_resources: (() => {
+        const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
+        return team ? [team.treasury?.balance ?? null, team.treasury?.reserve ?? null, (team.treasury?.pendingFundingRequestIds || []).length, (team.governorExceptions || []).length,
+          gameSettings.teamEconomyGovernorEnabled === true, (team.actorIds || []).map((id: string) => { const a: any = (actorsById as any)?.[id]; return a ? `${id}:${a.protectedCash || 0}:${a.inEconomicRecovery ? 1 : 0}` : id; }).join(',')] : null;
+      })(),
+      team_governance: (() => { const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null; return team ? [team.governanceMode || null, team.leaderId || null] : null; })(),
+      approvals: (pendingApprovalRequests || []).map((r: any) => `${r?.id}:${r?.status || 'pending'}`),
+      memory: [gameSettings.aiMemoryFullInspectionEnabled === true, ((gameState as any).aiMemory?.version ?? (gameState as any).aiMemoryVersion ?? null)],
+      scenarios: (((gameState as any).scenarioObjectives || (gameState as any).activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
     });
-  }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications]);
+  }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications, teamsById, pendingApprovalRequests]);
   const v9GiFingerprint = useMemo(() => composeGIFingerprint(v9GiFingerprints), [v9GiFingerprints]);
 
   /** Authorized, focused snapshot for one question. Built on demand — never on every render. */
