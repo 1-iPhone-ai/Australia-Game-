@@ -2800,7 +2800,7 @@ const KEYBOARD_SHORTCUTS = {
 };
 
 export const VERSION_CONSTANTS = {
-  GAME_VERSION: "8.2.0",
+  GAME_VERSION: "8.4.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -99872,8 +99872,8 @@ export interface GameIntelligenceAnswerCardProps {
   answer: GameIntelligenceAnswer;
   theme: V9Theme;
   onButton: (button: GameIntelligenceButton) => void;
-  /** Current world fingerprint; an answer built on an older state is marked stale and loses Do It. */
-  currentFingerprint?: string;
+  /** Current world fingerprint (composite or per-domain); an answer built on an older relevant state is marked stale and loses Do It. */
+  currentFingerprint?: string | GIFingerprintMap;
   onRefresh?: (query: string) => void;
 }
 
@@ -99887,9 +99887,9 @@ const GI_CERTAINTY_BADGE: Partial<Record<GICertainty, string>> = {
 
 export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProps> = ({ answer, theme, onButton, currentFingerprint, onRefresh }) => {
   const [showEvidence, setShowEvidence] = useState(false);
-  const stale = Boolean(currentFingerprint && isGIAnswerStale(answer, currentFingerprint));
+  const stale = isGIAnswerStale(answer, currentFingerprint);
   const followUps = answer.buttons.filter(b => b.id.startsWith('fu_'));
-  const actions = answer.buttons.filter(b => !b.id.startsWith('fu_') && !(stale && (b.kind === 'do' || b.kind === 'end_turn')));
+  const actions = answer.buttons.filter(b => !b.id.startsWith('fu_') && !(stale && GI_STATE_BOUND_BUTTON_KINDS.includes(b.kind)));
   const claimBadge = (c: GIClaim): string | null => {
     if (c.kind === 'prediction') return 'Prediction';
     if (c.kind === 'projection') return c.certainty === 'projected' ? 'Projected' : `Projected · ${certaintyLabel(c.certainty).toLowerCase()}`;
@@ -100086,6 +100086,38 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
                 <ol className="mt-1 list-decimal ml-5 font-mono">
                   {d.steps.map(st => <li key={st.id}>{st.tool} — {st.status}{st.error ? ` (${st.error})` : ''}</li>)}
                 </ol>
+                {d.language && (
+                  <details className="mt-1" data-testid="v9-gi-language">
+                    <summary className="cursor-pointer opacity-80">Language understanding (GI 2.1)</summary>
+                    <dl className="grid grid-cols-1 gap-y-0.5 mt-1 font-mono">
+                      {([
+                        ['normalized', d.language.normalizedQuery],
+                        ['analysed as', d.language.effectiveQuery !== d.language.originalQuery ? d.language.effectiveQuery : ''],
+                        ['typo fixes', d.language.corrections.join(', ')],
+                        ['left as typed', d.language.uncorrected.join(', ')],
+                        ['clauses', d.language.clauses.join(' | ')],
+                        ['concepts', d.language.concepts.join(', ')],
+                        ['actions', d.language.actions.join(', ')],
+                        ['goals', d.language.goals.join(', ')],
+                        ['problems', d.language.problems.join(', ')],
+                        ['threats', d.language.threats.join(', ')],
+                        ['constraints', d.language.constraints.join(', ')],
+                        ['quantities', d.language.quantities.join(', ')],
+                        ['time', d.language.time.join(', ')],
+                        ['conditions', d.language.conditions.join(', ')],
+                        ['references', d.language.references.join(', ')],
+                        ['repair', d.language.repair || ''],
+                        ['candidates', d.language.candidates.join(', ')],
+                        ['capability scores', d.language.scores.join(', ')],
+                        ['style', d.language.style === 'standard' ? '' : d.language.style],
+                        ['confidence', `language ${Math.round(d.language.confidences.languageConfidence * 100)}% · entities ${Math.round(d.language.confidences.entityConfidence * 100)}% · references ${Math.round(d.language.confidences.referenceConfidence * 100)}% · frame ${Math.round(d.language.confidences.semanticFrameConfidence * 100)}%`],
+                        ['freshness depends on', d.language.fingerprintDomains.join(', ')]
+                      ] as Array<[string, string]>).filter(([, v]) => v).map(([k, v]) => (
+                        <div key={k}><dt className="inline opacity-70">{k}: </dt><dd className="inline break-words">{v}</dd></div>
+                      ))}
+                    </dl>
+                  </details>
+                )}
               </details>
             ))}
           </div>
@@ -100100,7 +100132,7 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
         </dl>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" onClick={onRunSelfTests} className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`} data-testid="v9-run-self-tests">
-            Run V9 + Game Intelligence self-tests
+            Run V9 + Game Intelligence 2.1 self-tests
           </button>
           {selfTestResults && <span className="text-xs font-semibold">{passed}/{selfTestResults.length} passed</span>}
         </div>
@@ -100489,7 +100521,10 @@ export interface GISimulationIntent {
 }
 
 export interface GIWorld {
+  /** Composite fingerprint of every tracked state domain. */
   fingerprint: string;
+  /** Stable per-domain hashes (GI 2.1) — answers are invalidated only by the domains their plan read. */
+  fingerprints?: GIFingerprintMap;
   day: number;
   totalDays: number;
   turn: number;
@@ -100542,11 +100577,36 @@ export interface GIWorld {
   /** The human's own Co-Pilot session and visible ledger events (for "what is Co-Pilot doing?"). */
   session?: CoPilotTakeoverSession | null;
   ledgerEvents?: any[];
+  /** GI 2.1: focused read-only adapters over other canonical systems (never duplicated state). */
+  systems?: GISystemsView;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
     validateAp?: (actionType: string) => { valid: boolean; reason?: string; apCost?: number };
   };
+}
+
+/** Compact, read-only summaries of other canonical systems for cross-system questions. */
+export interface GISystemsView {
+  team: {
+    name: string;
+    treasuryBalance: number | null;
+    treasuryReserve: number | null;
+    pendingFundingRequests: number;
+    governanceMode: string | null;
+    activePlan: { objective: string; status: string; type: string; reservedCash: number } | null;
+    overseerMode: string | null;
+    safeMode: boolean;
+    governorEnabled: boolean;
+  } | null;
+  teammates: Array<{ id: string; name: string; inRecovery: boolean; protectedCash: number | null }>;
+  guardian: { enabled: boolean; protectionLevel: string; responseMode: string } | null;
+  autoMode: { enabled: boolean; permission: string | null } | null;
+  coPilot: { enabled: boolean; authorityMode: string; minimumCashReserve: number | null; sessionStatus: string | null };
+  pendingApprovals: number;
+  expeditions: string[];
+  scenarioObjectives: string[];
+  memoryInspection: boolean;
 }
 
 /** Canonical rollback-safe simulation: the pure canonical reducer on a clone, with the global RNG restored. */
@@ -100706,9 +100766,24 @@ export interface GIConversationContext {
   lastUnresolvedQuestion: string | null;
   recent: GIEntityRef[];
   pendingClarification: { originalQuery: string; options: GIEntityRef[] } | null;
+  /** GI 2.1: the previous question (effective form) and its entities, for corrections and fragments. */
+  lastQuery?: string | null;
+  lastQueryEntities?: GIEntityRef[];
+  lastHorizon?: { unit: 'action' | 'turn'; count: number } | null;
+  /** GI 2.1: small topic stack so a detour ("what about NSW?") does not lose the earlier topic. */
+  topicStack?: GITopicFrame[];
+}
+
+export interface GITopicFrame {
+  topic: GIEntityRef | null;
+  parent: string | null;
+  related: GIEntityRef[];
+  /** The question that opened the topic (so "back to the rail" can re-ask it). */
+  query: string;
 }
 
 export const GI_CONTEXT_RECENT_LIMIT = 8;
+export const GI_TOPIC_STACK_LIMIT = 4;
 
 export function createGIConversationContext(): GIConversationContext {
   return {
@@ -100723,7 +100798,11 @@ export function createGIConversationContext(): GIConversationContext {
     lastQueryType: null,
     lastUnresolvedQuestion: null,
     recent: [],
-    pendingClarification: null
+    pendingClarification: null,
+    lastQuery: null,
+    lastQueryEntities: [],
+    lastHorizon: null,
+    topicStack: []
   };
 }
 
@@ -100766,7 +100845,20 @@ export function sanitizeGIConversationContext(raw: unknown): GIConversationConte
     recent: list(src.recent).slice(0, GI_CONTEXT_RECENT_LIMIT),
     pendingClarification: src.pendingClarification && typeof src.pendingClarification.originalQuery === 'string'
       ? { originalQuery: src.pendingClarification.originalQuery.slice(0, 300), options: list(src.pendingClarification.options).slice(0, 4) }
-      : null
+      : null,
+    lastQuery: typeof src.lastQuery === 'string' ? src.lastQuery.slice(0, 300) : null,
+    lastQueryEntities: list(src.lastQueryEntities).slice(0, 6),
+    lastHorizon: src.lastHorizon && (src.lastHorizon.unit === 'action' || src.lastHorizon.unit === 'turn') && Number.isFinite(Number(src.lastHorizon.count))
+      ? { unit: src.lastHorizon.unit, count: Math.max(1, Math.min(6, Math.floor(Number(src.lastHorizon.count)))) }
+      : null,
+    topicStack: Array.isArray(src.topicStack)
+      ? src.topicStack.slice(0, GI_TOPIC_STACK_LIMIT).map((tf: any) => ({
+        topic: sanitizeGIEntityRef(tf?.topic),
+        parent: typeof tf?.parent === 'string' ? tf.parent.slice(0, 120) : null,
+        related: list(tf?.related).slice(0, 4),
+        query: typeof tf?.query === 'string' ? tf.query.slice(0, 300) : ''
+      })).filter((tf: GITopicFrame) => tf.topic)
+      : []
   };
 }
 
@@ -100815,6 +100907,36 @@ function giEscape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Canonical combined location registry: mainland regions + configured external territories. */
+export function getGIKnownLocationCodes(): Set<string> {
+  return new Set([...Object.keys(REGIONS), ...Object.keys(EXTERNAL_TERRITORIES)]);
+}
+
+export function getGITerritory(code: string): ExternalTerritoryData | null {
+  if (!code || REGIONS[code]) return null;
+  return isExternalTerritory(code) ? (EXTERNAL_TERRITORIES[code] || EXTERNAL_TERRITORIES[code.trim().toUpperCase()] || null) : null;
+}
+
+export function getGILocationName(code: string): string {
+  return REGIONS[code]?.name || getGITerritory(code)?.name || code;
+}
+
+/** Territory aliases derived from the registry (full names; distinctive first words; codes stay case-sensitive). */
+function giTerritoryAliases(): Array<{ alias: string; code: string }> {
+  const out: Array<{ alias: string; code: string }> = [];
+  const generic = new Set(['lord', 'heard', 'australian', 'coral', 'the', 'christmas']);
+  Object.keys(EXTERNAL_TERRITORIES).forEach(code => {
+    const name = String(EXTERNAL_TERRITORIES[code]?.name || '').toLowerCase();
+    if (!name) return;
+    out.push({ alias: name, code });
+    const first = name.split(/\s+/)[0];
+    if (first && first.length > 4 && !generic.has(first)) out.push({ alias: first, code });
+    if (/antarctic/.test(name)) { out.push({ alias: 'antarctica', code }); out.push({ alias: 'antarctic', code }); }
+    if (/christmas/.test(name)) out.push({ alias: 'christmas island', code });
+  });
+  return out;
+}
+
 export function listGIKnownResources(world: GIWorld): string[] {
   const set = new Set<string>();
   Object.values(REGIONAL_RESOURCES).forEach(list => list.forEach(r => set.add(r)));
@@ -100846,6 +100968,13 @@ export function resolveGIEntities(originalQuery: string, world: GIWorld): GIEnti
   GI_CASE_SENSITIVE_REGION_CODES.forEach(code => {
     if (REGIONS[code] && new RegExp(`\\b${code}\\b`).test(originalQuery)) push({ kind: 'region', id: code, label: REGIONS[code].name || code, matched: code, confidence: 0.95, source: 'query' });
   });
+  // External territories (canonical registry): names/aliases, and codes only when capitalised.
+  giTerritoryAliases().sort((a, b) => b.alias.length - a.alias.length).forEach(({ alias, code }) => {
+    if (new RegExp(`\\b${giEscape(alias)}\\b`).test(lower)) push({ kind: 'region', id: code, label: getGILocationName(code), matched: alias, confidence: 0.93, source: 'query' });
+  });
+  Object.keys(EXTERNAL_TERRITORIES).forEach(code => {
+    if (new RegExp(`\\b${giEscape(code)}\\b`).test(originalQuery)) push({ kind: 'region', id: code, label: getGILocationName(code), matched: code, confidence: 0.93, source: 'query' });
+  });
 
   // Resources: exact names, then aliases.
   const known = listGIKnownResources(world);
@@ -100864,13 +100993,16 @@ export function resolveGIEntities(originalQuery: string, world: GIWorld): GIEnti
   // Infrastructure projects: distinctive title tokens + project-type words.
   const qWords = new Set(giWords(originalQuery));
   const regionTokens = new Set([...Object.keys(REGIONS).map(c => c.toLowerCase()), ...Object.keys(GI_REGION_ALIASES)]);
-  const projectSignal = /\b(project|rail|railway|build|fund|funding|infrastructure|hub|plant|farm|cable|terminal|park|hydro|desal\w*|hydrogen|wind|corridor|hsr|high[\s-]?speed|construct|invest|mega)\b/.test(lower);
+  const projectSignal = /\b(project|rail|railway|build|fund|funding|infrastructure|hub|plant|farm|cable|terminal|park|hydro|desal\w*|hydrogen|wind|corridor|hsr|high[\s-]?speed|construct|invest|mega|thing|tech|innovation|expansion)\b/.test(lower);
+  const queryRegions = new Set(entities.filter(e => e.kind === 'region').map(e => e.id));
   const projectScores = (world.projects || []).map(p => {
     const tokens = Array.from(new Set(giWords(`${p.title} ${p.id.replace(/^infra_/, '').replace(/_/g, ' ')}`)))
       .filter(t => t.length > 2 && !GI_PROJECT_STOPWORDS.has(t) && !regionTokens.has(t));
     let score = tokens.filter(t => qWords.has(t)).length;
     if (/\bhsr\b|high[\s-]?speed/.test(lower) && /high[\s-]?speed/i.test(p.title)) score += 2;
     if (/\bsydney[\s-]+melbourne\b/.test(lower) && /sydney-melbourne/i.test(p.title)) score += 2;
+    // Casual references ("the hydrogen thing in WA"): a matching region breaks ties between title hits.
+    if (score > 0 && queryRegions.has(p.regionId)) score += 1;
     return { p, score };
   }).filter(x => x.score > 0 && (projectSignal || x.score >= 2)).sort((a, b) => b.score - a.score || a.p.id.localeCompare(b.p.id));
   if (projectScores.length) {
@@ -100935,6 +101067,8 @@ export interface GIOption {
   apCost: number;
   prerequisite?: string | null;
   navigation?: IntentNavAction | null;
+  /** GI 2.1: the parts of a combined option, in order. */
+  combo?: GIOption[];
 }
 
 const GI_VERB_PATTERNS: Array<{ kind: GIOptionKind; re: RegExp }> = [
@@ -100948,7 +101082,7 @@ const GI_VERB_PATTERNS: Array<{ kind: GIOptionKind; re: RegExp }> = [
   { kind: 'challenge', re: /\bchallenge/ },
   { kind: 'fund_project', re: /\b(build|fund|invest in|construct)\b/ },
   { kind: 'accept_contract', re: /\baccept\b/ },
-  { kind: 'wait', re: /\b(wait|do nothing|nothing|hold off|skip|don'?t do anything)\b/ }
+  { kind: 'wait', re: /\b(wait|do nothing|nothing|hold off|skip|don'?t do anything|do not do anything)\b/ }
 ];
 
 /** Split "X or Y" / "X vs Y" into option clauses, preserving case (verb inherited from the first clause). */
@@ -100956,7 +101090,15 @@ export function splitGIOptionClauses(query: string): string[] {
   // Only the sentence that actually poses the choice is split; thousands separators are not commas.
   const cleaned = String(query || '').replace(/(\d),(\d{3})/g, '$1$2');
   const sentences = cleaned.split(/(?<=[.?!])\s+/).map(x => x.trim()).filter(Boolean);
-  const choice = [...sentences].reverse().find(x => /\b(or|vs\.?|versus|instead of|rather than|compared (to|with))\b/i.test(x)) || '';
+  const choiceRe = /\b(or|vs\.?|versus|instead of|rather than|compared (to|with))\b/i;
+  const sentence = [...sentences].reverse().find(x => choiceRe.test(x)) || '';
+  // GI 2.1: in a long run-on message only the comma segment posing the choice (plus a short list
+  // before it: "defend NSW, sell Iron Ore, or go to Victoria") is split into options.
+  const segments = sentence.split(/,\s*/);
+  const idx = segments.findIndex(seg => choiceRe.test(seg));
+  let start = idx;
+  while (start > 0 && segments[start - 1].trim().split(/\s+/).length <= 6 && !/\b(i am|i have|i want|i would|i've|i'm|so)\b/i.test(segments[start - 1])) start--;
+  const choice = idx >= 0 ? segments.slice(start, idx + 1).join(', ') : sentence;
   const q = choice.replace(/[?!.]+/g, ' ').replace(/\s+/g, ' ').trim()
     .replace(/^(should i|do i|would it be better to|is it better to|which is better[:,]?|compare|is it smarter to)\s+/i, '');
   const parts = q.split(/\s+(?:or|vs\.?|versus|compared to|compared with|instead of|rather than)\s+|,\s*(?=\w)/i).map(s => s.trim()).filter(Boolean);
@@ -101154,6 +101296,27 @@ export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld
   }
 }
 
+/** Two options taken in order as one choice ("sell Gold and defend NSW"); simulated as a chain. */
+export function combineGIOptions(first: GIOption, second: GIOption): GIOption {
+  const main = second.regionId ? second : first;
+  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  // Cash raised by a sale can cover the next step, so only non-cash blockers carry over.
+  const cashBlock = (o: GIOption) => Boolean(o.blockReason && /you have \$/.test(o.blockReason));
+  const secondBlocked = !second.legal && !(first.kind === 'sell' || first.kind === 'sell_all' ? cashBlock(second) : false);
+  return {
+    ...main,
+    id: `opt_combo_${first.id.replace(/^opt_/, '')}__${second.id.replace(/^opt_/, '')}`,
+    label: `${first.label} and ${lower(second.label)}`,
+    intent: { actionType: first.intent!.actionType, chain: [first.intent!, second.intent!] },
+    legal: first.legal && !secondBlocked,
+    blockReason: first.blockReason || (secondBlocked ? second.blockReason : null),
+    cashCost: first.cashCost + second.cashCost,
+    apCost: first.apCost + second.apCost,
+    prerequisite: first.prerequisite || second.prerequisite || null,
+    combo: [first, second]
+  };
+}
+
 /** Rebuild an option the conversation already discussed (ids encode kind + target). */
 export function rebuildGIOptionFromId(id: string, world: GIWorld): GIOption | null {
   const region = (code: string): GIEntityRef[] => (world.regions[code] ? [{ kind: 'region', id: code, label: world.regions[code].name, confidence: 1, source: 'context' }] : []);
@@ -101193,6 +101356,18 @@ export function resolveGIOptions(query: string, world: GIWorld, contextEntities:
     if (verb && verb !== 'wait') inheritedVerb = verb;
     let opt: GIOption | null = null;
     if (kind) opt = buildGIOption(kind, lowerClause, world, ents);
+    // GI 2.1: one option clause with two actions ("dump my gold and hold NSW") → one combined option.
+    if (opt && clauses.length && /\band\b/.test(lowerClause)) {
+      const combos = GI_VERB_PATTERNS.filter(v => ['sell', 'deposit', 'travel', 'buy'].includes(v.kind) && v.re.test(lowerClause))
+        .map(v => ({ v, at: lowerClause.search(v.re) }))
+        .filter(x => x.v.kind !== opt!.kind)
+        .sort((a, b) => a.at - b.at);
+      const other = combos[0] ? buildGIOption(combos[0].v.kind, lowerClause, world, ents) : null;
+      if (other && other.intent && opt.intent) {
+        const firstIsOther = combos[0].at < lowerClause.search(GI_VERB_PATTERNS.find(v => v.kind === opt!.kind)!.re);
+        opt = combineGIOptions(firstIsOther ? other : opt, firstIsOther ? opt : other);
+      }
+    }
     if (!opt && clauses.length) {
       const region = ents.find(e => e.kind === 'region');
       const project = ents.find(e => e.kind === 'project');
@@ -101207,6 +101382,1364 @@ export function resolveGIOptions(query: string, world: GIWorld, contextEntities:
 }
 
 // ----------------------------------------------------------------------------
+// 4B. GAME INTELLIGENCE 2.1 — NATURAL LANGUAGE UNDERSTANDING (meaning first)
+// ----------------------------------------------------------------------------
+// Raw language → normalizer → typo recovery → tokens → clauses → entities → verb families →
+// semantic concepts → negation / modifiers → quantities → temporal / conditional → conversation
+// repair + references → language semantic graph → capability scores → candidate interpretations
+// → GISemanticFrame. The frame feeds the unchanged GI 2.0 planner (via GIQueryUnderstanding).
+//
+// Everything here is pure and deterministic: bounded static vocabularies, a per-world lexicon
+// (memoised), small edit-distance candidate sets. No network, no randomness, no state mutation.
+// Regex remains one signal among several (token sequences, token sets, concepts, entities, context).
+// ----------------------------------------------------------------------------
+
+export interface GIToken {
+  /** Lower-case (possibly corrected) form used for matching. */
+  t: string;
+  /** Surface text shown back / used for case-sensitive codes. */
+  raw: string;
+  kind: 'word' | 'number' | 'money' | 'percent' | 'punct';
+  /** Set when typo recovery replaced the original token. */
+  correctedFrom?: string;
+  /** Low-information conversational filler (never breaks a pattern). */
+  filler?: boolean;
+  /** Entity tag from the per-world lexicon. */
+  entity?: GIEntityRef;
+  /** Position in the token stream. */
+  i: number;
+}
+
+export type GIClauseMarker = 'and' | 'but' | 'because' | 'so' | 'if' | 'unless' | 'otherwise' | 'then' | 'without' | 'though' | 'until' | 'once' | 'before' | 'after' | 'while' | 'or' | null;
+
+export interface GIClause {
+  index: number;
+  text: string;
+  tokens: GIToken[];
+  marker: GIClauseMarker;
+  form: 'question' | 'imperative' | 'statement' | 'fragment';
+  /** Sentence number (punctuation-delimited) the clause belongs to. */
+  sentence: number;
+}
+
+export type GIConceptId =
+  | 'liquidity_low' | 'need_cash' | 'region_threat' | 'rival_advantage' | 'recommendation_request' | 'severity'
+  | 'diagnosis_request' | 'protect_long_term' | 'urgency' | 'worth_question' | 'implicit_comparison' | 'explain_request'
+  | 'continue_plan' | 'debt_existing' | 'afford_question' | 'wait_option' | 'status_request' | 'plan_request'
+  | 'win_path' | 'rules_question' | 'history_request' | 'prediction_request' | 'teammate_question' | 'system_question'
+  | 'style_concise' | 'style_detailed' | 'style_math' | 'style_direct' | 'style_expanded';
+
+export interface GIConceptHit {
+  id: GIConceptId;
+  clause: number;
+  weight: number;
+  evidence: string;
+}
+
+export type GIVerbFamily = 'sell' | 'travel' | 'defend' | 'borrow' | 'fund' | 'buy' | 'wait' | 'work' | 'leave' | 'take_control_region' | 'accept_contract' | 'challenge';
+
+export interface GILanguageAction {
+  family: GIVerbFamily;
+  clause: number;
+  /** Surface words that triggered the family. */
+  surface: string;
+  negated: boolean;
+  regionId?: string;
+  resource?: string;
+  projectId?: string;
+  amount?: GIQuantity | null;
+  /** Order in a composed multi-action request ("… then …"). */
+  step: number;
+}
+
+export type GIConstraintPolicy = 'required' | 'preferred' | 'allowed' | 'avoid' | 'forbidden' | 'fallback_only' | 'minimum' | 'maximum' | 'before' | 'after' | 'until' | 'unless';
+
+export interface GIConstraint {
+  subject: 'loan' | 'sell' | 'travel' | 'leave' | 'fund' | 'spend' | 'cash_floor' | 'cash_ceiling' | 'deposit';
+  target?: string;
+  policy: GIConstraintPolicy;
+  /** 1 = hard (forbidden / required), lower = softer preference. */
+  strength: number;
+  amount?: GIQuantity | null;
+  clause: number;
+  evidence: string;
+}
+
+export interface GIQuantity {
+  raw: string;
+  unit: '$' | '%' | 'regions' | 'turns' | 'actions' | 'units';
+  /** Absolute value when known at parse time. */
+  value: number | null;
+  /** Fraction (0–1) of a live reference, resolved against current state at plan time — never frozen. */
+  fraction?: number;
+  relativeTo?: 'cash';
+  approx: boolean;
+  bound: 'exact' | 'min' | 'max';
+  additional: boolean;
+  role: 'target' | 'floor' | 'ceiling' | 'state' | 'horizon' | 'count' | 'amount';
+  clause: number;
+}
+
+export interface GITemporalConstraint {
+  kind: 'urgency' | 'horizon' | 'before' | 'after' | 'until' | 'long_term' | 'deadline';
+  event?: 'rival_turn' | 'end_turn' | 'contract_expiry' | 'contract_payout' | 'cash_reached' | 'region_control' | 'end_of_game';
+  unit?: 'action' | 'turn';
+  count?: number;
+  regionId?: string;
+  amount?: number;
+  evidence: string;
+}
+
+export interface GICondition {
+  ifText: string;
+  trigger: { actorId?: string; regionId?: string; event: 'rival_moves' | 'rival_attacks' | 'cash' | 'region_lost' | 'contract' | 'other'; amount?: number };
+  then: GILanguageAction[];
+  otherwise: GILanguageAction[];
+  /** True when the then-part is an instruction (a conditional strategy), not a hypothetical question. */
+  isStrategy: boolean;
+}
+
+export interface GIGoal {
+  kind: 'cash_increase' | 'cash_reach' | 'regions_reach' | 'retain_region' | 'take_region' | 'prevent_loss' | 'win' | 'recover';
+  amount?: GIQuantity | null;
+  regionId?: string;
+  count?: number;
+  priority: 'normal' | 'high' | 'very_high';
+  deadline?: 'end_of_game' | null;
+  evidence: string;
+}
+
+export interface GIThreat {
+  regionId: string | null;
+  actorId: string | null;
+  /** True when the actor was inferred (e.g. "protect NSW" with only one rival). */
+  inferredActor: boolean;
+  urgency: 'immediate' | 'soon' | 'normal';
+  evidence: string;
+}
+
+export interface GIProblem {
+  kind: 'low_liquidity' | 'rival_advantage' | 'region_threat' | 'debt' | 'behind';
+  evidence: string;
+  /** Player claim ("only $700 left") — a hypothesis to verify against the game, never a fact. */
+  claimedAmount?: number | null;
+}
+
+export type GIRepairOp = 'replace_entity' | 'replace_timeframe' | 'replace_horizon' | 'negate_option' | 'remove_constraint' | 'add_constraint' | 'change_goal' | 'cancel' | 'return_topic' | 'shift_focus' | 'continue';
+
+export interface GIConversationRepair {
+  op: GIRepairOp;
+  detail: string;
+  /** The previous question rewritten with the repair applied (re-run through the whole pipeline). */
+  rewrittenQuery: string | null;
+  horizon?: { unit: 'action' | 'turn'; count: number } | null;
+}
+
+export type GIResponseStyle = 'standard' | 'concise' | 'detailed' | 'math' | 'direct' | 'expanded';
+
+export interface GILanguageGraph {
+  nodes: Array<{ id: string; kind: 'player' | 'actor' | 'region' | 'resource' | 'project' | 'concept' | 'goal'; label: string }>;
+  edges: Array<{ from: string; to: string; relation: 'threatens_control_of' | 'needs' | 'forbids' | 'avoids' | 'allows' | 'falls_back_on' | 'wants_to_prevent' | 'wants' | 'considers' | 'holds' | 'hypothesises' }>;
+}
+
+export interface GICandidateInterpretation {
+  id: string;
+  label: string;
+  capability: GICapability;
+  confidence: number;
+  /** A rewritten, unambiguous question the player can pick. */
+  query: string;
+}
+
+export interface GIConfidenceDimensions {
+  languageConfidence: number;
+  entityConfidence: number;
+  referenceConfidence: number;
+  semanticFrameConfidence: number;
+  planConfidence?: number;
+  evidenceConfidence?: number;
+  finalAnswerConfidence?: number;
+}
+
+export interface GISemanticFrame {
+  originalQuery: string;
+  normalizedText: string;
+  /** Typo-corrected, contraction-expanded text (original case kept for untouched tokens). */
+  canonicalText: string;
+  /** canonicalText with verb synonyms mapped to canonical verbs (used for option building only). */
+  optionText: string;
+  corrections: Array<{ from: string; to: string; distance: number }>;
+  uncorrected: Array<{ token: string; candidates: string[] }>;
+  clauses: GIClause[];
+  concepts: GIConceptHit[];
+  requestKinds: Array<'recommendation' | 'diagnosis' | 'severity' | 'comparison' | 'simulation' | 'plan' | 'status' | 'explanation' | 'affordability' | 'confirmation' | 'prediction' | 'history' | 'rules' | 'control'>;
+  goals: GIGoal[];
+  problems: GIProblem[];
+  threats: GIThreat[];
+  entities: GIEntityRef[];
+  actions: GILanguageAction[];
+  constraints: GIConstraint[];
+  preferences: GIConstraint[];
+  conditions: GICondition[];
+  time: GITemporalConstraint[];
+  quantities: GIQuantity[];
+  comparisons: Array<{ kind: 'explicit' | 'implicit'; options: string[]; evidence: string }>;
+  negations: Array<{ clause: number; scope: string }>;
+  references: string[];
+  hypotheses: Array<{ text: string; kind: 'causal' | 'correlation' | 'sequence' }>;
+  conversationRepair: GIConversationRepair | null;
+  style: GIResponseStyle;
+  isQuestion: boolean;
+  /** Fragment / statement with no explicit question ("only $700 left"). */
+  implicit: boolean;
+  capabilityScores: Partial<Record<GICapability, number>>;
+  alternativeFrames: GICandidateInterpretation[];
+  graph: GILanguageGraph;
+  confidence: GIConfidenceDimensions;
+}
+
+// ---- Static language registries --------------------------------------------------------
+
+/** Contractions, slang and shorthand → canonical words (applied on whole words, case-insensitive). */
+const GI_SHORTHAND: Array<[RegExp, string]> = [
+  [/[’‘]/g, "'"], [/[“”]/g, '"'],
+  [/\s*(?:→|->|=>)\s*/g, ' going for '],
+  [/\bw\/o\b/gi, 'without'], [/\bw\//gi, 'with '], [/\bb\/c\b/gi, 'because'], [/&/g, ' and '],
+  [/\bi\s?'?m\b/gi, 'i am'], [/\bi\s?'?ve\b/gi, 'i have'], [/\bi'?d (rather|prefer|like|say|do|go)\b/gi, 'i would $1'], [/\bi'd\b/gi, 'i would'], [/\bi'll\b/gi, 'i will'],
+  [/\b(do|does|did|is|are|was|were|have|has|had|should|would|could|must)n'?t\b/gi, '$1 not'],
+  [/\bcan'?t\b/gi, 'can not'], [/\bcannot\b/gi, 'can not'], [/\bwon'?t\b/gi, 'will not'], [/\bain'?t\b/gi, 'is not'],
+  [/\bwanna\b/gi, 'want to'], [/\bgonna\b/gi, 'going to'], [/\bgotta\b/gi, 'got to'], [/\bhafta\b/gi, 'have to'],
+  [/\b(boutta|bouta|abt to|finna)\b/gi, 'about to'], [/\btryna\b/gi, 'trying to'], [/\bkinda\b/gi, 'kind of'], [/\bsorta\b/gi, 'sort of'],
+  [/\blemme\b/gi, 'let me'], [/\bgimme\b/gi, 'give me'], [/\b(cuz|coz|cos|bc)\b/gi, 'because'], [/\btho\b/gi, 'though'],
+  [/\brn\b/gi, 'right now'], [/\bpl[sz]\b/gi, 'please'], [/\bthx\b/gi, 'thanks'], [/\bu\b/gi, 'you'], [/\bur\b/gi, 'your'], [/\br\b/gi, 'are'],
+[/\bsmth\b/gi, 'something'], [/\brly\b/gi, 'really'], [/\bprob\b/gi, 'probably'], [/\bnvm\b/gi, 'never mind'],
+  [/\b(what|how|where|who|that|there|it|he|she)'?s\b/gi, (m: string) => `${m.replace(/'?s$/i, '')} is`] as any,
+  [/\bwhats\b/gi, 'what is'], [/\bthats\b/gi, 'that is'], [/\btheres\b/gi, 'there is'],
+  [/\b(they|you|we)'?re\b/gi, '$1 are'], [/\bthey'?ve\b/gi, 'they have'],
+  [/\binfra\b/gi, 'infrastructure'], [/\bco[\s-]?pilot\b/gi, 'copilot'], [/\bauto[\s-]?pilot\b/gi, 'autopilot']
+];
+
+/** Conversational filler: low-information tokens that never break a phrase pattern. */
+const GI_FILLER_WORDS = new Set(['bro', 'bruh', 'dude', 'man', 'mate', 'honestly', 'like', 'basically', 'maybe', 'kind', 'sort', 'of_filler', 'just', 'really', 'okay', 'ok', 'um', 'uh', 'uhh', 'umm', 'hmm', 'lol', 'lmao', 'please', 'literally', 'tbh', 'ngl', 'imo', 'yeah', 'yo', 'hey', 'well', 'anyway', 'anyways', 'even', 'actually', 'so', 'pretty', 'super', 'totally', 'seriously', 'genuinely', 'thanks', 'fr', 'lowkey', 'highkey', 'guess', 'think', 'reckon', 'probably', 'here', 'idk', 'dunno']);
+
+/** Words never corrected by typo recovery (common English that sits close to game vocabulary). */
+const GI_ENGLISH_LEXICON = new Set((('a an the and or but if so as at by for from in into of on onto to up down out off over under with without about above after again against all almost also always am any are around away back be because been before being below between both can could did do does doing done each else enough ever every few first for get gets getting give go goes going gone good got great had has have having he her here him his how i if in is it its just keep kept know last least leave left less let like little long look lot make many may me might mine more most much must my need never new next no nor not now of off ok okay old once one only or other our out over own part put quite rather really right said same say see she should show since so some something soon still stop such sure take taken tell than that the their them then there these they thing things think this those though through till time to too try turn turns two under until up upon us use used very want was way we well were what when where which while who whom whose why will win with would yes yet you your yours ' +
+  'hold told sold cold bold fold gone done tone bone none home hole role whole goal coal load lead read real deal meal heal steal seal sell tell well fell bell cell shell spell yell sale self help held hell fill fall call wall tall ball mall hall cash case cast crash rash wash wish dish fish fail mail tail rain rail pain gain main wait want what went west best rest test next text lost cost most post host fund find fine mine line nine wine kind mind bind find wind band hand land sand stand plan plant play clay pay day way say stay may lay ray bay buy guy boy toy joy money honey funny sunny bunny above below broke broken spoke stroke smoke choke poke joke woke rival arrival trial trail train brain grain drain strain chain bank tank rank thank frank drink think thing things sing ring bring king wing ask task mask risk disk desk loan lean mean clean bean move more mode made make lake take sake cake wake fake bake came game name same flame frame blame claim chain plane lane sane cane vane region legion reason season teams team steam stream dream cream seem seen keen been green queen screen free tree three agree degree deep keep sleep steep sheep cheap chip ship shop stop top drop crop prop hop pop mop cop copy happy worth north south earth birth fourth forth victory story history plus minus bonus focus house horse course source force forces price prize pride ride side wide hide tide guide slide area idea ideas often after later early earlier soon sooner going doing being seeing saying playing paying losing using making taking having getting spending sending ending bending lending mending defending protecting selling buying travelling traveling borrowing building funding investing waiting working winning').split(/\s+/)));
+
+/** Game vocabulary eligible as typo-recovery targets (static part; names are added per world). */
+const GI_STATIC_VOCAB = ('should would could what where which afford defend protect travel borrow loan loans sell selling build fund invest deposit compare better worth money cash region regions control rival teammate opponent strategy economy recommend happen happens simulate infrastructure contract contracts project projects expedition expeditions market resource resources inventory reserve broke threat autonomous assistant advisor manual rescue copilot autopilot guardian treasury governor overseer governance memory ledger objective objectives victory winning losing afford affordable enough recover recovery defending protecting travelling borrowing funding investing waiting explain because instead without anything everything something mining hydrogen railway rail island islands territory territories deposit deposits challenge challenges equipment scenario campaign').split(/\s+/);
+
+const GI_NUMBER_WORD_VALUES: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100
+};
+
+/** Canonical verb families (phrases are token sequences; the first word may be a regex-free alternation). */
+const GI_VERB_FAMILY_PHRASES: Array<{ family: GIVerbFamily; phrases: string[] }> = [
+  { family: 'sell', phrases: ['sell', 'selling', 'sold', 'dump', 'dumping', 'liquidate', 'liquidating', 'offload', 'offloading', 'unload', 'unloading', 'cash out', 'cash in', 'get rid of', 'convert to cash', 'flip my'] },
+  { family: 'borrow', phrases: ['borrow', 'borrowing', 'take a loan', 'take out a loan', 'take another loan', 'take loans', 'loan', 'loans', 'debt', 'credit', 'financing', 'take out financing'] },
+  { family: 'defend', phrases: ['defend', 'defending', 'defended', 'protect', 'protected', 'protecting', 'hold', 'holding', 'secure', 'save', 'keep', 'shore up', 'reinforce', 'stop them taking', 'stop them getting', 'deposit', 'put money into', 'put money in', 'put <money> into', 'put <money> in', 'drop <money> into', 'deposit <money> in'] },
+  { family: 'travel', phrases: ['travel', 'travelling', 'traveling', 'go to', 'go into', 'go', 'going to', 'move to', 'head to', 'head over to', 'head for', 'head over', 'leave for', 'get to', 'make my way to', 'bounce to', 'fly to', 'visit', 'try', 'go after', 'expand to', 'expand into', 'push into'] },
+  { family: 'leave', phrases: ['leave', 'leaving', 'abandon', 'give up on', 'walk away from'] },
+  { family: 'fund', phrases: ['build', 'building', 'construct', 'fund', 'funding', 'invest in', 'investing in', 'put money into', 'finish', 'finance', 'spend on', 'spending on', 'spending all that money on'] },
+  { family: 'buy', phrases: ['buy', 'buying', 'purchase', 'pick up'] },
+  { family: 'wait', phrases: ['wait', 'waiting', 'hold off', 'do nothing', 'skip'] },
+  { family: 'work', phrases: ['work', 'working', 'wages'] },
+  { family: 'challenge', phrases: ['challenge', 'challenges'] },
+  { family: 'accept_contract', phrases: ['accept', 'take the contract', 'take that contract', 'sign'] }
+];
+
+/**
+ * Semantic concept registry. Patterns are token sequences over the normalised stream:
+ *  word | a|b|c alternatives | word? optional | <region> <actor> <rival> <resource> <project> <money> <num> slots | * (0–3 any tokens).
+ * Filler tokens between elements are skipped for free; up to one other gap token is allowed.
+ */
+const GI_SEMANTIC_CONCEPTS: Array<{ id: GIConceptId; weight: number; patterns: string[] }> = [
+  { id: 'liquidity_low', weight: 1, patterns: [
+    'broke', 'skint', 'poor', 'strapped', 'nearly|almost|basically broke',
+    'low|short|light|tight on|of cash|money|funds', 'out of cash|money|funds', 'running|run out of cash|money|funds', 'running low', 'running dry',
+    'no|zero cash|money|funds', 'barely|hardly any cash|money|funds', 'barely|hardly have * money|cash|anything', 'not much cash|money|left', 'do not have much cash|money',
+    'cash|money|funds is|are|looks low|gone|tight|cooked|dry|thin|short|basically|nearly|almost', 'low cash|money|funds', 'cooked on cash|money', 'cash|money problem|problems|issues|crunch',
+    'only <money> left', 'only <money>', 'down to <money>', 'just <money> left', '<money> left', 'little cash|money', 'cash|money is * gone', 'can not afford anything'
+  ] },
+  { id: 'need_cash', weight: 0.9, patterns: [
+    'need|want|get|make|raise|find|earn more? cash|money|funds', 'need <money>', 'make|get|raise|earn me? another|more|extra? <money>', 'get me above|over|to <money>',
+    'money|cash asap', 'how do|can i make|get|raise|earn * money|cash|<money>', 'fastest way to get|make|raise'
+  ] },
+  { id: 'region_threat', weight: 1, patterns: [
+    '<actor> * take|taking|takes|took|flip|flipping|flips|grab|grabbing|steal|stealing|overtake|overtaking|contest|contesting|attack|attacking|attacks|threaten|threatening|threatens|catching|pushing|push|move|moves|moving|going|coming * <region>',
+    '<actor> * putting|pouring|dumping money|cash into|in <region>', '<actor> keeps * putting money into <region>',
+    '<actor> * almost|nearly * own|owns|got|has|have|control|controls|controlling|there|getting', '<actor> * close|closing * in <region>',
+    '<region> * slipping|trouble|danger|contested|threatened|exposed|risk|attack|almost|nearly|flipping|going', '<region> is almost|nearly <actor>',
+    'losing|lose|lost * <region>', 'about to lose', 'getting overtaken', 'overtaken', 'losing control', 'stop <actor> * taking|getting|flipping|grabbing',
+    'stop them * taking|getting', '<actor> is catching * me', 'they|them|he|she * taking|flipping|stealing|grabbing|attacking|contesting <region>'
+  ] },
+  { id: 'rival_advantage', weight: 0.9, patterns: [
+    '<actor> * cooking|beating|crushing|destroying|smashing|outpacing|winning|ahead', '<actor> is * pulling ahead', 'behind <actor>', 'losing to <actor>',
+    '<actor> has * more regions|money|cash', '<actor> has <num> regions'
+  ] },
+  { id: 'recommendation_request', weight: 1, patterns: [
+    'what * should * do', 'what should i', 'what now', 'now what', 'best move|play|option|action|choice', 'what is the play|move|call|plan',
+    'what is my move|play|best', 'any ideas', 'help', 'help me', 'what would you do', 'what makes sense', 'makes the most sense', 'where do i go from here',
+    'what can i do', 'what do i do', 'what to do', 'tell me what to do', 'recommend', 'recommendation', 'advice', 'suggest', 'suggestion', 'next move|step',
+    'how do|can|should i stop|fix|recover|protect|save|defend|hold|keep|win|beat|handle|deal', 'what are my options', 'what are my choices', 'what is best', 'what is smartest', 'your call', 'what do you think', 'should i', 'do you think i should', 'is it smart to', 'is it better to'
+  ] },
+  { id: 'severity', weight: 1, patterns: [
+    'am i screwed|cooked|done|finished|doomed|toast|dead|losing', 'how bad', 'can i still win', 'still win', 'recoverable', 'can i recover', 'clutch', 'how much trouble',
+    'is it over', 'is this over', 'can i come back', 'am i in trouble', 'is it hopeless', 'any chance'
+  ] },
+  { id: 'diagnosis_request', weight: 1, patterns: [
+    'what is killing|hurting|holding back * me', 'what is wrong', 'why am i losing|behind|broke|stuck', 'biggest problem|issue|threat|weakness', 'what am i doing wrong',
+    'where am i going wrong', 'what went wrong', 'why is my', 'why do i keep', 'always running out', 'keep running out'
+  ] },
+  { id: 'protect_long_term', weight: 0.8, patterns: [
+    'without screwing|hurting|ruining|wrecking|killing|damaging|breaking|risking|sacrificing * later|future|long|plan|myself|position|chances|strategy|goal',
+    'long term', 'long run', 'for later', 'later on', 'not hurt|hurting my plan|future|position', 'safe for later', 'without going broke'
+  ] },
+  { id: 'urgency', weight: 0.6, patterns: ['right now', 'now', 'asap', 'as soon as possible', 'immediately', 'this turn', 'quick', 'quickly', 'fast', 'urgent', 'urgently', 'about to', 'soon', 'hurry'] },
+  { id: 'worth_question', weight: 0.9, patterns: ['worth it', 'worth', 'even worth', 'worthwhile', 'pay off', 'pays off', 'good deal'] },
+  { id: 'implicit_comparison', weight: 0.8, patterns: ['=better off', 'would * be smarter|better|wiser|safer', 'instead', '=rather than', '=or just', '=why not just', '=why not', '=smarter to', '=better to', 'versus', 'vs'] },
+  { id: 'explain_request', weight: 0.7, patterns: ['why', 'explain', 'how come', 'what does * mean', 'reason'] },
+  { id: 'continue_plan', weight: 0.9, patterns: ['and then', 'then what', 'what next', 'after that', 'what after', 'next step after'] },
+  { id: 'debt_existing', weight: 0.7, patterns: ['already have|got * debt|loan|loans', 'in debt', 'my debt|loans', 'owe'] },
+  { id: 'afford_question', weight: 1, patterns: ['afford', 'can i pay for', 'enough for', 'enough money|cash for', 'do i have enough'] },
+  { id: 'wait_option', weight: 0.7, patterns: ['wait', 'waiting', 'hold off', 'do nothing', 'sit tight'] },
+  { id: 'status_request', weight: 0.8, patterns: ['how much money|cash|ap', 'how many * ap|action points|actions', '=my cash|money|balance', 'where am i', 'what do i have', 'how much ap'] },
+  { id: 'plan_request', weight: 0.9, patterns: ['plan', 'step by step', 'sequence', 'roadmap', 'over the next', 'path to', '<num> action|move|step|turn plan'] },
+  { id: 'win_path', weight: 0.8, patterns: ['how do i win', 'path to victory', 'win condition', 'focus on to win', 'get to <num> regions', 'reach <num> regions', 'win this'] },
+  { id: 'history_request', weight: 0.8, patterns: ['last turn', 'what happened', 'recently', 'lately', 'history', 'been doing', 'has been'] },
+  { id: 'prediction_request', weight: 0.8, patterns: ['will <actor>', 'is <actor> going to', 'going to attack|move|take', 'next turn', 'likely', 'predict', 'planning to'] },
+  { id: 'teammate_question', weight: 0.9, patterns: ['teammate', 'partner', 'ally', 'team plan', 'my team'] },
+  { id: 'system_question', weight: 0.8, patterns: ['treasury', 'economy governor', 'governor', 'governance', 'overseer', 'guardian', 'auto mode', 'automode', 'ai memory', 'memory', 'activity ledger', 'ledger', 'expedition', 'expeditions', 'scenario', 'campaign', 'approval', 'approvals'] },
+  { id: 'style_concise', weight: 1, patterns: ['quick answer', 'short version', 'short answer', 'tldr', 'tl dr', 'briefly', 'in short', 'one line', 'keep it short', 'quickly tell'] },
+  { id: 'style_detailed', weight: 1, patterns: ['explain it', 'in detail', 'detailed', 'walk me through', 'break it down', 'break down', 'full breakdown', 'explain fully'] },
+  { id: 'style_math', weight: 1, patterns: ['show me the math', 'show the math', 'the math', 'show me the numbers', 'show the numbers', 'with numbers', 'numbers please', 'crunch the numbers'] },
+  { id: 'style_direct', weight: 1, patterns: ['just tell me what to do', 'just tell me', 'bottom line', 'straight answer', 'just the answer'] },
+  { id: 'style_expanded', weight: 1, patterns: ['every option', 'all options', 'all my options', 'all the options', 'every possible', 'all possible', 'all choices', 'every choice'] }
+];
+
+const GI_QUESTION_START = /^(what|why|how|where|when|which|who|whose|should|would|could|can|do|does|did|is|are|am|will|was|were|has|have|any|shall)\b/;
+
+// ---- Small deterministic string utilities -----------------------------------------------
+
+/** Optimal-string-alignment Damerau-Levenshtein distance with an early-exit bound. */
+export function giEditDistance(a: string, b: string, max = 3): number {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d: number[][] = [];
+  for (let i = 0; i <= a.length; i++) { d[i] = [i]; }
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let rowMin = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, d[i - 2][j - 2] + 1);
+      d[i][j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+  }
+  return d[a.length][b.length];
+}
+
+function giTypoBudget(len: number): number {
+  if (len < 4) return 0;
+  if (len < 8) return 1;
+  return 2;
+}
+
+// ---- Per-world lexicon (memoised) --------------------------------------------------------
+
+interface GILexicon {
+  key: string;
+  /** Surface form (lower case, 1–4 words) → entity. */
+  surfaces: Map<string, GIEntityRef>;
+  maxWords: number;
+  /** Fuzzy targets: word → canonical surface (lower case) and optional entity. */
+  vocab: Map<string, GIEntityRef | null>;
+  vocabList: string[];
+}
+
+let giLexiconCache: GILexicon | null = null;
+
+export function buildGILexicon(world: GIWorld): GILexicon {
+  const key = [
+    world.actors.map(a => `${a.id}:${a.name}:${a.relation}`).join(','),
+    world.projects.map(p => p.id).join(','),
+    Object.keys(world.market || {}).join(','),
+    Object.keys(world.player.inventory || {}).join(','),
+    world.contracts.map(c => c.id).join(',')
+  ].join('|');
+  if (giLexiconCache && giLexiconCache.key === key) return giLexiconCache;
+  const surfaces = new Map<string, GIEntityRef>();
+  const vocab = new Map<string, GIEntityRef | null>();
+  const addSurface = (s: string, ref: GIEntityRef) => { const k = s.toLowerCase().trim(); if (k && !surfaces.has(k)) surfaces.set(k, ref); };
+  const addVocab = (w: string, ref: GIEntityRef | null) => { const k = w.toLowerCase(); if (k.length >= 4 && !vocab.has(k)) vocab.set(k, ref); };
+  GI_STATIC_VOCAB.forEach(w => addVocab(w, null));
+  GI_SEMANTIC_CONCEPTS.forEach(c => c.patterns.forEach(p => p.split(/\s+/).forEach(el => el.split('|').forEach(w => { if (/^[a-z]+$/.test(w.replace(/\?$/, ''))) addVocab(w.replace(/\?$/, ''), null); }))));
+  GI_VERB_FAMILY_PHRASES.forEach(f => f.phrases.forEach(p => p.split(/\s+/).forEach(w => addVocab(w, null))));
+  Object.keys(GI_REGION_ALIASES).forEach(alias => {
+    const code = GI_REGION_ALIASES[alias];
+    if (!REGIONS[code]) return;
+    const ref: GIEntityRef = { kind: 'region', id: code, label: REGIONS[code].name || code, matched: alias, confidence: 0.97, source: 'query' };
+    addSurface(alias, ref);
+    alias.split(/\s+/).forEach(w => { if (!['new', 'south', 'north', 'western', 'northern', 'australia', 'australian', 'capital', 'territory', 'gold', 'coast', 'wales'].includes(w)) addVocab(w, ref); });
+  });
+  ['nsw', 'vic', 'qld', 'tas'].forEach(c => { const code = c.toUpperCase(); if (REGIONS[code]) addSurface(c, { kind: 'region', id: code, label: REGIONS[code].name || code, matched: c, confidence: 0.97, source: 'query' }); });
+  giTerritoryAliases().forEach(({ alias, code }) => {
+    const ref: GIEntityRef = { kind: 'region', id: code, label: getGILocationName(code), matched: alias, confidence: 0.93, source: 'query' };
+    addSurface(alias, ref);
+    if (!alias.includes(' ')) addVocab(alias, ref);
+  });
+  listGIKnownResources(world).forEach(res => {
+    const ref: GIEntityRef = { kind: 'resource', id: res, label: res, matched: res.toLowerCase(), confidence: 0.95, source: 'query' };
+    addSurface(res, ref);
+    if (res.toLowerCase().endsWith('s')) addSurface(res.slice(0, -1), ref);
+    res.split(/\s+/).forEach(w => addVocab(w, res.includes(' ') ? null : ref));
+  });
+  Object.keys(GI_RESOURCE_ALIASES).forEach(alias => {
+    const res = GI_RESOURCE_ALIASES[alias];
+    addSurface(alias, { kind: 'resource', id: res, label: res, matched: alias, confidence: 0.85, source: 'query' });
+  });
+  world.actors.forEach(a => {
+    if (a.relation === 'self') return;
+    const ref: GIEntityRef = { kind: 'actor', id: a.id, label: a.name, matched: a.name.toLowerCase(), confidence: 0.95, source: 'query' };
+    addSurface(a.name, ref);
+    const first = giWords(a.name).find(w => w.length > 2 && w !== 'the' && w !== 'ai');
+    if (first) { addSurface(first, ref); addVocab(first, ref); }
+  });
+  world.projects.forEach(p => {
+    giWords(`${p.title}`).filter(t => t.length > 3 && !GI_PROJECT_STOPWORDS.has(t)).forEach(t => addVocab(t, null));
+  });
+  // Role words resolve to the actual actors of this match ("the AI", "my rival", "my teammate").
+  const rival = world.actors.find(a => a.id === world.primaryRivalId) || world.actors.find(a => a.relation === 'rival');
+  if (rival) ['rival', 'opponent', 'enemy', 'the ai', 'ai opponent', 'computer'].forEach(w => addSurface(w, { kind: 'actor', id: rival.id, label: rival.name, matched: w, confidence: 0.85, source: 'query' }));
+  const mate = world.actors.find(a => a.relation === 'teammate');
+  if (mate) ['teammate', 'partner', 'ally'].forEach(w => addSurface(w, { kind: 'actor', id: mate.id, label: mate.name, matched: w, confidence: 0.85, source: 'query' }));
+  const vocabList = Array.from(vocab.keys()).sort();
+  giLexiconCache = { key, surfaces, maxWords: 4, vocab, vocabList };
+  return giLexiconCache;
+}
+
+// ---- 1–3. Normalise, tokenise, recover typos ----------------------------------------------
+
+export function normalizeGILanguage(raw: string): string {
+  let s = String(raw || '');
+  GI_SHORTHAND.forEach(([re, rep]) => { s = s.replace(re, rep as any); });
+  // Number words attached to money/scale words: "ten grand" → "10 grand", "a grand" → "1 grand".
+  s = s.replace(/\b(a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\s+(grand|thousand|k|hundred|bucks|dollars)\b/gi,
+    (_m, w: string, unit: string) => `${w.toLowerCase() === 'a' ? 1 : GI_NUMBER_WORD_VALUES[w.toLowerCase()]} ${unit}`);
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+function giTokenize(text: string): GIToken[] {
+  const out: GIToken[] = [];
+  const re = /(\$\s?\d[\d,]*(?:\.\d+)?\s?(?:k|m|mil|million|grand|thousand)?\b)|(\d[\d,]*(?:\.\d+)?\s?(?:%|percent\b|k\b|m\b|mil\b|grand\b|thousand\b|bucks\b|dollars\b)?)|([A-Za-z][A-Za-z']*)|([.?!,;:])/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const raw = m[0].trim();
+    if (m[1] || (m[2] && /(k|m|mil|million|grand|thousand|bucks|dollars)$/i.test(raw))) out.push({ t: raw.toLowerCase().replace(/\s+/g, ''), raw, kind: 'money', i: out.length });
+    else if (m[2] && /(%|percent)$/i.test(raw)) out.push({ t: raw.toLowerCase().replace(/\s+/g, ''), raw, kind: 'percent', i: out.length });
+    else if (m[2]) out.push({ t: raw.replace(/,/g, ''), raw, kind: 'number', i: out.length });
+    else if (m[3]) {
+      const lower = raw.toLowerCase().replace(/'s$/, '').replace(/'/g, '');
+      out.push({ t: lower, raw: raw.replace(/'s$/i, ''), kind: 'word', i: out.length });
+      if (/'s$/i.test(raw)) out.push({ t: "'s", raw: "'s", kind: 'word', i: out.length });
+    } else out.push({ t: raw, raw, kind: 'punct', i: out.length });
+  }
+  return out;
+}
+
+/** Bounded typo recovery against the known-vocabulary lexicon (never arbitrary English). */
+function giRecoverTypos(tokens: GIToken[], lex: GILexicon, ctx: GIConversationContext): { corrections: GISemanticFrame['corrections']; uncorrected: GISemanticFrame['uncorrected'] } {
+  const corrections: GISemanticFrame['corrections'] = [];
+  const uncorrected: GISemanticFrame['uncorrected'] = [];
+  const salient = new Set([ctx.activeTopic?.label, ...ctx.recent.map(r => r.label)].filter(Boolean).map(s => String(s).toLowerCase()));
+  tokens.forEach(tok => {
+    if (tok.kind !== 'word') return;
+    const w = tok.t;
+    if (w.length < 4 || GI_ENGLISH_LEXICON.has(w) || lex.vocab.has(w) || lex.surfaces.has(w) || GI_FILLER_WORDS.has(w)) return;
+    if (w.endsWith('s') && (lex.vocab.has(w.slice(0, -1)) || GI_ENGLISH_LEXICON.has(w.slice(0, -1)))) return;
+    if (/(ing|ed|ly)$/.test(w) && (GI_ENGLISH_LEXICON.has(w.replace(/(ing|ed|ly)$/, '')) || lex.vocab.has(w.replace(/(ing|ed|ly)$/, '')))) return;
+    const budget = giTypoBudget(w.length);
+    let best = budget + 1;
+    let found: string[] = [];
+    for (const v of lex.vocabList) {
+      if (Math.abs(v.length - w.length) > budget) continue;
+      if (w.length <= 5 && v[0] !== w[0]) continue;
+      const d = giEditDistance(w, v, budget);
+      if (d < best) { best = d; found = [v]; } else if (d === best && d <= budget) found.push(v);
+    }
+    if (best > budget || !found.length) return;
+    // Different targets tie: prefer the conversation-salient one, then the one the grammar expects
+    // (a place after "go/to/in/or…"), otherwise leave the word alone and record the ambiguity.
+    const distinct = Array.from(new Set(found));
+    let pick: string | null = distinct.length === 1 ? distinct[0] : null;
+    if (!pick) {
+      const sal = distinct.filter(v => salient.has(v) || Array.from(salient).some(s => s.split(/\s+/).includes(v)));
+      if (sal.length === 1) pick = sal[0];
+    }
+    if (!pick) {
+      const prevWord = tokens.slice(0, tok.i).reverse().find(t => t.kind === 'word' && !t.filler)?.t || '';
+      const wantsPlace = /^(go|to|in|into|travel|visit|defend|hold|take|from|or|vs|than|protect|leave|try|about|actually)$/.test(prevWord);
+      const wantsActor = /^(is|has|stop|beat|vs|than|about|against)$/.test(prevWord);
+      const byKind = distinct.filter(v => {
+        const ref = lex.vocab.get(v);
+        return ref && ((wantsPlace && ref.kind === 'region') || (wantsActor && ref.kind === 'actor'));
+      });
+      if (byKind.length === 1) pick = byKind[0];
+    }
+    if (!pick) { uncorrected.push({ token: w, candidates: distinct.slice(0, 3) }); return; }
+    corrections.push({ from: w, to: pick, distance: best });
+    tok.correctedFrom = w;
+    tok.t = pick;
+    tok.raw = pick;
+  });
+  return { corrections, uncorrected };
+}
+
+/** Tag tokens with lexicon entities (longest surface first); lower-case ambiguous codes by context. */
+function giTagEntities(tokens: GIToken[], lex: GILexicon, originalQuery: string): void {
+  const words = tokens;
+  for (let i = 0; i < words.length; i++) {
+    if (words[i].kind !== 'word' || words[i].entity) continue;
+    for (let n = Math.min(lex.maxWords, words.length - i); n >= 1; n--) {
+      const slice = words.slice(i, i + n);
+      if (slice.some(t => t.kind !== 'word')) continue;
+      const surface = slice.map(t => t.t).join(' ');
+      const ref = lex.surfaces.get(surface);
+      if (ref) { slice.forEach(t => { t.entity = { ...ref, matched: surface }; }); i += n - 1; break; }
+    }
+  }
+  // Case-sensitive region / territory codes as written ("SA", "WA", "NOR").
+  const upperCodes = new Set([...GI_CASE_SENSITIVE_REGION_CODES.filter(c => REGIONS[c]), ...Object.keys(EXTERNAL_TERRITORIES)]);
+  words.forEach((tok, idx) => {
+    if (tok.kind !== 'word' || tok.entity) return;
+    const upper = tok.raw.toUpperCase();
+    if (!upperCodes.has(upper)) return;
+    const written = tok.raw === upper && tok.raw.length >= 2;
+    // Lower-case "sa"/"wa"/"nt"/"act" count as places only in a place context: shorthand
+    // ("go wa?", "actually sa", "nsw or vic"), after place verbs/prepositions, or as the only content.
+    const prev = words.slice(0, idx).reverse().find(t => t.kind === 'word' && !t.filler)?.t || '';
+    const next = words.slice(idx + 1).find(t => t.kind === 'word' && !t.filler)?.t || '';
+    const contentCount = words.filter(t => t.kind === 'word' && !t.filler).length;
+    const placeContext = /^(go|to|in|into|travel|visit|defend|hold|take|from|about|actually|meant|mean|or|vs|than|protect|keep|leave|at|try|for|over|then)$/.test(prev) || next === 'or' || contentCount <= 2;
+    if (written || (placeContext && tok.t !== 'act') || (placeContext && tok.t === 'act' && /^(to|in|go|travel|visit|actually|or)$/.test(prev))) {
+      const code = upper;
+      tok.entity = { kind: 'region', id: code, label: getGILocationName(code), matched: tok.raw, confidence: written ? 0.95 : 0.8, source: 'query' };
+      if (!written) tok.raw = code;
+    }
+  });
+  void originalQuery;
+}
+
+// ---- 4. Clause segmentation ---------------------------------------------------------------
+
+const GI_CLAUSE_MARKERS: Record<string, GIClauseMarker> = {
+  and: 'and', plus: 'and', also: 'and', but: 'but', however: 'but', yet: 'but', because: 'because', since: 'because', so: 'so',
+  if: 'if', unless: 'unless', otherwise: 'otherwise', else: 'otherwise', then: 'then', without: 'without', though: 'though', although: 'though',
+  until: 'until', once: 'once', before: 'before', after: 'after', while: 'while', or: 'or'
+};
+
+function giSegmentClauses(tokens: GIToken[]): GIClause[] {
+  const clauses: GIClause[] = [];
+  let cur: GIToken[] = [];
+  let marker: GIClauseMarker = null;
+  let sentence = 0;
+  const flush = () => {
+    const words = cur.filter(t => t.kind !== 'punct');
+    if (words.length) {
+      const content = words.filter(t => !t.filler);
+      const first = content[0]?.t || '';
+      const text = cur.map(t => t.raw).join(' ').replace(/\s+([.?!,;:])/g, '$1').trim();
+      const second = content[1]?.t || '';
+      const negImperative = (first === 'do' || first === 'please') && second === 'not' || first === 'never' || first === 'no' || first === 'avoid';
+      // A question word only makes a question when the clause isn't closed as a statement ("Can't use loans.").
+      const closedStatement = cur.some(t => t.t === '.' || t.t === '!');
+      const isQ = !negImperative && (cur.some(t => t.t === '?') || (GI_QUESTION_START.test(first) && !closedStatement && !(first === 'can' && second === 'not')));
+      const verbFirst = GI_VERB_FAMILY_PHRASES.some(f => f.phrases.some(p => p.split(' ')[0] === first)) || ['give', 'tell', 'show', 'make', 'get', 'stop', 'keep', 'find', 'raise', 'put', 'take', 'use', 'avoid', 'only', 'ignore', 'forget', 'compare', 'build', 'let'].includes(first);
+      clauses.push({
+        index: clauses.length, text, tokens: words, marker, sentence,
+        form: isQ ? 'question' : (verbFirst || negImperative) ? 'imperative' : content.length <= 3 ? 'fragment' : 'statement'
+      });
+    }
+    cur = [];
+    marker = null;
+  };
+  tokens.forEach((tok, idx) => {
+    if (tok.kind === 'punct') {
+      cur.push(tok);
+      if (/[.?!;]/.test(tok.t)) { flush(); sentence++; }
+      else if (tok.t === ',' || tok.t === ':') flush();
+      return;
+    }
+    const m = GI_CLAUSE_MARKERS[tok.t];
+    const prevWord = tokens.slice(0, idx).reverse().find(t => t.kind !== 'punct');
+    const nextWord = tokens.slice(idx + 1).find(t => t.kind !== 'punct');
+    // "and"/"or" between two entities or two numbers joins a list, not clauses ("Gold and Iron Ore").
+    const joinsList = (m === 'and' || m === 'or') && prevWord?.entity && nextWord?.entity && prevWord.entity.kind === nextWord.entity.kind;
+    // "then" right after "and" / "so then", "so" as a leading filler, and "or" (options stay in one clause).
+    const skip = !m || joinsList || m === 'or' || (m === 'so' && !cur.filter(t => t.kind !== 'punct').length) || (m === 'then' && prevWord?.t === 'and')
+      || (m === 'and' && nextWord?.t === 'then');
+    if (!skip) {
+      if (cur.some(t => t.kind !== 'punct')) flush();
+      marker = m;
+      // Condition / constraint / temporal markers carry meaning for the patterns; conjunctions do not.
+      const keep = m === 'without' || m === 'if' || m === 'unless' || m === 'before' || m === 'after' || m === 'until' || m === 'once';
+      if (!keep) return;
+    }
+    cur.push(tok);
+  });
+  flush();
+  return clauses;
+}
+
+// ---- 5–7. Pattern matcher, concepts and verb families --------------------------------------
+
+type GIPatternEl = { alts: string[]; optional: boolean; slot?: 'region' | 'actor' | 'rival' | 'resource' | 'project' | 'money' | 'num'; wildcard?: boolean; strict?: boolean };
+
+const giPatternCache = new Map<string, GIPatternEl[]>();
+function giCompilePattern(p: string): GIPatternEl[] {
+  const hit = giPatternCache.get(p);
+  if (hit) return hit;
+  // A leading "=" makes the whole pattern strict: only filler may sit between its words.
+  const strict = p.startsWith('=');
+  const els = (strict ? p.slice(1) : p).split(/\s+/).map(el => {
+    if (el === '*') return { alts: [], optional: true, wildcard: true, strict };
+    const optional = el.endsWith('?') && el.length > 1;
+    const body = optional ? el.slice(0, -1) : el;
+    const slot = body.match(/^<(region|actor|rival|resource|project|money|num)>$/)?.[1] as GIPatternEl['slot'];
+    return { alts: slot ? [] : body.split('|'), optional, slot, strict };
+  });
+  giPatternCache.set(p, els);
+  return els;
+}
+
+function giTokenMatches(el: GIPatternEl, tok: GIToken, world: GIWorld): boolean {
+  if (el.slot) {
+    if (el.slot === 'money') return tok.kind === 'money' || (tok.kind === 'number' && Number(tok.t) >= 50);
+    if (el.slot === 'num') return tok.kind === 'number' || tok.t in GI_NUMBER_WORD_VALUES || tok.t === 'couple' || tok.t === 'few';
+    if (!tok.entity) return false;
+    if (el.slot === 'rival') return tok.entity.kind === 'actor' && world.actors.find(a => a.id === tok.entity!.id)?.relation === 'rival';
+    return tok.entity.kind === el.slot;
+  }
+  return el.alts.includes(tok.t);
+}
+
+/** Match a compiled pattern anywhere in a token list; fillers are free, one other gap is allowed. */
+function giMatchPattern(els: GIPatternEl[], toks: GIToken[], world: GIWorld): { start: number; end: number } | null {
+  const tryAt = (ei: number, ti: number, started: number): { start: number; end: number } | null => {
+    if (ei >= els.length) return { start: started, end: ti };
+    const el = els[ei];
+    if (el.wildcard) {
+      for (let skip = 0; skip <= 3 && ti + skip <= toks.length; skip++) {
+        const r = tryAt(ei + 1, ti + skip, started);
+        if (r) return r;
+      }
+      return null;
+    }
+    let gaps = 0;
+    for (let k = ti; k < toks.length; k++) {
+      if (giTokenMatches(el, toks[k], world)) {
+        // Multi-token entities (e.g. "new south wales") consume the whole tagged span.
+        let next = k + 1;
+        if (el.slot && toks[k].entity) while (next < toks.length && toks[next].entity && toks[next].entity!.id === toks[k].entity!.id && toks[next].entity!.matched === toks[k].entity!.matched && toks[next].t !== toks[k].t) next++;
+        const r = tryAt(ei + 1, next, started < 0 ? k : started);
+        if (r) return r;
+      }
+      if (started < 0) continue; // nothing matched yet: the pattern may start anywhere
+      if (toks[k].filler) continue;
+      gaps++;
+      if (gaps > (el.strict ? 0 : 1)) break;
+    }
+    if (el.optional) return tryAt(ei + 1, ti, started);
+    return null;
+  };
+  const r = tryAt(0, 0, -1);
+  return r && r.start >= 0 ? r : null;
+}
+
+function giDetectConcepts(clauses: GIClause[], world: GIWorld): GIConceptHit[] {
+  const hits: GIConceptHit[] = [];
+  clauses.forEach(c => {
+    GI_SEMANTIC_CONCEPTS.forEach(concept => {
+      for (const p of concept.patterns) {
+        const m = giMatchPattern(giCompilePattern(p), c.tokens, world);
+        if (m) {
+          hits.push({ id: concept.id, clause: c.index, weight: concept.weight, evidence: c.tokens.slice(m.start, Math.max(m.end, m.start + 1)).map(t => t.raw).join(' ') });
+          break;
+        }
+      }
+    });
+  });
+  // Bare status fragments: "ap?", "cash?", "my money".
+  const content = clauses.flatMap(c => c.tokens).filter(t => !t.filler && t.kind === 'word');
+  if (content.length <= 2 && content.some(t => /^(ap|cash|money|balance)$/.test(t.t)) && !hits.some(h => h.id === 'status_request')) hits.push({ id: 'status_request', clause: 0, weight: 0.8, evidence: content.map(t => t.t).join(' ') });
+  // Whole-message patterns that cross clause boundaries (e.g. "Riley … NSW" split by a comma).
+  const all: GIClause = { index: -1, text: '', tokens: clauses.flatMap(c => c.tokens), marker: null, form: 'statement', sentence: 0 };
+  if (!hits.some(h => h.id === 'region_threat')) {
+    const rival = all.tokens.find(t => t.entity?.kind === 'actor' && world.actors.find(a => a.id === t.entity!.id)?.relation === 'rival');
+    const region = all.tokens.find(t => t.entity?.kind === 'region');
+    const threatWord = all.tokens.find(t => /^(take|taking|takes|flip|flipping|steal|stealing|attack|attacking|threat|threatening|contest|almost|nearly|losing|lose|slipping|trouble|pressure|pushing|catching|getting)$/.test(t.t));
+    if (rival && region && threatWord) hits.push({ id: 'region_threat', clause: clauses.find(c => c.tokens.includes(region))?.index ?? 0, weight: 0.8, evidence: `${rival.raw} … ${region.raw}` });
+    else if (rival && region && all.tokens.filter(t => t.kind === 'word' && !t.filler).length <= 5) hits.push({ id: 'region_threat', clause: 0, weight: 0.55, evidence: `${rival.raw} ${region.raw}` });
+    else {
+      // "someone about to take NSW" with a name that isn't in this match: a threat by someone other than the player.
+      for (const c of clauses) {
+        const toks = c.tokens.filter(t => !t.filler);
+        const vi = toks.findIndex(t => /^(take|taking|takes|flip|flipping|grab|grabbing|steal|stealing|attack|attacking)$/.test(t.t));
+        if (vi < 0) continue;
+        const subject = toks.slice(Math.max(0, vi - 4), vi).map(t => t.t);
+        const reg = toks.slice(vi + 1, vi + 4).find(t => t.entity?.kind === 'region');
+        // The player's own intent ("I want to take NSW", "should I take NSW") is not a threat.
+        if (reg && subject.length && !subject.some(w => /^(i|we|me|my|us|our|should|can|could|how)$/.test(w))) { hits.push({ id: 'region_threat', clause: c.index, weight: 0.7, evidence: toks.slice(Math.max(0, vi - 3), vi + 3).map(t => t.raw).join(' ') }); break; }
+      }
+    }
+  }
+  return hits;
+}
+
+function giDetectActions(clauses: GIClause[], world: GIWorld): GILanguageAction[] {
+  const out: GILanguageAction[] = [];
+  let step = 0;
+  clauses.forEach(c => {
+    if (c.marker === 'then' || (c.marker === 'and' && out.length && c.form === 'imperative')) step++;
+    const toks = c.tokens;
+    const usedFamilies = new Set<GIVerbFamily>();
+    GI_VERB_FAMILY_PHRASES.forEach(({ family, phrases }) => {
+      for (const p of phrases) {
+        const els = giCompilePattern(p);
+        const m = giMatchPattern(els, toks, world);
+        if (!m || usedFamilies.has(family)) continue;
+        // Disambiguation by grammar/entity context.
+        const after = toks.slice(m.end, m.end + 5);
+        const before = toks.slice(Math.max(0, m.start - 4), m.start);
+        const region = after.find(t => t.entity?.kind === 'region')?.entity || (family === 'defend' || family === 'leave' ? before.find(t => t.entity?.kind === 'region')?.entity : undefined);
+        const resource = after.find(t => t.entity?.kind === 'resource')?.entity || toks.find(t => t.entity?.kind === 'resource')?.entity;
+        if (family === 'travel' && /^(go|try|going to)$/.test(p) && !region) continue;          // "go" alone / "try" alone are not travel
+        if (family === 'travel' && p === 'going to' && after[0] && !after[0].entity) continue;  // "going to attack" is not travel
+        if (family === 'defend' && ['keep', 'hold', 'save', 'secure'].includes(p) && !region) continue; // "keep at least $2K", "hold off"
+        if (family === 'leave' && after[0]?.t === 'me') continue;                              // "leave me with $5K"
+        if (family === 'defend' && p === 'hold' && after[0]?.t === 'off') continue;
+        if (family === 'fund' && ['finish', 'finance', 'build', 'fund'].includes(p) && !toks.some(t => /rail|railway|project|hub|plant|farm|infrastructure|cable|terminal|hydrogen|wind|corridor|thing/.test(t.t)) && !region) continue;
+        if (family === 'fund' && p === 'put money into' && region) continue;                    // deposits, not projects
+        if (family === 'defend' && /^(put|drop|deposit) /.test(p) && !region) continue;
+        if (family === 'borrow' && ['debt', 'credit', 'loans'].includes(p) && before.some(t => /^(already|have|got|my|in)$/.test(t.t))) continue; // state, not action
+        const negated = before.some(t => /^(not|no|never|without|except)$/.test(t.t));
+        usedFamilies.add(family);
+        out.push({ family, clause: c.index, surface: p, negated, regionId: region?.id, resource: resource?.kind === 'resource' ? resource.id : undefined, step });
+        break;
+      }
+    });
+  });
+  return out;
+}
+
+// ---- 8. Negation scope + constraint / preference model ------------------------------------
+
+const GI_POLICY_STRENGTH: Record<GIConstraintPolicy, number> = {
+  forbidden: 1, required: 1, fallback_only: 0.75, avoid: 0.55, allowed: 0.2, preferred: 0.6, minimum: 1, maximum: 1, before: 0.8, after: 0.8, until: 0.8, unless: 0.7
+};
+
+function giPolicyFor(clause: GIClause, next: GIClause | undefined, targetIdx: number): GIConstraintPolicy | null {
+  const toks = clause.tokens;
+  const before = toks.slice(0, targetIdx).map(t => t.t);
+  const after = toks.slice(targetIdx + 1).map(t => t.t);
+  const beforeText = ` ${before.join(' ')} `;
+  const afterText = ` ${after.join(' ')} `;
+  const whole = ` ${toks.map(t => t.t).join(' ')} `;
+  const nextText = next ? ` ${next.tokens.map(t => t.t).join(' ')} ` : '';
+  // "Why can't I build…?" states an inability, not a player constraint.
+  if (clause.form === 'question' && /\bcan not\b/.test(beforeText)) return null;
+  // "Why not just take the loan?" suggests an option; it is not a ban.
+  if (/\bwhy not\b/.test(beforeText)) return null;
+  const necessity = /\b(if necessary|if needed|if i have to|if you have to|if we have to|if there is no other|no other (choice|option|way)|if nothing else|last resort|only if|as a last|if i must|if it comes to it|if all else fails)\b/;
+  const permissive = /\b(do not mind|fine with|okay with|ok with|happy to|can use|could use|allowed to|open to|no problem with)\b/.test(beforeText) || /^\s*(is|are) (fine|okay|ok|allowed|good|acceptable|on the table)\b/.test(afterText);
+  const negatedAvoid = /\b(not|never) (want to |to )?avoid\b/.test(beforeText) || /\bdo not avoid\b/.test(beforeText);
+  const except = /\b(except|other than|anything but|besides)\b/.test(beforeText);
+  const unlessHere = /\bunless\b/.test(whole) || (next && (next.marker === 'unless' || (next.marker === 'if' && necessity.test(nextText))));
+  const onlyBefore = /\bonly\b/.test(beforeText) && (necessity.test(whole) || necessity.test(nextText) || /\blast resort\b/.test(whole));
+  // Negators that belong to a permissive / softening phrase ("do not mind", "rather not") are not bans.
+  const stripped = beforeText.replace(/\b(do not mind|not avoid|rather not|prefer not|try not to|ideally not|preferably not|not really|not keen)\b/g, ' ');
+  const negator = /\b(not|no|never|without|none)\b/.test(stripped);
+  const softPhrase = /\b(rather not|prefer not|would rather not|try not to|ideally not|not really|preferably not|not keen|rather)\b/.test(beforeText);
+  const avoidWord = /\bavoid(ing)?\b/.test(beforeText) || (/\bif possible\b/.test(afterText) && /\bavoid\b/.test(whole));
+  if (negatedAvoid) return 'allowed';
+  if (permissive && !negator) return 'allowed';
+  if (except) return 'forbidden';
+  if (unlessHere && (negator || softPhrase || avoidWord)) return 'fallback_only';
+  if (onlyBefore || (necessity.test(whole) && /\b(only|last resort)\b/.test(whole))) return 'fallback_only';
+  if (softPhrase) return 'avoid';
+  if (avoidWord && !negator) return 'avoid';
+  if (negator && /\b(really|kind of|sort of|particularly)\b/.test(beforeText) && /\bwant\b/.test(beforeText)) return 'avoid';
+  if (negator) return 'forbidden';
+  if (avoidWord) return 'avoid';
+  if (clause.form === 'imperative' && targetIdx <= 3) return 'preferred';
+  return null;
+}
+
+function giExtractConstraints(clauses: GIClause[], actions: GILanguageAction[], world: GIWorld): GIConstraint[] {
+  const out: GIConstraint[] = [];
+  const add = (c: GIConstraint) => {
+    const i = out.findIndex(x => x.subject === c.subject && (x.target || '') === (c.target || ''));
+    if (i >= 0) out[i] = c; else out.push(c);   // later statements refine earlier ones
+  };
+  clauses.forEach((c, ci) => {
+    const next = clauses[ci + 1];
+    const toks = c.tokens;
+    const idxOf = (re: RegExp) => toks.findIndex(t => re.test(t.t));
+    // Loans / borrowing / debt.
+    const li = idxOf(/^(loan|loans|borrow|borrowing|borrowed|debt|credit|financing)$/);
+    if (li >= 0) {
+      const stateMention = toks.slice(Math.max(0, li - 3), li).some(t => /^(already|have|got|my|in|existing|current)$/.test(t.t)) && !toks.slice(0, li).some(t => /^(not|no|never|avoid|without)$/.test(t.t));
+      const p = stateMention ? null : giPolicyFor(c, next, li);
+      if (p) add({ subject: 'loan', policy: p, strength: GI_POLICY_STRENGTH[p], clause: c.index, evidence: c.text });
+    }
+    // Selling (optionally a specific resource).
+    const si = idxOf(/^(sell|selling|sold|dump|dumping|liquidate|offload|unload)$/);
+    if (si >= 0) {
+      const res = toks.slice(si + 1).find(t => t.entity?.kind === 'resource')?.entity?.id || toks.slice(0, si).find(t => t.entity?.kind === 'resource')?.entity?.id;
+      const p = giPolicyFor(c, next, si);
+      if (p && p !== 'preferred') add({ subject: 'sell', target: res, policy: p, strength: GI_POLICY_STRENGTH[p], clause: c.index, evidence: c.text });
+    }
+    // Leaving / travelling away.
+    const vi = idxOf(/^(leave|leaving|abandon|travel|travelling|traveling)$/);
+    if (vi >= 0) {
+      const reg = toks.slice(vi + 1).find(t => t.entity?.kind === 'region')?.entity?.id;
+      const p = giPolicyFor(c, next, vi);
+      if (p && p !== 'preferred') add({ subject: /^(leave|leaving|abandon)$/.test(toks[vi].t) ? 'leave' : 'travel', target: reg, policy: p, strength: GI_POLICY_STRENGTH[p], clause: c.index, evidence: c.text });
+    }
+    // Funding projects.
+    const fi = idxOf(/^(build|fund|invest|funding|building|investing)$/);
+    if (fi >= 0 && toks.slice(0, fi).some(t => /^(not|no|never|avoid)$/.test(t.t))) {
+      const p = giPolicyFor(c, next, fi);
+      if (p) add({ subject: 'fund', policy: p, strength: GI_POLICY_STRENGTH[p], clause: c.index, evidence: c.text });
+    }
+  });
+  void actions; void world;
+  return out;
+}
+
+// ---- 9. Numbers and natural quantities ----------------------------------------------------
+
+function giParseMoneyToken(tok: GIToken): number | null {
+  const m = tok.t.match(/^\$?(\d[\d,]*(?:\.\d+)?)(k|m|mil|million|grand|thousand|bucks|dollars)?$/);
+  if (!m) return null;
+  const base = parseFloat(m[1].replace(/,/g, ''));
+  if (!Number.isFinite(base)) return null;
+  const mult = /^(k|grand|thousand)$/.test(m[2] || '') ? 1000 : /^(m|mil|million)$/.test(m[2] || '') ? 1000000 : 1;
+  return Math.round(base * mult);
+}
+
+function giExtractQuantities(clauses: GIClause[]): GIQuantity[] {
+  const out: GIQuantity[] = [];
+  clauses.forEach(c => {
+    const toks = c.tokens;
+    const text = ` ${toks.map(t => t.t).join(' ')} `;
+    toks.forEach((tok, i) => {
+      const prev = toks.slice(Math.max(0, i - 5), i).map(t => t.t).join(' ');
+      const next1 = toks[i + 1]?.t || '';
+      const next2 = toks[i + 2]?.t || '';
+      const approx = /\b(about|around|like|roughly|approximately|maybe|nearly|almost|ish)$/.test(prev) || /^~/.test(tok.raw);
+      const bound: GIQuantity['bound'] = /\b(at least|minimum|min|no less than|over|above|more than|past|north of)$/.test(prev) ? 'min'
+        : /\b(at most|no more than|up to|under|below|less than|max|maximum|not more than)$/.test(prev) || /\bmore than$/.test(prev) && /\b(spend|pay|use)\b/.test(prev) ? 'max' : 'exact';
+      const additional = /\b(another|extra|additional)$/.test(prev) || next1 === 'more';
+      // Count / horizon nouns.
+      const countVal = tok.kind === 'number' ? Number(tok.t) : (tok.t in GI_NUMBER_WORD_VALUES ? GI_NUMBER_WORD_VALUES[tok.t] : (tok.t === 'couple' ? 2 : tok.t === 'few' ? 3 : null));
+      const noun = /^(more|of|extra)$/.test(next1) ? next2 : next1;
+      if (countVal !== null && /^(regions?|states?)$/.test(noun)) {
+        out.push({ raw: `${tok.raw} ${noun}`, unit: 'regions', value: countVal, approx, bound, additional: additional || next1 === 'more', role: 'count', clause: c.index });
+        return;
+      }
+      if (countVal !== null && /^(turns?|actions?|moves?|steps?|days?)$/.test(noun) && tok.kind !== 'money') {
+        out.push({ raw: `${tok.raw} ${noun}`, unit: /turn|day/.test(noun) ? 'turns' : 'actions', value: Math.min(12, countVal), approx: approx || tok.t === 'few' || tok.t === 'couple', bound, additional, role: 'horizon', clause: c.index });
+        return;
+      }
+      // Money.
+      let money: number | null = null;
+      if (tok.kind === 'money') money = giParseMoneyToken(tok);
+      else if (tok.kind === 'number' && Number(tok.t) >= 50 && (/\b(cash|money|\$|have|got|left|need|make|raise|get|earn|keep|spend|sitting|only|another|extra|above|below|reach)\b/.test(text))) money = Number(tok.t);
+      if (money !== null && !(tok.kind === 'number' && /^(regions?|turns?|actions?|moves?|ap|units?|of)$/.test(next1))) {
+        const role = giMoneyRole(prev, text, toks.slice(i + 1, i + 3).map(t => t.t).join(' '));
+        out.push({ raw: tok.raw, unit: '$', value: money, approx, bound: role === 'floor' ? 'min' : role === 'ceiling' ? 'max' : bound, additional, role, clause: c.index });
+        return;
+      }
+      // Percentages and fractions of cash.
+      if (tok.kind === 'percent') {
+        const pct = parseFloat(tok.t);
+        if (Number.isFinite(pct)) out.push({ raw: tok.raw, unit: '%', value: null, fraction: Math.min(1, pct / 100), relativeTo: 'cash', approx, bound, additional: false, role: giMoneyRole(prev, text, ''), clause: c.index });
+        return;
+      }
+      const frac = tok.t === 'half' ? 0.5 : tok.t === 'quarter' ? 0.25 : tok.t === 'third' ? 1 / 3 : (tok.t === 'most' && next1 === 'of') ? 0.75 : (tok.t === 'all' && /^(my|of|the)$/.test(next1) && /\b(cash|money)\b/.test(toks.slice(i + 1, i + 4).map(t => t.t).join(' '))) ? 1 : null;
+      if (frac !== null && /\b(cash|money|funds|balance)\b/.test(toks.slice(i + 1, i + 5).map(t => t.t).join(' '))) {
+        out.push({ raw: `${tok.raw} my cash`, unit: '%', value: null, fraction: frac, relativeTo: 'cash', approx: tok.t === 'most', bound, additional: false, role: giMoneyRole(prev, text, ''), clause: c.index });
+      }
+    });
+  });
+  return out;
+}
+
+function giMoneyRole(prev: string, clauseText: string, after: string): GIQuantity['role'] {
+  if (/\b(keep|leave me with|stay above|not go below|without going below|hold on to|reserve|retain|preserve)\b/.test(prev)) return 'floor';
+  if (/\b(spend|pay|use|risk|put in|invest)\b/.test(prev) && /\b(not|no more|at most|max|than|under|up to)\b/.test(prev)) return 'ceiling';
+  if (/^\s*left\b/.test(after)) return 'state';
+  // The keyword nearest to the number decides between a stated amount and a target.
+  const words = prev.split(/\s+/).filter(Boolean).reverse();
+  for (const w of words) {
+    if (/^(have|got|sitting|only|left|down|holding|at|with)$/.test(w)) return 'state';
+    if (/^(make|need|raise|get|reach|earn|want|above|over|to|another|extra|more|me)$/.test(w)) return 'target';
+    if (/^(cost|costs|is|price|for|put|into|deposit)$/.test(w)) return 'amount';
+  }
+  void clauseText;
+  return 'amount';
+}
+
+/** Resolve a quantity against the live player state (fractions of cash are never frozen at parse time). */
+export function resolveGIQuantityAmount(q: GIQuantity | null | undefined, world: GIWorld): number | null {
+  if (!q) return null;
+  if (q.value !== null && q.unit === '$') return q.value;
+  if (q.fraction !== undefined && q.relativeTo === 'cash') return Math.round(world.player.money * q.fraction);
+  return q.value;
+}
+
+// ---- 10. Temporal and conditional language -----------------------------------------------
+
+function giExtractTime(clauses: GIClause[], quantities: GIQuantity[], concepts: GIConceptHit[]): GITemporalConstraint[] {
+  const out: GITemporalConstraint[] = [];
+  const text = ` ${clauses.map(c => c.tokens.map(t => t.t).join(' ')).join(' | ')} `;
+  if (concepts.some(h => h.id === 'urgency') || /\b(right now|immediately|this turn|asap)\b/.test(text)) out.push({ kind: 'urgency', evidence: concepts.find(h => h.id === 'urgency')?.evidence || 'now' });
+  quantities.filter(q => q.role === 'horizon').forEach(q => out.push({ kind: 'horizon', unit: q.unit === 'turns' ? 'turn' : 'action', count: q.value || 1, evidence: q.raw }));
+  if (/\bnext turn\b/.test(text) && !out.some(t => t.kind === 'horizon')) out.push({ kind: 'horizon', unit: 'turn', count: 1, evidence: 'next turn' });
+  if (/\bthis turn\b/.test(text) && !out.some(t => t.kind === 'horizon')) out.push({ kind: 'horizon', unit: 'turn', count: 1, evidence: 'this turn' });
+  if (/\bnext (action|move)\b/.test(text) && !out.some(t => t.kind === 'horizon')) out.push({ kind: 'horizon', unit: 'action', count: 1, evidence: 'next action' });
+  if (/\bbefore \w+ (moves|goes|next turn|turn)\b|\bbefore (they|he|she|the rival|my rival) (move|moves|go|goes)\b/.test(text)) out.push({ kind: 'before', event: 'rival_turn', evidence: 'before the rival moves' });
+  if (/\bbefore (i|we) end( my| the)? turn\b|\bbefore ending\b/.test(text)) out.push({ kind: 'before', event: 'end_turn', evidence: 'before you end your turn' });
+  if (/\bbefore (this|the|that) contract (expires|ends|runs out)\b/.test(text)) out.push({ kind: 'before', event: 'contract_expiry', evidence: 'before the contract expires' });
+  if (/\bafter \w+ (moves|goes)\b/.test(text)) out.push({ kind: 'after', event: 'rival_turn', evidence: 'after the rival moves' });
+  if (/\bafter (this|the|that) contract (pays|pays out|completes)\b/.test(text)) out.push({ kind: 'after', event: 'contract_payout', evidence: 'after the contract pays' });
+  const once = quantities.find(q => q.unit === '$' && clauses[q.clause]?.marker === 'once');
+  if (once) out.push({ kind: 'after', event: 'cash_reached', amount: once.value || undefined, evidence: `once you have ${once.raw}` });
+  const until = clauses.find(c => c.marker === 'until' && c.tokens.some(t => t.entity?.kind === 'region'));
+  if (until) out.push({ kind: 'until', event: 'region_control', regionId: until.tokens.find(t => t.entity?.kind === 'region')!.entity!.id, evidence: until.text });
+  if (/\b(long term|eventually|in the long run|later on|down the line)\b/.test(text)) out.push({ kind: 'long_term', evidence: 'long term' });
+  if (/\b(before the game ends|by the end|end of the game|before it ends)\b/.test(text)) out.push({ kind: 'deadline', event: 'end_of_game', evidence: 'before the game ends' });
+  return out;
+}
+
+function giExtractConditions(clauses: GIClause[], actions: GILanguageAction[], world: GIWorld): GICondition[] {
+  const out: GICondition[] = [];
+  clauses.forEach((c, i) => {
+    if (c.marker !== 'if' && !/^if\b/.test(c.tokens[0]?.t || '')) return;
+    const toks = c.tokens;
+    const actor = toks.find(t => t.entity?.kind === 'actor')?.entity;
+    const region = toks.find(t => t.entity?.kind === 'region')?.entity;
+    const text = toks.map(t => t.t).join(' ');
+    const event: GICondition['trigger']['event'] = actor && /\b(attack|attacks|moves|move|goes|takes|take|contests|deposits|comes)\b/.test(text) ? (/\b(move|moves|goes|comes)\b/.test(text) ? 'rival_moves' : 'rival_attacks')
+      : /\b(lose|lost)\b/.test(text) ? 'region_lost' : /\$|\bcash|money\b/.test(text) ? 'cash' : /\bcontract\b/.test(text) ? 'contract' : 'other';
+    const thenClauses: GIClause[] = [];
+    const elseClauses: GIClause[] = [];
+    for (let j = i + 1; j < clauses.length; j++) {
+      const cj = clauses[j];
+      if (cj.marker === 'otherwise') { elseClauses.push(cj); continue; }
+      if (elseClauses.length) { if (cj.marker === 'and' || cj.marker === 'then') elseClauses.push(cj); else break; continue; }
+      if (cj.marker === 'if') break;
+      if (j === i + 1 || cj.marker === 'then' || cj.marker === 'and') thenClauses.push(cj); else break;
+    }
+    const pick = (cs: GIClause[]) => actions.filter(a => cs.some(x => x.index === a.clause)).map(a => ({ ...a, regionId: a.regionId || (a.family === 'defend' && region ? region.id : undefined) }));
+    const thenActs = pick(thenClauses);
+    const isStrategy = thenClauses.some(x => x.form === 'imperative') && thenActs.length > 0;
+    out.push({
+      ifText: c.text,
+      trigger: { actorId: actor?.id || (event.startsWith('rival') ? world.primaryRivalId || undefined : undefined), regionId: region?.id, event },
+      then: thenActs,
+      otherwise: pick(elseClauses),
+      isStrategy
+    });
+  });
+  return out;
+}
+
+// ---- 11. Conversation repair, follow-up fragments and references --------------------------
+
+function giReplaceEntityInQuery(prevQuery: string, prev: GIEntityRef, next: GIEntityRef): string {
+  const surfaces = [prev.matched, prev.label, prev.id].filter(Boolean) as string[];
+  for (const s of surfaces.sort((a, b) => b.length - a.length)) {
+    const re = new RegExp(`\\b${giEscape(s)}\\b`, 'i');
+    if (re.test(prevQuery)) return prevQuery.replace(re, next.kind === 'region' ? next.id : next.label);
+  }
+  return `${prevQuery.replace(/[?.!]+$/, '')} (${next.label})?`;
+}
+
+function giDetectRepair(clauses: GIClause[], entities: GIEntityRef[], concepts: GIConceptHit[], constraints: GIConstraint[], ctx: GIConversationContext, world: GIWorld, lowerText: string): GIConversationRepair | null {
+  const prevQuery = ctx.lastQuery;
+  const words = clauses.flatMap(c => c.tokens).filter(t => t.kind === 'word');
+  const content = words.filter(t => !t.filler && !/^(i|meant|mean|it|not|no|sorry|oops|that|the|was|is|a|an|my|to|of)$/.test(t.t));
+  const short = words.length <= 7;
+  const correctionMarker = /^(actually|no|nope|sorry|oops|wait|i meant|i mean|not)\b/.test(lowerText) || /\bi meant\b|\bi mean\b|\bmeant to say\b|\bnot \w+,? (but )?\w+/.test(lowerText);
+  if (/^(ignore that|never mind|forget it|forget that|cancel that|scratch that)\b/.test(lowerText)) return { op: 'cancel', detail: 'Cancelled the previous question', rewrittenQuery: null };
+  const forget = lowerText.match(/^(forget|drop|skip) (the |that )?(loan|borrowing|debt) (idea|option|plan)?/);
+  if (forget && prevQuery) return { op: 'remove_constraint', detail: 'Dropped the loan option', rewrittenQuery: `${prevQuery.replace(/[?.!]+$/, '')} without taking a loan?` };
+  const back = lowerText.match(/^(ok(ay)?,? )?(back to|going back to|return to) (the )?(.+)$/);
+  if (back && ctx.topicStack?.length) {
+    const target = back[5].replace(/[?.!]+$/, '').trim();
+    const frame = ctx.topicStack.find(tf => tf.topic && (tf.topic.label.toLowerCase().includes(target) || target.split(/\s+/).some(w => w.length > 3 && tf.topic!.label.toLowerCase().includes(w))));
+    if (frame) return { op: 'return_topic', detail: `Back to ${frame.topic!.label}`, rewrittenQuery: frame.query || `Tell me about ${frame.topic!.label}` };
+  }
+  if (!prevQuery) return null;
+  // "make that 2" / "make it 2 turns" → horizon change.
+  const makeN = lowerText.match(/^(make (that|it)|change (that|it) to|actually)\s+(\d+|one|two|three|four|five|six)\b(\s+(turns?|actions?|moves?|steps?))?/);
+  if (makeN && ctx.lastHorizon) {
+    const n = GI_NUMBER_WORD_VALUES[makeN[4]] ?? parseInt(makeN[4], 10);
+    const unit = makeN[6] ? (/turn/.test(makeN[6]) ? 'turn' : 'action') : ctx.lastHorizon.unit;
+    return { op: 'replace_horizon', detail: `Horizon → ${n} ${unit}(s)`, horizon: { unit, count: Math.min(6, n) }, rewrittenQuery: prevQuery.replace(/\b(\d+|one|two|three|four|five|six)([- ])(turn|action|move|step)s?\b/i, `${n}$2$3`).replace(/\bnext (\d+|one|two|three|four|five|six) (turns?|actions?|moves?|steps?)\b/i, `next ${n} ${unit}s`) };
+  }
+  // "I meant next TURN, not next action".
+  const tf = lowerText.match(/\b(meant|mean)\b.*\bnext (turn|action)\b/);
+  if (tf && ctx.lastHorizon) {
+    const unit = tf[2] === 'turn' ? 'turn' : 'action';
+    return { op: 'replace_timeframe', detail: `Timeframe → ${unit}`, horizon: { unit, count: ctx.lastHorizon.count }, rewrittenQuery: prevQuery.replace(/\b(turns?|actions?|moves?)\b/i, unit + (ctx.lastHorizon.count > 1 ? 's' : '')) };
+  }
+  // "no loan though" / "without borrowing though" → add a constraint to the previous question.
+  if (short && /\bthough\b|^(and )?(no|without|but no|but without)\b/.test(lowerText) && constraints.some(c => c.subject === 'loan' && (c.policy === 'forbidden' || c.policy === 'avoid'))) {
+    return { op: 'add_constraint', detail: 'Added: no loans', rewrittenQuery: `${prevQuery.replace(/[?.!]+$/, '')} without taking a loan?` };
+  }
+  const prevEntities = ctx.lastQueryEntities || [];
+  // Entity replacement: "actually SA", "No, NSW.", "sorry, not Riley, my teammate".
+  const newEnt = entities[entities.length - 1];
+  if (newEnt && short && content.length <= 4) {
+    const sameKind = prevEntities.filter(e => e.kind === newEnt.kind && e.id !== newEnt.id);
+    const teammateSwap = /\bteammate|partner|ally\b/.test(lowerText) && prevEntities.some(e => e.kind === 'actor');
+    if (teammateSwap && newEnt.kind === 'actor') {
+      const prevActor = prevEntities.find(e => e.kind === 'actor')!;
+      return { op: 'replace_entity', detail: `${prevActor.label} → ${newEnt.label}`, rewrittenQuery: giReplaceEntityInQuery(prevQuery, prevActor, newEnt) };
+    }
+    if (sameKind.length && (correctionMarker || /^(what about|how about|and|okay but|ok but|but|what if)\b/.test(lowerText) || words.length <= 2)) {
+      const target = sameKind.length === 1 ? sameKind[0] : sameKind[sameKind.length - 1];
+      const op: GIRepairOp = correctionMarker ? 'replace_entity' : 'shift_focus';
+      return { op, detail: `${target.label} → ${newEnt.label}`, rewrittenQuery: giReplaceEntityInQuery(prevQuery, target, newEnt) };
+    }
+  }
+  // Teammate correction without a teammate in this match still repairs the actor relation.
+  if (correctionMarker && /\b(my )?(teammate|partner|ally)\b/.test(lowerText) && prevEntities.some(e => e.kind === 'actor')) {
+    const mate = world.actors.find(a => a.relation === 'teammate');
+    const prevActor = prevEntities.find(e => e.kind === 'actor')!;
+    return { op: 'replace_entity', detail: `${prevActor.label} → ${mate?.name || 'your teammate'}`, rewrittenQuery: prevQuery.replace(new RegExp(`\\b${giEscape(prevActor.label.split(/\s+/)[0])}\\b`, 'i'), mate?.name || 'my teammate') };
+  }
+  if (/^(the other (one|rail|project|option)|other one)\b/.test(lowerText) && ctx.lastComparison.length >= 2) {
+    const other = ctx.lastComparison.find(r => r.id !== ctx.activeTopic?.id) || ctx.lastComparison[1];
+    if (other && ctx.activeTopic) return { op: 'replace_entity', detail: `${ctx.activeTopic.label} → ${other.label}`, rewrittenQuery: giReplaceEntityInQuery(prevQuery, ctx.activeTopic, other) };
+  }
+  if (concepts.some(h => h.id === 'continue_plan') && short && content.length <= 2) {
+    const n = Math.min(6, (ctx.lastHorizon?.count || 1) + 2);
+    return { op: 'continue', detail: 'Continue the current plan', horizon: { unit: 'action', count: n }, rewrittenQuery: `What should I do over the next ${n} actions?` };
+  }
+  return null;
+}
+
+// ---- 12. Goals, problems, threats, comparisons, hypotheses --------------------------------
+
+function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'>, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
+  const goals: GIGoal[] = [];
+  const problems: GIProblem[] = [];
+  const threats: GIThreat[] = [];
+  const has = (id: GIConceptId) => frame.concepts.some(h => h.id === id);
+  const ev = (id: GIConceptId) => frame.concepts.find(h => h.id === id)?.evidence || id;
+  const stateMoney = frame.quantities.find(q => q.unit === '$' && q.role === 'state');
+  if (has('liquidity_low') || (stateMoney && stateMoney.value !== null && stateMoney.value < Math.max(1000, (world.reserveFloor || 0) * 2))) {
+    problems.push({ kind: 'low_liquidity', evidence: has('liquidity_low') ? ev('liquidity_low') : stateMoney!.raw, claimedAmount: stateMoney?.value ?? null });
+  }
+  if (has('debt_existing')) problems.push({ kind: 'debt', evidence: ev('debt_existing') });
+  if (has('rival_advantage')) problems.push({ kind: 'rival_advantage', evidence: ev('rival_advantage') });
+  const rivalIds = world.actors.filter(a => a.relation === 'rival').map(a => a.id);
+  const mentionedActor = frame.entities.find(e => e.kind === 'actor' && rivalIds.includes(e.id));
+  const urgency: GIThreat['urgency'] = /\b(about to|right now|now|immediately|nearly|almost|close)\b/.test(lowerText) ? 'immediate' : /\bsoon|next turn\b/.test(lowerText) ? 'soon' : 'normal';
+  const regionEnts = frame.entities.filter(e => e.kind === 'region');
+  if (has('region_threat')) {
+    const hit = frame.concepts.find(h => h.id === 'region_threat')!;
+    const clauseRegion = frame.clauses[hit.clause]?.tokens.find(t => t.entity?.kind === 'region')?.entity;
+    const region = clauseRegion || regionEnts[0];
+    threats.push({ regionId: region?.id || null, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: hit.evidence });
+    problems.push({ kind: 'region_threat', evidence: hit.evidence });
+    if (region) goals.push({ kind: 'prevent_loss', regionId: region.id, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
+  }
+  // "Keep NSW no matter what" / "need to protect NSW" → retain goal (+ implied threat).
+  frame.actions.filter(a => a.family === 'defend' && a.regionId && !a.negated).forEach(a => {
+    const veryHigh = /\bno matter what|at all costs|whatever it takes|must\b/.test(lowerText);
+    if (!goals.some(g => g.regionId === a.regionId)) goals.push({ kind: 'retain_region', regionId: a.regionId, priority: veryHigh ? 'very_high' : 'high', evidence: a.surface });
+    const r = world.regions[a.regionId!];
+    const isGoalStatement = /\b(need|have|got|want|must) to (protect|defend|hold|keep|save|secure)\b|\bno matter what\b|^(protect|defend|hold|keep|save|secure)\b/.test(lowerText) || /\bstop\b/.test(lowerText);
+    if (!threats.some(t => t.regionId === a.regionId) && isGoalStatement && (!r || r.controlledByPlayer || rivalIds.length)) {
+      threats.push({ regionId: a.regionId!, actorId: mentionedActor?.id || world.primaryRivalId, inferredActor: !mentionedActor, urgency, evidence: a.surface });
+    }
+  });
+  // Cash goals.
+  const target = frame.quantities.find(q => q.unit === '$' && q.role === 'target');
+  if (target) goals.push({ kind: target.additional || /\b(another|more|extra)\b/.test(lowerText) ? 'cash_increase' : (target.bound === 'min' || /\babove|over|reach\b/.test(lowerText) ? 'cash_reach' : 'cash_increase'), amount: target, priority: 'normal', evidence: target.raw });
+  else if (has('need_cash')) goals.push({ kind: 'cash_increase', amount: null, priority: urgency === 'immediate' ? 'high' : 'normal', evidence: ev('need_cash') });
+  const regionsQ = frame.quantities.find(q => q.unit === 'regions');
+  if (regionsQ && /\b(get|reach|control|need|want|trying|win|hold|own|take|have)\b/.test(lowerText)) {
+    goals.push({ kind: 'regions_reach', count: regionsQ.additional ? (world.win?.playerRegions || 0) + (regionsQ.value || 0) : (regionsQ.value || undefined), priority: 'normal', deadline: frame.time.some(t => t.kind === 'deadline') ? 'end_of_game' : null, evidence: regionsQ.raw });
+  }
+  if (has('protect_long_term')) goals.push({ kind: 'recover', priority: 'normal', evidence: ev('protect_long_term') });
+  if (has('win_path') && !goals.some(g => g.kind === 'regions_reach')) goals.push({ kind: 'win', priority: 'normal', evidence: ev('win_path') });
+  return { goals, problems, threats };
+}
+
+// ---- 13. Language semantic graph (what the player MEANS — separate from the evidence graph) ---
+
+function giBuildLanguageGraph(f: Pick<GISemanticFrame, 'threats' | 'problems' | 'goals' | 'constraints' | 'preferences' | 'actions' | 'entities' | 'hypotheses'>, world: GIWorld): GILanguageGraph {
+  const g: GILanguageGraph = { nodes: [{ id: 'player', kind: 'player', label: 'Player' }], edges: [] };
+  const node = (id: string, kind: GILanguageGraph['nodes'][number]['kind'], label: string) => { if (!g.nodes.some(n => n.id === id)) g.nodes.push({ id, kind, label }); return id; };
+  const edge = (from: string, to: string, relation: GILanguageGraph['edges'][number]['relation']) => { if (!g.edges.some(e => e.from === from && e.to === to && e.relation === relation)) g.edges.push({ from, to, relation }); };
+  f.threats.forEach(t => {
+    if (!t.regionId) return;
+    const r = node(`region:${t.regionId}`, 'region', getGILocationName(t.regionId));
+    if (t.actorId) edge(node(`actor:${t.actorId}`, 'actor', world.actors.find(a => a.id === t.actorId)?.name || t.actorId), r, 'threatens_control_of');
+    edge('player', node(`loss:${t.regionId}`, 'goal', `Loss(${t.regionId})`), 'wants_to_prevent');
+  });
+  if (f.problems.some(p => p.kind === 'low_liquidity') || f.goals.some(x => x.kind === 'cash_increase' || x.kind === 'cash_reach')) edge('player', node('cash', 'concept', 'Cash'), 'needs');
+  [...f.constraints, ...f.preferences].forEach(c => {
+    const id = c.subject === 'sell' ? `sell:${c.target || 'any'}` : c.subject;
+    const n = node(id, 'concept', c.target ? `${c.subject} ${c.target}` : c.subject);
+    edge('player', n, c.policy === 'forbidden' ? 'forbids' : c.policy === 'avoid' ? 'avoids' : c.policy === 'fallback_only' ? 'falls_back_on' : 'allows');
+  });
+  f.goals.forEach(x => edge('player', node(`goal:${x.kind}${x.regionId ? `:${x.regionId}` : ''}`, 'goal', x.kind), 'wants'));
+  f.actions.forEach(a => {
+    const target = a.regionId ? node(`region:${a.regionId}`, 'region', getGILocationName(a.regionId)) : a.resource ? node(`resource:${a.resource}`, 'resource', a.resource) : null;
+    if (target) edge('player', target, 'considers');
+  });
+  f.hypotheses.forEach((h, i) => edge('player', node(`hyp:${i}`, 'concept', h.text.slice(0, 40)), 'hypothesises'));
+  void f.entities;
+  return g;
+}
+
+// ---- 14. Capability scoring + candidate interpretations ----------------------------------
+
+function giScoreCapabilities(f: Omit<GISemanticFrame, 'capabilityScores' | 'alternativeFrames' | 'graph' | 'confidence'>, world: GIWorld, ctx: GIConversationContext): Partial<Record<GICapability, number>> {
+  const s: Partial<Record<GICapability, number>> = {};
+  const add = (c: GICapability, v: number) => { s[c] = Math.round(((s[c] || 0) + v) * 100) / 100; };
+  const has = (id: GIConceptId) => f.concepts.some(h => h.id === id);
+  const liquidity = f.problems.some(p => p.kind === 'low_liquidity');
+  const threat = f.threats.length > 0;
+  const request = has('recommendation_request') || f.conditions.some(c => !c.isStrategy) || f.requestKinds.includes('recommendation');
+  if (request) add('action_recommendation', 0.6);
+  if (has('severity')) { add('strategic_diagnosis', 0.75); if (liquidity) add('economy_diagnosis', 0.3); }
+  if (has('diagnosis_request')) { if (liquidity || /money|cash|broke/.test(f.normalizedText)) add('economy_diagnosis', 0.7); else add('strategic_diagnosis', 0.7); }
+  if (liquidity) { add('economy_diagnosis', 0.45); if (request) add('action_recommendation', 0.15); }
+  if (threat) { add('rival_assessment', 0.4); add('strategic_diagnosis', 0.3); if (request || f.goals.some(g => g.kind === 'retain_region' || g.kind === 'prevent_loss')) add('action_recommendation', 0.2); }
+  if (has('rival_advantage')) { add('strategic_diagnosis', 0.45); add('rival_assessment', 0.3); }
+  if (f.goals.some(g => g.kind === 'cash_increase' || g.kind === 'cash_reach')) { add('action_recommendation', 0.5); add('economy_diagnosis', 0.2); }
+  if (f.goals.some(g => g.kind === 'regions_reach' || g.kind === 'win')) { add('objective_status', 0.35); if (request || !f.isQuestion) add('sequence_plan', 0.25); }
+  if (f.goals.some(g => g.kind === 'retain_region') && !f.isQuestion && !request) add('action_recommendation', 0.45);
+  if (f.comparisons.some(c => c.kind === 'explicit')) add('comparison', 0.8);
+  else if (f.comparisons.length) add('comparison', 0.35);
+  if (has('worth_question')) { add('affordability', 0.35); add('comparison', 0.2); }
+  if (has('afford_question')) add('affordability', 0.8);
+  if (has('plan_request') || f.time.some(t => t.kind === 'horizon' && (t.count || 0) > 1)) add('sequence_plan', 0.6);
+  if (has('status_request')) add('player_status', 0.6);
+  if (has('history_request')) add('history', 0.5);
+  if (has('prediction_request') && f.entities.some(e => e.kind === 'actor')) add('rival_assessment', 0.5);
+  if (has('teammate_question')) add('teammate_status', 0.5);
+  if (has('system_question')) add('system_explain', 0.75);
+  if (has('teammate_question') && /\b(spend|spending|fund|funding|buy|invest)\b/i.test(f.normalizedText) && /\b(why|will not|won't|refuse|not)\b/i.test(f.normalizedText)) add('system_explain', 0.5);
+  // A bare limit ("no loans", "keep at least $2K") → the best move within that limit.
+  const contentConcepts = f.concepts.filter(h => !h.id.startsWith('style_') && h.id !== 'urgency');
+  if (!f.isQuestion && (f.constraints.length || f.preferences.length) && !contentConcepts.length && !f.actions.some(a => !a.negated && a.family !== 'borrow')) add('action_recommendation', 0.55);
+  if (f.goals.some(g => g.kind === 'regions_reach') && !f.isQuestion) add('sequence_plan', 0.3);
+  if (f.hypotheses.some(h => h.kind === 'causal')) {
+    if (/\b(money|cash|economy|broke|income|finances?|spending)\b/i.test(f.normalizedText)) add('economy_diagnosis', 0.6); else add('strategic_diagnosis', 0.5);
+  }
+  if (f.style === 'expanded' && !contentConcepts.length) add('action_recommendation', 0.5);
+  if (has('teammate_question') && /\b(spend|spending|fund|funding|buy|invest|will not|won't|refuse|why)\b/.test(f.normalizedText.toLowerCase())) add('system_explain', 0.45);
+  if (f.goals.some(g => g.kind === 'recover') && (request || liquidity || threat)) add('sequence_plan', 0.15);
+  if (f.conditions.some(c => c.isStrategy)) { add('sequence_plan', 0.4); add('simulation', 0.2); }
+  // Fragments with no explicit request: diagnose the stated situation rather than ignore it.
+  if (!f.isQuestion && !request && f.implicit) {
+    if (liquidity) add('economy_diagnosis', 0.35);
+    if (threat) add('rival_assessment', 0.35);
+  }
+  if (ctx.lastQueryType === 'comparison' && has('implicit_comparison') && !f.comparisons.length) add('comparison', 0.3);
+  void world;
+  return s;
+}
+
+const GI_AMBIGUOUS_PHRASES: Array<{ re: RegExp; candidates: Array<{ label: string; capability: GICapability; query: string; weight: (w: GIWorld) => number }> }> = [
+  { re: /^(can|how do|how can) i get out( of (this|here|it))?\??$/, candidates: [
+    { label: 'Recover my finances', capability: 'economy_diagnosis', query: 'How do I recover my cash position?', weight: w => (w.reserveFloor !== null && w.player.money < w.reserveFloor ? 0.7 : 0.42) },
+    { label: 'Leave this region', capability: 'action_recommendation', query: 'Should I travel out of {location}?', weight: () => 0.39 }
+  ] },
+  { re: /^(is it|is this) (good|bad|ok|okay)\??$/, candidates: [
+    { label: 'My overall position', capability: 'strategic_diagnosis', query: 'How bad is my position?', weight: () => 0.4 },
+    { label: 'The last recommendation', capability: 'comparison', query: 'Would that actually be worth it?', weight: () => 0.38 }
+  ] }
+];
+
+// ---- 15. Public entry: the semantic frame --------------------------------------------------
+
+export function parseGILanguage(query: string, world: GIWorld, ctxIn: GIConversationContext): GISemanticFrame {
+  const ctx = sanitizeGIConversationContext(ctxIn);
+  const lex = buildGILexicon(world);
+  const normalizedText = normalizeGILanguage(query);
+  const tokens = giTokenize(normalizedText);
+  tokens.forEach(t => { if (t.kind === 'word' && GI_FILLER_WORDS.has(t.t)) t.filler = true; });
+  // "kind of" / "sort of" are filler pairs.
+  tokens.forEach((t, i) => { if (t.t === 'of' && (tokens[i - 1]?.t === 'kind' || tokens[i - 1]?.t === 'sort')) t.filler = true; });
+  // "like" is content after "would/i'd/do" ("I'd like…").
+  tokens.forEach((t, i) => { if (t.t === 'like' && /^(would|do|i|you)$/.test(tokens[i - 1]?.t || '')) t.filler = false; });
+  const { corrections, uncorrected } = giRecoverTypos(tokens, lex, ctx);
+  giTagEntities(tokens, lex, query);
+  const canonicalText = tokens.map(t => t.raw).join(' ').replace(/\s+([.?!,;:])/g, '$1').replace(/\s+'s\b/g, "'s").trim();
+  const clauses = giSegmentClauses(tokens);
+  const lowerText = tokens.filter(t => t.kind !== 'punct').map(t => t.t).join(' ');
+
+  // Entities: grounded resolution on the recovered text (+ tags for fuzzy names / lower-case codes).
+  const resolution = resolveGIEntities(canonicalText, world);
+  const entities: GIEntityRef[] = [...resolution.entities];
+  tokens.forEach(t => { if (t.entity && !entities.some(e => e.kind === t.entity!.kind && e.id === t.entity!.id)) entities.push({ ...t.entity, confidence: t.correctedFrom ? Math.min(t.entity.confidence, 0.82) : t.entity.confidence }); });
+
+  const concepts = giDetectConcepts(clauses, world);
+  const actions = giDetectActions(clauses, world);
+  const allConstraints = giExtractConstraints(clauses, actions, world);
+  const quantities = giExtractQuantities(clauses);
+  // "my cash" inside a limit ("don't spend more than 25% of my cash") is not a status question.
+  if (quantities.some(q => q.role === 'floor' || q.role === 'ceiling' || q.role === 'target')) {
+    for (let i = concepts.length - 1; i >= 0; i--) if (concepts[i].id === 'status_request') concepts.splice(i, 1);
+  }
+  // Quantity-driven spending constraints (floors / ceilings resolved against live cash later).
+  quantities.forEach(q => {
+    if (q.role === 'floor') allConstraints.push({ subject: 'cash_floor', policy: 'minimum', strength: 1, amount: q, clause: q.clause, evidence: q.raw });
+    if (q.role === 'ceiling') allConstraints.push({ subject: 'cash_ceiling', policy: 'maximum', strength: 1, amount: q, clause: q.clause, evidence: q.raw });
+  });
+  const constraints = allConstraints.filter(c => c.strength >= 0.75 || c.policy === 'minimum' || c.policy === 'maximum');
+  const preferences = allConstraints.filter(c => !constraints.includes(c));
+  const time = giExtractTime(clauses, quantities, concepts);
+  const conditions = giExtractConditions(clauses, actions, world);
+  const negations = clauses.flatMap(c => c.tokens.some(t => /^(not|no|never|without|except)$/.test(t.t)) ? [{ clause: c.index, scope: c.text }] : []);
+  const references = detectGIReferences(lowerText);
+
+  // Comparisons: explicit "or"/"vs", or implicit (keep vs sell, stay vs go, act vs wait).
+  const comparisons: GISemanticFrame['comparisons'] = [];
+  if (/\b(or|vs|versus|instead of|rather than|compared to)\b/.test(lowerText) && (actions.length >= 2 || entities.filter(e => e.kind === 'region').length >= 2)) comparisons.push({ kind: 'explicit', options: actions.map(a => `${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`), evidence: 'or' });
+  else if (concepts.some(h => h.id === 'implicit_comparison') || /\bkeeping\b.*\b(gold|iron|resource)|\bleav(e|ing)\b.*\bfor\b|\bwaiting\b.*\b(smarter|better)\b/.test(lowerText)) comparisons.push({ kind: 'implicit', options: actions.map(a => a.family), evidence: concepts.find(h => h.id === 'implicit_comparison')?.evidence || 'implicit' });
+
+  // Causal language is a hypothesis to check, never repeated as fact.
+  const hypotheses: GISemanticFrame['hypotheses'] = [];
+  clauses.forEach(c => {
+    const ct = c.tokens.map(t => t.t).join(' ');
+    // Only a proposed CAUSE counts ("because I spent too much on infrastructure"), not a situation.
+    if (c.marker === 'because' && /\b(spent|spending|spend|bought|buying|built|building|invested|investing|infrastructure|project|projects|rail|loan|loans|debt|interest|maintenance|travel|travelling|traveling|fees|costs?)\b/.test(ct)) hypotheses.push({ text: c.text, kind: 'causal' });
+    else if (/\b(is|are) (killing|ruining|hurting|draining|wrecking|eating) my\b/.test(ct)) hypotheses.push({ text: c.text, kind: 'causal' });
+  });
+
+  const isQuestion = clauses.some(c => c.form === 'question') || /\?/.test(query);
+  // A problem stated together with a limit on what to do ("no debt pls, riley almost got nsw, im low
+  // on money") or a stated need ("I need to stop Riley…") is an implied request for advice.
+  const limitStated = allConstraints.some(c => c.subject !== 'cash_floor' && c.subject !== 'cash_ceiling' && (c.policy === 'forbidden' || c.policy === 'avoid' || c.policy === 'fallback_only'));
+  const needStated = /\b(need|have|got|want) to (stop|protect|defend|hold|keep|save|fix|get|make|raise|find)\b/.test(lowerText);
+  const impliedRequest = !isQuestion && (limitStated || needStated) && (concepts.some(h => h.id === 'liquidity_low' || h.id === 'region_threat' || h.id === 'need_cash') || actions.some(a => a.family === 'defend'));
+  const implicit = !isQuestion && !impliedRequest && !concepts.some(h => ['recommendation_request', 'severity', 'diagnosis_request', 'afford_question', 'plan_request', 'status_request'].includes(h.id));
+  const repair = giDetectRepair(clauses, entities, concepts, allConstraints, ctx, world, lowerText);
+  const base = { clauses, concepts, quantities, actions, time, entities };
+  const { goals, problems, threats } = giBuildGoalsProblems(base, world, lowerText);
+
+  const requestKinds: GISemanticFrame['requestKinds'] = [];
+  const req = (k: GISemanticFrame['requestKinds'][number]) => { if (!requestKinds.includes(k)) requestKinds.push(k); };
+  const has = (id: GIConceptId) => concepts.some(h => h.id === id);
+  if (has('recommendation_request') || impliedRequest || (!isQuestion && goals.length && !implicit)) req('recommendation');
+  if (has('diagnosis_request')) req('diagnosis');
+  if (has('severity')) req('severity');
+  if (comparisons.length) req('comparison');
+  if (has('plan_request')) req('plan');
+  if (has('status_request')) req('status');
+  if (has('explain_request')) req('explanation');
+  if (has('afford_question')) req('affordability');
+  if (has('prediction_request')) req('prediction');
+  if (has('history_request')) req('history');
+  if (/\bwhat (if|happens)\b|\bsimulate\b/.test(lowerText)) req('simulation');
+  if (/^(the|is the|so the)\b.*\?$/.test(query.trim()) || /^.{0,40}\$[\d,]+k?\?$/.test(query.trim())) req('confirmation');
+  // Problem statements with a recovery request ("help", "what now") are recommendations with diagnosis support.
+  if (!requestKinds.length && (goals.some(g => g.kind === 'retain_region' || g.kind === 'cash_increase') || (problems.length && has('recommendation_request')))) req('recommendation');
+
+  const style: GIResponseStyle = has('style_direct') ? 'direct' : has('style_concise') ? 'concise' : has('style_math') ? 'math' : has('style_expanded') ? 'expanded' : has('style_detailed') ? 'detailed' : 'standard';
+
+  // Verb canonicalisation for option building (region/resource-bound so "keep $2K" is untouched).
+  let optionText = canonicalText;
+  optionText = optionText.replace(/\b(dump|dumping|liquidate|offload|unload|cash out|get rid of|flip|be sold|sold)\b/gi, 'sell');
+  optionText = optionText.replace(/\bbe (defended|protected)\b/gi, 'defend');
+  optionText = optionText.replace(/\b(head over to|head to|head for|bounce to|make my way to|get to|go after|leave for|push into|expand into|expand to|fly to)\b/gi, 'travel to');
+  optionText = optionText.replace(/\b(try|go|going)\s+(?!to\b|into\b)(\S+)(\s+\S+)?/gi, (m0: string, _v: string, w1: string, w2: string | undefined) => {
+    const one = resolveGIEntities(w1.replace(/[?.!,]+$/, ''), world).entities.some(e => e.kind === 'region');
+    const two = !one && w2 && resolveGIEntities(`${w1} ${w2}`.replace(/[?.!,]+$/, ''), world).entities.some(e => e.kind === 'region');
+    return one || two ? `travel to ${w1}${w2 || ''}` : m0;
+  });
+  optionText = optionText.replace(/\b(shore up|save|keep|protect)\s+(?=\S)/gi, (m0, _v, off, str) => {
+    const rest = String(str).slice(off + m0.length, off + m0.length + 30);
+    return resolveGIEntities(rest.split(/[\s,.?!]+/).slice(0, 3).join(' '), world).entities.some(e => e.kind === 'region') ? 'defend ' : m0;
+  });
+  optionText = optionText.replace(/\bleave\s+(\S+)\s+and\s+(travel to|try)\b/gi, 'travel to');
+
+  const partial = {
+    originalQuery: query, normalizedText, canonicalText, optionText, corrections, uncorrected, clauses, concepts, requestKinds, goals, problems, threats,
+    entities, actions, constraints, preferences, conditions, time, quantities, comparisons, negations, references, hypotheses,
+    conversationRepair: repair, style, isQuestion, implicit
+  };
+  const capabilityScores = giScoreCapabilities(partial, world, ctx);
+
+  // Candidate interpretations for genuinely ambiguous short questions.
+  const alternativeFrames: GICandidateInterpretation[] = [];
+  const bare = lowerText.replace(/[?.!]/g, '').trim();
+  GI_AMBIGUOUS_PHRASES.forEach(a => {
+    if (!a.re.test(`${bare}?`) && !a.re.test(bare)) return;
+    a.candidates.forEach((c, i) => alternativeFrames.push({ id: `alt${i}`, label: c.label, capability: c.capability, confidence: Math.round(c.weight(world) * 100) / 100, query: c.query.replace('{location}', world.player.locationName) }));
+  });
+  alternativeFrames.sort((x, y) => y.confidence - x.confidence || x.id.localeCompare(y.id));
+
+  const graph = giBuildLanguageGraph({ threats, problems, goals, constraints, preferences, actions, entities, hypotheses }, world);
+  const words = tokens.filter(t => t.kind === 'word');
+  const unknownShare = words.length ? uncorrected.length / words.length : 0;
+  const languageConfidence = Math.max(0.2, Math.min(1, 0.95 - unknownShare * 0.8 - corrections.length * 0.03));
+  const entityConfidence = entities.length ? entities.reduce((s, e) => s + e.confidence, 0) / entities.length : 0.85;
+  const referenceConfidence = references.length ? (ctx.activeTopic || ctx.lastComparison.length ? 0.8 : 0.45) : 0.95;
+  const signal = concepts.length + actions.length + goals.length + constraints.length + (comparisons.length ? 1 : 0) + requestKinds.length;
+  const semanticFrameConfidence = Math.max(0.25, Math.min(0.97, 0.45 + Math.min(0.5, signal * 0.08) - (alternativeFrames.length > 1 && alternativeFrames[0].confidence - alternativeFrames[1].confidence < 0.15 ? 0.25 : 0)));
+  return {
+    ...partial,
+    capabilityScores,
+    alternativeFrames,
+    graph,
+    confidence: {
+      languageConfidence: Math.round(languageConfidence * 100) / 100,
+      entityConfidence: Math.round(entityConfidence * 100) / 100,
+      referenceConfidence: Math.round(referenceConfidence * 100) / 100,
+      semanticFrameConfidence: Math.round(semanticFrameConfidence * 100) / 100
+    }
+  };
+}
+
+/** Compact summary of a frame for comparisons, diagnostics and paraphrase tests. */
+export function summarizeGIFrame(f: GISemanticFrame): {
+  requests: string[]; problems: string[]; threatRegions: string[]; loanPolicy: GIConstraintPolicy | null; urgency: boolean;
+  goals: string[]; actions: string[]; constraints: string[]; horizon: string | null; style: GIResponseStyle;
+} {
+  const loan = [...f.constraints, ...f.preferences].find(c => c.subject === 'loan');
+  const horizon = f.time.find(t => t.kind === 'horizon');
+  return {
+    requests: [...f.requestKinds].sort(),
+    problems: Array.from(new Set(f.problems.map(p => p.kind))).sort(),
+    threatRegions: Array.from(new Set(f.threats.map(t => t.regionId || '?'))).sort(),
+    loanPolicy: loan ? loan.policy : null,
+    urgency: f.time.some(t => t.kind === 'urgency'),
+    goals: Array.from(new Set(f.goals.map(g => `${g.kind}${g.regionId ? ':' + g.regionId : ''}`))).sort(),
+    actions: Array.from(new Set(f.actions.filter(a => !a.negated).map(a => `${a.family}${a.regionId ? ':' + a.regionId : a.resource ? ':' + a.resource : ''}`))).sort(),
+    constraints: [...f.constraints, ...f.preferences].map(c => `${c.subject}${c.target ? ':' + c.target : ''}=${c.policy}`).sort(),
+    horizon: horizon ? `${horizon.count} ${horizon.unit}` : null,
+    style: f.style
+  };
+}
+
+// ----------------------------------------------------------------------------
 // 5. QUERY UNDERSTANDING
 // ----------------------------------------------------------------------------
 
@@ -101214,7 +102747,7 @@ export type GICapability =
   | 'player_status' | 'objective_status' | 'economy_diagnosis' | 'strategic_diagnosis' | 'affordability' | 'action_validation'
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
-  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine';
+  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -101232,23 +102765,58 @@ export interface GIQueryUnderstanding {
   outputType: GIAnswerShape;
   horizon: { unit: 'action' | 'turn'; count: number } | null;
   needs: { comparison: boolean; diagnosis: boolean; simulation: boolean; explanation: boolean; recommendation: boolean; control: boolean; clarification: boolean; prediction: boolean };
-  constraints: { avoidLoans: boolean; keepReserve: boolean; targetAmount: number | null; targetRegions: number | null; protectPlan: boolean };
+  constraints: GIUnderstoodConstraints;
   askIntent: AskGameIntent;
   askConfidence: number;
   controlRoute: Extract<GameIntelligenceRoute, { kind: 'control' }> | null;
   deficitReference: boolean;
   confidence: number;
+  /** GI 2.1: the semantic frame the understanding was reconstructed from. */
+  frame?: GISemanticFrame;
+  /** GI 2.1: the question actually analysed (after conversation repair). */
+  effectiveQuery?: string;
+  repair?: GIConversationRepair | null;
+  style?: GIResponseStyle;
+  /** GI 2.1: final weighted capability scores (cascade prior + semantic evidence). */
+  capabilityScores?: Partial<Record<GICapability, number>>;
+  confidences?: GIConfidenceDimensions;
+  /** Composed multi-action request ("sell … then deposit …"), validated later — never executed here. */
+  composedSteps?: GILanguageAction[];
+  /** GI 2.1: a strategic question that also needs AI Memory evidence (Ask-the-Game is the provider). */
+  memoryEvidence?: boolean;
+  /** GI 2.1: interpretations made from context that the player can correct ("Assuming you mean …"). */
+  assumptions?: string[];
+}
+
+export interface GIUnderstoodConstraints {
+  avoidLoans: boolean;
+  keepReserve: boolean;
+  targetAmount: number | null;
+  targetRegions: number | null;
+  protectPlan: boolean;
+  /** GI 2.1 structured policies (hard constraints and soft preferences). */
+  policies?: GIConstraint[];
+  loanPolicy?: GIConstraintPolicy | null;
+  /** Cash the player wants to keep (resolved against live cash). */
+  cashFloor?: number | null;
+  /** Most the player is willing to spend on one move. */
+  spendCeiling?: number | null;
+  /** Resources the player does not want sold (or only as a fallback). */
+  sellPolicies?: Record<string, GIConstraintPolicy>;
+  targetLabel?: string | null;
 }
 
 const GI_NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
 
 const GI_CUES = {
   why: /\bwhy\b/,
-  whatIf: /\b(what if|what happens if|what would happen|what happens when|simulate|if i (sell|buy|travel|go|take|build|fund|defend|deposit|wait|don'?t))\b/,
+  whatIf: /\b(what if|what happens if|what would happen|what happens when|simulate|if i (sell|buy|travel|go|take|build|fund|defend|deposit|wait|don'?t|do not))\b/,
   compare: /\b(or|vs|versus|compare|compared|better|which (one|option|is better|should)|rather than|instead of)\b/,
   plan: /\b(plan|over the next|next (two|three|four|\d+|few) (turns?|actions?|moves?|steps?)|path to|sequence|step[- ]by[- ]step|how (do|can) i (win|get to|reach|recover))\b/,
-  recommend: /\b(should i|what should|recommend|best (move|action|way|option|play)|what now|what do i do|fastest way|safest way|what'?s the (best|fastest|safest)|help me|what matters|how do i (win|recover|get))\b/,
-  diagnose: /\b(losing|behind|problem|wrong|struggling|collaps|running out|keep (running|losing)|stuck|blocking|blocked|can'?t|cannot|won'?t let|failing|pulling ahead|doing nothing|biggest (problem|issue|threat)|hurting)\b/,
+  recommend: /\b(should i|what should|recommend|best (move|action|way|option|play)|what now|what do i do|fastest way|safest way|what'?s the (best|fastest|safest)|what is the (best|fastest|safest)|help me|what matters|how do i (win|recover|get))\b/,
+  diagnose: /\b(losing|behind|problem|wrong|struggling|collaps|running out|keep (running|losing)|stuck|blocking|blocked|failing|pulling ahead|doing nothing|biggest (problem|issue|threat)|hurting)\b/,
+  /** "Why can't I…?" — an inability only signals a diagnosis inside a question ("Can't use loans." is a limit). */
+  inability: /\b(can'?t|cannot|can not|won'?t let|will not let)\b/,
   afford: /\b(afford|enough (money|cash)|pay for)\b/,
   predict: /\b(will|going to|likely|next turn|planning|predict|definitely|probably|intend|attack|threaten|threatening)\b/,
   history: /\b(last turn|happened|recently|recent|history|lately|last (few|\d+) (turns?|actions?))\b/,
@@ -101291,14 +102859,56 @@ function refFromOption(o: GIOption): GIEntityRef | null {
   return { kind: 'action', id: o.id, label: o.label, confidence: 0.9, source: 'context' };
 }
 
-/** Full query understanding. Pure and deterministic for identical (query, context, world). */
+/**
+ * Full query understanding. Pure and deterministic for identical (query, context, world).
+ * GI 2.1: meaning first — the semantic frame (typo recovery, clauses, concepts, constraints,
+ * quantities, repair) is built before the GI 2.0 cascade, which then runs on the recovered text.
+ */
 export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConversationContext): GIQueryUnderstanding {
   const ctx = sanitizeGIConversationContext(ctxIn);
-  const normalized = normalizeIntelligenceQuery(query);
-  const control = classifyGameIntelligenceRequest(query);
-  const ask = classifyAskGameIntent(parseAskGameNormalizedQuery(query));
-  const resolution = resolveGIEntities(query, world);
+  const frame = parseGILanguage(query, world, ctx);
+  const repair = frame.conversationRepair;
+  if (repair && repair.rewrittenQuery && repair.op !== 'cancel') {
+    // Conversation repair re-runs the previous question with the correction applied (one level only).
+    const repairedFrame = parseGILanguage(repair.rewrittenQuery, world, { ...ctx, lastQuery: null });
+    repairedFrame.conversationRepair = null;
+    const u = understandGIQueryFromFrame(repair.rewrittenQuery, repairedFrame, world, ctx);
+    return { ...u, originalQuery: query, effectiveQuery: repair.rewrittenQuery, repair, horizon: repair.horizon || u.horizon };
+  }
+  const u = understandGIQueryFromFrame(query, frame, world, ctx);
+  return repair ? { ...u, repair } : u;
+}
+
+/** Modes that hand authority to the AI (asking about them never changes control). */
+const GI_AUTHORITY_INCREASE_MODES: PlayerControlMode[] = ['assistant', 'rescue', 'autonomous'];
+
+function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world: GIWorld, ctx: GIConversationContext): GIQueryUnderstanding {
+  const text = frame.canonicalText || query;
+  const normalized = normalizeIntelligenceQuery(text);
+  let control = classifyGameIntelligenceRequest(text);
+  // Control safety: a question or musing about a higher-authority mode is discussion, not a command.
+  const discussion = /^(should|would|could|is|are|do|does|why|what|how|maybe|perhaps|i wonder|wonder)\b/.test(normalized) || /\b(maybe|might|would it|better|worth|good idea|useful|risky)\b/.test(normalized);
+  if (control.kind === 'control' && control.command === 'set_mode' && GI_AUTHORITY_INCREASE_MODES.includes(control.mode) && discussion && !/^(go|switch|set|turn|put|enable|activate|use|change)\b/.test(normalized)) {
+    control = { kind: 'ask_engine' };
+  }
+  const ask = classifyAskGameIntent(parseAskGameNormalizedQuery(text));
+  const resolution = resolveGIEntities(text, world);
   const entities = [...resolution.entities];
+  frame.entities.forEach(e => { if (!entities.some(x => x.kind === e.kind && x.id === e.id)) entities.push(e); });
+  // GI 2.1 entity salience: when several entities fit but one is clearly the conversation's topic
+  // (active topic, last mentioned, last compared), use it and say so; otherwise ask.
+  const assumptions: string[] = [];
+  for (let i = resolution.ambiguous.length - 1; i >= 0; i--) {
+    const amb = resolution.ambiguous[i];
+    const salient = [ctx.activeTopic, ctx.last[amb.kind], ...ctx.lastComparison, ...(ctx.topicStack || []).map(t => t.topic)]
+      .filter(Boolean)
+      .find(r => r!.kind === amb.kind && amb.options.some(o => o.id === r!.id));
+    if (salient) {
+      entities.push({ ...salient, confidence: 0.75, source: 'context' });
+      assumptions.push(`Assuming you mean ${salient.label} — say if you meant ${amb.options.filter(o => o.id !== salient.id).map(o => o.label).slice(0, 2).join(' or ')}.`);
+      resolution.ambiguous.splice(i, 1);
+    }
+  }
   const resolvedReferences: GIQueryUnderstanding['resolvedReferences'] = [];
   const unresolved: string[] = [];
   const ambiguous = [...resolution.ambiguous];
@@ -101346,7 +102956,8 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
     useRef('current topic', ctx.activeTopic);
   }
 
-  let options = resolveGIOptions(query, world, entities);
+  let options = resolveGIOptions(frame.optionText || text, world, entities);
+  options = extendGIOptionsFromFrame(options, frame, world, ctx, normalized);
   // "Would that actually be worth it?" → weigh the option under discussion against doing nothing.
   if (/\bworth\b/.test(normalized) && options.length < 2) {
     const topicId = ctx.lastSimulation?.id || (ctx.activeTopic?.kind === 'action' ? ctx.activeTopic.id : null);
@@ -101366,27 +102977,17 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
 
   const needs = {
     comparison: options.length >= 2 || (cue('compare') && options.length >= 2),
-    simulation: cue('whatIf'),
-    diagnosis: cue('diagnose') || (cue('why') && !options.length && !mentionsMode && (/\b(i|my|me)\b/.test(normalized))),
+    simulation: cue('whatIf') || (frame.style === 'math' && options.length === 1 && Boolean(options[0].intent)),
+    diagnosis: cue('diagnose') || (cue('inability') && frame.isQuestion) || (cue('why') && !options.length && !mentionsMode && (/\b(i|my|me)\b/.test(normalized))),
     explanation: cue('why'),
     recommendation: cue('recommend') || cue('plan'),
     control: control.kind === 'control',
     clarification: false,
     prediction: (hasRival || /\b(rival|opponent)\b/.test(normalized)) && cue('predict') && !cue('history')
   };
-  const constraints = {
-    avoidLoans: /\bwithout (a |taking (a |out a )?)?(loan|borrowing|debt)\b|\bno loans?\b/.test(normalized),
-    keepReserve: /\b(reserve|safe|safely|safest|without going broke)\b/.test(normalized),
-    targetAmount: (() => {
-      const m = normalized.match(/\$?\s?(\d[\d,]*)(\s?k)?\b/);
-      if (!m || !/\$|k\b|thousand|money|cash|dollars/.test(normalized)) return null;
-      const n = parseInt(m[1].replace(/,/g, ''), 10) * (m[2] ? 1000 : 1);
-      return Number.isFinite(n) && n > 0 ? n : null;
-    })(),
-    targetRegions: (() => { const m = normalized.match(/\b(\d+|two|three|four|five|six) regions?\b/); return m ? (GI_NUMBER_WORDS[m[1]] ?? parseInt(m[1], 10)) : null; })(),
-    protectPlan: cue('protectPlan')
-  };
-  const horizon = detectGIHorizon(normalized);
+  const constraints = buildGIUnderstoodConstraints(frame, world, normalized, cue('protectPlan'));
+  const frameHorizon = frame.time.find(t => t.kind === 'horizon' && t.unit && t.count);
+  const horizon = detectGIHorizon(normalized) || (frameHorizon ? { unit: frameHorizon.unit!, count: Math.min(6, frameHorizon.count!) } : null);
 
   let primary: GICapability = 'ask_engine';
   const supporting: GICapability[] = [];
@@ -101401,11 +103002,12 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
   const targetsReference = unresolved.includes('it') && /\b(build|fund|afford|buy|accept|do|pay for)\b/.test(normalized);
   if (needs.control && control.kind === 'control') {
     primary = 'control';
-  } else if (delegatedMemoryIntents.includes(ask.intent) && ask.confidence >= 0.5 && isMemoryAwareAskIntent(ask.intent) && !needs.comparison && !needs.simulation && !cue('afford')) {
+  } else if (delegatedMemoryIntents.includes(ask.intent) && ask.confidence >= 0.5 && isMemoryAwareAskIntent(ask.intent) && !needs.comparison && !needs.simulation && !cue('afford')
+    && !(frame.concepts.some(h => h.id === 'recommendation_request') && /\b(should i|what should|change (my )?strategy|what now)\b/.test(normalized))) {
     primary = 'ask_engine';
   } else if (targetsReference) {
     primary = cue('afford') ? 'affordability' : 'action_validation';
-  } else if (mentionsMode && (cue('why') || cue('rules') || /\b(risky|safe|what does|difference|mean)\b/.test(normalized))) {
+  } else if (mentionsMode && (cue('why') || cue('rules') || /\b(risky|safe|what does|difference|mean|better|worth|useful|good idea|should i)\b/.test(normalized) || frame.concepts.some(h => h.id === 'implicit_comparison'))) {
     primary = 'control_explain';
   } else if (needs.comparison) {
     primary = 'comparison';
@@ -101472,6 +103074,45 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
     primary = 'objective_status';
   }
 
+  // ---- GI 2.1: weighted capability scoring (cascade prior + semantic frame evidence) ----
+  const cascadePrimary = primary;
+  const locked = ['control', 'control_explain', 'comparison', 'simulation', 'settings_lookup'].includes(primary) || targetsReference
+    || (primary === 'ask_engine' && delegatedMemoryIntents.includes(ask.intent) && ask.confidence >= 0.5)
+    || (primary === 'rival_assessment' && needs.prediction);
+  const scores: Partial<Record<GICapability, number>> = { ...frame.capabilityScores };
+  const bump = (c: GICapability, v: number) => { scores[c] = Math.round(((scores[c] || 0) + v) * 100) / 100; };
+  const weakPrior = ['region_info', 'market_info', 'project_info', 'contract_info', 'player_status', 'objective_status', 'history', 'teammate_status'].includes(primary);
+  if (primary !== 'ask_engine') bump(primary, locked ? 5 : weakPrior ? 0.3 : 0.6);
+  else if (ask.confidence >= 0.6) bump('ask_engine', 0.5);
+  supporting.forEach(c => bump(c, 0.2));
+  if (!locked) {
+    const ranked = (Object.keys(scores) as GICapability[]).filter(c => (scores[c] || 0) > 0)
+      .sort((a, b) => (scores[b]! - scores[a]!) || (a === cascadePrimary ? -1 : b === cascadePrimary ? 1 : a.localeCompare(b)));
+    // Comparison / simulation need real options; they are never chosen from wording alone.
+    const needsOptions = (c: GICapability) => (c === 'comparison' && options.length < 2) || (c === 'simulation' && !options.length);
+    ranked.splice(0, ranked.length, ...ranked.filter(c => !needsOptions(c)));
+    const best = ranked[0];
+    if (best && best !== primary && (scores[best] || 0) >= 0.45) {
+      primary = best;
+      supporting.splice(0, supporting.length);
+    }
+    // Supporting capabilities from semantic evidence (bounded; the planner budget still applies).
+    ranked.filter(c => c !== primary && (scores[c] || 0) >= 0.3 && c !== 'ask_engine').slice(0, 4).forEach(c => addSupport(c));
+    if (cascadePrimary !== primary && cascadePrimary !== 'ask_engine' && (scores[cascadePrimary] || 0) >= 0.3) addSupport(cascadePrimary);
+    if (['action_recommendation', 'strategic_diagnosis', 'economy_diagnosis', 'sequence_plan'].includes(primary)) addSupport('objective_status', 'conflict_check');
+    if (supporting.length > 5) supporting.splice(5);
+  }
+  if (primary === 'action_recommendation' || primary === 'sequence_plan') needs.recommendation = true;
+  if (primary === 'strategic_diagnosis' || primary === 'economy_diagnosis' || supporting.includes('strategic_diagnosis') || supporting.includes('economy_diagnosis')) {
+    if (frame.problems.length || frame.concepts.some(h => h.id === 'severity' || h.id === 'diagnosis_request')) needs.diagnosis = true;
+  }
+  // Composed multi-action requests ("sell … then put $3K into NSW") → a validated sequence.
+  const composedSteps = frame.actions.filter(a => !a.negated && ['sell', 'defend', 'travel', 'buy', 'fund'].includes(a.family));
+  const isComposed = composedSteps.length >= 2 && new Set(composedSteps.map(a => a.step)).size >= 2 && !needs.comparison && primary !== 'control';
+  if (isComposed) { primary = 'sequence_plan'; addSupport('simulation'); }
+  // A conditional instruction ("if Riley attacks NSW, defend it; otherwise…") is a strategy to explain and validate.
+  if (!isComposed && frame.conditions.some(c => c.isStrategy) && primary !== 'control') { primary = 'sequence_plan'; needs.prediction = false; addSupport('rival_assessment'); }
+
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
     (ambiguous.length > 0 && !['control', 'control_explain', 'comparison'].includes(primary))
@@ -101486,7 +103127,8 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
     rival_assessment: needs.prediction ? 'prediction' : 'history', economy_diagnosis: 'diagnosis', strategic_diagnosis: 'diagnosis',
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
-    player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual'
+    player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
+    system_explain: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -101520,8 +103162,127 @@ export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConver
     askConfidence: ask.confidence,
     controlRoute: control.kind === 'control' ? control : null,
     deficitReference: refs.includes('deficit'),
-    confidence: Math.round(confidence * 100) / 100
+    confidence: Math.round(Math.min(confidence, 0.5 + frame.confidence.semanticFrameConfidence * 0.5) * 100) / 100,
+    frame,
+    effectiveQuery: query,
+    repair: null,
+    style: frame.style,
+    capabilityScores: scores,
+    confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
+    composedSteps: isComposed ? composedSteps : undefined,
+    assumptions,
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain'].includes(primary)
   };
+}
+
+/** Structured constraints: GI 2.0 flags kept for compatibility, GI 2.1 policies added. */
+function buildGIUnderstoodConstraints(frame: GISemanticFrame, world: GIWorld, normalized: string, protectPlan: boolean): GIUnderstoodConstraints {
+  const policies = [...frame.constraints, ...frame.preferences];
+  const loan = policies.find(c => c.subject === 'loan') || null;
+  const legacyNoLoan = /\bwithout (a |taking (a |out a )?)?(loan|borrowing|debt)\b|\bno loans?\b/.test(normalized);
+  const loanPolicy: GIConstraintPolicy | null = loan ? loan.policy : (legacyNoLoan ? 'forbidden' : null);
+  const floorQ = frame.quantities.find(q => q.role === 'floor');
+  const ceilQ = frame.quantities.find(q => q.role === 'ceiling');
+  const sellPolicies: Record<string, GIConstraintPolicy> = {};
+  policies.filter(c => c.subject === 'sell').forEach(c => { sellPolicies[c.target || '*'] = c.policy; });
+  const cashGoal = frame.goals.find(g => (g.kind === 'cash_increase' || g.kind === 'cash_reach') && g.amount);
+  let targetAmount: number | null = null;
+  let targetLabel: string | null = null;
+  if (cashGoal) {
+    const amt = resolveGIQuantityAmount(cashGoal.amount, world) || 0;
+    if (cashGoal.kind === 'cash_reach') { targetAmount = Math.max(0, amt - world.player.money); targetLabel = `reaching $${amt.toLocaleString()}`; }
+    else { targetAmount = amt; targetLabel = `another $${amt.toLocaleString()}`; }
+  } else {
+    const m = normalized.match(/\$?\s?(\d[\d,]*)(\s?k)?\b/);
+    if (m && /\$|k\b|thousand|money|cash|dollars/.test(normalized) && !frame.quantities.some(q => q.role === 'state' || q.role === 'floor' || q.role === 'ceiling' || q.role === 'amount')) {
+      const n = parseInt(m[1].replace(/,/g, ''), 10) * (m[2] ? 1000 : 1);
+      if (Number.isFinite(n) && n > 0) targetAmount = n;
+    }
+  }
+  const regionsGoal = frame.goals.find(g => g.kind === 'regions_reach' && g.count);
+  const legacyRegions = (() => { const m = normalized.match(/\b(\d+|two|three|four|five|six) regions?\b/); return m ? (GI_NUMBER_WORDS[m[1]] ?? parseInt(m[1], 10)) : null; })();
+  return {
+    avoidLoans: loanPolicy === 'forbidden',
+    keepReserve: /\b(reserve|safe|safely|safest|without going broke)\b/.test(normalized) || Boolean(floorQ) || frame.goals.some(g => g.kind === 'recover'),
+    targetAmount,
+    targetRegions: regionsGoal?.count ?? legacyRegions,
+    protectPlan: protectPlan || frame.concepts.some(h => h.id === 'protect_long_term'),
+    policies,
+    loanPolicy,
+    cashFloor: floorQ ? resolveGIQuantityAmount(floorQ, world) : null,
+    spendCeiling: ceilQ ? resolveGIQuantityAmount(ceilQ, world) : null,
+    sellPolicies,
+    targetLabel
+  };
+}
+
+/**
+ * Implicit and single-option comparisons, grounded in real options:
+ *  "Should I go WA?" → travel WA vs wait; "Would I be better off keeping Gold?" → sell Gold vs keep;
+ *  "Is Victoria really worth leaving NSW for?" → travel VIC vs hold NSW; "Why not just take the loan?"
+ *  → the loan vs the current recommendation; "Would waiting be smarter?" → topic action vs wait.
+ */
+function extendGIOptionsFromFrame(optionsIn: GIOption[], frame: GISemanticFrame, world: GIWorld, ctx: GIConversationContext, normalized: string): GIOption[] {
+  // Options the player explicitly ruled out ("I don't want to loan anything") are constraints, not choices.
+  const ruledOut = (o: GIOption) => [...frame.constraints, ...frame.preferences].some(c => (c.policy === 'forbidden' || c.policy === 'avoid') && (
+    (c.subject === 'loan' && o.kind === 'candidate' && o.candidateId && /loan|credit/.test(giCandidateList(world).find(x => x.id === o.candidateId)?.actionType || ''))
+    || (c.subject === 'loan' && o.kind === 'loan')
+    || (c.subject === 'sell' && (o.kind === 'sell' || o.kind === 'sell_all') && (!c.target || c.target === o.resource || o.kind === 'sell_all'))
+  ));
+  const options = optionsIn.filter(o => !ruledOut(o));
+  if (options.length >= 2) return options;
+  const wait = () => buildGIOption('wait', 'wait', world, []);
+  const regionRef = (code: string): GIEntityRef[] => (world.regions[code] ? [{ kind: 'region', id: code, label: world.regions[code].name, confidence: 1, source: 'context' }] : []);
+  const leave = frame.actions.find(a => a.family === 'leave' && a.regionId);
+  const travel = frame.actions.find(a => a.family === 'travel' && a.regionId && a.regionId !== leave?.regionId)
+    || (leave ? { regionId: frame.entities.find(e => e.kind === 'region' && e.id !== leave.regionId)?.id } : null);
+  if (leave && travel?.regionId) {
+    const go = buildGIOption('travel', 'travel', world, regionRef(travel.regionId));
+    const hold = buildGIOption('deposit', 'defend', world, regionRef(leave.regionId!));
+    const out = [go, hold].filter(Boolean) as GIOption[];
+    if (out.length === 2) return out;
+  }
+  if (/\bkeep(ing)?\b/.test(normalized) && frame.concepts.some(h => h.id === 'implicit_comparison')) {
+    const res = frame.entities.find(e => e.kind === 'resource');
+    if (res) {
+      const sell = buildGIOption('sell', 'sell', world, [res]);
+      const keep = wait();
+      if (sell && keep) return [sell, { ...keep, label: `Keep your ${res.label}` }];
+    }
+  }
+  if (/\bwhy not( just)?\b/.test(normalized) && options.length === 1) {
+    const recId = ctx.lastRecommendation?.id;
+    const rec = recId ? (rebuildGIOptionFromId(recId, world) || (() => {
+      const c = giCandidateList(world).find(x => x.id === recId);
+      return c ? buildGIOption(/loan/.test(c.actionType) ? 'loan' : /challenge/.test(c.actionType) ? 'challenge' : 'work', c.actionType, world, []) : null;
+    })()) : null;
+    const top = world.actionSet?.recommended;
+    const alt = rec || (top ? { id: `opt_cand_${top.id}`, kind: 'candidate' as const, label: top.label, candidateId: top.id, legal: top.legal && world.isHumanTurn, blockReason: top.blockReason, cashCost: top.costEstimate || 0, apCost: top.apCost || 1, navigation: top.navigation, intent: top.execution?.kind === 'copilot_candidate' ? { actionType: top.actionType, parameters: (top.execution as any).candidate?.parameters || {}, targetId: (top.execution as any).candidate?.targetId, costEstimate: top.costEstimate || 0 } : undefined } : null);
+    if (alt && alt.id !== options[0].id) return [options[0], alt];
+  }
+  if (/\b(wait|waiting|hold off)\b/.test(normalized) && /\b(smarter|better|wiser|safer)\b/.test(normalized) && options.length <= 1) {
+    const topicId = ctx.lastRecommendation?.id || ctx.lastSimulation?.id || (ctx.activeTopic?.kind === 'action' ? ctx.activeTopic.id : null) || world.actionSet?.recommended?.id || null;
+    const prior = topicId ? (rebuildGIOptionFromId(topicId, world) || (() => {
+      const c = giCandidateList(world).find(x => x.id === topicId);
+      return c ? { id: `opt_cand_${c.id}`, kind: 'candidate' as const, label: c.label, candidateId: c.id, legal: c.legal && world.isHumanTurn, blockReason: c.blockReason, cashCost: c.costEstimate || 0, apCost: c.apCost || 1, navigation: c.navigation } as GIOption : null;
+    })()) : null;
+    const w = wait();
+    if (prior && w) return [prior, w];
+  }
+  // A single concrete action posed as a decision ("should I go WA?", "sell gold?", "sell my gold",
+  // "so uh should I maybe defend NSW?") → the action vs waiting. Filler never hides the decision.
+  const contentWords = frame.clauses.flatMap(c => c.tokens).filter(t => !t.filler && t.kind !== 'punct').map(t => t.t);
+  const contentText = contentWords.join(' ');
+  const firstClause = frame.clauses[0];
+  const decision = /^(should|do|would|is it (smart|good|wise|worth)|can i|shall)\b/.test(contentText)
+    || /\b(should i|you think i should|is it (smart|worth|wise|good) to)\b/.test(contentText)
+    || (/\?$/.test(frame.originalQuery.trim()) && contentWords.length <= 4)
+    || (firstClause?.form === 'imperative' && frame.clauses.length === 1 && contentWords.length <= 5 && frame.actions.length === 1 && !frame.requestKinds.length);
+  if (options.length === 1 && decision && options[0].intent && !['wait', 'region', 'candidate'].includes(options[0].kind) && !/\b(what (happens|if)|afford|how much|cost)\b/.test(normalized)) {
+    const w = wait();
+    if (w) return [options[0], w];
+  }
+  return options;
 }
 
 // ----------------------------------------------------------------------------
@@ -101533,7 +103294,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state';
 
 export interface GIPlanStep {
   id: string;
@@ -101567,7 +103328,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   history: ['observed_history'],
   settings_lookup: ['settings_search'],
   control: ['control_state'],
-  control_explain: ['control_state']
+  control_explain: ['control_state'],
+  system_explain: ['system_state']
 };
 
 export interface GIQueryPlan {
@@ -101583,13 +103345,15 @@ export interface GIQueryPlan {
   expectedAnswer: GIAnswerShape;
   fallback: 'ask_engine' | 'insufficient';
   confidence: number;
+  /** State domains whose change invalidates this plan's answer. */
+  fingerprintDomains: GIFingerprintDomain[];
 }
 
 const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team'
 };
 
 function giHash(text: string): string {
@@ -101627,7 +103391,9 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('objective_status') || u.primary === 'strategic_diagnosis') add('objective_state', {}, { purpose: 'Current goal and win-condition progress' });
     if (want('project_info') || (want('affordability') && (ids('project').length || u.ambiguous.some(a => a.kind === 'project')))) add('project_state', { ids: ids('project') }, { purpose: 'Real project cost, funding and status' });
     if (want('contract_info') || (want('action_validation') && ids('contract').length)) add('contract_state', { ids: ids('contract') }, { purpose: 'Contract requirements and status' });
-    if (want('region_info') || u.options.some(o => o.regionId)) add('region_state', { ids: Array.from(new Set([...ids('region'), ...u.options.map(o => o.regionId).filter(Boolean)])) }, { purpose: 'Region control, deposits and travel cost' });
+    const threatRegions = (u.frame?.threats || []).map(t => t.regionId).filter(Boolean) as string[];
+    if (want('region_info') || u.options.some(o => o.regionId) || threatRegions.length) add('region_state', { ids: Array.from(new Set([...ids('region'), ...u.options.map(o => o.regionId).filter(Boolean), ...threatRegions])) }, { purpose: 'Region control, deposits and travel cost' });
+    if (threatRegions.length && !want('rival_assessment') && !want('strategic_diagnosis')) add('threat_scan', { ids: ids('actor') }, { purpose: 'Observable rival position and threatened regions' });
     if (want('market_info') || u.options.some(o => o.kind === 'sell' || o.kind === 'sell_all' || o.kind === 'buy')) add('market_state', { ids: ids('resource') }, { purpose: 'Market prices and holdings' });
     if (want('teammate_status')) add('actor_state', { ids: ids('actor').length ? ids('actor') : world.teammateIds.slice(0, 1), relation: 'teammate' }, { purpose: 'Visible teammate state' });
     const rankId = (want('action_recommendation') || want('sequence_plan') || want('strategic_diagnosis') || want('economy_diagnosis') || want('conflict_check'))
@@ -101650,6 +103416,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     }
     if (want('conflict_check') || u.queryType === 'compound') add('conflict_scan', {}, { dependsOn: rankId ? [rankId] : [], optional: true, purpose: 'Look for systems recommending conflicting behaviour' });
     if (want('control_state' as any)) add('control_state');
+    if (want('system_explain')) add('system_state', {}, { purpose: 'Read-only summaries of team, treasury, governor, Guardian, Auto Mode and Co-Pilot' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -101684,7 +103451,8 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     droppedSteps: dropped,
     expectedAnswer: u.outputType,
     fallback: u.primary === 'ask_engine' ? 'ask_engine' : 'insufficient',
-    confidence: u.confidence
+    confidence: u.confidence,
+    fingerprintDomains: giPlanFingerprintDomains(steps, u)
   };
 }
 
@@ -101763,20 +103531,65 @@ export function spendableCash(world: GIWorld): number {
   return Math.max(0, world.player.money - (world.reserveFloor || 0));
 }
 
+/** The resource a canonical sell candidate would sell (if any). */
+function giCandidateResource(c: ContextualActionCandidate): string | null {
+  const p = (c.execution as any)?.candidate?.parameters || {};
+  return p.item || p.resource || null;
+}
+
+export interface GIPolicyFilterResult {
+  allowed: ContextualActionCandidate[];
+  /** Soft preference ("rather not") — ranked after everything allowed. */
+  avoided: Array<{ candidate: ContextualActionCandidate; reason: string }>;
+  /** Last resort — only used when nothing allowed can do the job. */
+  fallback: Array<{ candidate: ContextualActionCandidate; reason: string }>;
+  removed: Array<{ candidate: ContextualActionCandidate; reason: string }>;
+}
+
+/**
+ * Apply the player's language constraints to canonical candidates. Nothing is invented here: the
+ * Contextual Action System still ranks; this only removes, defers or keeps its candidates.
+ */
+export function applyGIConstraintPolicies(cands: ContextualActionCandidate[], constraints: GIUnderstoodConstraints, world: GIWorld): GIPolicyFilterResult {
+  const out: GIPolicyFilterResult = { allowed: [], avoided: [], fallback: [], removed: [] };
+  const loanPolicy = constraints.loanPolicy || (constraints.avoidLoans ? 'forbidden' : null);
+  const floor = Math.max(constraints.cashFloor || 0, 0);
+  cands.forEach(c => {
+    const cost = c.costEstimate || 0;
+    if (/loan|credit|borrow/.test(c.actionType) && loanPolicy) {
+      if (loanPolicy === 'forbidden') { out.removed.push({ candidate: c, reason: 'you ruled out loans' }); return; }
+      if (loanPolicy === 'fallback_only') { out.fallback.push({ candidate: c, reason: 'a loan is your last resort' }); return; }
+      if (loanPolicy === 'avoid') { out.avoided.push({ candidate: c, reason: "you'd rather not borrow" }); return; }
+    }
+    const res = /sell/.test(c.actionType) ? giCandidateResource(c) : null;
+    const sellPolicy = constraints.sellPolicies ? (res && constraints.sellPolicies[res]) || (/sell/.test(c.actionType) ? constraints.sellPolicies['*'] : undefined) : undefined;
+    if (sellPolicy === 'forbidden') { out.removed.push({ candidate: c, reason: `you don't want to sell ${res || 'anything'}` }); return; }
+    if (sellPolicy === 'fallback_only') { out.fallback.push({ candidate: c, reason: `selling ${res || 'resources'} is your last resort` }); return; }
+    if (sellPolicy === 'avoid') { out.avoided.push({ candidate: c, reason: `you'd rather not sell ${res || 'resources'}` }); return; }
+    if (floor > 0 && cost > 0 && world.player.money - cost < floor) { out.removed.push({ candidate: c, reason: `it would take you below the $${floor.toLocaleString()} you want to keep` }); return; }
+    if (constraints.spendCeiling && cost > constraints.spendCeiling) { out.removed.push({ candidate: c, reason: `it costs more than the $${constraints.spendCeiling.toLocaleString()} you want to spend` }); return; }
+    out.allowed.push(c);
+  });
+  return out;
+}
+
 /** Plan a legal sequence from the canonical ranking, bounded by AP, cash and reserve. */
 export function planGISequence(world: GIWorld, horizon: GIQueryUnderstanding['horizon'], constraints: GIQueryUnderstanding['constraints']): {
   steps: ContextualActionCandidate[]; apBudget: number | null; skipped: Array<{ label: string; reason: string }>; turnsCovered: number;
 } {
-  const ranked = (world.actionSet?.ranked || []).filter(c => c.execution?.kind === 'copilot_candidate' && c.legal);
+  const legalRanked = (world.actionSet?.ranked || []).filter(c => c.execution?.kind === 'copilot_candidate' && c.legal);
+  const policy = applyGIConstraintPolicies(legalRanked, constraints, world);
+  // Allowed first, then soft-avoided; last-resort moves only when nothing allowed remains.
+  const ranked = [...policy.allowed, ...policy.avoided.map(x => x.candidate), ...(policy.allowed.length ? [] : policy.fallback.map(x => x.candidate))];
   const apAvail = world.player.apRemaining;
   const perTurn = world.player.apTotal || apAvail || 3;
   const wantActions = horizon ? (horizon.unit === 'turn' ? Math.min(6, horizon.count * perTurn) : horizon.count) : Math.min(3, apAvail ?? 3);
   const apBudget = apAvail === null ? null : Math.min(apAvail, wantActions);
   let cash = world.player.money;
-  const floor = constraints.keepReserve || world.reserveFloor ? (world.reserveFloor || 0) : 0;
+  const floor = Math.max(constraints.keepReserve || world.reserveFloor ? (world.reserveFloor || 0) : 0, constraints.cashFloor || 0);
   let ap = apBudget ?? wantActions;
   const steps: ContextualActionCandidate[] = [];
-  const skipped: Array<{ label: string; reason: string }> = [];
+  const skipped: Array<{ label: string; reason: string }> = [...policy.removed.map(x => ({ label: x.candidate.label, reason: x.reason })), ...(policy.allowed.length ? policy.fallback.map(x => ({ label: x.candidate.label, reason: x.reason })) : [])];
   const families = new Set<string>();
   for (const c of ranked) {
     if (steps.length >= Math.min(wantActions, 4)) break;
@@ -101854,9 +103667,23 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
       const codes: string[] = step.args.ids?.length ? step.args.ids : [P.location].filter(Boolean);
       const facts: GIFact[] = [];
       const data: GIRegionView[] = [];
+      let territoryHits = 0;
       codes.forEach(code => {
         const r = world.regions[code];
-        if (!r) return;
+        if (!r) {
+          // External territories come from the canonical territory registry (not region control).
+          const t = getGITerritory(code);
+          if (!t) return;
+          const tn = g.node(`region:${code}`, 'region', t.name);
+          const add = (f: GIFact) => { facts.push(f); g.fact(f, tn); };
+          add(fact(`territory.${code}.name`, 'External territory', t.name, 'External territory registry', 'world'));
+          add(fact(`territory.${code}.resources`, `Resources in ${t.name}`, (t.resources || []).join(', ') || 'none listed', 'External territory registry', 'world'));
+          if (typeof t.travelCost === 'number') add(fact(`territory.${code}.travel`, `Travel cost to ${t.name}`, t.travelCost, 'External territory registry', 'rules', { unit: '$' }));
+          if (typeof t.unlockConditions?.minLevel === 'number') add(fact(`territory.${code}.minLevel`, `Level needed for ${t.name}`, t.unlockConditions.minLevel, 'External territory registry', 'rules'));
+          if (typeof t.unlockConditions?.minCash === 'number') add(fact(`territory.${code}.minCash`, `Cash needed to unlock ${t.name}`, t.unlockConditions.minCash, 'External territory registry', 'rules', { unit: '$' }));
+          territoryHits += 1;
+          return;
+        }
         data.push(r);
         const rn = g.node(`region:${code}`, 'region', r.name);
         const add = (f: GIFact) => { facts.push(f); g.fact(f, rn); };
@@ -101871,7 +103698,7 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         if (r.controlledByRival && world.primaryRivalId) g.edge(g.node(`actor:${world.primaryRivalId}`, 'actor', world.actors.find(a => a.id === world.primaryRivalId)?.name || 'Rival'), rn, 'controls');
         if (world.win?.regionsTarget) g.edge(rn, 'win', 'contributes_to');
       });
-      return { ...base, ok: data.length > 0, data, facts, error: data.length ? undefined : 'Region not found' };
+      return { ...base, ok: data.length > 0 || territoryHits > 0, data, facts, error: data.length || territoryHits ? undefined : 'Region not found' };
     }
     case 'market_state': {
       const ids: string[] = step.args.ids?.length ? step.args.ids : Object.keys(P.inventory);
@@ -102072,6 +103899,22 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
     }
     case 'conflict_scan':
       return { ...base, ok: true, data: null, facts: [] };
+    case 'system_state': {
+      const sys = world.systems;
+      if (!sys) return { ...base, ok: false, unavailable: true, error: 'System summaries are unavailable in this view', data: null, facts: [] };
+      const facts: GIFact[] = [];
+      const push = (f: GIFact) => { facts.push(f); g.fact(f); };
+      if (sys.team) {
+        if (sys.team.treasuryBalance !== null) push(fact('sys.treasury', 'Team treasury balance', sys.team.treasuryBalance, 'Team Treasury', 'team', { unit: '$' }));
+        if (sys.team.treasuryReserve !== null) push(fact('sys.treasuryReserve', 'Team treasury reserve', sys.team.treasuryReserve, 'Team Treasury', 'team', { unit: '$' }));
+        if (sys.team.activePlan) push(fact('sys.planReserved', 'Cash reserved by the active team plan', sys.team.activePlan.reservedCash, 'Team Plan', 'team', { unit: '$' }));
+        push(fact('sys.fundingRequests', 'Pending treasury funding requests', sys.team.pendingFundingRequests, 'Team Treasury', 'team'));
+      }
+      sys.teammates.forEach(m => { if (m.protectedCash !== null) push(fact(`sys.vault.${m.id}`, `${m.name} protected cash`, m.protectedCash, 'Cash Vault', 'team', { unit: '$' })); });
+      if (sys.coPilot.minimumCashReserve !== null) push(fact('sys.copilotReserve', 'Co-Pilot minimum cash reserve', sys.coPilot.minimumCashReserve, 'Co-Pilot settings', 'assistance', { unit: '$' }));
+      push(fact('sys.approvals', 'Pending approval requests', sys.pendingApprovals, 'Approvals', 'assistance'));
+      return { ...base, ok: true, data: sys, facts };
+    }
     case 'settings_search': {
       if (!world.tools.searchSettings) return { ...base, ok: false, unavailable: true, error: 'Settings search unavailable', data: null, facts: [] };
       const res = world.tools.searchSettings(step.args.query || '');
@@ -102188,7 +104031,7 @@ export function diagnoseGIPosition(world: GIWorld, exec: GIExecution, economic: 
   const P = world.player;
   const add = (id: string, severity: number, c: GIClaim, recovery?: string) => causes.push({ id, severity, claim: c, recovery });
   if (world.reserveFloor !== null && P.money < world.reserveFloor) {
-    add('below_reserve', 90, claim(`Your cash (${money(P.money)}) is below your reserve of ${money(world.reserveFloor)}.`, 'fact', 'confirmed', ['player.cash', 'player.reserve']), 'raise cash before spending');
+    add('below_reserve', 90, claim(`Your biggest problem is that you have almost no cash buffer: ${money(P.money)}, below your ${money(world.reserveFloor)} reserve.`, 'fact', 'confirmed', ['player.cash', 'player.reserve']), 'raise cash before spending');
   }
   if (world.attention && world.attention.state !== 'good') {
     add('attention', world.attention.state === 'critical' ? 85 : 55, claim(`${world.attention.label}: ${world.attention.detail}`, 'fact', 'confirmed', []), world.attention.navigation?.label);
@@ -102277,7 +104120,7 @@ export function compareGIOptions(world: GIWorld, u: GIQueryUnderstanding, exec: 
     let risk: string | null = null;
     if (world.reserveFloor !== null && cashAfter !== null && cashAfter < world.reserveFloor) { risk = `drops cash below your ${money(world.reserveFloor)} reserve`; score -= 25; }
     if (sim?.certainty === 'uncertain') { risk = risk ? `${risk}; outcome is random` : 'outcome is random'; score -= 5; }
-    if (o.kind === 'sell_all' || o.kind === 'sell') { risk = risk || 'gives up future market upside on what you sell'; }
+    if (o.kind === 'sell_all' || o.kind === 'sell' || o.combo?.some(x => x.kind === 'sell' || x.kind === 'sell_all')) { risk = risk || 'gives up future market upside on what you sell'; }
     if (!o.legal) score -= 100;
     const reversible = o.kind === 'deposit' ? Boolean(false) : (o.kind === 'sell' || o.kind === 'sell_all' || o.kind === 'fund_project') ? false : true;
     const certainty: GICertainty = !o.legal ? 'confirmed' : sim?.ok ? (sim.certainty === 'deterministic' ? 'projected' : 'moderate') : (o.kind === 'wait' ? 'confirmed' : 'moderate');
@@ -102366,6 +104209,63 @@ export interface GIDiagnostics {
   verification: GIVerificationReport;
   askIntent: AskGameIntent;
   planId: string;
+  /** GI 2.1: structured language-understanding metadata (never a reasoning trace). */
+  language?: GILanguageDiagnostics;
+}
+
+export interface GILanguageDiagnostics {
+  originalQuery: string;
+  normalizedQuery: string;
+  effectiveQuery: string;
+  corrections: string[];
+  uncorrected: string[];
+  clauses: string[];
+  concepts: string[];
+  actions: string[];
+  goals: string[];
+  problems: string[];
+  threats: string[];
+  constraints: string[];
+  quantities: string[];
+  time: string[];
+  conditions: string[];
+  references: string[];
+  repair: string | null;
+  candidates: string[];
+  scores: string[];
+  style: GIResponseStyle;
+  confidences: GIConfidenceDimensions;
+  fingerprintDomains: GIFingerprintDomain[];
+}
+
+export function buildGILanguageDiagnostics(u: GIQueryUnderstanding, plan: GIQueryPlan): GILanguageDiagnostics | undefined {
+  const f = u.frame;
+  if (!f) return undefined;
+  const money = (q: GIQuantity) => q.fraction !== undefined ? `${Math.round(q.fraction * 100)}% of cash` : q.value !== null ? (q.unit === '$' ? `$${q.value.toLocaleString()}` : `${q.value} ${q.unit}`) : q.raw;
+  return {
+    originalQuery: u.originalQuery,
+    normalizedQuery: f.normalizedText,
+    effectiveQuery: u.effectiveQuery || u.originalQuery,
+    corrections: f.corrections.map(c => `${c.from} → ${c.to}`),
+    uncorrected: f.uncorrected.map(c => `${c.token} (${c.candidates.join('/')})`),
+    clauses: f.clauses.map(c => `${c.marker ? `[${c.marker}] ` : ''}${c.text} · ${c.form}`),
+    concepts: f.concepts.map(c => `${c.id} ← “${c.evidence}”`),
+    actions: f.actions.map(a => `${a.negated ? 'not ' : ''}${a.family}${a.regionId ? ' ' + a.regionId : ''}${a.resource ? ' ' + a.resource : ''} (step ${a.step + 1})`),
+    goals: f.goals.map(g => `${g.kind}${g.regionId ? ' ' + g.regionId : ''}${g.count ? ' ' + g.count : ''}${g.amount ? ' ' + money(g.amount) : ''} · ${g.priority}`),
+    problems: f.problems.map(p => `${p.kind}${p.claimedAmount ? ` (you said $${p.claimedAmount.toLocaleString()} — checked against the game)` : ''}`),
+    threats: f.threats.map(t => `${t.actorId || '?'} → ${t.regionId || '?'}${t.inferredActor ? ' (actor inferred)' : ''} · ${t.urgency}`),
+    constraints: [...f.constraints, ...f.preferences].map(c => `${c.subject}${c.target ? ':' + c.target : ''} = ${c.policy}${c.amount ? ` ${money(c.amount)}` : ''}`),
+    quantities: f.quantities.map(q => `${q.raw} → ${money(q)} · ${q.role}${q.bound !== 'exact' ? ' ' + q.bound : ''}${q.approx ? ' ~' : ''}${q.additional ? ' +' : ''}`),
+    time: f.time.map(t => `${t.kind}${t.count ? ` ${t.count} ${t.unit}` : ''}${t.event ? ` ${t.event}` : ''}`),
+    conditions: f.conditions.map(c => `IF ${c.trigger.event}${c.trigger.regionId ? ' ' + c.trigger.regionId : ''} THEN ${c.then.map(a => a.family + (a.regionId ? ' ' + a.regionId : '')).join(', ') || '—'}${c.otherwise.length ? ` ELSE ${c.otherwise.map(a => a.family + (a.regionId ? ' ' + a.regionId : '')).join(', ')}` : ''}${c.isStrategy ? ' (strategy)' : ' (situation)'}`),
+    references: [...u.resolvedReferences.map(r => `${r.phrase} → ${r.entity.label}`), ...u.unresolvedReferences.map(r => `${r} (unresolved)`)],
+    repair: u.repair ? `${u.repair.op}: ${u.repair.detail}` : null,
+    candidates: f.alternativeFrames.map(a => `${a.label} ${Math.round(a.confidence * 100)}%`),
+    scores: (Object.keys(u.capabilityScores || {}) as GICapability[]).sort((a, b) => (u.capabilityScores![b]! - u.capabilityScores![a]!)).slice(0, 6).map(c => `${c} ${u.capabilityScores![c]}`),
+    style: f.style,
+    confidences: u.confidences || f.confidence,
+    fingerprintDomains: plan.fingerprintDomains
+  };
 }
 
 export interface GIAnswerMeta {
@@ -102376,6 +104276,8 @@ export interface GIAnswerMeta {
   freshness: 'current' | 'updated' | 'stale';
   freshnessNote?: string;
   planId: string;
+  /** GI 2.1: hashes of only the state domains this answer depends on (dependency-aware staleness). */
+  domainHashes?: GIFingerprintMap;
 }
 
 function certaintyLabel(c: GICertainty): string {
@@ -102434,6 +104336,332 @@ export function buildGIFollowUps(u: GIQueryUnderstanding, world: GIWorld, shape:
   if (shape === 'recommendation' || shape === 'plan') { add('Show me the best alternatives'); if (extra?.recommended) add(`Why ${extra.recommended}?`); }
   if (shape === 'prediction') add('What has my rival done recently?');
   if (!out.length) { add('What should I do next?'); add('Why am I losing?'); add('What should I focus on to win?'); }
+  return out;
+}
+
+// ---- GI 2.1 composition helpers (consume verified evidence; wording is conversational) ----------
+
+interface GIComposePart {
+  sections: GIAnswerSection[];
+  buttons: GameIntelligenceButton[];
+  title?: string;
+}
+
+function giFactIds(exec: GIExecution, ids: string[]): string[] {
+  return ids.filter(id => exec.graph.facts[id]);
+}
+
+/** "Your immediate problem is cash, but NSW is the bigger strategic risk…" — from real state only. */
+export function composeGISituation(u: GIQueryUnderstanding, world: GIWorld, exec: GIExecution): GIAnswerSection | null {
+  const f = u.frame;
+  if (!f) return null;
+  const P = world.player;
+  const claims: GIClaim[] = [];
+  const liquidity = f.problems.find(p => p.kind === 'low_liquidity');
+  if (liquidity) {
+    const R = world.reserveFloor;
+    const above = R !== null ? Math.max(0, P.money - R) : null;
+    const text = R !== null && P.money < R
+      ? `Your immediate problem is cash: you have ${money(P.money)}, which is below your ${money(R)} reserve.`
+      : R !== null
+        ? `Your immediate problem is cash: you have ${money(P.money)}, only ${money(above!)} above your ${money(R)} reserve.`
+        : `Your immediate problem is cash: you have ${money(P.money)}.`;
+    claims.push(claim(text, 'fact', 'confirmed', giFactIds(exec, ['player.cash', 'player.reserve']), { derived: above !== null ? [above] : [] }));
+    if (liquidity.claimedAmount && Math.abs(liquidity.claimedAmount - P.money) > Math.max(100, P.money * 0.1)) {
+      claims.push(claim(`You mentioned ${money(liquidity.claimedAmount)}; the game shows ${money(P.money)}, so I've used the game's figure.`, 'caveat', 'confirmed', giFactIds(exec, ['player.cash']), { derived: [liquidity.claimedAmount] }));
+    }
+  }
+  const seen = new Set<string>();
+  f.threats.forEach(t => {
+    if (!t.regionId || seen.has(t.regionId)) return;
+    seen.add(t.regionId);
+    const r = world.regions[t.regionId];
+    if (!r) return;
+    const rival = world.actors.find(a => a.id === (t.actorId || world.primaryRivalId)) || world.actors.find(a => a.relation === 'rival') || null;
+    const rivalName = rival?.name || 'Your rival';
+    const lead = liquidity ? `${r.name} is the bigger strategic risk` : `${r.name} is at risk`;
+    if (r.controlledByPlayer && r.rivalCostToControl !== null) {
+      const cost = r.rivalCostToControl;
+      const visibleCash = rival?.visible && rival.money !== null ? rival.money : null;
+      const tail = visibleCash === null ? ' (their cash is hidden, so I can’t tell whether they can afford it)'
+        : visibleCash >= cost ? ` and has ${money(visibleCash)}, enough to do it` : `, more than the ${money(visibleCash)} they have right now`;
+      claims.push(claim(`${lead}: ${rivalName} needs ${money(cost)} to take it${tail}.`, 'fact', 'confirmed', giFactIds(exec, [`region.${r.code}.rivalCost`, `threat.${r.code}`, `actor.${rival?.id}.money`]), { derived: [cost, ...(visibleCash !== null ? [visibleCash] : [])] }));
+    } else if (r.controlledByRival) {
+      claims.push(claim(`${rivalName} already controls ${r.name}; taking it back would need ${money(r.playerCostToControl || 0)}.`, 'fact', 'confirmed', giFactIds(exec, [`region.${r.code}.playerCost`]), { derived: [r.playerCostToControl || 0] }));
+    } else {
+      claims.push(claim(`Nobody controls ${r.name} yet; ${money(r.playerCostToControl || 0)} would give you control.`, 'fact', 'confirmed', giFactIds(exec, [`region.${r.code}.playerCost`]), { derived: [r.playerCostToControl || 0] }));
+    }
+    if (world.win?.regionsTarget && r.controlledByPlayer) {
+      claims.push(claim(`Losing it would move you further from your ${world.win.regionsTarget}-region goal (you hold ${world.win.playerRegions}).`, 'inference', 'high', giFactIds(exec, ['win.regionsTarget', 'win.playerRegions']), { derived: [world.win.regionsTarget, world.win.playerRegions] }));
+    }
+  });
+  const regionGoal = f.goals.find(g => g.kind === 'regions_reach' && g.count);
+  if (regionGoal && world.win) {
+    claims.push(claim(`You're aiming for ${regionGoal.count} regions and hold ${world.win.playerRegions} now.`, 'fact', 'confirmed', giFactIds(exec, ['win.playerRegions']), { derived: [regionGoal.count!, world.win.playerRegions] }));
+  }
+  return claims.length ? { id: 'situation', heading: null, claims } : null;
+}
+
+/** State the player's limits back in plain words (what was left out, and why). */
+function composeGILimitClaims(u: GIQueryUnderstanding, policy: GIPolicyFilterResult | null): GIClaim[] {
+  const c = u.constraints;
+  const out: GIClaim[] = [];
+  const lp = c.loanPolicy || (c.avoidLoans ? 'forbidden' : null);
+  if (lp === 'forbidden') out.push(claim('Loans are left out, as you asked.', 'caveat', 'confirmed', []));
+  if (lp === 'avoid') out.push(claim("Loans are ranked last because you'd rather not borrow.", 'caveat', 'confirmed', []));
+  if (lp === 'fallback_only') out.push(claim(policy && policy.allowed.some(x => Number((x.execution as any)?.candidate?.expectedStateDelta?.cashDelta || 0) > 0)
+    ? 'A loan stays a last resort, and there are other ways to raise cash, so it isn’t needed.'
+    : 'A loan stays a last resort — nothing else can raise enough right now, so it is shown as the fallback.', 'caveat', 'confirmed', []));
+  Object.entries(c.sellPolicies || {}).forEach(([res, p]) => {
+    const what = res === '*' ? 'resources' : res;
+    if (p === 'forbidden') out.push(claim(`Selling ${what} is left out.`, 'caveat', 'confirmed', []));
+    if (p === 'fallback_only') out.push(claim(`Selling ${what} is kept as a last resort.`, 'caveat', 'confirmed', []));
+    if (p === 'avoid') out.push(claim(`Selling ${what} is ranked last, as you prefer.`, 'caveat', 'confirmed', []));
+  });
+  if (c.cashFloor) out.push(claim(`Anything that would take you below ${money(c.cashFloor)} is left out.`, 'caveat', 'confirmed', [], { derived: [c.cashFloor] }));
+  if (c.spendCeiling) out.push(claim(`Nothing here costs more than ${money(c.spendCeiling)}.`, 'caveat', 'confirmed', [], { derived: [c.spendCeiling] }));
+  return out;
+}
+
+/** Best moves for a stated situation, within the player's limits (canonical candidates + rule-checked options). */
+export function composeGISituationMoves(u: GIQueryUnderstanding, world: GIWorld, exec: GIExecution): GIComposePart {
+  const f = u.frame!;
+  const P = world.player;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const legal = (world.actionSet?.ranked || []).filter(c => c.legal && c.execution?.kind === 'copilot_candidate');
+  const policy = applyGIConstraintPolicies(legal, u.constraints, world);
+  const moves: GIClaim[] = [];
+  const threat = f.threats.find(t => t.regionId && world.regions[t.regionId]);
+  if (threat) {
+    const r = world.regions[threat.regionId!];
+    const opt = buildGIOption('deposit', r.controlledByPlayer ? 'defend' : 'take', world, [{ kind: 'region', id: r.code, label: r.name, confidence: 1, source: 'context' }]);
+    if (opt) {
+      const floor = Math.max(u.constraints.cashFloor || 0, 0);
+      const breaksFloor = floor > 0 && opt.cashCost > 0 && P.money - opt.cashCost < floor;
+      if (opt.legal && !breaksFloor) {
+        moves.push(claim(`${opt.label} — it answers the threat directly and leaves you ${money(P.money - opt.cashCost)}.`, 'recommendation', 'high', giFactIds(exec, [`region.${r.code}.rivalCost`]), { optionLegal: true, derived: [P.money - opt.cashCost, opt.cashCost, ...giNumbersIn(opt.label).map(n => n.value)] }));
+      } else if (breaksFloor) {
+        moves.push(claim(`${opt.label} would take you below the ${money(floor)} you want to keep, so it's left out for now.`, 'caveat', 'confirmed', [], { derived: [floor, opt.cashCost, ...giNumbersIn(opt.label).map(n => n.value)] }));
+      } else {
+        moves.push(claim(`${opt.label} would answer the threat, but it is blocked: ${opt.blockReason}${opt.prerequisite ? ` First: ${opt.prerequisite}.` : ''}`, 'recommendation', 'confirmed', [], { optionLegal: false, derived: giNumbersIn(`${opt.label} ${opt.blockReason || ''} ${opt.prerequisite || ''}`).map(n => n.value) }));
+      }
+      buttons.push(...optionButtons(opt, world));
+    }
+  }
+  const raisers = policy.allowed
+    .map(c => ({ c, gain: Number((c.execution as any)?.candidate?.expectedStateDelta?.cashDelta || 0) }))
+    .filter(x => x.gain > 0)
+    .sort((a, b) => b.gain - a.gain || a.c.id.localeCompare(b.c.id));
+  const wantsCash = f.problems.some(p => p.kind === 'low_liquidity') || f.goals.some(g => g.kind === 'cash_increase' || g.kind === 'cash_reach');
+  const pool = wantsCash ? raisers.map(x => x.c) : policy.allowed;
+  const usable = pool.length ? pool : [...policy.avoided.map(x => x.candidate), ...policy.fallback.map(x => x.candidate)];
+  usable.slice(0, u.style === 'expanded' ? 4 : 2).forEach(c => {
+    const gain = Number((c.execution as any)?.candidate?.expectedStateDelta?.cashDelta || 0);
+    const fallbackNote = !pool.length ? ' (only as a last resort)' : '';
+    moves.push(claim(`${c.label}${gain > 0 ? `: about +${money(gain)}` : c.costEstimate ? ` (${money(c.costEstimate)})` : ''} — ${c.reasons[0] || 'legal and ranked highly'}${fallbackNote}.`, 'recommendation', 'high', giFactIds(exec, [`rank.${c.id}`]), { optionLegal: true, derived: [gain, c.costEstimate || 0] }));
+  });
+  if (!moves.length) moves.push(claim('No legal move fits all of your limits right now — easing one of them (or ending your turn) is the only way forward.', 'caveat', 'confirmed', []));
+  sections.push({ id: 'moves', heading: 'Best moves within your limits', claims: moves });
+  if (usable[0]) buttons.push(...candidateButtonsFor(usable[0], world.control));
+  const limits = composeGILimitClaims(u, policy);
+  if (f.concepts.some(h => h.id === 'protect_long_term') && !moves.some(m => /loan/i.test(m.text))) {
+    limits.push(claim('None of these borrow or spend below your reserve, so they don’t trade your later position for a quick fix.', 'inference', 'high', giFactIds(exec, ['player.reserve'])));
+  }
+  if (limits.length) sections.push({ id: 'limits', heading: null, claims: limits });
+  return { sections, buttons };
+}
+
+function giOptionForAction(a: GILanguageAction, world: GIWorld): GIOption | null {
+  const reg = a.regionId && world.regions[a.regionId] ? [{ kind: 'region' as const, id: a.regionId, label: world.regions[a.regionId].name, confidence: 1, source: 'context' as const }] : [];
+  const res = a.resource ? [{ kind: 'resource' as const, id: a.resource, label: a.resource, confidence: 1, source: 'context' as const }] : [];
+  switch (a.family) {
+    case 'defend': return buildGIOption('deposit', 'defend', world, reg);
+    case 'travel': return buildGIOption('travel', 'travel', world, reg);
+    case 'sell': return buildGIOption('sell', 'sell', world, res);
+    case 'buy': return buildGIOption('buy', 'buy', world, res);
+    default: return null;
+  }
+}
+
+/** "If Riley attacks NSW, defend it. Otherwise go to Victoria." — explained and validated, never automated. */
+export function composeGIConditional(u: GIQueryUnderstanding, world: GIWorld): GIComposePart | null {
+  const cond = u.frame?.conditions.find(c => c.isStrategy);
+  if (!cond) return null;
+  const actorName = world.actors.find(a => a.id === cond.trigger.actorId)?.name || 'your rival';
+  const regionName = cond.trigger.regionId ? getGILocationName(cond.trigger.regionId) : null;
+  const trigger = cond.trigger.event === 'rival_attacks' || cond.trigger.event === 'rival_moves'
+    ? `${actorName} moves on ${regionName || 'one of your regions'}`
+    : cond.trigger.event === 'region_lost' ? `you lose ${regionName || 'a region'}` : cond.ifText.replace(/^if\s+/i, '').replace(/[,.;:!?]+$/, '');
+  const claims: GIClaim[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const describe = (acts: GILanguageAction[], lead: string) => acts.forEach(a => {
+    const opt = giOptionForAction({ ...a, regionId: a.regionId || cond.trigger.regionId }, world);
+    if (!opt) return;
+    claims.push(claim(`${lead}: ${opt.label} — ${opt.legal ? 'you could do this right now' : `blocked right now: ${opt.blockReason}`}.`, 'recommendation', opt.legal ? 'high' : 'confirmed', [], { optionLegal: opt.legal, derived: giNumbersIn(`${opt.label} ${opt.blockReason || ''}`).map(n => n.value) }));
+    buttons.push(...optionButtons(opt, world).filter(b => b.kind !== 'do'));
+  });
+  describe(cond.then, `If ${trigger}`);
+  describe(cond.otherwise, 'Otherwise');
+  if (!claims.length) return null;
+  claims.push(claim("Game Intelligence only advises: it won't watch for this and act on its own. When it happens, ask again, or let Co-Pilot handle turns through the control modes.", 'caveat', 'confirmed', []));
+  const threatened = cond.trigger.regionId ? world.regions[cond.trigger.regionId] : null;
+  const rival = world.actors.find(a => a.id === cond.trigger.actorId);
+  if (threatened?.controlledByPlayer && threatened.rivalCostToControl !== null && rival?.visible && rival.money !== null) {
+    claims.push(claim(rival.money >= threatened.rivalCostToControl
+      ? `${rival.name} can afford the ${money(threatened.rivalCostToControl)} needed to take ${threatened.name} right now, so the trigger is realistic.`
+      : `${rival.name} can't yet afford the ${money(threatened.rivalCostToControl)} needed to take ${threatened.name}.`, 'inference', 'high', [], { derived: [threatened.rivalCostToControl, rival.money] }));
+  }
+  return { title: 'Your conditional plan', sections: [{ id: 'conditional', heading: 'Your conditional plan', claims }], buttons };
+}
+
+/** Causal statements are hypotheses: check them against the game, never repeat them as fact. */
+export function composeGIHypothesisCheck(u: GIQueryUnderstanding, world: GIWorld): GIAnswerSection | null {
+  const hyp = u.frame?.hypotheses[0];
+  if (!hyp) return null;
+  const t = hyp.text.toLowerCase();
+  const claims: GIClaim[] = [];
+  if (/infrastructure|project|rail|build|building/.test(t)) {
+    const active = world.projects.filter(p => p.status === 'active' && p.maintenancePerTurn > 0);
+    const invested = world.projects.reduce((s, p) => s + (p.invested || 0), 0);
+    const maint = active.reduce((s, p) => s + p.maintenancePerTurn, 0);
+    claims.push(claim(maint > 0
+      ? `You suggested infrastructure is the cause. The game shows ${money(maint)} of project maintenance per turn${invested ? ` and ${money(invested)} already invested` : ''}, so it is a real cost to weigh.`
+      : invested > 0
+        ? `You suggested infrastructure is the cause. You've invested ${money(invested)} in projects, but none are charging maintenance yet.`
+        : `You suggested infrastructure is the cause, but the game shows no infrastructure spending or maintenance for you — so that isn't what's draining your cash.`,
+    'inference', 'high', [], { derived: [maint, invested] }));
+  } else if (/loan|debt|interest|borrow/.test(t)) {
+    claims.push(claim(world.player.debtTotal > 0
+      ? `You suggested debt is the cause. You do carry ${money(world.player.debtTotal)} in loans, which is a real drag.`
+      : `You suggested debt is the cause, but the game shows no outstanding loans.`, 'inference', 'high', [], { derived: [world.player.debtTotal] }));
+  } else {
+    claims.push(claim(`You suggested a cause (“${hyp.text.slice(0, 60)}”). I can't confirm that from the game's data, so I've treated it as a possibility, not a fact.`, 'caveat', 'confirmed', []));
+  }
+  return { id: 'hypothesis', heading: 'Checking your theory', claims };
+}
+
+/** "Sell enough Iron Ore to get above $10K, then put $3K into NSW." — validated and simulated, never executed. */
+export function composeGIComposedSequence(u: GIQueryUnderstanding, world: GIWorld, exec: GIExecution): GIComposePart {
+  const f = u.frame!;
+  const steps = (u.composedSteps || []).slice().sort((a, b) => a.step - b.step || a.clause - b.clause).slice(0, 4);
+  const claims: GIClaim[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const intents: GISimulationIntent[] = [];
+  let cash = world.player.money;
+  let ap = world.player.apRemaining;
+  let allLegal = true;
+  steps.forEach((a, i) => {
+    const n = i + 1;
+    const q = f.quantities.find(x => x.clause === a.clause && x.unit === '$');
+    if (a.family === 'sell' && a.resource) {
+      const held = world.player.inventory[a.resource] || 0;
+      const price = world.market[a.resource];
+      if (!held || typeof price !== 'number') {
+        allLegal = false;
+        claims.push(claim(`${n}. Sell ${a.resource}: ${held ? 'there is no market price for it right now' : `you don't hold any ${a.resource}`}.`, 'fact', 'confirmed', []));
+        return;
+      }
+      const target = q && (q.role === 'target' || q.bound === 'min') ? resolveGIQuantityAmount(q, world) : null;
+      let qty = held;
+      if (target !== null) qty = Math.min(held, Math.max(0, Math.ceil((target - cash + 1) / price)));
+      if (target !== null && qty === 0) {
+        claims.push(claim(`${n}. No sale needed: you already have ${money(cash)}, above ${money(target)}.`, 'fact', 'confirmed', [], { derived: [cash, target] }));
+        return;
+      }
+      const gain = qty * price;
+      intents.push({ actionType: 'sell', parameters: { item: a.resource, resource: a.resource, quantity: qty, unitPrice: price } });
+      claims.push(claim(`${n}. Sell ${qty} ${a.resource} at about ${money(price)} each — about +${money(gain)}.`, 'projection', 'moderate', giFactIds(exec, [`market.${a.resource}.price`]), { optionLegal: true, derived: [qty, price, gain] }));
+      cash += gain;
+      if (ap !== null) ap -= 1;
+      if (target !== null && cash <= target) {
+        claims.push(claim(`That still leaves you below ${money(target)}: you only hold ${held} ${a.resource}.`, 'fact', 'confirmed', [], { derived: [target, held] }));
+      }
+      buttons.push({ id: `open_market_${n}`, label: 'Open Market', kind: 'open', nav: navAction('market', 'Open Market'), tone: 'secondary' });
+      return;
+    }
+    const opt = giOptionForAction(a, world);
+    if (!opt) { claims.push(claim(`${n}. I couldn't match “${a.surface}” to a concrete action.`, 'caveat', 'confirmed', [])); allLegal = false; return; }
+    let amount = opt.cashCost;
+    if (a.family === 'defend' && q) amount = resolveGIQuantityAmount(q, world) || amount;
+    let block = opt.blockReason;
+    if (!block && amount > cash) block = `it needs ${money(amount)} and you'd have ${money(cash)} at that point`;
+    if (!block && ap !== null && ap < 1) block = 'you would be out of Action Points by then';
+    // Earlier steps can fix a blocker the current state shows (e.g. cash from a sale).
+    if (opt.blockReason && /you have \$/.test(opt.blockReason) && amount <= cash) block = null;
+    const label = a.family === 'defend' && world.regions[a.regionId || ''] ? `Put ${money(amount)} into ${world.regions[a.regionId!].name}` : opt.label;
+    if (block) {
+      allLegal = false;
+      claims.push(claim(`${n}. ${label}: blocked — ${block}${opt.prerequisite ? ` First: ${opt.prerequisite}.` : ''}`, 'fact', 'confirmed', [], { optionLegal: false, derived: [amount, cash, ...giNumbersIn(`${block} ${opt.prerequisite || ''}`).map(x => x.value)] }));
+    } else {
+      claims.push(claim(`${n}. ${label} — legal at that point, leaving about ${money(cash - amount)}.`, 'projection', 'moderate', [], { optionLegal: true, derived: [amount, cash - amount] }));
+      if (opt.intent) intents.push(a.family === 'defend' ? { ...opt.intent, parameters: { ...(opt.intent.parameters || {}), amount }, costEstimate: amount } : opt.intent);
+      cash -= amount;
+      if (ap !== null) ap -= Math.max(0, opt.apCost);
+    }
+    buttons.push(...optionButtons(opt, world).filter(b => b.kind !== 'do' && b.kind !== 'ask'));
+  });
+  const sections: GIAnswerSection[] = [{ id: 'steps', heading: 'Your sequence', claims }];
+  if (allLegal && intents.length >= 2 && world.tools.simulate) {
+    const sim = world.tools.simulate({ actionType: intents[0].actionType, chain: intents });
+    if (sim.ok) {
+      sections.push({ id: 'sim', heading: 'Simulated result', claims: [claim(`Run in that order, you'd end with about ${money(sim.after.cash)}${sim.after.apRemaining !== null ? ` and ${sim.after.apRemaining} AP` : ''}.`, 'projection', 'moderate', [], { derived: [sim.after.cash, sim.after.apRemaining ?? 0] })] });
+    }
+  }
+  sections.push({ id: 'how', heading: null, claims: [claim('Game Intelligence only checks and simulates this — use the buttons to carry out each step yourself, in order.', 'caveat', 'confirmed', [])] });
+  return { title: 'Your sequence', sections, buttons };
+}
+
+/** Shape a verified answer to the requested depth ("quick answer", "just tell me", "show me the math"). */
+export function shapeGISectionsForStyle(sections: GIAnswerSection[], style: GIResponseStyle | undefined): GIAnswerSection[] {
+  if (!style || style === 'standard' || style === 'detailed' || style === 'expanded') return sections;
+  const isRec = (s: GIAnswerSection) => s.claims.some(c => c.kind === 'recommendation');
+  if (style === 'direct') {
+    const recs = sections.filter(isRec);
+    const rest = sections.filter(s => !isRec(s) && ['situation', 'primary', 'verdict', 'answer', 'gap'].includes(s.id));
+    const out = [...recs, ...rest].map(s => ({ ...s, claims: s.claims.slice(0, 2) }));
+    return out.length ? out.slice(0, 3) : sections.slice(0, 2);
+  }
+  if (style === 'concise') {
+    const out: GIAnswerSection[] = [];
+    let budget = 3;
+    const ordered = [...sections.filter(isRec), ...sections.filter(s => !isRec(s) && !['goal', 'risk', 'alt'].includes(s.id))];
+    for (const s of ordered) {
+      if (budget <= 0) break;
+      if (['conflicts', 'tradeoff', 'checkpoint', 'supporting', 'limits', 'how'].includes(s.id)) continue;
+      const take = s.claims.slice(0, Math.min(budget, isRec(s) ? 1 : 2));
+      budget -= take.length;
+      out.push({ ...s, claims: take });
+    }
+    return out.length ? out : sections.slice(0, 1);
+  }
+  if (style === 'math') {
+    const out = sections.map(s => ({ ...s, claims: s.claims.filter(c => /\d/.test(c.text)) })).filter(s => s.claims.length);
+    return out.length ? out : sections;
+  }
+  return sections;
+}
+
+/** Natural follow-ups from what the player actually said (generic chips stay the fallback). */
+export function buildGIFrameFollowUps(u: GIQueryUnderstanding, world: GIWorld): string[] {
+  const f = u.frame;
+  if (!f) return [];
+  const out: string[] = [];
+  const add = (s: string) => { if (!out.includes(s) && out.length < 3) out.push(s); };
+  const threat = f.threats.find(t => t.regionId && world.regions[t.regionId]);
+  const liquidity = f.problems.some(p => p.kind === 'low_liquidity');
+  if (threat) {
+    const code = threat.regionId!;
+    add(`How much do I need to defend ${code}?`);
+    if (liquidity) add('What can I safely sell?');
+    add(`What happens if I ignore ${code}?`);
+  } else if (liquidity || f.goals.some(g => g.kind === 'cash_increase' || g.kind === 'cash_reach')) {
+    add('What can I safely sell?');
+    add('What if I sell everything?');
+    add('Why am I always running out of money?');
+  }
+  if (f.goals.some(g => g.kind === 'regions_reach')) add('Which region is cheapest to take next?');
+  if (f.conditions.some(c => c.isStrategy)) add('What happens if I defend now instead?');
   return out;
 }
 
@@ -102519,8 +104747,24 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
     }
     case 'region_info': {
       kind = 'next_step';
-      const r = world.regions[u.entities.find(e => e.kind === 'region')?.id || P.location];
-      if (r) {
+      const regionRefId = u.entities.find(e => e.kind === 'region')?.id || P.location;
+      const r = world.regions[regionRefId];
+      const territory = !r ? getGITerritory(regionRefId) : null;
+      if (territory) {
+        title = territory.name;
+        const tf = (id: string) => [id].filter(x => exec.graph.facts[x]);
+        const claims: GIClaim[] = [
+          claim(`${territory.name} is an external territory. Resources: ${(territory.resources || []).join(', ') || 'none listed'}.`, 'fact', 'confirmed', tf(`territory.${regionRefId}.resources`)),
+          ...(typeof territory.travelCost === 'number' ? [claim(`Travelling there costs ${money(territory.travelCost)}.`, 'fact', 'confirmed', tf(`territory.${regionRefId}.travel`))] : []),
+          ...(territory.unlockConditions && (territory.unlockConditions.minLevel || territory.unlockConditions.minCash)
+            ? [claim(`To unlock it you need level ${territory.unlockConditions.minLevel || 0}${territory.unlockConditions.minCash ? ` and ${money(territory.unlockConditions.minCash)} in cash` : ''}.`, 'fact', 'confirmed', tf(`territory.${regionRefId}.minCash`), { derived: [territory.unlockConditions.minLevel || 0] })]
+            : [])
+        ];
+        section('answer', null, claims);
+        buttons.push({ id: 'open_map', label: 'Open Map', kind: 'open', nav: navAction('map', 'Open Map'), tone: 'secondary' });
+        ctx.last = { region: { kind: 'region', id: regionRefId, label: territory.name, confidence: 1, source: 'context' } };
+        ctx.activeTopic = ctx.last.region!;
+      } else if (r) {
         title = r.name;
         const claims: GIClaim[] = [];
         if (/\bresources?\b/.test(u.normalizedQuery) || !/\b(control|own|deposit|travel)\b/.test(u.normalizedQuery)) claims.push(claim(`Resources in ${r.name}: ${r.resources.join(', ') || 'none listed'}.`, 'fact', 'confirmed', [`region.${r.code}.resources`]));
@@ -102627,7 +104871,7 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
           : `Not in full: ${t.label} still needs ${money(t.cost)} and you have ${money(P.money)}. You ${aff.stepAffordable ? 'can' : "can't"} fund the smallest step of ${money(t.stepCost)}.`,
         'fact', 'confirmed', ['afford.cost', 'player.cash', 'afford.step']));
       } else {
-        claims.push(claim(aff.affordableNow ? `Yes — it costs ${money(t.cost)} and you have ${money(P.money)}.` : `No — it costs ${money(t.cost)} and you have ${money(P.money)} (${money(aff.deficit)} short).`, 'fact', 'confirmed', ['afford.cost', 'player.cash', 'afford.deficit']));
+        claims.push(claim(aff.affordableNow ? `Yes — it costs ${money(t.cost)} and you have ${money(P.money)}.` : `You can't fund this yet: it costs ${money(t.cost)} and you have ${money(P.money)}, so you're ${money(aff.deficit)} short.`, 'fact', 'confirmed', ['afford.cost', 'player.cash', 'afford.deficit']));
       }
       if (world.reserveFloor !== null) {
         claims.push(claim(aff.affordableKeepingReserve
@@ -102661,6 +104905,15 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       kind = 'next_step';
       shape = 'diagnosis';
       const economic = u.primary === 'economy_diagnosis';
+      // GI 2.1: a bare situation statement ("only 600 bucks, riley has nearly got nsw") gets a short,
+      // evidence-checked summary plus a one-tap "What should I do?", instead of "I don't understand".
+      if (u.frame?.implicit && (u.frame.problems.length || u.frame.threats.length)) {
+        const sit = composeGISituation(u, world, exec);
+        title = 'Where you stand';
+        if (sit) sections.push(sit);
+        buttons.push({ id: 'ask_what_now', label: 'What should I do?', kind: 'ask', query: `${u.effectiveQuery || u.originalQuery} — what should I do?`, tone: 'primary' });
+        break;
+      }
       const causes = diagnoseGIPosition(world, exec, economic);
       title = economic ? 'Why your cash is tight' : 'Your biggest problems';
       if (!causes.length) {
@@ -102717,6 +104970,8 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       } else {
         top.push(claim('None of these options can be done right now.', 'fact', 'confirmed', rows.map(r => `opt.${r.option.id}.legal`)));
       }
+      const situation = u.frame && (u.frame.problems.length || u.frame.threats.length) ? composeGISituation(u, world, exec) : null;
+      if (situation && u.style !== 'concise' && u.style !== 'direct') sections.push(situation);
       section('verdict', null, top);
       section('options', 'Options', rows.map(r => {
         const bits: string[] = [];
@@ -102769,6 +105024,7 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       }
       const conflicts = detectGIConflicts(world, exec, rows);
       if (conflicts.length) section('conflicts', 'Strategy conflict', conflicts.map(c => claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+      if (u.constraints.policies?.length) section('limits', null, composeGILimitClaims(u, null));
       rows.slice(0, 3).forEach(r => buttons.push(...optionButtons(r.option, world)));
       ctx.lastComparison = rows.map(r => refFromOption(r.option)).filter(Boolean) as GIEntityRef[];
       if (best) { const ref = refFromOption(best.option); ctx.lastRecommendation = ref; ctx.activeTopic = ref; }
@@ -102824,19 +105080,45 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
     case 'sequence_plan':
     case 'action_recommendation': {
       kind = 'next_step';
-      const gapTarget = (u.deficitReference && convo.lastDeficit) ? convo.lastDeficit : (u.constraints.targetAmount ? { amount: u.constraints.targetAmount, forLabel: 'your target', forRef: null } : null);
+      // GI 2.1: composed multi-action requests and conditional strategies are validated, never executed.
+      if (u.composedSteps?.length) {
+        const part = composeGIComposedSequence(u, world, exec);
+        title = part.title || 'Your sequence';
+        shape = 'plan';
+        sections.push(...part.sections);
+        buttons.push(...part.buttons);
+        break;
+      }
+      const conditional = composeGIConditional(u, world);
+      if (conditional) {
+        title = conditional.title || 'Your conditional plan';
+        shape = 'plan';
+        sections.push(...conditional.sections);
+        buttons.push(...conditional.buttons);
+        break;
+      }
+      const gapTarget = (u.deficitReference && convo.lastDeficit) ? convo.lastDeficit : (u.constraints.targetAmount ? { amount: u.constraints.targetAmount, forLabel: u.constraints.targetLabel || 'your target', forRef: null } : null);
       if (gapTarget) {
         // "What's the fastest way to get the money?" — cash-raising legal moves only, measured against the gap.
         title = `Raising ${money(gapTarget.amount)}`;
-        const raisers = (set?.ranked || [])
-          .filter(c => c.legal && c.execution?.kind === 'copilot_candidate' && Number((c.execution as any).candidate?.expectedStateDelta?.cashDelta || 0) > 0)
-          .filter(c => !(u.constraints.avoidLoans && /loan|credit/.test(c.actionType)))
-          .map(c => ({ c, gain: Number((c.execution as any).candidate.expectedStateDelta.cashDelta) }))
+        const cashPolicy = applyGIConstraintPolicies((set?.ranked || []).filter(c => c.legal && c.execution?.kind === 'copilot_candidate'), u.constraints, world);
+        const toGain = (c: ContextualActionCandidate) => ({ c, gain: Number((c.execution as any).candidate?.expectedStateDelta?.cashDelta || 0) });
+        const allowedRaisers = [...cashPolicy.allowed, ...cashPolicy.avoided.map(x => x.candidate)].map(toGain).filter(x => x.gain > 0);
+        const fallbackRaisers = cashPolicy.fallback.map(x => x.candidate).map(toGain).filter(x => x.gain > 0);
+        const raisers = (allowedRaisers.length ? allowedRaisers : fallbackRaisers)
           .sort((a, b) => b.gain - a.gain || a.c.id.localeCompare(b.c.id))
           .slice(0, 3);
-        const invValue = Object.entries(P.inventory).reduce((sum, [res, n]) => sum + (typeof world.market[res] === 'number' ? world.market[res] * n : 0), 0);
-        const head: GIClaim[] = [claim(`You need ${money(gapTarget.amount)} more for ${gapTarget.forLabel}.`, 'fact', 'confirmed', [], { derived: [gapTarget.amount] })];
-        if (invValue > 0) head.push(claim(`Selling your whole inventory at current prices would raise about ${money(invValue)}${invValue >= gapTarget.amount ? ' — enough on its own' : ''}.`, 'projection', 'moderate', [], { derived: [invValue] }));
+        const sellable = (res: string) => {
+          const p2 = u.constraints.sellPolicies?.[res] || u.constraints.sellPolicies?.['*'];
+          return p2 !== 'forbidden' && p2 !== 'fallback_only';
+        };
+        const invValue = Object.entries(P.inventory).filter(([res]) => sellable(res)).reduce((sum, [res, n]) => sum + (typeof world.market[res] === 'number' ? world.market[res] * n : 0), 0);
+        const gapText = /^another /.test(gapTarget.forLabel) ? `You want to raise ${money(gapTarget.amount)} on top of the ${money(P.money)} you have.`
+          : /^reaching /.test(gapTarget.forLabel) ? `You need ${money(gapTarget.amount)} more to reach ${gapTarget.forLabel.replace(/^reaching /, '')}.`
+          : `You need ${money(gapTarget.amount)} more for ${gapTarget.forLabel}.`;
+        const head: GIClaim[] = [claim(gapText, 'fact', 'confirmed', [], { derived: [gapTarget.amount, ...giNumbersIn(gapTarget.forLabel).map(n => n.value)] })];
+        const hasSellLimits = Object.keys(u.constraints.sellPolicies || {}).length > 0;
+        if (invValue > 0) head.push(claim(`Selling ${hasSellLimits ? 'everything you are willing to sell' : 'your whole inventory'} at current prices would raise about ${money(invValue)}${invValue >= gapTarget.amount ? ' — enough on its own' : ''}.`, 'projection', 'moderate', [], { derived: [invValue] }));
         section('gap', null, head);
         if (raisers.length) {
           section('moves', 'Fastest legal cash moves', raisers.map(({ c, gain }) => claim(`${c.label}: about +${money(gain)} (${c.apCost || 1} AP).`, 'recommendation', 'high', [`rank.${c.id}`].filter(id => exec.graph.facts[id]), { optionLegal: true, derived: [gain, c.apCost || 1] })));
@@ -102847,18 +105129,46 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
             : `Together they raise about ${money(total)}, so the gap will take more than one turn at current prices.`, 'projection', 'moderate', [], { derived: [total, apNeed] })]);
           buttons.push(...candidateButtonsFor(raisers[0].c, control));
         } else {
-          section('moves', null, [claim('No legal cash-raising action is available right now.', 'fact', 'confirmed', [])]);
+          section('moves', null, [claim(cashPolicy.removed.length ? 'No legal cash-raising move fits your limits right now.' : 'No legal cash-raising action is available right now.', 'fact', 'confirmed', [])]);
         }
+        // Feasibility under the player's limits: explain the conflict instead of inventing a plan.
+        const reachable = raisers.reduce((sum, r) => sum + r.gain, 0) + invValue;
+        if (reachable < gapTarget.amount && (cashPolicy.removed.length || hasSellLimits || u.constraints.cashFloor)) {
+          const excluded = cashPolicy.removed.map(x => toGain(x.candidate)).filter(x => x.gain > 0);
+          const excludedTotal = excluded.reduce((sum, x) => sum + x.gain, 0);
+          section('feasibility', 'Within your limits', [claim(`With those limits, this turn's legal moves raise at most about ${money(reachable)} — not enough for ${money(gapTarget.amount)}.${excludedTotal > 0 ? ` The moves you ruled out (${excluded.map(x => x.c.label).join(', ')}) would add about ${money(excludedTotal)}.` : ''} It will take more than one turn, or easing a limit.`, 'projection', 'moderate', [], { derived: [reachable, gapTarget.amount, excludedTotal] })]);
+        }
+        section('limits', null, composeGILimitClaims(u, cashPolicy));
         if (invValue > 0) buttons.push({ id: 'sim_sell_all', label: 'What if I sell everything?', kind: 'ask', query: 'What if I sell everything?', tone: 'secondary' });
         if (gapTarget.forRef) ctx.activeTopic = gapTarget.forRef;
         break;
       }
+      // GI 2.1: a stated situation ("I'm broke, Riley is about to take NSW, no loans") gets a situation
+      // summary and constraint-aware moves instead of a generic ranking.
+      if (u.frame && (u.frame.problems.length || u.frame.threats.length) && !u.horizon) {
+        title = 'What to do now';
+        shape = 'recommendation';
+        const sit = composeGISituation(u, world, exec);
+        if (sit) sections.push(sit);
+        const part = composeGISituationMoves(u, world, exec);
+        sections.push(...part.sections);
+        buttons.push(...part.buttons);
+        const conflictsNow = detectGIConflicts(world, exec).filter(c => c.id !== 'reserve_vs_recommendation' || !u.constraints.avoidLoans);
+        if (conflictsNow.length && u.style !== 'concise') section('conflicts', 'Strategy conflict', conflictsNow.slice(0, 1).map(c => claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+        const top = part.buttons.find(b => b.candidateId);
+        if (top?.candidateId) { const c = giCandidateList(world).find(x => x.id === top.candidateId); if (c) { ctx.lastRecommendation = { kind: 'action', id: c.id, label: c.label, confidence: 1, source: 'context' }; } }
+        const threatRef = u.frame.threats.find(t => t.regionId && world.regions[t.regionId]);
+        if (threatRef) { const ref: GIEntityRef = { kind: 'region', id: threatRef.regionId!, label: world.regions[threatRef.regionId!].name, confidence: 1, source: 'context' }; ctx.last = { ...(ctx.last || {}), region: ref }; ctx.activeTopic = ref; }
+        break;
+      }
       const seq = giResult(exec, 'plan_sequence')?.data;
-      const rec = set?.recommended || null;
+      const hasPolicies = Boolean(u.constraints.loanPolicy || u.constraints.cashFloor || u.constraints.spendCeiling || Object.keys(u.constraints.sellPolicies || {}).length);
+      const recPolicy = hasPolicies ? applyGIConstraintPolicies((set?.ranked || []).filter(c => c.legal), u.constraints, world) : null;
+      const rec = recPolicy ? (recPolicy.allowed[0] || recPolicy.avoided[0]?.candidate || recPolicy.fallback[0]?.candidate || null) : (set?.recommended || null);
       shape = seq?.steps?.length > 1 || u.horizon ? 'plan' : 'recommendation';
       title = shape === 'plan' ? (u.constraints.targetRegions ? `Path to ${u.constraints.targetRegions} regions` : 'Your plan') : 'What to do next';
       if (world.objective || world.win) {
-        section('goal', shape === 'plan' ? 'Goal' : null, [claim(world.objective ? `Goal: ${world.objective.title} (${world.objective.progress.completed}/${world.objective.progress.total}).` : `${world.win!.label}.`, 'fact', 'confirmed', ['objective.title', 'objective.progress'].filter(id => exec.graph.facts[id]))]);
+        section('goal', shape === 'plan' ? 'Goal' : null, [claim(world.objective ? `${/^goal:/i.test(world.objective.title) ? '' : 'Goal: '}${world.objective.title} (${world.objective.progress.completed}/${world.objective.progress.total}).` : `${world.win!.label}.`, 'fact', 'confirmed', ['objective.title', 'objective.progress'].filter(id => exec.graph.facts[id]))]);
       }
       if (shape === 'plan' && seq?.steps?.length) {
         section('steps', 'Steps', seq.steps.map((c: ContextualActionCandidate, i: number) => claim(`${['Now', 'Next', 'Then', 'After that'][i] || 'Then'}: ${c.label}${c.costEstimate ? ` (${money(c.costEstimate)})` : ''} — ${c.reasons[0] || 'legal and ranked highly'}.`, 'recommendation', 'high', [`plan.${i}`], { optionLegal: true, derived: c.costEstimate ? [c.costEstimate] : [] })));
@@ -102871,8 +105181,10 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       } else if (rec) {
         section('rec', 'Recommended', [claim(`${rec.label} — ${rec.reasons[0] || rec.description || 'highest-ranked legal action'}${rec.costEstimate ? ` (${money(rec.costEstimate)})` : ''}.`, 'recommendation', 'high', [`rank.${rec.id}`].filter(id => exec.graph.facts[id]), { optionLegal: rec.legal, derived: rec.costEstimate ? [rec.costEstimate] : [] })]);
         if (rec.risk) section('risk', 'Risk', [claim(rec.risk + '.', 'fact', 'confirmed', [])]);
-        const alt = set?.useful?.[0];
-        if (alt) section('alt', 'Alternative', [claim(`${alt.label} — ${alt.reasons[0] || alt.description}.`, 'recommendation', 'moderate', [`rank.${alt.id}`].filter(id => exec.graph.facts[id]), { optionLegal: alt.legal })]);
+        const altPool = (recPolicy ? recPolicy.allowed.filter(c => c.id !== rec.id) : (set?.useful || [])).filter(c => c.id !== rec.id);
+        const alts = altPool.slice(0, u.style === 'expanded' ? 4 : 1);
+        if (alts.length) section('alt', alts.length > 1 ? 'Alternatives' : 'Alternative', alts.map(alt => claim(`${alt.label} — ${alt.reasons[0] || alt.description}.`, 'recommendation', 'moderate', [`rank.${alt.id}`].filter(id => exec.graph.facts[id]), { optionLegal: alt.legal, derived: alt.costEstimate ? [alt.costEstimate] : [] })));
+        if (recPolicy) section('limits', null, composeGILimitClaims(u, recPolicy));
         buttons.push(...candidateButtonsFor(rec, control), { id: 'alts', label: 'Show Alternatives', kind: 'alternatives', candidateId: rec.id, tone: 'secondary' });
         ctx.lastRecommendation = { kind: 'action', id: rec.id, label: rec.label, confidence: 1, source: 'context' };
         ctx.activeTopic = ctx.lastRecommendation;
@@ -102951,6 +105263,45 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       buttons.push({ id: 'open_ledger', label: 'Open Activity Ledger', kind: 'open', nav: navAction('ledger', 'Open Activity Ledger'), tone: 'secondary' });
       break;
     }
+    case 'system_explain': {
+      kind = 'why';
+      const sys = giResult(exec, 'system_state')?.data as GISystemsView | undefined;
+      const q = u.normalizedQuery;
+      title = 'What your systems are doing';
+      if (!sys) { section('answer', null, [claim("I can't read those systems from this view.", 'caveat', 'confirmed', [])]); break; }
+      const claims: GIClaim[] = [];
+      const wants = (re: RegExp) => re.test(q);
+      const teamish = wants(/\b(team|teammate|partner|ally|treasury|governor|overseer|governance|plan|spend|spending|fund)\b/);
+      if (teamish) {
+        if (!sys.team) claims.push(claim("You're not on a team in this match, so the team systems (treasury, team plans, Economy Governor) aren't active.", 'fact', 'confirmed', []));
+        else {
+          const t = sys.team;
+          sys.teammates.forEach(m => {
+            if (m.inRecovery) claims.push(claim(`${m.name} is in economic recovery, so it is saving cash rather than spending it.`, 'fact', 'confirmed', []));
+            if (m.protectedCash) claims.push(claim(`${m.name} has ${money(m.protectedCash)} locked in its Cash Vault, which it won't spend.`, 'fact', 'confirmed', giFactIds(exec, [`sys.vault.${m.id}`])));
+          });
+          if (t.governorEnabled) claims.push(claim('The team Economy Governor is on: it can stop AI teammates spending when their cash or reserve is low.', 'fact', 'confirmed', []));
+          if (t.activePlan) claims.push(claim(`The active team plan is “${t.activePlan.objective}” (${t.activePlan.status.replace(/_/g, ' ')})${t.activePlan.reservedCash ? `, which reserves ${money(t.activePlan.reservedCash)} for itself` : ''}.`, 'fact', 'confirmed', giFactIds(exec, ['sys.planReserved'])));
+          if (t.treasuryBalance !== null) claims.push(claim(`The team treasury holds ${money(t.treasuryBalance)}${t.treasuryReserve ? `, with ${money(t.treasuryReserve)} kept in reserve` : ''}.`, 'fact', 'confirmed', giFactIds(exec, ['sys.treasury', 'sys.treasuryReserve'])));
+          if (t.pendingFundingRequests) claims.push(claim(`${t.pendingFundingRequests} treasury funding request(s) are still waiting.`, 'fact', 'confirmed', giFactIds(exec, ['sys.fundingRequests'])));
+          if (t.overseerMode) claims.push(claim(`The Overseer is in ${t.overseerMode.replace(/_/g, ' ')} mode${t.safeMode ? ', with Safe Mode active' : ''}.`, 'fact', 'confirmed', []));
+          if (t.governanceMode) claims.push(claim(`Team governance is set to ${t.governanceMode.replace(/_/g, ' ')}.`, 'fact', 'confirmed', []));
+        }
+      }
+      if (wants(/\bguardian\b/) || (!claims.length && sys.guardian)) {
+        if (sys.guardian) claims.push(claim(sys.guardian.enabled ? `Guardian is on (${sys.guardian.protectionLevel.replace(/_/g, ' ')}, ${sys.guardian.responseMode.replace(/_/g, ' ')}): it warns about or blocks risky moves.` : 'Guardian is off, so risky moves are not intercepted.', 'fact', 'confirmed', []));
+      }
+      if (wants(/\b(auto ?mode|automode|autopilot)\b/) && sys.autoMode) claims.push(claim(sys.autoMode.enabled ? `Auto Mode is on${sys.autoMode.permission ? ` with ${sys.autoMode.permission.replace(/_/g, ' ')} permission` : ''}.` : 'Auto Mode is off.', 'fact', 'confirmed', []));
+      if (wants(/\bcopilot\b/)) claims.push(claim(`Co-Pilot is ${sys.coPilot.enabled ? 'enabled' : 'off'} (authority: ${sys.coPilot.authorityMode.replace(/_/g, ' ')})${sys.coPilot.minimumCashReserve !== null ? `, keeping at least ${money(sys.coPilot.minimumCashReserve)} in cash` : ''}${sys.coPilot.sessionStatus ? `; its current session is ${sys.coPilot.sessionStatus}` : ''}.`, 'fact', 'confirmed', giFactIds(exec, ['sys.copilotReserve'])));
+      if (sys.pendingApprovals && (wants(/\bapprov/) || teamish)) claims.push(claim(`${sys.pendingApprovals} approval request(s) are waiting for you — nothing they cover happens until you answer.`, 'fact', 'confirmed', giFactIds(exec, ['sys.approvals'])));
+      if (wants(/\bexpedition/)) claims.push(claim(sys.expeditions.length ? `Active expeditions: ${sys.expeditions.join(', ')}.` : 'You have no active expeditions.', 'fact', 'confirmed', []));
+      if (wants(/\b(scenario|campaign|mission)\b/)) claims.push(claim(sys.scenarioObjectives.length ? `Scenario objectives: ${sys.scenarioObjectives.join('; ')}.` : 'No scenario objectives are active in this match.', 'fact', 'confirmed', []));
+      if (wants(/\b(memory|remember|learned|learn)\b/)) claims.push(claim(sys.memoryInspection ? 'Full AI memory inspection is on, so Ask-the-Game can show what the AI has learned.' : "Rival AI memory stays private unless full memory inspection is turned on in settings.", 'fact', 'confirmed', []));
+      if (!claims.length) claims.push(claim('None of those systems is doing anything that would explain this right now.', 'inference', 'moderate', []));
+      section('answer', null, claims);
+      if (teamish && sys.team) buttons.push({ id: 'open_team', label: 'Team plan settings (LAB)', kind: 'open', nav: navAction('assistant_advanced', 'Team plan settings', { section: 'teamModeAi.teamPlans' }), tone: 'secondary' });
+      break;
+    }
     case 'settings_lookup': {
       kind = 'ask_engine';
       const res = giResult(exec, 'settings_search')?.data;
@@ -102966,10 +105317,13 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       break;
   }
 
+  const hypothesis = composeGIHypothesisCheck(u, world);
+  if (hypothesis) sections.push(hypothesis);
   const grounded = sections.some(s => s.claims.some(c => c.kind !== 'caveat' || c.factIds.length > 0)) || sections.length > 0;
   const recommendedLabel = set?.recommended?.label;
   const deficit = ctx.lastDeficit?.amount;
-  const followUps = buildGIFollowUps(u, world, shape, { deficit, recommended: recommendedLabel, options: u.options });
+  const frameFollowUps = buildGIFrameFollowUps(u, world);
+  const followUps = [...frameFollowUps, ...buildGIFollowUps(u, world, shape, { deficit, recommended: recommendedLabel, options: u.options }).filter(x => !frameFollowUps.includes(x))].slice(0, 4);
   return { title, sections, buttons, followUps, shape, contextUpdates: ctx, kind, grounded };
 }
 
@@ -102998,6 +105352,25 @@ function giNumbersIn(text: string): Array<{ value: number; strict: boolean }> {
   return out;
 }
 
+/** Capitalised acronyms the game uses that are never places. */
+const GI_NON_LOCATION_ACRONYMS = new Set(['AP', 'AI', 'OK', 'VS', 'HSR', 'XP', 'HP', 'UI', 'LAB', 'NPC', 'CPU', 'ASAP', 'GDP', 'ID']);
+
+/**
+ * A capitalised 2–4 letter code used as a place ("in XX", "to XX", "take XX", "controls XX", "XX is
+ * controlled…") must exist in the canonical location registry (regions + external territories).
+ * Codes that are registered are always accepted, wherever they appear.
+ */
+export function findUnknownGILocationCode(text: string, known: Set<string> = getGIKnownLocationCodes()): string | null {
+  const placeRe = /\b(?:in|to|from|into|at|towards?|defend|take|hold|contest|controls?|controlled|control of|leave)\s+([A-Z]{2,4})\b|\b([A-Z]{2,4})\s+(?:is|are)\s+(?:controlled|exposed|threatened|contested|uncontrolled)\b/g;
+  let m: RegExpExecArray | null;
+  const src = String(text || '').replace(/\b(In|To|From|Into|At|Towards?|Defend|Take|Hold|Contest|Controls?|Controlled|Leave)\b/g, w => w.toLowerCase());
+  while ((m = placeRe.exec(src))) {
+    const code = m[1] || m[2];
+    if (code && !known.has(code) && !GI_NON_LOCATION_ACRONYMS.has(code)) return code;
+  }
+  return null;
+}
+
 /**
  * Verifies every claim before it reaches the player: numbers must come from evidence (or an
  * explicitly derived calculation), region names must exist, predictions and projections must be
@@ -103021,7 +105394,7 @@ export function verifyGIClaims(sections: GIAnswerSection[], graph: GIEvidenceGra
   world.contracts.forEach(c => { addNum(c.title); addNum(c.blocker || ''); });
   const removed: GIVerificationReport['removed'] = [];
   let checked = 0;
-  const regionCodes = new Set(Object.keys(REGIONS));
+  const locationCodes = getGIKnownLocationCodes();
   const out = sections.map(s => ({
     ...s,
     claims: s.claims.filter(c => {
@@ -103030,8 +105403,7 @@ export function verifyGIClaims(sections: GIAnswerSection[], graph: GIEvidenceGra
       for (const n of giNumbersIn(c.text)) {
         if (n.strict && !allowed.has(Math.round(n.value * 100) / 100)) { removed.push({ text: c.text, reason: `unverified number ${n.value}` }); return false; }
       }
-      const codes = (c.text.match(/\b[A-Z]{2,3}\b/g) || []).filter(x => !['AP', 'AI', 'OK', 'VS'].includes(x));
-      const badCode = codes.find(code => /^(NSW|VIC|QLD|SA|WA|NT|TAS|ACT|NOR|CHR|CCK|CSI|ACI)$/.test(code) && !regionCodes.has(code));
+      const badCode = findUnknownGILocationCode(c.text, locationCodes);
       if (badCode) { removed.push({ text: c.text, reason: `unknown region ${badCode}` }); return false; }
       if (/\b(caused|causes|because of)\b/i.test(c.text) && c.kind !== 'fact') { removed.push({ text: c.text, reason: 'causal claim without direct evidence' }); return false; }
       if (c.kind === 'prediction' && (c.certainty === 'confirmed' || c.certainty === 'high')) { removed.push({ text: c.text, reason: 'prediction presented as certain' }); return false; }
@@ -103098,6 +105470,26 @@ function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, c
     if (cu.pendingClarification !== undefined) next.pendingClarification = cu.pendingClarification;
   }
   next.lastUnresolvedQuestion = u.unresolvedReferences.length ? u.originalQuery : null;
+  // GI 2.1: previous question + entities (corrections / fragments), plan horizon, bounded topic stack.
+  if (u.repair?.op === 'cancel') {
+    next.lastQuery = null;
+    next.lastQueryEntities = [];
+  } else {
+    next.lastQuery = (u.effectiveQuery || u.originalQuery).slice(0, 300);
+    next.lastQueryEntities = queryEntities.slice(0, 6).map(e => ({ ...e, source: 'context' as const }));
+    if (u.horizon) next.lastHorizon = u.horizon;
+    const topic = next.activeTopic;
+    if (topic) {
+      const prevStack = (ctx.topicStack || []).filter(tf => !(tf.topic && tf.topic.kind === topic.kind && tf.topic.id === topic.id));
+      const opener = (ctx.topicStack || []).find(tf => tf.topic && tf.topic.kind === topic.kind && tf.topic.id === topic.id);
+      next.topicStack = [{
+        topic,
+        parent: prevStack[0]?.topic?.label || null,
+        related: queryEntities.filter(e => !(e.kind === topic.kind && e.id === topic.id)).slice(0, 4).map(e => ({ ...e, source: 'context' as const })),
+        query: opener?.query || (u.effectiveQuery || u.originalQuery).slice(0, 300)
+      }, ...prevStack].slice(0, GI_TOPIC_STACK_LIMIT);
+    }
+  }
   const recent = [...queryEntities.map(e => ({ ...e, source: 'context' as const })), ...next.recent];
   const seen = new Set<string>();
   next.recent = recent.filter(r => { const k = `${r.kind}:${r.id}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, GI_CONTEXT_RECENT_LIMIT);
@@ -103141,17 +105533,43 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
     clarification: u.needs.clarification,
     verification,
     askIntent: u.askIntent,
-    planId: plan.planId
+    planId: plan.planId,
+    language: buildGILanguageDiagnostics(u, plan)
   });
 
+  // GI 2.1: "ignore that" / "never mind" — acknowledge and drop the previous question.
+  if (u.repair?.op === 'cancel') {
+    const answer: GameIntelligenceAnswer = {
+      id: `gi_${plan.planId}_${context.exchanges}`, query, kind: 'insufficient', title: 'Okay — dropped that',
+      lines: ["Okay, I've set that question aside. Ask me something else whenever you're ready."], evidence: [], buttons: [
+        { id: 'fu_0', label: 'What should I do next?', kind: 'ask', query: 'What should I do next?', tone: 'secondary' }
+      ], sourceSystems: [], grounded: true,
+      gi: { queryType: 'clarification', confidence: 0.9, confidenceLabel: giConfidenceLabel(0.9), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId, domainHashes: pickGIDomainHashes(world, plan.fingerprintDomains) }
+    };
+    return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase({ passed: true, checked: 0, removed: [] }, 0.9, false), plan, understanding: u, delegateToAskEngine: false };
+  }
+
+  // GI 2.1: genuinely ambiguous wording with close candidate interpretations → a focused choice.
+  const alts = u.frame?.alternativeFrames || [];
+  if (alts.length >= 2 && alts[0].confidence - alts[1].confidence < 0.15 && u.primary !== 'control') {
+    const answer: GameIntelligenceAnswer = {
+      id: `gi_${plan.planId}_${context.exchanges}`, query, kind: 'insufficient', title: 'Which do you mean?',
+      lines: ['That could mean a couple of things. Pick the one you meant:'], evidence: [],
+      buttons: alts.slice(0, 3).map(a => ({ id: `clarify_${a.id}`, label: a.label, kind: 'ask' as const, query: a.query, tone: 'secondary' as const })),
+      sourceSystems: [], grounded: false, clarification: true,
+      gi: { queryType: 'clarification', confidence: alts[0].confidence, confidenceLabel: giConfidenceLabel(alts[0].confidence), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId, domainHashes: pickGIDomainHashes(world, plan.fingerprintDomains) }
+    };
+    return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase({ passed: true, checked: 0, removed: [] }, alts[0].confidence, false), plan, understanding: u, delegateToAskEngine: false };
+  }
+
   // Grounded V9 builders stay canonical for "show alternatives" and "what is Co-Pilot doing".
-  const legacyRoute = classifyGameIntelligenceRequest(query);
+  const legacyRoute = classifyGameIntelligenceRequest(u.frame?.canonicalText || query);
   if (u.primary !== 'control' && (legacyRoute.kind === 'alternatives' || legacyRoute.kind === 'activity')) {
     const answer = legacyRoute.kind === 'alternatives'
       ? buildAlternativesIntelligenceAnswer({ query, actionSet: world.actionSet, control: world.control, excludeId: world.actionSet?.recommended?.id })
       : buildActivityIntelligenceAnswer({ query, control: world.control, session: world.session || null, ledgerEvents: world.ledgerEvents || [] });
     const conf = answer.grounded ? 0.85 : 0.4;
-    answer.gi = { queryType: legacyRoute.kind === 'alternatives' ? 'comparison' : 'history', confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId };
+    answer.gi = { queryType: legacyRoute.kind === 'alternatives' ? 'comparison' : 'history', confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId, domainHashes: pickGIDomainHashes(world, plan.fingerprintDomains) };
     const verification = { passed: true, checked: answer.lines.length, removed: [] };
     return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase(verification, conf, false), plan, understanding: u, delegateToAskEngine: false };
   }
@@ -103160,7 +105578,7 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
   if (u.primary === 'control' && u.controlRoute) {
     const answer = buildIntelligenceControlAnswer(u.controlRoute, world.control, query);
     const verification = { passed: true, checked: 0, removed: [] };
-    answer.gi = { queryType: 'control', confidence: 0.95, confidenceLabel: giConfidenceLabel(0.95), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId };
+    answer.gi = { queryType: 'control', confidence: 0.95, confidenceLabel: giConfidenceLabel(0.95), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId, domainHashes: pickGIDomainHashes(world, plan.fingerprintDomains) };
     return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase(verification, 0.95, false), plan, understanding: u, delegateToAskEngine: false };
   }
 
@@ -103181,6 +105599,9 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
   }
 
   const composed = composeGIAnswer(u, plan, exec, world, context);
+  if (u.assumptions?.length && composed.shape !== 'clarification') {
+    composed.sections.unshift({ id: 'assumption', heading: null, claims: u.assumptions.slice(0, 1).map(a => claim(a, 'caveat', 'confirmed', [])) });
+  }
   const derivedNumbers: number[] = [];
   if (composed.contextUpdates.lastDeficit) derivedNumbers.push(composed.contextUpdates.lastDeficit.amount);
   // Numbers carried in structured conversation context were verified when they were first stated.
@@ -103189,6 +105610,8 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
     giNumbersIn(context.lastDeficit.forLabel).forEach(n => derivedNumbers.push(n.value));
   }
   const verified = verifyGIClaims(composed.sections, exec.graph, world, derivedNumbers);
+  // Response depth ("quick answer", "just tell me", "show me the math") only selects among VERIFIED claims.
+  verified.sections = shapeGISectionsForStyle(verified.sections, u.style);
   const confidence = computeGIConfidence(u, plan, exec, verified.report, verified.sections);
   const evidence: GameIntelligenceEvidence[] = Object.values(exec.graph.facts).slice(0, 14).map(f => ({
     source: f.source,
@@ -103222,7 +105645,7 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
     sourceSystems: Array.from(new Set(Object.values(exec.graph.facts).map(f => f.source))).slice(0, 6),
     grounded: composed.grounded && claimsFlat.some(c => c.kind !== 'caveat'),
     sections: verified.sections,
-    gi: { queryType: u.queryType, confidence, confidenceLabel: giConfidenceLabel(confidence), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId }
+    gi: { queryType: u.queryType, confidence, confidenceLabel: giConfidenceLabel(confidence), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId, domainHashes: pickGIDomainHashes(world, plan.fingerprintDomains) }
   };
   if (composed.shape === 'clarification') answer.clarification = true;
   return {
@@ -103236,9 +105659,12 @@ export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn
 }
 
 /**
- * Async wrapper: delegates to the Ask-the-Game engine when the plan says so, then checks freshness.
- * If relevant state changed while waiting, the answer is recomputed once from fresh state; if it
- * changed again, actionable buttons are removed and the answer is marked stale.
+ * Async wrapper with a bounded freshness contract:
+ *   1. build the answer from world snapshot A;
+ *   2. if a state domain the plan depends on changed meanwhile, rebuild the answer ONCE from
+ *      fresh snapshot B (a real recomputation — not a relabelled fingerprint);
+ *   3. if it changed again, the answer is marked stale and loses its state-bound actions.
+ * Applies to every path (delegated or not); there is never a recomputation loop.
  */
 export async function runGameIntelligence(input: {
   query: string;
@@ -103248,37 +105674,147 @@ export async function runGameIntelligence(input: {
   refreshWorld?: () => GIWorld;
   queryId?: string;
 }): Promise<GIRunResult> {
-  let result = runGameIntelligenceCore(input.query, input.world, input.context, input.queryId);
-  if (result.delegateToAskEngine) {
-    let response: AskGameResponse | null = null;
-    try { response = input.askEngine ? await input.askEngine(input.query) : null; } catch { response = null; }
-    const wrapped = buildAskEngineIntelligenceAnswer(input.query, response);
-    const followUps = buildGIFollowUps(result.understanding, input.world, 'fact');
-    wrapped.buttons = [...wrapped.buttons.filter(b => b.kind !== 'ask'), ...followUps.slice(0, 3).map((f, i) => ({ id: `fu_${i}`, label: f, kind: 'ask' as const, query: f, tone: 'secondary' as const }))];
-    const conf = Math.max(0.05, Math.min(0.95, Number(response?.confidence ?? 0.3)));
-    wrapped.gi = { queryType: result.understanding.queryType, confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: input.world.fingerprint, freshness: 'current', planId: result.plan.planId };
-    result = { ...result, answer: wrapped, diagnostics: { ...result.diagnostics, confidence: conf, steps: result.diagnostics.steps.map(s => s.tool === 'ask_engine' ? { ...s, status: response ? 'ok' : 'failed' } : s) } };
-  }
-  if (input.refreshWorld && !result.delegateToAskEngine) return result;
-  if (input.refreshWorld) {
-    const fresh = input.refreshWorld();
-    if (fresh.fingerprint !== input.world.fingerprint) {
-      const actionable = result.answer.buttons.some(b => b.kind === 'do' || b.kind === 'end_turn');
-      if (result.answer.gi) {
-        result.answer.gi.freshness = 'updated';
-        result.answer.gi.freshnessNote = 'Game state changed while I was checking that. This answer uses the latest state where it matters.';
-        result.answer.gi.fingerprint = fresh.fingerprint;
+  const runOnce = async (world: GIWorld): Promise<GIRunResult> => {
+    let result = runGameIntelligenceCore(input.query, world, input.context, input.queryId);
+    if (result.delegateToAskEngine) {
+      let response: AskGameResponse | null = null;
+      // The Ask-the-Game engine receives the recovered wording (typos fixed, corrections applied).
+      const askText = result.understanding.repair?.rewrittenQuery || result.understanding.frame?.canonicalText || input.query;
+      try { response = input.askEngine ? await input.askEngine(askText) : null; } catch { response = null; }
+      const wrapped = buildAskEngineIntelligenceAnswer(input.query, response);
+      const followUps = buildGIFollowUps(result.understanding, world, 'fact');
+      wrapped.buttons = [...wrapped.buttons.filter(b => b.kind !== 'ask'), ...followUps.slice(0, 3).map((f, i) => ({ id: `fu_${i}`, label: f, kind: 'ask' as const, query: f, tone: 'secondary' as const }))];
+      const conf = Math.max(0.05, Math.min(0.95, Number(response?.confidence ?? 0.3)));
+      wrapped.gi = { queryType: result.understanding.queryType, confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: world.fingerprint, freshness: 'current', planId: result.plan.planId, domainHashes: pickGIDomainHashes(world, result.plan.fingerprintDomains) };
+      result = { ...result, answer: wrapped, diagnostics: { ...result.diagnostics, confidence: conf, steps: result.diagnostics.steps.map(s => s.tool === 'ask_engine' ? { ...s, status: response ? 'ok' : 'failed' } : s) } };
+    } else if (result.understanding.memoryEvidence && input.askEngine) {
+      // GI 2.1: Game Intelligence stays the synthesis layer; AI Memory (via Ask-the-Game, which enforces
+      // visibility and permission rules) is one evidence provider for compound strategic questions.
+      let response: AskGameResponse | null = null;
+      try { response = await input.askEngine(result.understanding.effectiveQuery || input.query); } catch { response = null; }
+      const text = response?.permissionRequired
+        ? 'Details of what the rival AI has learned need permission (full memory inspection), so they are left out.'
+        : String(response?.mainAnswer || '').split(/(?<=[.!?])\s+/).slice(0, 2).join(' ').slice(0, 280);
+      if (text) {
+        const memClaim = claim(text, response?.permissionRequired ? 'caveat' : 'inference', 'moderate', [], { derived: giNumbersIn(text).map(n => n.value) });
+        const memSection: GIAnswerSection = { id: 'memory', heading: 'What the AI memory shows', claims: [memClaim] };
+        result.answer.sections = [...(result.answer.sections || []), memSection];
+        result.answer.lines = [...result.answer.lines, memClaim.text];
+        result.answer.sourceSystems = Array.from(new Set([...result.answer.sourceSystems, 'AI Memory (Ask-the-Game)'])).slice(0, 7);
       }
-      if (actionable) result.answer.buttons = result.answer.buttons.filter(b => b.kind !== 'do' && b.kind !== 'end_turn');
-      result.diagnostics = { ...result.diagnostics, freshness: 'updated' };
     }
+    return result;
+  };
+  const first = await runOnce(input.world);
+  if (!input.refreshWorld) return first;
+  const snapshotB = input.refreshWorld();
+  if (!giWorldChangedFor(input.world, snapshotB, first.plan.fingerprintDomains)) return first;
+
+  // Relevant state moved while analysing: recompute once from the fresh snapshot.
+  const second = await runOnce(snapshotB);
+  const snapshotC = input.refreshWorld();
+  if (!giWorldChangedFor(snapshotB, snapshotC, second.plan.fingerprintDomains)) {
+    if (second.answer.gi) {
+      second.answer.gi.freshness = 'updated';
+      second.answer.gi.freshnessNote = 'The game state changed while I was checking, so I rebuilt this answer from the latest state.';
+    }
+    second.diagnostics = { ...second.diagnostics, freshness: 'updated' };
+    return second;
   }
-  return result;
+  // Changed again: present the analysis, but never as current or actionable.
+  second.answer.buttons = second.answer.buttons.filter(b => !GI_STATE_BOUND_BUTTON_KINDS.includes(b.kind));
+  if (second.answer.gi) {
+    second.answer.gi.freshness = 'stale';
+    second.answer.gi.freshnessNote = 'The game state kept changing while I was checking — ask again for current advice.';
+  }
+  second.diagnostics = { ...second.diagnostics, freshness: 'stale' };
+  return second;
 }
 
-/** Freshness check used at render time: an answer built on an older state must not offer Do It. */
-export function isGIAnswerStale(answer: GameIntelligenceAnswer, currentFingerprint: string): boolean {
-  return Boolean(answer.gi && answer.gi.fingerprint && currentFingerprint && answer.gi.fingerprint !== currentFingerprint);
+/** Buttons whose meaning depends on the exact state they were computed from. */
+export const GI_STATE_BOUND_BUTTON_KINDS: GameIntelligenceButtonKind[] = ['do', 'end_turn', 'take_over_turn'];
+
+// ---- Dependency-aware fingerprints -------------------------------------------
+
+export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history';
+export type GIFingerprintMap = Partial<Record<GIFingerprintDomain, string>>;
+export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history'];
+
+/** Which state domains each grounded tool reads. 'turn' (actor/turn/day) is always included. */
+const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
+  player_state: ['player', 'assistance'],
+  objective_state: ['objectives'],
+  control_state: ['assistance'],
+  region_state: ['world', 'player'],
+  market_state: ['market', 'player'],
+  project_state: ['projects', 'player'],
+  contract_state: ['contracts', 'player'],
+  actor_state: ['actors'],
+  observed_history: ['history'],
+  rank_actions: ['objectives', 'player'],
+  plan_sequence: ['objectives', 'player', 'assistance'],
+  validate_options: ['player', 'world'],
+  affordability: ['player', 'projects', 'assistance'],
+  simulate_options: ['player', 'world', 'market'],
+  economy_scan: ['player', 'market', 'projects'],
+  threat_scan: ['world', 'actors'],
+  conflict_scan: ['objectives', 'assistance'],
+  settings_search: ['assistance'],
+  system_state: ['assistance', 'actors', 'objectives'],
+  ask_engine: GI_FINGERPRINT_DOMAINS
+};
+
+export function giPlanFingerprintDomains(steps: GIPlanStep[], u: GIQueryUnderstanding): GIFingerprintDomain[] {
+  const set = new Set<GIFingerprintDomain>(['turn']);
+  steps.forEach(s => (GI_TOOL_FINGERPRINT_DOMAINS[s.tool] || GI_FINGERPRINT_DOMAINS).forEach(d => set.add(d)));
+  if (u.options.length) { set.add('player'); set.add('world'); }
+  if (u.primary === 'control' || u.primary === 'control_explain') set.add('assistance');
+  if (u.primary === 'ask_engine') GI_FINGERPRINT_DOMAINS.forEach(d => set.add(d));
+  return GI_FINGERPRINT_DOMAINS.filter(d => set.has(d));
+}
+
+/** Stable per-domain hashes from compact, already-extracted state slices (never the whole game state). */
+export function buildGIDomainFingerprints(slices: Partial<Record<GIFingerprintDomain, unknown>>): GIFingerprintMap {
+  const out: GIFingerprintMap = {};
+  GI_FINGERPRINT_DOMAINS.forEach(d => {
+    if (slices[d] === undefined) return;
+    let text = '';
+    try { text = JSON.stringify(slices[d]); } catch { text = String(slices[d]); }
+    out[d] = giHash(text);
+  });
+  return out;
+}
+
+export function composeGIFingerprint(map: GIFingerprintMap): string {
+  return giHash(GI_FINGERPRINT_DOMAINS.map(d => `${d}:${map[d] ?? ''}`).join('|'));
+}
+
+export function pickGIDomainHashes(world: GIWorld, domains: GIFingerprintDomain[]): GIFingerprintMap | undefined {
+  if (!world.fingerprints) return undefined;
+  const out: GIFingerprintMap = {};
+  domains.forEach(d => { if (world.fingerprints![d] !== undefined) out[d] = world.fingerprints![d]; });
+  return out;
+}
+
+/** True when any domain the answer depends on differs between two snapshots. */
+export function giWorldChangedFor(a: GIWorld, b: GIWorld, domains: GIFingerprintDomain[]): boolean {
+  if (a.fingerprints && b.fingerprints) return domains.some(d => (a.fingerprints![d] ?? '') !== (b.fingerprints![d] ?? ''));
+  return a.fingerprint !== b.fingerprint;
+}
+
+/**
+ * Freshness check used at render time: an answer built on an older state must not offer state-bound
+ * actions. With per-domain hashes only the domains the answer read are compared.
+ */
+export function isGIAnswerStale(answer: GameIntelligenceAnswer, current: string | GIFingerprintMap | null | undefined): boolean {
+  if (!answer.gi) return false;
+  if (answer.gi.freshness === 'stale') return true;
+  if (!current) return false;
+  if (typeof current !== 'string' && answer.gi.domainHashes && Object.keys(answer.gi.domainHashes).length) {
+    return (Object.keys(answer.gi.domainHashes) as GIFingerprintDomain[]).some(d => (current[d] ?? '') !== answer.gi!.domainHashes![d]);
+  }
+  const composite = typeof current === 'string' ? current : composeGIFingerprint(current);
+  return Boolean(answer.gi.fingerprint && composite && answer.gi.fingerprint !== composite);
 }
 
 export function buildGIWorldFingerprint(parts: Array<string | number | null | undefined>): string {
@@ -103289,7 +105825,7 @@ export function buildGIWorldFingerprint(parts: Array<string | number | null | un
 // 12. GAME INTELLIGENCE 2.0 SELF-TESTS (deterministic fixture world)
 // ----------------------------------------------------------------------------
 
-export function createGIFixtureWorld(overrides?: Partial<GIWorld> & { money?: number; simulate?: boolean }): { world: GIWorld; liveState: any } {
+export function createGIFixtureWorld(overrides?: Partial<GIWorld> & { money?: number; simulate?: boolean; withTeam?: boolean }): { world: GIWorld; liveState: any } {
   const settings = createDefaultGameSettings();
   const money = overrides?.money ?? 6000;
   const inventoryList = ['Gold', 'Gold', 'Iron Ore', 'Iron Ore', 'Iron Ore'];
@@ -103366,7 +105902,8 @@ export function createGIFixtureWorld(overrides?: Partial<GIWorld> & { money?: nu
     contracts: [{ id: 'ag_logistics_nsw', title: 'Agricultural Logistics Contract', regionId: 'NSW', status: 'available', requiredMoney: 15000, rewardMoney: 20000, turnsRemaining: 5, blocker: 'Contract requires $15,000 (have $6,000)', assignedToPlayer: false }],
     actors: [
       { id: 'player', name: 'Adam', relation: 'self', kind: 'human', money, location: 'NSW', regionsControlled: 1, visible: true },
-      { id: 'ai', name: 'Riley', relation: 'rival', kind: 'ai', money: 9000, location: 'VIC', regionsControlled: 2, visible: true }
+      { id: 'ai', name: 'Riley', relation: 'rival', kind: 'ai', money: 9000, location: 'VIC', regionsControlled: 2, visible: true },
+      ...(overrides?.withTeam ? [{ id: 'mate', name: 'Sam', relation: 'teammate' as const, kind: 'ai' as const, money: 2500, location: 'QLD', regionsControlled: null, visible: true }] : [])
     ],
     observed: [
       { day: 3, actorId: 'ai', actorName: 'Riley', summary: 'Riley deposited $2,000 in Victoria', kind: 'region deposit' },
@@ -103374,7 +105911,21 @@ export function createGIFixtureWorld(overrides?: Partial<GIWorld> & { money?: nu
       { day: 4, actorId: 'ai', actorName: 'Riley', summary: 'Riley deposited $500 in South Australia', kind: 'region deposit' }
     ],
     primaryRivalId: 'ai',
-    teammateIds: [],
+    teammateIds: overrides?.withTeam ? ['mate'] : [],
+    systems: {
+      team: overrides?.withTeam ? {
+        name: 'Team Adam', treasuryBalance: 4000, treasuryReserve: 2500, pendingFundingRequests: 1, governanceMode: 'leader_approval',
+        activePlan: { objective: 'Hold the east coast', status: 'active', type: 'defend', reservedCash: 2000 }, overseerMode: 'conservative', safeMode: false, governorEnabled: true
+      } : null,
+      teammates: overrides?.withTeam ? [{ id: 'mate', name: 'Sam', inRecovery: true, protectedCash: 1500 }] : [],
+      guardian: { enabled: true, protectionLevel: 'major_mistakes', responseMode: 'adaptive' },
+      autoMode: { enabled: false, permission: 'recommend_only' },
+      coPilot: { enabled: false, authorityMode: 'off', minimumCashReserve: 1000, sessionStatus: null },
+      pendingApprovals: 0,
+      expeditions: [],
+      scenarioObjectives: [],
+      memoryInspection: false
+    },
     settings: { fogOfWar: false, aiMemoryFullInspection: false, experienceLevel: 'guided' },
     tools: {
       simulate: overrides?.simulate === false ? undefined : (intent) => simulateGIActionOnClone(liveState, 'player', intent, settings)
@@ -103536,6 +106087,501 @@ export async function runGameIntelligence2AsyncSelfTests(): Promise<V9SelfTestRe
   } catch (e) {
     results.push({ id: 'gi2_freshness_async', name: 'State change during an async query is detected', passed: false, detail: e instanceof Error ? e.message : String(e) });
   }
+  return results;
+}
+
+
+// ----------------------------------------------------------------------------
+// 13. GAME INTELLIGENCE 2.1 — NATURAL LANGUAGE SELF-TESTS
+// ----------------------------------------------------------------------------
+// Paraphrase, permutation, noise, typo-mutation, shorthand, negation, quantity, temporal,
+// conditional, correction, ambiguity, control-safety and freshness tests. Deterministic: fixed
+// fixtures, fixed mutations, bounded permutations — never random.
+
+export type GISemanticField = 'primary' | 'supporting' | 'entities' | 'actions' | 'goals' | 'constraints' | 'horizon' | 'options' | 'problems' | 'threats' | 'requests' | 'loan';
+
+/** Compare the meaning of two understandings (not object identity or surface wording). */
+export function assertGISemanticallyEquivalent(a: GIQueryUnderstanding, b: GIQueryUnderstanding, fields: GISemanticField[] = ['primary', 'entities', 'problems', 'threats', 'loan', 'options']): true | string {
+  const view = (u: GIQueryUnderstanding, f: GISemanticField): string => {
+    const fr = u.frame;
+    const sum = fr ? summarizeGIFrame(fr) : null;
+    switch (f) {
+      case 'primary': return u.primary;
+      case 'supporting': return [...u.supporting].sort().join(',');
+      case 'entities': return Array.from(new Set(u.entities.filter(e => e.kind === 'region' || e.kind === 'resource' || e.kind === 'project').map(e => `${e.kind}:${e.id}`))).sort().join(',');
+      case 'actions': return (sum?.actions || []).join(',');
+      case 'goals': return (sum?.goals || []).join(',');
+      case 'constraints': return (sum?.constraints || []).join(',');
+      case 'horizon': return u.horizon ? `${u.horizon.count} ${u.horizon.unit}` : '-';
+      case 'options': return u.options.map(o => o.id).sort().join(',');
+      case 'problems': return (sum?.problems || []).filter(p => p !== 'region_threat').join(',');
+      case 'threats': return (sum?.threatRegions || []).join(',');
+      case 'requests': return (sum?.requests || []).filter(r => r === 'recommendation' || r === 'comparison' || r === 'diagnosis').join(',');
+      case 'loan': return String(u.constraints.loanPolicy || '-');
+    }
+  };
+  const diffs = fields.filter(f => view(a, f) !== view(b, f)).map(f => `${f}: "${view(a, f)}" vs "${view(b, f)}"`);
+  return diffs.length ? diffs.join('; ') : true;
+}
+
+/** Bounded, deterministic clause permutations (lexicographic, evenly sampled — no factorial blow-up). */
+export function generateGIClausePermutations(units: string[], cap = 8): string[] {
+  const all: number[][] = [];
+  const permute = (prefix: number[], rest: number[]) => {
+    if (all.length >= 120) return;
+    if (!rest.length) { all.push(prefix); return; }
+    rest.forEach((r, i) => permute([...prefix, r], [...rest.slice(0, i), ...rest.slice(i + 1)]));
+  };
+  permute([], units.map((_, i) => i));
+  const step = Math.max(1, Math.floor(all.length / cap));
+  const picked = all.filter((_, i) => i % step === 0).slice(0, cap);
+  return picked.map((order, k) => order.map(i => units[i]).join(k % 2 === 0 ? '. ' : ', ') + (k % 3 === 0 ? '?' : '.'));
+}
+
+/** Fixed typo mutations of a word: deletion, adjacent transposition, substitution, insertion. */
+export function mutateGIWord(word: string): string[] {
+  const w = word;
+  const mid = Math.max(1, Math.floor(w.length / 2));
+  const nextLetter = (ch: string) => (ch === 'z' ? 'y' : String.fromCharCode(ch.charCodeAt(0) + 1));
+  return Array.from(new Set([
+    w.slice(0, mid) + w.slice(mid + 1),                               // delete
+    w.slice(0, mid - 1) + w[mid] + w[mid - 1] + w.slice(mid + 1),     // transpose
+    w.slice(0, mid) + nextLetter(w[mid]) + w.slice(mid + 1),          // substitute
+    w.slice(0, mid) + w[mid] + w.slice(mid)                           // insert (double a letter)
+  ])).filter(x => x !== w);
+}
+
+export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const W = () => createGIFixtureWorld().world;
+  const run = (q: string, ctx?: GIConversationContext, w?: GIWorld) => runGameIntelligenceCore(q, w || W(), ctx || createGIConversationContext());
+  const und = (q: string, ctx?: GIConversationContext, w?: GIWorld) => understandGIQuery(q, w || W(), ctx || createGIConversationContext());
+  const text = (r: GIRunResult) => r.answer.lines.join(' ');
+  const family = (qs: string[], fields: GISemanticField[]): true | string => {
+    const base = und(qs[0]);
+    for (const q of qs.slice(1)) {
+      const r = assertGISemanticallyEquivalent(base, und(q), fields);
+      if (r !== true) return `"${q}": ${r}`;
+    }
+    return true;
+  };
+
+  check('gi21_version', 'GAME_VERSION reports 8.4.0', () => GAME_VERSION === '8.4.0' || GAME_VERSION);
+
+  check('gi21_paraphrase_family', 'Part 34 paraphrases → equivalent frames (recommendation, NSW threat)', () => {
+    const qs = [
+      "I'm broke and Riley's taking NSW. No loans. What now?",
+      "What should I do if Riley is nearly controlling NSW and I don't have much cash?",
+      'no debt pls riley almost got nsw and im low on money',
+      "Riley → NSW, I'm broke, don't borrow.",
+      "Need to protect NSW. Cash is low. Can't use loans.",
+      'Low cash, no borrowing, Riley is about to take NSW.',
+      'What can I do right now to stop Riley getting NSW without debt?',
+      "If I'm nearly broke and Riley takes NSW soon, how do I stop it without borrowing?"
+    ];
+    const core = family(qs, ['primary', 'threats', 'requests']);
+    if (core !== true) return core;
+    const withCash = family(qs.filter((_, i) => i !== 6), ['problems']);
+    if (withCash !== true) return withCash;
+    return family(qs.filter((_, i) => i !== 1), ['loan']);
+  });
+
+  check('gi21_north_star', 'North-star phrasings resolve to the same strategic problem', () => family([
+    "I'm broke and Riley is about to take NSW. What should I do without loans?",
+    'riley nearly got nsw im broke no debt help',
+    'no borrowing, cash is gone, and nsw is almost his. what now',
+    'what can i do without a loan because riley is about to flip nsw and i barely have money',
+    "NSW is in trouble. Don't borrow. I'm low on cash. Best move?"
+  ], ['primary', 'problems', 'threats', 'loan', 'requests']));
+
+  check('gi21_permutations', 'Clause permutations (A B C D …) keep the same essential frame', () => {
+    const perms = generateGIClausePermutations(['Riley is about to take NSW', "I'm broke", 'no loans', 'what should I do'], 8);
+    if (perms.length < 6) return `only ${perms.length} permutations`;
+    return family(perms, ['primary', 'problems', 'threats', 'loan']);
+  });
+
+  check('gi21_reordered', 'Part 58 reordered message converges on the same frame', () => {
+    const r = assertGISemanticallyEquivalent(und("I'm broke and Riley is about to take NSW. What should I do without loans?"), und("no debt and what should i do because nsw nearly riley's and cash is basically gone"), ['primary', 'problems', 'threats', 'loan']);
+    return r;
+  });
+
+  check('gi21_noise', 'Filler / noise variants of "Should I defend NSW?" keep the meaning', () => family([
+    'Should I defend NSW?', 'so uh should I maybe defend NSW?', 'honestly do you think I should defend NSW here', 'bro idk maybe protect nsw?', 'like should NSW maybe be defended right now'
+  ], ['primary', 'entities', 'options']));
+
+  check('gi21_order_invariance', 'Word-order variants of "sell my gold" share action + resource + decision', () => family([
+    'sell my gold', 'my gold sell?', 'gold should I sell', 'should gold be sold'
+  ], ['primary', 'entities', 'options']));
+
+  check('gi21_typo_examples', 'Known typos recover (aford, defned, victora, victoira, rily, autonomus, infrastucture, contrct)', () => {
+    const cases: Array<[string, string]> = [['Can I aford it', 'afford'], ['should I defned nsw', 'defend'], ['go to victora', 'victoria'], ['go to victoira', 'victoria'], ['what is rily doing', 'riley'], ['switch to autonomus', 'autonomous'], ['infrastucture costs', 'infrastructure'], ['contrct status', 'contract']];
+    const fails = cases.filter(([q, want]) => !parseGILanguage(q, W(), createGIConversationContext()).canonicalText.toLowerCase().includes(want));
+    return fails.length ? fails.map(f => f[0]).join(', ') : true;
+  });
+
+  check('gi21_typo_mutations', 'Automatic deletion / transposition / substitution / insertion typos mostly recover', () => {
+    const vocab = ['riley', 'victoria', 'afford', 'defend', 'autonomous', 'infrastructure', 'contract', 'queensland', 'tasmania', 'borrow'];
+    let total = 0; let ok = 0; const misses: string[] = [];
+    vocab.forEach(v => mutateGIWord(v).forEach(m => {
+      total++;
+      const f = parseGILanguage(`check ${m} now`, W(), createGIConversationContext());
+      if (f.canonicalText.toLowerCase().includes(v)) ok++; else misses.push(m);
+    }));
+    return ok / total >= 0.8 || `${ok}/${total} recovered; missed ${misses.slice(0, 8).join(', ')}`;
+  });
+
+  check('gi21_typo_query', 'Part 60: "shuld i defned nsw or go victora" → defend NSW vs travel Victoria', () => {
+    const u = und('shuld i defned nsw or go victora');
+    const ids = u.options.map(o => o.id);
+    return (u.primary === 'comparison' && ids.includes('opt_deposit_NSW') && ids.includes('opt_travel_VIC')) || `${u.primary}/${ids}`;
+  });
+
+  check('gi21_no_false_corrections', 'Common English near game words is never "corrected"', () => {
+    const f = parseGILanguage('good hold told sell tell cash case fund find least last wait want', W(), createGIConversationContext());
+    return f.corrections.length === 0 || JSON.stringify(f.corrections);
+  });
+
+  check('gi21_shorthand', 'Shorthand: nsw or vic / sell gold? / go wa? / no loans / riley nsw help / broke what now / ap?', () => {
+    const errs: string[] = [];
+    const a = und('nsw or vic'); if (a.primary !== 'comparison' || a.options.length !== 2) errs.push(`nsw or vic → ${a.primary}`);
+    const b = und('sell gold?'); if (!b.options.some(o => o.id === 'opt_sell_Gold')) errs.push('sell gold?');
+    const c = und('go wa?'); if (!c.options.some(o => o.id === 'opt_travel_WA')) errs.push(`go wa? → ${c.options.map(o => o.id)}`);
+    const d = und('no loans'); if (d.constraints.loanPolicy !== 'forbidden') errs.push('no loans');
+    const e = und('riley nsw help'); if (e.primary !== 'action_recommendation' || !e.frame?.threats.some(t => t.regionId === 'NSW')) errs.push(`riley nsw help → ${e.primary}`);
+    const f = und('broke what now'); if (f.primary !== 'action_recommendation' || !f.frame?.problems.some(p => p.kind === 'low_liquidity')) errs.push(`broke what now → ${f.primary}`);
+    const g = run('ap?'); if (g.understanding.primary !== 'player_status' || !/Action Point/.test(text(g))) errs.push(`ap? → ${g.understanding.primary}`);
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_negation_matrix', 'Negation scope: take / don\'t / don\'t mind / avoid / only if necessary / fine / except / don\'t avoid', () => {
+    const cases: Array<[string, GIConstraintPolicy]> = [
+      ['Take a loan.', 'preferred'], ["Don't take a loan.", 'forbidden'], ["I don't mind taking a loan.", 'allowed'], ['Avoid loans.', 'avoid'],
+      ['Only use a loan if necessary.', 'fallback_only'], ['Loans are fine.', 'allowed'], ['Do anything except take a loan.', 'forbidden'], ["Don't avoid loans.", 'allowed'],
+      ["I don't want to avoid loans.", 'allowed'], ["I'd rather not take a loan.", 'avoid'], ['Only use a loan as a last resort.', 'fallback_only'], ['Loans are fine if needed.', 'allowed'],
+      ['im broke but dont borrow unless theres literally no other option', 'fallback_only'], ["Can't use loans.", 'forbidden']
+    ];
+    const bad = cases.map(([q, want]) => ({ q, want, got: und(q).constraints.loanPolicy })).filter(x => x.got !== x.want);
+    return bad.length ? bad.map(x => `"${x.q}" → ${x.got} (want ${x.want})`).join('; ') : true;
+  });
+
+  check('gi21_sell_policy', '"Don\'t sell Gold unless there\'s no other choice" → selling Gold is a fallback, not a ban', () => {
+    const u = und("Don't sell Gold unless there's no other choice.");
+    return u.constraints.sellPolicies?.Gold === 'fallback_only' || JSON.stringify(u.constraints.sellPolicies);
+  });
+
+  check('gi21_constraint_answer', 'Compound problem: situation first, loans excluded, NSW defence offered, long-term respected', () => {
+    const r = run('bro im broke, riley boutta take nsw and i dont wanna loan anything. what can i do rn without screwing myself later');
+    const t = text(r);
+    const moves = (r.answer.sections || []).find(s => s.id === 'moves')?.claims.map(c => c.text).join(' ') || '';
+    return (r.understanding.primary === 'action_recommendation' && /immediate problem is cash/.test(t) && /bigger strategic risk/.test(t) && /Defend New South Wales/.test(moves) && !/Loan/.test(moves) && /Loans are left out/.test(t)) || t;
+  });
+
+  check('gi21_frame_example', 'Part 57 frame: Riley, NSW, low liquidity, loans forbidden, immediate, long-term preference', () => {
+    const u = und('bro im broke, riley boutta take nsw and i dont wanna loan anything. what can i do rn without screwing myself later');
+    const f = u.frame!;
+    return (f.entities.some(e => e.id === 'ai') && f.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai') && f.problems.some(p => p.kind === 'low_liquidity')
+      && u.constraints.loanPolicy === 'forbidden' && f.time.some(t => t.kind === 'urgency') && f.concepts.some(h => h.id === 'protect_long_term')
+      && ['economy_diagnosis', 'rival_assessment'].every(c => u.supporting.includes(c as GICapability))
+      && f.graph.edges.some(e => e.relation === 'threatens_control_of') && f.graph.edges.some(e => e.relation === 'forbids')) || JSON.stringify(summarizeGIFrame(f));
+  });
+
+  check('gi21_natural_quantity', 'Part 63: another ten grand, keep half my cash, don\'t sell gold → feasibility explained', () => {
+    const r = run('make me another ten grand but keep at least half my current cash and dont sell gold');
+    const c = r.understanding.constraints;
+    const moves = (r.answer.sections || []).find(s => s.id === 'moves')?.claims.map(x => x.text).join(' ') || '';
+    return (c.targetAmount === 10000 && c.cashFloor === 3000 && c.sellPolicies?.Gold === 'forbidden' && (r.answer.sections || []).some(s => s.id === 'feasibility') && !/Sell Gold/.test(moves)) || `${JSON.stringify({ ...c, policies: undefined })} ${text(r)}`;
+  });
+
+  check('gi21_numbers', 'Natural numbers: 10k / ten grand / ten thousand / $10,000 / 25% / keep $2K / couple turns / two more regions', () => {
+    const amt = (q: string) => und(q).constraints.targetAmount;
+    const errs: string[] = [];
+    ['make me 10k', 'make me ten grand', 'make me ten thousand', 'make me $10,000', 'make me about ten grand'].forEach(q => { if (amt(q) !== 10000) errs.push(`${q} → ${amt(q)}`); });
+    const ceil = und("don't spend more than 25% of my cash"); if (ceil.constraints.spendCeiling !== 1500) errs.push(`25% → ${ceil.constraints.spendCeiling}`);
+    const floor = und('keep at least $2K'); if (floor.constraints.cashFloor !== 2000) errs.push(`floor → ${floor.constraints.cashFloor}`);
+    const leave = und('leave me with $5K'); if (leave.constraints.cashFloor !== 5000) errs.push(`leave → ${leave.constraints.cashFloor}`);
+    const hz = und('plan my next couple turns'); if (!hz.horizon || hz.horizon.count !== 2 || hz.horizon.unit !== 'turn') errs.push(`couple turns → ${JSON.stringify(hz.horizon)}`);
+    const mv = und('give me a three move plan'); if (!mv.horizon || mv.horizon.count !== 3) errs.push(`three moves → ${JSON.stringify(mv.horizon)}`);
+    const rg = und('I need two more regions'); if (rg.constraints.targetRegions !== 3) errs.push(`two more regions → ${rg.constraints.targetRegions}`);
+    const half = und('keep half my money'); if (half.constraints.cashFloor !== 3000) errs.push(`half → ${half.constraints.cashFloor}`);
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_fraction_live', 'Fractions of cash resolve against live state (not frozen at parse time)', () => {
+    const a = und('keep half my money', undefined, createGIFixtureWorld({ money: 6000 }).world).constraints.cashFloor;
+    const b = und('keep half my money', undefined, createGIFixtureWorld({ money: 700 }).world).constraints.cashFloor;
+    return (a === 3000 && b === 350) || `${a}/${b}`;
+  });
+
+  check('gi21_temporal', 'Temporal: rn / before Riley moves / after this contract pays / until I control NSW / long term / before the game ends', () => {
+    const t = (q: string) => parseGILanguage(q, W(), createGIConversationContext()).time.map(x => `${x.kind}${x.event ? ':' + x.event : ''}`);
+    const errs: string[] = [];
+    if (!t('what can i do rn').includes('urgency')) errs.push('rn');
+    if (!t('what should I do before Riley moves').includes('before:rival_turn')) errs.push('before rival');
+    if (!t('what should I do after this contract pays').includes('after:contract_payout')) errs.push('after payout');
+    if (!t('keep defending until I control NSW').includes('until:region_control')) errs.push('until');
+    if (!t('what matters long term').includes('long_term')) errs.push('long term');
+    if (!t('I need five regions before the game ends').includes('deadline:end_of_game')) errs.push('deadline');
+    return errs.length ? errs.join(', ') : true;
+  });
+
+  check('gi21_conditional', 'Conditional: "If Riley attacks NSW, defend it. Otherwise go to Victoria." → explained, validated, not automated', () => {
+    const r = run('If Riley attacks NSW, defend it. Otherwise go to Victoria.');
+    const cond = r.understanding.frame!.conditions[0];
+    const t = text(r);
+    return (cond?.isStrategy && cond.then.some(a => a.family === 'defend') && cond.otherwise.some(a => a.family === 'travel' && a.regionId === 'VIC')
+      && /conditional plan/i.test(r.answer.title) && /won't watch for this/.test(t) && !r.answer.immediate && !r.answer.buttons.some(b => b.kind === 'do')) || `${r.answer.title} ${t}`;
+  });
+
+  check('gi21_causal_hypothesis', 'Causal claims are checked as hypotheses, never repeated as fact', () => {
+    const a = run('Infrastructure is killing my economy');
+    const b = run("I'm broke because I spent too much on infrastructure");
+    const c = parseGILanguage("I'm broke and I spent money on infrastructure", W(), createGIConversationContext());
+    return ((a.answer.sections || []).some(s => s.id === 'hypothesis') && /You suggested/.test(text(a)) && (b.answer.sections || []).some(s => s.id === 'hypothesis') && c.hypotheses.length === 0) || `${text(a)} | ${text(b)} | ${c.hypotheses.length}`;
+  });
+
+  check('gi21_implicit_comparisons', 'Implicit comparisons: keep Gold / leave NSW for Victoria / wait vs act / why not the loan', () => {
+    const errs: string[] = [];
+    const a = und('Would I be better off keeping Gold?'); if (a.primary !== 'comparison' || !a.options.some(o => o.id === 'opt_sell_Gold')) errs.push(`keep gold → ${a.primary}`);
+    const b = und('Is Victoria really worth leaving NSW for?'); if (!(b.options.some(o => o.id === 'opt_travel_VIC') && b.options.some(o => o.id === 'opt_deposit_NSW'))) errs.push(`vic/nsw → ${b.options.map(o => o.id)}`);
+    const first = run('What should I do next?');
+    const c = und('Would waiting be smarter?', first.context); if (c.primary !== 'comparison' || !c.options.some(o => o.kind === 'wait')) errs.push(`waiting → ${c.primary}`);
+    const d = und('Why not just take the loan?', first.context); if (d.options.length < 2) errs.push(`why not loan → ${d.options.map(o => o.id)}`);
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_fragment', 'Part 59: "only 600 bucks, riley has nearly got nsw" → checked summary + [What should I do?]', () => {
+    const r = run('only 600 bucks, riley has nearly got nsw');
+    const t = text(r);
+    return (/You mentioned \$600/.test(t) && /New South Wales/.test(t) && r.answer.buttons.some(b => b.label === 'What should I do?') && !/don't understand/i.test(t)) || t;
+  });
+
+  check('gi21_goals', 'Goal extraction: "I need $10K." / "Keep NSW no matter what." / "Need five regions before the game ends."', () => {
+    const a = parseGILanguage('I need $10K.', W(), createGIConversationContext()).goals;
+    const b = parseGILanguage('Keep NSW no matter what.', W(), createGIConversationContext()).goals;
+    const c = parseGILanguage('Need five regions before the game ends.', W(), createGIConversationContext()).goals;
+    return (a.some(g => g.kind === 'cash_increase' && g.amount?.value === 10000) && b.some(g => g.kind === 'retain_region' && g.regionId === 'NSW' && g.priority === 'very_high')
+      && c.some(g => g.kind === 'regions_reach' && g.count === 5 && g.deadline === 'end_of_game')) || JSON.stringify({ a, b, c });
+  });
+
+  check('gi21_long_messy', 'Part 64 long message: 5-region goal, loan avoid, combined sell Gold + defend NSW vs Victoria', () => {
+    const u = und('okay so honestly idk what to do, ive only got like 8k, riley keeps putting money into nsw, i wanna get five regions eventually and id rather not take another loan, should i dump my gold and hold nsw or just leave and try vic instead?');
+    const ids = u.options.map(o => o.id);
+    return (u.primary === 'comparison' && ids.includes('opt_combo_sell_Gold__deposit_NSW') && ids.includes('opt_travel_VIC') && u.constraints.loanPolicy === 'avoid' && u.constraints.targetRegions === 5 && u.frame!.threats.some(t => t.regionId === 'NSW')) || `${u.primary}/${ids}/${u.constraints.loanPolicy}/${u.constraints.targetRegions}`;
+  });
+
+  check('gi21_corrections', 'Corrections: WA → "actually SA"; Riley → "I meant my teammate"; 3-action plan → "make that 2"', () => {
+    const tw = createGIFixtureWorld({ withTeam: true }).world;
+    const a1 = run('Should I go WA?');
+    const a2 = run('actually sa', a1.context);
+    const b1 = run('What is Riley doing?', undefined, tw);
+    const b2 = run('Sorry, I meant my teammate.', b1.context, tw);
+    const c1 = run('Give me a 3-action plan');
+    const c2 = run('Make that 2', c1.context);
+    const errs: string[] = [];
+    if (!(a2.understanding.repair?.op === 'replace_entity' && a2.understanding.options.some(o => o.id === 'opt_travel_SA'))) errs.push(`SA → ${a2.understanding.repair?.op}/${a2.understanding.options.map(o => o.id)}`);
+    if (!(b2.understanding.repair?.op === 'replace_entity' && b2.understanding.entities.some(e => e.id === 'mate'))) errs.push(`teammate → ${b2.understanding.repair?.op}/${b2.understanding.entities.map(e => e.id)}`);
+    if (!(c2.understanding.repair?.op === 'replace_horizon' && c2.understanding.horizon?.count === 2 && c2.understanding.primary === 'sequence_plan')) errs.push(`make that 2 → ${c2.understanding.primary}/${JSON.stringify(c2.understanding.horizon)}`);
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_followups', 'Follow-ups: "What about VIC?" / "And then?" / "No loan though." / "ignore that"', () => {
+    const r1 = run('Tell me about NSW');
+    const r2 = run('What about VIC?', r1.context);
+    const p1 = run('What should I do next?');
+    const p2 = run('And then?', p1.context);
+    const p3 = run('No loan though.', p1.context);
+    const x = run('ignore that', p1.context);
+    const errs: string[] = [];
+    if (!r2.understanding.entities.some(e => e.id === 'VIC')) errs.push('what about VIC');
+    if (p2.understanding.primary !== 'sequence_plan') errs.push(`and then → ${p2.understanding.primary}`);
+    if (p3.understanding.constraints.loanPolicy !== 'forbidden' || p3.understanding.repair?.op !== 'add_constraint') errs.push('no loan though');
+    if (x.understanding.repair?.op !== 'cancel' || x.context.lastQuery) errs.push('ignore that');
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_topic_stack', 'Topic stack: rail → "What about NSW?" → "okay, back to the rail"', () => {
+    const r1 = run('Can I afford the high-speed rail?');
+    const r2 = run('What about NSW?', r1.context);
+    const r3 = run('okay, back to the rail', r2.context);
+    return (r2.understanding.entities.some(e => e.id === 'NSW') && r3.understanding.repair?.op === 'return_topic' && r3.understanding.entities.some(e => e.id === 'infra_hsr_nsw_vic') && (r3.context.topicStack || []).length <= GI_TOPIC_STACK_LIMIT) || `${r3.understanding.repair?.op}/${r3.understanding.entities.map(e => e.id)}`;
+  });
+
+  check('gi21_ambiguity', 'Ambiguity: close candidates ask; a salient topic resolves with "Assuming you mean…"', () => {
+    const a = run('Can I afford the rail?');
+    const b = run('Can I get out?');
+    const ctx = noteGIContextEntity(createGIConversationContext(), { kind: 'project', id: 'infra_inland_rail_qld', label: 'Inland Rail Freight Hub', confidence: 1, source: 'context' });
+    const c = run('Can I afford the rail?', ctx);
+    return (a.understanding.needs.clarification && a.answer.buttons.filter(x => x.id.startsWith('clarify_')).length >= 2
+      && b.answer.clarification === true && b.answer.buttons.filter(x => x.id.startsWith('clarify_')).length === 2
+      && !c.understanding.needs.clarification && /Assuming you mean Inland Rail/.test(text(c))) || `${a.understanding.needs.clarification}/${b.answer.clarification}/${text(c).slice(0, 120)}`;
+  });
+
+  check('gi21_casual_entities', 'Casual entity names: hydrogen thing in WA / snowy thing in NSW / Canberra tech project', () => {
+    const e = (q: string) => und(q).entities.filter(x => x.kind === 'project').map(x => x.id);
+    const a = e('how is the hydrogen thing in WA'); const b = e('what about the snowy thing in NSW'); const c = e('can I fund that Canberra tech project');
+    return (a.length === 1 && /hydrogen/.test(a[0]) && b.length === 1 && /snowy/.test(b[0]) && c.length === 1 && /canberra|tech/.test(c[0])) || JSON.stringify({ a, b, c });
+  });
+
+  check('gi21_control_safety', 'Mentioning Autonomous never raises authority; explicit commands still need confirmation', () => {
+    const errs: string[] = [];
+    ['Why is autonomous mode useful?', 'Maybe autonomous would be better?', 'should i go autonomous?', 'is autonomous worth it?'].forEach(q => {
+      const r = run(q);
+      if (r.answer.immediate || r.answer.buttons.some(b => b.kind === 'set_mode' && (b.mode === 'autonomous'))) errs.push(q);
+    });
+    const cmd = run('go autonomus');
+    if (!(cmd.understanding.primary === 'control' && !cmd.answer.immediate && cmd.answer.buttons.some(b => b.kind === 'set_mode' && b.mode === 'autonomous'))) errs.push('go autonomus');
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_composed_actions', 'Composed "sell … then put $3K into NSW" is validated + simulated on a clone, never executed', () => {
+    const { world, liveState } = createGIFixtureWorld();
+    const before = JSON.stringify(liveState);
+    const r = runGameIntelligenceCore('Sell enough Iron Ore to get above $6,500, then put $3K into NSW.', world, createGIConversationContext());
+    const steps = (r.answer.sections || []).find(s => s.id === 'steps')?.claims || [];
+    return (r.understanding.primary === 'sequence_plan' && steps.length >= 2 && /Iron Ore/.test(steps[0].text) && /\$3,000 into New South Wales/.test(text(r)) && (r.answer.sections || []).some(s => s.id === 'sim')
+      && !r.answer.buttons.some(b => b.kind === 'do') && JSON.stringify(liveState) === before) || text(r);
+  });
+
+  check('gi21_styles', 'Response depth: quick answer / just tell me / show me the math', () => {
+    const plain = run('What should I do next?');
+    const quick = run('quick answer: what should I do next?');
+    const direct = run('just tell me what to do');
+    const math = run('show me the math on selling my gold');
+    const count = (r: GIRunResult) => (r.answer.sections || []).reduce((n, s) => n + s.claims.length, 0);
+    const errs: string[] = [];
+    if (!(count(quick) <= 3 && count(quick) <= count(plain))) errs.push(`quick ${count(quick)} vs ${count(plain)}`);
+    if (!((direct.answer.sections || [])[0]?.claims.some(c => c.kind === 'recommendation'))) errs.push('direct not recommendation-first');
+    if (!(math.understanding.primary === 'simulation' && (math.answer.sections || []).every(s => s.claims.every(c => /\d/.test(c.text))))) errs.push(`math ${math.understanding.primary}`);
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_natural_followups', 'Follow-ups come from the frame ("How much do I need to defend NSW?")', () => {
+    const r = run("I'm broke and Riley is about to take NSW. No loans. What now?");
+    const labels = r.answer.buttons.filter(b => b.id.startsWith('fu_')).map(b => b.label);
+    return (labels.includes('How much do I need to defend NSW?') && labels.includes('What can I safely sell?')) || labels.join(' | ');
+  });
+
+  check('gi21_system_adapters', 'Cross-system: "Why won\'t my teammate spend money on this?" uses recovery, governor, plan and treasury', () => {
+    const tw = createGIFixtureWorld({ withTeam: true }).world;
+    const r = run("Why won't my teammate spend money on this?", undefined, tw);
+    const g = run('Is Guardian on?', undefined, tw);
+    const t = text(r);
+    return (r.understanding.primary === 'system_explain' && /economic recovery/.test(t) && /Economy Governor/.test(t) && /reserves \$2,000/.test(t) && /Guardian is on/.test(text(g))) || `${r.understanding.primary}: ${t} | ${text(g)}`;
+  });
+
+  check('gi21_territories', 'External territories: resolved from the registry and accepted by verification', () => {
+    const errs: string[] = [];
+    const codes = Object.keys(EXTERNAL_TERRITORIES);
+    if (!['NOR', 'CHR', 'CCK', 'CSI', 'ACI', 'AAT', 'HMI'].every(c => codes.includes(c))) errs.push('registry');
+    const u = und('What is on Norfolk Island?');
+    if (!u.entities.some(e => e.id === 'NOR')) errs.push(`norfolk → ${u.entities.map(e => e.id)}`);
+    const w = W();
+    const secs: GIAnswerSection[] = [{ id: 'x', heading: null, claims: [claim('Travel to NOR from here.', 'fact', 'confirmed', []), claim('You could expand into AAT later.', 'fact', 'confirmed', []), claim('Defend XYZ now.', 'fact', 'confirmed', [])] }];
+    const v = verifyGIClaims(secs, { nodes: [], edges: [], facts: {} }, w);
+    const kept = v.sections.flatMap(s => s.claims).map(c => c.text);
+    if (!(kept.length === 2 && v.report.removed.length === 1 && /XYZ/.test(v.report.removed[0].reason))) errs.push(JSON.stringify(v.report));
+    const r = run('Tell me about Norfolk Island', undefined, w);
+    if (!/external territory/i.test(text(r))) errs.push(text(r));
+    return errs.length ? errs.join('; ') : true;
+  });
+
+  check('gi21_fingerprint_domains', 'Dependency-aware freshness: cash questions ignore project changes', () => {
+    const r = run('How much money do I have?');
+    const domains = r.plan.fingerprintDomains;
+    const base: GIFingerprintMap = { turn: 't', player: 'p1', world: 'w', market: 'm', projects: 'x1', contracts: 'c', objectives: 'o', assistance: 'a', actors: 'r', history: 'h' };
+    const answer = { ...r.answer, gi: { ...(r.answer.gi as GIAnswerMeta), domainHashes: Object.fromEntries(domains.map(d => [d, base[d]])) as GIFingerprintMap } };
+    const projectsOnly = isGIAnswerStale(answer, { ...base, projects: 'x2' });
+    const playerChange = isGIAnswerStale(answer, { ...base, player: 'p2' });
+    return (!domains.includes('projects') && domains.includes('player') && !projectsOnly && playerChange) || `${domains} ${projectsOnly}/${playerChange}`;
+  });
+
+  check('gi21_determinism', 'Same query + context + state → same frame, plan and answer', () => {
+    const q = 'okay so honestly idk what to do, ive only got like 8k, riley keeps putting money into nsw, i wanna get five regions eventually and id rather not take another loan, should i dump my gold and hold nsw or just leave and try vic instead?';
+    const a = run(q); const b = run(q);
+    return (JSON.stringify(summarizeGIFrame(a.understanding.frame!)) === JSON.stringify(summarizeGIFrame(b.understanding.frame!)) && a.plan.planId === b.plan.planId && text(a) === text(b)) || 'non-deterministic';
+  });
+
+  check('gi21_purity', 'Language parsing never mutates the context or the world', () => {
+    const w = W();
+    const ctx = createGIConversationContext();
+    const beforeCtx = JSON.stringify(ctx);
+    const beforeWorld = JSON.stringify({ ...w, tools: undefined });
+    parseGILanguage("I'm broke and Riley is about to take NSW. No loans.", w, ctx);
+    understandGIQuery('actually sa', w, ctx);
+    return (JSON.stringify(ctx) === beforeCtx && JSON.stringify({ ...w, tools: undefined }) === beforeWorld) || 'mutated';
+  });
+
+  check('gi21_budget_bounded', 'Long compound questions keep the GI 2.0 plan budget (≤ 8 steps)', () => {
+    const r = run('bro im broke, riley boutta take nsw and i dont wanna loan anything, also i need five regions and maybe sell gold? what can i do rn without screwing myself later, show me the math');
+    return r.plan.steps.length <= r.plan.budget && r.plan.budget <= 8 || `${r.plan.steps.length}/${r.plan.budget}`;
+  });
+
+  check('gi21_role_threats', 'Threats phrased with role words or unknown names still register ("the AI is taking NSW")', () => {
+    const a = parseGILanguage('the AI is taking NSW, what do I do', W(), createGIConversationContext());
+    const b = parseGILanguage('sam is about to take nsw and im broke', W(), createGIConversationContext());
+    const c = parseGILanguage('I am about to take NSW', W(), createGIConversationContext());
+    return (a.threats.some(t => t.regionId === 'NSW' && t.actorId === 'ai') && b.threats.some(t => t.regionId === 'NSW') && !c.threats.length) || JSON.stringify([a.threats, b.threats, c.threats]);
+  });
+
+  check('gi21_diagnostics', 'LAB diagnostics expose structured language metadata (no reasoning trace)', () => {
+    const r = run('shuld i defned nsw or go victora');
+    const l = r.diagnostics.language;
+    return (Boolean(l) && l!.corrections.length >= 2 && l!.clauses.length >= 1 && l!.scores.length >= 1 && l!.fingerprintDomains.includes('player')) || JSON.stringify(l);
+  });
+
+  return results;
+}
+
+export async function runGameIntelligence21AsyncSelfTests(): Promise<V9SelfTestResult[]> {
+  const results: V9SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail: string) => results.push({ id, name, passed, detail: passed ? 'ok' : detail });
+  const withMaps = (w: GIWorld, map: GIFingerprintMap): GIWorld => ({ ...w, fingerprints: map, fingerprint: composeGIFingerprint(map) });
+  const base: GIFingerprintMap = { turn: 't1', player: 'p1', world: 'w1', market: 'm1', projects: 'x1', contracts: 'c1', objectives: 'o1', assistance: 'a1', actors: 'r1', history: 'h1' };
+  try {
+    // Non-delegated path: relevant state changes once → the answer is REBUILT from snapshot B.
+    const a = withMaps(createGIFixtureWorld({ money: 6000 }).world, base);
+    const b = withMaps(createGIFixtureWorld({ money: 700 }).world, { ...base, player: 'p2' });
+    const r = await runGameIntelligence({ query: 'How much money do I have?', world: a, context: createGIConversationContext(), refreshWorld: () => b });
+    push('gi21_fresh_recompute', 'A relevant change during analysis rebuilds the answer once from fresh state (non-delegated path)', r.answer.gi?.freshness === 'updated' && /\$700/.test(r.answer.lines.join(' ')), `${r.answer.gi?.freshness} ${r.answer.lines.join(' ')}`);
+  } catch (e) { push('gi21_fresh_recompute', 'Relevant change rebuilds the answer', false, String(e)); }
+  try {
+    // Changes again → stale and non-actionable.
+    const a = withMaps(createGIFixtureWorld().world, base);
+    let n = 0;
+    const r = await runGameIntelligence({ query: 'What should I do next?', world: a, context: createGIConversationContext(), refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, player: `p${++n + 1}` }) });
+    push('gi21_fresh_stale', 'State that keeps changing ends stale, with state-bound actions removed (bounded — no loop)', r.answer.gi?.freshness === 'stale' && !r.answer.buttons.some(btn => GI_STATE_BOUND_BUTTON_KINDS.includes(btn.kind)) && n === 2, `${r.answer.gi?.freshness}/${n}`);
+  } catch (e) { push('gi21_fresh_stale', 'Repeated change marks stale', false, String(e)); }
+  try {
+    // Irrelevant domain change (projects) does not invalidate a cash question.
+    const a = withMaps(createGIFixtureWorld().world, base);
+    const r = await runGameIntelligence({ query: 'How much money do I have?', world: a, context: createGIConversationContext(), refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, projects: 'x9' }) });
+    push('gi21_fresh_irrelevant', 'A change in an unrelated domain keeps the answer current', r.answer.gi?.freshness === 'current', String(r.answer.gi?.freshness));
+  } catch (e) { push('gi21_fresh_irrelevant', 'Irrelevant change keeps answer current', false, String(e)); }
+  try {
+    // Delegated path goes through the same bounded contract.
+    const a = withMaps(createGIFixtureWorld().world, base);
+    let calls = 0;
+    const r = await runGameIntelligence({ query: 'How do AP points work?', world: a, context: createGIConversationContext(), askEngine: async () => { calls++; return null; }, refreshWorld: () => withMaps(createGIFixtureWorld().world, { ...base, market: 'm2' }) });
+    push('gi21_fresh_delegated', 'Delegated answers are also recomputed once when relevant state changes', r.answer.gi?.freshness === 'updated' && calls === 2, `${r.answer.gi?.freshness}/${calls}`);
+  } catch (e) { push('gi21_fresh_delegated', 'Delegated freshness', false, String(e)); }
+  try {
+    // Memory is one evidence provider inside a compound strategic answer (Ask-the-Game enforces visibility).
+    const w = createGIFixtureWorld().world;
+    const r = await runGameIntelligence({
+      query: 'Riley has been reacting to my travel patterns. Should I change strategy now?', world: w, context: createGIConversationContext(),
+      askEngine: async () => ({ responseId: 'x', queryId: 'x', intent: 'PLAYSTYLE_LEARNED' as AskGameIntent, mainAnswer: 'Riley has noticed that you travel often and tends to deposit where you have just left.', confidence: 0.7, evidenceBundle: {} as any, previewCards: [], suggestedFollowUps: [] })
+    });
+    const memory = (r.answer.sections || []).some(s => s.id === 'memory');
+    push('gi21_memory_composition', 'Compound memory + strategy questions stay in Game Intelligence with memory as evidence', !r.delegateToAskEngine && (memory || !r.understanding.memoryEvidence), `${r.understanding.primary}/${r.understanding.memoryEvidence}/${memory}`);
+  } catch (e) { push('gi21_memory_composition', 'Memory composition', false, String(e)); }
   return results;
 }
 
@@ -105931,16 +108977,27 @@ function dispatchGameSettingsChange(
     });
   }, [gameState, player, gameSettings, coPilotRuntimeContext, takeoverSession, addNotification, dispatchAuthoritativeGameActivityLedgerEvent, appendGameActivityLedgerEvent, dispatchGameState, dispatchPlayer, setTakeoverSession]);
 
+  /** The Smart Settings transaction behind the latest "Game Assistant Adjustment" (for its Undo). */
+  const intentAdjustmentUndoRef = useRef<{ transactionId: string; transaction: SmartSettingsTransaction } | null>(null);
+
   const applyAssistanceLevelFromHud = useCallback((level: AssistanceLevel) => {
     const currentProfile = gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile();
     const nextProfile = applyAssistanceLevelToProfile(currentProfile, level);
     const plan = typeof generateSmartSettingsPlan === 'function' ? generateSmartSettingsPlan(nextProfile, gameSettings, true) : null;
+    const transactionId = `assist_${level}_${Date.now()}`;
     trackedSetGameSettings('direct_player_change', 'Game Assistant', prev => {
+      // Canonical Smart Settings transaction for the adjustment's Undo button. Prior subsystem
+      // values are captured here because the HUD also remaps Co-Pilot after the plan applies.
+      const priorSubsystemValues = { coPilotSettings: prev.coPilotSettings, autoModeSettings: prev.autoModeSettings, guardianAiSettings: prev.guardianAiSettings };
+      const profileBefore = prev.smartSettingsProfile || createDefaultSmartSettingsProfile();
       try {
         if (!plan) {
+          intentAdjustmentUndoRef.current = { transactionId, transaction: { transactionId, timestamp: Date.now(), planId: 'assistance_level', priorValues: {}, appliedValues: {}, profileBefore, profileAfter: nextProfile, status: 'applied', priorSubsystemValues } };
           return { ...prev, smartSettingsProfile: nextProfile };
         }
-        const applied = applySmartSettingsPlan(plan, prev).updatedSettings;
+        const appliedResult = applySmartSettingsPlan(plan, prev);
+        intentAdjustmentUndoRef.current = { transactionId, transaction: { ...appliedResult.transaction, transactionId, profileBefore, priorSubsystemValues } };
+        const applied = appliedResult.updatedSettings;
         const nextCoPilot = sanitizeCoPilotSettings(applied.coPilotSettings);
         const mapped = mapConceptualModeToTechnicalSettings(nextProfile.coPilotMode || 'off');
         nextCoPilot.coPilotEnabled = mapped.coPilotEnabled;
@@ -105965,7 +109022,8 @@ function dispatchGameSettingsChange(
         changedBy: 'Game Assistant',
         duration: 'Until you change it',
         settingKey: 'assistanceLevel',
-        nextValue: level
+        nextValue: level,
+        undoTransactionId: transactionId
       }
     }));
   }, [gameSettings, trackedSetGameSettings, addNotification]);
@@ -134635,19 +137693,45 @@ function dispatchGameSettingsChange(
   const giQueryCounterRef = useRef(0);
   const [giDiagnostics, setGiDiagnostics] = useState<GIDiagnostics[]>([]);
 
-  const v9GiFingerprint = useMemo(() => buildGIWorldFingerprint([
-    gameState.turnCounter,
-    gameState.day,
-    gameState.currentActorId,
-    player?.money,
-    player?.actionsUsedThisTurn,
-    player?.currentRegion,
-    Array.isArray(player?.inventory) ? player.inventory.length : 0,
-    JSON.stringify(gameState.regionDeposits || {}),
-    aiPlayer?.money,
-    v9ActionSet.fingerprint,
-    takeoverSession?.status || 'none'
-  ]), [gameState.turnCounter, gameState.day, gameState.currentActorId, player?.money, player?.actionsUsedThisTurn, player?.currentRegion, player?.inventory, gameState.regionDeposits, aiPlayer?.money, v9ActionSet.fingerprint, takeoverSession?.status]);
+  // GI 2.1: dependency-aware freshness. Each domain hashes a compact slice of the state it covers
+  // (actual inventory contents, deposits, prices, projects, contracts, objective, assistance…);
+  // an answer is invalidated only by the domains its plan actually read.
+  const v9GiFingerprints = useMemo<GIFingerprintMap>(() => {
+    const inventoryCounts: Record<string, number> = {};
+    (Array.isArray(player?.inventory) ? player.inventory : []).forEach((it: any) => {
+      const k = typeof it === 'string' ? it : String(it?.name || it?.id || 'item');
+      inventoryCounts[k] = (inventoryCounts[k] || 0) + 1;
+    });
+    const rawProjects = gameState.infrastructureProjects || {};
+    const projectSlice = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean)
+      .map((pr: any) => [pr.id, pr.totalInvestedMoney ?? pr.currentFunding ?? 0, pr.status]);
+    let contractSlice: any[] = [];
+    try { contractSlice = listRegionalContracts(gameState).map((c: any) => [c.id, c.status, c.assignedActorId || null, c.turnsRemaining ?? null]); } catch { contractSlice = []; }
+    const objective = intentLayerComputed.objective;
+    const cp = gameSettings.coPilotSettings;
+    const ledgerEvents = (gameState.gameActivityLedger?.events || []) as any[];
+    return buildGIDomainFingerprints({
+      turn: [gameState.turnCounter, gameState.day, gameState.currentActorId],
+      player: [
+        player?.money, player?.actionsUsedThisTurn, player?.currentRegion,
+        Object.keys(inventoryCounts).sort().map(k => `${k}:${inventoryCounts[k]}`),
+        (Array.isArray(player?.advancedLoans) ? player.advancedLoans : []).map((l: any) => [l?.amount, l?.daysRemaining]),
+        player?.debt ?? 0
+      ],
+      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}],
+      market: gameState.resourcePrices || {},
+      projects: projectSlice,
+      contracts: contractSlice,
+      objectives: [objective ? [objective.id, objective.progress.completed, objective.progress.total, objective.completionState] : null, v9ActionSet.fingerprint, v9WinLines],
+      assistance: [
+        takeoverSession?.status || 'none', takeoverSession?.mode || null, cp?.coPilotEnabled, cp?.authorityMode,
+        cp?.spendingCaps?.minimumCashReserve ?? null, gameSettings.fogOfWarEnabled, gameSettings.negotiationMode, regionDepositInput
+      ],
+      actors: (Object.values(actorsById || {}) as any[]).filter(a => a && String(a.id) !== String(player?.id || 'player')).map(a => [a.id, a.money, a.currentRegion]),
+      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length]
+    });
+  }, [gameState, player, intentLayerComputed.objective, gameSettings, v9ActionSet.fingerprint, v9WinLines, takeoverSession, regionDepositInput, actorsById, notifications]);
+  const v9GiFingerprint = useMemo(() => composeGIFingerprint(v9GiFingerprints), [v9GiFingerprints]);
 
   /** Authorized, focused snapshot for one question. Built on demand — never on every render. */
   const buildV9GIWorld = (): GIWorld => {
@@ -134771,6 +137855,7 @@ function dispatchGameSettingsChange(
     const worldState = { gameState: coPilotViewState, player, actorsById, aiPlayer, teamsById };
     return {
       fingerprint: v9GiFingerprint,
+      fingerprints: v9GiFingerprints,
       day: Number(gameState.day || 1),
       totalDays: Number(gameSettings.totalDays || 0),
       turn: Number(gameState.turnCounter || 0),
@@ -134821,6 +137906,40 @@ function dispatchGameSettingsChange(
       settings: { fogOfWar: fog, aiMemoryFullInspection: gameSettings.aiMemoryFullInspectionEnabled === true, experienceLevel: getIntentPresentationLevel(gameSettings) },
       session: takeoverSession,
       ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
+      systems: (() => {
+        // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
+        const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
+        const plan: any = team?.activeTeamPlan || null;
+        const guardian: any = gameSettings.guardianAiSettings || null;
+        const auto: any = gameSettings.autoModeSettings || null;
+        const cpSettings: any = gameSettings.coPilotSettings || {};
+        const gs: any = gameState;
+        const scenarioObjectives = ((gs.scenarioObjectives || gs.activeScenarioConfig?.objectives || []) as any[]).slice(0, 5).map(o => String(o?.label || o?.description || o?.id || '')).filter(Boolean);
+        return {
+          team: team ? {
+            name: String(team.name || team.id),
+            treasuryBalance: typeof team.treasury?.balance === 'number' ? team.treasury.balance : null,
+            treasuryReserve: typeof team.treasury?.reserve === 'number' ? team.treasury.reserve : null,
+            pendingFundingRequests: Array.isArray(team.treasury?.pendingFundingRequestIds) ? team.treasury.pendingFundingRequestIds.length : 0,
+            governanceMode: typeof team.governanceMode === 'string' ? team.governanceMode : null,
+            activePlan: plan ? { objective: String(plan.objective || plan.type || 'Team plan'), status: String(plan.status || 'active'), type: String(plan.type || ''), reservedCash: Number(plan.reservedCash || 0) } : null,
+            overseerMode: typeof team.overseer?.currentAdaptiveStrategyMode === 'string' ? team.overseer.currentAdaptiveStrategyMode : null,
+            safeMode: Boolean(team.overseer?.safeModeActive),
+            governorEnabled: gameSettings.teamEconomyGovernorEnabled === true
+          } : null,
+          teammates: actors.filter(a => a.relation === 'teammate').map(a => {
+            const raw: any = (actorsById as any)?.[a.id] || {};
+            return { id: a.id, name: a.name, inRecovery: raw.inEconomicRecovery === true, protectedCash: typeof raw.protectedCash === 'number' ? raw.protectedCash : null };
+          }),
+          guardian: guardian ? { enabled: Boolean(guardian.enabled), protectionLevel: String(guardian.protectionLevel || 'default'), responseMode: String(guardian.responseMode || 'default') } : null,
+          autoMode: auto ? { enabled: Boolean(auto.autoModeEnabled), permission: typeof (auto.permissionMode || auto.permission) === 'string' ? (auto.permissionMode || auto.permission) : null } : null,
+          coPilot: { enabled: Boolean(cpSettings.coPilotEnabled), authorityMode: String(cpSettings.authorityMode || 'off'), minimumCashReserve: reserve > 0 ? reserve : null, sessionStatus: takeoverSession?.status || null },
+          pendingApprovals: (pendingApprovalRequests || []).filter((r: any) => !r?.status || r.status === 'pending').length,
+          expeditions: Object.values(gs.activeExpeditions || {}).slice(0, 4).map((e: any) => String(e?.title || e?.destinationName || e?.id || 'Expedition')),
+          scenarioObjectives,
+          memoryInspection: gameSettings.aiMemoryFullInspectionEnabled === true
+        };
+      })(),
       tools: {
         simulate: intent => simulateGIActionOnClone(worldState, playerId, intent, gameSettings),
         searchSettings: q => askGameToolSearchSettings(gameSettings, q),
@@ -150120,12 +153239,17 @@ function dispatchGameSettingsChange(
               <div className="text-xs opacity-80">Why: {uiState.intentAdjustment.why}</div>
               <div className="text-xs opacity-80">Changed by: {uiState.intentAdjustment.changedBy} · Duration: {uiState.intentAdjustment.duration}</div>
               <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" className="text-xs underline" onClick={() => {
-                  if (typeof undoLastSmartSettingsTransaction === 'function') {
-                    try { undoLastSmartSettingsTransaction(); } catch { /* keep existing undo stack if unavailable */ }
-                  }
-                  updateUiState({ intentAdjustment: null });
-                }}>Undo</button>
+                {uiState.intentAdjustment.undoTransactionId && intentAdjustmentUndoRef.current?.transactionId === uiState.intentAdjustment.undoTransactionId && (
+                  <button type="button" className="text-xs underline" onClick={() => {
+                    const pending = intentAdjustmentUndoRef.current;
+                    if (pending) {
+                      // Canonical Smart Settings undo: restores prior values, subsystem settings and profile.
+                      trackedSetGameSettings('direct_player_change', 'Undo Game Assistant adjustment', prev => undoSmartSettingsTransaction(pending.transaction, prev));
+                      intentAdjustmentUndoRef.current = null;
+                    }
+                    updateUiState({ intentAdjustment: null });
+                  }}>Undo</button>
+                )}
                 <button type="button" className="text-xs underline" onClick={() => {
                   const key = uiState.intentAdjustment?.settingKey;
                   if (key) {
@@ -150550,7 +153674,7 @@ function dispatchGameSettingsChange(
                     <button type="button" className="text-xs underline opacity-80" onClick={() => setV9IntelFeed([])}>Clear</button>
                   </div>
                   {v9IntelFeed.slice().reverse().map(answer => (
-                    <GameIntelligenceAnswerCard key={answer.id} answer={answer} theme={themeStyles} onButton={handleV9Button} currentFingerprint={v9GiFingerprint} onRefresh={q => void submitIntelligenceQuery(q)} />
+                    <GameIntelligenceAnswerCard key={answer.id} answer={answer} theme={themeStyles} onButton={handleV9Button} currentFingerprint={v9GiFingerprints} onRefresh={q => void submitIntelligenceQuery(q)} />
                   ))}
                 </div>
               )}
@@ -150647,9 +153771,9 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests()];
             setV9SelfTestResults(sync);
-            void runGameIntelligence2AsyncSelfTests().then(extra => setV9SelfTestResults([...sync, ...extra]));
+            void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
           selfTestResults={v9SelfTestResults}
           giDiagnostics={giDiagnostics}
@@ -160297,6 +163421,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   const renderInfrastructureProjectsModal = () => {
     if (!uiState.showInfrastructureProjectsModal) return null;
     const projects = gameState.infrastructureProjects || [];
+    // The canonical computed objective (same source as the Intent panel) — no duplicate objective state.
+    const currentObjective = intentLayerComputed.objective;
 
     return (
       <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex("infrastructure_projects_modal") }} onClick={() => updateUiState({ showInfrastructureProjectsModal: false })}>
