@@ -5019,6 +5019,10 @@ export interface ContextualRecommendation {
   costEstimate: number;
   candidate: any;
   whyPoints: string[];
+  /** V9: canonical ranking score (utility + objective alignment - risk) — exposed for explanations. */
+  relevanceScore?: number;
+  /** V9: objective-alignment component of relevanceScore. */
+  objectiveAlignment?: number;
 }
 
 export interface PlayerAttentionSnapshot {
@@ -5067,20 +5071,22 @@ export const GAME_MENTAL_MODEL_GROUPS = {
   win: ['Money', 'Net Worth', 'Regions', 'Challenges', 'Scenario objectives', 'Campaign objectives']
 } as const;
 
+// V9: one vocabulary for the Human + AI control model (Manual / Advisor / Assistant / Rescue /
+// Autonomous). The underlying AssistanceLevel keys are unchanged so saves and presets still load.
 export const ASSISTANCE_LEVEL_LABELS: Record<AssistanceLevel, string> = {
-  off: 'Off',
-  guide: 'Guide',
-  assist: 'Assist',
-  copilot: 'Co-Pilot',
+  off: 'Manual',
+  guide: 'Advisor',
+  assist: 'Assistant',
+  copilot: 'Rescue',
   autonomous: 'Autonomous'
 };
 
 export const ASSISTANCE_LEVEL_BLURBS: Record<AssistanceLevel, string> = {
   off: 'You control everything.',
-  guide: 'Recommendations and explanations only.',
-  assist: 'Recommendations, warnings, and optional lightweight automation.',
-  copilot: 'Can execute approved actions for you.',
-  autonomous: 'Can temporarily control your turns according to your permissions.'
+  guide: 'Recommendations and explanations only — the AI never acts for you.',
+  assist: 'Recommendations and warnings; Co-Pilot asks before acting.',
+  copilot: 'Co-Pilot takes over a turn when you ask or on a genuine emergency, then hands back control.',
+  autonomous: 'After you press Start, Co-Pilot plays your turns within your permissions until you take control.'
 };
 
 export type SmartSettingsCategory =
@@ -37986,6 +37992,17 @@ export function classifyAskGameIntent(rawQuery: string | AskGameNormalizedQuery)
     if (intentKey === 'CURRENT_PLAN' && /\bwhat is your current plan\b/i.test(cleaned)) {
       rawScore += 0.65;
     }
+    // V9 Game Intelligence phrasing boosters: common natural questions that previously fell through
+    // to GENERAL_HELP. They only steer to an existing grounded intent and its existing tools.
+    if (intentKey === 'ECONOMY_DIAGNOSE' && (/\b(hurting|wrong with|problem with|problems with|draining|diagnose)\b.*\b(economy|finances|money|cash|income)\b/i.test(cleaned) || /\b(economy|finances)\b.*\b(hurting|problem|wrong|struggling)\b/i.test(cleaned))) {
+      rawScore += 0.6;
+    }
+    if (intentKey === 'AI_BEHAVIOR_EXPLAIN' && (/\bwhy did (the )?(ai|rival|opponent|bot)\b/i.test(cleaned) || /\b(opponent|rival)\b.*\b(threaten|threatening|threat|planning|up to)\b/i.test(cleaned))) {
+      rawScore += 0.6;
+    }
+    if (intentKey === 'SETTINGS_INSPECT' && (/\b(which|what) setting\b/i.test(cleaned) || /\bsetting\b.*\b(blocking|controlling|controls|prevents|preventing)\b/i.test(cleaned) || /\bopen the setting\b/i.test(cleaned))) {
+      rawScore += 0.6;
+    }
 
     // Normalize confidence between 0.0 and 1.0
     const confidence = Math.min(1.0, Math.max(0.0, rawScore));
@@ -64441,7 +64458,7 @@ export function rankContextualRecommendations(
     }
   }
 
-  return picked.map(({ c, alignment }) => {
+  return picked.map(({ c, alignment, score }) => {
     const whyPoints: string[] = [];
     if (alignment >= 20 && objective) whyPoints.push(`advances your current goal: ${objective.title}`);
     if ((c.apCost ?? 1) <= 1) whyPoints.push('costs only 1 AP');
@@ -64462,7 +64479,9 @@ export function rankContextualRecommendations(
       apCost: c.apCost ?? 1,
       costEstimate: c.costEstimate || 0,
       candidate: c,
-      whyPoints
+      whyPoints,
+      relevanceScore: score,
+      objectiveAlignment: alignment
     };
   });
 }
@@ -83721,6 +83740,8 @@ type LiveControlCenterTab = 'all' | 'teamStatus' | 'approvals' | 'treasury' | 'e
 export type QuickActionDomainId = 'all' | 'core' | 'economy' | 'competition' | 'team' | 'tools' | 'region' | 'regions' | 'aiTeam' | 'ai_teams' | 'settings';
 
 interface UIState {
+  /** V9: top-level PLAY / INTELLIGENCE / LAB layer. Transient UI state — never saved. */
+  experienceLayer?: ExperienceLayer;
   showLiveControlCenter: boolean;
   liveControlCenterTab: LiveControlCenterTab;
   quickActionDomainFilter: QuickActionDomainId;
@@ -95327,11 +95348,11 @@ export const CoPilotAiCard: React.FC<CoPilotAiCardProps> = ({
   const isLocked = (profile.lockedSettingKeys || []).includes('coPilot') || (profile.lockedCategories || []).includes('copilot');
 
   const modes = [
-    { value: 'off', label: 'Off', desc: 'Manual play' },
-    { value: 'advisor', label: 'Advisor', desc: 'Turn guidance' },
-    { value: 'active_assistant', label: 'Assistant', desc: 'Partial support' },
-    { value: 'takeover_requested', label: 'On Request', desc: '1-click takeover' },
-    { value: 'autonomous_takeover', label: 'Autonomous', desc: 'Auto takeover' }
+    { value: 'off', label: 'Manual', desc: 'You play everything' },
+    { value: 'advisor', label: 'Advisor', desc: 'Recommends only' },
+    { value: 'active_assistant', label: 'Assistant', desc: 'Asks before acting' },
+    { value: 'takeover_requested', label: 'Rescue', desc: '1-click / emergency takeover' },
+    { value: 'autonomous_takeover', label: 'Autonomous', desc: 'Plays after Start' }
   ];
 
   return (
@@ -98089,6 +98110,2112 @@ export interface AskGameDrawerProps {
 
 
 // ============================================================================
+// SECTION 20B: V9 EXPERIENCE UNIFICATION
+// ----------------------------------------------------------------------------
+// PLAY / INTELLIGENCE / LAB, the Contextual Action System, Unified Game
+// Intelligence and the single Human + AI Control Model.
+//
+// Everything in this section is an orchestration / presentation / authority-
+// reading layer. It never re-implements legality, execution, planning or
+// authority:
+//   - who may act       -> canonical coPilotSettings via resolveCanonicalCoPilotSettings
+//                          + mapTechnicalSettingsToConceptualMode + takeover sessions
+//   - what is legal     -> Co-Pilot candidate generator / rankContextualRecommendations
+//   - executing a move  -> the existing human "Do" path (executeIntentRecommendation)
+//   - answering         -> Ask-the-Game engine (processAskGameQuery via useAskGameAIState)
+//   - navigation        -> IntentNavAction / resolveIntentNavToUiPatch / navigateToSettings
+// ============================================================================
+
+export type ExperienceLayer = 'play' | 'intelligence' | 'lab';
+
+export const EXPERIENCE_LAYERS: readonly ExperienceLayer[] = ['play', 'intelligence', 'lab'] as const;
+
+export const EXPERIENCE_LAYER_META: Record<ExperienceLayer, { label: string; icon: string; description: string }> = {
+  play: { label: 'PLAY', icon: '🎮', description: 'Play the match: objective, status and the actions that matter now.' },
+  intelligence: { label: 'INTELLIGENCE', icon: '🧠', description: 'Understand, plan, ask questions and choose how much the AI helps.' },
+  lab: { label: 'LAB', icon: '🧪', description: 'Advanced configuration: AI engines, team systems, automation, replay and diagnostics.' }
+};
+
+export function sanitizeExperienceLayer(value: unknown): ExperienceLayer {
+  return value === 'intelligence' || value === 'lab' ? value : 'play';
+}
+
+// ----------------------------------------------------------------------------
+// 1. ONE CONTROL MODEL FOR HUMAN + AI
+// ----------------------------------------------------------------------------
+
+export type PlayerControlMode = 'manual' | 'advisor' | 'assistant' | 'rescue' | 'autonomous';
+
+export const PLAYER_CONTROL_MODES: readonly PlayerControlMode[] = ['manual', 'advisor', 'assistant', 'rescue', 'autonomous'] as const;
+
+export interface PlayerControlModeMeta {
+  label: string;
+  icon: string;
+  /** Canonical conceptual Co-Pilot mode (smartSettingsProfile.coPilotMode). */
+  conceptual: CoPilotUiConceptualMode;
+  /** Matching Game Assistant level so the Settings Hub stays in agreement. */
+  assistanceLevel: AssistanceLevel;
+  /** Relative authority, used only to decide whether a change needs explicit confirmation. */
+  authorityRank: number;
+  summary: string;
+  whoActs: string;
+  /** Moving INTO this mode is a meaningful authority increase and needs an explicit confirm. */
+  requiresConfirmation: boolean;
+}
+
+export const PLAYER_CONTROL_MODE_META: Record<PlayerControlMode, PlayerControlModeMeta> = {
+  manual: {
+    label: 'Manual',
+    icon: '👤',
+    conceptual: 'off',
+    assistanceLevel: 'off',
+    authorityRank: 0,
+    summary: 'You play every action. Player Co-Pilot assistance is off (rival and teammate AI are unaffected).',
+    whoActs: 'You execute everything.',
+    requiresConfirmation: false
+  },
+  advisor: {
+    label: 'Advisor',
+    icon: '💡',
+    conceptual: 'advisor',
+    assistanceLevel: 'guide',
+    authorityRank: 1,
+    summary: 'Co-Pilot recommends and explains. It never acts for you.',
+    whoActs: 'You execute; the AI only advises.',
+    requiresConfirmation: false
+  },
+  assistant: {
+    label: 'Assistant',
+    icon: '🤝',
+    conceptual: 'active_assistant',
+    assistanceLevel: 'assist',
+    authorityRank: 2,
+    summary: 'Co-Pilot can prepare moves for you, but asks for your approval before anything executes.',
+    whoActs: 'Shared: the AI proposes, you approve.',
+    requiresConfirmation: false
+  },
+  rescue: {
+    label: 'Rescue',
+    icon: '🛟',
+    conceptual: 'takeover_requested',
+    assistanceLevel: 'copilot',
+    authorityRank: 3,
+    summary: 'You play. Co-Pilot takes over a turn when you ask, or steps in on a genuine emergency, then hands control back.',
+    whoActs: 'You — unless a rescue is running.',
+    requiresConfirmation: true
+  },
+  autonomous: {
+    label: 'Autonomous',
+    icon: '🤖',
+    conceptual: 'autonomous_takeover',
+    assistanceLevel: 'autonomous',
+    authorityRank: 4,
+    summary: 'After you press Start, Co-Pilot plays your turns within your permissions until you take control.',
+    whoActs: 'Co-Pilot, until you take control.',
+    requiresConfirmation: true
+  }
+};
+
+export function mapConceptualModeToPlayerControlMode(conceptual?: string | null): PlayerControlMode {
+  switch (conceptual) {
+    case 'advisor': return 'advisor';
+    case 'active_assistant': return 'assistant';
+    case 'takeover_requested': return 'rescue';
+    case 'autonomous_takeover': return 'autonomous';
+    default: return 'manual';
+  }
+}
+
+export function mapPlayerControlModeToConceptual(mode: PlayerControlMode): CoPilotUiConceptualMode {
+  return PLAYER_CONTROL_MODE_META[mode]?.conceptual || 'off';
+}
+
+/** Same resolution order the Co-Pilot bootstrap / runtime use: gameSettings first, then state. */
+export function resolveHumanCoPilotSettings(gameSettings: any, gameState?: any): CoPilotSettings {
+  return resolveCanonicalCoPilotSettings(
+    gameSettings?.coPilotSettings || gameState?.coPilotSettings || gameState?.gameSettings?.coPilotSettings,
+    gameState,
+    gameSettings
+  );
+}
+
+/**
+ * The ONE canonical reading of the player-facing control mode. It is derived from the runtime
+ * technical authority (the thing the executor actually checks), never from a separate UI flag.
+ */
+export function resolvePlayerControlMode(gameSettings: any, gameState?: any): PlayerControlMode {
+  const cp = resolveHumanCoPilotSettings(gameSettings, gameState);
+  return mapConceptualModeToPlayerControlMode(mapTechnicalSettingsToConceptualMode(cp.coPilotEnabled, cp.authorityMode));
+}
+
+export function isPlayerControlAuthorityIncrease(from: PlayerControlMode, to: PlayerControlMode): boolean {
+  return (PLAYER_CONTROL_MODE_META[to]?.authorityRank ?? 0) > (PLAYER_CONTROL_MODE_META[from]?.authorityRank ?? 0);
+}
+
+/**
+ * Writes a control mode through the canonical high-risk Co-Pilot patch (the same function the HUD
+ * "Start Co-Pilot" button uses). Only Co-Pilot keys and the matching profile fields change —
+ * Guardian, Auto Mode and every other custom setting are left exactly as the player set them.
+ * Changing the mode never starts execution: Autonomous still needs an explicit Start.
+ */
+export function applyPlayerControlModeToSettings(prev: GameSettingsState, mode: PlayerControlMode): GameSettingsState {
+  const meta = PLAYER_CONTROL_MODE_META[mode] || PLAYER_CONTROL_MODE_META.manual;
+  const profile = prev.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const plan = {
+    planId: `v9_control_${mode}`,
+    timestamp: 0,
+    profile: {
+      ...profile,
+      coPilotMode: meta.conceptual,
+      assistanceLevel: meta.assistanceLevel,
+      enabled: mode === 'manual' ? profile.enabled : true
+    },
+    changes: [],
+    conflicts: [],
+    autoModeBoundaries: {},
+    fairnessSummary: '',
+    summary: `Control mode → ${meta.label}`
+  } as unknown as SmartSettingsPlan;
+  const patched = applyHighRiskCoPilotSettingsPatch(prev, plan);
+  const mapped = mapConceptualModeToTechnicalSettings(meta.conceptual);
+  const nextCoPilot = sanitizeCoPilotSettings(patched.coPilotSettings);
+  nextCoPilot.coPilotEnabled = mapped.coPilotEnabled;
+  nextCoPilot.authorityMode = mapped.authorityMode;
+  const next: GameSettingsState = { ...patched, coPilotSettings: nextCoPilot };
+  // resolveCanonicalCoPilotSettings treats a top-level coPilotEnabled === false as a hard disable,
+  // so the legacy mirror keys must agree with the canonical nested settings whenever they exist.
+  if (Object.prototype.hasOwnProperty.call(prev, 'coPilotEnabled') || Object.prototype.hasOwnProperty.call(prev, 'coPilotAuthorityMode')) {
+    next.coPilotEnabled = mapped.coPilotEnabled;
+    next.coPilotAuthorityMode = mapped.authorityMode;
+  }
+  return next;
+}
+
+export type PlayerControlPhase =
+  | 'not_applicable'
+  | 'manual'
+  | 'advisor'
+  | 'assistant_ready'
+  | 'assistant_waiting_approval'
+  | 'rescue_available'
+  | 'rescue_active'
+  | 'autonomous_ready'
+  | 'autonomous_active'
+  | 'planning'
+  | 'executing'
+  | 'waiting_other_actor'
+  | 'paused'
+  | 'stopped_manually'
+  | 'objective_completed'
+  | 'blocked'
+  | 'session_ended'
+  | 'session_failed';
+
+export type PlayerControlOwner = 'human' | 'copilot' | 'shared' | 'other_actor' | 'ai_only';
+export type PlayerControlTone = 'human' | 'shared' | 'copilot' | 'waiting' | 'warning' | 'neutral';
+
+export interface PlayerControlState {
+  mode: PlayerControlMode;
+  modeLabel: string;
+  modeIcon: string;
+  /** Raw technical authority — shown only in LAB / diagnostics. */
+  technicalAuthority: CoPilotAuthorityMode;
+  phase: PlayerControlPhase;
+  owner: PlayerControlOwner;
+  tone: PlayerControlTone;
+  icon: string;
+  headline: string;
+  detail: string;
+  isHumanTurn: boolean;
+  objective: string | null;
+  actionProgress: { current: number; total: number } | null;
+  currentActionLabel: string | null;
+  sessionScopeLabel: string | null;
+  canTakeControl: boolean;
+  canStart: boolean;
+  startLabel: string | null;
+  canResume: boolean;
+  /** True while Co-Pilot owns (or is holding) the human actor's turn. */
+  copilotHoldsControl: boolean;
+}
+
+export interface PlayerControlStateInput {
+  gameSettings: any;
+  gameState: any;
+  takeoverSession: CoPilotTakeoverSession | null | undefined;
+  isHumanTurn: boolean;
+  currentActorName?: string;
+  pendingProposal?: boolean;
+  manualOverride?: boolean;
+  canStartAutonomous?: boolean;
+  /** An explicit Start is in its paint chain (session not created yet) — it must be cancellable. */
+  startPending?: boolean;
+  apUsed?: number;
+  apTotal?: number;
+  isAiOnlyMatch?: boolean;
+}
+
+const V9_FINISHED_SESSION_STATUSES: readonly string[] = ['disabled', 'terminated', 'completed', 'failed'];
+
+export function describeTakeoverScope(session: CoPilotTakeoverSession | null | undefined): string | null {
+  if (!session) return null;
+  const max = session.maxTurnsAllowed;
+  if (session.scope === 'current_turn') return 'This turn only';
+  if (session.scope === 'single_action') return 'One action';
+  if (session.scope === 'continuous' || !max || max === Infinity || max >= 999) return 'Until you take control';
+  return `${Math.max(0, max - (session.currentTurnCount || 0))} turn(s) left`;
+}
+
+/**
+ * Single normalized selector for "who controls the human actor right now". Every V9 surface
+ * (status bar, Intelligence control card, answers) reads this, so they cannot disagree.
+ */
+export function derivePlayerControlState(input: PlayerControlStateInput): PlayerControlState {
+  const mode = resolvePlayerControlMode(input.gameSettings, input.gameState);
+  const meta = PLAYER_CONTROL_MODE_META[mode];
+  const cp = resolveHumanCoPilotSettings(input.gameSettings, input.gameState);
+  const session = input.takeoverSession || null;
+  const isHumanTurn = Boolean(input.isHumanTurn);
+  const otherName = input.currentActorName || 'Another player';
+  const executableMode = (mode === 'rescue' || mode === 'autonomous') && isCoPilotAuthorityExecutable(cp);
+  const total = Math.max(0, Number(input.apTotal) || 0);
+  const used = Math.max(0, Number(input.apUsed) || 0);
+  const base: PlayerControlState = {
+    mode,
+    modeLabel: meta.label,
+    modeIcon: meta.icon,
+    technicalAuthority: cp.coPilotEnabled ? cp.authorityMode : 'off',
+    phase: 'manual',
+    owner: 'human',
+    tone: 'human',
+    icon: '🟢',
+    headline: "YOU'RE PLAYING",
+    detail: '',
+    isHumanTurn,
+    objective: null,
+    actionProgress: null,
+    currentActionLabel: null,
+    sessionScopeLabel: null,
+    canTakeControl: false,
+    canStart: false,
+    startLabel: null,
+    canResume: false,
+    copilotHoldsControl: false
+  };
+
+  if (input.isAiOnlyMatch) {
+    return {
+      ...base,
+      phase: 'not_applicable',
+      owner: 'ai_only',
+      tone: 'neutral',
+      icon: '🎥',
+      headline: 'AI VS AI',
+      detail: 'Every actor is AI-controlled, so the human control model does not apply to this match.'
+    };
+  }
+
+  const manuallyStopped = Boolean(session && isCoPilotManuallyStopped(session));
+  const finished = Boolean(session && V9_FINISHED_SESSION_STATUSES.includes(session.status));
+  const live = Boolean(session && !manuallyStopped && !finished && session.status !== 'interrupted');
+  const rescueSession = Boolean(session && (session.scope === 'current_turn' || cp.authorityMode === 'automatic_rescue'));
+
+  if (live && session) {
+    const display = getCoPilotRuntimeDisplayState(session, isHumanTurn, otherName);
+    const common: PlayerControlState = {
+      ...base,
+      objective: session.activeObjective?.description || null,
+      sessionScopeLabel: describeTakeoverScope(session),
+      canTakeControl: true,
+      copilotHoldsControl: true,
+      actionProgress: total > 0 ? { current: Math.min(total, used + (isHumanTurn ? 1 : 0)), total } : null,
+      currentActionLabel: display.currentActionName || null
+    };
+    if (!isHumanTurn) {
+      return {
+        ...common,
+        phase: 'waiting_other_actor',
+        owner: 'other_actor',
+        tone: 'waiting',
+        icon: '⏳',
+        headline: 'CO-PILOT WAITING',
+        detail: session.scope === 'current_turn' || session.scope === 'single_action'
+          ? `${otherName} is taking their turn. The rescue turn is done — control returns to you when your turn starts.`
+          : `${otherName} is taking their turn. Your Co-Pilot resumes automatically when control returns to you.`,
+        actionProgress: null
+      };
+    }
+    if (session.status === 'awaiting_approval') {
+      return {
+        ...common,
+        phase: 'assistant_waiting_approval',
+        owner: 'shared',
+        tone: 'shared',
+        icon: '✋',
+        headline: 'SHARED CONTROL',
+        detail: 'Co-Pilot is waiting for your approval before it acts.'
+      };
+    }
+    if (session.status === 'blocked') {
+      return {
+        ...common,
+        phase: 'blocked',
+        owner: 'copilot',
+        tone: 'warning',
+        icon: '⚠️',
+        headline: rescueSession ? 'CO-PILOT RESCUE' : 'CO-PILOT CONTROLLING',
+        detail: session.lastActionError ? `Blocked: ${session.lastActionError}` : 'Co-Pilot has no permitted legal action right now.'
+      };
+    }
+    // Phase is read from the session's own status: the runtime display folds 'active' into
+    // 'executing', which would hide the difference between "in control" and "running an action".
+    const st = session.status;
+    const phase: PlayerControlPhase = (st === 'executing' || st === 'verifying' || st === 'ending_player_turn' || st === 'completing')
+      ? 'executing'
+      : (st === 'planning' || st === 'replanning' || st === 'resuming')
+        ? 'planning'
+        : (rescueSession ? 'rescue_active' : 'autonomous_active');
+    return {
+      ...common,
+      phase,
+      owner: 'copilot',
+      tone: 'copilot',
+      icon: rescueSession ? '🛟' : '🤖',
+      headline: rescueSession ? 'CO-PILOT RESCUE' : 'CO-PILOT CONTROLLING',
+      detail: display.phaseDescription || 'Co-Pilot is playing your turn.'
+    };
+  }
+
+  if (input.startPending && !manuallyStopped && isHumanTurn) {
+    return {
+      ...base,
+      phase: 'planning',
+      owner: 'copilot',
+      tone: 'copilot',
+      icon: mode === 'rescue' ? '🛟' : '🤖',
+      headline: 'CO-PILOT STARTING',
+      detail: 'Co-Pilot is starting. Take Control cancels it before any action runs.',
+      canTakeControl: true,
+      copilotHoldsControl: true
+    };
+  }
+
+  if (input.pendingProposal) {
+    return {
+      ...base,
+      phase: 'assistant_waiting_approval',
+      owner: 'shared',
+      tone: 'shared',
+      icon: '✋',
+      headline: 'SHARED CONTROL',
+      detail: 'Co-Pilot proposed a move and is waiting for your approval. Nothing runs until you decide.'
+    };
+  }
+
+  const turnNote = isHumanTurn ? '' : ` ${otherName} is taking their turn.`;
+
+  if (manuallyStopped || (input.manualOverride && (!session || finished))) {
+    const canResume = executableMode && Boolean(session) && manuallyStopped;
+    const startable = !canResume && isHumanTurn && (mode === 'rescue' || mode === 'autonomous');
+    return {
+      ...base,
+      phase: 'stopped_manually',
+      detail: `You took control. Co-Pilot will not act until you resume or start it again.${turnNote}`,
+      canResume,
+      canStart: startable,
+      startLabel: startable ? (mode === 'rescue' ? 'Take Over This Turn' : 'Start Co-Pilot') : null
+    };
+  }
+
+  if (session && session.status === 'interrupted') {
+    return {
+      ...base,
+      phase: 'paused',
+      detail: `Co-Pilot is paused and not executing. You are in control.${turnNote}`,
+      canResume: executableMode
+    };
+  }
+
+  let endPhase: PlayerControlPhase | null = null;
+  let endNote: string | null = null;
+  if (session && session.status === 'completed') {
+    endPhase = session.returnReason === 'objective_completed' ? 'objective_completed' : 'session_ended';
+    endNote = session.returnReason === 'objective_completed'
+      ? `Co-Pilot objective complete${session.activeObjective?.description ? ` (${session.activeObjective.description})` : ''} — control returned to you.`
+      : 'Co-Pilot session finished — control returned to you.';
+  } else if (session && session.status === 'failed') {
+    endPhase = 'session_failed';
+    endNote = `Co-Pilot stopped safely (${session.lastActionError || 'an action failed validation'}). You are in control.`;
+  } else if (session && session.status === 'terminated') {
+    endPhase = 'session_ended';
+    endNote = 'Co-Pilot session ended. You are in control.';
+  }
+
+  const withEnd = (state: PlayerControlState): PlayerControlState => (
+    endPhase ? { ...state, phase: endPhase, detail: `${endNote}${turnNote}` } : { ...state, detail: `${state.detail}${turnNote}` }
+  );
+
+  switch (mode) {
+    case 'advisor':
+      return withEnd({ ...base, phase: 'advisor', detail: 'AI: Advisor — it recommends and explains; you make every move.' });
+    case 'assistant':
+      return withEnd({
+        ...base,
+        phase: 'assistant_ready',
+        owner: 'shared',
+        tone: 'shared',
+        icon: '🟣',
+        headline: 'SHARED CONTROL',
+        detail: 'You play. Co-Pilot may propose moves and always asks before acting.'
+      });
+    case 'rescue':
+      return withEnd({
+        ...base,
+        phase: 'rescue_available',
+        detail: executableMode
+          ? 'Rescue ready — Co-Pilot takes over only when you ask or a real emergency hits.'
+          : 'Rescue selected, but its canonical rescue switch is off — review it in LAB → Co-Pilot.',
+        canStart: isHumanTurn,
+        startLabel: 'Take Over This Turn'
+      });
+    case 'autonomous':
+      return withEnd({
+        ...base,
+        phase: 'autonomous_ready',
+        detail: 'Autonomous is armed — Co-Pilot starts only when you press Start.',
+        canStart: Boolean(input.canStartAutonomous ?? isHumanTurn),
+        startLabel: 'Start Co-Pilot'
+      });
+    case 'manual':
+    default:
+      return withEnd({ ...base, phase: 'manual', detail: 'Manual — player Co-Pilot assistance is off.' });
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 2. CONTEXTUAL ACTION SYSTEM
+// ----------------------------------------------------------------------------
+
+export type ContextualActionGroup = 'recommended' | 'useful' | 'available' | 'blocked';
+export type ContextualActionUrgency = 'critical' | 'high' | 'normal' | 'low';
+
+export type ContextualActionExecution =
+  | { kind: 'copilot_candidate'; candidate: any }
+  | { kind: 'navigate'; nav: IntentNavAction }
+  | { kind: 'end_turn' };
+
+export interface ContextualActionScoreFactor {
+  factor: string;
+  points: number;
+}
+
+/** Canonical Contextual Action Candidate — a ranked, explainable pointer at a REAL game action. */
+export interface ContextualActionCandidate {
+  id: string;
+  actionType: string;
+  label: string;
+  description: string;
+  category: string;
+  icon: string;
+  navigation: IntentNavAction | null;
+  /** Route into the canonical executor / navigator. Never a re-implementation of the effect. */
+  execution: ContextualActionExecution | null;
+  legal: boolean;
+  blockReason: string | null;
+  relevance: number;
+  urgency: ContextualActionUrgency;
+  benefit: string | null;
+  risk: string | null;
+  costEstimate: number | null;
+  apCost: number | null;
+  objectiveRelation: string | null;
+  reasons: string[];
+  evidence: string[];
+  sourceSystem: string;
+  confidence: number | null;
+  requiresConfirmation: boolean;
+  scoreBreakdown: ContextualActionScoreFactor[];
+}
+
+export interface ContextualSurfaceInput {
+  id: string;
+  label: string;
+  icon: string;
+  target: IntentNavTarget;
+  category: string;
+  legal: boolean;
+  blockReason?: string | null;
+}
+
+export interface ContextualActionInput {
+  /** Output of the canonical rankContextualRecommendations (already legality-filtered). */
+  rankedRecommendations: ContextualRecommendation[];
+  /** Co-Pilot candidates the canonical validator rejected (isValid === false). */
+  invalidCandidates?: any[];
+  objective: CurrentObjective | null;
+  attention: PlayerAttentionSnapshot | null;
+  apRemaining: number;
+  isHumanTurn: boolean;
+  surfaces?: ContextualSurfaceInput[];
+}
+
+export interface ContextualActionSet {
+  recommended: ContextualActionCandidate | null;
+  useful: ContextualActionCandidate[];
+  available: ContextualActionCandidate[];
+  blocked: ContextualActionCandidate[];
+  /** Every actionable candidate in rank order (recommended + useful + the rest). */
+  ranked: ContextualActionCandidate[];
+  /** Stable signature of the ranking — identical relevant state always yields the same value. */
+  fingerprint: string;
+}
+
+const CONTEXTUAL_ACTION_ICONS: Record<string, string> = {
+  travel: '✈️', challenge: '🎯', sell: '💰', market: '💰', buy: '🛍️', craft: '🔨', invest: '🏦', loan: '🏦',
+  contract: '📜', infrastructure: '🏗️', expedition: '🧭', relic: '🗿', sabotage: '🕵️', deposit: '🏛️', region: '🏛️',
+  equipment: '🛒', negotiat: '🤝', treasury: '🏦', governance: '🏛️', end_turn: '⏭️', rest: '😴', gather: '⛏️'
+};
+
+export function iconForContextualAction(actionType: string, category?: string): string {
+  const blob = `${actionType || ''} ${category || ''}`.toLowerCase();
+  for (const key of Object.keys(CONTEXTUAL_ACTION_ICONS)) {
+    if (blob.includes(key)) return CONTEXTUAL_ACTION_ICONS[key];
+  }
+  return '▶️';
+}
+
+function contextualTokens(text: string): string[] {
+  return String(text || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 3);
+}
+
+/** Does this candidate directly address the current attention signal? (pure, explainable) */
+export function contextualCandidateAddressesAttention(candidate: any, attention: PlayerAttentionSnapshot | null): boolean {
+  if (!candidate || !attention || attention.state === 'good') return false;
+  const label = String(attention.label || '').toLowerCase();
+  const blob = `${candidate.actionType || ''} ${candidate.category || ''} ${candidate.title || ''}`.toLowerCase();
+  const cashDelta = Number(candidate.expectedStateDelta?.cashDelta || 0);
+  if (label.includes('bankrupt') || label.includes('liquidity') || label.includes('cash')) {
+    // Borrowing adds debt, so it only counts as a fix for a genuine (critical) cash emergency.
+    const borrowing = /loan|credit|borrow/.test(blob);
+    return cashDelta > 0 && (!borrowing || attention.state === 'critical');
+  }
+  if (label.includes('contract')) return blob.includes('contract');
+  if (label.includes('expedition')) return blob.includes('expedition') || blob.includes('supplies');
+  if (label.includes('region')) return blob.includes('deposit') || blob.includes('region');
+  if (label.includes('teammate')) return blob.includes('give') || blob.includes('treasury') || blob.includes('support');
+  return false;
+}
+
+function describeContextualRisk(riskFactor: number): string | null {
+  if (!Number.isFinite(riskFactor) || riskFactor <= 0) return null;
+  if (riskFactor >= 60) return `High risk (${Math.round(riskFactor)}/100)`;
+  if (riskFactor >= 30) return `Moderate risk (${Math.round(riskFactor)}/100)`;
+  return `Low risk (${Math.round(riskFactor)}/100)`;
+}
+
+function compareContextualCandidates(a: ContextualActionCandidate, b: ContextualActionCandidate): number {
+  if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Builds the ranked contextual action set. Pure and deterministic: no randomness, no Date.now,
+ * ties broken by id. Ranking controls VISIBILITY and ORDER only — executing any candidate still
+ * goes through the canonical executor, which re-validates legality, AP, cash reserves, spending
+ * caps, Guardian and Co-Pilot permissions at execution time.
+ */
+export function buildContextualActionSet(input: ContextualActionInput): ContextualActionSet {
+  const objective = input.objective || null;
+  const attention = input.attention || null;
+  const apRemaining = Math.max(0, Number(input.apRemaining) || 0);
+  const attentionActive = Boolean(attention && attention.state !== 'good');
+  const urgencyBoost = attention?.state === 'critical' ? 25 : attentionActive ? 10 : 0;
+  const actionable: ContextualActionCandidate[] = [];
+  const seenIds = new Set<string>();
+
+  for (const rec of input.rankedRecommendations || []) {
+    const c = rec?.candidate || {};
+    const id = String(rec?.id || c.id || `${rec?.actionType}_${c.targetId || ''}`);
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    const utility = Math.round(Number(c.utilityScore || 0));
+    const alignment = Math.round(Number(rec.objectiveAlignment || 0));
+    const riskPenalty = Math.round(Number(c.riskFactor || 0) * 0.15);
+    const addressesAttention = contextualCandidateAddressesAttention(c, attention);
+    const breakdown: ContextualActionScoreFactor[] = [{ factor: 'Co-Pilot strategic value', points: utility }];
+    if (alignment) breakdown.push({ factor: objective ? `Advances goal: ${objective.title}` : 'Advances current goal', points: alignment });
+    if (riskPenalty) breakdown.push({ factor: 'Risk', points: -riskPenalty });
+    if (addressesAttention && urgencyBoost) breakdown.push({ factor: `Addresses: ${attention?.label}`, points: urgencyBoost });
+    const relevance = breakdown.reduce((sum, f) => sum + f.points, 0);
+    const cost = Number(rec.costEstimate || 0);
+    const cashDelta = Number(c.expectedStateDelta?.cashDelta || 0);
+    const reasons = [...(rec.whyPoints || [])];
+    if (addressesAttention && attention) reasons.unshift(`addresses ${attention.label.toLowerCase()}: ${attention.detail}`);
+    actionable.push({
+      id,
+      actionType: String(rec.actionType || c.actionType || 'action'),
+      label: String(rec.title || c.title || 'Action'),
+      description: String(c.description || c.expectedOutcome || ''),
+      category: String(c.category || rec.actionType || 'action'),
+      icon: iconForContextualAction(String(rec.actionType || ''), String(c.category || '')),
+      navigation: deriveRelevantNavigationTarget(`${rec.actionType || ''} ${c.category || ''}`),
+      execution: { kind: 'copilot_candidate', candidate: c },
+      legal: true,
+      blockReason: null,
+      relevance,
+      urgency: addressesAttention && attention?.state === 'critical' ? 'critical' : relevance >= 80 ? 'high' : 'normal',
+      benefit: cashDelta > 0 ? `Expected +$${Math.round(cashDelta).toLocaleString()}` : (c.expectedOutcome || null),
+      risk: describeContextualRisk(Number(c.riskFactor || 0)),
+      costEstimate: cost > 0 ? cost : 0,
+      apCost: Number(rec.apCost ?? c.apCost ?? 1),
+      objectiveRelation: alignment > 0 && objective ? `Supports your goal: ${objective.title}` : null,
+      reasons,
+      evidence: [
+        `Co-Pilot candidate scoring — utility ${utility}, risk ${Math.round(Number(c.riskFactor || 0))}, reward ${Math.round(Number(c.rewardScore || 0))}`,
+        `Passed the canonical legality filter: ${rec.apCost ?? 1} AP${cost > 0 ? `, $${cost.toLocaleString()}` : ', no cash cost'} (you have ${apRemaining} AP)`
+      ],
+      sourceSystem: 'Co-Pilot action candidates',
+      confidence: Number.isFinite(Number(c.rewardScore)) ? Math.max(0, Math.min(1, Number(c.rewardScore) / 100)) : null,
+      requiresConfirmation: false,
+      scoreBreakdown: breakdown
+    });
+  }
+
+  if (attentionActive && attention?.navigation) {
+    const nav = attention.navigation;
+    const id = `attention_${nav.target}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      const points = attention.state === 'critical' ? 60 : 30;
+      actionable.push({
+        id,
+        actionType: `open_${nav.target}`,
+        label: nav.label,
+        description: attention.detail,
+        category: 'attention',
+        icon: attention.state === 'critical' ? '⚠️' : '❗',
+        navigation: nav,
+        execution: { kind: 'navigate', nav },
+        legal: true,
+        blockReason: null,
+        relevance: points,
+        urgency: attention.state === 'critical' ? 'critical' : 'high',
+        benefit: null,
+        risk: null,
+        costEstimate: null,
+        apCost: 0,
+        objectiveRelation: null,
+        reasons: [`${attention.label}: ${attention.detail}`],
+        evidence: [`Player attention monitor classified your position as "${attention.state.replace(/_/g, ' ')}" (${attention.label}).`],
+        sourceSystem: 'Player attention monitor',
+        confidence: null,
+        requiresConfirmation: false,
+        scoreBreakdown: [{ factor: `Attention: ${attention.label}`, points }]
+      });
+    }
+  }
+
+  const nextStep = objective?.recommendedNextStep || null;
+  if (nextStep?.navigation) {
+    const alreadyCovered = actionable.some(a => a.execution?.kind === 'copilot_candidate' && nextStep.actionType && a.actionType === nextStep.actionType);
+    const id = `objective_${nextStep.id || nextStep.navigation.target}`;
+    if (!alreadyCovered && !seenIds.has(id)) {
+      seenIds.add(id);
+      actionable.push({
+        id,
+        actionType: nextStep.actionType || `open_${nextStep.navigation.target}`,
+        label: nextStep.label,
+        description: nextStep.detail || `Next step toward ${objective?.title || 'your goal'}.`,
+        category: 'objective',
+        icon: '🎯',
+        navigation: nextStep.navigation,
+        execution: { kind: 'navigate', nav: nextStep.navigation },
+        legal: true,
+        blockReason: null,
+        relevance: 35,
+        urgency: 'normal',
+        benefit: null,
+        risk: null,
+        costEstimate: null,
+        apCost: null,
+        objectiveRelation: objective ? `Next step toward ${objective.title}` : null,
+        reasons: [`next step toward ${objective?.title || 'your current goal'}`],
+        evidence: [`Current objective "${objective?.title}" — ${objective?.progress.completed}/${objective?.progress.total} requirements met.`],
+        sourceSystem: 'Current objective',
+        confidence: null,
+        requiresConfirmation: false,
+        scoreBreakdown: [{ factor: 'Next objective step', points: 35 }]
+      });
+    }
+  }
+
+  const executableCount = actionable.filter(a => a.execution?.kind === 'copilot_candidate').length;
+  if (input.isHumanTurn && (apRemaining <= 0 || executableCount === 0)) {
+    const noAp = apRemaining <= 0;
+    actionable.push({
+      id: 'end_turn',
+      actionType: 'end_turn',
+      label: 'End Turn',
+      description: noAp ? 'You have no Action Points left this turn.' : 'No scored legal action is available right now.',
+      category: 'turn',
+      icon: '⏭️',
+      navigation: null,
+      execution: { kind: 'end_turn' },
+      legal: true,
+      blockReason: null,
+      relevance: noAp ? 1000 : 5,
+      urgency: noAp ? 'high' : 'low',
+      benefit: null,
+      risk: null,
+      costEstimate: 0,
+      apCost: 0,
+      objectiveRelation: null,
+      reasons: [noAp ? 'no Action Points left — ending your turn is the only move' : 'nothing legal scored well enough to recommend'],
+      evidence: [`Action points remaining: ${apRemaining}.`],
+      sourceSystem: 'Turn structure',
+      confidence: null,
+      requiresConfirmation: false,
+      scoreBreakdown: [{ factor: noAp ? 'No Action Points left' : 'Fallback', points: noAp ? 1000 : 5 }]
+    });
+  }
+
+  actionable.sort(compareContextualCandidates);
+  const recommended = actionable[0] || null;
+  const useful = actionable.slice(1, 4);
+
+  // Blocked-but-important: canonical validator rejections that would beat what you can do now,
+  // or that speak to your goal. The block itself is the useful information ("need $X more").
+  const topUtility = Number((input.rankedRecommendations?.[0]?.candidate as any)?.utilityScore || 0);
+  const objTokens = new Set(contextualTokens(`${objective?.title || ''} ${objective?.recommendedNextStep?.label || ''}`));
+  const blocked: ContextualActionCandidate[] = [];
+  const invalid = [...(input.invalidCandidates || [])]
+    .filter((c: any) => c && c.isValid === false && c.invalidationReason)
+    .sort((a: any, b: any) => (Number(b.utilityScore || 0) - Number(a.utilityScore || 0)) || String(a.id || '').localeCompare(String(b.id || '')));
+  for (const c of invalid) {
+    if (blocked.length >= 2) break;
+    const utility = Number(c.utilityScore || 0);
+    const aligned = contextualTokens(`${c.title || ''} ${c.actionType || ''}`).some(t => objTokens.has(t));
+    if (!(utility > topUtility || aligned)) continue;
+    const id = `blocked_${c.id || c.actionType}`;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const reason = String(c.invalidationReason);
+    blocked.push({
+      id,
+      actionType: String(c.actionType || 'action'),
+      label: String(c.title || c.actionType || 'Action'),
+      description: String(c.description || ''),
+      category: String(c.category || 'action'),
+      icon: iconForContextualAction(String(c.actionType || ''), String(c.category || '')),
+      navigation: deriveRelevantNavigationTarget(`${c.title || ''} ${c.actionType || ''} ${reason}`),
+      execution: null,
+      legal: false,
+      blockReason: reason,
+      relevance: Math.round(utility * 0.5),
+      urgency: 'low',
+      benefit: Number(c.expectedStateDelta?.cashDelta || 0) > 0 ? `Would be worth +$${Math.round(Number(c.expectedStateDelta.cashDelta)).toLocaleString()}` : (c.expectedOutcome || null),
+      risk: describeContextualRisk(Number(c.riskFactor || 0)),
+      costEstimate: Number(c.costEstimate || 0) || null,
+      apCost: Number(c.apCost ?? 1),
+      objectiveRelation: aligned && objective ? `Related to your goal: ${objective.title}` : null,
+      reasons: [utility > topUtility ? 'scores higher than anything you can do right now' : 'relates to your current goal'],
+      evidence: [`Canonical action validation rejected it: ${reason}`, `Co-Pilot utility score ${Math.round(utility)}.`],
+      sourceSystem: 'Co-Pilot action validation',
+      confidence: null,
+      requiresConfirmation: false,
+      scoreBreakdown: [{ factor: 'Co-Pilot strategic value (blocked)', points: Math.round(utility * 0.5) }]
+    });
+  }
+
+  const shownTargets = new Set(actionable.map(a => a.navigation?.target).filter(Boolean) as string[]);
+  const attentionTarget = attention?.navigation?.target;
+  const objectiveTarget = nextStep?.navigation?.target;
+  const available = (input.surfaces || [])
+    .filter(s => s && s.legal && !shownTargets.has(s.target))
+    .map((s, index) => {
+      const factors: ContextualActionScoreFactor[] = [{ factor: 'Available this turn', points: 5 }];
+      if (attentionActive && s.target === attentionTarget) factors.push({ factor: 'Matches current attention', points: 20 });
+      if (s.target === objectiveTarget) factors.push({ factor: 'Matches objective step', points: 15 });
+      const relevance = factors.reduce((sum, f) => sum + f.points, 0);
+      const nav = navAction(s.target, s.label);
+      const candidate: ContextualActionCandidate = {
+        id: `surface_${s.id}`,
+        actionType: `open_${s.target}`,
+        label: s.label,
+        description: `Open ${s.label}.`,
+        category: s.category,
+        icon: s.icon,
+        navigation: nav,
+        execution: { kind: 'navigate', nav },
+        legal: true,
+        blockReason: null,
+        relevance: relevance - index * 0.01,
+        urgency: 'low',
+        benefit: null,
+        risk: null,
+        costEstimate: null,
+        apCost: null,
+        objectiveRelation: s.target === objectiveTarget && objective ? `Where the next step for ${objective.title} happens` : null,
+        reasons: factors.slice(1).map(f => f.factor.toLowerCase()),
+        evidence: ['Legal to open now (action bar availability).'],
+        sourceSystem: 'Action bar',
+        confidence: null,
+        requiresConfirmation: false,
+        scoreBreakdown: factors
+      };
+      return candidate;
+    })
+    .sort(compareContextualCandidates)
+    .slice(0, 5);
+
+  const fingerprint = [...actionable, ...blocked].map(a => `${a.id}:${Math.round(a.relevance * 100) / 100}`).join('|');
+  return { recommended, useful, available, blocked, ranked: actionable, fingerprint };
+}
+
+export function findContextualCandidate(set: ContextualActionSet | null | undefined, id: string | null | undefined): ContextualActionCandidate | null {
+  if (!set || !id) return null;
+  return [...set.ranked, ...set.blocked, ...set.available].find(c => c.id === id) || null;
+}
+
+// ----------------------------------------------------------------------------
+// 3. UNIFIED GAME INTELLIGENCE
+// ----------------------------------------------------------------------------
+
+export type GameIntelligenceButtonKind =
+  | 'do'
+  | 'open'
+  | 'why'
+  | 'alternatives'
+  | 'set_mode'
+  | 'take_over_turn'
+  | 'take_control'
+  | 'start_copilot'
+  | 'resume_copilot'
+  | 'ask'
+  | 'deeplink'
+  | 'end_turn';
+
+export interface GameIntelligenceButton {
+  id: string;
+  label: string;
+  kind: GameIntelligenceButtonKind;
+  candidateId?: string;
+  nav?: IntentNavAction | null;
+  mode?: PlayerControlMode;
+  query?: string;
+  deepLink?: any;
+  tone?: 'primary' | 'secondary' | 'danger';
+}
+
+export interface GameIntelligenceEvidence {
+  source: string;
+  detail: string;
+}
+
+export type GameIntelligenceAnswerKind = 'control' | 'next_step' | 'alternatives' | 'why' | 'activity' | 'ask_engine' | 'insufficient' | 'error';
+
+export type GameIntelligenceImmediateCommand =
+  | { kind: 'take_control' }
+  | { kind: 'set_mode'; mode: PlayerControlMode };
+
+export interface GameIntelligenceAnswer {
+  id: string;
+  query: string;
+  kind: GameIntelligenceAnswerKind;
+  title: string;
+  lines: string[];
+  evidence: GameIntelligenceEvidence[];
+  buttons: GameIntelligenceButton[];
+  sourceSystems: string[];
+  /** False when the game did not have enough evidence to answer substantively. */
+  grounded: boolean;
+  /** Authority DECREASES only. Increases always come back as an explicit button. */
+  immediate?: GameIntelligenceImmediateCommand | null;
+}
+
+export type GameIntelligenceRoute =
+  | { kind: 'control'; command: 'take_control' }
+  | { kind: 'control'; command: 'set_mode'; mode: PlayerControlMode }
+  | { kind: 'control'; command: 'take_over_turn' }
+  | { kind: 'control'; command: 'rescue_until_recovered' }
+  | { kind: 'next_step'; focus: 'general' | 'win' | 'recovery' }
+  | { kind: 'alternatives' }
+  | { kind: 'activity' }
+  | { kind: 'ask_engine' };
+
+export function normalizeIntelligenceQuery(raw: string): string {
+  return String(raw || '')
+    .toLowerCase()
+    .replace(/co-pilot/g, 'copilot')
+    .replace(/co pilot/g, 'copilot')
+    .replace(/[^a-z0-9$' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const INTEL_MODE_WORDS: Array<{ pattern: RegExp; mode: PlayerControlMode }> = [
+  { pattern: /\bmanual\b/, mode: 'manual' },
+  { pattern: /\badvis(or|er)\b/, mode: 'advisor' },
+  { pattern: /\bassistant\b/, mode: 'assistant' },
+  { pattern: /\brescue\b/, mode: 'rescue' },
+  { pattern: /\b(autonomous|autopilot|auto pilot)\b/, mode: 'autonomous' }
+];
+
+function findIntelModeWord(q: string): PlayerControlMode | null {
+  for (const entry of INTEL_MODE_WORDS) {
+    if (entry.pattern.test(q)) return entry.mode;
+  }
+  return null;
+}
+
+/**
+ * Deterministic request router. Control commands are matched strictly (explicit verb + mode or a
+ * fixed phrase) so a loosely-worded question can never be read as "give the AI more authority".
+ * Anything that is not a V9 orchestration request goes to the Ask-the-Game engine.
+ */
+export function classifyGameIntelligenceRequest(raw: string): GameIntelligenceRoute {
+  const q = normalizeIntelligenceQuery(raw);
+  if (!q) return { kind: 'ask_engine' };
+
+  if (/^(stop|halt|pause)( it| now| please| copilot| the copilot| autopilot| autonomous| automation)?$/.test(q)
+    || /^take (back )?control\b/.test(q)
+    || /\b(give|hand) (me )?(my )?control back\b/.test(q)
+    || /\bgive me back (my )?control\b/.test(q)
+    || /\bstop (controlling|playing for) me\b/.test(q)
+    || /\bstop the copilot\b/.test(q)
+    || /^(i ?ll|i will|let me) (play|take it from here)\b/.test(q)) {
+    return { kind: 'control', command: 'take_control' };
+  }
+
+  if (/\btake over (this|my|the current) turn\b/.test(q) || /\bplay (this|my) turn( for me)?\b/.test(q) || /^take this turn\b/.test(q)) {
+    return { kind: 'control', command: 'take_over_turn' };
+  }
+
+  if (/\btake over until\b/.test(q) || /\b(recover|rescue) me\b/.test(q) || /\blet (the )?copilot (recover|rescue)\b/.test(q)) {
+    return { kind: 'control', command: 'rescue_until_recovered' };
+  }
+
+  if (/\bask (me )?before acting\b/.test(q) || /\bhelp me but ask\b/.test(q)) {
+    return { kind: 'control', command: 'set_mode', mode: 'assistant' };
+  }
+  if (/\b(just|only) advise( me)?\b/.test(q) || /\badvice only\b/.test(q)) {
+    return { kind: 'control', command: 'set_mode', mode: 'advisor' };
+  }
+  if (/\b(turn off|disable) (the )?copilot\b/.test(q) || /\bcopilot off\b/.test(q)) {
+    return { kind: 'control', command: 'set_mode', mode: 'manual' };
+  }
+  const modeWord = findIntelModeWord(q);
+  if (modeWord) {
+    const explicitVerb = /\b(switch|change|set|go|move|put|turn|enable|use|activate)\b/.test(q);
+    const bareMode = /^(manual|advisor|adviser|assistant|rescue|autonomous|autopilot)( mode)?$/.test(q);
+    if (explicitVerb || bareMode) return { kind: 'control', command: 'set_mode', mode: modeWord };
+  }
+
+  if (/\balternativ/.test(q) || /\bother options\b/.test(q) || /\bwhat else\b/.test(q) || /\bshow (me )?(the )?(best |other )?options\b/.test(q)) {
+    return { kind: 'alternatives' };
+  }
+
+  if (/\bhelp me recover\b/.test(q) || /\brecover financially\b/.test(q) || /\bget out of debt\b/.test(q)) {
+    return { kind: 'next_step', focus: 'recovery' };
+  }
+  if (/\bwhat should i (do|focus)\b/.test(q) || /\bnext (step|move|action)\b/.test(q) || /\bbest (move|action|play)s?\b/.test(q)
+    || /^what now\b/.test(q) || /\bwhat matters\b/.test(q) || /\bhow (do|can) i win\b/.test(q) || /\bfocus on to win\b/.test(q)) {
+    return { kind: 'next_step', focus: /\bwin\b/.test(q) ? 'win' : 'general' };
+  }
+
+  if (/\bcopilot\b.*\b(doing|done|did)\b/.test(q) || /\bwhat (is|has|did) (the )?copilot\b/.test(q) || /\brecent (ai |copilot )?activity\b/.test(q) || /\bwhy did (the )?copilot\b/.test(q)) {
+    return { kind: 'activity' };
+  }
+
+  return { kind: 'ask_engine' };
+}
+
+let gameIntelligenceAnswerCounter = 0;
+function nextIntelligenceAnswerId(prefix: string): string {
+  gameIntelligenceAnswerCounter += 1;
+  return `gi_${prefix}_${gameIntelligenceAnswerCounter}`;
+}
+
+function describeContextualCost(c: ContextualActionCandidate): string {
+  const bits: string[] = [];
+  if (typeof c.costEstimate === 'number' && c.costEstimate > 0) bits.push(`$${c.costEstimate.toLocaleString()}`);
+  if (typeof c.apCost === 'number' && c.apCost > 0) bits.push(`${c.apCost} AP`);
+  return bits.length ? bits.join(' • ') : 'No cost';
+}
+
+/** Buttons for one candidate, honouring legality, turn ownership and who currently controls the actor. */
+export function buildContextualCandidateButtons(
+  c: ContextualActionCandidate,
+  control: PlayerControlState,
+  options?: { includeWhy?: boolean; includeAlternatives?: boolean }
+): GameIntelligenceButton[] {
+  const buttons: GameIntelligenceButton[] = [];
+  const humanCanAct = control.isHumanTurn && !control.copilotHoldsControl && control.owner !== 'ai_only';
+  if (c.legal && c.execution?.kind === 'copilot_candidate' && humanCanAct) {
+    buttons.push({ id: `do_${c.id}`, label: 'Do It', kind: 'do', candidateId: c.id, tone: 'primary' });
+  } else if (c.legal && c.execution?.kind === 'end_turn' && humanCanAct) {
+    buttons.push({ id: `end_${c.id}`, label: 'End Turn', kind: 'end_turn', candidateId: c.id, tone: 'primary' });
+  }
+  if (c.navigation) {
+    buttons.push({ id: `open_${c.id}`, label: c.legal ? (c.execution?.kind === 'navigate' ? c.navigation.label : 'Open') : 'Show path to unlock', kind: 'open', nav: c.navigation, tone: 'secondary' });
+  }
+  if (options?.includeWhy !== false) {
+    buttons.push({ id: `why_${c.id}`, label: c.legal ? 'Why?' : 'Blocked: Why?', kind: 'why', candidateId: c.id, tone: 'secondary' });
+  }
+  if (options?.includeAlternatives) {
+    buttons.push({ id: `alt_${c.id}`, label: 'Show Alternatives', kind: 'alternatives', candidateId: c.id, tone: 'secondary' });
+  }
+  return buttons;
+}
+
+export function buildIntelligenceControlAnswer(
+  route: Extract<GameIntelligenceRoute, { kind: 'control' }>,
+  control: PlayerControlState,
+  query: string
+): GameIntelligenceAnswer {
+  const evidence: GameIntelligenceEvidence[] = [
+    { source: 'Control model', detail: `Current mode ${control.modeLabel}; ${control.headline.toLowerCase()} (${control.phase.replace(/_/g, ' ')}).` }
+  ];
+  const base = { id: nextIntelligenceAnswerId('control'), query, kind: 'control' as const, evidence, sourceSystems: ['Control model', 'Co-Pilot takeover sessions'], grounded: true };
+  if (control.owner === 'ai_only') {
+    return { ...base, title: 'Control model not applicable', lines: ['This is an AI vs AI match — there is no human actor for the Co-Pilot to assist or control.'], buttons: [] };
+  }
+  if (route.command === 'take_control') {
+    if (control.canTakeControl) {
+      return {
+        ...base,
+        title: 'Taking control',
+        lines: ['Stopping Co-Pilot now. Anything it already committed stays; nothing further will execute until you choose to start or resume it.'],
+        buttons: [],
+        immediate: { kind: 'take_control' }
+      };
+    }
+    const lower: GameIntelligenceButton[] = control.mode === 'manual' ? [] : [
+      { id: 'mode_advisor', label: 'Switch to Advisor', kind: 'set_mode', mode: 'advisor', tone: 'secondary' },
+      { id: 'mode_manual', label: 'Switch to Manual', kind: 'set_mode', mode: 'manual', tone: 'secondary' }
+    ];
+    return {
+      ...base,
+      title: 'You already have control',
+      lines: [`Co-Pilot is not executing anything for you. Current mode: ${control.modeLabel} — ${PLAYER_CONTROL_MODE_META[control.mode].whoActs}`],
+      buttons: lower
+    };
+  }
+  if (route.command === 'set_mode') {
+    const target = route.mode;
+    const meta = PLAYER_CONTROL_MODE_META[target];
+    if (target === control.mode) {
+      return { ...base, title: `Already in ${meta.label}`, lines: [meta.summary], buttons: [] };
+    }
+    if (!isPlayerControlAuthorityIncrease(control.mode, target)) {
+      return {
+        ...base,
+        title: `Switching to ${meta.label}`,
+        lines: [
+          meta.summary,
+          control.copilotHoldsControl ? 'Co-Pilot is stopped first so no further action runs under the old mode.' : 'This lowers AI authority, so it applies immediately.'
+        ],
+        buttons: [],
+        immediate: { kind: 'set_mode', mode: target }
+      };
+    }
+    return {
+      ...base,
+      title: `Switch to ${meta.label}?`,
+      lines: [
+        meta.summary,
+        target === 'autonomous' ? 'Selecting Autonomous does not start it — Co-Pilot only plays after you press Start.' : 'Nothing changes until you confirm below.',
+        'All spending caps, reserves, Guardian protections and permissions still apply.'
+      ],
+      buttons: [{ id: `mode_${target}`, label: `Switch to ${meta.label}`, kind: 'set_mode', mode: target, tone: 'primary' }]
+    };
+  }
+  // take_over_turn / rescue_until_recovered: always an explicit button — never automatic.
+  if (!control.isHumanTurn) {
+    return {
+      ...base,
+      title: 'Not your turn yet',
+      lines: ['Co-Pilot can only take over while you own the turn. Ask again when your turn starts.'],
+      buttons: []
+    };
+  }
+  if (control.copilotHoldsControl) {
+    return {
+      ...base,
+      title: 'Co-Pilot is already playing',
+      lines: [control.detail],
+      buttons: [{ id: 'take_control', label: 'Take Control', kind: 'take_control', tone: 'danger' }]
+    };
+  }
+  const recovering = route.command === 'rescue_until_recovered';
+  return {
+    ...base,
+    title: recovering ? 'Let Co-Pilot recover you?' : 'Let Co-Pilot take this turn?',
+    lines: [
+      'Co-Pilot will run a Rescue takeover for the current turn using its legal, permitted actions, then hand control back to you.',
+      ...(control.mode !== 'rescue' ? [`Confirming also sets your control mode to Rescue (currently ${control.modeLabel}).`] : []),
+      recovering
+        ? 'Rescue sessions are scoped to one turn. While Rescue mode stays selected, Co-Pilot re-engages only when a genuine emergency (cash crisis or stranded expedition) is detected.'
+        : 'Your spending caps, cash reserve, Guardian protections and Co-Pilot permissions all still apply.',
+      'You can press Take Control at any time.'
+    ],
+    buttons: [{ id: 'take_over_turn', label: recovering ? 'Let Co-Pilot Recover Me' : 'Take Over This Turn', kind: 'take_over_turn', tone: 'primary' }]
+  };
+}
+
+export function buildNextStepIntelligenceAnswer(input: {
+  query: string;
+  focus: 'general' | 'win' | 'recovery';
+  actionSet: ContextualActionSet | null;
+  objective: CurrentObjective | null;
+  attention: PlayerAttentionSnapshot | null;
+  control: PlayerControlState;
+  winLines?: string[];
+  cash?: number | null;
+}): GameIntelligenceAnswer {
+  const lines: string[] = [];
+  const evidence: GameIntelligenceEvidence[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const set = input.actionSet;
+  const rec = set?.recommended || null;
+  if (input.focus === 'win' && input.winLines?.length) {
+    lines.push(...input.winLines);
+    evidence.push({ source: 'Win condition progress', detail: input.winLines.join(' ') });
+  }
+  if (input.objective) {
+    lines.push(`Current goal: ${input.objective.title} (${input.objective.progress.completed}/${input.objective.progress.total} requirements met).`);
+    evidence.push({ source: 'Current objective', detail: `${input.objective.title} — ${input.objective.description}` });
+    const missing = input.objective.requirements.filter(r => !r.satisfied).slice(0, 2);
+    if (missing.length) lines.push(`Still missing: ${missing.map(r => r.label).join('; ')}.`);
+  }
+  if (input.attention && input.attention.state !== 'good') {
+    lines.push(`Needs attention — ${input.attention.label}: ${input.attention.detail}`);
+    evidence.push({ source: 'Player attention monitor', detail: `${input.attention.state.replace(/_/g, ' ')}: ${input.attention.label}` });
+  }
+  if (input.focus === 'recovery' && typeof input.cash === 'number') {
+    lines.push(`Cash on hand: $${Math.round(input.cash).toLocaleString()}.`);
+    evidence.push({ source: 'Player state', detail: `Cash $${Math.round(input.cash).toLocaleString()}` });
+  }
+  if (rec) {
+    lines.push(`Recommended: ${rec.label} — ${rec.reasons[0] || rec.description || 'highest-ranked legal action'}. Cost: ${describeContextualCost(rec)}.`);
+    evidence.push({ source: rec.sourceSystem, detail: rec.scoreBreakdown.map(f => `${f.factor} ${f.points >= 0 ? '+' : ''}${Math.round(f.points)}`).join(', ') });
+    buttons.push(...buildContextualCandidateButtons(rec, input.control, { includeWhy: true, includeAlternatives: true }));
+  } else {
+    lines.push('The game has no scored legal action for you right now. You can open More Actions or end your turn.');
+  }
+  if (input.focus === 'recovery' && input.control.owner !== 'ai_only' && !input.control.copilotHoldsControl && input.control.isHumanTurn) {
+    buttons.push({ id: 'recover_me', label: 'Let Co-Pilot Recover Me', kind: 'take_over_turn', tone: 'secondary' });
+  }
+  if (!input.control.isHumanTurn) lines.push('It is not your turn — actions unlock when your turn starts.');
+  const grounded = Boolean(rec || input.objective);
+  return {
+    id: nextIntelligenceAnswerId('next'),
+    query: input.query,
+    kind: grounded ? 'next_step' : 'insufficient',
+    title: input.focus === 'win' ? 'What to focus on to win' : input.focus === 'recovery' ? 'Recovering your finances' : 'What to do next',
+    lines,
+    evidence,
+    buttons,
+    sourceSystems: ['Contextual Action System', 'Current objective', 'Player attention monitor'],
+    grounded
+  };
+}
+
+export function buildAlternativesIntelligenceAnswer(input: {
+  query: string;
+  actionSet: ContextualActionSet | null;
+  control: PlayerControlState;
+  excludeId?: string | null;
+}): GameIntelligenceAnswer {
+  const all = (input.actionSet?.ranked || []).filter(c => c.id !== input.excludeId);
+  const picks = all.slice(0, 4);
+  const lines = picks.length
+    ? picks.map((c, i) => `${i + 1}. ${c.label} — score ${Math.round(c.relevance)}; ${c.reasons[0] || c.description || 'legal now'} (${describeContextualCost(c)})`)
+    : ['No other ranked alternatives are available right now.'];
+  const blocked = (input.actionSet?.blocked || []).filter(c => c.id !== input.excludeId).slice(0, 2);
+  if (blocked.length) lines.push(...blocked.map(c => `Blocked: ${c.label} — ${c.blockReason}`));
+  const buttons: GameIntelligenceButton[] = [];
+  picks.slice(0, 3).forEach(c => {
+    buildContextualCandidateButtons(c, input.control, { includeWhy: true }).forEach(b => {
+      buttons.push({ ...b, label: `${b.label}: ${c.label}`.slice(0, 48) });
+    });
+  });
+  return {
+    id: nextIntelligenceAnswerId('alt'),
+    query: input.query,
+    kind: picks.length ? 'alternatives' : 'insufficient',
+    title: 'Best alternatives',
+    lines,
+    evidence: picks.map(c => ({ source: c.sourceSystem, detail: `${c.label}: ${c.scoreBreakdown.map(f => `${f.factor} ${f.points >= 0 ? '+' : ''}${Math.round(f.points)}`).join(', ')}` })),
+    buttons,
+    sourceSystems: ['Contextual Action System'],
+    grounded: picks.length > 0
+  };
+}
+
+export function buildWhyActionIntelligenceAnswer(input: {
+  query: string;
+  candidate: ContextualActionCandidate;
+  actionSet: ContextualActionSet | null;
+  control: PlayerControlState;
+}): GameIntelligenceAnswer {
+  const c = input.candidate;
+  const lines: string[] = [];
+  if (!c.legal) {
+    lines.push(`Blocked: ${c.blockReason || 'the canonical validator rejected this action.'}`);
+  }
+  if (c.reasons.length) lines.push(`Why it matters: ${c.reasons.join('; ')}.`);
+  if (c.objectiveRelation) lines.push(c.objectiveRelation + '.');
+  lines.push(`Cost: ${describeContextualCost(c)}.`);
+  if (c.benefit) lines.push(`Expected benefit: ${c.benefit}.`);
+  if (c.risk) lines.push(`Risk: ${c.risk}.`);
+  const ranked = input.actionSet?.ranked || [];
+  const idx = ranked.findIndex(r => r.id === c.id);
+  if (c.legal && idx === 0 && ranked[1]) {
+    lines.push(`It outranks ${ranked[1].label} (score ${Math.round(c.relevance)} vs ${Math.round(ranked[1].relevance)}).`);
+  } else if (c.legal && idx > 0) {
+    lines.push(`It ranks #${idx + 1}; ${ranked[0].label} currently scores higher (${Math.round(ranked[0].relevance)} vs ${Math.round(c.relevance)}).`);
+  }
+  if (c.execution?.kind === 'copilot_candidate') {
+    lines.push('Doing it runs through the canonical executor, which re-checks legality, Action Points, cash reserve, spending caps and Guardian protections at that moment.');
+  }
+  const evidence: GameIntelligenceEvidence[] = [
+    ...c.evidence.map(detail => ({ source: c.sourceSystem, detail })),
+    { source: 'Relevance score', detail: c.scoreBreakdown.map(f => `${f.factor} ${f.points >= 0 ? '+' : ''}${Math.round(f.points)}`).join(', ') || 'n/a' }
+  ];
+  return {
+    id: nextIntelligenceAnswerId('why'),
+    query: input.query,
+    kind: 'why',
+    title: `${c.legal ? 'Why' : 'Why not'}: ${c.label}`,
+    lines,
+    evidence,
+    buttons: buildContextualCandidateButtons(c, input.control, { includeWhy: false, includeAlternatives: true }),
+    sourceSystems: [c.sourceSystem, 'Contextual Action System'],
+    grounded: true
+  };
+}
+
+export function buildActivityIntelligenceAnswer(input: {
+  query: string;
+  control: PlayerControlState;
+  session: CoPilotTakeoverSession | null | undefined;
+  ledgerEvents?: any[];
+}): GameIntelligenceAnswer {
+  const lines: string[] = [`${input.control.headline}: ${input.control.detail}`];
+  const evidence: GameIntelligenceEvidence[] = [{ source: 'Control model', detail: `${input.control.modeLabel} / ${input.control.phase.replace(/_/g, ' ')}` }];
+  const session = input.session;
+  if (session) {
+    const executed = (session.executedActionTypes || []).slice(-5);
+    lines.push(`This Co-Pilot session: ${session.actionsExecutedCount || 0} action(s) executed${executed.length ? ` (latest: ${executed.join(', ')})` : ''}, $${Math.round(session.totalSpent || 0).toLocaleString()} spent.`);
+    if (session.activeObjective?.description) lines.push(`Objective: ${session.activeObjective.description}.`);
+    if (session.returnReason) lines.push(`Control returned because: ${String(session.returnReason).replace(/_/g, ' ')}.`);
+    if (session.lastActionError) lines.push(`Last error: ${session.lastActionError}.`);
+    evidence.push({ source: 'Co-Pilot takeover session', detail: `status ${session.status}, scope ${session.scope}` });
+  }
+  const recent = (input.ledgerEvents || [])
+    .filter((e: any) => /copilot|co-pilot|takeover/i.test(`${e?.eventType || ''} ${e?.summary || ''} ${e?.actionType || ''}`))
+    .slice(-5)
+    .reverse();
+  if (recent.length) {
+    lines.push('Recent Co-Pilot activity:');
+    recent.forEach((e: any) => lines.push(`• Day ${e.day ?? '?'}: ${e.summary || e.eventType}`));
+    evidence.push({ source: 'Game Activity Ledger', detail: `${recent.length} Co-Pilot event(s)` });
+  }
+  const grounded = Boolean(session || recent.length);
+  if (!grounded) lines.push('No Co-Pilot activity has been recorded in this match yet.');
+  const buttons: GameIntelligenceButton[] = [];
+  if (input.control.canTakeControl) buttons.push({ id: 'take_control', label: 'Take Control', kind: 'take_control', tone: 'danger' });
+  buttons.push({ id: 'open_ledger', label: 'Open Activity Ledger', kind: 'open', nav: navAction('ledger', 'Open Activity Ledger'), tone: 'secondary' });
+  return {
+    id: nextIntelligenceAnswerId('activity'),
+    query: input.query,
+    kind: grounded ? 'activity' : 'insufficient',
+    title: 'Recent Co-Pilot activity',
+    lines,
+    evidence,
+    buttons,
+    sourceSystems: ['Co-Pilot takeover sessions', 'Game Activity Ledger'],
+    grounded
+  };
+}
+
+const ASK_DEEPLINK_LABELS: Record<string, string> = {
+  economy: 'Open Market', map: 'Open Map', settings: 'Open Setting', contracts: 'Open Contracts', infrastructure: 'Open Infrastructure',
+  expeditions: 'Open Expeditions', loans: 'Open Loans', player: 'Open Stats', workshop: 'Open Workshop', ledger: 'Open Activity Ledger', travel: 'Open Travel'
+};
+
+/** Wraps an Ask-the-Game engine response without adding or changing any of its claims. */
+export function buildAskEngineIntelligenceAnswer(query: string, response: AskGameResponse | null | undefined): GameIntelligenceAnswer {
+  if (!response) {
+    return {
+      id: nextIntelligenceAnswerId('ask'),
+      query,
+      kind: 'insufficient',
+      title: 'No answer available',
+      lines: ['The game does not currently have enough information to answer that.'],
+      evidence: [],
+      buttons: [],
+      sourceSystems: ['Ask-the-Game'],
+      grounded: false
+    };
+  }
+  const confidence = Number(response.confidence ?? 0);
+  const bundle = response.evidenceBundle;
+  // Presentation only: markdown emphasis markers are stripped; the engine's wording is untouched.
+  const lines = String(response.mainAnswer || '').split('\n').map(l => l.replace(/\*\*/g, '').trim()).filter(Boolean).slice(0, 14);
+  if (confidence < 0.4) lines.unshift('Low confidence — the game may not have enough information to answer this precisely.');
+  const evidence: GameIntelligenceEvidence[] = (bundle?.items || []).slice(0, 6).map(item => ({
+    source: String(item.source || item.type || 'Ask-the-Game'),
+    detail: String(item.label || item.type || '')
+  }));
+  (bundle?.toolResults || []).slice(0, 3).forEach((t: any) => {
+    evidence.push({ source: `Tool: ${t?.toolName || t?.tool || 'grounded tool'}`, detail: t?.success === false ? `failed: ${t?.error || 'unavailable'}` : 'executed against live state' });
+  });
+  const buttons: GameIntelligenceButton[] = [];
+  const tab = response.deepLink?.tab;
+  if (tab && tab !== 'help' && tab !== 'intelligence') {
+    buttons.push({ id: `deeplink_${tab}`, label: ASK_DEEPLINK_LABELS[tab] || `Open ${tab}`, kind: 'deeplink', deepLink: response.deepLink, tone: 'secondary' });
+  }
+  (response.suggestedFollowUps || []).slice(0, 3).forEach((f, i) => {
+    buttons.push({ id: `ask_${i}`, label: f, kind: 'ask', query: f, tone: 'secondary' });
+  });
+  return {
+    id: nextIntelligenceAnswerId('ask'),
+    query,
+    kind: 'ask_engine',
+    title: ASK_GAME_INTENT_REGISTRY[response.intent]?.description || String(response.intent),
+    lines: lines.length ? lines : ['The game does not currently have enough information to answer that.'],
+    evidence,
+    buttons,
+    sourceSystems: ['Ask-the-Game', ...(response.communication ? ['AI Communication'] : [])],
+    grounded: evidence.length > 0 && confidence >= 0.4 && !bundle?.fallbackUsed
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 4. PRESENTATION COMPONENTS
+// ----------------------------------------------------------------------------
+
+export type V9Theme = ReturnType<typeof resolveThemeStyles>;
+
+const V9_TONE_CLASSES: Record<PlayerControlTone, { badge: string; ring: string }> = {
+  human: { badge: 'bg-emerald-600 text-white', ring: 'border-emerald-500/60' },
+  shared: { badge: 'bg-purple-600 text-white', ring: 'border-purple-500/60' },
+  copilot: { badge: 'bg-sky-600 text-white', ring: 'border-sky-500/70' },
+  waiting: { badge: 'bg-indigo-600 text-white', ring: 'border-indigo-500/60' },
+  warning: { badge: 'bg-amber-600 text-white', ring: 'border-amber-500/70' },
+  neutral: { badge: 'bg-slate-600 text-white', ring: 'border-slate-500/60' }
+};
+
+export interface ExperienceLayerNavProps {
+  active: ExperienceLayer;
+  onChange: (layer: ExperienceLayer) => void;
+  theme: V9Theme;
+  badges?: Partial<Record<ExperienceLayer, string | number | null>>;
+}
+
+/** PLAY | INTELLIGENCE | LAB — an ARIA tablist with arrow / Home / End keyboard support. */
+export const ExperienceLayerNav: React.FC<ExperienceLayerNavProps> = ({ active, onChange, theme, badges }) => {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const focusLayer = (layer: ExperienceLayer) => {
+    onChange(layer);
+    refs.current[layer]?.focus();
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const n = EXPERIENCE_LAYERS.length;
+    if (e.key === 'ArrowRight') { e.preventDefault(); focusLayer(EXPERIENCE_LAYERS[(index + 1) % n]); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); focusLayer(EXPERIENCE_LAYERS[(index - 1 + n) % n]); }
+    else if (e.key === 'Home') { e.preventDefault(); focusLayer(EXPERIENCE_LAYERS[0]); }
+    else if (e.key === 'End') { e.preventDefault(); focusLayer(EXPERIENCE_LAYERS[n - 1]); }
+  };
+  return (
+    <div role="tablist" aria-label="Game layers" className={`flex rounded-xl border ${theme.border} overflow-hidden`} data-testid="v9-layer-nav">
+      {EXPERIENCE_LAYERS.map((layer, index) => {
+        const meta = EXPERIENCE_LAYER_META[layer];
+        const selected = layer === active;
+        const badge = badges?.[layer];
+        return (
+          <button
+            key={layer}
+            ref={el => { refs.current[layer] = el; }}
+            type="button"
+            role="tab"
+            id={`v9-layer-tab-${layer}`}
+            aria-selected={selected}
+            aria-controls={selected ? `v9-layer-panel-${layer}` : undefined}
+            tabIndex={selected ? 0 : -1}
+            title={meta.description}
+            onClick={() => onChange(layer)}
+            onKeyDown={e => onKeyDown(e, index)}
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-extrabold tracking-wider flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+              selected ? theme.button : `${theme.buttonGhost || ''} opacity-80 hover:opacity-100`
+            }`}
+          >
+            <span aria-hidden="true">{meta.icon}</span>
+            <span>{meta.label}</span>
+            {badge ? <span className="ml-1 px-1.5 rounded-full bg-red-600 text-white text-[10px] font-bold">{badge}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+export interface PlayerControlStatusBarProps {
+  control: PlayerControlState;
+  theme: V9Theme;
+  onTakeControl: () => void;
+  onStart: () => void;
+  onResume: () => void;
+  onOpenControl?: () => void;
+  onReviewApproval?: () => void;
+  lastDeltas?: { cashDelta?: number; netWorthDelta?: number; apDelta?: number } | null;
+}
+
+/** The persistent "who controls my player" indicator. Exactly one headline — never contradictory. */
+export const PlayerControlStatusBar: React.FC<PlayerControlStatusBarProps> = ({ control, theme, onTakeControl, onStart, onResume, onOpenControl, onReviewApproval, lastDeltas }) => {
+  const tone = V9_TONE_CLASSES[control.tone] || V9_TONE_CLASSES.neutral;
+  const facts: string[] = [];
+  if (control.objective && control.copilotHoldsControl) facts.push(`Objective: ${control.objective}`);
+  if (control.actionProgress && control.copilotHoldsControl) facts.push(`Action ${control.actionProgress.current} / ${control.actionProgress.total}`);
+  if (control.currentActionLabel && control.phase === 'executing') facts.push(`Now: ${control.currentActionLabel}`);
+  if (control.sessionScopeLabel && control.copilotHoldsControl) facts.push(control.sessionScopeLabel);
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="v9-control-status"
+      data-control-phase={control.phase}
+      className={`${theme.card} border-2 ${tone.ring} rounded-xl px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2`}
+    >
+      <div className="flex items-start gap-2 flex-1 min-w-0">
+        <span className="text-lg leading-none mt-0.5" aria-hidden="true">{control.icon}</span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold tracking-wider ${tone.badge}`}>{control.headline}</span>
+            {control.owner !== 'ai_only' && (
+              <span className={`text-xs font-semibold ${theme.textMuted || 'opacity-75'}`}>
+                AI: {control.modeIcon} {control.modeLabel}
+              </span>
+            )}
+          </div>
+          <div className="text-xs mt-0.5">{control.detail}</div>
+          {facts.length > 0 && <div className={`text-[11px] mt-0.5 ${theme.textMuted || 'opacity-75'}`}>{facts.join(' • ')}</div>}
+          {lastDeltas && control.copilotHoldsControl && (typeof lastDeltas.cashDelta === 'number') && (
+            <div className="text-[11px] font-mono mt-0.5">
+              Last action: {lastDeltas.cashDelta >= 0 ? `+$${lastDeltas.cashDelta}` : `-$${Math.abs(lastDeltas.cashDelta)}`}
+              {typeof lastDeltas.apDelta === 'number' ? ` • AP ${lastDeltas.apDelta}` : ''}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        {control.phase === 'assistant_waiting_approval' && onReviewApproval && (
+          <button type="button" onClick={onReviewApproval} className={`${theme.button} px-3 py-1.5 rounded-lg text-xs font-bold`}>Review & Approve</button>
+        )}
+        {control.canTakeControl && (
+          <button
+            type="button"
+            onClick={onTakeControl}
+            data-testid="copilot-take-control-button"
+            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold border border-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            🛑 Take Control
+          </button>
+        )}
+        {control.canResume && (
+          <button type="button" onClick={onResume} data-testid="copilot-resume-button" className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">
+            ▶️ Resume Co-Pilot
+          </button>
+        )}
+        {control.canStart && control.startLabel && !control.canResume && (
+          <button type="button" onClick={onStart} data-testid="copilot-start-button" className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold">
+            ▶ {control.startLabel}
+          </button>
+        )}
+        {onOpenControl && control.owner !== 'ai_only' && (
+          <button type="button" onClick={onOpenControl} className={`${theme.buttonSecondary} px-2.5 py-1.5 rounded-lg text-xs font-semibold`}>
+            Change control
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export interface PlayerControlModeSelectorProps {
+  control: PlayerControlState;
+  theme: V9Theme;
+  onSelect: (mode: PlayerControlMode) => void;
+  disabled?: boolean;
+}
+
+/** Five player-facing modes. Raising authority into Rescue / Autonomous needs an explicit confirm. */
+export const PlayerControlModeSelector: React.FC<PlayerControlModeSelectorProps> = ({ control, theme, onSelect, disabled }) => {
+  const [pending, setPending] = useState<PlayerControlMode | null>(null);
+  const choose = (mode: PlayerControlMode) => {
+    if (mode === control.mode) return;
+    const meta = PLAYER_CONTROL_MODE_META[mode];
+    if (meta.requiresConfirmation && isPlayerControlAuthorityIncrease(control.mode, mode)) {
+      setPending(mode);
+      return;
+    }
+    setPending(null);
+    onSelect(mode);
+  };
+  return (
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label="Human and AI control mode" className="flex flex-col gap-1.5">
+        {PLAYER_CONTROL_MODES.map(mode => {
+          const meta = PLAYER_CONTROL_MODE_META[mode];
+          const selected = control.mode === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => choose(mode)}
+              data-testid={`v9-control-mode-${mode}`}
+              className={`px-3 py-2 rounded-lg border text-left transition-colors flex flex-wrap items-baseline gap-x-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50 ${
+                selected ? `${theme.button} font-bold` : `${theme.border} ${theme.buttonGhost || ''}`
+              }`}
+            >
+              <span className="text-sm font-bold">{meta.icon} {meta.label}</span>
+              <span className="text-[11px] opacity-80">{meta.whoActs}</span>
+            </button>
+          );
+        })}
+      </div>
+      {pending && (
+        <div role="alertdialog" aria-label={`Confirm ${PLAYER_CONTROL_MODE_META[pending].label}`} className={`${theme.border} border-2 border-amber-500/60 rounded-lg p-3 text-sm space-y-2`}>
+          <div className="font-bold">Give Co-Pilot more authority — switch to {PLAYER_CONTROL_MODE_META[pending].label}?</div>
+          <div className="text-xs opacity-90">{PLAYER_CONTROL_MODE_META[pending].summary}</div>
+          <div className="text-xs opacity-80">
+            {pending === 'autonomous' ? 'Nothing starts yet: Co-Pilot plays only after you press Start. ' : ''}
+            Spending caps, cash reserves, Guardian protections and permissions still apply. Take Control stops it instantly.
+          </div>
+          <div className="flex gap-2">
+            <button type="button" className={`${theme.button} px-3 py-1.5 rounded-lg text-xs font-bold`} onClick={() => { const m = pending; setPending(null); onSelect(m); }}>
+              Confirm {PLAYER_CONTROL_MODE_META[pending].label}
+            </button>
+            <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`} onClick={() => setPending(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div className={`text-xs ${theme.textMuted || 'opacity-75'}`}>{PLAYER_CONTROL_MODE_META[control.mode].summary}</div>
+    </div>
+  );
+};
+
+export interface ContextualActionPanelProps {
+  actionSet: ContextualActionSet;
+  control: PlayerControlState;
+  theme: V9Theme;
+  onButton: (button: GameIntelligenceButton) => void;
+  onShowAllActions: () => void;
+}
+
+/** PLAY's action hierarchy: Recommended → Useful Now → Available → More Actions. */
+export const ContextualActionPanel: React.FC<ContextualActionPanelProps> = ({ actionSet, control, theme, onButton, onShowAllActions }) => {
+  const rec = actionSet.recommended;
+  const renderButtons = (c: ContextualActionCandidate, compact: boolean) => (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {buildContextualCandidateButtons(c, control, { includeWhy: true }).map(b => (
+        <button
+          key={b.id}
+          type="button"
+          onClick={() => onButton(b)}
+          className={`${b.tone === 'primary' ? theme.button : theme.buttonSecondary} ${compact ? 'px-2 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'} rounded-lg font-semibold`}
+        >
+          {b.label}
+        </button>
+      ))}
+    </div>
+  );
+  const waitingNote = !control.isHumanTurn
+    ? 'Waiting for your turn — actions unlock when control returns to you.'
+    : control.copilotHoldsControl
+      ? 'Co-Pilot is playing this turn. Take Control to act yourself.'
+      : null;
+  return (
+    <section aria-label="Contextual actions" className={`${theme.card} ${theme.border} border rounded-xl p-3 space-y-3`} data-testid="v9-contextual-actions">
+      {waitingNote && <div className={`text-xs ${theme.textMuted || 'opacity-75'}`}>{waitingNote}</div>}
+      <div>
+        <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Recommended</div>
+        {rec ? (
+          <div className={`mt-1 rounded-lg border-2 ${rec.urgency === 'critical' ? 'border-red-500/60' : 'border-emerald-500/50'} p-3`}>
+            <div className="flex items-start gap-2">
+              <span className="text-xl" aria-hidden="true">{rec.icon}</span>
+              <div className="min-w-0">
+                <div className="font-bold">{rec.label}</div>
+                <div className="text-xs opacity-85">{rec.reasons[0] || rec.description}</div>
+                <div className="text-[11px] opacity-70 mt-0.5">{describeContextualCost(rec)}{rec.risk ? ` • ${rec.risk}` : ''}</div>
+              </div>
+            </div>
+            {renderButtons(rec, false)}
+          </div>
+        ) : (
+          <div className="text-sm opacity-70 mt-1">No legal action to recommend right now.</div>
+        )}
+      </div>
+      {actionSet.useful.length > 0 && (
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Useful Now</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
+            {actionSet.useful.map(c => (
+              <div key={c.id} className={`${theme.border} border rounded-lg p-2`}>
+                <div className="text-sm font-semibold">{c.icon} {c.label}</div>
+                <div className="text-[11px] opacity-80">{c.reasons[0] || c.description}</div>
+                <div className="text-[10px] opacity-60">{describeContextualCost(c)}</div>
+                {renderButtons(c, true)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {actionSet.blocked.length > 0 && (
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Blocked, but worth knowing</div>
+          <div className="flex flex-col gap-1.5 mt-1">
+            {actionSet.blocked.map(c => (
+              <div key={c.id} className={`${theme.border} border border-dashed rounded-lg px-2 py-1.5 flex flex-wrap items-center gap-2 text-xs`}>
+                <span className="font-semibold">{c.icon} {c.label}</span>
+                <span className="opacity-80">Blocked: {c.blockReason}</span>
+                <span className="flex gap-1.5">
+                  {buildContextualCandidateButtons(c, control, { includeWhy: true }).map(b => (
+                    <button key={b.id} type="button" onClick={() => onButton(b)} className={`${theme.buttonSecondary} px-2 py-0.5 rounded text-[11px] font-semibold`}>{b.label}</button>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wider opacity-70 mr-1">Available</span>
+        {actionSet.available.map(c => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => c.navigation && onButton({ id: `open_${c.id}`, label: c.label, kind: 'open', nav: c.navigation })}
+            className={`${theme.buttonSecondary} px-2 py-1 rounded-lg text-xs font-semibold`}
+          >
+            {c.icon} {c.label}
+          </button>
+        ))}
+        <button type="button" onClick={onShowAllActions} className={`${theme.buttonSecondary} px-2 py-1 rounded-lg text-xs font-bold`} data-testid="v9-all-actions">
+          ☰ More Actions
+        </button>
+      </div>
+    </section>
+  );
+};
+
+export interface GameIntelligenceAnswerCardProps {
+  answer: GameIntelligenceAnswer;
+  theme: V9Theme;
+  onButton: (button: GameIntelligenceButton) => void;
+}
+
+export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProps> = ({ answer, theme, onButton }) => {
+  const [showEvidence, setShowEvidence] = useState(false);
+  return (
+    <article className={`${theme.card} ${theme.border} border rounded-xl p-3 space-y-2`} aria-label={answer.title} data-testid="v9-intel-answer">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs opacity-70">You asked: “{answer.query}”</div>
+        <div className="text-[10px] opacity-70">Sources: {answer.sourceSystems.join(', ')}</div>
+      </div>
+      <div className="font-bold">{answer.title}</div>
+      {!answer.grounded && <div className="text-xs text-amber-500 font-semibold">Limited evidence — treat this as incomplete.</div>}
+      <div className="text-sm space-y-1">
+        {answer.lines.map((line, i) => <p key={i}>{line}</p>)}
+      </div>
+      {answer.buttons.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {answer.buttons.map(b => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => onButton(b)}
+              className={`${b.tone === 'primary' ? theme.button : b.tone === 'danger' ? 'bg-red-600 hover:bg-red-500 text-white' : theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {answer.evidence.length > 0 && (
+        <div>
+          <button type="button" className="text-xs underline opacity-80" aria-expanded={showEvidence} onClick={() => setShowEvidence(v => !v)}>
+            {showEvidence ? 'Hide evidence' : `Show evidence (${answer.evidence.length})`}
+          </button>
+          {showEvidence && (
+            <ul className="mt-1 text-[11px] space-y-0.5 opacity-85">
+              {answer.evidence.map((e, i) => <li key={i}><span className="font-semibold">{e.source}:</span> {e.detail}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </article>
+  );
+};
+
+export type LabGroupId = 'ai_engine' | 'team' | 'assistants' | 'automation' | 'rules' | 'memory' | 'replay_diag' | 'settings';
+
+export const LAB_GROUP_META: Record<LabGroupId, { title: string; icon: string }> = {
+  ai_engine: { title: 'AI Engine & Algorithms', icon: '⚙️' },
+  team: { title: 'Team Systems', icon: '👥' },
+  assistants: { title: 'Assistants (Advanced)', icon: '🛡️' },
+  automation: { title: 'Automation & Approvals', icon: '🤖' },
+  rules: { title: 'Rules & Simulation', icon: '📐' },
+  memory: { title: 'AI Memory', icon: '🧠' },
+  replay_diag: { title: 'Replay, Ledger & Diagnostics', icon: '🔬' },
+  settings: { title: 'Settings', icon: '🗂️' }
+};
+
+export interface LabEntry {
+  id: string;
+  group: LabGroupId;
+  title: string;
+  description: string;
+  onOpen: () => void;
+  available?: boolean;
+  unavailableReason?: string;
+}
+
+export interface LabWorkspaceProps {
+  entries: LabEntry[];
+  theme: V9Theme;
+  technicalRows: Array<{ label: string; value: string }>;
+  interfaceLevelLabel: string;
+  onRunSelfTests: () => void;
+  selfTestResults: V9SelfTestResult[] | null;
+}
+
+export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, technicalRows, interfaceLevelLabel, onRunSelfTests, selfTestResults }) => {
+  const [filter, setFilter] = useState('');
+  const q = filter.trim().toLowerCase();
+  const visible = q ? entries.filter(e => `${e.title} ${e.description} ${LAB_GROUP_META[e.group].title}`.toLowerCase().includes(q)) : entries;
+  const groups = (Object.keys(LAB_GROUP_META) as LabGroupId[]).filter(g => visible.some(e => e.group === g));
+  const passed = selfTestResults ? selfTestResults.filter(r => r.passed).length : 0;
+  return (
+    <div className="space-y-4" data-testid="v9-lab">
+      <div className={`${theme.card} ${theme.border} border rounded-xl p-4 space-y-2`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="font-bold text-lg">🧪 LAB</div>
+            <div className={`text-xs ${theme.textMuted || 'opacity-75'}`}>
+              Deep configuration for the systems under the game. You never need LAB to play — every system here keeps working with its current settings.
+              Settings detail level: {interfaceLevelLabel}.
+            </div>
+          </div>
+          <label className="text-xs flex items-center gap-2">
+            <span className="sr-only">Filter LAB systems</span>
+            <input
+              type="search"
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              placeholder="Find a system…"
+              className={`${theme.border} border rounded-lg px-2 py-1 text-sm bg-transparent`}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {groups.map(g => (
+          <section key={g} aria-label={LAB_GROUP_META[g].title} className={`${theme.card} ${theme.border} border rounded-xl p-3`}>
+            <h3 className="font-bold text-sm mb-2">{LAB_GROUP_META[g].icon} {LAB_GROUP_META[g].title}</h3>
+            <div className="space-y-1.5">
+              {visible.filter(e => e.group === g).map(e => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={e.onOpen}
+                  disabled={e.available === false}
+                  title={e.available === false ? e.unavailableReason : e.description}
+                  className={`w-full text-left ${theme.border} border rounded-lg px-3 py-2 hover:opacity-100 opacity-90 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400`}
+                >
+                  <div className="text-sm font-semibold">{e.title}</div>
+                  <div className="text-[11px] opacity-75">{e.available === false ? e.unavailableReason : e.description}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      <section aria-label="Technical control state" className={`${theme.card} ${theme.border} border rounded-xl p-3`}>
+        <h3 className="font-bold text-sm mb-2">🔧 Technical Co-Pilot state</h3>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
+          {technicalRows.map(r => (
+            <div key={r.label} className="flex justify-between gap-2"><dt className="opacity-70">{r.label}</dt><dd>{r.value}</dd></div>
+          ))}
+        </dl>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onRunSelfTests} className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`} data-testid="v9-run-self-tests">
+            Run V9 experience self-tests
+          </button>
+          {selfTestResults && <span className="text-xs font-semibold">{passed}/{selfTestResults.length} passed</span>}
+        </div>
+        {selfTestResults && (
+          <ul className="mt-2 text-[11px] space-y-0.5 max-h-64 overflow-y-auto">
+            {selfTestResults.map(r => (
+              <li key={r.id}><span className={r.passed ? 'text-emerald-500' : 'text-red-500'}>{r.passed ? '✓' : '✗'}</span> {r.name}{r.passed ? '' : ` — ${r.detail}`}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
+// 5. V9 SELF-TESTS (pure; run from LAB → Technical Co-Pilot state)
+// ----------------------------------------------------------------------------
+
+export interface V9SelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function v9TestSettings(mode: PlayerControlMode): GameSettingsState {
+  return applyPlayerControlModeToSettings(createDefaultGameSettings(), mode);
+}
+
+function v9TestSession(overrides: Partial<CoPilotTakeoverSession>): CoPilotTakeoverSession {
+  return {
+    id: 'v9_test_session',
+    targetActorId: 'player',
+    scope: 'continuous',
+    activeObjective: { id: 'o', actorId: 'player', type: 'rebuild_team_economy', description: 'Secure regional control', priority: 'high', targetMetrics: {}, maxTurns: 10, maxSpendAllowed: 1000, allowedActionCategories: [], status: 'active', progressPercentage: 0, targetTurn: 10, createdTurn: 1 } as any,
+    activePlan: { id: 'p', title: 'Plan', multiTurnPlanSequence: [] } as any,
+    startTurn: 1,
+    currentTurnCount: 0,
+    maxTurnsAllowed: 999,
+    totalSpent: 0,
+    maxSpendAllowed: 1000,
+    actionsExecutedCount: 0,
+    maxActionsAllowed: 99,
+    status: 'active',
+    sessionToken: 'tok',
+    ...overrides
+  } as CoPilotTakeoverSession;
+}
+
+export function runV9ExperienceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const state = { gameMode: 'game', turnCounter: 3, day: 2, currentActorId: 'player', humanPlayerId: 'player' };
+
+  // --- Control model: mapping and canonical settings
+  check('ctl_roundtrip', 'Every player mode round-trips through the canonical technical authority', () => {
+    for (const mode of PLAYER_CONTROL_MODES) {
+      const s = v9TestSettings(mode);
+      const back = resolvePlayerControlMode(s, state);
+      if (back !== mode) return `${mode} resolved as ${back}`;
+      if (s.smartSettingsProfile?.coPilotMode !== PLAYER_CONTROL_MODE_META[mode].conceptual) return `${mode}: profile coPilotMode drifted`;
+    }
+    return true;
+  });
+  check('ctl_manual_not_exec', 'Manual: Co-Pilot authority is not executable', () => !isCoPilotAuthorityExecutable(resolveHumanCoPilotSettings(v9TestSettings('manual'), state)) || 'manual executable');
+  check('ctl_advisor_not_exec', 'Advisor: Co-Pilot can recommend but cannot execute', () => {
+    const cp = resolveHumanCoPilotSettings(v9TestSettings('advisor'), state);
+    return (cp.coPilotEnabled && cp.authorityMode === 'recommendations' && !isCoPilotAuthorityExecutable(cp)) || `authority ${cp.authorityMode}`;
+  });
+  check('ctl_assistant_ask', 'Assistant maps to ask-before-acting (approval required)', () => resolveHumanCoPilotSettings(v9TestSettings('assistant'), state).authorityMode === 'ask_before_acting' || 'wrong authority');
+  check('ctl_rescue_exec', 'Rescue maps to automatic_rescue with its canonical switch enabled', () => {
+    const cp = resolveHumanCoPilotSettings(v9TestSettings('rescue'), state);
+    return (cp.authorityMode === 'automatic_rescue' && isCoPilotAuthorityExecutable(cp)) || 'rescue not executable';
+  });
+  check('ctl_preserves_custom', 'Changing mode never overwrites Guardian / Auto Mode settings', () => {
+    const base = createDefaultGameSettings();
+    const custom = { ...base, guardianAiSettings: { ...base.guardianAiSettings, enabled: !base.guardianAiSettings?.enabled }, autoModeSettings: { ...base.autoModeSettings, v9Marker: 7 } as any } as GameSettingsState;
+    const next = applyPlayerControlModeToSettings(custom, 'autonomous');
+    return (next.guardianAiSettings === custom.guardianAiSettings && next.autoModeSettings === custom.autoModeSettings) || 'custom settings changed';
+  });
+  check('ctl_increase_detect', 'Authority increases are detected (confirmation required)', () => (
+    isPlayerControlAuthorityIncrease('advisor', 'autonomous') && isPlayerControlAuthorityIncrease('manual', 'rescue') && !isPlayerControlAuthorityIncrease('autonomous', 'advisor')
+  ) || 'rank order wrong');
+
+  // --- Control state selector
+  const derive = (mode: PlayerControlMode, session: CoPilotTakeoverSession | null, extra?: Partial<PlayerControlStateInput>) => derivePlayerControlState({
+    gameSettings: v9TestSettings(mode), gameState: state, takeoverSession: session, isHumanTurn: true, currentActorName: 'Riley', apUsed: 1, apTotal: 4, ...extra
+  });
+  check('state_manual', "Manual with no session: YOU'RE PLAYING, no Take Control", () => {
+    const s = derive('manual', null);
+    return (s.phase === 'manual' && s.owner === 'human' && !s.canTakeControl && !s.copilotHoldsControl) || s.phase;
+  });
+  check('state_autonomous_ready', 'Autonomous selected but not started: ready + Start, not controlling', () => {
+    const s = derive('autonomous', null, { canStartAutonomous: true });
+    return (s.phase === 'autonomous_ready' && s.canStart && !s.copilotHoldsControl && s.headline === "YOU'RE PLAYING") || s.phase;
+  });
+  check('state_autonomous_active', 'Autonomous live session: CO-PILOT CONTROLLING with Take Control and action progress', () => {
+    const s = derive('autonomous', v9TestSession({ status: 'active' }));
+    return (s.owner === 'copilot' && s.headline === 'CO-PILOT CONTROLLING' && s.canTakeControl && s.actionProgress?.current === 2 && s.actionProgress.total === 4 && s.objective === 'Secure regional control') || `${s.phase}/${s.headline}`;
+  });
+  check('state_planning_executing', 'Planning and executing session phases are distinguished', () => {
+    const p = derive('autonomous', v9TestSession({ status: 'planning' }));
+    const e = derive('autonomous', v9TestSession({ status: 'executing' }));
+    return (p.phase === 'planning' && e.phase === 'executing') || `${p.phase}/${e.phase}`;
+  });
+  check('state_waiting', 'Rival turn with live session: waiting state, not frozen, no duplicate start', () => {
+    const s = derive('autonomous', v9TestSession({ status: 'waiting_for_other_players' }), { isHumanTurn: false });
+    return (s.phase === 'waiting_other_actor' && s.detail.includes('Riley') && !s.canStart) || s.phase;
+  });
+  check('state_rescue_active', 'Rescue session shows CO-PILOT RESCUE', () => {
+    const s = derive('rescue', v9TestSession({ status: 'active', scope: 'current_turn' }));
+    return (s.headline === 'CO-PILOT RESCUE' && s.phase === 'rescue_active') || `${s.phase}/${s.headline}`;
+  });
+  check('state_rescue_available', 'Rescue without session: available, human playing, explicit start only', () => {
+    const s = derive('rescue', null);
+    return (s.phase === 'rescue_available' && s.owner === 'human' && s.canStart && !s.copilotHoldsControl) || s.phase;
+  });
+  check('state_stopped', 'After Take Control (latched session): stopped manually, resumable, not controlling', () => {
+    const s = derive('autonomous', v9TestSession({ status: 'interrupted', manualStopLatched: true, sessionToken: undefined }));
+    return (s.phase === 'stopped_manually' && s.canResume && !s.canTakeControl && !s.copilotHoldsControl) || s.phase;
+  });
+  check('state_paused', 'Non-manual interrupt shows paused (not controlling)', () => {
+    const s = derive('autonomous', v9TestSession({ status: 'interrupted' }));
+    return (s.phase === 'paused' && !s.copilotHoldsControl) || s.phase;
+  });
+  check('state_completed', 'Objective completed returns control to the human', () => {
+    const s = derive('rescue', v9TestSession({ status: 'completed', returnReason: 'objective_completed' }));
+    return (s.phase === 'objective_completed' && s.owner === 'human' && !s.canTakeControl) || s.phase;
+  });
+  check('state_failed_ended', 'Failed and terminated sessions are reported without claiming control', () => {
+    const f = derive('autonomous', v9TestSession({ status: 'failed', lastActionError: 'x' }));
+    const t = derive('autonomous', v9TestSession({ status: 'terminated' }));
+    return (f.phase === 'session_failed' && t.phase === 'session_ended' && !f.copilotHoldsControl && !t.copilotHoldsControl) || `${f.phase}/${t.phase}`;
+  });
+  check('state_starting', 'A Start still in flight is shown as starting and can be cancelled', () => {
+    const s = derive('autonomous', null, { startPending: true });
+    return (s.headline === 'CO-PILOT STARTING' && s.canTakeControl && s.copilotHoldsControl) || s.phase;
+  });
+  check('state_blocked', 'Blocked session is surfaced as blocked', () => derive('autonomous', v9TestSession({ status: 'blocked', lastActionError: 'No cash' })).phase === 'blocked' || 'not blocked');
+  check('state_approval', 'Assistant proposal pending shows waiting for approval', () => {
+    const s = derive('assistant', null, { pendingProposal: true });
+    return (s.phase === 'assistant_waiting_approval' && s.owner === 'shared') || s.phase;
+  });
+  check('state_ai_only', 'AI-vs-AI match reports the control model as not applicable', () => derive('autonomous', null, { isAiOnlyMatch: true }).phase === 'not_applicable' || 'applied');
+  check('state_no_contradiction', 'No state claims both human playing and Co-Pilot controlling', () => {
+    const statuses: CoPilotTakeoverStatus[] = ['active', 'planning', 'executing', 'waiting_for_other_players', 'paused', 'interrupted', 'completed', 'failed', 'terminated', 'awaiting_approval', 'blocked', 'resuming', 'ending_player_turn'];
+    for (const mode of PLAYER_CONTROL_MODES) {
+      for (const status of statuses) {
+        for (const turn of [true, false]) {
+          const s = derive(mode, v9TestSession({ status }), { isHumanTurn: turn });
+          if (s.headline === "YOU'RE PLAYING" && s.copilotHoldsControl) return `${mode}/${status}/${turn}`;
+          if (s.copilotHoldsControl && !s.canTakeControl) return `no Take Control for ${mode}/${status}`;
+        }
+      }
+    }
+    return true;
+  });
+
+  // --- Contextual actions
+  const cand = (id: string, utility: number, extra?: any) => ({ id, title: `Action ${id}`, actionType: extra?.actionType || 'sell', category: 'economy', apCost: 1, costEstimate: 0, utilityScore: utility, riskFactor: 10, rewardScore: 50, isValid: true, expectedStateDelta: { cashDelta: 100, apDelta: -1 }, ...extra });
+  const objective: CurrentObjective = { id: 'obj', sourceType: 'manual', sourceId: 'obj', title: 'Grow cash', description: '', priority: 1, progress: { completed: 0, total: 1 }, requirements: [], blockers: [], recommendedNextStep: null, completionState: 'active' };
+  const rank = (cands: any[]) => rankContextualRecommendations(cands, objective, { apRemaining: 3, cash: 1000, limit: 12 });
+  const setFrom = (cands: any[], extra?: Partial<ContextualActionInput>) => buildContextualActionSet({
+    rankedRecommendations: rank(cands), invalidCandidates: cands.filter(c => c.isValid === false), objective, attention: { state: 'good', label: 'Stable', detail: '' }, apRemaining: 3, isHumanTurn: true, ...extra
+  });
+  check('ctx_real_only', 'Only real (canonically legal) candidates become executable actions', () => {
+    const set = setFrom([cand('a', 50), cand('b', 70, { isValid: false, invalidationReason: 'Need $500 more' })]);
+    const execIds = set.ranked.filter(c => c.execution?.kind === 'copilot_candidate').map(c => c.id);
+    return (execIds.length === 1 && execIds[0] === 'a') || execIds.join(',');
+  });
+  check('ctx_blocked_marked', 'Blocked candidates are marked with the validator reason and never executable', () => {
+    const set = setFrom([cand('a', 50), cand('b', 70, { isValid: false, invalidationReason: 'Need $500 more' })]);
+    const b = set.blocked[0];
+    return (Boolean(b) && !b.legal && b.execution === null && b.blockReason === 'Need $500 more') || 'blocked not surfaced';
+  });
+  check('ctx_deterministic', 'Ranking is deterministic for identical state', () => {
+    const cands = [cand('x', 40), cand('y', 40), cand('z', 60, { actionType: 'travel' })];
+    return setFrom(cands).fingerprint === setFrom(cands.slice().reverse()).fingerprint || 'fingerprint differs';
+  });
+  check('ctx_no_ap_end_turn', 'With 0 AP the recommendation is End Turn', () => setFrom([cand('a', 50)], { rankedRecommendations: [], apRemaining: 0 }).recommended?.id === 'end_turn' || 'not end turn');
+  check('ctx_attention', 'A cash crisis boosts cash-raising actions and surfaces the attention route', () => {
+    const set = setFrom([cand('sellit', 40), cand('travelit', 45, { actionType: 'travel', expectedStateDelta: { cashDelta: -50, apDelta: -1 } })], {
+      attention: { state: 'critical', label: 'Bankruptcy danger', detail: 'Cash is $50.', navigation: navAction('market', 'Show cash actions') }
+    });
+    const sell = set.ranked.find(c => c.id === 'sellit');
+    return (Boolean(sell) && sell!.scoreBreakdown.some(f => f.factor.startsWith('Addresses')) && set.ranked.some(c => c.id === 'attention_market')) || 'no attention boost';
+  });
+  check('ctx_all_actions_reachable', 'Available surfaces are exposed so the full feature set stays reachable', () => {
+    const set = setFrom([cand('a', 50)], { surfaces: [{ id: 'shop', label: 'Shop', icon: '🛒', target: 'shop', category: 'tools', legal: true }, { id: 'sab', label: 'Sabotage', icon: 'x', target: 'sabotage', category: 'c', legal: false }] });
+    return (set.available.length === 1 && set.available[0].navigation?.target === 'shop') || 'surfaces wrong';
+  });
+  check('ctx_buttons_respect_control', 'Do It is withheld while Co-Pilot controls the turn or on another actor’s turn', () => {
+    const set = setFrom([cand('a', 50)]);
+    const c = set.recommended!;
+    const human = derive('advisor', null);
+    const copilot = derive('autonomous', v9TestSession({ status: 'active' }));
+    const rival = derive('advisor', null, { isHumanTurn: false });
+    const hasDo = (s: PlayerControlState) => buildContextualCandidateButtons(c, s).some(b => b.kind === 'do');
+    return (hasDo(human) && !hasDo(copilot) && !hasDo(rival)) || 'Do It gating wrong';
+  });
+
+  // --- Game Intelligence routing
+  const route = (q: string) => classifyGameIntelligenceRequest(q);
+  check('gi_stop', '"Stop" / "Give me control back" route to Take Control', () => {
+    const a = route('Stop'); const b = route('Give me control back'); const c = route('Stop controlling me');
+    return (a.kind === 'control' && (a as any).command === 'take_control' && (b as any).command === 'take_control' && (c as any).command === 'take_control') || JSON.stringify([a, b, c]);
+  });
+  check('gi_modes', 'Explicit mode commands route to the canonical control model', () => {
+    const a = route('Switch to Advisor') as any; const b = route('Help me but ask before acting') as any; const c = route('Go autonomous') as any;
+    return (a.mode === 'advisor' && b.mode === 'assistant' && c.mode === 'autonomous') || JSON.stringify([a, b, c]);
+  });
+  check('gi_no_loose_autonomy', 'Questions that merely mention autonomy do not change control', () => {
+    const a = route('What does autonomous mode do?'); const b = route('Why did the AI choose that?'); const c = route('Is rescue good for me?');
+    return (a.kind !== 'control' && b.kind !== 'control' && c.kind !== 'control') || JSON.stringify([a, b, c]);
+  });
+  check('gi_takeover_turn', '"Take over this turn" requires an explicit button (no immediate start)', () => {
+    const r = route('Take over this turn');
+    if (r.kind !== 'control') return 'not control';
+    const ans = buildIntelligenceControlAnswer(r as any, derive('advisor', null), 'Take over this turn');
+    return (!ans.immediate && ans.buttons.some(b => b.kind === 'take_over_turn')) || 'immediate start';
+  });
+  check('gi_increase_needs_click', 'Authority increases are never applied immediately', () => {
+    const ans = buildIntelligenceControlAnswer({ kind: 'control', command: 'set_mode', mode: 'autonomous' }, derive('advisor', null), 'go autonomous');
+    return (!ans.immediate && ans.buttons[0]?.kind === 'set_mode') || 'applied without confirmation';
+  });
+  check('gi_decrease_immediate', 'Authority decreases apply immediately', () => {
+    const ans = buildIntelligenceControlAnswer({ kind: 'control', command: 'set_mode', mode: 'advisor' }, derive('autonomous', null), 'switch to advisor');
+    return (ans.immediate?.kind === 'set_mode') || 'not immediate';
+  });
+  check('gi_next_alt_why', 'Next step / alternatives / why answers are built from real candidates', () => {
+    const set = setFrom([cand('a', 60), cand('b', 50), cand('c', 40, { actionType: 'travel' })]);
+    const ctl = derive('advisor', null);
+    const next = buildNextStepIntelligenceAnswer({ query: 'q', focus: 'general', actionSet: set, objective, attention: null, control: ctl });
+    const alt = buildAlternativesIntelligenceAnswer({ query: 'q', actionSet: set, control: ctl, excludeId: set.recommended?.id });
+    const why = buildWhyActionIntelligenceAnswer({ query: 'q', candidate: set.recommended!, actionSet: set, control: ctl });
+    const realIds = new Set(set.ranked.map(c => c.id));
+    const buttonsReal = [...next.buttons, ...alt.buttons, ...why.buttons].every(b => !b.candidateId || realIds.has(b.candidateId));
+    return (next.grounded && alt.grounded && why.lines.some(l => l.includes('outranks')) && buttonsReal) || 'answers not grounded';
+  });
+  check('gi_insufficient', 'With no evidence Game Intelligence says so instead of inventing an answer', () => {
+    const ans = buildNextStepIntelligenceAnswer({ query: 'q', focus: 'general', actionSet: null, objective: null, attention: null, control: derive('manual', null) });
+    const ask = buildAskEngineIntelligenceAnswer('q', null);
+    return (!ans.grounded && ans.kind === 'insufficient' && !ask.grounded) || 'fabricated';
+  });
+  check('layer_sanitize', 'Layer navigation state sanitizes to PLAY by default', () => (
+    sanitizeExperienceLayer(undefined) === 'play' && sanitizeExperienceLayer('lab') === 'lab' && sanitizeExperienceLayer('bogus') === 'play'
+  ) || 'bad sanitize');
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -98289,6 +100416,9 @@ function AustraliaGame() {
   const [coPilotExplicitStartRequested, setCoPilotExplicitStartRequested] = useState(false);
   const [coPilotPumpHold, setCoPilotPumpHold] = useState(false);
   const coPilotStartInFlightRef = useRef(false);
+  // V9: set by Take Control so a Start that is still inside its afterNextPaint chain cannot create a
+  // session (and execute) after the player has already taken control back.
+  const coPilotStartCancelledRef = useRef(false);
 
   const commandCenterSettings = useMemo(() => {
     return gameSettings.commandCenterSettings || createDefaultCommandCenterSettings();
@@ -98327,6 +100457,7 @@ function AustraliaGame() {
 
   // UI state
   const [uiState, setUiState] = useState<UIState>({
+    experienceLayer: 'play' as ExperienceLayer,
     settingsActiveTab: 'home' as SettingsHubTabId,
     settingsViewMode: 'basic' as 'basic' | 'advanced',
     settingsSearchQuery: '',
@@ -100324,10 +102455,12 @@ function dispatchGameSettingsChange(
         actor,
         objective: idleObjective,
         recs: [] as ContextualRecommendation[],
-        attention: { state: 'good' as AttentionState, label: 'Stable', detail: 'Start a match to see live goals.' },
+        attention: { state: 'good' as AttentionState, label: 'Stable', detail: 'Start a match to see live goals.' } as PlayerAttentionSnapshot,
         assistanceLevel: mapAssistanceLevelFromProfile(gameSettings.smartSettingsProfile, gameSettings),
         goalOptions: [] as IntentGoalOption[],
-        onboardingHint: null
+        onboardingHint: null,
+        contextualRanked: [] as ContextualRecommendation[],
+        invalidCandidates: [] as any[]
       };
     }
     const objective = resolveCurrentObjective(gameState, gameSettings, actor, gameState.playerTrackedObjective);
@@ -100340,6 +102473,16 @@ function dispatchGameSettingsChange(
       actor,
       state: gameState
     });
+    // V9 Contextual Action System: the same canonical ranking, widened so PLAY can show
+    // Recommended / Useful Now and Game Intelligence can offer real alternatives.
+    const contextualRanked = rankContextualRecommendations(intentRecCandidates, objective, {
+      apRemaining: apLeft,
+      cash: actor?.money || 0,
+      limit: 12,
+      settings: gameSettings,
+      actor,
+      state: gameState
+    });
     return {
       actor,
       objective,
@@ -100347,7 +102490,9 @@ function dispatchGameSettingsChange(
       attention: classifyPlayerAttentionState(gameState, gameSettings, actor, objective),
       assistanceLevel: mapAssistanceLevelFromProfile(gameSettings.smartSettingsProfile, gameSettings),
       goalOptions: listIntentGoalOptions(gameState, gameSettings, actor),
-      onboardingHint: collectIntentOnboardingHints(gameState, gameSettings, actor, objective)[0] || null
+      onboardingHint: collectIntentOnboardingHints(gameState, gameSettings, actor, objective)[0] || null,
+      contextualRanked,
+      invalidCandidates: (intentRecCandidates || []).filter((c: any) => c && c.isValid === false)
     };
   }, [gameState, gameSettings, player, isLiveIntentMatch, intentRecCandidates]);
   // Advisor / Assistant / On-Request read the human's condition from the reducer state, which in
@@ -100526,6 +102671,7 @@ function dispatchGameSettingsChange(
     if (coPilotStartInFlightRef.current) return;
     if (coPilotManualOverride || takeoverSession?.manualStopLatched) return;
     coPilotStartInFlightRef.current = true;
+    coPilotStartCancelledRef.current = false;
     setCoPilotStartPhase('click');
     const plan = pendingCoPilotApplyRef.current || {
       planId: 'explicit_start',
@@ -100545,6 +102691,11 @@ function dispatchGameSettingsChange(
     pendingCoPilotApplyRef.current = null;
     setCoPilotPumpHold(true);
     afterNextPaint(() => {
+      if (coPilotStartCancelledRef.current) {
+        setCoPilotPumpHold(false);
+        coPilotStartInFlightRef.current = false;
+        return;
+      }
       let patchedSettings = gameSettings;
       try {
         patchedSettings = applyHighRiskCoPilotSettingsPatch(gameSettings, plan);
@@ -100558,7 +102709,7 @@ function dispatchGameSettingsChange(
       }
       afterNextPaint(() => {
         try {
-          const newSession = startCoPilotAutonomousTakeover({
+          const newSession = coPilotStartCancelledRef.current ? null : startCoPilotAutonomousTakeover({
             player,
             gameState,
             gameSettings: patchedSettings,
@@ -108215,6 +110366,12 @@ function dispatchGameSettingsChange(
 
   const openIntentNav = useCallback((nav?: IntentNavAction | null) => {
     if (!nav) return;
+    // V9: "Ask" destinations land in the unified Game Intelligence workspace (the legacy
+    // showAskGameAi flag opened nothing unless the optional drawer surface was enabled).
+    if (nav.target === 'ask_game') {
+      updateUiState({ experienceLayer: 'intelligence' });
+      return;
+    }
     const patch = resolveIntentNavToUiPatch(nav.target);
     if (nav.section) {
       updateUiState({ ...patch, settingsSectionTarget: nav.section, settingsActiveTab: nav.target === 'assistant_advanced' ? 'aiTeams' : uiState.settingsActiveTab });
@@ -108731,6 +110888,8 @@ function dispatchGameSettingsChange(
       replayRecordingRef.current = null;
     }
     updateUiState({
+      // V9: every new match starts in PLAY.
+      experienceLayer: 'play',
       showCampaignSelect: false,
       showNegotiationCenter: false,
       showOverseerDashboard: false,
@@ -128962,6 +131121,378 @@ function dispatchGameSettingsChange(
     );
   };
 
+  // ===========================================================================
+  // V9 EXPERIENCE UNIFICATION — component wiring.
+  // Thin adapters only: the control mode is read from canonical Co-Pilot settings, starts/stops go
+  // through handleStartCoPilot / interruptCoPilotTakeover, actions execute through
+  // executeIntentRecommendation, answers come from the Ask-the-Game engine.
+  // ===========================================================================
+  const experienceLayer = sanitizeExperienceLayer(uiState.experienceLayer);
+  const setExperienceLayer = useCallback((layer: ExperienceLayer) => {
+    updateUiState({ experienceLayer: sanitizeExperienceLayer(layer) });
+  }, [updateUiState]);
+  const v9PendingStartRef = useRef(false);
+  const [v9StartNonce, setV9StartNonce] = useState(0);
+  const [v9IntelFeed, setV9IntelFeed] = useState<GameIntelligenceAnswer[]>([]);
+  const [v9IntelQuery, setV9IntelQuery] = useState('');
+  const [v9IntelBusy, setV9IntelBusy] = useState(false);
+  const [v9SelfTestResults, setV9SelfTestResults] = useState<V9SelfTestResult[] | null>(null);
+
+  // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
+  // queued / in-flight Start so no delayed continuation can create a session afterwards.
+  const handleTakeControl = useCallback(() => {
+    v9PendingStartRef.current = false;
+    coPilotStartCancelledRef.current = true;
+    pendingCoPilotApplyRef.current = null;
+    setCoPilotManualOverride(true);
+    const revoked = takeoverSession ? interruptCoPilotTakeover(takeoverSession, 'manual_player_interrupt', gameState, { appendReplayEvent, dispatchLedgerEvent: dispatchAuthoritativeGameActivityLedgerEvent }) : null;
+    setTakeoverSession(revoked ? { ...revoked, manualStopLatched: true, sessionToken: undefined } : null);
+    COPILOT_COMMITTED_ACTION_TOKENS.clear();
+    addNotification('Human player took control back from Co-Pilot immediately.', 'warning', false, 'system');
+  }, [takeoverSession, gameState, appendReplayEvent, dispatchAuthoritativeGameActivityLedgerEvent, setTakeoverSession, addNotification]);
+
+  const handleResumeCoPilot = useCallback(() => {
+    setCoPilotManualOverride(false);
+    const cpSettings = resolveCanonicalCoPilotSettings(gameSettings?.coPilotSettings || gameState?.coPilotSettings, gameState, gameSettings);
+    const resumed = resumeCoPilotTakeoverSession(takeoverSession, gameState, cpSettings, isPlayerTurnForCoPilot);
+    setTakeoverSession(resumed);
+    recordDiag2Event('COPILOT_RESUME', {
+      currentActorId: gameState?.currentActorId,
+      turnCounter: gameState?.turnCounter ?? gameState?.turn,
+      currentTurnCount: resumed?.currentTurnCount,
+      sessionToken: resumed?.sessionToken,
+      writer: 'ui_resume',
+      prevStatus: takeoverSession?.status,
+      nextStatus: resumed?.status
+    });
+    if (resumed && (isCoPilotSessionExecutable(resumed) || resumed.status === 'waiting_for_other_players' || resumed.status === 'planning' || resumed.status === 'active')) {
+      addNotification('Autonomous Co-Pilot resumed control.', 'success', false, 'system');
+    }
+  }, [gameSettings, gameState, takeoverSession, isPlayerTurnForCoPilot, setTakeoverSession, addNotification]);
+
+  const v9IsAiOnlyMatch = gameState.selectedMode === 'team_ai_vs_ai';
+  const v9PendingProposal = Boolean(uiState.showCoPilotProposalModal && uiState.activeCoPilotProposal);
+  const v9RawApRemaining = getRemainingActionPoints(player, gameSettings);
+  const v9ApFinite = Number.isFinite(v9RawApRemaining);
+  const v9ApRemaining = v9ApFinite ? v9RawApRemaining : 99;
+  const v9ApUsed = Number(player?.actionsUsedThisTurn) || 0;
+  const v9CurrentActorName = getActorDisplayName(currentActorId);
+
+  const playerControlState = useMemo(() => derivePlayerControlState({
+    gameSettings,
+    gameState,
+    takeoverSession,
+    isHumanTurn: isPlayerTurnForCoPilot,
+    currentActorName: v9CurrentActorName,
+    pendingProposal: v9PendingProposal,
+    manualOverride: coPilotManualOverride,
+    canStartAutonomous: isPlayerTurnForCoPilot && !uiState.showSettings && !isCoPilotSessionExecutable(takeoverSession),
+    startPending: coPilotPumpHold,
+    apUsed: v9ApUsed,
+    apTotal: v9ApFinite ? v9ApUsed + v9RawApRemaining : 0,
+    isAiOnlyMatch: v9IsAiOnlyMatch
+  }), [gameSettings, gameState, takeoverSession, isPlayerTurnForCoPilot, v9CurrentActorName, v9PendingProposal, coPilotManualOverride, uiState.showSettings, coPilotPumpHold, v9ApUsed, v9ApFinite, v9RawApRemaining, v9IsAiOnlyMatch]);
+
+  // Mode changes write ONLY Co-Pilot keys through the canonical high-risk patch, lower authority by
+  // stopping a live session first, and never start execution (Start / a real Rescue emergency does).
+  const setPlayerControlMode = useCallback((mode: PlayerControlMode) => {
+    if (v9IsAiOnlyMatch) return;
+    const current = resolvePlayerControlMode(gameSettings, gameState);
+    if (mode === current) return;
+    const lowering = !isPlayerControlAuthorityIncrease(current, mode);
+    const sessionLive = Boolean(
+      takeoverSession
+      && !isCoPilotManuallyStopped(takeoverSession)
+      && !['disabled', 'terminated', 'completed', 'failed', 'interrupted'].includes(takeoverSession.status)
+    );
+    if (lowering && sessionLive) handleTakeControl();
+    v9PendingStartRef.current = false;
+    setCoPilotExplicitStartRequested(false);
+    trackedSetGameSettings('direct_player_change', 'Control Mode', prev => applyPlayerControlModeToSettings(prev, mode));
+    const meta = PLAYER_CONTROL_MODE_META[mode];
+    addNotification(`Control mode: ${meta.label}. ${meta.summary}`, 'info');
+  }, [v9IsAiOnlyMatch, gameSettings, gameState, takeoverSession, handleTakeControl, trackedSetGameSettings, addNotification]);
+
+  // Explicit "Take Over This Turn" (Rescue) / "Start Co-Pilot" (Autonomous). Reuses handleStartCoPilot
+  // with an explicit plan so it can never silently escalate Rescue into continuous Autonomous play.
+  const requestCoPilotStart = useCallback((mode: 'rescue' | 'autonomous') => {
+    if (v9IsAiOnlyMatch) return;
+    if (!isHumanPlayerTurn(gameState, player)) {
+      addNotification('Co-Pilot can only start while you own the turn.', 'warning');
+      return;
+    }
+    if (takeoverSession && isCoPilotSessionExecutable(takeoverSession)) {
+      addNotification('Co-Pilot is already running this turn.', 'info');
+      return;
+    }
+    if (coPilotStartInFlightRef.current || v9PendingStartRef.current) return;
+    const meta = PLAYER_CONTROL_MODE_META[mode];
+    pendingCoPilotApplyRef.current = {
+      planId: `v9_start_${mode}`,
+      timestamp: Date.now(),
+      profile: {
+        ...(gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile()),
+        coPilotMode: meta.conceptual,
+        assistanceLevel: meta.assistanceLevel,
+        enabled: true
+      },
+      changes: [],
+      conflicts: [],
+      autoModeBoundaries: {},
+      fairnessSummary: '',
+      summary: `Start Co-Pilot (${meta.label})`
+    } as unknown as SmartSettingsPlan;
+    // An explicit start is the player's own intent, so it clears the Take Control latch.
+    if (coPilotManualOverride) setCoPilotManualOverride(false);
+    if (takeoverSession && isCoPilotManuallyStopped(takeoverSession)) setTakeoverSession(null);
+    v9PendingStartRef.current = true;
+    setV9StartNonce(n => n + 1);
+  }, [v9IsAiOnlyMatch, gameState, player, takeoverSession, gameSettings, coPilotManualOverride, setTakeoverSession, addNotification]);
+
+  useEffect(() => {
+    if (!v9PendingStartRef.current) return;
+    if (coPilotManualOverride || takeoverSession?.manualStopLatched) return;
+    v9PendingStartRef.current = false;
+    handleStartCoPilot();
+  }, [v9StartNonce, coPilotManualOverride, takeoverSession?.manualStopLatched, handleStartCoPilot]);
+
+  // Surfaces mirror the action bar's own visibility / availability rules.
+  const v9Surfaces = useMemo<ContextualSurfaceInput[]>(() => {
+    const turn = isPlayerTurnForCoPilot;
+    const notTurn = turn ? null : 'Not your turn';
+    const onShopRegion = EQUIPMENT_SHOP_REGIONS.includes(player?.currentRegion);
+    const list: ContextualSurfaceInput[] = [
+      { id: 'travel', label: 'Travel', icon: '✈️', target: 'travel', category: 'explore', legal: turn, blockReason: notTurn },
+      { id: 'challenges', label: 'Challenges', icon: '🎯', target: 'challenges', category: 'explore', legal: turn, blockReason: notTurn },
+      { id: 'market', label: 'Market', icon: '💰', target: 'market', category: 'economy', legal: turn, blockReason: notTurn },
+      { id: 'resourceMarket', label: 'Resource Market', icon: '🛍️', target: 'resource_market', category: 'economy', legal: turn, blockReason: notTurn },
+      { id: 'workshop', label: 'Workshop', icon: '🔨', target: 'workshop', category: 'build', legal: turn, blockReason: notTurn },
+      { id: 'contracts', label: 'Contracts', icon: '📜', target: 'contracts', category: 'build', legal: turn, blockReason: notTurn }
+    ];
+    if (gameSettings.equipmentShopEnabled) list.push({ id: 'shop', label: 'Shop', icon: '🛒', target: 'shop', category: 'build', legal: turn && onShopRegion, blockReason: notTurn || (onShopRegion ? null : 'No shop in this region') });
+    if (gameSettings.investmentsEnabled) list.push({ id: 'investments', label: 'Investments', icon: '🏦', target: 'investments', category: 'build', legal: turn, blockReason: notTurn });
+    if (gameSettings.advancedLoansEnabled && gameSettings.advancedLoansAccessMode !== 'ai_only') list.push({ id: 'loans', label: 'Loans', icon: '🏦', target: 'loans', category: 'economy', legal: turn, blockReason: notTurn });
+    if (gameSettings.sabotageEnabled && isCompetitiveMode) list.push({ id: 'sabotage', label: 'Sabotage', icon: SABOTAGE_ICON, target: 'sabotage', category: 'compete', legal: turn, blockReason: notTurn });
+    return list;
+  }, [isPlayerTurnForCoPilot, player?.currentRegion, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode]);
+
+  const v9ActionSet = useMemo(() => buildContextualActionSet({
+    rankedRecommendations: intentLayerComputed.contextualRanked,
+    invalidCandidates: intentLayerComputed.invalidCandidates,
+    objective: isLiveIntentMatch ? intentLayerComputed.objective : null,
+    attention: isLiveIntentMatch ? intentLayerComputed.attention : null,
+    apRemaining: v9ApRemaining,
+    isHumanTurn: isPlayerTurnForCoPilot,
+    surfaces: v9Surfaces
+  }), [intentLayerComputed, isLiveIntentMatch, v9ApRemaining, isPlayerTurnForCoPilot, v9Surfaces]);
+
+  const v9WinLines = useMemo(() => {
+    if (!isLiveIntentMatch) return [] as string[];
+    const metric = gameSettings.winCondition;
+    const mine = getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode });
+    const theirs = getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode });
+    const delta = mine - theirs;
+    const lines = [
+      `${winConditionLabel}.`,
+      `${getWinMetricDisplayLabel(metric, { isTeam: isTeamMode, sideLabel: isTeamMode ? 'Your team' : 'You' })}: ${formatWinMetricValue(metric, mine)} vs ${formatWinMetricValue(metric, theirs)} (${delta === 0 ? 'tied' : delta > 0 ? 'you lead' : 'you trail'}).`,
+      `Day ${gameState.day} of ${gameSettings.totalDays}.`
+    ];
+    return lines;
+  }, [isLiveIntentMatch, gameSettings.winCondition, gameSettings.totalDays, getCompetitiveMetricValue, getWinMetricDisplayLabel, formatWinMetricValue, isTeamMode, winConditionLabel, gameState.day]);
+
+  const pushIntelAnswer = useCallback((answer: GameIntelligenceAnswer) => {
+    setV9IntelFeed(prev => [...prev, answer].slice(-20));
+  }, []);
+
+  const submitIntelligenceQuery = useCallback(async (raw: string) => {
+    const query = String(raw || '').trim();
+    if (!query || v9IntelBusy) return;
+    setV9IntelQuery('');
+    updateUiState({ experienceLayer: 'intelligence' });
+    const route = classifyGameIntelligenceRequest(query);
+    if (route.kind === 'control') {
+      const answer = buildIntelligenceControlAnswer(route, playerControlState, query);
+      pushIntelAnswer(answer);
+      if (answer.immediate?.kind === 'take_control') handleTakeControl();
+      else if (answer.immediate?.kind === 'set_mode') setPlayerControlMode(answer.immediate.mode);
+      return;
+    }
+    if (route.kind === 'next_step') {
+      pushIntelAnswer(buildNextStepIntelligenceAnswer({
+        query,
+        focus: route.focus,
+        actionSet: isLiveIntentMatch ? v9ActionSet : null,
+        objective: isLiveIntentMatch ? intentLayerComputed.objective : null,
+        attention: isLiveIntentMatch ? intentLayerComputed.attention : null,
+        control: playerControlState,
+        winLines: v9WinLines,
+        cash: typeof player?.money === 'number' ? player.money : null
+      }));
+      return;
+    }
+    if (route.kind === 'alternatives') {
+      pushIntelAnswer(buildAlternativesIntelligenceAnswer({ query, actionSet: isLiveIntentMatch ? v9ActionSet : null, control: playerControlState, excludeId: v9ActionSet.recommended?.id }));
+      return;
+    }
+    if (route.kind === 'activity') {
+      pushIntelAnswer(buildActivityIntelligenceAnswer({ query, control: playerControlState, session: takeoverSession, ledgerEvents: gameState.gameActivityLedger?.events || [] }));
+      return;
+    }
+    setV9IntelBusy(true);
+    try {
+      const response = await askAI.submitQuery(query);
+      pushIntelAnswer(buildAskEngineIntelligenceAnswer(query, response));
+    } catch {
+      pushIntelAnswer(buildAskEngineIntelligenceAnswer(query, null));
+    } finally {
+      setV9IntelBusy(false);
+    }
+  }, [v9IntelBusy, updateUiState, playerControlState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, isLiveIntentMatch, v9ActionSet, intentLayerComputed, v9WinLines, player?.money, takeoverSession, gameState.gameActivityLedger, askAI]);
+
+  // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
+  // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
+  const handleV9Button = useCallback((button: GameIntelligenceButton) => {
+    const candidate = findContextualCandidate(v9ActionSet, button.candidateId);
+    switch (button.kind) {
+      case 'do': {
+        if (!candidate || !candidate.legal || candidate.execution?.kind !== 'copilot_candidate') return;
+        const exec = candidate.execution;
+        requestManualAction(() => executeIntentRecommendation(exec.candidate));
+        return;
+      }
+      case 'end_turn':
+        requestManualAction(() => handleEndTurn());
+        return;
+      case 'open':
+        openIntentNav(button.nav || candidate?.navigation || null);
+        return;
+      case 'why':
+        if (!candidate) return;
+        pushIntelAnswer(buildWhyActionIntelligenceAnswer({ query: `Why ${candidate.legal ? '' : 'not '}${candidate.label}?`, candidate, actionSet: v9ActionSet, control: playerControlState }));
+        setExperienceLayer('intelligence');
+        return;
+      case 'alternatives':
+        pushIntelAnswer(buildAlternativesIntelligenceAnswer({ query: 'Show alternatives', actionSet: v9ActionSet, control: playerControlState, excludeId: button.candidateId || v9ActionSet.recommended?.id }));
+        setExperienceLayer('intelligence');
+        return;
+      case 'set_mode':
+        if (button.mode) setPlayerControlMode(button.mode);
+        return;
+      case 'take_over_turn':
+        requestCoPilotStart('rescue');
+        return;
+      case 'start_copilot':
+        requestCoPilotStart(button.mode === 'rescue' ? 'rescue' : 'autonomous');
+        return;
+      case 'take_control':
+        handleTakeControl();
+        return;
+      case 'resume_copilot':
+        handleResumeCoPilot();
+        return;
+      case 'ask':
+        if (button.query) void submitIntelligenceQuery(button.query);
+        return;
+      case 'deeplink':
+        if (button.deepLink) askAI.applyDeepLink(button.deepLink);
+        return;
+      default:
+        return;
+    }
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI]);
+
+  const handleV9ControlStart = useCallback(() => {
+    requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
+  }, [requestCoPilotStart, playerControlState.mode]);
+
+  const buildV9LabEntries = (): LabEntry[] => {
+    const settingsEntry = (id: string, group: LabGroupId, title: string, description: string, tab: SettingsHubTabId, section?: string): LabEntry => ({
+      id, group, title, description, onOpen: () => navigateToSettings(tab, section)
+    });
+    const flagEntry = (id: string, group: LabGroupId, title: string, description: string, patch: Record<string, any>, available = true, unavailableReason?: string): LabEntry => ({
+      id, group, title, description, onOpen: () => updateUiState(patch), available, unavailableReason
+    });
+    return [
+      settingsEntry('ai_difficulty', 'ai_engine', 'AI Difficulty & Engine', 'Rival and teammate AI difficulty, market modifiers and engine options.', 'aiTeams', 'ai.settings'),
+      settingsEntry('ai_algorithms', 'ai_engine', 'AI Thinking & Algorithms', 'Planner algorithms, search depth and thinking styles.', 'aiTeams', 'teamModeAi.aiThinkingAlgorithm'),
+      settingsEntry('ai_builder', 'ai_engine', 'AI Algorithm Builder', 'Compose custom AI thinking pipelines.', 'aiTeams', 'teamModeAi.algorithmBuilder'),
+      settingsEntry('ai_strategy_lab', 'ai_engine', 'AI Strategy Lab & Tuning Sliders', 'Strategy presets and weight sliders.', 'aiTeams', 'aiStrategyLab.main'),
+      settingsEntry('ai_adaptive', 'ai_engine', 'Adaptive AI & Determinism', 'Comeback logic, opponent models, projected outcomes and deterministic mode.', 'aiTeams', 'ai.adaptive'),
+      {
+        id: 'ai_tuning_lab', group: 'ai_engine', title: 'AI Tuning Lab', description: 'Evolve and compare AI genomes.',
+        onOpen: () => setShowTuningLab(true),
+        available: Boolean(gameSettings.aiTuningLabUiEnabled),
+        unavailableReason: 'Enable the AI Tuning Lab UI in Settings → AI & Teams to use this workspace.'
+      },
+      flagEntry('ai_command_center', 'ai_engine', 'AI Command Center', 'Live AI command dashboard.', { showAiCommandCenterModal: true }, Boolean(gameSettings.aiCommandCenterUiEnabled), 'Enable the AI Command Center UI in Settings → Interface.'),
+      {
+        id: 'ai_pipeline', group: 'ai_engine', title: 'AI Action Pipeline Inspector', description: 'Inspect every AI decision through validation and approval.',
+        onOpen: () => setShowAiPipelineInspector(true),
+        available: Boolean(gameSettings.aiPipelineInspectorEnabled),
+        unavailableReason: 'Enable the AI Action Pipeline Inspector in Settings → Replay & Diagnostics.'
+      },
+      settingsEntry('team_brain', 'team', 'Team Brain', 'Team-level planning brain for AI teammates.', 'aiTeams', 'teamModeAi.teamBrain'),
+      settingsEntry('team_strategic_command', 'team', 'Strategic Command & Overseer', 'Team directives and the Adaptive Overseer.', 'oversight', 'teamModeAi.overseer'),
+      flagEntry('team_overseer_dashboard', 'team', 'Overseer Dashboard', 'Live Overseer directives and interventions.', { showOverseerDashboard: true }),
+      settingsEntry('team_governor', 'team', 'Economy Governor', 'Team spending governor rules.', 'oversight', 'teamModeAi.economyGovernor'),
+      settingsEntry('team_treasury', 'team', 'Team Treasury', 'Shared treasury rules and funding requests.', 'oversight', 'teamModeAi.treasury'),
+      settingsEntry('team_governance', 'team', 'Team Governance', 'Votes, vetoes and the governance control surface.', 'oversight', 'teamModeAi.governanceControlSurface'),
+      settingsEntry('team_auditor', 'team', 'AI Operations Auditor', 'Auditor rules and incident thresholds.', 'oversight', 'teamModeAi.auditor'),
+      flagEntry('team_auditor_dashboard', 'team', 'Auditor Dashboard', 'Auditor incidents and findings.', { showAuditorDashboard: true }),
+      settingsEntry('team_sequences', 'team', 'Teammate Action Sequences', 'Multi-step teammate sequences.', 'aiTeams', 'teamModeAi.actionSequences'),
+      settingsEntry('team_plans', 'team', 'Team Plans', 'Team plan coordination settings.', 'aiTeams', 'teamModeAi.teamPlans'),
+      settingsEntry('copilot_advanced', 'assistants', 'Co-Pilot Advanced Permissions', 'Technical authority modes, spending caps, reserves, action categories and takeover limits.', 'aiTeams', 'aiTeams.coPilot'),
+      flagEntry('guardian_center', 'assistants', 'Guardian AI Center', 'Guardian thresholds, categories, overrides and audit.', { showGuardianAiCenter: true }),
+      settingsEntry('ai_assistant_surfaces', 'assistants', 'Assistant Surfaces', 'Floating Ask-the-Game drawer, command widgets and assistant surfaces.', 'interfaceAcc', 'interface.aiAssistants'),
+      settingsEntry('ai_communication', 'assistants', 'AI Communication', 'Proactive intelligence, speakers and autonomy level.', 'aiTeams', 'ai.communication'),
+      flagEntry('copilot_console', 'assistants', 'Co-Pilot Console', 'The classic Co-Pilot console and recommendation list.', { showCoPilotModal: true }),
+      settingsEntry('auto_mode', 'automation', 'Auto Mode', 'Adaptive Match Manager.', 'automation', 'autoMode.main'),
+      settingsEntry('auto_mode_advanced', 'automation', 'Auto Mode Policies & Limits', 'Advanced Auto Mode boundaries.', 'automation', 'autoMode.advanced'),
+      flagEntry('human_automation', 'automation', 'Human Player Automation', 'Your own automation rules and run history.', { showHumanAutomationDashboard: true }),
+      settingsEntry('action_approval', 'automation', 'AI Action Approval', 'Which AI actions require approval.', 'automation', 'teamModeAi.actionApproval'),
+      settingsEntry('action_requirements', 'automation', 'Action Requirements', 'Prerequisites AI actions must satisfy.', 'automation', 'teamModeAi.actionRequirements'),
+      flagEntry('live_control_center', 'automation', 'Live Control Center', 'Every live system toggle in one place.', { showLiveControlCenter: true }),
+      settingsEntry('rules_core', 'rules', 'Core Gameplay', 'Match length, actions per day and core rules.', 'gameplay', 'gameplay.core'),
+      settingsEntry('rules_action_limits', 'rules', 'Action Limits & Action Points', 'Action point budgets and costs.', 'gameplay', 'gameplay.actionLimits'),
+      settingsEntry('rules_priority', 'rules', 'Priority Resolution', 'How competing systems are resolved.', 'oversight', 'advancedSystems.priority'),
+      flagEntry('rules_determinism', 'rules', 'Determinism Audit', 'Verify deterministic replays.', { showDeterminismAuditModal: true }),
+      flagEntry('rules_whatif', 'rules', 'What-If Timelines', 'Branching simulations.', { showWhatIfTimelinesModal: true }),
+      flagEntry('rules_balance', 'rules', 'Balance Sandbox', 'Balance tools inside the Activity Ledger dashboard.', { showGameActivityLedgerDashboard: true }),
+      settingsEntry('memory_ai', 'memory', 'AI Memory', 'In-match AI memory.', 'aiTeams', 'ai.memory'),
+      settingsEntry('memory_persistent', 'memory', 'Persistent AI Memory', 'Cross-match memory, backups and deletion.', 'aiTeams', 'ai.persistentMemory'),
+      settingsEntry('replay_settings', 'replay_diag', 'Replay & Analytics', 'Replay recording, safety and debrief analytics.', 'replayDiag', 'advancedSystems.replaySafety'),
+      flagEntry('ledger_dashboard', 'replay_diag', 'Game Activity Ledger', 'Every recorded event, story and replay comparison.', { showGameActivityLedgerDashboard: true }),
+      settingsEntry('ledger_settings', 'replay_diag', 'Ledger Configuration', 'What the Activity Ledger records and saves.', 'replayDiag', 'advancedSystems.gameActivityLedger'),
+      settingsEntry('decision_transparency', 'replay_diag', 'Decision Transparency', 'AI reasoning traces and timelines.', 'replayDiag', 'advancedSystems.decisionTransparency'),
+      flagEntry('auto_mode_diagnostics', 'replay_diag', 'Diagnostics Drawer', 'Auto Mode / Co-Pilot diagnostics (Ctrl+Alt+D).', { showAutoModeDiagnosticsDrawer: true }),
+      settingsEntry('diag2', 'replay_diag', 'DIAG-2 Overlay & Telemetry', 'On-screen diagnostic telemetry overlay.', 'replayDiag', 'advancedSystems.diag2Overlay'),
+      flagEntry('save_migration', 'replay_diag', 'Save Migration', 'Save schema and migration details.', { showSaveMigrationModal: true }),
+      settingsEntry('settings_home', 'settings', 'Full Settings Hub', 'Every setting, with search and presets.', 'home'),
+      settingsEntry('settings_quick', 'settings', 'Quick Setup & Presets', 'Presets and quick match setup.', 'quickSetup'),
+      settingsEntry('settings_interface', 'settings', 'Interface & Accessibility', 'Theme, motion, focus and accessibility.', 'interfaceAcc', 'interface.accessibility'),
+      settingsEntry('settings_mechanics', 'settings', 'Mechanics Directory', 'Glossary of every game mechanic.', 'mechanicsDir')
+    ];
+  };
+
+  const v9TechnicalRows = (): Array<{ label: string; value: string }> => {
+    const cp = resolveHumanCoPilotSettings(gameSettings, gameState);
+    return [
+      { label: 'coPilotEnabled', value: String(cp.coPilotEnabled) },
+      { label: 'authorityMode', value: String(cp.authorityMode) },
+      { label: 'conceptual mode', value: mapTechnicalSettingsToConceptualMode(cp.coPilotEnabled, cp.authorityMode) },
+      { label: 'automaticRescueEnabled', value: String(cp.automaticRescueEnabled) },
+      { label: 'profile.coPilotMode', value: String(gameSettings.smartSettingsProfile?.coPilotMode ?? 'unset') },
+      { label: 'control phase', value: playerControlState.phase },
+      { label: 'session status', value: takeoverSession ? String(takeoverSession.status) : 'none' },
+      { label: 'session scope', value: takeoverSession ? String(takeoverSession.scope) : '—' },
+      { label: 'session token', value: takeoverSession?.sessionToken ? 'present' : 'none' },
+      { label: 'manualStopLatched', value: String(Boolean(takeoverSession?.manualStopLatched)) },
+      { label: 'manual override latch', value: String(coPilotManualOverride) },
+      { label: 'explicit start requested', value: String(coPilotExplicitStartRequested) },
+      { label: 'pump hold', value: String(coPilotPumpHold) }
+    ];
+  };
+
   // Settings Modal
   const renderSettingsModal = () => {
     if (!uiState.showSettings) return null;
@@ -144056,107 +146587,10 @@ function dispatchGameSettingsChange(
             )}
           </div>
 
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow}`}>
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Recommended Now</div>
-              <div className="flex gap-2">
-                <button type="button" className="text-xs underline opacity-80" onClick={() => updateUiState({ showIntentWhyThese: !uiState.showIntentWhyThese })}>Why these?</button>
-                <button type="button" className="text-xs underline opacity-80" onClick={() => updateUiState({ simplifiedMoreOpen: true, showIntentAllActions: true })}>Show all actions</button>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {recommendedNow.length === 0 && (
-                <div className="text-sm opacity-70 md:col-span-3">No legal actions to recommend right now. End your turn or open More actions.</div>
-              )}
-              {recommendedNow.map((rec, idx) => (
-                <div key={rec.id} className={`${themeStyles.border} border rounded-lg p-3`}>
-                  <div className="text-xs opacity-60">#{idx + 1}</div>
-                  <div className="font-semibold text-sm">{rec.title}</div>
-                  <div className="text-xs opacity-80 mt-1">{rec.reason}</div>
-                  <div className="text-xs mt-1 opacity-70">{rec.costLabel}</div>
-                  <button
-                    type="button"
-                    disabled={!isPlayerTurn}
-                    onClick={() => executeIntentRecommendation(rec.candidate)}
-                    className="mt-2 px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50"
-                  >
-                    Do
-                  </button>
-                </div>
-              ))}
-            </div>
-            {whyThese && (
-              <div className={`mt-3 pt-3 border-t ${themeStyles.border} text-sm space-y-1`}>
-                <div className="font-semibold">Why these actions?</div>
-                <div>{whyThese.why}</div>
-                <div className="text-xs opacity-70">{whyThese.whatChanged}</div>
-              </div>
-            )}
-          </div>
-
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 ${themeStyles.shadow} flex flex-col md:flex-row md:items-center gap-3`}>
-            <div className="flex-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Game Assistant</div>
-              <div className="text-sm">{ASSISTANCE_LEVEL_LABELS[assistanceLevel]} — {ASSISTANCE_LEVEL_BLURBS[assistanceLevel]}</div>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {(['off', 'guide', 'assist', 'copilot', 'autonomous'] as AssistanceLevel[]).map(level => (
-                <button
-                  key={level}
-                  type="button"
-                  onClick={() => applyAssistanceLevelFromHud(level)}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold border ${
-                    assistanceLevel === level ? 'bg-indigo-700 border-indigo-400 text-white' : 'border-gray-600 opacity-80 hover:opacity-100'
-                  }`}
-                >
-                  {ASSISTANCE_LEVEL_LABELS[level]}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="text-xs underline" onClick={() => openIntentNav(navAction('assistant_advanced', 'Advanced Assistant Controls'))}>
-              Advanced Assistant Controls
-            </button>
-            <div className="flex flex-wrap gap-1 text-[10px]">
-              {([
-                { id: 'routine_off' as CoPilotExplainMode, label: "Don't explain routine market sales" },
-                { id: 'high_impact' as CoPilotExplainMode, label: 'Only explain high-impact decisions' },
-                { id: 'every' as CoPilotExplainMode, label: 'Explain every Co-Pilot action' }
-              ]).map(opt => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`px-2 py-0.5 rounded border ${gameSettings.playerIntentExplainMode === opt.id ? 'bg-indigo-800 border-indigo-400' : 'border-gray-600 opacity-70'}`}
-                  onClick={() => trackedSetGameSettings('direct_player_change', 'Co-Pilot teaching', prev => ({
-                    ...prev,
-                    playerIntentExplainMode: opt.id,
-                    playerIntentExplainRoutineActions: opt.id === 'every'
-                  }))}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-[11px] flex flex-wrap gap-x-4 gap-y-1`}>
-            <span><span className="opacity-60">Win</span> {String(gameSettings.winCondition || 'money')}</span>
-            <span><span className="opacity-60">AP</span> {apRemainingNow}</span>
-            <span><span className="opacity-60">Cash</span> ${Number(intentActor?.money || 0).toLocaleString()} — funds travel, contracts, and upkeep</span>
-            <span><span className="opacity-60">Here</span> {REGIONS[intentActor?.currentRegion]?.name || intentActor?.currentRegion || 'Unknown'}</span>
-            <span><span className="opacity-60">Blocker</span> {attention.state === 'good' ? 'None' : attention.label}</span>
-            <span><span className="opacity-60">Assistant</span> {ASSISTANCE_LEVEL_LABELS[assistanceLevel]}</span>
-            <button type="button" className="underline" onClick={() => openIntentNav(navAction('ask_game', 'Ask for help'))}>Ask for help</button>
-            <button type="button" className="underline" disabled={!isPlayerTurn} onClick={handleEndTurn}>End Turn</button>
-          </div>
-
+          {/* V9: "Recommended Now", the assistance-level row and the status summary moved into the
+              Contextual Action panel, the Control section and the PLAY HUD; advanced links live in LAB. */}
           <div className="flex flex-wrap gap-2 text-[11px]">
-            <button type="button" className="underline opacity-80" onClick={() => openIntentNav(navAction('assistant_advanced', 'Advanced Controls'))}>Advanced Controls</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showIntentAllActions: true, simplifiedMoreOpen: true })}>Show All Actions</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showSettings: true })}>Full Settings Hub</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showSettings: true, settingsActiveTab: 'aiTeams' })}>Detailed AI Systems</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showGameActivityLedgerDashboard: true })}>Open Activity Ledger</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showSettings: true, settingsActiveTab: 'replayDiag' })}>Replay & Analytics</button>
-            <button type="button" className="underline opacity-80" onClick={() => updateUiState({ showSettings: true, settingsActiveTab: 'replayDiag', showAutoModeDiagnosticsDrawer: true })}>Diagnostics</button>
+            <button type="button" className="underline opacity-80" onClick={() => setExperienceLayer('lab')}>Advanced systems live in LAB →</button>
             {presentation === 'simple' && <span className="opacity-50">Guided view — advanced systems stay one click away.</span>}
           </div>
 
@@ -144228,6 +146662,477 @@ function dispatchGameSettingsChange(
       );
     };
 	    
+    // V9: the compact Co-Pilot advisor panel (condition grade, primary risk, top move) now lives in
+    // INTELLIGENCE instead of competing with the contextual actions in PLAY.
+    const renderCompactCoPilotPanel = () => {
+          const coPilotSettings = gameSettings?.coPilotSettings;
+          const coPilotEnabled = Boolean(coPilotSettings?.coPilotEnabled);
+          const authorityMode = coPilotSettings?.authorityMode || 'off';
+          const shouldShowCompactCoPilotPanel = isCompactCoPilotPanelVisible(
+            isPlayerTurn,
+            coPilotEnabled,
+            authorityMode,
+            coPilotPanelDismissedTurn,
+            gameState.turnCounter
+          );
+
+          if (!shouldShowCompactCoPilotPanel) return null;
+          if (uiState.showSettings) {
+            return null;
+          }
+          // V9: the "Autonomous armed" / "Co-Pilot is playing" floating pills were a second, sometimes
+          // contradictory ownership indicator. PlayerControlStatusBar is now the single source for that.
+          if (authorityMode === 'full_co_pilot' || (authorityMode as string) === 'autonomous_takeover' || isCoPilotSessionExecutable(takeoverSession)) {
+            return null;
+          }
+
+          let humanCondition: any = null;
+          let problems: any[] = [];
+          let primaryProblem: any = null;
+          let recommendations: any[] = [];
+          let topRecommendation: any = null;
+          try {
+            humanCondition = evaluateHumanStrategicCondition(coPilotViewState, 'player');
+            problems = detectCoPilotProblems(coPilotViewState, humanCondition);
+            primaryProblem = problems.length > 0 ? problems[0] : null;
+            const intent = evaluateCoPilotIntentContext(coPilotViewState, problems);
+            recommendations = generateCoPilotRecommendations(coPilotViewState, humanCondition, problems, intent);
+            const evaluation = typeof generateCoPilotPlayerActionCandidates === 'function'
+              ? generateCoPilotPlayerActionCandidates(coPilotRuntimeContext)
+              : null;
+            const legal = listLegalCoPilotCandidates(evaluation, getRemainingActionPoints(player, gameSettings));
+            const rawTop = recommendations.length > 0 ? recommendations[0] : null;
+            topRecommendation = alignCoPilotRecommendationToLegalCandidate(
+              rawTop,
+              legal,
+              player?.id || 'player',
+              gameState.turnCounter || gameState.day || 1
+            );
+          } catch (err) {
+            console.error('[Compact Co-Pilot Panel] diagnostic render failed', err);
+            return null;
+          }
+
+          const getConditionGradeBadgeClass = (statusGrade?: string) => {
+            switch (statusGrade) {
+              case 'EXCELLENT':
+                return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+              case 'STABLE':
+              case 'GOOD':
+                return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+              case 'VULNERABLE':
+              case 'WARNING':
+                return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+              case 'CRITICAL':
+                return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+              case 'EMERGENCY':
+              case 'BANKRUPT':
+                return 'bg-red-700/30 text-red-200 border-red-500/60 animate-pulse';
+              default:
+                return 'bg-gray-500/20 text-gray-300 border-gray-500/40';
+            }
+          };
+
+          const handleAcceptTopMove = () => {
+            setCoPilotManualOverride(false);
+            if (!topRecommendation) return;
+            executeCoPilotRecommendationAsHuman(topRecommendation);
+          };
+
+          return (
+            <div className="bg-slate-900/90 border border-sky-500/40 rounded-xl p-3.5 shadow-xl mb-4 backdrop-blur-sm transition-all">
+              {/* Header Row */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5 pb-2 border-b border-gray-700/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🤖</span>
+                  <span className="font-bold text-sm text-white">Co-Pilot Assistant</span>
+                  
+                  {/* Condition Grade Badge */}
+                  <span className={`px-2 py-0.5 rounded text-xs font-extrabold border ${getConditionGradeBadgeClass(humanCondition.overallStatusGrade)}`}>
+                    {humanCondition.overallStatusGrade}
+                  </span>
+
+                  {/* Authority Mode Badge */}
+                  <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700 text-[11px]">
+                    Mode: {coPilotSettings.authorityMode}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateUiState({ showCoPilotModal: true });
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white transition-colors flex items-center gap-1"
+                  >
+                    <span>💬</span> Ask Co-Pilot
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateUiState({ showCoPilotRecommendationsModal: true });
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center gap-1"
+                  >
+                    <span>📋</span> View Recommendations
+                  </button>
+
+                  {topRecommendation && (
+                    <button
+                      type="button"
+                      onClick={handleAcceptTopMove}
+                      disabled={!isPlayerTurn}
+                      className="px-2.5 py-1 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <span>⚡</span> Accept Top Move
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setCoPilotPanelDismissedTurn(gameState.turnCounter)}
+                    className="px-2 py-1 text-xs text-gray-400 hover:text-white transition-colors"
+                    title="Dismiss panel for current turn"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {currentObjective && (
+                <div className="text-xs text-sky-200 mb-2">
+                  Current tracked objective: {currentObjective.title}
+                </div>
+              )}
+
+              {/* Body Section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* Primary Problem / Risk Summary */}
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
+                  <div className="text-[11px] font-semibold text-rose-300 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <span>⚠️</span> Primary Detected Risk
+                  </div>
+                  <div className="text-gray-200">
+                    {primaryProblem ? primaryProblem.description : 'No active strategic hazards detected. Operational condition stable.'}
+                  </div>
+                </div>
+
+                {/* Top Recommended Move */}
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
+                      <span>🎯</span> Recommended Action
+                    </span>
+                    {topRecommendation && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
+                        {Math.round(topRecommendation.confidenceScore)}% Confidence
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-gray-200 font-medium">
+                    {topRecommendation ? topRecommendation.title : 'Maintain standard regional progression plan.'}
+                  </div>
+                  <div className="text-gray-400 text-[11px] mt-0.5 line-clamp-1">
+                    {topRecommendation ? topRecommendation.reasoningSummary : 'No action required.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+    };
+
+    // =========================================================================
+    // V9 layer renderers (PLAY / INTELLIGENCE / LAB). They only compose existing surfaces and the
+    // V9 adapters defined at component level; no gameplay logic lives here.
+    // =========================================================================
+    const showAllActions = () => {
+      updateUiState({ showIntentAllActions: true, simplifiedMoreOpen: true, experienceLayer: 'play' });
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          document.getElementById('v9-all-actions-bar')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        }, 0);
+      }
+    };
+
+    const renderV9Header = () => (
+      <div className="mb-4 flex flex-col lg:flex-row lg:items-stretch gap-2" data-testid="v9-header">
+        <div className="shrink-0 self-start">
+          <ExperienceLayerNav
+            active={experienceLayer}
+            onChange={setExperienceLayer}
+            theme={themeStyles}
+            badges={{ intelligence: isLiveIntentMatch && attention.state === 'critical' ? '!' : null }}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <PlayerControlStatusBar
+            control={playerControlState}
+            theme={themeStyles}
+            onTakeControl={handleTakeControl}
+            onStart={handleV9ControlStart}
+            onResume={handleResumeCoPilot}
+            onOpenControl={() => setExperienceLayer('intelligence')}
+            onReviewApproval={() => updateUiState({ showCoPilotProposalModal: true })}
+            lastDeltas={takeoverSession?.lastExecutionResult?.verifiedDeltas || null}
+          />
+        </div>
+      </div>
+    );
+
+    const renderV9PlayHud = () => {
+      const turnOwnerLabel = isPlayerTurn
+        ? 'Your turn'
+        : `${currentActor?.displayName || currentActor?.name || v9CurrentActorName}'s turn`;
+      const apLabel = v9ApFinite ? `${apRemainingNow} left` : 'Unlimited';
+      return (
+        <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3" data-testid="v9-play-hud">
+          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 ${themeStyles.shadow} grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 text-sm`}>
+            <div className="col-span-2 md:col-span-3 xl:col-span-2 min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Objective</div>
+              <div className="font-bold truncate" title={currentObjective.description}>{currentObjective.title}</div>
+              <div className="text-xs opacity-75">
+                {currentObjective.progress.completed}/{currentObjective.progress.total} requirements
+                {currentObjective.recommendedNextStep ? ` • Next: ${currentObjective.recommendedNextStep.label}` : ''}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Day</div>
+              <div className="font-bold">{gameState.day} / {gameSettings.totalDays}</div>
+              <div className="text-xs opacity-75">{isTeamMode ? `Round ${gameState.roundNumber} • ` : ''}{turnOwnerLabel}</div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Actions</div>
+              <div className="font-bold">{apLabel}</div>
+              <div className="text-xs opacity-75">{v9ApFinite ? `${v9ApUsed} used this turn` : 'Action limits off'}</div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Cash</div>
+              <div className="font-bold">${Number(player.money || 0).toLocaleString()}</div>
+              <div className="text-xs opacity-75 truncate" title={winConditionLabel}>{WIN_METRIC_PROFILES[gameSettings.winCondition]?.label || 'Win condition'}</div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Location</div>
+              <div className="font-bold truncate">{currentRegion?.name || player.currentRegion}</div>
+              <div className="text-xs opacity-75 truncate">Control: {currentRegionControllerName || 'None'}</div>
+            </div>
+          </div>
+
+          {attention.state !== 'good' && (
+            <div
+              role="alert"
+              className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm ${attention.state === 'critical' ? 'border-red-500/70' : 'border-amber-500/70'} ${themeStyles.card}`}
+            >
+              <span className="font-extrabold">{attention.state === 'critical' ? '⚠️' : '❗'} {attention.label}</span>
+              <span className="opacity-90 flex-1 min-w-[12rem]">{attention.detail}</span>
+              {attention.navigation && (
+                <button type="button" className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => openIntentNav(attention.navigation)}>
+                  {attention.navigation.label}
+                </button>
+              )}
+              <button type="button" className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => void submitIntelligenceQuery('What should I do next?')}>
+                Why? / What now?
+              </button>
+            </div>
+          )}
+
+          {uiState.intentTeaching && (
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-sm`}>
+              <div className="font-semibold">What happened</div>
+              <div>{uiState.intentTeaching.whatHappened}</div>
+              <div className="mt-1 text-xs opacity-80">Why: {uiState.intentTeaching.why}</div>
+              <button type="button" className="text-xs underline mt-1" onClick={() => updateUiState({ intentTeaching: null })}>Got it</button>
+            </div>
+          )}
+
+          {onboardingHint && (
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`}>
+              <span className="font-semibold">💡 {onboardingHint.title}</span>
+              <span className="opacity-80 flex-1 min-w-[12rem]">{onboardingHint.body}</span>
+              {onboardingHint.navigation && (
+                <button type="button" className="underline" onClick={() => openIntentNav(onboardingHint.navigation)}>{onboardingHint.navigation.label}</button>
+              )}
+              <button
+                type="button"
+                className="opacity-70 underline"
+                onClick={() => trackedSetGameSettings('direct_player_change', 'Intent onboarding', prev => ({
+                  ...prev,
+                  playerIntentOnboardingDismissed: [...(prev.playerIntentOnboardingDismissed || []), onboardingHint.id]
+                }))}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <ContextualActionPanel
+            actionSet={v9ActionSet}
+            control={playerControlState}
+            theme={themeStyles}
+            onButton={handleV9Button}
+            onShowAllActions={showAllActions}
+          />
+        </div>
+      );
+    };
+
+    const renderV9Intelligence = () => {
+      const chips = [
+        'What should I do next?',
+        'Show me the best alternatives',
+        'What is hurting my economy?',
+        'What should I focus on to win?',
+        isTeamMode ? 'What is my teammate doing?' : 'What is the opponent threatening?',
+        'What is the Co-Pilot doing?',
+        'Help me recover financially'
+      ];
+      const activity = buildActivityIntelligenceAnswer({ query: 'recent activity', control: playerControlState, session: takeoverSession, ledgerEvents: gameState.gameActivityLedger?.events || [] });
+      const compactPanel = renderCompactCoPilotPanel();
+      return (
+        <div role="tabpanel" id="v9-layer-panel-intelligence" aria-labelledby="v9-layer-tab-intelligence" className="mb-4 grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="v9-intelligence">
+          <div className="xl:col-span-2 space-y-4 min-w-0">
+            <section aria-labelledby="v9-intel-ask-heading" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow} space-y-3`}>
+              <div>
+                <h2 id="v9-intel-ask-heading" className="font-bold text-lg">🧠 Game Intelligence</h2>
+                <p className={`text-xs ${themeStyles.textMuted || 'opacity-75'}`}>
+                  Ask anything about your match. Answers come from live game state, the rules and the game's own planners — never guesses. It can also change who plays your turns.
+                </p>
+              </div>
+              <form
+                className="flex flex-col sm:flex-row gap-2"
+                onSubmit={e => { e.preventDefault(); void submitIntelligenceQuery(v9IntelQuery); }}
+              >
+                <label htmlFor="v9-intel-input" className="sr-only">Ask Game Intelligence</label>
+                <input
+                  id="v9-intel-input"
+                  type="text"
+                  value={v9IntelQuery}
+                  onChange={e => setV9IntelQuery(e.target.value)}
+                  placeholder="e.g. Can I afford this infrastructure project?"
+                  className={`flex-1 ${themeStyles.border} border rounded-lg px-3 py-2 text-sm bg-transparent`}
+                  autoComplete="off"
+                />
+                <button type="submit" disabled={v9IntelBusy || !v9IntelQuery.trim()} className={`${themeStyles.button} px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50`}>
+                  {v9IntelBusy ? 'Thinking…' : 'Ask'}
+                </button>
+              </form>
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map(chip => (
+                  <button key={chip} type="button" disabled={v9IntelBusy} onClick={() => void submitIntelligenceQuery(chip)} className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded-full text-xs`}>
+                    {chip}
+                  </button>
+                ))}
+              </div>
+              {v9IntelFeed.length > 0 && (
+                <div className="space-y-2" aria-live="polite">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Answers</span>
+                    <button type="button" className="text-xs underline opacity-80" onClick={() => setV9IntelFeed([])}>Clear</button>
+                  </div>
+                  {v9IntelFeed.slice().reverse().map(answer => (
+                    <GameIntelligenceAnswerCard key={answer.id} answer={answer} theme={themeStyles} onButton={handleV9Button} />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section aria-label="Recommended">
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Recommended · with reasons</div>
+              <ContextualActionPanel actionSet={v9ActionSet} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
+            </section>
+
+            <section aria-label="Plan">
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Plan · current goal and path</div>
+              {renderPlayerIntentStrip()}
+            </section>
+          </div>
+
+          <div className="space-y-4 min-w-0">
+            <section aria-labelledby="v9-control-heading" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow} space-y-3`}>
+              <h2 id="v9-control-heading" className="font-bold">🎛️ Control — who plays your turns</h2>
+              {playerControlState.owner === 'ai_only' ? (
+                <div className="text-sm">{playerControlState.detail}</div>
+              ) : (
+                <PlayerControlModeSelector control={playerControlState} theme={themeStyles} onSelect={setPlayerControlMode} />
+              )}
+              {playerControlState.owner !== 'ai_only' && (
+                <div className="flex flex-wrap gap-2">
+                  {playerControlState.canTakeControl && (
+                    <button type="button" onClick={handleTakeControl} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold">🛑 Take Control</button>
+                  )}
+                  {!playerControlState.copilotHoldsControl && isPlayerTurn && (
+                    <button type="button" onClick={() => handleV9Button({ id: 'take_over_turn', label: 'Take Over This Turn', kind: 'take_over_turn' })} className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`}>
+                      🛟 Let Co-Pilot take this turn
+                    </button>
+                  )}
+                  {playerControlState.mode === 'autonomous' && playerControlState.canStart && !playerControlState.canResume && (
+                    <button type="button" onClick={handleV9ControlStart} className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold">▶ Start Co-Pilot</button>
+                  )}
+                  {playerControlState.canResume && (
+                    <button type="button" onClick={handleResumeCoPilot} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">▶️ Resume Co-Pilot</button>
+                  )}
+                </div>
+              )}
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Explanations of Co-Pilot moves</div>
+                <div className="flex flex-wrap gap-1 text-[11px]">
+                  {([
+                    { id: 'routine_off' as CoPilotExplainMode, label: "Skip routine sales" },
+                    { id: 'high_impact' as CoPilotExplainMode, label: 'High-impact only' },
+                    { id: 'every' as CoPilotExplainMode, label: 'Explain every action' }
+                  ]).map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={gameSettings.playerIntentExplainMode === opt.id}
+                      className={`px-2 py-0.5 rounded border ${gameSettings.playerIntentExplainMode === opt.id ? themeStyles.button : `${themeStyles.border} opacity-80`}`}
+                      onClick={() => trackedSetGameSettings('direct_player_change', 'Co-Pilot teaching', prev => ({
+                        ...prev,
+                        playerIntentExplainMode: opt.id,
+                        playerIntentExplainRoutineActions: opt.id === 'every'
+                      }))}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button type="button" className="text-xs underline opacity-80" onClick={() => navigateToSettings('aiTeams', 'aiTeams.coPilot')}>
+                Advanced Co-Pilot permissions (LAB)
+              </button>
+            </section>
+
+            {compactPanel && (
+              <section aria-label="Co-Pilot assessment">
+                <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Co-Pilot & Guardian assessment</div>
+                {compactPanel}
+              </section>
+            )}
+
+            <section aria-labelledby="v9-activity-heading" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow} space-y-1 text-sm`}>
+              <h2 id="v9-activity-heading" className="font-bold">🕘 Recent Activity</h2>
+              {activity.lines.slice(0, 8).map((line, i) => <p key={i} className={i === 0 ? 'font-semibold' : 'text-xs opacity-90'}>{line}</p>)}
+              <button type="button" className="text-xs underline opacity-80" onClick={() => openIntentNav(navAction('ledger', 'Open Activity Ledger'))}>Open Activity Ledger</button>
+            </section>
+          </div>
+        </div>
+      );
+    };
+
+    const renderV9Lab = () => (
+      <div role="tabpanel" id="v9-layer-panel-lab" aria-labelledby="v9-layer-tab-lab" className="mb-4">
+        <LabWorkspace
+          entries={buildV9LabEntries()}
+          theme={themeStyles}
+          technicalRows={v9TechnicalRows()}
+          interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
+          onRunSelfTests={() => setV9SelfTestResults(runV9ExperienceSelfTests())}
+          selfTestResults={v9SelfTestResults}
+        />
+      </div>
+    );
+
     const renderHudTransitBanner = () => {
       if (!isActorInTransit(player)) return null;
       const journey = player.activeJourney;
@@ -144268,55 +147173,18 @@ function dispatchGameSettingsChange(
         {/* HUD Transit Banner */}
         {renderHudTransitBanner()}
 
-        {renderPlayerIntentStrip()}
-
-        {/* Co-Pilot Live Turn Indicator & Control Surface (Requirement 4) */}
-        {(takeoverSession || coPilotManualOverride || canStartCoPilot) && (
-          <CoPilotLiveTurnIndicator
-            takeoverSession={takeoverSession}
-            isPlayerTurn={isPlayerTurn}
-            rivalActorName={aiPlayer?.name || 'Rival AI'}
-            canStartCoPilot={canStartCoPilot}
-            onStartCoPilot={handleStartCoPilot}
-            onTakeControl={() => {
-              setCoPilotManualOverride(true);
-              const revoked = takeoverSession ? interruptCoPilotTakeover(takeoverSession, 'manual_player_interrupt', gameState, { appendReplayEvent, dispatchLedgerEvent: dispatchAuthoritativeGameActivityLedgerEvent }) : null;
-              setTakeoverSession(revoked ? { ...revoked, manualStopLatched: true, sessionToken: undefined } : null);
-              COPILOT_COMMITTED_ACTION_TOKENS.clear();
-              addNotification('Human player took control back from Co-Pilot immediately.', 'warning', false, 'system');
-            }}
-            onResumeCoPilot={() => {
-              setCoPilotManualOverride(false);
-              const cpSettings = resolveCanonicalCoPilotSettings(gameSettings?.coPilotSettings || gameState?.coPilotSettings, gameState, gameSettings);
-              const resumed = resumeCoPilotTakeoverSession(takeoverSession, gameState, cpSettings, isPlayerTurn);
-              setTakeoverSession(resumed);
-              recordDiag2Event('COPILOT_RESUME', {
-                currentActorId: gameState?.currentActorId,
-                turnCounter: gameState?.turnCounter ?? gameState?.turn,
-                currentTurnCount: resumed?.currentTurnCount,
-                sessionToken: resumed?.sessionToken,
-                writer: 'ui_resume',
-                prevStatus: takeoverSession?.status,
-                nextStatus: resumed?.status
-              });
-              if (resumed && (isCoPilotSessionExecutable(resumed) || resumed.status === 'waiting_for_other_players' || resumed.status === 'planning' || resumed.status === 'active')) {
-                addNotification('Autonomous Co-Pilot resumed control.', 'success', false, 'system');
-              }
-            }}
-            onOpenSettings={() => updateUiState({ showSettings: true, settingsActiveTab: 'autoMode', settingsSectionTarget: 'autoMode.main' })}
-            lastDeltas={takeoverSession?.lastExecutionResult?.verifiedDeltas ? {
-              cashDelta: takeoverSession.lastExecutionResult.verifiedDeltas.cashDelta,
-              netWorthDelta: takeoverSession.lastExecutionResult.verifiedDeltas.netWorthDelta,
-              apDelta: takeoverSession.lastExecutionResult.verifiedDeltas.apDelta
-            } : undefined}
-          />
-        )}
+        {/* V9: PLAY | INTELLIGENCE | LAB + the single persistent Human/AI control status.
+            (Replaces the separate CoPilotLiveTurnIndicator banner; same Take Control / Resume / Start paths.) */}
+        {renderV9Header()}
+        {experienceLayer === 'play' && renderV9PlayHud()}
+        {experienceLayer === 'intelligence' && renderV9Intelligence()}
+        {experienceLayer === 'lab' && renderV9Lab()}
 
         {/* Day Transition Screen */}
         {renderDayTransitionScreen()}
 
         {/* Quick Actions Bar - only show on player turn when not suppressed by blocking modal */}
-        {isPlayerTurn && getQuickActions.length > 0 && uiState.quickActionsOpen && !uiState.showQuickActionsCustomizer && !uiState.showSettings && !surfaceState.activeBlockingModal && !globalUISurfaceManager.isWidgetSuppressed('quick_actions') && shouldShowWidgetContextually('quick_actions', resolveCurrentGamePhase(gameState, uiState, surfaceState), gameState, gameSettings, surfaceState, gameSettings?.presetSettings?.activePreset || 'Current/Custom') && (
+        {experienceLayer === 'play' && isPlayerTurn && getQuickActions.length > 0 && uiState.quickActionsOpen && !uiState.showQuickActionsCustomizer && !uiState.showSettings && !surfaceState.activeBlockingModal && !globalUISurfaceManager.isWidgetSuppressed('quick_actions') && shouldShowWidgetContextually('quick_actions', resolveCurrentGamePhase(gameState, uiState, surfaceState), gameState, gameSettings, surfaceState, gameSettings?.presetSettings?.activePreset || 'Current/Custom') && (
           <div className={`fixed ${quickActionCompact ? "bottom-2" : "bottom-6"} left-1/2 -translate-x-1/2 z-40`}>
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 ${themeStyles.shadow}`}>
               {/* Quick Actions Domain Filter & Customization Toolbar */}
@@ -144431,13 +147299,17 @@ function dispatchGameSettingsChange(
           </div>
         )}
 
-        <QuickActionsReopenHandle
-          uiState={uiState}
-          gameSettings={gameSettings}
-          gameState={gameState}
-          updateUiState={updateUiState}
-        />
-        
+        {experienceLayer === 'play' && (
+          <QuickActionsReopenHandle
+            uiState={uiState}
+            gameSettings={gameSettings}
+            gameState={gameState}
+            updateUiState={updateUiState}
+          />
+        )}
+
+        {/* V9: the classic board (status, map, region, full action bar, stats) is the PLAY layer. */}
+        {experienceLayer === 'play' && (<>
 	        {/* Top Status Bar */}
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 mb-4 ${themeStyles.shadow}`}>
 	          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -145362,197 +148234,8 @@ function dispatchGameSettingsChange(
         );
       })()}
 
-        {/* Compact In-Game Co-Pilot Panel */}
-        {(() => {
-          const coPilotSettings = gameSettings?.coPilotSettings;
-          const coPilotEnabled = Boolean(coPilotSettings?.coPilotEnabled);
-          const authorityMode = coPilotSettings?.authorityMode || 'off';
-          const shouldShowCompactCoPilotPanel = isCompactCoPilotPanelVisible(
-            isPlayerTurn,
-            coPilotEnabled,
-            authorityMode,
-            coPilotPanelDismissedTurn,
-            gameState.turnCounter
-          );
-
-          if (!shouldShowCompactCoPilotPanel) return null;
-          if (uiState.showSettings) {
-            return null;
-          }
-          const profileArmed = gameSettings?.smartSettingsProfile?.coPilotMode === 'autonomous_takeover' || coPilotArmedPendingStart;
-          if (profileArmed && !isCoPilotSessionExecutable(takeoverSession)) {
-            return (
-              <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-indigo-950/95 border border-indigo-500/50 text-indigo-100 text-xs font-semibold shadow-lg">
-                Autonomous armed — press Start Co-Pilot
-              </div>
-            );
-          }
-          if (authorityMode === 'full_co_pilot' || authorityMode === 'autonomous_takeover' || isCoPilotSessionExecutable(takeoverSession)) {
-            return (
-              <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-indigo-950/95 border border-indigo-500/50 text-indigo-100 text-xs font-semibold shadow-lg">
-                Co-Pilot Autonomous is playing Adam’s turn
-              </div>
-            );
-          }
-
-          let humanCondition: any = null;
-          let problems: any[] = [];
-          let primaryProblem: any = null;
-          let recommendations: any[] = [];
-          let topRecommendation: any = null;
-          try {
-            humanCondition = evaluateHumanStrategicCondition(coPilotViewState, 'player');
-            problems = detectCoPilotProblems(coPilotViewState, humanCondition);
-            primaryProblem = problems.length > 0 ? problems[0] : null;
-            const intent = evaluateCoPilotIntentContext(coPilotViewState, problems);
-            recommendations = generateCoPilotRecommendations(coPilotViewState, humanCondition, problems, intent);
-            const evaluation = typeof generateCoPilotPlayerActionCandidates === 'function'
-              ? generateCoPilotPlayerActionCandidates(coPilotRuntimeContext)
-              : null;
-            const legal = listLegalCoPilotCandidates(evaluation, getRemainingActionPoints(player, gameSettings));
-            const rawTop = recommendations.length > 0 ? recommendations[0] : null;
-            topRecommendation = alignCoPilotRecommendationToLegalCandidate(
-              rawTop,
-              legal,
-              player?.id || 'player',
-              gameState.turnCounter || gameState.day || 1
-            );
-          } catch (err) {
-            console.error('[Compact Co-Pilot Panel] diagnostic render failed', err);
-            return null;
-          }
-
-          const getConditionGradeBadgeClass = (statusGrade?: string) => {
-            switch (statusGrade) {
-              case 'EXCELLENT':
-                return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
-              case 'STABLE':
-              case 'GOOD':
-                return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
-              case 'VULNERABLE':
-              case 'WARNING':
-                return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
-              case 'CRITICAL':
-                return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
-              case 'EMERGENCY':
-              case 'BANKRUPT':
-                return 'bg-red-700/30 text-red-200 border-red-500/60 animate-pulse';
-              default:
-                return 'bg-gray-500/20 text-gray-300 border-gray-500/40';
-            }
-          };
-
-          const handleAcceptTopMove = () => {
-            setCoPilotManualOverride(false);
-            if (!topRecommendation) return;
-            executeCoPilotRecommendationAsHuman(topRecommendation);
-          };
-
-          return (
-            <div className="bg-slate-900/90 border border-sky-500/40 rounded-xl p-3.5 shadow-xl mb-4 backdrop-blur-sm transition-all">
-              {/* Header Row */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5 pb-2 border-b border-gray-700/50">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">🤖</span>
-                  <span className="font-bold text-sm text-white">Co-Pilot Assistant</span>
-                  
-                  {/* Condition Grade Badge */}
-                  <span className={`px-2 py-0.5 rounded text-xs font-extrabold border ${getConditionGradeBadgeClass(humanCondition.overallStatusGrade)}`}>
-                    {humanCondition.overallStatusGrade}
-                  </span>
-
-                  {/* Authority Mode Badge */}
-                  <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700 text-[11px]">
-                    Mode: {coPilotSettings.authorityMode}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateUiState({ showCoPilotModal: true });
-                    }}
-                    className="px-2.5 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white transition-colors flex items-center gap-1"
-                  >
-                    <span>💬</span> Ask Co-Pilot
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateUiState({ showCoPilotRecommendationsModal: true });
-                    }}
-                    className="px-2.5 py-1 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center gap-1"
-                  >
-                    <span>📋</span> View Recommendations
-                  </button>
-
-                  {topRecommendation && (
-                    <button
-                      type="button"
-                      onClick={handleAcceptTopMove}
-                      disabled={!isPlayerTurn}
-                      className="px-2.5 py-1 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
-                    >
-                      <span>⚡</span> Accept Top Move
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setCoPilotPanelDismissedTurn(gameState.turnCounter)}
-                    className="px-2 py-1 text-xs text-gray-400 hover:text-white transition-colors"
-                    title="Dismiss panel for current turn"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-
-              {currentObjective && (
-                <div className="text-xs text-sky-200 mb-2">
-                  Current tracked objective: {currentObjective.title}
-                </div>
-              )}
-
-              {/* Body Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                {/* Primary Problem / Risk Summary */}
-                <div className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
-                  <div className="text-[11px] font-semibold text-rose-300 uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <span>⚠️</span> Primary Detected Risk
-                  </div>
-                  <div className="text-gray-200">
-                    {primaryProblem ? primaryProblem.description : 'No active strategic hazards detected. Operational condition stable.'}
-                  </div>
-                </div>
-
-                {/* Top Recommended Move */}
-                <div className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-2.5">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
-                      <span>🎯</span> Recommended Action
-                    </span>
-                    {topRecommendation && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                        {Math.round(topRecommendation.confidenceScore)}% Confidence
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-gray-200 font-medium">
-                    {topRecommendation ? topRecommendation.title : 'Maintain standard regional progression plan.'}
-                  </div>
-                  <div className="text-gray-400 text-[11px] mt-0.5 line-clamp-1">
-                    {topRecommendation ? topRecommendation.reasoningSummary : 'No action required.'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-        
-        {/* Action Buttons Bar */}
+        {/* Action Buttons Bar (V9: the complete action set — "More Actions" scrolls here) */}
+        <div id="v9-all-actions-bar" />
         {simplifiedActionBarActive ? (
           <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 mb-4 ${themeStyles.shadow}`}>
             <div className="flex flex-wrap gap-2 items-start">
@@ -146553,7 +149236,9 @@ function dispatchGameSettingsChange(
           </div>
         </div>
         
-        {/* Modals */}
+        </>)}
+
+        {/* Modals — rendered on every layer so deep links from INTELLIGENCE / LAB open in place. */}
         {renderAiStatsModal()}
         {renderProgressDashboard()}
         {renderHelpModal()}
