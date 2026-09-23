@@ -38242,7 +38242,42 @@ export interface AskGameToolExecutionResult {
   timestamp: number;
   result: any;
   error?: string;
+  /** The dependency is declared but has no grounded implementation (reported, never silently dropped). */
+  unavailable?: boolean;
 }
+
+/**
+ * Canonical routing for intent tool dependencies. Registry dependency names map to the grounded
+ * dispatcher where a faithful implementation exists; the rest are reported as explicitly
+ * unavailable (Game Intelligence 2.0 answers those from live state instead of estimated numbers).
+ */
+export const ASK_GAME_TOOL_DEPENDENCY_ROUTES: Record<string, string | null> = {
+  validateactionrules: 'validate_action',
+  getgamesettings: 'inspect_settings',
+  searchsettingsregistry: 'search_settings',
+  getplayerstatus: null,
+  getregioninfo: null,
+  getmarketprices: null,
+  getcontractdetails: null,
+  getinfrastructurestatus: null,
+  getexpeditionstatus: null,
+  getaibehaviorlog: null,
+  getaistrategycontext: null,
+  geteconomydiagnostics: null,
+  getrecommendedaction: null,
+  getrecommendedsequence: null,
+  rundryrunsimulation: null,
+  checkaffordability: null,
+  getteammatediagnostics: null,
+  getgovernancestatus: null,
+  getactivityledger: null,
+  getreplaybranchdata: null,
+  getcreditloanstatus: null,
+  getdominancetracker: null,
+  getcrisisstabilitystatus: null,
+  getgeneralhelpcontext: null,
+  getgamerulesdoc: null
+};
 
 // ----------------------------------------------------------------------------
 // GROUNDED TOOL IMPLEMENTATIONS
@@ -38954,7 +38989,21 @@ export function executeAskGameTool(
 
   try {
     let result: any = null;
-    const normalizedToolName = (toolName || '').toLowerCase().trim();
+    let normalizedToolName = (toolName || '').toLowerCase().trim();
+    if (Object.prototype.hasOwnProperty.call(ASK_GAME_TOOL_DEPENDENCY_ROUTES, normalizedToolName)) {
+      const routed = ASK_GAME_TOOL_DEPENDENCY_ROUTES[normalizedToolName];
+      if (!routed) {
+        return {
+          success: false,
+          unavailable: true,
+          toolName,
+          timestamp,
+          result: null,
+          error: `'${toolName}' has no grounded implementation; Game Intelligence answers this from live game state.`
+        };
+      }
+      normalizedToolName = routed;
+    }
 
     switch (normalizedToolName) {
       case 'validate_action':
@@ -99031,6 +99080,11 @@ export interface GameIntelligenceAnswer {
   grounded: boolean;
   /** Authority DECREASES only. Increases always come back as an explicit button. */
   immediate?: GameIntelligenceImmediateCommand | null;
+  /** Game Intelligence 2.0: structured, verified claims grouped by answer section. */
+  sections?: GIAnswerSection[];
+  /** Game Intelligence 2.0: confidence, freshness and plan metadata. */
+  gi?: GIAnswerMeta;
+  clarification?: boolean;
 }
 
 export type GameIntelligenceRoute =
@@ -99818,24 +99872,75 @@ export interface GameIntelligenceAnswerCardProps {
   answer: GameIntelligenceAnswer;
   theme: V9Theme;
   onButton: (button: GameIntelligenceButton) => void;
+  /** Current world fingerprint; an answer built on an older state is marked stale and loses Do It. */
+  currentFingerprint?: string;
+  onRefresh?: (query: string) => void;
 }
 
-export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProps> = ({ answer, theme, onButton }) => {
+const GI_CERTAINTY_BADGE: Partial<Record<GICertainty, string>> = {
+  high: 'bg-sky-700 text-white',
+  moderate: 'bg-amber-600 text-white',
+  low: 'bg-red-700 text-white',
+  projected: 'bg-indigo-600 text-white',
+  unknown: 'bg-slate-600 text-white'
+};
+
+export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProps> = ({ answer, theme, onButton, currentFingerprint, onRefresh }) => {
   const [showEvidence, setShowEvidence] = useState(false);
+  const stale = Boolean(currentFingerprint && isGIAnswerStale(answer, currentFingerprint));
+  const followUps = answer.buttons.filter(b => b.id.startsWith('fu_'));
+  const actions = answer.buttons.filter(b => !b.id.startsWith('fu_') && !(stale && (b.kind === 'do' || b.kind === 'end_turn')));
+  const claimBadge = (c: GIClaim): string | null => {
+    if (c.kind === 'prediction') return 'Prediction';
+    if (c.kind === 'projection') return c.certainty === 'projected' ? 'Projected' : `Projected · ${certaintyLabel(c.certainty).toLowerCase()}`;
+    if (c.kind === 'inference' && c.certainty !== 'confirmed') return certaintyLabel(c.certainty);
+    return null;
+  };
   return (
     <article className={`${theme.card} ${theme.border} border rounded-xl p-3 space-y-2`} aria-label={answer.title} data-testid="v9-intel-answer">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs opacity-70">You asked: “{answer.query}”</div>
-        <div className="text-[10px] opacity-70">Sources: {answer.sourceSystems.join(', ')}</div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] opacity-80">
+          {answer.gi && <span className="px-1.5 py-0.5 rounded border border-current" title={`Confidence ${Math.round(answer.gi.confidence * 100)}%`}>{answer.gi.confidenceLabel}</span>}
+          <span>Sources: {answer.sourceSystems.join(', ') || '—'}</span>
+        </div>
       </div>
       <div className="font-bold">{answer.title}</div>
-      {!answer.grounded && <div className="text-xs text-amber-500 font-semibold">Limited evidence — treat this as incomplete.</div>}
-      <div className="text-sm space-y-1">
-        {answer.lines.map((line, i) => <p key={i}>{line}</p>)}
-      </div>
-      {answer.buttons.length > 0 && (
+      {stale && (
+        <div role="status" className="text-xs border border-amber-500/60 rounded-lg px-2 py-1 flex flex-wrap items-center gap-2">
+          <span>The game state has changed since this answer — actions are hidden until it is refreshed.</span>
+          {onRefresh && <button type="button" className="underline font-semibold" onClick={() => onRefresh(answer.query)}>Refresh answer</button>}
+        </div>
+      )}
+      {answer.gi?.freshnessNote && !stale && <div className="text-xs opacity-80">{answer.gi.freshnessNote}</div>}
+      {!answer.grounded && !answer.clarification && <div className="text-xs text-amber-500 font-semibold">Limited evidence — treat this as incomplete.</div>}
+      {answer.sections && answer.sections.length > 0 ? (
+        <div className="text-sm space-y-2">
+          {answer.sections.map(sec => (
+            <section key={sec.id} aria-label={sec.heading || undefined}>
+              {sec.heading && <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">{sec.heading}</div>}
+              <ul className="space-y-0.5">
+                {sec.claims.map(c => {
+                  const badge = claimBadge(c);
+                  return (
+                    <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
+                      <span>{c.text}</span>
+                      {badge && <span className={`text-[10px] px-1.5 rounded ${GI_CERTAINTY_BADGE[c.certainty] || 'bg-slate-600 text-white'}`}>{badge}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm space-y-1">
+          {answer.lines.map((line, i) => <p key={i}>{line}</p>)}
+        </div>
+      )}
+      {actions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {answer.buttons.map(b => (
+          {actions.map(b => (
             <button
               key={b.id}
               type="button"
@@ -99847,10 +99952,18 @@ export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProp
           ))}
         </div>
       )}
+      {followUps.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] opacity-70">You could ask:</span>
+          {followUps.map(b => (
+            <button key={b.id} type="button" onClick={() => onButton(b)} className={`${theme.buttonSecondary} px-2 py-0.5 rounded-full text-[11px]`}>{b.label}</button>
+          ))}
+        </div>
+      )}
       {answer.evidence.length > 0 && (
         <div>
           <button type="button" className="text-xs underline opacity-80" aria-expanded={showEvidence} onClick={() => setShowEvidence(v => !v)}>
-            {showEvidence ? 'Hide evidence' : `Show evidence (${answer.evidence.length})`}
+            {showEvidence ? 'Hide evidence' : `Show evidence & numbers (${answer.evidence.length})`}
           </button>
           {showEvidence && (
             <ul className="mt-1 text-[11px] space-y-0.5 opacity-85">
@@ -99893,9 +100006,11 @@ export interface LabWorkspaceProps {
   interfaceLevelLabel: string;
   onRunSelfTests: () => void;
   selfTestResults: V9SelfTestResult[] | null;
+  /** Recent Game Intelligence plans (structured execution metadata only — no hidden AI state). */
+  giDiagnostics?: GIDiagnostics[];
 }
 
-export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, technicalRows, interfaceLevelLabel, onRunSelfTests, selfTestResults }) => {
+export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, technicalRows, interfaceLevelLabel, onRunSelfTests, selfTestResults, giDiagnostics }) => {
   const [filter, setFilter] = useState('');
   const q = filter.trim().toLowerCase();
   const visible = q ? entries.filter(e => `${e.title} ${e.description} ${LAB_GROUP_META[e.group].title}`.toLowerCase().includes(q)) : entries;
@@ -99946,6 +100061,36 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
           </section>
         ))}
       </div>
+      <section aria-label="Game Intelligence inspector" className={`${theme.card} ${theme.border} border rounded-xl p-3`} data-testid="v9-gi-inspector">
+        <h3 className="font-bold text-sm mb-1">🧠 Game Intelligence inspector</h3>
+        <p className={`text-[11px] mb-2 ${theme.textMuted || 'opacity-75'}`}>How recent questions were understood, planned and verified. Execution metadata only.</p>
+        {!giDiagnostics?.length ? (
+          <div className="text-xs opacity-70">Ask something in INTELLIGENCE to see its plan here.</div>
+        ) : (
+          <div className="space-y-2">
+            {giDiagnostics.slice().reverse().map(d => (
+              <details key={`${d.queryId}_${d.planId}`} className={`${theme.border} border rounded-lg px-2 py-1 text-[11px]`}>
+                <summary className="cursor-pointer font-semibold">“{d.normalizedQuery}” — {d.queryType} · {d.primary} · {Math.round(d.confidence * 100)}%</summary>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 mt-1 font-mono">
+                  <div><dt className="inline opacity-70">supporting: </dt><dd className="inline">{d.supporting.join(', ') || '—'}</dd></div>
+                  <div><dt className="inline opacity-70">domains: </dt><dd className="inline">{d.domains.join(', ') || '—'}</dd></div>
+                  <div><dt className="inline opacity-70">entities: </dt><dd className="inline">{d.entities.join(', ') || '—'}</dd></div>
+                  <div><dt className="inline opacity-70">references: </dt><dd className="inline">{[...d.resolvedReferences, ...d.unresolvedReferences.map(r => `${r} (unresolved)`)].join(', ') || '—'}</dd></div>
+                  <div><dt className="inline opacity-70">options: </dt><dd className="inline">{d.options.join(', ') || '—'}</dd></div>
+                  <div><dt className="inline opacity-70">budget: </dt><dd className="inline">{d.steps.length}/{d.budget}{d.droppedSteps.length ? ` (dropped ${d.droppedSteps.join(', ')})` : ''}</dd></div>
+                  <div><dt className="inline opacity-70">evidence: </dt><dd className="inline">{d.evidenceCount} facts · graph {d.graphNodes}/{d.graphEdges}</dd></div>
+                  <div><dt className="inline opacity-70">freshness: </dt><dd className="inline">{d.freshness}{d.fallbackUsed ? ' · Ask-the-Game fallback' : ''}{d.clarification ? ' · clarification' : ''}</dd></div>
+                  <div><dt className="inline opacity-70">verification: </dt><dd className="inline">{d.verification.passed ? `passed (${d.verification.checked} claims)` : `removed ${d.verification.removed.length}: ${d.verification.removed.map(r => r.reason).join('; ')}`}</dd></div>
+                  <div><dt className="inline opacity-70">ask intent: </dt><dd className="inline">{d.askIntent}</dd></div>
+                </dl>
+                <ol className="mt-1 list-decimal ml-5 font-mono">
+                  {d.steps.map(st => <li key={st.id}>{st.tool} — {st.status}{st.error ? ` (${st.error})` : ''}</li>)}
+                </ol>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
       <section aria-label="Technical control state" className={`${theme.card} ${theme.border} border rounded-xl p-3`}>
         <h3 className="font-bold text-sm mb-2">🔧 Technical Co-Pilot state</h3>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
@@ -99955,7 +100100,7 @@ export const LabWorkspace: React.FC<LabWorkspaceProps> = ({ entries, theme, tech
         </dl>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" onClick={onRunSelfTests} className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs font-semibold`} data-testid="v9-run-self-tests">
-            Run V9 experience self-tests
+            Run V9 + Game Intelligence self-tests
           </button>
           {selfTestResults && <span className="text-xs font-semibold">{passed}/{selfTestResults.length} passed</span>}
         </div>
@@ -100211,6 +100356,3186 @@ export function runV9ExperienceSelfTests(): V9SelfTestResult[] {
   check('layer_sanitize', 'Layer navigation state sanitizes to PLAY by default', () => (
     sanitizeExperienceLayer(undefined) === 'play' && sanitizeExperienceLayer('lab') === 'lab' && sanitizeExperienceLayer('bogus') === 'play'
   ) || 'bad sanitize');
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20C: GAME INTELLIGENCE 2.0
+// ----------------------------------------------------------------------------
+// Question → Normalize → Conversation context → Entities → Query understanding
+// → Primary + supporting intents → Query plan → Evidence routing → Grounded tools
+// → Evidence graph → Analysis (lookup / diagnosis / comparison / simulation /
+// planning / prediction / conflicts) → Answer plan → Composition → Claim,
+// permission and freshness verification → Answer + actions + follow-ups.
+//
+// Deterministic, browser-native and grounded. Everything the pipeline says comes
+// from the authorized GIWorld snapshot (built from live state by the component),
+// canonical validators, the Contextual Action System, the canonical reducer
+// (rollback-safe, run on a clone) or the existing Ask-the-Game engine. Plans,
+// graphs and claims are structured execution metadata — never shown as a
+// reasoning trace (LAB exposes the metadata for debugging only).
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. AUTHORIZED WORLD SNAPSHOT
+// ----------------------------------------------------------------------------
+
+export type GICertainty = 'confirmed' | 'high' | 'moderate' | 'low' | 'projected' | 'unknown';
+export type GIFactCertainty = 'confirmed' | 'observed' | 'calculated' | 'projected' | 'estimated' | 'inferred';
+
+export interface GIRegionView {
+  code: string;
+  name: string;
+  resources: string[];
+  controllerId: string | null;
+  controllerLabel: string;
+  controlledByPlayer: boolean;
+  controlledByRival: boolean;
+  playerDeposit: number;
+  rivalDeposit: number;
+  /** Deposit the player needs to take control (0 when already controlling). */
+  playerCostToControl: number | null;
+  /** Deposit the rival side needs to take control from its current position. */
+  rivalCostToControl: number | null;
+  travelCost: number | null;
+  isHere: boolean;
+  adjacent: string[];
+  devTier: number | null;
+}
+
+export interface GIProjectView {
+  id: string;
+  title: string;
+  regionId: string;
+  totalCost: number;
+  invested: number;
+  remaining: number;
+  status: string;
+  requiredDevTier: number | null;
+  regionDevTier: number | null;
+  maintenancePerTurn: number;
+  description: string;
+  /** Smallest funding step the Infrastructure screen offers. */
+  fundingIncrement: number;
+}
+
+export interface GIContractView {
+  id: string;
+  title: string;
+  regionId: string;
+  status: string;
+  requiredMoney: number | null;
+  rewardMoney: number | null;
+  turnsRemaining: number | null;
+  blocker: string | null;
+  assignedToPlayer: boolean;
+}
+
+export interface GIActorView {
+  id: string;
+  name: string;
+  relation: 'self' | 'teammate' | 'rival';
+  kind: 'human' | 'ai';
+  money: number | null;
+  location: string | null;
+  regionsControlled: number | null;
+  /** False when the settings (e.g. fog of war) hide this actor's details. */
+  visible: boolean;
+}
+
+export interface GIObservedEvent {
+  day: number | null;
+  actorId: string | null;
+  actorName: string;
+  summary: string;
+  kind: string;
+}
+
+export interface GISimSnapshot {
+  cash: number;
+  apRemaining: number | null;
+  location: string;
+  inventoryCount: number;
+  deposits: Record<string, number>;
+}
+
+export interface GISimulationOutcome {
+  ok: boolean;
+  error?: string;
+  /** deterministic: fully determined by rules; estimated: uses a price/amount assumption; uncertain: random outcome. */
+  certainty: 'deterministic' | 'estimated' | 'uncertain';
+  before: GISimSnapshot;
+  after: GISimSnapshot;
+  cashDelta: number;
+  apDelta: number | null;
+  locationChange: { from: string; to: string } | null;
+  inventoryDelta: Record<string, number>;
+  depositDelta: Record<string, number>;
+  branches?: Array<{ label: string; cashDelta: number }>;
+  notes: string[];
+  /** True when the canonical reducer made no change (the action would not execute). */
+  noEffect: boolean;
+}
+
+export interface GISimulationIntent {
+  actionType: string;
+  parameters?: Record<string, any>;
+  targetId?: string;
+  costEstimate?: number;
+  randomOutcome?: boolean;
+  /** Several canonical actions applied in order on the same clone (e.g. selling every resource). */
+  chain?: GISimulationIntent[];
+}
+
+export interface GIWorld {
+  fingerprint: string;
+  day: number;
+  totalDays: number;
+  turn: number;
+  isHumanTurn: boolean;
+  currentActorName: string;
+  isTeamMode: boolean;
+  isAiOnly: boolean;
+  negotiationMode: boolean;
+  /** The amount the region Deposit button currently uses (the player's own input). */
+  defaultDepositAmount: number | null;
+  player: {
+    id: string;
+    name: string;
+    money: number;
+    apRemaining: number | null;
+    apUsed: number;
+    apTotal: number | null;
+    location: string;
+    locationName: string;
+    inventory: Record<string, number>;
+    loans: Array<{ amount: number; rate: number | null; daysRemaining: number | null }>;
+    debtTotal: number;
+  };
+  reserveFloor: number | null;
+  reserveSource: string | null;
+  win: {
+    id: string;
+    label: string;
+    metricLabel: string;
+    playerValue: number;
+    opponentValue: number;
+    lines: string[];
+    regionsTarget: number | null;
+    playerRegions: number;
+    rivalRegions: number;
+  } | null;
+  objective: CurrentObjective | null;
+  attention: PlayerAttentionSnapshot | null;
+  actionSet: ContextualActionSet | null;
+  control: PlayerControlState;
+  regions: Record<string, GIRegionView>;
+  market: Record<string, number>;
+  projects: GIProjectView[];
+  contracts: GIContractView[];
+  actors: GIActorView[];
+  observed: GIObservedEvent[];
+  primaryRivalId: string | null;
+  teammateIds: string[];
+  settings: { fogOfWar: boolean; aiMemoryFullInspection: boolean; experienceLevel: string };
+  /** The human's own Co-Pilot session and visible ledger events (for "what is Co-Pilot doing?"). */
+  session?: CoPilotTakeoverSession | null;
+  ledgerEvents?: any[];
+  tools: {
+    simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
+    searchSettings?: (query: string) => any;
+    validateAp?: (actionType: string) => { valid: boolean; reason?: string; apCost?: number };
+  };
+}
+
+/** Canonical rollback-safe simulation: the pure canonical reducer on a clone, with the global RNG restored. */
+export function simulateGIActionOnClone(
+  liveState: any,
+  actorId: string,
+  intent: GISimulationIntent,
+  gameSettings: any
+): GISimulationOutcome {
+  const snap = (st: any): GISimSnapshot => {
+    const actor = st?.actorsById?.[actorId] || (actorId === 'player' ? st?.player : null) || {};
+    const inv = Array.isArray(actor.inventory) ? actor.inventory : [];
+    const depositsSrc = st?.gameState?.regionDeposits || st?.regionDeposits || {};
+    const deposits: Record<string, number> = {};
+    Object.keys(depositsSrc || {}).forEach(code => {
+      const v = Number(depositsSrc[code]?.[actorId] || 0);
+      if (v) deposits[code] = v;
+    });
+    const ap = getRemainingActionPoints(actor, gameSettings);
+    return {
+      cash: Number(actor.money) || 0,
+      apRemaining: Number.isFinite(ap) ? ap : null,
+      location: String(actor.currentRegion || ''),
+      inventoryCount: inv.length,
+      deposits
+    };
+  };
+  const countInv = (st: any): Record<string, number> => {
+    const actor = st?.actorsById?.[actorId] || (actorId === 'player' ? st?.player : null) || {};
+    const out: Record<string, number> = {};
+    (Array.isArray(actor.inventory) ? actor.inventory : []).forEach((it: any) => {
+      const k = typeof it === 'string' ? it : String(it?.name || it?.id || 'item');
+      out[k] = (out[k] || 0) + 1;
+    });
+    return out;
+  };
+  const before = snap(liveState);
+  const beforeInv = countInv(liveState);
+  const rngBackup = (() => {
+    try { return JSON.stringify(globalRngRegistry.streams); } catch { return null; }
+  })();
+  const incidentCount = globalRngRegistry.incidentLog.length;
+  const certified = globalRngRegistry.isReplayCertified;
+  const runOnce = (params?: Record<string, any>): any => {
+    const steps = intent.chain?.length ? intent.chain : [intent];
+    let st: any = liveState;
+    steps.forEach((step, i) => {
+      st = executeCanonicalGameplayActionIntent(i === 0 ? st : { gameState: st.gameState || st, player: st.actorsById?.[actorId] || st.player, actorsById: st.actorsById, aiPlayer: st.aiPlayer, teamsById: st.teamsById }, {
+        actionType: step.actionType,
+        actorId,
+        parameters: { ...(step.parameters || {}), ...(params || {}) },
+        targetId: step.targetId,
+        costEstimate: step.costEstimate
+      });
+    });
+    return st;
+  };
+  const restoreRng = () => {
+    try {
+      if (rngBackup) {
+        const parsed = JSON.parse(rngBackup);
+        Object.keys(parsed).forEach(k => { (globalRngRegistry.streams as any)[k] = parsed[k]; });
+      }
+      globalRngRegistry.incidentLog.length = Math.min(globalRngRegistry.incidentLog.length, incidentCount);
+      globalRngRegistry.isReplayCertified = certified;
+    } catch { /* restoring is best-effort; the live state itself is never touched */ }
+  };
+  try {
+    const afterState = runOnce(intent.randomOutcome ? { isWin: true } : undefined);
+    const after = snap(afterState);
+    const afterInv = countInv(afterState);
+    const inventoryDelta: Record<string, number> = {};
+    new Set([...Object.keys(beforeInv), ...Object.keys(afterInv)]).forEach(k => {
+      const d = (afterInv[k] || 0) - (beforeInv[k] || 0);
+      if (d) inventoryDelta[k] = d;
+    });
+    const depositDelta: Record<string, number> = {};
+    new Set([...Object.keys(before.deposits), ...Object.keys(after.deposits)]).forEach(k => {
+      const d = (after.deposits[k] || 0) - (before.deposits[k] || 0);
+      if (d) depositDelta[k] = d;
+    });
+    let branches: GISimulationOutcome['branches'];
+    if (intent.randomOutcome) {
+      const lossState = runOnce({ isWin: false });
+      branches = [
+        { label: 'If it succeeds', cashDelta: after.cash - before.cash },
+        { label: 'If it fails', cashDelta: snap(lossState).cash - before.cash }
+      ];
+    }
+    const noEffect = after.cash === before.cash && after.location === before.location
+      && after.inventoryCount === before.inventoryCount && Object.keys(depositDelta).length === 0
+      && (after.apRemaining === before.apRemaining);
+    return {
+      ok: !noEffect,
+      error: noEffect ? 'The game rules would not carry out this action from the current state.' : undefined,
+      certainty: intent.randomOutcome ? 'uncertain' : (/sell|buy/.test(intent.actionType) ? 'estimated' : 'deterministic'),
+      before,
+      after,
+      cashDelta: after.cash - before.cash,
+      apDelta: before.apRemaining !== null && after.apRemaining !== null ? after.apRemaining - before.apRemaining : null,
+      locationChange: after.location !== before.location ? { from: before.location, to: after.location } : null,
+      inventoryDelta,
+      depositDelta,
+      branches,
+      notes: [],
+      noEffect
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      certainty: 'estimated',
+      before,
+      after: before,
+      cashDelta: 0,
+      apDelta: 0,
+      locationChange: null,
+      inventoryDelta: {},
+      depositDelta: {},
+      notes: [],
+      noEffect: true
+    };
+  } finally {
+    restoreRng();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 2. CONVERSATION WORKING CONTEXT (bounded, structured, sanitized)
+// ----------------------------------------------------------------------------
+
+export type GIEntityKind = 'region' | 'resource' | 'project' | 'contract' | 'actor' | 'action' | 'mode';
+
+export interface GIEntityRef {
+  kind: GIEntityKind;
+  id: string;
+  label: string;
+  matched?: string;
+  confidence: number;
+  source: 'query' | 'context' | 'default';
+}
+
+export type GIQueryType =
+  | 'factual' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'planning'
+  | 'status' | 'prediction' | 'rules' | 'settings' | 'control' | 'history' | 'affordability' | 'compound' | 'clarification';
+
+export interface GIConversationContext {
+  version: 1;
+  exchanges: number;
+  activeTopic: GIEntityRef | null;
+  last: Partial<Record<GIEntityKind, GIEntityRef>>;
+  lastComparison: GIEntityRef[];
+  lastRecommendation: GIEntityRef | null;
+  lastSimulation: GIEntityRef | null;
+  lastDeficit: { amount: number; forLabel: string; forRef: GIEntityRef | null } | null;
+  lastQueryType: GIQueryType | null;
+  lastUnresolvedQuestion: string | null;
+  recent: GIEntityRef[];
+  pendingClarification: { originalQuery: string; options: GIEntityRef[] } | null;
+}
+
+export const GI_CONTEXT_RECENT_LIMIT = 8;
+
+export function createGIConversationContext(): GIConversationContext {
+  return {
+    version: 1,
+    exchanges: 0,
+    activeTopic: null,
+    last: {},
+    lastComparison: [],
+    lastRecommendation: null,
+    lastSimulation: null,
+    lastDeficit: null,
+    lastQueryType: null,
+    lastUnresolvedQuestion: null,
+    recent: [],
+    pendingClarification: null
+  };
+}
+
+function sanitizeGIEntityRef(raw: any): GIEntityRef | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const kinds: GIEntityKind[] = ['region', 'resource', 'project', 'contract', 'actor', 'action', 'mode'];
+  if (!kinds.includes(raw.kind) || typeof raw.id !== 'string' || !raw.id) return null;
+  return {
+    kind: raw.kind,
+    id: raw.id.slice(0, 80),
+    label: String(raw.label || raw.id).slice(0, 120),
+    confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0)),
+    source: raw.source === 'query' || raw.source === 'default' ? raw.source : 'context'
+  };
+}
+
+export function sanitizeGIConversationContext(raw: unknown): GIConversationContext {
+  const base = createGIConversationContext();
+  if (!raw || typeof raw !== 'object') return base;
+  const src = raw as any;
+  const last: Partial<Record<GIEntityKind, GIEntityRef>> = {};
+  Object.keys(src.last || {}).forEach(k => {
+    const ref = sanitizeGIEntityRef(src.last[k]);
+    if (ref) last[ref.kind] = ref;
+  });
+  const list = (v: any) => (Array.isArray(v) ? v.map(sanitizeGIEntityRef).filter(Boolean) as GIEntityRef[] : []);
+  return {
+    ...base,
+    exchanges: Math.max(0, Math.floor(Number(src.exchanges) || 0)),
+    activeTopic: sanitizeGIEntityRef(src.activeTopic),
+    last,
+    lastComparison: list(src.lastComparison).slice(0, 4),
+    lastRecommendation: sanitizeGIEntityRef(src.lastRecommendation),
+    lastSimulation: sanitizeGIEntityRef(src.lastSimulation),
+    lastDeficit: src.lastDeficit && Number.isFinite(Number(src.lastDeficit.amount))
+      ? { amount: Number(src.lastDeficit.amount), forLabel: String(src.lastDeficit.forLabel || '').slice(0, 120), forRef: sanitizeGIEntityRef(src.lastDeficit.forRef) }
+      : null,
+    lastQueryType: typeof src.lastQueryType === 'string' ? src.lastQueryType : null,
+    lastUnresolvedQuestion: typeof src.lastUnresolvedQuestion === 'string' ? src.lastUnresolvedQuestion.slice(0, 200) : null,
+    recent: list(src.recent).slice(0, GI_CONTEXT_RECENT_LIMIT),
+    pendingClarification: src.pendingClarification && typeof src.pendingClarification.originalQuery === 'string'
+      ? { originalQuery: src.pendingClarification.originalQuery.slice(0, 300), options: list(src.pendingClarification.options).slice(0, 4) }
+      : null
+  };
+}
+
+/** Note an entity the player interacted with outside a question (e.g. a "Why?" click). */
+export function noteGIContextEntity(ctx: GIConversationContext, ref: GIEntityRef): GIConversationContext {
+  const clean = sanitizeGIEntityRef(ref);
+  if (!clean) return ctx;
+  return {
+    ...ctx,
+    activeTopic: clean,
+    last: { ...ctx.last, [clean.kind]: clean },
+    recent: [clean, ...ctx.recent.filter(r => !(r.kind === clean.kind && r.id === clean.id))].slice(0, GI_CONTEXT_RECENT_LIMIT)
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 3. ENTITY RESOLUTION (grounded against the world snapshot)
+// ----------------------------------------------------------------------------
+
+const GI_REGION_ALIASES: Record<string, string> = {
+  'queensland': 'QLD', 'qld': 'QLD', 'brisbane': 'QLD', 'gold coast': 'QLD',
+  'new south wales': 'NSW', 'nsw': 'NSW', 'sydney': 'NSW',
+  'victoria': 'VIC', 'vic': 'VIC', 'melbourne': 'VIC',
+  'south australia': 'SA', 'adelaide': 'SA',
+  'western australia': 'WA', 'perth': 'WA',
+  'northern territory': 'NT', 'darwin': 'NT',
+  'tasmania': 'TAS', 'tas': 'TAS', 'hobart': 'TAS',
+  'australian capital territory': 'ACT', 'canberra': 'ACT'
+};
+/** Two-letter codes that are also English words only match when written in capitals. */
+const GI_CASE_SENSITIVE_REGION_CODES = ['SA', 'WA', 'NT', 'ACT'];
+
+const GI_RESOURCE_ALIASES: Record<string, string> = {
+  'iron': 'Iron Ore', 'iron ore': 'Iron Ore', 'opal': 'Opals', 'gas': 'Natural Gas', 'crocodile': 'Crocodile Leather',
+  'fruit': 'Tropical Fruit', 'sugar': 'Sugar Cane', 'fish': 'Seafood'
+};
+
+const GI_PROJECT_STOPWORDS = new Set(['project', 'the', 'and', 'of', 'a', 'an', 'hub', 'plant', 'farm', 'park', 'corridor', 'regional', 'terminal', 'expansion']);
+const GI_TEXT_STOPWORDS = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'this', 'that', 'what', 'will', 'your', 'have', 'should', 'would', 'could', 'about', 'there', 'their', 'them', 'they', 'then', 'than', 'when', 'where', 'which', 'while', 'over', 'next', 'turn', 'turns', 'money', 'cash']);
+
+function giWords(text: string): string[] {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
+}
+
+function giEscape(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function listGIKnownResources(world: GIWorld): string[] {
+  const set = new Set<string>();
+  Object.values(REGIONAL_RESOURCES).forEach(list => list.forEach(r => set.add(r)));
+  Object.keys(world.market || {}).forEach(r => set.add(r));
+  Object.keys(world.player.inventory || {}).forEach(r => set.add(r));
+  return Array.from(set).sort();
+}
+
+export interface GIEntityResolution {
+  entities: GIEntityRef[];
+  /** Kinds with more than one equally plausible match, e.g. "rail" → two rail projects. */
+  ambiguous: Array<{ kind: GIEntityKind; phrase: string; options: GIEntityRef[] }>;
+}
+
+export function resolveGIEntities(originalQuery: string, world: GIWorld): GIEntityResolution {
+  const lower = ` ${String(originalQuery || '').toLowerCase().replace(/[^a-z0-9$\s'-]/g, ' ').replace(/\s+/g, ' ')} `;
+  const entities: GIEntityRef[] = [];
+  const ambiguous: GIEntityResolution['ambiguous'] = [];
+  const push = (ref: GIEntityRef) => {
+    if (!entities.some(e => e.kind === ref.kind && e.id === ref.id)) entities.push(ref);
+  };
+
+  // Regions: aliases, names, codes (ambiguous two-letter codes only in capitals).
+  Object.keys(GI_REGION_ALIASES).sort((a, b) => b.length - a.length).forEach(alias => {
+    const code = GI_REGION_ALIASES[alias];
+    if (!REGIONS[code]) return;
+    if (new RegExp(`\\b${giEscape(alias)}\\b`).test(lower)) push({ kind: 'region', id: code, label: REGIONS[code].name || code, matched: alias, confidence: 0.97, source: 'query' });
+  });
+  GI_CASE_SENSITIVE_REGION_CODES.forEach(code => {
+    if (REGIONS[code] && new RegExp(`\\b${code}\\b`).test(originalQuery)) push({ kind: 'region', id: code, label: REGIONS[code].name || code, matched: code, confidence: 0.95, source: 'query' });
+  });
+
+  // Resources: exact names, then aliases.
+  const known = listGIKnownResources(world);
+  known.slice().sort((a, b) => b.length - a.length).forEach(res => {
+    const r = res.toLowerCase();
+    const singular = r.endsWith('s') ? r.slice(0, -1) : r;
+    if (new RegExp(`\\b(${giEscape(r)}|${giEscape(singular)})\\b`).test(lower)) push({ kind: 'resource', id: res, label: res, matched: r, confidence: 0.95, source: 'query' });
+  });
+  Object.keys(GI_RESOURCE_ALIASES).forEach(alias => {
+    const res = GI_RESOURCE_ALIASES[alias];
+    if (known.includes(res) && new RegExp(`\\b${giEscape(alias)}\\b`).test(lower) && !entities.some(e => e.kind === 'resource' && e.id === res)) {
+      push({ kind: 'resource', id: res, label: res, matched: alias, confidence: 0.85, source: 'query' });
+    }
+  });
+
+  // Infrastructure projects: distinctive title tokens + project-type words.
+  const qWords = new Set(giWords(originalQuery));
+  const regionTokens = new Set([...Object.keys(REGIONS).map(c => c.toLowerCase()), ...Object.keys(GI_REGION_ALIASES)]);
+  const projectSignal = /\b(project|rail|railway|build|fund|funding|infrastructure|hub|plant|farm|cable|terminal|park|hydro|desal\w*|hydrogen|wind|corridor|hsr|high[\s-]?speed|construct|invest|mega)\b/.test(lower);
+  const projectScores = (world.projects || []).map(p => {
+    const tokens = Array.from(new Set(giWords(`${p.title} ${p.id.replace(/^infra_/, '').replace(/_/g, ' ')}`)))
+      .filter(t => t.length > 2 && !GI_PROJECT_STOPWORDS.has(t) && !regionTokens.has(t));
+    let score = tokens.filter(t => qWords.has(t)).length;
+    if (/\bhsr\b|high[\s-]?speed/.test(lower) && /high[\s-]?speed/i.test(p.title)) score += 2;
+    if (/\bsydney[\s-]+melbourne\b/.test(lower) && /sydney-melbourne/i.test(p.title)) score += 2;
+    return { p, score };
+  }).filter(x => x.score > 0 && (projectSignal || x.score >= 2)).sort((a, b) => b.score - a.score || a.p.id.localeCompare(b.p.id));
+  if (projectScores.length) {
+    const top = projectScores[0].score;
+    const tied = projectScores.filter(x => x.score === top);
+    if (tied.length === 1) {
+      push({ kind: 'project', id: tied[0].p.id, label: tied[0].p.title, confidence: Math.min(0.95, 0.6 + 0.15 * top), source: 'query' });
+    } else {
+      ambiguous.push({ kind: 'project', phrase: 'project', options: tied.map(x => ({ kind: 'project' as const, id: x.p.id, label: x.p.title, confidence: 0.5, source: 'query' as const })) });
+    }
+  }
+
+  // Contracts: id or two distinctive title tokens.
+  (world.contracts || []).forEach(c => {
+    const tokens = giWords(c.title).filter(t => t.length > 3 && !GI_TEXT_STOPWORDS.has(t) && t !== 'contract');
+    const hits = tokens.filter(t => qWords.has(t)).length;
+    if (lower.includes(c.id.toLowerCase()) || hits >= 2) push({ kind: 'contract', id: c.id, label: c.title, confidence: hits >= 2 ? 0.85 : 0.95, source: 'query' });
+  });
+
+  // Actors: names first, then roles.
+  (world.actors || []).forEach(a => {
+    if (a.relation === 'self') return;
+    const nameWords = giWords(a.name).filter(w => w.length > 2 && w !== 'the');
+    const firstWord = nameWords[0];
+    if ((firstWord && firstWord !== 'ai' && qWords.has(firstWord)) || lower.includes(` ${a.name.toLowerCase()} `)) {
+      push({ kind: 'actor', id: a.id, label: a.name, matched: firstWord, confidence: 0.95, source: 'query' });
+    }
+  });
+  if (/\b(rival|opponent|enemy|the ai|computer)\b/.test(lower) && world.primaryRivalId && !entities.some(e => e.kind === 'actor' && e.id === world.primaryRivalId)) {
+    const rival = world.actors.find(a => a.id === world.primaryRivalId);
+    if (rival) push({ kind: 'actor', id: rival.id, label: rival.name, matched: 'rival', confidence: 0.85, source: 'query' });
+  }
+  if (/\b(teammate|partner|ally)\b/.test(lower) && world.teammateIds[0] && !entities.some(e => e.kind === 'actor' && world.teammateIds.includes(e.id))) {
+    const mate = world.actors.find(a => a.id === world.teammateIds[0]);
+    if (mate) push({ kind: 'actor', id: mate.id, label: mate.name, matched: 'teammate', confidence: 0.85, source: 'query' });
+  }
+
+  return { entities, ambiguous };
+}
+
+// ----------------------------------------------------------------------------
+// 4. OPTIONS (actions the player is weighing), grounded in real rules
+// ----------------------------------------------------------------------------
+
+export type GIOptionKind = 'deposit' | 'travel' | 'sell' | 'sell_all' | 'buy' | 'loan' | 'work' | 'challenge' | 'fund_project' | 'accept_contract' | 'wait' | 'candidate' | 'region';
+
+export interface GIOption {
+  id: string;
+  kind: GIOptionKind;
+  label: string;
+  regionId?: string;
+  resource?: string;
+  projectId?: string;
+  contractId?: string;
+  candidateId?: string;
+  amount?: number;
+  /** Canonical intent used for validation / simulation. Absent for 'wait' and bare 'region'. */
+  intent?: GISimulationIntent;
+  legal: boolean;
+  blockReason: string | null;
+  cashCost: number;
+  apCost: number;
+  prerequisite?: string | null;
+  navigation?: IntentNavAction | null;
+}
+
+const GI_VERB_PATTERNS: Array<{ kind: GIOptionKind; re: RegExp }> = [
+  { kind: 'deposit', re: /\b(defend|protect|reinforce|hold|deposit|secure)\b/ },
+  { kind: 'travel', re: /\b(travel|go to|go into|move to|head to|head for|expand (to|into)|fly to|visit)\b/ },
+  { kind: 'sell_all', re: /\bsell (all|everything)\b|\bliquidat/ },
+  { kind: 'sell', re: /\bsell|selling\b/ },
+  { kind: 'buy', re: /\b(buy|purchase)\b/ },
+  { kind: 'loan', re: /\b(loan|borrow|credit)\b/ },
+  { kind: 'work', re: /\bwork\b/ },
+  { kind: 'challenge', re: /\bchallenge/ },
+  { kind: 'fund_project', re: /\b(build|fund|invest in|construct)\b/ },
+  { kind: 'accept_contract', re: /\baccept\b/ },
+  { kind: 'wait', re: /\b(wait|do nothing|nothing|hold off|skip|don'?t do anything)\b/ }
+];
+
+/** Split "X or Y" / "X vs Y" into option clauses, preserving case (verb inherited from the first clause). */
+export function splitGIOptionClauses(query: string): string[] {
+  // Only the sentence that actually poses the choice is split; thousands separators are not commas.
+  const cleaned = String(query || '').replace(/(\d),(\d{3})/g, '$1$2');
+  const sentences = cleaned.split(/(?<=[.?!])\s+/).map(x => x.trim()).filter(Boolean);
+  const choice = [...sentences].reverse().find(x => /\b(or|vs\.?|versus|instead of|rather than|compared (to|with))\b/i.test(x)) || '';
+  const q = choice.replace(/[?!.]+/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/^(should i|do i|would it be better to|is it better to|which is better[:,]?|compare|is it smarter to)\s+/i, '');
+  const parts = q.split(/\s+(?:or|vs\.?|versus|compared to|compared with|instead of|rather than)\s+|,\s*(?=\w)/i).map(s => s.trim()).filter(Boolean);
+  return parts.length >= 2 ? parts.slice(0, 4) : [];
+}
+
+function giCandidateList(world: GIWorld): ContextualActionCandidate[] {
+  const set = world.actionSet;
+  return set ? [...set.ranked, ...set.blocked] : [];
+}
+
+function giApCost(world: GIWorld, actionType: string, fallback = 1): { ok: boolean; cost: number; reason?: string } {
+  const v = world.tools.validateAp?.(actionType);
+  if (v) return { ok: v.valid, cost: typeof v.apCost === 'number' ? v.apCost : fallback, reason: v.reason };
+  const ap = world.player.apRemaining;
+  return { ok: ap === null || ap >= fallback, cost: fallback, reason: ap !== null && ap < fallback ? `Needs ${fallback} AP (you have ${ap})` : undefined };
+}
+
+/** Build a grounded option for one clause. Legality mirrors the canonical UI / reducer rules. */
+export function buildGIOption(kind: GIOptionKind, clause: string, world: GIWorld, ents: GIEntityRef[]): GIOption | null {
+  const region = ents.find(e => e.kind === 'region');
+  const resource = ents.find(e => e.kind === 'resource');
+  const project = ents.find(e => e.kind === 'project');
+  const contract = ents.find(e => e.kind === 'contract');
+  const cash = world.player.money;
+  const notTurn = world.isHumanTurn ? null : 'Not your turn';
+  switch (kind) {
+    case 'deposit': {
+      if (!region) return null;
+      const r = world.regions[region.id];
+      if (!r) return null;
+      const defending = r.controlledByPlayer;
+      const amount = defending ? Math.max(0, Math.floor(world.defaultDepositAmount || 0)) : Math.max(0, r.playerCostToControl || 0);
+      const ap = giApCost(world, 'region_deposit');
+      let block: string | null = notTurn;
+      let prerequisite: string | null = null;
+      if (!block && world.negotiationMode) block = 'Negotiation mode is on — region control changes through proposals.';
+      if (!block && !r.isHere) { block = `You must be in ${r.name} to deposit there.`; prerequisite = `Travel to ${r.name}${r.travelCost !== null ? ` ($${r.travelCost.toLocaleString()})` : ''}`; }
+      if (!block && !defending && cash < amount) block = `Taking control needs $${amount.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && defending && amount <= 0) block = 'Set a deposit amount in the region panel first.';
+      if (!block && defending && cash < amount) block = `Your deposit amount is $${amount.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
+      return {
+        id: `opt_deposit_${r.code}`,
+        kind,
+        label: defending ? `Defend ${r.name}${amount > 0 ? ` (deposit $${amount.toLocaleString()})` : ''}` : `Take control of ${r.name}`,
+        regionId: r.code,
+        amount,
+        intent: amount > 0 ? { actionType: 'region_deposit', parameters: { region: r.code, regionCode: r.code, amount }, targetId: r.code, costEstimate: amount } : undefined,
+        legal: !block,
+        blockReason: block,
+        cashCost: amount,
+        apCost: ap.cost,
+        prerequisite,
+        navigation: navAction('map', 'Open Map')
+      };
+    }
+    case 'travel': {
+      if (!region) return null;
+      const r = world.regions[region.id];
+      if (!r) return null;
+      const ap = giApCost(world, 'travel');
+      const cost = r.travelCost ?? 0;
+      let block: string | null = notTurn;
+      if (!block && r.isHere) block = `You are already in ${r.name}.`;
+      if (!block && cash < cost) block = `Travel costs $${cost.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
+      return {
+        id: `opt_travel_${r.code}`,
+        kind,
+        label: `Travel to ${r.name}`,
+        regionId: r.code,
+        intent: { actionType: 'travel', parameters: { region: r.code, destinationRegion: r.code, cost }, targetId: r.code, costEstimate: cost },
+        legal: !block,
+        blockReason: block,
+        cashCost: cost,
+        apCost: ap.cost,
+        navigation: navAction('travel', 'Open Travel')
+      };
+    }
+    case 'sell':
+    case 'sell_all': {
+      const inv = world.player.inventory;
+      const all = kind === 'sell_all' || /\b(everything|all (my )?(resources|inventory|items))\b/.test(clause) || (!resource && /\b(resources|inventory|stuff|items|goods)\b/.test(clause));
+      const targets = all ? Object.keys(inv) : (resource ? [resource.id] : []);
+      if (!targets.length) return all ? { id: 'opt_sell_all', kind: 'sell_all', label: 'Sell everything', legal: false, blockReason: 'Your inventory is empty.', cashCost: 0, apCost: 1, navigation: navAction('market', 'Open Market') } : null;
+      const qty = targets.reduce((s, t) => s + (inv[t] || 0), 0);
+      const ap = giApCost(world, 'sell');
+      let block: string | null = notTurn;
+      if (!block && qty === 0) block = `You don't hold any ${targets.join(', ')}.`;
+      if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
+      const single = targets.length === 1 ? targets[0] : null;
+      const sellIntent = (res: string): GISimulationIntent => ({
+        actionType: 'sell',
+        parameters: { item: res, resource: res, quantity: inv[res] || 0, ...(typeof world.market[res] === 'number' ? { unitPrice: world.market[res] } : {}) }
+      });
+      const heldTargets = targets.filter(t => (inv[t] || 0) > 0);
+      return {
+        id: all ? 'opt_sell_all' : `opt_sell_${single}`,
+        kind: all ? 'sell_all' : 'sell',
+        label: all ? 'Sell everything' : `Sell ${single}`,
+        resource: single || undefined,
+        amount: qty,
+        intent: heldTargets.length === 1 ? sellIntent(heldTargets[0]) : heldTargets.length > 1 ? { actionType: 'sell', chain: heldTargets.map(sellIntent) } : undefined,
+        legal: !block,
+        blockReason: block,
+        cashCost: 0,
+        apCost: ap.cost,
+        navigation: navAction('market', 'Open Market')
+      };
+    }
+    case 'buy': {
+      if (!resource) return null;
+      const price = world.market[resource.id];
+      const ap = giApCost(world, 'buy_market');
+      let block: string | null = notTurn;
+      if (!block && typeof price !== 'number') block = `No market price is available for ${resource.id}.`;
+      if (!block && cash < price) block = `${resource.id} costs $${price.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      if (!block && !ap.ok) block = ap.reason || 'Not enough Action Points.';
+      return {
+        id: `opt_buy_${resource.id}`,
+        kind,
+        label: `Buy ${resource.id}`,
+        resource: resource.id,
+        intent: typeof price === 'number' ? { actionType: 'buy_market', parameters: { item: resource.id, resource: resource.id, quantity: 1, unitPrice: price }, costEstimate: price } : undefined,
+        legal: !block,
+        blockReason: block,
+        cashCost: typeof price === 'number' ? price : 0,
+        apCost: ap.cost,
+        navigation: navAction('resource_market', 'Open Resource Market')
+      };
+    }
+    case 'fund_project': {
+      if (!project) return null;
+      const p = world.projects.find(x => x.id === project.id);
+      if (!p) return null;
+      const step = Math.min(p.fundingIncrement, Math.max(0, p.remaining));
+      let block: string | null = notTurn;
+      if (!block && (p.status === 'active' || p.remaining <= 0)) block = `${p.title} is already fully funded.`;
+      if (!block && p.status === 'locked') block = `${p.title} is locked.`;
+      if (!block && cash < step) block = `The smallest funding step is $${step.toLocaleString()} (you have $${cash.toLocaleString()}).`;
+      return {
+        id: `opt_fund_${p.id}`,
+        kind,
+        label: `Fund ${p.title}`,
+        projectId: p.id,
+        amount: step,
+        intent: step > 0 ? { actionType: 'invest_infrastructure_project', parameters: { projectId: p.id, amount: step, investmentAmount: step }, targetId: p.id, costEstimate: step } : undefined,
+        legal: !block,
+        blockReason: block,
+        cashCost: step,
+        apCost: 0,
+        navigation: navAction('infrastructure', 'Open Infrastructure')
+      };
+    }
+    case 'accept_contract': {
+      if (!contract) return null;
+      const c = world.contracts.find(x => x.id === contract.id);
+      if (!c) return null;
+      const block = notTurn || c.blocker;
+      return {
+        id: `opt_contract_${c.id}`,
+        kind,
+        label: `Accept ${c.title}`,
+        contractId: c.id,
+        legal: !block,
+        blockReason: block,
+        cashCost: c.requiredMoney || 0,
+        apCost: 1,
+        navigation: navAction('contracts', 'Open Contracts')
+      };
+    }
+    case 'wait':
+      return { id: 'opt_wait', kind, label: 'Wait / do nothing this turn', legal: true, blockReason: null, cashCost: 0, apCost: 0 };
+    default: {
+      // loan / work / challenge: only ever offered through the canonical candidate generator.
+      const typeRe = kind === 'loan' ? /loan/ : kind === 'work' ? /^work$/ : /challenge/;
+      const cand = giCandidateList(world).find(c => typeRe.test(c.actionType));
+      if (!cand) return null;
+      return {
+        id: `opt_cand_${cand.id}`,
+        kind: 'candidate',
+        label: cand.label,
+        candidateId: cand.id,
+        intent: cand.execution?.kind === 'copilot_candidate'
+          ? { actionType: cand.actionType, parameters: cand.execution.candidate?.parameters || {}, targetId: cand.execution.candidate?.targetId, costEstimate: cand.costEstimate || 0, randomOutcome: /challenge|double/.test(cand.actionType) }
+          : undefined,
+        legal: cand.legal && world.isHumanTurn,
+        blockReason: cand.legal ? notTurn : cand.blockReason,
+        cashCost: cand.costEstimate || 0,
+        apCost: cand.apCost || 1,
+        navigation: cand.navigation
+      };
+    }
+  }
+}
+
+/** Rebuild an option the conversation already discussed (ids encode kind + target). */
+export function rebuildGIOptionFromId(id: string, world: GIWorld): GIOption | null {
+  const region = (code: string): GIEntityRef[] => (world.regions[code] ? [{ kind: 'region', id: code, label: world.regions[code].name, confidence: 1, source: 'context' }] : []);
+  const res = (r: string): GIEntityRef[] => [{ kind: 'resource', id: r, label: r, confidence: 1, source: 'context' }];
+  let m: RegExpMatchArray | null;
+  if (id === 'opt_sell_all') return buildGIOption('sell_all', 'sell everything', world, []);
+  if (id === 'opt_wait') return buildGIOption('wait', 'wait', world, []);
+  if ((m = id.match(/^opt_deposit_(.+)$/))) return buildGIOption('deposit', 'defend', world, region(m[1]));
+  if ((m = id.match(/^opt_travel_(.+)$/))) return buildGIOption('travel', 'travel', world, region(m[1]));
+  if ((m = id.match(/^opt_sell_(.+)$/))) return buildGIOption('sell', 'sell', world, res(m[1]));
+  if ((m = id.match(/^opt_buy_(.+)$/))) return buildGIOption('buy', 'buy', world, res(m[1]));
+  if ((m = id.match(/^opt_fund_(.+)$/))) {
+    const p = world.projects.find(x => x.id === m![1]);
+    return p ? buildGIOption('fund_project', 'fund', world, [{ kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' }]) : null;
+  }
+  if ((m = id.match(/^opt_cand_(.+)$/))) {
+    const c = giCandidateList(world).find(x => x.id === m![1]);
+    if (!c) return null;
+    const kind: GIOptionKind = /loan/.test(c.actionType) ? 'loan' : /challenge/.test(c.actionType) ? 'challenge' : 'work';
+    return buildGIOption(kind, c.actionType, world, []);
+  }
+  return null;
+}
+
+/** Resolve the options a question is weighing (explicit "X or Y", or a single action phrase). */
+export function resolveGIOptions(query: string, world: GIWorld, contextEntities: GIEntityRef[]): GIOption[] {
+  const clauses = splitGIOptionClauses(query);
+  const list = clauses.length ? clauses : [String(query || '')];
+  const options: GIOption[] = [];
+  let inheritedVerb: GIOptionKind | null = null;
+  for (const clause of list) {
+    const { entities } = resolveGIEntities(clause, world);
+    const ents = entities.length ? entities : (clauses.length ? [] : contextEntities);
+    const lowerClause = clause.toLowerCase();
+    const verb = GI_VERB_PATTERNS.find(v => v.re.test(lowerClause))?.kind || null;
+    const kind = verb || inheritedVerb;
+    if (verb && verb !== 'wait') inheritedVerb = verb;
+    let opt: GIOption | null = null;
+    if (kind) opt = buildGIOption(kind, lowerClause, world, ents);
+    if (!opt && clauses.length) {
+      const region = ents.find(e => e.kind === 'region');
+      const project = ents.find(e => e.kind === 'project');
+      const resource = ents.find(e => e.kind === 'resource');
+      if (project) opt = buildGIOption('fund_project', lowerClause, world, ents);
+      else if (region) opt = { id: `opt_region_${region.id}`, kind: 'region', label: region.label, regionId: region.id, legal: true, blockReason: null, cashCost: 0, apCost: 0, navigation: navAction('map', 'Open Map') };
+      else if (resource && inheritedVerb) opt = buildGIOption(inheritedVerb, lowerClause, world, ents);
+    }
+    if (opt && !options.some(o => o.id === opt!.id)) options.push(opt);
+  }
+  return options;
+}
+
+// ----------------------------------------------------------------------------
+// 5. QUERY UNDERSTANDING
+// ----------------------------------------------------------------------------
+
+export type GICapability =
+  | 'player_status' | 'objective_status' | 'economy_diagnosis' | 'strategic_diagnosis' | 'affordability' | 'action_validation'
+  | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
+  | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
+  | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine';
+
+export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
+
+export interface GIQueryUnderstanding {
+  originalQuery: string;
+  normalizedQuery: string;
+  queryType: GIQueryType;
+  primary: GICapability;
+  supporting: GICapability[];
+  entities: GIEntityRef[];
+  resolvedReferences: Array<{ phrase: string; entity: GIEntityRef }>;
+  unresolvedReferences: string[];
+  ambiguous: GIEntityResolution['ambiguous'];
+  options: GIOption[];
+  outputType: GIAnswerShape;
+  horizon: { unit: 'action' | 'turn'; count: number } | null;
+  needs: { comparison: boolean; diagnosis: boolean; simulation: boolean; explanation: boolean; recommendation: boolean; control: boolean; clarification: boolean; prediction: boolean };
+  constraints: { avoidLoans: boolean; keepReserve: boolean; targetAmount: number | null; targetRegions: number | null; protectPlan: boolean };
+  askIntent: AskGameIntent;
+  askConfidence: number;
+  controlRoute: Extract<GameIntelligenceRoute, { kind: 'control' }> | null;
+  deficitReference: boolean;
+  confidence: number;
+}
+
+const GI_NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+
+const GI_CUES = {
+  why: /\bwhy\b/,
+  whatIf: /\b(what if|what happens if|what would happen|what happens when|simulate|if i (sell|buy|travel|go|take|build|fund|defend|deposit|wait|don'?t))\b/,
+  compare: /\b(or|vs|versus|compare|compared|better|which (one|option|is better|should)|rather than|instead of)\b/,
+  plan: /\b(plan|over the next|next (two|three|four|\d+|few) (turns?|actions?|moves?|steps?)|path to|sequence|step[- ]by[- ]step|how (do|can) i (win|get to|reach|recover))\b/,
+  recommend: /\b(should i|what should|recommend|best (move|action|way|option|play)|what now|what do i do|fastest way|safest way|what'?s the (best|fastest|safest)|help me|what matters|how do i (win|recover|get))\b/,
+  diagnose: /\b(losing|behind|problem|wrong|struggling|collaps|running out|keep (running|losing)|stuck|blocking|blocked|can'?t|cannot|won'?t let|failing|pulling ahead|doing nothing|biggest (problem|issue|threat)|hurting)\b/,
+  afford: /\b(afford|enough (money|cash)|pay for)\b/,
+  predict: /\b(will|going to|likely|next turn|planning|predict|definitely|probably|intend|attack|threaten|threatening)\b/,
+  history: /\b(last turn|happened|recently|recent|history|lately|last (few|\d+) (turns?|actions?))\b/,
+  status: /\b(how much|how many|what is my|what'?s my|do i have|where am i|my (cash|money|ap|action points|location|inventory))\b/,
+  rules: /\b(how does|how do .* work|what does|rules?|mechanic|explain how|what is (a|an) )\b/,
+  settings: /\b(setting|settings|configure|config|option(s)? for)\b/,
+  protectPlan: /\bwithout (hurting|damaging|ruining|breaking|risking|losing)\b|\b(hurt|damage) my (plan|strategy|chances?)\b/
+};
+
+function detectGIHorizon(q: string): GIQueryUnderstanding['horizon'] {
+  const m = q.match(/\bnext (two|three|four|five|six|\d+) (turns?|actions?|moves?|steps?)\b/) || q.match(/\b(two|three|four|five|six|\d+)[- ](turn|action|move|step)s?\b/) || q.match(/\bover the next (two|three|four|five|six|\d+) (turns?|actions?)\b/);
+  if (m) {
+    const n = GI_NUMBER_WORDS[m[1]] ?? parseInt(m[1], 10);
+    if (Number.isFinite(n) && n > 0) return { unit: /turn/.test(m[2]) ? 'turn' : 'action', count: Math.min(6, n) };
+  }
+  if (/\bthis turn\b/.test(q)) return { unit: 'turn', count: 1 };
+  return null;
+}
+
+function detectGIReferences(q: string): string[] {
+  const refs: string[] = [];
+  const add = (p: string) => { if (!refs.includes(p)) refs.push(p); };
+  if (/\b(that|this|the) (project|rail|railway|build|infrastructure)\b/.test(q)) add('project');
+  if (/\b(that|this|the) (contract|job)\b/.test(q)) add('contract');
+  if (/\b(go|travel|move|deposit|defend|get|stay) there\b|\b(that|this|the) (region|state)\b/.test(q)) add('region');
+  if (/\b(the money|the funds|the cash|the deficit|the shortfall|the rest|the difference)\b/.test(q)) add('deficit');
+  if (/\b(he|she|they|them|him|her|their)\b/.test(q)) add('actor');
+  if (/\bthe (first|1st) (one|option)\b/.test(q)) add('first');
+  if (/\bthe (second|2nd) (one|option)\b/.test(q)) add('second');
+  if (/\bthe other (one|option)\b/.test(q)) add('other');
+  if (/\bthe (cheaper|cheapest) (one|option)\b/.test(q)) add('cheaper');
+  if (/\b(it|that|this)\b(?!\s+(turn|game|match|round|time|week|one|option|region|state|project|rail|railway|contract|job|plan)\b)/.test(q)) add('topic');
+  return refs;
+}
+
+function refFromOption(o: GIOption): GIEntityRef | null {
+  if (o.projectId) return { kind: 'project', id: o.projectId, label: o.label.replace(/^Fund /, ''), confidence: 0.9, source: 'context' };
+  if (o.candidateId) return { kind: 'action', id: o.candidateId, label: o.label, confidence: 0.9, source: 'context' };
+  if (o.kind === 'region' && o.regionId) return { kind: 'region', id: o.regionId, label: o.label, confidence: 0.9, source: 'context' };
+  return { kind: 'action', id: o.id, label: o.label, confidence: 0.9, source: 'context' };
+}
+
+/** Full query understanding. Pure and deterministic for identical (query, context, world). */
+export function understandGIQuery(query: string, world: GIWorld, ctxIn: GIConversationContext): GIQueryUnderstanding {
+  const ctx = sanitizeGIConversationContext(ctxIn);
+  const normalized = normalizeIntelligenceQuery(query);
+  const control = classifyGameIntelligenceRequest(query);
+  const ask = classifyAskGameIntent(parseAskGameNormalizedQuery(query));
+  const resolution = resolveGIEntities(query, world);
+  const entities = [...resolution.entities];
+  const resolvedReferences: GIQueryUnderstanding['resolvedReferences'] = [];
+  const unresolved: string[] = [];
+  const ambiguous = [...resolution.ambiguous];
+
+  // Reference resolution against bounded context. Explicit query entities always win.
+  const refs = detectGIReferences(normalized);
+  const hasKind = (k: GIEntityKind) => entities.some(e => e.kind === k);
+  const useRef = (phrase: string, ref: GIEntityRef | null | undefined) => {
+    if (!ref) { unresolved.push(phrase); return; }
+    const r = { ...ref, source: 'context' as const };
+    if (!entities.some(e => e.kind === r.kind && e.id === r.id)) entities.push(r);
+    resolvedReferences.push({ phrase, entity: r });
+  };
+  for (const phrase of refs) {
+    switch (phrase) {
+      case 'project': if (!hasKind('project') && !ambiguous.some(a => a.kind === 'project')) useRef('that project', ctx.last.project); break;
+      case 'contract': if (!hasKind('contract')) useRef('that contract', ctx.last.contract); break;
+      case 'region': if (!hasKind('region')) useRef('there', ctx.last.region); break;
+      case 'actor': if (!hasKind('actor')) useRef('they', ctx.last.actor); break;
+      case 'deficit': if (!ctx.lastDeficit) unresolved.push('the money'); else if (ctx.lastDeficit.forRef && !entities.some(e => e.id === ctx.lastDeficit!.forRef!.id)) useRef('the money', ctx.lastDeficit.forRef); break;
+      case 'first': useRef('the first one', ctx.lastComparison[0]); break;
+      case 'second': useRef('the second one', ctx.lastComparison[1]); break;
+      case 'other': {
+        const other = ctx.lastComparison.find(r => r.id !== ctx.lastRecommendation?.id) || ctx.lastComparison[1];
+        useRef('the other one', other);
+        break;
+      }
+      case 'cheaper': {
+        const list = ctx.lastComparison.filter(r => r.kind === 'project');
+        const cheapest = list.map(r => world.projects.find(p => p.id === r.id)).filter(Boolean).sort((a, b) => a!.remaining - b!.remaining)[0];
+        useRef('the cheaper one', cheapest ? { kind: 'project', id: cheapest.id, label: cheapest.title, confidence: 0.85, source: 'context' } : null);
+        break;
+      }
+      case 'topic':
+        if (!entities.length && !ambiguous.length) {
+          if (ctx.activeTopic) useRef('it', ctx.activeTopic);
+          else if (ctx.lastComparison.length >= 2) ambiguous.push({ kind: ctx.lastComparison[0].kind, phrase: 'it', options: ctx.lastComparison.slice(0, 4) });
+          else unresolved.push('it');
+        }
+        break;
+    }
+  }
+  // "What if I wait?" / "Would that be worth it?" keep the active topic without a pronoun match.
+  if (!entities.length && ctx.activeTopic && (/^(what if|what about|and if|would (that|it)|is (that|it)|how about)\b/.test(normalized) || /\bwait\b/.test(normalized))) {
+    useRef('current topic', ctx.activeTopic);
+  }
+
+  let options = resolveGIOptions(query, world, entities);
+  // "Would that actually be worth it?" → weigh the option under discussion against doing nothing.
+  if (/\bworth\b/.test(normalized) && options.length < 2) {
+    const topicId = ctx.lastSimulation?.id || (ctx.activeTopic?.kind === 'action' ? ctx.activeTopic.id : null);
+    const prior = topicId ? rebuildGIOptionFromId(topicId, world) : null;
+    if (prior) {
+      const wait = buildGIOption('wait', 'wait', world, []);
+      options = [prior, ...(wait ? [wait] : [])];
+      if (!resolvedReferences.some(r => r.entity.id === prior.id)) resolvedReferences.push({ phrase: 'that', entity: { kind: 'action', id: prior.id, label: prior.label, confidence: 0.9, source: 'context' } });
+      const idx = unresolved.indexOf('it');
+      if (idx >= 0) unresolved.splice(idx, 1);
+    }
+  }
+  const cue = (k: keyof typeof GI_CUES) => GI_CUES[k].test(normalized);
+  const hasRival = entities.some(e => e.kind === 'actor' && world.actors.find(a => a.id === e.id)?.relation === 'rival');
+  const hasTeammate = entities.some(e => e.kind === 'actor' && world.actors.find(a => a.id === e.id)?.relation === 'teammate');
+  const mentionsMode = /\b(manual|advisor|assistant|rescue|autonomous|autopilot|co-?pilot|control mode)\b/.test(normalized);
+
+  const needs = {
+    comparison: options.length >= 2 || (cue('compare') && options.length >= 2),
+    simulation: cue('whatIf'),
+    diagnosis: cue('diagnose') || (cue('why') && !options.length && !mentionsMode && (/\b(i|my|me)\b/.test(normalized))),
+    explanation: cue('why'),
+    recommendation: cue('recommend') || cue('plan'),
+    control: control.kind === 'control',
+    clarification: false,
+    prediction: (hasRival || /\b(rival|opponent)\b/.test(normalized)) && cue('predict') && !cue('history')
+  };
+  const constraints = {
+    avoidLoans: /\bwithout (a |taking (a |out a )?)?(loan|borrowing|debt)\b|\bno loans?\b/.test(normalized),
+    keepReserve: /\b(reserve|safe|safely|safest|without going broke)\b/.test(normalized),
+    targetAmount: (() => {
+      const m = normalized.match(/\$?\s?(\d[\d,]*)(\s?k)?\b/);
+      if (!m || !/\$|k\b|thousand|money|cash|dollars/.test(normalized)) return null;
+      const n = parseInt(m[1].replace(/,/g, ''), 10) * (m[2] ? 1000 : 1);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })(),
+    targetRegions: (() => { const m = normalized.match(/\b(\d+|two|three|four|five|six) regions?\b/); return m ? (GI_NUMBER_WORDS[m[1]] ?? parseInt(m[1], 10)) : null; })(),
+    protectPlan: cue('protectPlan')
+  };
+  const horizon = detectGIHorizon(normalized);
+
+  let primary: GICapability = 'ask_engine';
+  const supporting: GICapability[] = [];
+  const addSupport = (...caps: GICapability[]) => caps.forEach(c => { if (c !== primary && !supporting.includes(c)) supporting.push(c); });
+  const hasProject = entities.some(e => e.kind === 'project') || ambiguous.some(a => a.kind === 'project');
+  const hasRegion = entities.some(e => e.kind === 'region');
+  const hasResource = entities.some(e => e.kind === 'resource');
+  const hasContract = entities.some(e => e.kind === 'contract');
+  const memoryish = isMemoryAwareAskIntent(ask.intent) && !needs.prediction;
+
+  const delegatedMemoryIntents: AskGameIntent[] = ['MEMORY_RECALL', 'RELATIONSHIP_EXPLAIN', 'PLAYSTYLE_LEARNED', 'TEAM_PLAN_UPDATE', 'PLAN_STATUS', 'PLAN_CHANGE', 'CURRENT_PLAN', 'DECISION_MEMORY', 'STRATEGIC_PATTERN'];
+  const targetsReference = unresolved.includes('it') && /\b(build|fund|afford|buy|accept|do|pay for)\b/.test(normalized);
+  if (needs.control && control.kind === 'control') {
+    primary = 'control';
+  } else if (delegatedMemoryIntents.includes(ask.intent) && ask.confidence >= 0.5 && isMemoryAwareAskIntent(ask.intent) && !needs.comparison && !needs.simulation && !cue('afford')) {
+    primary = 'ask_engine';
+  } else if (targetsReference) {
+    primary = cue('afford') ? 'affordability' : 'action_validation';
+  } else if (mentionsMode && (cue('why') || cue('rules') || /\b(risky|safe|what does|difference|mean)\b/.test(normalized))) {
+    primary = 'control_explain';
+  } else if (needs.comparison) {
+    primary = 'comparison';
+    addSupport('objective_status');
+    if (options.some(o => o.intent)) addSupport('simulation');
+    if (needs.recommendation || cue('compare')) addSupport('action_recommendation');
+    if (options.some(o => o.kind === 'deposit' || o.kind === 'region')) addSupport('rival_assessment');
+  } else if (needs.simulation) {
+    primary = 'simulation';
+    addSupport('objective_status');
+    if (/\bworth\b/.test(normalized) || needs.recommendation) addSupport('action_recommendation');
+    if (ctx.lastDeficit || /\bwait\b/.test(normalized)) addSupport('affordability');
+  } else if (cue('afford') || (/\bworth (it|doing)\b/.test(normalized) && (hasProject || entities.length > 0))) {
+    primary = 'affordability';
+    if (hasProject) addSupport('project_info');
+    addSupport('economy_diagnosis');
+    if (constraints.protectPlan || /\bworth\b/.test(normalized)) addSupport('objective_status', 'conflict_check', 'action_recommendation');
+  } else if (needs.prediction) {
+    primary = 'rival_assessment';
+    addSupport('history');
+  } else if (cue('settings')) {
+    primary = 'settings_lookup';
+  } else if (/\b(teammate|partner|ally)\b/.test(normalized) && !memoryish) {
+    primary = 'teammate_status';
+    addSupport('history');
+  } else if (needs.diagnosis && !hasContract && !(hasProject && /\b(build|fund|this)\b/.test(normalized))) {
+    const economic = /\b(money|cash|broke|economy|economic|finance|income|spending|running out|debt|loan|afford)\b/.test(normalized);
+    primary = hasTeammate ? 'teammate_status' : (economic ? 'economy_diagnosis' : 'strategic_diagnosis');
+    if (!economic && !hasTeammate) addSupport('economy_diagnosis', 'rival_assessment', 'objective_status');
+    if (economic) addSupport('objective_status');
+    if (needs.recommendation || horizon || /\b(recover|fix|what (should|do) i)\b/.test(normalized)) addSupport(horizon ? 'sequence_plan' : 'action_recommendation');
+    addSupport('conflict_check');
+  } else if (needs.diagnosis && (hasContract || hasProject)) {
+    primary = 'action_validation';
+    addSupport(hasProject ? 'project_info' : 'contract_info', 'action_recommendation');
+  } else if (cue('plan') || horizon) {
+    primary = 'sequence_plan';
+    addSupport('objective_status', 'conflict_check');
+  } else if (needs.recommendation || /\b(what should i do|next)\b/.test(normalized)) {
+    primary = 'action_recommendation';
+    addSupport('objective_status', 'conflict_check');
+    if (constraints.targetAmount || /\b(money|cash|recover|liquidity)\b/.test(normalized)) addSupport('economy_diagnosis');
+  } else if (hasTeammate && !memoryish) {
+    primary = 'teammate_status';
+    addSupport('history');
+  } else if (hasRival && (cue('history') || /\b(doing|done|up to)\b/.test(normalized)) && !memoryish) {
+    primary = 'rival_assessment';
+    addSupport('history');
+  } else if (cue('history') && !memoryish) {
+    primary = 'history';
+  } else if (hasProject && !memoryish) {
+    primary = 'project_info';
+  } else if (hasContract) {
+    primary = 'contract_info';
+  } else if (hasResource && (/\b(worth|price|value|sell for|cost)\b/.test(normalized) || /\b(where|which region)\b/.test(normalized))) {
+    primary = 'market_info';
+  } else if (hasRegion) {
+    primary = 'region_info';
+  } else if (cue('status')) {
+    primary = 'player_status';
+  } else if (cue('settings')) {
+    primary = 'settings_lookup';
+  } else if (/\b(objective|goal|win condition|winning|win)\b/.test(normalized)) {
+    primary = 'objective_status';
+  }
+
+  // Ambiguous references → clarification (never a guess).
+  const clarificationNeeded = (
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison'].includes(primary))
+    || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
+    || targetsReference
+  );
+  needs.clarification = clarificationNeeded;
+
+  const majorFacets = [needs.diagnosis, needs.recommendation, needs.comparison, needs.simulation, needs.prediction, primary === 'affordability'].filter(Boolean).length;
+  const typeByPrimary: Partial<Record<GICapability, GIQueryType>> = {
+    control: 'control', control_explain: 'explanation', comparison: 'comparison', simulation: 'simulation', affordability: 'affordability',
+    rival_assessment: needs.prediction ? 'prediction' : 'history', economy_diagnosis: 'diagnosis', strategic_diagnosis: 'diagnosis',
+    teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
+    history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
+    player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual'
+  };
+  const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
+  const shapeByType: Record<GIQueryType, GIAnswerShape> = {
+    factual: 'fact', explanation: 'explanation', diagnosis: 'diagnosis', recommendation: 'recommendation', comparison: 'comparison',
+    simulation: 'simulation', planning: 'plan', status: 'status', prediction: 'prediction', rules: 'delegated', settings: 'fact',
+    control: 'control', history: 'fact', affordability: 'explanation', compound: needs.diagnosis ? 'diagnosis' : 'recommendation', clarification: 'clarification'
+  };
+  let outputType = shapeByType[queryType];
+  if (primary === 'ask_engine') outputType = 'delegated';
+
+  const entityConfidence = entities.length ? entities.reduce((s, e) => s + e.confidence, 0) / entities.length : 0.8;
+  const primaryConfidence = primary === 'ask_engine' ? Math.max(0.3, ask.confidence) : (primary === 'control' ? 0.95 : 0.85);
+  const confidence = Math.max(0.1, Math.min(1, primaryConfidence * 0.6 + entityConfidence * 0.4 - (unresolved.length ? 0.15 : 0) - (ambiguous.length ? 0.2 : 0)));
+
+  return {
+    originalQuery: query,
+    normalizedQuery: normalized,
+    queryType,
+    primary,
+    supporting,
+    entities,
+    resolvedReferences,
+    unresolvedReferences: unresolved,
+    ambiguous,
+    options,
+    outputType,
+    horizon,
+    needs,
+    constraints,
+    askIntent: ask.intent,
+    askConfidence: ask.confidence,
+    controlRoute: control.kind === 'control' ? control : null,
+    deficitReference: refs.includes('deficit'),
+    confidence: Math.round(confidence * 100) / 100
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 6. QUERY PLANNER (deterministic, bounded)
+// ----------------------------------------------------------------------------
+
+export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team' | 'assistance' | 'history' | 'rules';
+
+export type GIToolName =
+  | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
+  | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine';
+
+export interface GIPlanStep {
+  id: string;
+  tool: GIToolName;
+  domain: GIEvidenceDomain;
+  args: Record<string, any>;
+  dependsOn: string[];
+  optional: boolean;
+  /** Core to the primary capability: never dropped by the budget. */
+  essential?: boolean;
+  purpose: string;
+}
+
+const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
+  simulation: ['validate_options', 'simulate_options', 'player_state'],
+  comparison: ['validate_options', 'simulate_options', 'player_state'],
+  affordability: ['affordability', 'project_state', 'player_state'],
+  action_validation: ['project_state', 'contract_state', 'validate_options'],
+  project_info: ['project_state'],
+  contract_info: ['contract_state'],
+  sequence_plan: ['plan_sequence', 'rank_actions'],
+  action_recommendation: ['rank_actions'],
+  strategic_diagnosis: ['economy_scan', 'threat_scan', 'objective_state'],
+  economy_diagnosis: ['economy_scan', 'player_state'],
+  rival_assessment: ['threat_scan'],
+  teammate_status: ['actor_state'],
+  region_info: ['region_state'],
+  market_info: ['market_state'],
+  player_status: ['player_state'],
+  objective_status: ['objective_state'],
+  history: ['observed_history'],
+  settings_lookup: ['settings_search'],
+  control: ['control_state'],
+  control_explain: ['control_state']
+};
+
+export interface GIQueryPlan {
+  planId: string;
+  goal: string;
+  queryType: GIQueryType;
+  primary: GICapability;
+  supporting: GICapability[];
+  domains: GIEvidenceDomain[];
+  steps: GIPlanStep[];
+  budget: number;
+  droppedSteps: string[];
+  expectedAnswer: GIAnswerShape;
+  fallback: 'ask_engine' | 'insufficient';
+  confidence: number;
+}
+
+const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
+  player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
+  project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
+  plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules'
+};
+
+function giHash(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36);
+}
+
+export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQueryPlan {
+  const steps: GIPlanStep[] = [];
+  const add = (tool: GIToolName, args: Record<string, any> = {}, opts?: { dependsOn?: string[]; optional?: boolean; purpose?: string }) => {
+    const id = `s${steps.length + 1}_${tool}`;
+    if (steps.some(s => s.tool === tool && JSON.stringify(s.args) === JSON.stringify(args))) return steps.find(s => s.tool === tool)!.id;
+    steps.push({ id, tool, domain: GI_TOOL_DOMAINS[tool], args, dependsOn: opts?.dependsOn || [], optional: Boolean(opts?.optional), purpose: opts?.purpose || tool });
+    return id;
+  };
+  const ids = (kind: GIEntityKind) => u.entities.filter(e => e.kind === kind).map(e => e.id);
+  const want = (c: GICapability) => u.primary === c || u.supporting.includes(c);
+
+  if (u.needs.clarification) {
+    // No evidence needed beyond the candidates offered back to the player.
+  } else if (u.primary === 'control' || u.primary === 'control_explain') {
+    add('control_state', {}, { purpose: 'Read the canonical Human/AI control state' });
+  } else if (u.primary === 'ask_engine' || u.primary === 'settings_lookup') {
+    if (u.primary === 'settings_lookup') add('settings_search', { query: u.originalQuery }, { purpose: 'Search the settings registry for the actual question' });
+    add('ask_engine', { query: u.originalQuery, intent: u.askIntent }, { purpose: 'Delegate to the Ask-the-Game engine', optional: u.primary === 'settings_lookup' });
+  } else {
+    // Core evidence the chosen capabilities need — nothing more.
+    if (['player_status', 'affordability', 'economy_diagnosis', 'strategic_diagnosis', 'comparison', 'simulation', 'sequence_plan', 'action_recommendation'].some(c => want(c as GICapability))) {
+      add('player_state', {}, { purpose: 'Cash, reserve, AP and location' });
+    }
+    if (want('objective_status') || u.primary === 'strategic_diagnosis') add('objective_state', {}, { purpose: 'Current goal and win-condition progress' });
+    if (want('project_info') || (want('affordability') && (ids('project').length || u.ambiguous.some(a => a.kind === 'project')))) add('project_state', { ids: ids('project') }, { purpose: 'Real project cost, funding and status' });
+    if (want('contract_info') || (want('action_validation') && ids('contract').length)) add('contract_state', { ids: ids('contract') }, { purpose: 'Contract requirements and status' });
+    if (want('region_info') || u.options.some(o => o.regionId)) add('region_state', { ids: Array.from(new Set([...ids('region'), ...u.options.map(o => o.regionId).filter(Boolean)])) }, { purpose: 'Region control, deposits and travel cost' });
+    if (want('market_info') || u.options.some(o => o.kind === 'sell' || o.kind === 'sell_all' || o.kind === 'buy')) add('market_state', { ids: ids('resource') }, { purpose: 'Market prices and holdings' });
+    if (want('teammate_status')) add('actor_state', { ids: ids('actor').length ? ids('actor') : world.teammateIds.slice(0, 1), relation: 'teammate' }, { purpose: 'Visible teammate state' });
+    const rankId = (want('action_recommendation') || want('sequence_plan') || want('strategic_diagnosis') || want('economy_diagnosis') || want('conflict_check'))
+      ? add('rank_actions', { constraints: u.constraints }, { purpose: 'Canonical contextual action ranking' })
+      : null;
+    if (want('economy_diagnosis') || want('strategic_diagnosis')) add('economy_scan', {}, { purpose: 'Liquidity, reserve, debt and idle inventory' });
+    if (want('rival_assessment') || want('strategic_diagnosis')) {
+      add('threat_scan', { ids: ids('actor') }, { purpose: 'Observable rival position and threatened regions' });
+      if (want('history') || u.needs.prediction) add('observed_history', { actorIds: ids('actor').length ? ids('actor') : [world.primaryRivalId].filter(Boolean) }, { purpose: 'Observable recent actions' });
+    } else if (want('history')) {
+      add('observed_history', { actorIds: ids('actor') }, { purpose: 'Observable recent actions' });
+    }
+    if (u.options.length) {
+      const v = add('validate_options', {}, { purpose: 'Canonical legality of each option' });
+      if (want('simulation') || u.needs.simulation) add('simulate_options', {}, { dependsOn: [v], purpose: 'Rollback-safe what-if on a cloned state' });
+    }
+    if (want('affordability')) add('affordability', { ids: ids('project') }, { purpose: 'Cost vs spendable cash and reserve' });
+    if (want('sequence_plan') || (want('action_recommendation') && (u.horizon || u.needs.diagnosis))) {
+      add('plan_sequence', { horizon: u.horizon, constraints: u.constraints }, { dependsOn: rankId ? [rankId] : [], purpose: 'Build a legal sequence within AP and reserve' });
+    }
+    if (want('conflict_check') || u.queryType === 'compound') add('conflict_scan', {}, { dependsOn: rankId ? [rankId] : [], optional: true, purpose: 'Look for systems recommending conflicting behaviour' });
+    if (want('control_state' as any)) add('control_state');
+  }
+
+  const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
+  const simple = ['factual', 'status', 'settings', 'control', 'clarification'].includes(u.queryType) && !u.supporting.length;
+  const budget = simple ? 2 : complex ? 8 : 5;
+  const dropped: string[] = [];
+  const core = GI_PRIMARY_TOOLS[u.primary] || [];
+  steps.forEach(s => { s.essential = core.includes(s.tool); });
+  // Enforce the budget: drop optional steps first, then the latest supporting (non-essential) steps.
+  while (steps.length > budget) {
+    let removeAt = steps.map(s => s.optional && !s.essential).lastIndexOf(true);
+    if (removeAt < 0) removeAt = steps.map(s => !s.essential).lastIndexOf(true);
+    if (removeAt < 0) break;
+    dropped.push(steps[removeAt].tool);
+    steps.splice(removeAt, 1);
+  }
+  const domains = Array.from(new Set(steps.map(s => s.domain)));
+  const goalByPrimary: Partial<Record<GICapability, string>> = {
+    strategic_diagnosis: 'Diagnose your strategic position', economy_diagnosis: 'Diagnose your finances', comparison: 'Compare your options',
+    simulation: 'Project the outcome of an action', affordability: 'Check whether you can afford it', sequence_plan: 'Plan your next moves',
+    action_recommendation: 'Recommend your next move', rival_assessment: 'Assess your rival from observable information', control: 'Change who controls your turns'
+  };
+  return {
+    planId: `gip_${giHash(`${u.normalizedQuery}|${u.entities.map(e => e.kind + e.id).join(',')}|${world.fingerprint}`)}`,
+    goal: goalByPrimary[u.primary] || 'Answer from game evidence',
+    queryType: u.queryType,
+    primary: u.primary,
+    supporting: u.supporting,
+    domains,
+    steps,
+    budget,
+    droppedSteps: dropped,
+    expectedAnswer: u.outputType,
+    fallback: u.primary === 'ask_engine' ? 'ask_engine' : 'insufficient',
+    confidence: u.confidence
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 7. GROUNDED TOOL ORCHESTRATOR + EVIDENCE GRAPH
+// ----------------------------------------------------------------------------
+
+export interface GIFact {
+  id: string;
+  label: string;
+  value: number | string | boolean;
+  unit?: '$' | 'AP' | 'turns' | '%' | 'regions' | 'units';
+  source: string;
+  domain: GIEvidenceDomain;
+  certainty: GIFactCertainty;
+}
+
+export type GIRelation = 'supports' | 'blocks' | 'costs' | 'affects' | 'progresses' | 'threatens' | 'requires' | 'contradicts' | 'contributes_to' | 'alternative_to' | 'controls';
+
+export interface GIGraphNode {
+  id: string;
+  kind: 'actor' | 'region' | 'resource' | 'action' | 'objective' | 'contract' | 'project' | 'setting' | 'fact' | 'recommendation' | 'event';
+  label: string;
+  factIds: string[];
+}
+
+export interface GIEvidenceGraph {
+  nodes: GIGraphNode[];
+  edges: Array<{ from: string; to: string; relation: GIRelation }>;
+  facts: Record<string, GIFact>;
+}
+
+export interface GIToolResult {
+  stepId: string;
+  tool: GIToolName;
+  ok: boolean;
+  unavailable?: boolean;
+  error?: string;
+  data: any;
+  facts: GIFact[];
+  cached?: boolean;
+}
+
+export interface GIExecution {
+  results: Record<string, GIToolResult>;
+  order: string[];
+  graph: GIEvidenceGraph;
+  cacheHits: number;
+  pendingAsk: boolean;
+}
+
+export const GI_GRAPH_NODE_LIMIT = 60;
+
+class GIGraphBuilder {
+  graph: GIEvidenceGraph = { nodes: [], edges: [], facts: {} };
+  node(id: string, kind: GIGraphNode['kind'], label: string): string {
+    if (!this.graph.nodes.some(n => n.id === id) && this.graph.nodes.length < GI_GRAPH_NODE_LIMIT) this.graph.nodes.push({ id, kind, label, factIds: [] });
+    return id;
+  }
+  edge(from: string, to: string, relation: GIRelation) {
+    if (this.graph.nodes.some(n => n.id === from) && this.graph.nodes.some(n => n.id === to) && !this.graph.edges.some(e => e.from === from && e.to === to && e.relation === relation)) {
+      this.graph.edges.push({ from, to, relation });
+    }
+  }
+  fact(f: GIFact, nodeId?: string) {
+    this.graph.facts[f.id] = f;
+    if (nodeId) this.graph.nodes.find(n => n.id === nodeId)?.factIds.push(f.id);
+  }
+}
+
+function fact(id: string, label: string, value: number | string | boolean, source: string, domain: GIEvidenceDomain, extra?: Partial<GIFact>): GIFact {
+  return { id, label, value, source, domain, certainty: 'confirmed', ...extra };
+}
+
+export function spendableCash(world: GIWorld): number {
+  return Math.max(0, world.player.money - (world.reserveFloor || 0));
+}
+
+/** Plan a legal sequence from the canonical ranking, bounded by AP, cash and reserve. */
+export function planGISequence(world: GIWorld, horizon: GIQueryUnderstanding['horizon'], constraints: GIQueryUnderstanding['constraints']): {
+  steps: ContextualActionCandidate[]; apBudget: number | null; skipped: Array<{ label: string; reason: string }>; turnsCovered: number;
+} {
+  const ranked = (world.actionSet?.ranked || []).filter(c => c.execution?.kind === 'copilot_candidate' && c.legal);
+  const apAvail = world.player.apRemaining;
+  const perTurn = world.player.apTotal || apAvail || 3;
+  const wantActions = horizon ? (horizon.unit === 'turn' ? Math.min(6, horizon.count * perTurn) : horizon.count) : Math.min(3, apAvail ?? 3);
+  const apBudget = apAvail === null ? null : Math.min(apAvail, wantActions);
+  let cash = world.player.money;
+  const floor = constraints.keepReserve || world.reserveFloor ? (world.reserveFloor || 0) : 0;
+  let ap = apBudget ?? wantActions;
+  const steps: ContextualActionCandidate[] = [];
+  const skipped: Array<{ label: string; reason: string }> = [];
+  const families = new Set<string>();
+  for (const c of ranked) {
+    if (steps.length >= Math.min(wantActions, 4)) break;
+    if (constraints.avoidLoans && /loan|credit/.test(c.actionType)) { skipped.push({ label: c.label, reason: 'you asked to avoid loans' }); continue; }
+    const cost = c.costEstimate || 0;
+    const apc = c.apCost || 1;
+    if (apc > ap) { skipped.push({ label: c.label, reason: 'not enough Action Points left in the plan' }); continue; }
+    if (cost > 0 && cash - cost < floor) { skipped.push({ label: c.label, reason: floor ? 'would drop cash below your reserve' : 'not enough cash' }); continue; }
+    if (families.has(c.actionType) && ranked.length > wantActions) continue;
+    families.add(c.actionType);
+    steps.push(c);
+    ap -= apc;
+    cash -= cost;
+    const delta = Number((c.execution as any)?.candidate?.expectedStateDelta?.cashDelta || 0);
+    if (delta > 0) cash += delta;
+  }
+  return { steps, apBudget, skipped: skipped.slice(0, 3), turnsCovered: horizon?.unit === 'turn' ? Math.min(horizon.count, Math.max(1, Math.ceil(steps.length / Math.max(1, perTurn)))) : 1 };
+}
+
+function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, prior: Record<string, GIToolResult>, g: GIGraphBuilder): GIToolResult {
+  const base = { stepId: step.id, tool: step.tool };
+  const P = world.player;
+  const me = g.node('actor:self', 'actor', 'You');
+  switch (step.tool) {
+    case 'player_state': {
+      const facts = [
+        fact('player.cash', 'Cash', P.money, 'Player state', 'player', { unit: '$' }),
+        fact('player.location', 'Location', P.locationName, 'Player state', 'player'),
+        ...(P.apRemaining !== null ? [fact('player.ap', 'Action points left', P.apRemaining, 'Player state', 'player', { unit: 'AP' })] : []),
+        ...(P.apTotal !== null ? [fact('player.apTotal', 'Action points per turn', P.apTotal, 'Player state', 'player', { unit: 'AP' })] : []),
+        ...(world.reserveFloor !== null ? [
+          fact('player.reserve', world.reserveSource || 'Cash reserve', world.reserveFloor, world.reserveSource || 'Settings', 'assistance', { unit: '$' }),
+          fact('player.spendable', 'Spendable cash above reserve', spendableCash(world), 'Calculated', 'player', { unit: '$', certainty: 'calculated' })
+        ] : []),
+        ...(P.debtTotal > 0 ? [fact('player.debt', 'Outstanding loans', P.debtTotal, 'Player state', 'player', { unit: '$' })] : [])
+      ];
+      facts.forEach(f => g.fact(f, me));
+      return { ...base, ok: true, data: P, facts };
+    }
+    case 'objective_state': {
+      const facts: GIFact[] = [];
+      const obj = world.objective;
+      if (obj) {
+        const on = g.node('objective', 'objective', obj.title);
+        g.edge(me, on, 'progresses');
+        facts.push(fact('objective.title', 'Current goal', obj.title, 'Objective tracker', 'objectives'));
+        facts.push(fact('objective.progress', 'Goal requirements met', obj.progress.completed, 'Objective tracker', 'objectives'));
+        facts.push(fact('objective.total', 'Goal requirements', obj.progress.total, 'Objective tracker', 'objectives'));
+        obj.requirements.forEach((r, i) => {
+          if (typeof r.currentValue === 'number') facts.push(fact(`objective.req${i}.current`, r.label, r.currentValue, 'Objective tracker', 'objectives'));
+          if (typeof r.targetValue === 'number') facts.push(fact(`objective.req${i}.target`, `${r.label} target`, r.targetValue, 'Objective tracker', 'objectives'));
+        });
+        facts.forEach(f => g.fact(f, on));
+      }
+      if (world.win) {
+        const w = world.win;
+        const wn = g.node('win', 'objective', w.label);
+        [fact('win.player', `${w.metricLabel} (you)`, w.playerValue, 'Win condition', 'objectives'),
+          fact('win.rival', `${w.metricLabel} (rival)`, w.opponentValue, 'Win condition', 'objectives'),
+          fact('win.playerRegions', 'Regions you control', w.playerRegions, 'Region control', 'objectives', { unit: 'regions' }),
+          fact('win.rivalRegions', 'Regions your rival controls', w.rivalRegions, 'Region control', 'objectives', { unit: 'regions' }),
+          ...(w.regionsTarget ? [fact('win.regionsTarget', 'Regions needed to win', w.regionsTarget, 'Rules', 'rules', { unit: 'regions' })] : [])
+        ].forEach(f => { facts.push(f); g.fact(f, wn); });
+        g.edge('objective', wn, 'requires');
+      }
+      return { ...base, ok: Boolean(obj || world.win), data: { objective: obj, win: world.win }, facts, error: obj || world.win ? undefined : 'No objective data' };
+    }
+    case 'control_state': {
+      const c = world.control;
+      const facts = [fact('control.mode', 'Control mode', c.modeLabel, 'Control model', 'assistance'), fact('control.phase', 'Control state', c.headline, 'Control model', 'assistance')];
+      facts.forEach(f => g.fact(f));
+      return { ...base, ok: true, data: c, facts };
+    }
+    case 'region_state': {
+      const codes: string[] = step.args.ids?.length ? step.args.ids : [P.location].filter(Boolean);
+      const facts: GIFact[] = [];
+      const data: GIRegionView[] = [];
+      codes.forEach(code => {
+        const r = world.regions[code];
+        if (!r) return;
+        data.push(r);
+        const rn = g.node(`region:${code}`, 'region', r.name);
+        const add = (f: GIFact) => { facts.push(f); g.fact(f, rn); };
+        add(fact(`region.${code}.controller`, `${r.name} controlled by`, r.controllerLabel, 'Region control', 'world'));
+        add(fact(`region.${code}.playerDeposit`, `Your deposit in ${r.name}`, r.playerDeposit, 'Region control', 'world', { unit: '$' }));
+        add(fact(`region.${code}.rivalDeposit`, `Rival deposit in ${r.name}`, r.rivalDeposit, 'Region control', 'world', { unit: '$' }));
+        if (r.playerCostToControl !== null) add(fact(`region.${code}.playerCost`, `Deposit you need to control ${r.name}`, r.playerCostToControl, 'Region control', 'world', { unit: '$' }));
+        if (r.rivalCostToControl !== null) add(fact(`region.${code}.rivalCost`, `Deposit your rival needs to take ${r.name}`, r.rivalCostToControl, 'Region control', 'world', { unit: '$' }));
+        if (r.travelCost !== null) add(fact(`region.${code}.travel`, `Travel cost to ${r.name}`, r.travelCost, 'Travel rules', 'rules', { unit: '$' }));
+        add(fact(`region.${code}.resources`, `Resources in ${r.name}`, r.resources.join(', ') || 'none listed', 'Region data', 'world'));
+        if (r.controlledByPlayer) g.edge(me, rn, 'controls');
+        if (r.controlledByRival && world.primaryRivalId) g.edge(g.node(`actor:${world.primaryRivalId}`, 'actor', world.actors.find(a => a.id === world.primaryRivalId)?.name || 'Rival'), rn, 'controls');
+        if (world.win?.regionsTarget) g.edge(rn, 'win', 'contributes_to');
+      });
+      return { ...base, ok: data.length > 0, data, facts, error: data.length ? undefined : 'Region not found' };
+    }
+    case 'market_state': {
+      const ids: string[] = step.args.ids?.length ? step.args.ids : Object.keys(P.inventory);
+      const facts: GIFact[] = [];
+      const rows = ids.map(res => {
+        const price = world.market[res];
+        const held = P.inventory[res] || 0;
+        const rn = g.node(`resource:${res}`, 'resource', res);
+        if (typeof price === 'number') { const f = fact(`market.${res}.price`, `${res} market price`, price, 'Market', 'world', { unit: '$' }); facts.push(f); g.fact(f, rn); }
+        const f2 = fact(`inv.${res}`, `${res} held`, held, 'Inventory', 'player', { unit: 'units' }); facts.push(f2); g.fact(f2, rn);
+        const regionsWith = Object.keys(REGIONAL_RESOURCES).filter(code => REGIONS[code] && REGIONAL_RESOURCES[code].includes(res));
+        if (regionsWith.length) { const f3 = fact(`market.${res}.regions`, `Regions producing ${res}`, regionsWith.join(', '), 'Region data', 'world'); facts.push(f3); g.fact(f3, rn); }
+        return { resource: res, price: typeof price === 'number' ? price : null, held, value: typeof price === 'number' ? price * held : null, regionsWith };
+      });
+      const total = rows.reduce((s, r) => s + (r.value || 0), 0);
+      if (rows.some(r => r.value)) { const f = fact('inv.value', 'Market value of these holdings', total, 'Calculated', 'player', { unit: '$', certainty: 'calculated' }); facts.push(f); g.fact(f); }
+      return { ...base, ok: rows.length > 0, data: rows, facts, error: rows.length ? undefined : 'No resources to inspect' };
+    }
+    case 'project_state': {
+      const idList: string[] = step.args.ids?.length ? step.args.ids : [];
+      const projects = idList.length ? world.projects.filter(p => idList.includes(p.id)) : [];
+      const facts: GIFact[] = [];
+      projects.forEach(p => {
+        const pn = g.node(`project:${p.id}`, 'project', p.title);
+        const add = (f: GIFact) => { facts.push(f); g.fact(f, pn); };
+        add(fact(`project.${p.id}.cost`, `${p.title} total cost`, p.totalCost, 'Infrastructure', 'world', { unit: '$' }));
+        add(fact(`project.${p.id}.invested`, `${p.title} funded so far`, p.invested, 'Infrastructure', 'world', { unit: '$' }));
+        add(fact(`project.${p.id}.remaining`, `${p.title} remaining cost`, p.remaining, 'Infrastructure', 'world', { unit: '$' }));
+        add(fact(`project.${p.id}.status`, `${p.title} status`, p.status.replace(/_/g, ' '), 'Infrastructure', 'world'));
+        add(fact(`project.${p.id}.step`, `${p.title} smallest funding step`, p.fundingIncrement, 'Infrastructure screen', 'rules', { unit: '$' }));
+        if (p.maintenancePerTurn) add(fact(`project.${p.id}.maint`, `${p.title} maintenance per turn`, p.maintenancePerTurn, 'Infrastructure', 'world', { unit: '$' }));
+        if (p.requiredDevTier !== null) add(fact(`project.${p.id}.tier`, `${p.title} listed development tier`, p.requiredDevTier, 'Infrastructure data', 'world'));
+        if (p.regionDevTier !== null) add(fact(`project.${p.id}.regionTier`, `${p.regionId} development tier`, p.regionDevTier, 'Regional development', 'world'));
+        g.edge(`project:${p.id}`, me, 'costs');
+      });
+      return { ...base, ok: projects.length > 0, data: projects, facts, error: projects.length ? undefined : 'No matching project' };
+    }
+    case 'contract_state': {
+      const contracts = world.contracts.filter(c => (step.args.ids || []).includes(c.id));
+      const facts: GIFact[] = [];
+      contracts.forEach(c => {
+        const cn = g.node(`contract:${c.id}`, 'contract', c.title);
+        const add = (f: GIFact) => { facts.push(f); g.fact(f, cn); };
+        add(fact(`contract.${c.id}.status`, `${c.title} status`, c.status, 'Contracts', 'world'));
+        if (c.requiredMoney !== null) add(fact(`contract.${c.id}.money`, `${c.title} required cash`, c.requiredMoney, 'Contracts', 'world', { unit: '$' }));
+        if (c.rewardMoney !== null) add(fact(`contract.${c.id}.reward`, `${c.title} cash reward`, c.rewardMoney, 'Contracts', 'world', { unit: '$' }));
+        if (c.turnsRemaining !== null) add(fact(`contract.${c.id}.turns`, `${c.title} turns remaining`, c.turnsRemaining, 'Contracts', 'world', { unit: 'turns' }));
+        if (c.blocker) { add(fact(`contract.${c.id}.blocker`, `${c.title} blocker`, c.blocker, 'Contract validation', 'rules')); g.edge(cn, me, 'blocks'); }
+      });
+      return { ...base, ok: contracts.length > 0, data: contracts, facts, error: contracts.length ? undefined : 'No matching contract' };
+    }
+    case 'actor_state': {
+      const actors = world.actors.filter(a => (step.args.ids || []).includes(a.id) || (!step.args.ids?.length && a.relation === step.args.relation));
+      const facts: GIFact[] = [];
+      actors.forEach(a => {
+        const an = g.node(`actor:${a.id}`, 'actor', a.name);
+        if (!a.visible) { const f = fact(`actor.${a.id}.hidden`, `${a.name} details`, 'hidden by current settings', 'Visibility rules', 'ai'); facts.push(f); g.fact(f, an); return; }
+        if (a.money !== null) { const f = fact(`actor.${a.id}.money`, `${a.name} cash`, a.money, 'Visible actor state', 'ai', { unit: '$' }); facts.push(f); g.fact(f, an); }
+        if (a.location) { const f = fact(`actor.${a.id}.location`, `${a.name} location`, REGIONS[a.location]?.name || a.location, 'Visible actor state', 'ai'); facts.push(f); g.fact(f, an); }
+        if (a.regionsControlled !== null) { const f = fact(`actor.${a.id}.regions`, `Regions ${a.name} controls`, a.regionsControlled, 'Region control', 'ai', { unit: 'regions' }); facts.push(f); g.fact(f, an); }
+      });
+      const askedForSpecific = Boolean(step.args.ids?.length);
+      return { ...base, ok: actors.length > 0 || !askedForSpecific, data: actors, facts, error: actors.length || !askedForSpecific ? undefined : 'No such actor in this match' };
+    }
+    case 'observed_history': {
+      const ids: string[] = step.args.actorIds || [];
+      const events = world.observed.filter(e => !ids.length || (e.actorId && ids.includes(e.actorId))).slice(-8);
+      const facts = events.map((e, i) => fact(`obs.${i}`, `Observed (${e.actorName}${e.day !== null ? `, day ${e.day}` : ''})`, e.summary, 'Visible activity', 'history', { certainty: 'observed' }));
+      facts.forEach(f => g.fact(f));
+      return { ...base, ok: true, data: events, facts };
+    }
+    case 'rank_actions': {
+      const set = world.actionSet;
+      const facts: GIFact[] = [];
+      (set?.ranked || []).slice(0, 5).forEach((c, i) => {
+        const an = g.node(`action:${c.id}`, 'action', c.label);
+        const f = fact(`rank.${c.id}`, `Ranked #${i + 1}`, c.label, 'Contextual Action System', 'rules', { certainty: 'calculated' });
+        facts.push(f); g.fact(f, an);
+        if (typeof c.costEstimate === 'number' && c.costEstimate > 0) { const fc = fact(`rank.${c.id}.cost`, `${c.label} cost`, c.costEstimate, 'Contextual Action System', 'rules', { unit: '$' }); facts.push(fc); g.fact(fc, an); }
+        if (c.objectiveRelation) g.edge(an, 'objective', 'supports');
+      });
+      (set?.blocked || []).forEach(c => {
+        const an = g.node(`action:${c.id}`, 'action', c.label);
+        const f = fact(`blocked.${c.id}`, `${c.label} blocked`, c.blockReason || 'blocked', 'Canonical validation', 'rules');
+        facts.push(f); g.fact(f, an); g.edge(an, me, 'blocks');
+      });
+      return { ...base, ok: Boolean(set), data: set, facts, error: set ? undefined : 'No contextual ranking available' };
+    }
+    case 'plan_sequence': {
+      const plan = planGISequence(world, step.args.horizon, step.args.constraints || u.constraints);
+      const facts = plan.steps.map((c, i) => fact(`plan.${i}`, `Plan step ${i + 1}`, c.label, 'Sequence planner (contextual ranking)', 'rules', { certainty: 'calculated' }));
+      plan.steps.forEach(c => { if (c.costEstimate) facts.push(fact(`plan.${c.id}.cost`, `${c.label} cost`, c.costEstimate, 'Contextual Action System', 'rules', { unit: '$' })); });
+      facts.forEach(f => g.fact(f));
+      return { ...base, ok: plan.steps.length > 0, data: plan, facts, error: plan.steps.length ? undefined : 'No legal sequence fits the current Action Points / cash' };
+    }
+    case 'validate_options': {
+      const facts: GIFact[] = [];
+      u.options.forEach(o => {
+        const on = g.node(`option:${o.id}`, 'action', o.label);
+        if (o.cashCost) { const f = fact(`opt.${o.id}.cost`, `${o.label} cost`, o.cashCost, 'Canonical rules', 'rules', { unit: '$' }); facts.push(f); g.fact(f, on); }
+        if (o.amount && o.kind !== 'sell' && o.kind !== 'sell_all') { const f = fact(`opt.${o.id}.amount`, `${o.label} amount`, o.amount, 'Canonical rules', 'rules', { unit: '$' }); facts.push(f); g.fact(f, on); }
+        if (o.amount && (o.kind === 'sell' || o.kind === 'sell_all')) { const f = fact(`opt.${o.id}.qty`, `${o.label} quantity`, o.amount, 'Inventory', 'player', { unit: 'units' }); facts.push(f); g.fact(f, on); }
+        const f = fact(`opt.${o.id}.legal`, `${o.label} legal now`, o.legal ? 'yes' : `no — ${o.blockReason}`, 'Canonical validation', 'rules');
+        facts.push(f); g.fact(f, on);
+        if (!o.legal) g.edge(on, me, 'blocks');
+        if (o.regionId && world.regions[o.regionId]) g.edge(on, `region:${o.regionId}`, 'affects');
+        u.options.filter(x => x.id !== o.id).forEach(x => g.edge(on, `option:${x.id}`, 'alternative_to'));
+      });
+      return { ...base, ok: u.options.length > 0, data: u.options, facts };
+    }
+    case 'simulate_options': {
+      const facts: GIFact[] = [];
+      const sims: Record<string, GISimulationOutcome | null> = {};
+      if (!world.tools.simulate) return { ...base, ok: false, unavailable: true, error: 'Simulation is unavailable in this view', data: sims, facts };
+      u.options.forEach(o => {
+        if (o.kind === 'wait' || !o.intent || !o.legal) { sims[o.id] = null; return; }
+        const sim = world.tools.simulate!(o.intent);
+        sims[o.id] = sim;
+        if (!sim.ok) return;
+        const certainty: GIFactCertainty = sim.certainty === 'deterministic' ? 'projected' : 'estimated';
+        const on = `option:${o.id}`;
+        const add = (f: GIFact) => { facts.push(f); g.fact(f, on); };
+        add(fact(`sim.${o.id}.cashBefore`, `Cash before ${o.label}`, sim.before.cash, 'Rollback-safe simulation', 'rules', { unit: '$', certainty: 'confirmed' }));
+        add(fact(`sim.${o.id}.cashAfter`, `Cash after ${o.label}`, sim.after.cash, 'Rollback-safe simulation', 'rules', { unit: '$', certainty }));
+        add(fact(`sim.${o.id}.cashDelta`, `Cash change from ${o.label}`, Math.abs(sim.cashDelta), 'Rollback-safe simulation', 'rules', { unit: '$', certainty }));
+        if (sim.apDelta !== null) add(fact(`sim.${o.id}.ap`, `AP after ${o.label}`, sim.after.apRemaining ?? 0, 'Rollback-safe simulation', 'rules', { unit: 'AP', certainty }));
+        (sim.branches || []).forEach((b, i) => add(fact(`sim.${o.id}.branch${i}`, `${o.label}: ${b.label}`, Math.abs(b.cashDelta), 'Rollback-safe simulation', 'rules', { unit: '$', certainty: 'estimated' })));
+        Object.entries(sim.depositDelta).forEach(([code, d]) => add(fact(`sim.${o.id}.dep.${code}`, `Deposit change in ${code}`, Math.abs(d), 'Rollback-safe simulation', 'rules', { unit: '$', certainty })));
+        if (world.reserveFloor !== null) add(fact(`sim.${o.id}.belowReserve`, `${o.label} leaves cash below reserve`, sim.after.cash < world.reserveFloor, 'Calculated', 'rules', { certainty }));
+      });
+      return { ...base, ok: Object.values(sims).some(s => s && s.ok), data: sims, facts, error: Object.values(sims).some(s => s && s.ok) ? undefined : 'No option could be simulated' };
+    }
+    case 'affordability': {
+      const projectResult = Object.values(prior).find(r => r.tool === 'project_state' && r.ok);
+      const project: GIProjectView | undefined = projectResult?.data?.[0];
+      const facts: GIFact[] = [];
+      const spend = spendableCash(world);
+      let target: { label: string; cost: number; kind: string; stepCost?: number } | null = null;
+      if (project) target = { label: project.title, cost: project.remaining, kind: 'project', stepCost: Math.min(project.fundingIncrement, project.remaining) };
+      else {
+        const opt = u.options.find(o => o.cashCost > 0) || u.options[0];
+        if (opt) target = { label: opt.label, cost: opt.cashCost, kind: 'option' };
+        else {
+          const act = u.entities.find(e => e.kind === 'action');
+          const cand = act ? giCandidateList(world).find(c => c.id === act.id) : null;
+          if (cand) target = { label: cand.label, cost: cand.costEstimate || 0, kind: 'action' };
+        }
+      }
+      if (!target) return { ...base, ok: false, data: null, facts, error: 'No target to price' };
+      const deficit = Math.max(0, target.cost - world.player.money);
+      const deficitVsReserve = Math.max(0, target.cost - spend);
+      facts.push(fact('afford.cost', `${target.label} cost`, target.cost, 'Calculated', 'rules', { unit: '$' }));
+      facts.push(fact('afford.deficit', `Cash short of ${target.label}`, deficit, 'Calculated', 'player', { unit: '$', certainty: 'calculated' }));
+      if (world.reserveFloor !== null) facts.push(fact('afford.deficitReserve', `Short of ${target.label} while keeping your reserve`, deficitVsReserve, 'Calculated', 'player', { unit: '$', certainty: 'calculated' }));
+      if (target.stepCost) facts.push(fact('afford.step', 'Smallest funding step', target.stepCost, 'Infrastructure screen', 'rules', { unit: '$' }));
+      facts.forEach(f => g.fact(f));
+      return { ...base, ok: true, data: { target, deficit, deficitVsReserve, spendable: spend, affordableNow: deficit === 0, affordableKeepingReserve: deficitVsReserve === 0, stepAffordable: target.stepCost ? world.player.money >= target.stepCost : null }, facts };
+    }
+    case 'economy_scan': {
+      const P2 = world.player;
+      const inventoryValue = Object.entries(P2.inventory).reduce((s, [res, n]) => s + (typeof world.market[res] === 'number' ? world.market[res] * n : 0), 0);
+      const topCosts = (world.actionSet?.ranked || []).map(c => c.costEstimate || 0).filter(c => c > 0).sort((a, b) => a - b);
+      const medianCost = topCosts.length ? topCosts[Math.floor(topCosts.length / 2)] : null;
+      const interest = P2.loans.reduce((s, l) => s + (l.rate ? l.amount * l.rate : 0), 0);
+      const facts: GIFact[] = [];
+      if (inventoryValue) facts.push(fact('econ.inventoryValue', 'Market value of your inventory', inventoryValue, 'Calculated from market prices', 'player', { unit: '$', certainty: 'calculated' }));
+      if (medianCost !== null) facts.push(fact('econ.medianCost', 'Typical cost of your legal actions', medianCost, 'Contextual Action System', 'rules', { unit: '$', certainty: 'calculated' }));
+      if (P2.debtTotal) facts.push(fact('econ.debt', 'Outstanding loans', P2.debtTotal, 'Loans', 'player', { unit: '$' }));
+      if (interest) facts.push(fact('econ.interest', 'Loan interest exposure', Math.round(interest), 'Loans', 'player', { unit: '$', certainty: 'calculated' }));
+      const maint = world.projects.filter(p => p.status === 'active' && p.maintenancePerTurn > 0);
+      facts.forEach(f => g.fact(f, me));
+      return { ...base, ok: true, data: { inventoryValue, medianCost, interest, activeMaintenance: maint.map(p => ({ title: p.title, amount: p.maintenancePerTurn })) }, facts };
+    }
+    case 'threat_scan': {
+      const rival = world.actors.find(a => a.id === (step.args.ids?.[0] || world.primaryRivalId)) || world.actors.find(a => a.relation === 'rival') || null;
+      const facts: GIFact[] = [];
+      const threatened: Array<{ region: GIRegionView; rivalCanAfford: boolean | null }> = [];
+      Object.values(world.regions).forEach(r => {
+        if (!r.controlledByPlayer || r.rivalCostToControl === null) return;
+        const rivalCash = rival?.visible ? rival.money : null;
+        const canAfford = rivalCash === null ? null : rivalCash >= r.rivalCostToControl;
+        if (canAfford !== false) threatened.push({ region: r, rivalCanAfford: canAfford });
+      });
+      threatened.sort((a, b) => (a.region.rivalCostToControl || 0) - (b.region.rivalCostToControl || 0) || a.region.code.localeCompare(b.region.code));
+      if (rival) {
+        const rn = g.node(`actor:${rival.id}`, 'actor', rival.name);
+        if (rival.visible && rival.money !== null) { const f = fact(`actor.${rival.id}.money`, `${rival.name} cash`, rival.money, 'Visible actor state', 'ai', { unit: '$' }); facts.push(f); g.fact(f, rn); }
+        if (rival.regionsControlled !== null) { const f = fact(`actor.${rival.id}.regions`, `Regions ${rival.name} controls`, rival.regionsControlled, 'Region control', 'ai', { unit: 'regions' }); facts.push(f); g.fact(f, rn); }
+        if (rival.visible && rival.location) { const f = fact(`actor.${rival.id}.location`, `${rival.name} location`, REGIONS[rival.location]?.name || rival.location, 'Visible actor state', 'ai'); facts.push(f); g.fact(f, rn); }
+        threatened.slice(0, 3).forEach(t => {
+          const regionNode = g.node(`region:${t.region.code}`, 'region', t.region.name);
+          g.edge(rn, regionNode, 'threatens');
+          const f = fact(`threat.${t.region.code}`, `${rival.name} needs to take ${t.region.name}`, t.region.rivalCostToControl || 0, 'Region control', 'world', { unit: '$' });
+          facts.push(f); g.fact(f, regionNode);
+        });
+      }
+      return { ...base, ok: Boolean(rival), data: { rival, threatened }, facts, error: rival ? undefined : 'No rival in this match' };
+    }
+    case 'conflict_scan':
+      return { ...base, ok: true, data: null, facts: [] };
+    case 'settings_search': {
+      if (!world.tools.searchSettings) return { ...base, ok: false, unavailable: true, error: 'Settings search unavailable', data: null, facts: [] };
+      const res = world.tools.searchSettings(step.args.query || '');
+      const matches = (res?.matches || []).slice(0, 5);
+      const facts = matches.map((m: any, i: number) => fact(`setting.${i}`, m.title || m.settingKey, String(m.currentValue), 'Settings registry', 'rules'));
+      facts.forEach((f: GIFact) => g.fact(f));
+      return { ...base, ok: matches.length > 0, data: res, facts, error: matches.length ? undefined : 'No matching settings' };
+    }
+    case 'ask_engine':
+      return { ...base, ok: false, unavailable: true, data: null, facts: [], error: 'deferred' };
+    default:
+      return { ...base, ok: false, unavailable: true, error: `Unknown tool ${step.tool}`, data: null, facts: [] };
+  }
+}
+
+/** Runs the plan in order (dependencies first), with a per-plan memo so no computation repeats. */
+export function executeGIPlan(plan: GIQueryPlan, world: GIWorld, u: GIQueryUnderstanding): GIExecution {
+  const g = new GIGraphBuilder();
+  const results: Record<string, GIToolResult> = {};
+  const order: string[] = [];
+  const memo = new Map<string, GIToolResult>();
+  let cacheHits = 0;
+  let pendingAsk = false;
+  const done = new Set<string>();
+  const remaining = [...plan.steps];
+  let guard = 0;
+  while (remaining.length && guard++ < 50) {
+    const idx = remaining.findIndex(s => s.dependsOn.every(d => done.has(d) || !plan.steps.some(p => p.id === d)));
+    const step = remaining.splice(idx >= 0 ? idx : 0, 1)[0];
+    const key = `${step.tool}:${JSON.stringify(step.args)}`;
+    let res = memo.get(key);
+    if (res) { cacheHits++; res = { ...res, stepId: step.id, cached: true }; }
+    else {
+      try { res = runGITool(step, world, u, results, g); }
+      catch (err) { res = { stepId: step.id, tool: step.tool, ok: false, error: err instanceof Error ? err.message : String(err), data: null, facts: [] }; }
+      memo.set(key, res);
+    }
+    if (step.tool === 'ask_engine') pendingAsk = true;
+    results[step.id] = res;
+    order.push(step.id);
+    done.add(step.id);
+  }
+  return { results, order, graph: g.graph, cacheHits, pendingAsk };
+}
+
+function giResult(exec: GIExecution, tool: GIToolName): GIToolResult | null {
+  const id = exec.order.find(o => exec.results[o]?.tool === tool);
+  return id ? exec.results[id] : null;
+}
+
+// ----------------------------------------------------------------------------
+// 8. ANALYSIS: diagnosis, comparison, conflicts
+// ----------------------------------------------------------------------------
+
+export interface GIClaim {
+  id: string;
+  text: string;
+  kind: 'fact' | 'inference' | 'projection' | 'prediction' | 'recommendation' | 'caveat';
+  certainty: GICertainty;
+  factIds: string[];
+  /** Numbers derived by the pipeline (not in any fact) that the claim is allowed to state. */
+  derived?: number[];
+  optionLegal?: boolean;
+}
+
+export interface GICause {
+  id: string;
+  severity: number;
+  claim: GIClaim;
+  recovery?: string;
+}
+
+export interface GIConflict {
+  id: string;
+  systems: [string, string];
+  description: string;
+  tradeoff: string;
+}
+
+export interface GIComparisonRow {
+  option: GIOption;
+  cost: number;
+  ap: number;
+  legal: boolean;
+  blockReason: string | null;
+  cashAfter: number | null;
+  objectiveEffect: string | null;
+  risk: string | null;
+  reversible: boolean;
+  score: number;
+  certainty: GICertainty;
+}
+
+let giClaimCounter = 0;
+/** Tidy sentence joins produced by composing reasons that already end in punctuation. */
+export function tidyGISentence(text: string): string {
+  return String(text || '')
+    .replace(/([.!?])(\s*[.])+/g, '$1')
+    .replace(/\.\s*\)/g, ')')
+    .replace(/\s+([,.;])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function claim(text: string, kind: GIClaim['kind'], certainty: GICertainty, factIds: string[], extra?: Partial<GIClaim>): GIClaim {
+  giClaimCounter += 1;
+  return { id: `c${giClaimCounter}`, text: tidyGISentence(text), kind, certainty, factIds, ...extra };
+}
+
+const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
+export function diagnoseGIPosition(world: GIWorld, exec: GIExecution, economic: boolean): GICause[] {
+  const causes: GICause[] = [];
+  const P = world.player;
+  const add = (id: string, severity: number, c: GIClaim, recovery?: string) => causes.push({ id, severity, claim: c, recovery });
+  if (world.reserveFloor !== null && P.money < world.reserveFloor) {
+    add('below_reserve', 90, claim(`Your cash (${money(P.money)}) is below your reserve of ${money(world.reserveFloor)}.`, 'fact', 'confirmed', ['player.cash', 'player.reserve']), 'raise cash before spending');
+  }
+  if (world.attention && world.attention.state !== 'good') {
+    add('attention', world.attention.state === 'critical' ? 85 : 55, claim(`${world.attention.label}: ${world.attention.detail}`, 'fact', 'confirmed', []), world.attention.navigation?.label);
+  }
+  const econ = giResult(exec, 'economy_scan')?.data;
+  if (econ?.medianCost && P.money < econ.medianCost * 2) {
+    add('thin_cash', 60, claim(`Your cash covers fewer than two typical actions (typical cost ${money(econ.medianCost)}).`, 'inference', 'high', ['econ.medianCost', 'player.cash']), 'sell idle inventory or take income actions');
+  }
+  if (econ?.inventoryValue && econ.inventoryValue > P.money * 0.5) {
+    add('idle_inventory', 40, claim(`${money(econ.inventoryValue)} of value is sitting in inventory rather than cash.`, 'fact', 'confirmed', ['econ.inventoryValue']), 'sell resources you do not need');
+  }
+  if (P.debtTotal > 0) {
+    add('debt', P.debtTotal > P.money ? 65 : 35, claim(`You carry ${money(P.debtTotal)} in loans${econ?.interest ? `, with about ${money(econ.interest)} of interest exposure` : ''}.`, 'fact', 'confirmed', ['econ.debt', 'econ.interest'].filter(id => exec.graph.facts[id])), 'avoid new borrowing');
+  }
+  if (econ?.activeMaintenance?.length) {
+    const total = econ.activeMaintenance.reduce((s: number, m: any) => s + m.amount, 0);
+    add('maintenance', 45, claim(`Active projects list ${money(total)} of maintenance per turn.`, 'fact', 'confirmed', [], { derived: [total] }), 'avoid new projects until cash recovers');
+  }
+  if (!economic && world.win) {
+    const w = world.win;
+    const delta = w.playerValue - w.opponentValue;
+    if (delta < 0) {
+      add('behind_metric', 75, claim(`You trail your rival on ${w.metricLabel.toLowerCase()} (${w.playerValue.toLocaleString()} vs ${w.opponentValue.toLocaleString()}).`, 'fact', 'confirmed', ['win.player', 'win.rival']));
+    }
+    if (w.regionsTarget && w.rivalRegions > w.playerRegions) {
+      add('behind_regions', 80, claim(`Your rival controls ${w.rivalRegions} region(s) to your ${w.playerRegions}; ${w.regionsTarget} are needed to win.`, 'fact', 'confirmed', ['win.rivalRegions', 'win.playerRegions', 'win.regionsTarget']));
+    }
+  }
+  const threat = giResult(exec, 'threat_scan')?.data;
+  if (!economic && threat?.threatened?.length) {
+    const t = threat.threatened[0];
+    const rivalName = threat.rival?.name || 'Your rival';
+    add('threatened_region', t.rivalCanAfford ? 78 : 50, claim(
+      t.rivalCanAfford
+        ? `${t.region.name} is exposed: ${rivalName} needs ${money(t.region.rivalCostToControl)} to take it and currently has enough cash.`
+        : `${t.region.name} is your most exposed region (${rivalName} would need ${money(t.region.rivalCostToControl)}).`,
+      'fact', 'confirmed', [`threat.${t.region.code}`, `actor.${threat.rival?.id}.money`].filter(id => exec.graph.facts[id])), `defend ${t.region.name}`);
+  }
+  if (world.objective?.completionState === 'blocked' && world.objective.blockers[0]) {
+    add('objective_blocked', 65, claim(`Your goal is blocked: ${world.objective.blockers[0]}.`, 'fact', 'confirmed', ['objective.title']));
+  }
+  if (world.player.apRemaining === 0 && world.isHumanTurn) {
+    add('no_ap', 30, claim('You have no Action Points left this turn.', 'fact', 'confirmed', ['player.ap']), 'end your turn');
+  }
+  return causes.sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id));
+}
+
+export function compareGIOptions(world: GIWorld, u: GIQueryUnderstanding, exec: GIExecution): GIComparisonRow[] {
+  const sims: Record<string, GISimulationOutcome | null> = giResult(exec, 'simulate_options')?.data || {};
+  const winRegions = Boolean(world.win?.regionsTarget);
+  const threat = giResult(exec, 'threat_scan')?.data;
+  const rows = u.options.map(o => {
+    const sim = sims[o.id] || null;
+    const cashAfter = sim?.ok ? sim.after.cash : (o.kind === 'wait' ? world.player.money : (o.legal ? world.player.money - o.cashCost : null));
+    let objectiveEffect: string | null = null;
+    let score = 0;
+    const region = o.regionId ? world.regions[o.regionId] : null;
+    if (o.kind === 'deposit' && region) {
+      if (region.controlledByPlayer) {
+        const threatened = threat?.threatened?.some((t: any) => t.region.code === region.code);
+        const raise = o.amount && region.rivalCostToControl !== null ? ` (your rival's cost to take it rises from $${region.rivalCostToControl.toLocaleString()} to $${(region.rivalCostToControl + o.amount).toLocaleString()})` : '';
+        objectiveEffect = threatened ? `protects ${region.name}, which is currently exposed${raise}` : `adds to your hold on ${region.name}${raise}`;
+        score += threatened ? 40 : 15;
+      } else {
+        objectiveEffect = `would give you control of ${region.name}`;
+        score += 35;
+      }
+      if (winRegions) score += 15;
+    } else if (o.kind === 'travel' && region) {
+      objectiveEffect = region.controlledByPlayer ? `moves you to ${region.name}, which you already control` : `positions you to contest ${region.name} (a deposit is still needed)`;
+      score += region.controlledByPlayer ? 5 : 20;
+    } else if ((o.kind === 'sell' || o.kind === 'sell_all') && sim?.ok) {
+      objectiveEffect = `raises about ${money(sim.cashDelta)} of cash`;
+      score += Math.min(30, sim.cashDelta / 100);
+    } else if (o.kind === 'fund_project') {
+      const p = world.projects.find(x => x.id === o.projectId);
+      objectiveEffect = p ? `adds funding to ${p.title} (${money(p.remaining)} still needed in total)` : null;
+      score += 10;
+    } else if (o.kind === 'wait') {
+      objectiveEffect = 'keeps your cash and Action Points, but makes no progress';
+      score += 2;
+    } else if (o.kind === 'candidate') {
+      const c = giCandidateList(world).find(x => x.id === o.candidateId);
+      if (c) { objectiveEffect = c.objectiveRelation || c.reasons[0] || null; score += Math.min(40, (c.relevance || 0) / 3); }
+    }
+    let risk: string | null = null;
+    if (world.reserveFloor !== null && cashAfter !== null && cashAfter < world.reserveFloor) { risk = `drops cash below your ${money(world.reserveFloor)} reserve`; score -= 25; }
+    if (sim?.certainty === 'uncertain') { risk = risk ? `${risk}; outcome is random` : 'outcome is random'; score -= 5; }
+    if (o.kind === 'sell_all' || o.kind === 'sell') { risk = risk || 'gives up future market upside on what you sell'; }
+    if (!o.legal) score -= 100;
+    const reversible = o.kind === 'deposit' ? Boolean(false) : (o.kind === 'sell' || o.kind === 'sell_all' || o.kind === 'fund_project') ? false : true;
+    const certainty: GICertainty = !o.legal ? 'confirmed' : sim?.ok ? (sim.certainty === 'deterministic' ? 'projected' : 'moderate') : (o.kind === 'wait' ? 'confirmed' : 'moderate');
+    return { option: o, cost: o.cashCost, ap: o.apCost, legal: o.legal, blockReason: o.blockReason, cashAfter, objectiveEffect, risk, reversible, score: Math.round(score * 10) / 10, certainty };
+  });
+  return rows.sort((a, b) => b.score - a.score || a.option.id.localeCompare(b.option.id));
+}
+
+export function detectGIConflicts(world: GIWorld, exec: GIExecution, rows?: GIComparisonRow[]): GIConflict[] {
+  const conflicts: GIConflict[] = [];
+  const rec = world.actionSet?.recommended;
+  if (rec && world.reserveFloor !== null && (rec.costEstimate || 0) > 0 && world.player.money - (rec.costEstimate || 0) < world.reserveFloor) {
+    conflicts.push({
+      id: 'reserve_vs_recommendation',
+      systems: ['Contextual recommendation', 'Cash reserve'],
+      description: `The top-ranked action (${rec.label}) costs ${money(rec.costEstimate || 0)}, which would take you below your ${money(world.reserveFloor)} reserve.`,
+      tradeoff: 'The ranking values the move, but your reserve setting says to keep that cash.'
+    });
+  }
+  if (rec && world.attention?.state === 'critical' && rec.execution?.kind === 'copilot_candidate' && !contextualCandidateAddressesAttention((rec.execution as any).candidate, world.attention)) {
+    conflicts.push({
+      id: 'attention_vs_recommendation',
+      systems: ['Contextual recommendation', 'Attention monitor'],
+      description: `${world.attention.label} is flagged as critical, but the top-ranked action (${rec.label}) does not address it.`,
+      tradeoff: 'Following the ranking may leave the urgent problem unsolved.'
+    });
+  }
+  if (world.objective && rec && world.objective.recommendedNextStep && rec.actionType !== world.objective.recommendedNextStep.actionType && rec.objectiveRelation === null && world.objective.recommendedNextStep.actionType) {
+    conflicts.push({
+      id: 'goal_vs_ranking',
+      systems: ['Current goal', 'Contextual ranking'],
+      description: `Your goal's next step is "${world.objective.recommendedNextStep.label}", while the top-ranked action is ${rec.label}.`,
+      tradeoff: 'One favours your tracked goal, the other the strongest immediate move.'
+    });
+  }
+  (rows || []).forEach(r => {
+    if (r.legal && r.risk && /reserve/.test(r.risk) && r.score > 0) {
+      conflicts.push({
+        id: `option_reserve_${r.option.id}`,
+        systems: ['Option value', 'Cash reserve'],
+        description: `${r.option.label} ${r.objectiveEffect ? `${r.objectiveEffect}, but it ` : ''}${r.risk}.`,
+        tradeoff: 'Short-term progress versus keeping your safety buffer.'
+      });
+    }
+  });
+  return conflicts.slice(0, 3);
+}
+
+// ----------------------------------------------------------------------------
+// 9. ANSWER PLANNER + COMPOSER
+// ----------------------------------------------------------------------------
+
+export interface GIAnswerSection {
+  id: string;
+  heading: string | null;
+  claims: GIClaim[];
+}
+
+export interface GIVerificationReport {
+  passed: boolean;
+  checked: number;
+  removed: Array<{ text: string; reason: string }>;
+}
+
+export interface GIDiagnostics {
+  queryId: string;
+  normalizedQuery: string;
+  queryType: GIQueryType;
+  primary: GICapability;
+  supporting: GICapability[];
+  resolvedReferences: string[];
+  unresolvedReferences: string[];
+  entities: string[];
+  options: string[];
+  domains: GIEvidenceDomain[];
+  steps: Array<{ id: string; tool: GIToolName; status: 'ok' | 'failed' | 'unavailable' | 'cached' | 'deferred'; error?: string }>;
+  droppedSteps: string[];
+  budget: number;
+  evidenceCount: number;
+  graphNodes: number;
+  graphEdges: number;
+  confidence: number;
+  freshness: 'current' | 'updated' | 'stale';
+  fallbackUsed: boolean;
+  clarification: boolean;
+  verification: GIVerificationReport;
+  askIntent: AskGameIntent;
+  planId: string;
+}
+
+export interface GIAnswerMeta {
+  queryType: GIQueryType;
+  confidence: number;
+  confidenceLabel: string;
+  fingerprint: string;
+  freshness: 'current' | 'updated' | 'stale';
+  freshnessNote?: string;
+  planId: string;
+}
+
+function certaintyLabel(c: GICertainty): string {
+  switch (c) {
+    case 'confirmed': return 'Confirmed';
+    case 'high': return 'High confidence';
+    case 'moderate': return 'Moderate confidence';
+    case 'low': return 'Low confidence';
+    case 'projected': return 'Projected';
+    default: return 'Unknown';
+  }
+}
+
+export function giConfidenceLabel(conf: number): string {
+  return conf >= 0.85 ? 'High confidence' : conf >= 0.6 ? 'Moderate confidence' : 'Low confidence';
+}
+
+function candidateButtonsFor(c: ContextualActionCandidate | null | undefined, control: PlayerControlState): GameIntelligenceButton[] {
+  return c ? buildContextualCandidateButtons(c, control, { includeWhy: true }) : [];
+}
+
+function optionButtons(o: GIOption, world: GIWorld): GameIntelligenceButton[] {
+  const out: GameIntelligenceButton[] = [];
+  if (o.candidateId) {
+    const c = giCandidateList(world).find(x => x.id === o.candidateId);
+    if (c) out.push(...buildContextualCandidateButtons(c, world.control, { includeWhy: false }).filter(b => b.kind === 'do'));
+  }
+  if (o.navigation) out.push({ id: `open_${o.id}`, label: o.legal ? o.navigation.label : `${o.navigation.label} (blocked)`, kind: 'open', nav: o.navigation, tone: 'secondary' });
+  if (o.intent && o.legal) out.push({ id: `sim_${o.id}`, label: `Simulate: ${o.label}`.slice(0, 48), kind: 'ask', query: `What happens if I ${o.label.charAt(0).toLowerCase()}${o.label.slice(1)}?`, tone: 'secondary' });
+  return out;
+}
+
+/** Deterministic, grounded follow-ups (generic chips are the fallback only). */
+export function buildGIFollowUps(u: GIQueryUnderstanding, world: GIWorld, shape: GIAnswerShape, extra?: { deficit?: number; recommended?: string; options?: GIOption[] }): string[] {
+  const out: string[] = [];
+  const add = (s: string) => { if (s && !out.includes(s) && out.length < 4) out.push(s); };
+  const region = u.entities.find(e => e.kind === 'region');
+  const project = u.entities.find(e => e.kind === 'project');
+  if (shape === 'comparison' && extra?.options?.length) {
+    extra.options.slice(0, 2).forEach(o => { if (o.intent && o.legal) add(`What happens if I ${o.label.charAt(0).toLowerCase()}${o.label.slice(1)}?`); });
+    add('What should I do over the next two turns?');
+  }
+  if (project) {
+    add('What if I wait one turn?');
+    if (extra?.deficit) add("What's the fastest way to get the money?");
+    add(`Compare ${project.label} with my next-best option`);
+  }
+  if (region) {
+    const r = world.regions[region.id];
+    if (r?.controlledByPlayer) add(`What happens if I ignore ${r.name}?`);
+    else if (r) add(`How much would it cost to take ${r.name}?`);
+    const other = Object.values(world.regions).find(x => x.code !== region.id && !x.controlledByPlayer && x.adjacent.includes(region.id));
+    if (r && other && r.controlledByPlayer) add(`Should I defend ${r.code} or travel to ${other.name}?`);
+  }
+  if (shape === 'diagnosis') { add('Build me a recovery plan for the next two turns'); add('What happens if I do nothing?'); }
+  if (shape === 'recommendation' || shape === 'plan') { add('Show me the best alternatives'); if (extra?.recommended) add(`Why ${extra.recommended}?`); }
+  if (shape === 'prediction') add('What has my rival done recently?');
+  if (!out.length) { add('What should I do next?'); add('Why am I losing?'); add('What should I focus on to win?'); }
+  return out;
+}
+
+export interface GIComposed {
+  title: string;
+  sections: GIAnswerSection[];
+  buttons: GameIntelligenceButton[];
+  followUps: string[];
+  shape: GIAnswerShape;
+  contextUpdates: Partial<GIConversationContext>;
+  kind: GameIntelligenceAnswerKind;
+  grounded: boolean;
+}
+
+export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec: GIExecution, world: GIWorld, convo: GIConversationContext = createGIConversationContext()): GIComposed {
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const section = (id: string, heading: string | null, claims: GIClaim[]) => { const kept = claims.filter(Boolean); if (kept.length) sections.push({ id, heading, claims: kept }); };
+  const ctx: Partial<GIConversationContext> = {};
+  const P = world.player;
+  const control = world.control;
+  const set = world.actionSet;
+  let title = plan.goal;
+  let shape: GIAnswerShape = u.outputType;
+  let kind: GameIntelligenceAnswerKind = 'ask_engine';
+
+  // --- Clarification: ask, never guess.
+  if (u.needs.clarification) {
+    const opts = (u.ambiguous[0]?.options || []).slice(0, 4);
+    const fallbackOpts = opts.length ? opts : world.projects.filter(p => p.remaining > 0).slice(0, 3).map(p => ({ kind: 'project' as const, id: p.id, label: p.title, confidence: 0.5, source: 'default' as const }));
+    const what = (u.ambiguous[0]?.kind || 'project') === 'project' ? 'project' : u.ambiguous[0]?.kind || 'one';
+    title = `Which ${what} do you mean?`;
+    section('clarify', null, [claim(fallbackOpts.length ? `I found more than one ${what} that fits. Pick one:` : "I couldn't tell what that refers to. Name it and I'll check.", 'caveat', 'confirmed', [])]);
+    fallbackOpts.forEach(o => buttons.push({ id: `clarify_${o.id}`, label: o.label, kind: 'ask', query: rewriteGIQueryWithEntity(u.originalQuery, o), tone: 'secondary' }));
+    ctx.pendingClarification = { originalQuery: u.originalQuery, options: fallbackOpts };
+    return { title, sections, buttons, followUps: [], shape: 'clarification', contextUpdates: ctx, kind: 'insufficient', grounded: false };
+  }
+
+  switch (u.primary) {
+    case 'control_explain': {
+      kind = 'control';
+      const modeWord = (['manual', 'advisor', 'assistant', 'rescue', 'autonomous'] as PlayerControlMode[]).find(m => new RegExp(`\\b${m}\\b`).test(u.normalizedQuery)) || null;
+      const meta = modeWord ? PLAYER_CONTROL_MODE_META[modeWord] : null;
+      title = meta ? `${meta.label} mode` : 'How AI control works';
+      const claims: GIClaim[] = [];
+      if (meta) {
+        claims.push(claim(meta.summary, 'fact', 'confirmed', ['control.mode']));
+        claims.push(claim(`Who acts: ${meta.whoActs}`, 'fact', 'confirmed', []));
+        if (modeWord === 'autonomous' || modeWord === 'rescue') {
+          claims.push(claim('The risk is that Co-Pilot spends and moves for you. It stays inside your spending caps, cash reserve, Guardian protections and permissions, and Take Control stops it instantly.', 'fact', 'confirmed', []));
+        }
+      }
+      claims.push(claim(`Right now: ${control.headline.toLowerCase()} — mode ${control.modeLabel}.`, 'fact', 'confirmed', ['control.mode', 'control.phase']));
+      claims.push(claim('Asking about a mode never changes it. Say "switch to …" and confirm to change modes.', 'caveat', 'confirmed', []));
+      section('control', null, claims);
+      break;
+    }
+    case 'player_status': {
+      kind = 'next_step';
+      shape = 'fact';
+      title = 'Your status';
+      const q = u.normalizedQuery;
+      const claims: GIClaim[] = [];
+      if (/\b(ap|action points?|actions? (left|remaining))\b/.test(q)) {
+        claims.push(P.apRemaining === null ? claim('Action limits are off, so Action Points are unlimited.', 'fact', 'confirmed', []) : claim(`You have ${P.apRemaining} Action Point(s) left this turn.`, 'fact', 'confirmed', ['player.ap']));
+      }
+      if (/\b(money|cash|how much)\b/.test(q) || !claims.length) {
+        claims.push(claim(`You have ${money(P.money)}${world.reserveFloor !== null ? `, of which ${money(spendableCash(world))} is above your reserve` : ''}.`, 'fact', 'confirmed', ['player.cash', 'player.spendable'].filter(id => exec.graph.facts[id])));
+      }
+      if (/\b(where|location)\b/.test(q)) claims.push(claim(`You are in ${P.locationName}.`, 'fact', 'confirmed', ['player.location']));
+      section('answer', null, claims);
+      break;
+    }
+    case 'objective_status': {
+      kind = 'next_step';
+      title = 'Your goal';
+      const claims: GIClaim[] = [];
+      if (world.objective) claims.push(claim(`Current goal: ${world.objective.title} (${world.objective.progress.completed}/${world.objective.progress.total} requirements met).`, 'fact', 'confirmed', ['objective.title', 'objective.progress']));
+      (world.win?.lines || []).forEach(l => claims.push(claim(l, 'fact', 'confirmed', ['win.player', 'win.rival'])));
+      section('answer', null, claims);
+      if (set?.recommended) buttons.push(...candidateButtonsFor(set.recommended, control));
+      break;
+    }
+    case 'region_info': {
+      kind = 'next_step';
+      const r = world.regions[u.entities.find(e => e.kind === 'region')?.id || P.location];
+      if (r) {
+        title = r.name;
+        const claims: GIClaim[] = [];
+        if (/\bresources?\b/.test(u.normalizedQuery) || !/\b(control|own|deposit|travel)\b/.test(u.normalizedQuery)) claims.push(claim(`Resources in ${r.name}: ${r.resources.join(', ') || 'none listed'}.`, 'fact', 'confirmed', [`region.${r.code}.resources`]));
+        claims.push(claim(r.controllerId ? `${r.name} is controlled by ${r.controllerLabel}.` : `${r.name} is not controlled by anyone yet.`, 'fact', 'confirmed', [`region.${r.code}.controller`]));
+        if (r.controlledByPlayer && r.rivalCostToControl !== null) claims.push(claim(`Your rival would need ${money(r.rivalCostToControl)} to take it.`, 'fact', 'confirmed', [`region.${r.code}.rivalCost`]));
+        if (!r.controlledByPlayer && r.playerCostToControl !== null) claims.push(claim(`You would need ${money(r.playerCostToControl)} to take control.`, 'fact', 'confirmed', [`region.${r.code}.playerCost`]));
+        if (!r.isHere && r.travelCost !== null) claims.push(claim(`Travelling there costs ${money(r.travelCost)}.`, 'fact', 'confirmed', [`region.${r.code}.travel`]));
+        section('answer', null, claims);
+        if (u.needs.explanation) {
+          const why: GIClaim[] = [];
+          if (world.win?.regionsTarget) why.push(claim(`Your win condition counts regions: you hold ${world.win.playerRegions} of the ${world.win.regionsTarget} you need, so ${r.controlledByPlayer ? 'keeping' : 'taking'} ${r.name} matters directly.`, 'inference', 'high', ['win.playerRegions', 'win.regionsTarget'].filter(id => exec.graph.facts[id]), { derived: [world.win.playerRegions, world.win.regionsTarget] }));
+          if (r.controlledByPlayer && r.rivalCostToControl !== null) {
+            const rival = world.actors.find(a => a.id === world.primaryRivalId);
+            if (rival?.visible && rival.money !== null) why.push(claim(rival.money >= r.rivalCostToControl ? `${rival.name} currently has enough cash to take it.` : `${rival.name} does not currently have the ${money(r.rivalCostToControl)} needed to take it.`, 'inference', 'high', [`region.${r.code}.rivalCost`]));
+          }
+          if (r.isHere) why.push(claim(`You are in ${r.name} now, so you can deposit or run its challenges without travelling.`, 'fact', 'confirmed', ['player.location'].filter(id => exec.graph.facts[id])));
+          const held = r.resources.filter(res => (P.inventory[res] || 0) > 0);
+          if (held.length) why.push(claim(`You hold resources from here: ${held.join(', ')}.`, 'fact', 'confirmed', []));
+          if (!why.length) why.push(claim(`The game shows nothing that makes ${r.name} unusually important for your position right now.`, 'inference', 'moderate', []));
+          section('why', 'Why it matters', why);
+        }
+        buttons.push({ id: 'open_map', label: 'Open Map', kind: 'open', nav: navAction('map', 'Open Map'), tone: 'secondary' });
+        ctx.last = { region: { kind: 'region', id: r.code, label: r.name, confidence: 1, source: 'context' } };
+        ctx.activeTopic = ctx.last.region!;
+      }
+      break;
+    }
+    case 'market_info': {
+      kind = 'next_step';
+      const rows: any[] = giResult(exec, 'market_state')?.data || [];
+      title = rows.length === 1 ? rows[0].resource : 'Market';
+      const claims: GIClaim[] = [];
+      rows.forEach(r => {
+        if (r.price !== null) claims.push(claim(`${r.resource} sells for ${money(r.price)} each${r.held ? `; you hold ${r.held} (${money(r.value)})` : ''}.`, 'fact', 'confirmed', [`market.${r.resource}.price`, `inv.${r.resource}`]));
+        else claims.push(claim(`There is no live market price for ${r.resource} right now.`, 'fact', 'confirmed', []));
+        if (r.regionsWith.length) claims.push(claim(`${r.resource} comes from ${r.regionsWith.map((c: string) => REGIONS[c]?.name || c).join(', ')}.`, 'fact', 'confirmed', [`market.${r.resource}.regions`]));
+      });
+      section('answer', null, claims);
+      buttons.push({ id: 'open_market', label: 'Open Market', kind: 'open', nav: navAction('resource_market', 'Open Resource Market'), tone: 'secondary' });
+      const res = u.entities.find(e => e.kind === 'resource');
+      if (res) { ctx.last = { resource: res }; ctx.activeTopic = res; }
+      break;
+    }
+    case 'project_info':
+    case 'contract_info':
+    case 'action_validation': {
+      kind = 'why';
+      const projects: GIProjectView[] = giResult(exec, 'project_state')?.data || [];
+      const contracts: GIContractView[] = giResult(exec, 'contract_state')?.data || [];
+      if (projects[0]) {
+        const p = projects[0];
+        title = p.title;
+        const claims: GIClaim[] = [];
+        const done = p.status === 'active' || p.remaining <= 0;
+        claims.push(claim(done ? `${p.title} is fully funded and ${p.status.replace(/_/g, ' ')}.` : `${p.title} has ${money(p.invested)} of ${money(p.totalCost)} funded — ${money(p.remaining)} still needed.`, 'fact', 'confirmed', [`project.${p.id}.invested`, `project.${p.id}.cost`, `project.${p.id}.remaining`]));
+        if (!done) {
+          const step = Math.min(p.fundingIncrement, p.remaining);
+          const stepOk = P.money >= step;
+          claims.push(claim(stepOk
+            ? `You can fund it now: the smallest step is ${money(step)} and you have ${money(P.money)}.`
+            : `You're blocked by cash: the smallest funding step is ${money(step)} and you have ${money(P.money)} (${money(step - P.money)} short).`,
+          'fact', 'confirmed', [`project.${p.id}.step`, 'player.cash'], { derived: stepOk ? [] : [step - P.money] }));
+          if (!stepOk) ctx.lastDeficit = { amount: step - P.money, forLabel: `the first ${money(step)} funding step for ${p.title}`, forRef: { kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' } };
+          if (p.requiredDevTier !== null && p.regionDevTier !== null && p.regionDevTier < p.requiredDevTier) {
+            claims.push(claim(`The project lists development tier ${p.requiredDevTier}; ${p.regionId} is at tier ${p.regionDevTier}. The funding screen does not currently enforce this.`, 'caveat', 'confirmed', [`project.${p.id}.tier`, `project.${p.id}.regionTier`]));
+          }
+        }
+        if (p.maintenancePerTurn) claims.push(claim(`Once active it lists ${money(p.maintenancePerTurn)} of maintenance per turn.`, 'fact', 'confirmed', [`project.${p.id}.maint`]));
+        section('answer', null, claims);
+        buttons.push({ id: 'open_infra', label: 'Open Infrastructure', kind: 'open', nav: navAction('infrastructure', 'Open Infrastructure'), tone: 'secondary' });
+        if (!done && P.money < Math.min(p.fundingIncrement, p.remaining)) buttons.push({ id: 'raise', label: `Ways to raise ${money(Math.min(p.fundingIncrement, p.remaining) - P.money)}`, kind: 'ask', query: "What's the fastest way to get the money?", tone: 'secondary' });
+        const ref: GIEntityRef = { kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' };
+        ctx.last = { project: ref };
+        ctx.activeTopic = ref;
+      } else if (contracts[0]) {
+        const c = contracts[0];
+        title = c.title;
+        const claims: GIClaim[] = [];
+        claims.push(claim(`${c.title} is ${c.status}.`, 'fact', 'confirmed', [`contract.${c.id}.status`]));
+        if (c.blocker) claims.push(claim(`Blocked: ${c.blocker}.`, 'fact', 'confirmed', [`contract.${c.id}.blocker`]));
+        else claims.push(claim('You meet its listed requirements.', 'fact', 'confirmed', [`contract.${c.id}.status`]));
+        if (c.rewardMoney) claims.push(claim(`Cash reward: ${money(c.rewardMoney)}.`, 'fact', 'confirmed', [`contract.${c.id}.reward`]));
+        if (c.requiredMoney && P.money < c.requiredMoney) ctx.lastDeficit = { amount: c.requiredMoney - P.money, forLabel: c.title, forRef: { kind: 'contract', id: c.id, label: c.title, confidence: 1, source: 'context' } };
+        section('answer', null, claims);
+        buttons.push({ id: 'open_contracts', label: 'Open Contracts', kind: 'open', nav: navAction('contracts', 'Open Contracts'), tone: 'secondary' });
+        const ref: GIEntityRef = { kind: 'contract', id: c.id, label: c.title, confidence: 1, source: 'context' };
+        ctx.last = { contract: ref };
+        ctx.activeTopic = ref;
+      } else {
+        section('answer', null, [claim('The game has no project or contract matching that.', 'caveat', 'confirmed', [])]);
+      }
+      break;
+    }
+    case 'affordability': {
+      kind = 'why';
+      const aff = giResult(exec, 'affordability')?.data;
+      if (!aff) { section('answer', null, [claim('The game does not have a cost for that yet — name the project or action.', 'caveat', 'confirmed', [])]); break; }
+      title = `Can you afford ${aff.target.label}?`;
+      const claims: GIClaim[] = [];
+      const t = aff.target;
+      if (t.kind === 'project' && t.stepCost) {
+        claims.push(claim(aff.affordableNow
+          ? `Yes — you can cover the full remaining ${money(t.cost)}.`
+          : `Not in full: ${t.label} still needs ${money(t.cost)} and you have ${money(P.money)}. You ${aff.stepAffordable ? 'can' : "can't"} fund the smallest step of ${money(t.stepCost)}.`,
+        'fact', 'confirmed', ['afford.cost', 'player.cash', 'afford.step']));
+      } else {
+        claims.push(claim(aff.affordableNow ? `Yes — it costs ${money(t.cost)} and you have ${money(P.money)}.` : `No — it costs ${money(t.cost)} and you have ${money(P.money)} (${money(aff.deficit)} short).`, 'fact', 'confirmed', ['afford.cost', 'player.cash', 'afford.deficit']));
+      }
+      if (world.reserveFloor !== null) {
+        claims.push(claim(aff.affordableKeepingReserve
+          ? `It also keeps you above your ${money(world.reserveFloor)} reserve.`
+          : `Paying it would cut into your ${money(world.reserveFloor)} reserve (you have ${money(aff.spendable)} spendable above it).`,
+        'fact', 'confirmed', ['player.reserve', 'player.spendable']));
+      }
+      section('answer', null, claims);
+      if (!aff.affordableNow && aff.deficit > 0) ctx.lastDeficit = { amount: t.kind === 'project' && t.stepCost && !aff.stepAffordable ? t.stepCost - P.money : aff.deficit, forLabel: t.label, forRef: u.entities.find(e => e.kind === 'project') || null };
+      if (u.supporting.includes('objective_status') || u.constraints.protectPlan) {
+        const impact: GIClaim[] = [];
+        if (world.objective) impact.push(claim(`Your current goal is ${world.objective.title}.`, 'fact', 'confirmed', ['objective.title']));
+        const rec = set?.recommended;
+        if (rec && rec.execution?.kind === 'copilot_candidate') {
+          impact.push(claim(`The strongest move for that goal right now is ${rec.label}${rec.costEstimate ? ` (${money(rec.costEstimate)})` : ''}; spending on ${t.label} competes with it for cash.`, 'inference', 'high', [`rank.${rec.id}`], { derived: rec.costEstimate ? [rec.costEstimate] : [] }));
+        }
+        const conflicts = detectGIConflicts(world, exec);
+        if (world.reserveFloor !== null && !aff.affordableKeepingReserve) impact.push(claim(`It would weaken your plan by leaving less than your reserve for other moves.`, 'inference', 'high', ['player.reserve']));
+        else if (aff.affordableKeepingReserve) impact.push(claim('It does not break your reserve, so your plan keeps its safety buffer.', 'inference', 'high', ['player.reserve'].filter(id => exec.graph.facts[id])));
+        conflicts.forEach(c => impact.push(claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+        section('impact', 'Effect on your plan', impact);
+        if (rec) buttons.push(...candidateButtonsFor(rec, control).slice(0, 1));
+      }
+      const pref = u.entities.find(e => e.kind === 'project');
+      if (pref) { buttons.push({ id: 'open_infra', label: 'Open Infrastructure', kind: 'open', nav: navAction('infrastructure', 'Open Infrastructure'), tone: 'secondary' }); ctx.last = { project: pref }; ctx.activeTopic = pref; }
+      buttons.push({ id: 'sim_wait', label: 'What if I wait?', kind: 'ask', query: 'What if I wait one turn?', tone: 'secondary' });
+      break;
+    }
+    case 'economy_diagnosis':
+    case 'strategic_diagnosis': {
+      kind = 'next_step';
+      shape = 'diagnosis';
+      const economic = u.primary === 'economy_diagnosis';
+      const causes = diagnoseGIPosition(world, exec, economic);
+      title = economic ? 'Why your cash is tight' : 'Your biggest problems';
+      if (!causes.length) {
+        section('primary', null, [claim(economic ? 'The game shows no current cash problem: you are above your reserve and nothing is flagged.' : "The game doesn't show a clear problem right now — nothing is flagged and you aren't behind on your win condition.", 'inference', 'high', ['player.cash'])]);
+      } else {
+        section('primary', 'Main problem', [causes[0].claim]);
+        section('supporting', causes.length > 1 ? 'Also contributing' : null, causes.slice(1, 4).map(c => ({ ...c.claim, kind: c.claim.kind === 'fact' ? 'fact' : 'inference' } as GIClaim)));
+      }
+      const seq = giResult(exec, 'plan_sequence')?.data;
+      const rec = set?.recommended;
+      // Link the response to the main cause when the cause has a concrete, rule-checked remedy.
+      const causeOption = (() => {
+        const top = causes[0];
+        if (!top || !['threatened_region', 'behind_regions', 'behind_metric'].includes(top.id)) return null;
+        const t = giResult(exec, 'threat_scan')?.data?.threatened?.[0];
+        if (t) return buildGIOption('deposit', 'defend', world, [{ kind: 'region', id: t.region.code, label: t.region.name, confidence: 1, source: 'context' }]);
+        if (top.id === 'behind_regions') {
+          const cheapest = Object.values(world.regions)
+            .filter(r => !r.controlledByPlayer && r.playerCostToControl !== null && r.playerCostToControl > 0)
+            .sort((a, b) => (a.playerCostToControl! + (a.isHere ? 0 : (a.travelCost || 0))) - (b.playerCostToControl! + (b.isHere ? 0 : (b.travelCost || 0))) || a.code.localeCompare(b.code))[0];
+          if (cheapest) return buildGIOption('deposit', 'take', world, [{ kind: 'region', id: cheapest.code, label: cheapest.name, confidence: 1, source: 'context' }]);
+        }
+        return null;
+      })();
+      if (causeOption) {
+        section('remedy', 'Address the main problem', [claim(causeOption.legal
+          ? `${causeOption.label} — it answers the main problem directly.`
+          : `${causeOption.label} would answer it, but it is blocked: ${causeOption.blockReason}${causeOption.prerequisite ? ` First: ${causeOption.prerequisite}.` : ''}`,
+        'recommendation', causeOption.legal ? 'high' : 'confirmed', [], { optionLegal: causeOption.legal, derived: giNumbersIn(`${causeOption.label} ${causeOption.blockReason || ''} ${causeOption.prerequisite || ''}`).map(n => n.value) })]);
+        buttons.push(...optionButtons(causeOption, world));
+      }
+      if (seq?.steps?.length) {
+        section('recovery', causeOption ? 'Then, from your ranked actions' : 'Best response', seq.steps.map((c: ContextualActionCandidate, i: number) => claim(`${['Now', 'Next', 'Then', 'After that'][i] || 'Then'}: ${c.label}${c.costEstimate ? ` (${money(c.costEstimate)})` : ''} — ${c.reasons[0] || 'legal and ranked highly'}.`, 'recommendation', 'high', [`plan.${i}`], { optionLegal: true, derived: c.costEstimate ? [c.costEstimate] : [] })));
+        buttons.push(...candidateButtonsFor(seq.steps[0], control));
+      } else if (rec) {
+        section('recovery', 'Best response', [claim(`${rec.label} — ${rec.reasons[0] || 'highest-ranked legal action'}.`, 'recommendation', 'high', [`rank.${rec.id}`].filter(id => exec.graph.facts[id]), { optionLegal: rec.legal })]);
+        buttons.push(...candidateButtonsFor(rec, control));
+      }
+      const conflicts = detectGIConflicts(world, exec);
+      if (conflicts.length) section('conflicts', 'Strategy conflict', conflicts.map(c => claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+      if (!economic) buttons.push({ id: 'recover', label: 'Recovery plan', kind: 'ask', query: 'Build me a recovery plan for the next two turns', tone: 'secondary' });
+      if (world.control.owner !== 'ai_only' && !world.control.copilotHoldsControl && world.isHumanTurn && causes[0]?.id === 'below_reserve') buttons.push({ id: 'recover_me', label: 'Let Co-Pilot Recover Me', kind: 'take_over_turn', tone: 'secondary' });
+      break;
+    }
+    case 'comparison': {
+      kind = 'alternatives';
+      shape = 'comparison';
+      const rows = compareGIOptions(world, u, exec);
+      title = `${rows.map(r => r.option.label).join(' vs ')}`;
+      const best = rows.find(r => r.legal) || null;
+      const top: GIClaim[] = [];
+      if (best) {
+        top.push(claim(`${best.option.label} looks strongest right now${best.objectiveEffect ? ` — it ${best.objectiveEffect}` : ''}.`, 'recommendation', rows.filter(r => r.legal).length > 1 && Math.abs(rows[0].score - rows[1].score) < 5 ? 'moderate' : 'high', [`opt.${best.option.id}.legal`], { optionLegal: true, derived: giNumbersIn(best.objectiveEffect || '').map(n => n.value) }));
+      } else {
+        top.push(claim('None of these options can be done right now.', 'fact', 'confirmed', rows.map(r => `opt.${r.option.id}.legal`)));
+      }
+      section('verdict', null, top);
+      section('options', 'Options', rows.map(r => {
+        const bits: string[] = [];
+        if (!r.legal) bits.push(`blocked — ${r.blockReason}`);
+        if (r.cost) bits.push(`costs ${money(r.cost)}`);
+        if (r.ap) bits.push(`${r.ap} AP`);
+        if (r.cashAfter !== null && r.legal) bits.push(`cash afterwards ${money(r.cashAfter)}`);
+        if (r.objectiveEffect && r.legal) bits.push(r.objectiveEffect);
+        if (r.risk && r.legal) bits.push(`risk: ${r.risk}`);
+        if (r.option.prerequisite) bits.push(`first: ${r.option.prerequisite}`);
+        return claim(`${r.option.label}: ${bits.join('; ') || 'no additional cost'}.`, r.legal && r.cashAfter !== null && r.option.kind !== 'wait' ? 'projection' : 'fact', r.certainty === 'moderate' ? 'moderate' : r.certainty, [`opt.${r.option.id}.legal`, `opt.${r.option.id}.cost`, `sim.${r.option.id}.cashAfter`].filter(id => exec.graph.facts[id]), { optionLegal: r.legal, derived: [...(r.cashAfter !== null ? [r.cashAfter] : []), ...giNumbersIn(r.objectiveEffect || '').map(n => n.value)] });
+      }));
+      // A suggested order when several legal options fit this turn's AP and cash.
+      const legalRows = rows.filter(r => r.legal && r.option.kind !== 'wait' && r.option.kind !== 'region');
+      if (best && legalRows.length >= 2 && P.apRemaining !== null) {
+        const raisers = legalRows.filter(r => r.option.kind === 'sell' || r.option.kind === 'sell_all');
+        const ordered = [...raisers.filter(r => r !== best), best, ...legalRows.filter(r => r !== best && !raisers.includes(r))];
+        let ap = P.apRemaining;
+        let cashLeft = P.money;
+        const seqClaims: GIClaim[] = [];
+        const later: string[] = [];
+        ordered.forEach(r => {
+          if (r.ap <= ap && r.cost <= cashLeft && seqClaims.length < 3) {
+            ap -= r.ap;
+            cashLeft -= r.cost;
+            seqClaims.push(claim(`${seqClaims.length + 1}. ${r.option.label}`, 'recommendation', 'moderate', [`opt.${r.option.id}.legal`], { optionLegal: true, derived: [seqClaims.length + 1] }));
+          } else later.push(r.option.label);
+        });
+        if (later.length) seqClaims.push(claim(`Re-evaluate ${later.join(' and ')} next turn.`, 'recommendation', 'moderate', [], { optionLegal: true }));
+        if (seqClaims.length >= 2) section('sequence', 'Suggested sequence', seqClaims);
+      }
+      if (convo.lastDeficit) {
+        const sims: Record<string, GISimulationOutcome | null> = giResult(exec, 'simulate_options')?.data || {};
+        const cover: GIClaim[] = [];
+        rows.forEach(r => {
+          const sim = sims[r.option.id];
+          if (sim?.ok && sim.cashDelta > 0) {
+            const gap = convo.lastDeficit!.amount;
+            cover.push(claim(sim.cashDelta >= gap
+              ? `${r.option.label} raises about ${money(sim.cashDelta)}, enough to cover the ${money(gap)} you still need for ${convo.lastDeficit!.forLabel}.`
+              : `${r.option.label} raises about ${money(sim.cashDelta)}, leaving ${money(gap - sim.cashDelta)} of the ${money(gap)} you need for ${convo.lastDeficit!.forLabel}.`,
+            'projection', sim.certainty === 'deterministic' ? 'projected' : 'moderate', [`sim.${r.option.id}.cashDelta`], { derived: [gap, Math.max(0, gap - sim.cashDelta)] }));
+          }
+        });
+        section('goal_fit', 'Against your goal', cover);
+      }
+      const second = rows.filter(r => r.legal)[1];
+      if (best && second) {
+        section('tradeoff', 'Main tradeoff', [claim(`Choosing ${best.option.label} over ${second.option.label}: ${best.risk ? `it ${best.risk}` : 'it keeps more of your position'}, while ${second.option.label} ${second.objectiveEffect || 'offers a different benefit'}.`, 'inference', 'moderate', [], { derived: [...giNumbersIn(best.option.label).map(n => n.value), ...giNumbersIn(second.objectiveEffect || '').map(n => n.value), ...giNumbersIn(second.option.label).map(n => n.value)] })]);
+      }
+      const conflicts = detectGIConflicts(world, exec, rows);
+      if (conflicts.length) section('conflicts', 'Strategy conflict', conflicts.map(c => claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+      rows.slice(0, 3).forEach(r => buttons.push(...optionButtons(r.option, world)));
+      ctx.lastComparison = rows.map(r => refFromOption(r.option)).filter(Boolean) as GIEntityRef[];
+      if (best) { const ref = refFromOption(best.option); ctx.lastRecommendation = ref; ctx.activeTopic = ref; }
+      break;
+    }
+    case 'simulation': {
+      kind = 'why';
+      shape = 'simulation';
+      const sims: Record<string, GISimulationOutcome | null> = giResult(exec, 'simulate_options')?.data || {};
+      const opt = u.options[0] || null;
+      const waitMode = !opt || opt.kind === 'wait';
+      if (waitMode) {
+        const topic = u.entities.find(e => e.kind === 'project') || u.entities[0] || null;
+        title = topic ? `Waiting on ${topic.label}` : 'If you do nothing';
+        const claims: GIClaim[] = [claim(`Waiting keeps your ${money(P.money)} and your Action Points unspent.`, 'fact', 'confirmed', ['player.cash'])];
+        const p = topic?.kind === 'project' ? world.projects.find(x => x.id === topic.id) : null;
+        if (p) {
+          claims.push(claim(`${p.title} would still need ${money(p.remaining)}; nothing about its cost changes by waiting.`, 'fact', 'confirmed', [`project.${p.id}.remaining`].filter(id => exec.graph.facts[id])));
+          if (world.control.owner !== 'ai_only') claims.push(claim('Your cash next turn depends on income and events the game has not rolled yet, so it cannot be projected exactly.', 'caveat', 'confirmed', []));
+        }
+        const threat = world.actors.find(a => a.relation === 'rival');
+        if (threat && Object.values(world.regions).some(r => r.controlledByPlayer)) claims.push(claim(`Your rival also gets a turn; any region you hold stays open to a deposit.`, 'inference', 'moderate', []));
+        section('sim', null, claims);
+        if (topic) { ctx.activeTopic = topic; }
+      } else {
+        const sim = sims[opt.id];
+        title = `If you ${opt.label.charAt(0).toLowerCase()}${opt.label.slice(1)}`;
+        if (!opt.legal) {
+          section('sim', null, [claim(`That can't happen right now: ${opt.blockReason}.`, 'fact', 'confirmed', [`opt.${opt.id}.legal`])]);
+          if (opt.prerequisite) section('path', 'First', [claim(opt.prerequisite, 'fact', 'confirmed', [])]);
+        } else if (!sim || !sim.ok) {
+          section('sim', null, [claim(sim?.error || 'The game could not simulate that action from the current state.', 'caveat', 'confirmed', [])]);
+        } else {
+          const cert: GICertainty = sim.certainty === 'deterministic' ? 'projected' : 'moderate';
+          section('before', 'Before', [claim(`Cash ${money(sim.before.cash)}${sim.before.apRemaining !== null ? `, ${sim.before.apRemaining} AP` : ''}, in ${REGIONS[sim.before.location]?.name || sim.before.location}.`, 'fact', 'confirmed', [`sim.${opt.id}.cashBefore`])]);
+          const afterClaims = [claim(`Cash ${money(sim.after.cash)}${sim.after.apRemaining !== null ? `, ${sim.after.apRemaining} AP` : ''}${sim.locationChange ? `, in ${REGIONS[sim.locationChange.to]?.name || sim.locationChange.to}` : ''}.`, 'projection', cert, [`sim.${opt.id}.cashAfter`, `sim.${opt.id}.ap`].filter(id => exec.graph.facts[id]))];
+          Object.entries(sim.depositDelta).forEach(([code, d]) => afterClaims.push(claim(`Your deposit in ${REGIONS[code]?.name || code} rises by ${money(d)}.`, 'projection', cert, [`sim.${opt.id}.dep.${code}`])));
+          Object.entries(sim.inventoryDelta).forEach(([res, d]) => afterClaims.push(claim(`${res}: ${d > 0 ? '+' : ''}${d}.`, 'projection', cert, [], { derived: [Math.abs(d)] })));
+          section('after', 'After (simulated)', afterClaims);
+          if (sim.branches?.length) section('branches', 'Possible outcomes', sim.branches.map((b, i) => claim(`${b.label}: cash ${b.cashDelta >= 0 ? '+' : '−'}${money(Math.abs(b.cashDelta))}.`, 'projection', 'moderate', [`sim.${opt.id}.branch${i}`])));
+          const implications: GIClaim[] = [];
+          if (world.reserveFloor !== null) implications.push(claim(sim.after.cash < world.reserveFloor ? `This would leave you below your ${money(world.reserveFloor)} reserve.` : `You would stay above your ${money(world.reserveFloor)} reserve.`, 'projection', cert, ['player.reserve']));
+          if (sim.certainty === 'estimated') implications.push(claim('Prices used are the current market prices; the actual sale can differ if the market moves first.', 'caveat', 'confirmed', []));
+          if (sim.certainty === 'uncertain') implications.push(claim('The result is random — the game only knows the possible outcomes, not which one you will get.', 'caveat', 'confirmed', []));
+          section('implication', 'What it means', implications);
+          buttons.push(...optionButtons(opt, world).filter(b => b.kind !== 'ask'));
+          ctx.lastSimulation = refFromOption(opt);
+        }
+        ctx.activeTopic = refFromOption(opt);
+      }
+      break;
+    }
+    case 'sequence_plan':
+    case 'action_recommendation': {
+      kind = 'next_step';
+      const gapTarget = (u.deficitReference && convo.lastDeficit) ? convo.lastDeficit : (u.constraints.targetAmount ? { amount: u.constraints.targetAmount, forLabel: 'your target', forRef: null } : null);
+      if (gapTarget) {
+        // "What's the fastest way to get the money?" — cash-raising legal moves only, measured against the gap.
+        title = `Raising ${money(gapTarget.amount)}`;
+        const raisers = (set?.ranked || [])
+          .filter(c => c.legal && c.execution?.kind === 'copilot_candidate' && Number((c.execution as any).candidate?.expectedStateDelta?.cashDelta || 0) > 0)
+          .filter(c => !(u.constraints.avoidLoans && /loan|credit/.test(c.actionType)))
+          .map(c => ({ c, gain: Number((c.execution as any).candidate.expectedStateDelta.cashDelta) }))
+          .sort((a, b) => b.gain - a.gain || a.c.id.localeCompare(b.c.id))
+          .slice(0, 3);
+        const invValue = Object.entries(P.inventory).reduce((sum, [res, n]) => sum + (typeof world.market[res] === 'number' ? world.market[res] * n : 0), 0);
+        const head: GIClaim[] = [claim(`You need ${money(gapTarget.amount)} more for ${gapTarget.forLabel}.`, 'fact', 'confirmed', [], { derived: [gapTarget.amount] })];
+        if (invValue > 0) head.push(claim(`Selling your whole inventory at current prices would raise about ${money(invValue)}${invValue >= gapTarget.amount ? ' — enough on its own' : ''}.`, 'projection', 'moderate', [], { derived: [invValue] }));
+        section('gap', null, head);
+        if (raisers.length) {
+          section('moves', 'Fastest legal cash moves', raisers.map(({ c, gain }) => claim(`${c.label}: about +${money(gain)} (${c.apCost || 1} AP).`, 'recommendation', 'high', [`rank.${c.id}`].filter(id => exec.graph.facts[id]), { optionLegal: true, derived: [gain, c.apCost || 1] })));
+          const total = raisers.reduce((sum, r) => sum + r.gain, 0);
+          const apNeed = raisers.reduce((sum, r) => sum + (r.c.apCost || 1), 0);
+          section('coverage', null, [claim(total >= gapTarget.amount
+            ? `Those moves together cover the gap this turn if you have ${apNeed} AP.`
+            : `Together they raise about ${money(total)}, so the gap will take more than one turn at current prices.`, 'projection', 'moderate', [], { derived: [total, apNeed] })]);
+          buttons.push(...candidateButtonsFor(raisers[0].c, control));
+        } else {
+          section('moves', null, [claim('No legal cash-raising action is available right now.', 'fact', 'confirmed', [])]);
+        }
+        if (invValue > 0) buttons.push({ id: 'sim_sell_all', label: 'What if I sell everything?', kind: 'ask', query: 'What if I sell everything?', tone: 'secondary' });
+        if (gapTarget.forRef) ctx.activeTopic = gapTarget.forRef;
+        break;
+      }
+      const seq = giResult(exec, 'plan_sequence')?.data;
+      const rec = set?.recommended || null;
+      shape = seq?.steps?.length > 1 || u.horizon ? 'plan' : 'recommendation';
+      title = shape === 'plan' ? (u.constraints.targetRegions ? `Path to ${u.constraints.targetRegions} regions` : 'Your plan') : 'What to do next';
+      if (world.objective || world.win) {
+        section('goal', shape === 'plan' ? 'Goal' : null, [claim(world.objective ? `Goal: ${world.objective.title} (${world.objective.progress.completed}/${world.objective.progress.total}).` : `${world.win!.label}.`, 'fact', 'confirmed', ['objective.title', 'objective.progress'].filter(id => exec.graph.facts[id]))]);
+      }
+      if (shape === 'plan' && seq?.steps?.length) {
+        section('steps', 'Steps', seq.steps.map((c: ContextualActionCandidate, i: number) => claim(`${['Now', 'Next', 'Then', 'After that'][i] || 'Then'}: ${c.label}${c.costEstimate ? ` (${money(c.costEstimate)})` : ''} — ${c.reasons[0] || 'legal and ranked highly'}.`, 'recommendation', 'high', [`plan.${i}`], { optionLegal: true, derived: c.costEstimate ? [c.costEstimate] : [] })));
+        const checkpoints: GIClaim[] = [];
+        if (world.reserveFloor !== null) checkpoints.push(claim(`Keep at least ${money(world.reserveFloor)} in cash.`, 'fact', 'confirmed', ['player.reserve']));
+        if (u.horizon && u.horizon.unit === 'turn' && u.horizon.count > 1) checkpoints.push(claim(`Steps beyond this turn are provisional: the ranking is recomputed each turn from the new state.`, 'caveat', 'confirmed', []));
+        (seq.skipped || []).slice(0, 2).forEach((s: any) => checkpoints.push(claim(`Left out ${s.label}: ${s.reason}.`, 'fact', 'confirmed', [])));
+        section('checkpoint', 'Checkpoint', checkpoints);
+        buttons.push(...candidateButtonsFor(seq.steps[0], control));
+      } else if (rec) {
+        section('rec', 'Recommended', [claim(`${rec.label} — ${rec.reasons[0] || rec.description || 'highest-ranked legal action'}${rec.costEstimate ? ` (${money(rec.costEstimate)})` : ''}.`, 'recommendation', 'high', [`rank.${rec.id}`].filter(id => exec.graph.facts[id]), { optionLegal: rec.legal, derived: rec.costEstimate ? [rec.costEstimate] : [] })]);
+        if (rec.risk) section('risk', 'Risk', [claim(rec.risk + '.', 'fact', 'confirmed', [])]);
+        const alt = set?.useful?.[0];
+        if (alt) section('alt', 'Alternative', [claim(`${alt.label} — ${alt.reasons[0] || alt.description}.`, 'recommendation', 'moderate', [`rank.${alt.id}`].filter(id => exec.graph.facts[id]), { optionLegal: alt.legal })]);
+        buttons.push(...candidateButtonsFor(rec, control), { id: 'alts', label: 'Show Alternatives', kind: 'alternatives', candidateId: rec.id, tone: 'secondary' });
+        ctx.lastRecommendation = { kind: 'action', id: rec.id, label: rec.label, confidence: 1, source: 'context' };
+        ctx.activeTopic = ctx.lastRecommendation;
+      } else {
+        section('rec', null, [claim('The game has no scored legal action for you right now. You can open More Actions or end your turn.', 'caveat', 'confirmed', [])]);
+      }
+      const conflicts = detectGIConflicts(world, exec);
+      if (conflicts.length) section('conflicts', 'Strategy conflict', conflicts.map(c => claim(`${c.description} ${c.tradeoff}`, 'inference', 'moderate', [])));
+      if (!world.isHumanTurn) section('turn', null, [claim(`It's ${world.currentActorName}'s turn — actions unlock when your turn starts.`, 'fact', 'confirmed', [])]);
+      break;
+    }
+    case 'rival_assessment': {
+      kind = 'activity';
+      shape = u.needs.prediction ? 'prediction' : 'fact';
+      const threat = giResult(exec, 'threat_scan')?.data;
+      const obs: GIObservedEvent[] = giResult(exec, 'observed_history')?.data || [];
+      const rival: GIActorView | null = threat?.rival || null;
+      title = rival ? (u.needs.prediction ? `What ${rival.name} might do` : rival.name) : 'Your rival';
+      const claims: GIClaim[] = [];
+      if (!rival) { claims.push(claim('There is no rival in this match.', 'fact', 'confirmed', [])); section('answer', null, claims); break; }
+      if (u.needs.prediction) claims.push(claim(`${/definitely|exactly|certain/.test(u.normalizedQuery) ? 'Not definitely. ' : ''}${rival.name}'s internal plan is not visible to you, so this can only be inferred from what you can see.`, 'caveat', 'confirmed', []));
+      if (!rival.visible) claims.push(claim(`${rival.name}'s cash and location are hidden by your current settings.`, 'fact', 'confirmed', [`actor.${rival.id}.hidden`].filter(id => exec.graph.facts[id])));
+      else {
+        if (rival.money !== null) claims.push(claim(`${rival.name} has ${money(rival.money)}${rival.location ? ` and is in ${REGIONS[rival.location]?.name || rival.location}` : ''}.`, 'fact', 'confirmed', [`actor.${rival.id}.money`, `actor.${rival.id}.location`].filter(id => exec.graph.facts[id])));
+      }
+      if (rival.regionsControlled !== null) claims.push(claim(`${rival.name} controls ${rival.regionsControlled} region(s).`, 'fact', 'confirmed', [`actor.${rival.id}.regions`]));
+      section('observed', null, claims);
+      const pattern: GIClaim[] = [];
+      const kinds: Record<string, number> = {};
+      obs.forEach(e => { kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
+      const topKind = Object.entries(kinds).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+      if (obs.length) {
+        pattern.push(claim(`Last observable actions: ${obs.slice(-3).map(e => e.summary).join('; ')}.`, 'fact', 'confirmed', obs.slice(-3).map((_, i) => `obs.${Math.max(0, obs.length - 3) + i}`).filter(id => exec.graph.facts[id])));
+        if (topKind && topKind[1] >= 2) pattern.push(claim(`The strongest visible pattern is ${topKind[0]} (${topKind[1]} of the last ${obs.length} observed actions).`, 'inference', 'moderate', [], { derived: [topKind[1], obs.length] }));
+      } else {
+        pattern.push(claim(`No actions by ${rival.name} have been observed yet this match.`, 'fact', 'confirmed', []));
+      }
+      if (threat?.threatened?.length) {
+        const t = threat.threatened[0];
+        pattern.push(claim(t.rivalCanAfford
+          ? `${t.region.name} is a likely target: ${rival.name} can afford the ${money(t.region.rivalCostToControl)} needed to take it.`
+          : `${t.region.name} is your most exposed region (${money(t.region.rivalCostToControl)} needed to take it).`,
+        u.needs.prediction ? 'prediction' : 'inference', 'moderate', [`threat.${t.region.code}`]));
+      }
+      section('pattern', u.needs.prediction ? 'Likely behaviour (prediction)' : 'Pattern', pattern);
+      if (threat?.threatened?.[0]) buttons.push({ id: 'defend', label: `Defend ${threat.threatened[0].region.code}?`, kind: 'ask', query: `Should I defend ${threat.threatened[0].region.code} or travel to ${Object.values(world.regions).find(r => !r.controlledByPlayer && !r.isHere)?.name || 'another region'}?`, tone: 'secondary' });
+      const ref: GIEntityRef = { kind: 'actor', id: rival.id, label: rival.name, confidence: 1, source: 'context' };
+      ctx.last = { actor: ref };
+      ctx.activeTopic = ref;
+      break;
+    }
+    case 'teammate_status': {
+      kind = 'activity';
+      const actors: GIActorView[] = giResult(exec, 'actor_state')?.data || [];
+      const mate = actors[0];
+      title = mate ? mate.name : 'Teammate';
+      if (!mate) { section('answer', null, [claim('You have no teammate in this match.', 'fact', 'confirmed', [])]); break; }
+      const obs = world.observed.filter(e => e.actorId === mate.id).slice(-3);
+      const claims: GIClaim[] = [];
+      if (mate.visible && mate.money !== null) claims.push(claim(`${mate.name} has ${money(mate.money)}${mate.location ? ` in ${REGIONS[mate.location]?.name || mate.location}` : ''}.`, 'fact', 'confirmed', [`actor.${mate.id}.money`, `actor.${mate.id}.location`].filter(id => exec.graph.facts[id])));
+      claims.push(obs.length ? claim(`Recent actions: ${obs.map(e => e.summary).join('; ')}.`, 'fact', 'confirmed', []) : claim(`No recent actions by ${mate.name} are visible — they may not have had a turn yet, or their actions were not logged.`, 'fact', 'confirmed', []));
+      section('answer', null, claims);
+      buttons.push({ id: 'open_team', label: 'Team plan settings (LAB)', kind: 'open', nav: navAction('assistant_advanced', 'Team plan settings', { section: 'teamModeAi.teamPlans' }), tone: 'secondary' });
+      const ref: GIEntityRef = { kind: 'actor', id: mate.id, label: mate.name, confidence: 1, source: 'context' };
+      ctx.last = { actor: ref };
+      ctx.activeTopic = ref;
+      break;
+    }
+    case 'history': {
+      kind = 'activity';
+      const obs: GIObservedEvent[] = giResult(exec, 'observed_history')?.data || [];
+      title = 'Recent activity';
+      section('answer', null, obs.length
+        ? obs.slice(-5).map((e, i) => claim(`${e.actorName}${e.day !== null ? ` (day ${e.day})` : ''}: ${e.summary}`, 'fact', 'confirmed', [`obs.${Math.max(0, obs.length - 5) + i}`].filter(id => exec.graph.facts[id])))
+        : [claim('No recent activity has been recorded yet.', 'fact', 'confirmed', [])]);
+      buttons.push({ id: 'open_ledger', label: 'Open Activity Ledger', kind: 'open', nav: navAction('ledger', 'Open Activity Ledger'), tone: 'secondary' });
+      break;
+    }
+    case 'settings_lookup': {
+      kind = 'ask_engine';
+      const res = giResult(exec, 'settings_search')?.data;
+      const matches = (res?.matches || []).slice(0, 4);
+      title = 'Matching settings';
+      if (matches.length) {
+        section('answer', null, matches.map((m: any, i: number) => claim(`${m.title || m.settingKey}: currently ${String(m.currentValue)}.`, 'fact', 'confirmed', [`setting.${i}`])));
+        buttons.push({ id: 'open_setting', label: 'Open Settings Hub', kind: 'open', nav: navAction('settings', 'Open Settings'), tone: 'secondary' });
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  const grounded = sections.some(s => s.claims.some(c => c.kind !== 'caveat' || c.factIds.length > 0)) || sections.length > 0;
+  const recommendedLabel = set?.recommended?.label;
+  const deficit = ctx.lastDeficit?.amount;
+  const followUps = buildGIFollowUps(u, world, shape, { deficit, recommended: recommendedLabel, options: u.options });
+  return { title, sections, buttons, followUps, shape, contextUpdates: ctx, kind, grounded };
+}
+
+/** Replace an unresolved reference ("it") with a concrete entity for clarification buttons. */
+export function rewriteGIQueryWithEntity(query: string, ref: GIEntityRef): string {
+  const q = String(query || '').trim();
+  if (/\b(it|that|this)\b/i.test(q)) return q.replace(/\b(it|that|this)\b/i, ref.label);
+  if (/\b(the|that|this) (project|rail|contract)\b/i.test(q)) return q.replace(/\b(the|that|this) (project|rail|contract)\b/i, ref.label);
+  return `${q.replace(/\?$/, '')} — ${ref.label}?`;
+}
+
+// ----------------------------------------------------------------------------
+// 10. CLAIM VERIFICATION + CONFIDENCE
+// ----------------------------------------------------------------------------
+
+function giNumbersIn(text: string): Array<{ value: number; strict: boolean }> {
+  const out: Array<{ value: number; strict: boolean }> = [];
+  const re = /(\$\s?)?(\d[\d,]*(?:\.\d+)?)(\s?%)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const v = parseFloat(m[2].replace(/,/g, ''));
+    if (!Number.isFinite(v)) continue;
+    const strict = Boolean(m[1] || m[3]) || v > 12;
+    out.push({ value: v, strict });
+  }
+  return out;
+}
+
+/**
+ * Verifies every claim before it reaches the player: numbers must come from evidence (or an
+ * explicitly derived calculation), region names must exist, predictions and projections must be
+ * labelled, causation must not be asserted from inference, recommendations must be legal.
+ */
+export function verifyGIClaims(sections: GIAnswerSection[], graph: GIEvidenceGraph, world: GIWorld, extraAllowed: number[] = []): { sections: GIAnswerSection[]; report: GIVerificationReport } {
+  const allowed = new Set<number>(extraAllowed.map(n => Math.round(n * 100) / 100));
+  const addNum = (v: any) => {
+    if (typeof v === 'number' && Number.isFinite(v)) { allowed.add(Math.round(v * 100) / 100); allowed.add(Math.round(Math.abs(v) * 100) / 100); }
+    else if (typeof v === 'string') giNumbersIn(v).forEach(n => allowed.add(n.value));
+  };
+  Object.values(graph.facts).forEach(f => addNum(f.value));
+  addNum(world.player.money); addNum(world.reserveFloor); addNum(world.player.apRemaining); addNum(world.day); addNum(world.totalDays);
+  (world.win?.lines || []).forEach(addNum);
+  if (world.objective) { addNum(world.objective.progress.completed); addNum(world.objective.progress.total); addNum(world.objective.title); }
+  (world.actionSet?.ranked || []).forEach(c => { addNum(c.costEstimate); c.reasons.forEach(addNum); addNum(c.risk || ''); addNum(c.label); addNum(c.description); });
+  (world.actionSet?.blocked || []).forEach(c => { addNum(c.blockReason || ''); addNum(c.label); });
+  world.observed.forEach(e => addNum(e.summary));
+  if (world.attention) addNum(world.attention.detail);
+  world.projects.forEach(p => addNum(p.title));
+  world.contracts.forEach(c => { addNum(c.title); addNum(c.blocker || ''); });
+  const removed: GIVerificationReport['removed'] = [];
+  let checked = 0;
+  const regionCodes = new Set(Object.keys(REGIONS));
+  const out = sections.map(s => ({
+    ...s,
+    claims: s.claims.filter(c => {
+      checked++;
+      (c.derived || []).forEach(d => allowed.add(Math.round(Math.abs(d) * 100) / 100));
+      for (const n of giNumbersIn(c.text)) {
+        if (n.strict && !allowed.has(Math.round(n.value * 100) / 100)) { removed.push({ text: c.text, reason: `unverified number ${n.value}` }); return false; }
+      }
+      const codes = (c.text.match(/\b[A-Z]{2,3}\b/g) || []).filter(x => !['AP', 'AI', 'OK', 'VS'].includes(x));
+      const badCode = codes.find(code => /^(NSW|VIC|QLD|SA|WA|NT|TAS|ACT|NOR|CHR|CCK|CSI|ACI)$/.test(code) && !regionCodes.has(code));
+      if (badCode) { removed.push({ text: c.text, reason: `unknown region ${badCode}` }); return false; }
+      if (/\b(caused|causes|because of)\b/i.test(c.text) && c.kind !== 'fact') { removed.push({ text: c.text, reason: 'causal claim without direct evidence' }); return false; }
+      if (c.kind === 'prediction' && (c.certainty === 'confirmed' || c.certainty === 'high')) { removed.push({ text: c.text, reason: 'prediction presented as certain' }); return false; }
+      if (c.kind === 'projection' && c.certainty === 'confirmed') { removed.push({ text: c.text, reason: 'projection presented as fact' }); return false; }
+      if (c.kind === 'recommendation' && c.optionLegal === false && !/blocked/i.test(c.text)) { removed.push({ text: c.text, reason: 'recommended action is not legal' }); return false; }
+      return true;
+    })
+  })).filter(s => s.claims.length);
+  return { sections: out, report: { passed: removed.length === 0, checked, removed } };
+}
+
+export function computeGIConfidence(u: GIQueryUnderstanding, plan: GIQueryPlan, exec: GIExecution, verification: GIVerificationReport, sections: GIAnswerSection[]): number {
+  const required = plan.steps.filter(s => !s.optional && s.tool !== 'ask_engine');
+  const okRequired = required.filter(s => exec.results[s.id]?.ok).length;
+  const toolRatio = required.length ? okRequired / required.length : 1;
+  const claims = sections.flatMap(s => s.claims);
+  const weight = (c: GIClaim) => c.kind === 'prediction' ? 1 : c.kind === 'inference' ? 0.7 : c.kind === 'projection' ? (c.certainty === 'projected' ? 0.2 : 0.4) : 0;
+  const inferredShare = claims.length ? claims.reduce((s, c) => s + weight(c), 0) / claims.length : 0;
+  let conf = u.confidence * 0.35 + toolRatio * 0.4 + (1 - inferredShare) * 0.25;
+  const core = GI_PRIMARY_TOOLS[u.primary] || [];
+  if (plan.steps.some(s => core.includes(s.tool) && exec.results[s.id] && !exec.results[s.id].ok)) conf -= 0.2;
+  if (!verification.passed) conf -= Math.min(0.25, verification.removed.length * 0.08);
+  if (u.unresolvedReferences.length) conf -= 0.1;
+  if (claims.some(c => c.certainty === 'low')) conf -= 0.05;
+  if (!claims.some(c => c.kind !== 'caveat')) conf = Math.min(conf, 0.45);
+  if (!claims.length) conf = Math.min(conf, 0.3);
+  return Math.max(0.05, Math.min(0.98, Math.round(conf * 100) / 100));
+}
+
+// ----------------------------------------------------------------------------
+// 11. ENTRY POINTS
+// ----------------------------------------------------------------------------
+
+export interface GIRunResult {
+  answer: GameIntelligenceAnswer;
+  context: GIConversationContext;
+  diagnostics: GIDiagnostics;
+  plan: GIQueryPlan;
+  understanding: GIQueryUnderstanding;
+  /** True when the pipeline decided the Ask-the-Game engine should answer (rules, memory, team plans…). */
+  delegateToAskEngine: boolean;
+}
+
+function sectionsToLines(sections: GIAnswerSection[]): string[] {
+  return sections.flatMap(s => s.claims.map(c => c.text));
+}
+
+function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, composed: GIComposed | null): GIConversationContext {
+  const ctx = sanitizeGIConversationContext(prev);
+  const next: GIConversationContext = { ...ctx, exchanges: ctx.exchanges + 1, lastQueryType: u.queryType, pendingClarification: null };
+  const queryEntities = u.entities.filter(e => e.kind !== 'mode');
+  const last = { ...ctx.last };
+  queryEntities.forEach(e => { last[e.kind] = { ...e, source: 'context' }; });
+  next.last = last;
+  if (queryEntities.length) next.activeTopic = { ...queryEntities[queryEntities.length - 1], source: 'context' };
+  if (composed) {
+    const cu = composed.contextUpdates;
+    if (cu.last) next.last = { ...next.last, ...cu.last };
+    if (cu.activeTopic !== undefined) next.activeTopic = cu.activeTopic;
+    if (cu.lastComparison) next.lastComparison = cu.lastComparison.slice(0, 4);
+    if (cu.lastRecommendation !== undefined) next.lastRecommendation = cu.lastRecommendation;
+    if (cu.lastSimulation !== undefined) next.lastSimulation = cu.lastSimulation;
+    if (cu.lastDeficit !== undefined) next.lastDeficit = cu.lastDeficit;
+    if (cu.pendingClarification !== undefined) next.pendingClarification = cu.pendingClarification;
+  }
+  next.lastUnresolvedQuestion = u.unresolvedReferences.length ? u.originalQuery : null;
+  const recent = [...queryEntities.map(e => ({ ...e, source: 'context' as const })), ...next.recent];
+  const seen = new Set<string>();
+  next.recent = recent.filter(r => { const k = `${r.kind}:${r.id}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, GI_CONTEXT_RECENT_LIMIT);
+  return sanitizeGIConversationContext(next);
+}
+
+/**
+ * Synchronous core. Pure given (query, world, context): same inputs → same plan and answer text.
+ * Control commands keep flowing through the unified control model's answer builder.
+ */
+export function runGameIntelligenceCore(query: string, world: GIWorld, contextIn: GIConversationContext, queryId = 'gi'): GIRunResult {
+  giClaimCounter = 0;
+  const context = sanitizeGIConversationContext(contextIn);
+  const u = understandGIQuery(query, world, context);
+  const plan = buildGIQueryPlan(u, world);
+  const exec = executeGIPlan(plan, world, u);
+  const diagBase = (verification: GIVerificationReport, confidence: number, fallbackUsed: boolean): GIDiagnostics => ({
+    queryId,
+    normalizedQuery: u.normalizedQuery,
+    queryType: u.queryType,
+    primary: u.primary,
+    supporting: u.supporting,
+    resolvedReferences: u.resolvedReferences.map(r => `${r.phrase} → ${r.entity.label}`),
+    unresolvedReferences: u.unresolvedReferences,
+    entities: u.entities.map(e => `${e.kind}:${e.label}`),
+    options: u.options.map(o => `${o.label}${o.legal ? '' : ' (blocked)'}`),
+    domains: plan.domains,
+    steps: plan.steps.map(s => {
+      const r = exec.results[s.id];
+      const status = s.tool === 'ask_engine' ? 'deferred' : !r ? 'failed' : r.cached ? 'cached' : r.unavailable ? 'unavailable' : r.ok ? 'ok' : 'failed';
+      return { id: s.id, tool: s.tool, status, error: r?.error };
+    }),
+    droppedSteps: plan.droppedSteps,
+    budget: plan.budget,
+    evidenceCount: Object.keys(exec.graph.facts).length,
+    graphNodes: exec.graph.nodes.length,
+    graphEdges: exec.graph.edges.length,
+    confidence,
+    freshness: 'current',
+    fallbackUsed,
+    clarification: u.needs.clarification,
+    verification,
+    askIntent: u.askIntent,
+    planId: plan.planId
+  });
+
+  // Grounded V9 builders stay canonical for "show alternatives" and "what is Co-Pilot doing".
+  const legacyRoute = classifyGameIntelligenceRequest(query);
+  if (u.primary !== 'control' && (legacyRoute.kind === 'alternatives' || legacyRoute.kind === 'activity')) {
+    const answer = legacyRoute.kind === 'alternatives'
+      ? buildAlternativesIntelligenceAnswer({ query, actionSet: world.actionSet, control: world.control, excludeId: world.actionSet?.recommended?.id })
+      : buildActivityIntelligenceAnswer({ query, control: world.control, session: world.session || null, ledgerEvents: world.ledgerEvents || [] });
+    const conf = answer.grounded ? 0.85 : 0.4;
+    answer.gi = { queryType: legacyRoute.kind === 'alternatives' ? 'comparison' : 'history', confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId };
+    const verification = { passed: true, checked: answer.lines.length, removed: [] };
+    return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase(verification, conf, false), plan, understanding: u, delegateToAskEngine: false };
+  }
+
+  // Control commands: the unified Human + AI Control Model owns these (confirmation rules intact).
+  if (u.primary === 'control' && u.controlRoute) {
+    const answer = buildIntelligenceControlAnswer(u.controlRoute, world.control, query);
+    const verification = { passed: true, checked: 0, removed: [] };
+    answer.gi = { queryType: 'control', confidence: 0.95, confidenceLabel: giConfidenceLabel(0.95), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId };
+    return { answer, context: updateGIContext(context, u, null), diagnostics: diagBase(verification, 0.95, false), plan, understanding: u, delegateToAskEngine: false };
+  }
+
+  if (u.primary === 'ask_engine' || (u.primary === 'settings_lookup' && !giResult(exec, 'settings_search')?.ok)) {
+    const verification = { passed: true, checked: 0, removed: [] };
+    const placeholder: GameIntelligenceAnswer = {
+      id: `gi_${plan.planId}`,
+      query,
+      kind: 'ask_engine',
+      title: 'Checking…',
+      lines: [],
+      evidence: [],
+      buttons: [],
+      sourceSystems: ['Ask-the-Game'],
+      grounded: false
+    };
+    return { answer: placeholder, context: updateGIContext(context, u, null), diagnostics: diagBase(verification, u.confidence, true), plan, understanding: u, delegateToAskEngine: true };
+  }
+
+  const composed = composeGIAnswer(u, plan, exec, world, context);
+  const derivedNumbers: number[] = [];
+  if (composed.contextUpdates.lastDeficit) derivedNumbers.push(composed.contextUpdates.lastDeficit.amount);
+  // Numbers carried in structured conversation context were verified when they were first stated.
+  if (context.lastDeficit) {
+    derivedNumbers.push(context.lastDeficit.amount);
+    giNumbersIn(context.lastDeficit.forLabel).forEach(n => derivedNumbers.push(n.value));
+  }
+  const verified = verifyGIClaims(composed.sections, exec.graph, world, derivedNumbers);
+  const confidence = computeGIConfidence(u, plan, exec, verified.report, verified.sections);
+  const evidence: GameIntelligenceEvidence[] = Object.values(exec.graph.facts).slice(0, 14).map(f => ({
+    source: f.source,
+    detail: `${f.label}: ${typeof f.value === 'number' && f.unit === '$' ? money(f.value) : String(f.value)}${f.certainty !== 'confirmed' ? ` (${f.certainty})` : ''}`
+  }));
+  // Failures already explained by the answer (a blocked option cannot be simulated, an empty
+  // inventory has nothing to price) are not "missing evidence".
+  const explainedFailure = (s: GIPlanStep) => (
+    (s.tool === 'simulate_options' && !u.options.some(o => o.legal && o.intent))
+    || (s.tool === 'market_state' && !u.entities.some(e => e.kind === 'resource') && Object.keys(world.player.inventory).length === 0)
+  );
+  const failed = plan.steps.filter(s => exec.results[s.id] && !exec.results[s.id].ok && !s.optional && s.tool !== 'conflict_scan' && !explainedFailure(s));
+  if (failed.length && verified.sections.length) {
+    verified.sections.push({ id: 'limits', heading: null, claims: [claim(`Some evidence was unavailable (${failed.map(f => exec.results[f.id].error || f.tool).slice(0, 2).join('; ')}), so this answer may be incomplete.`, 'caveat', 'confirmed', [])] });
+  }
+  if (!verified.sections.length) {
+    verified.sections.push({ id: 'none', heading: null, claims: [claim('The game does not currently have enough information to answer that precisely.', 'caveat', 'confirmed', [])] });
+  }
+  const claimsFlat = verified.sections.flatMap(s => s.claims);
+  const followButtons: GameIntelligenceButton[] = composed.followUps.map((f, i) => ({ id: `fu_${i}`, label: f, kind: 'ask', query: f, tone: 'secondary' }));
+  const seenBtn = new Set<string>();
+  const buttons = [...composed.buttons].filter(b => { const k = `${b.kind}:${b.label}`; if (seenBtn.has(k)) return false; seenBtn.add(k); return true; }).slice(0, 6);
+  const answer: GameIntelligenceAnswer = {
+    id: `gi_${plan.planId}_${context.exchanges}`,
+    query,
+    kind: composed.kind,
+    title: composed.title,
+    lines: sectionsToLines(verified.sections),
+    evidence,
+    buttons: [...buttons, ...followButtons],
+    sourceSystems: Array.from(new Set(Object.values(exec.graph.facts).map(f => f.source))).slice(0, 6),
+    grounded: composed.grounded && claimsFlat.some(c => c.kind !== 'caveat'),
+    sections: verified.sections,
+    gi: { queryType: u.queryType, confidence, confidenceLabel: giConfidenceLabel(confidence), fingerprint: world.fingerprint, freshness: 'current', planId: plan.planId }
+  };
+  if (composed.shape === 'clarification') answer.clarification = true;
+  return {
+    answer,
+    context: updateGIContext(context, u, composed),
+    diagnostics: diagBase(verified.report, confidence, false),
+    plan,
+    understanding: u,
+    delegateToAskEngine: false
+  };
+}
+
+/**
+ * Async wrapper: delegates to the Ask-the-Game engine when the plan says so, then checks freshness.
+ * If relevant state changed while waiting, the answer is recomputed once from fresh state; if it
+ * changed again, actionable buttons are removed and the answer is marked stale.
+ */
+export async function runGameIntelligence(input: {
+  query: string;
+  world: GIWorld;
+  context: GIConversationContext;
+  askEngine?: (q: string) => Promise<AskGameResponse | null>;
+  refreshWorld?: () => GIWorld;
+  queryId?: string;
+}): Promise<GIRunResult> {
+  let result = runGameIntelligenceCore(input.query, input.world, input.context, input.queryId);
+  if (result.delegateToAskEngine) {
+    let response: AskGameResponse | null = null;
+    try { response = input.askEngine ? await input.askEngine(input.query) : null; } catch { response = null; }
+    const wrapped = buildAskEngineIntelligenceAnswer(input.query, response);
+    const followUps = buildGIFollowUps(result.understanding, input.world, 'fact');
+    wrapped.buttons = [...wrapped.buttons.filter(b => b.kind !== 'ask'), ...followUps.slice(0, 3).map((f, i) => ({ id: `fu_${i}`, label: f, kind: 'ask' as const, query: f, tone: 'secondary' as const }))];
+    const conf = Math.max(0.05, Math.min(0.95, Number(response?.confidence ?? 0.3)));
+    wrapped.gi = { queryType: result.understanding.queryType, confidence: conf, confidenceLabel: giConfidenceLabel(conf), fingerprint: input.world.fingerprint, freshness: 'current', planId: result.plan.planId };
+    result = { ...result, answer: wrapped, diagnostics: { ...result.diagnostics, confidence: conf, steps: result.diagnostics.steps.map(s => s.tool === 'ask_engine' ? { ...s, status: response ? 'ok' : 'failed' } : s) } };
+  }
+  if (input.refreshWorld && !result.delegateToAskEngine) return result;
+  if (input.refreshWorld) {
+    const fresh = input.refreshWorld();
+    if (fresh.fingerprint !== input.world.fingerprint) {
+      const actionable = result.answer.buttons.some(b => b.kind === 'do' || b.kind === 'end_turn');
+      if (result.answer.gi) {
+        result.answer.gi.freshness = 'updated';
+        result.answer.gi.freshnessNote = 'Game state changed while I was checking that. This answer uses the latest state where it matters.';
+        result.answer.gi.fingerprint = fresh.fingerprint;
+      }
+      if (actionable) result.answer.buttons = result.answer.buttons.filter(b => b.kind !== 'do' && b.kind !== 'end_turn');
+      result.diagnostics = { ...result.diagnostics, freshness: 'updated' };
+    }
+  }
+  return result;
+}
+
+/** Freshness check used at render time: an answer built on an older state must not offer Do It. */
+export function isGIAnswerStale(answer: GameIntelligenceAnswer, currentFingerprint: string): boolean {
+  return Boolean(answer.gi && answer.gi.fingerprint && currentFingerprint && answer.gi.fingerprint !== currentFingerprint);
+}
+
+export function buildGIWorldFingerprint(parts: Array<string | number | null | undefined>): string {
+  return giHash(parts.map(p => String(p ?? '')).join('|'));
+}
+
+// ----------------------------------------------------------------------------
+// 12. GAME INTELLIGENCE 2.0 SELF-TESTS (deterministic fixture world)
+// ----------------------------------------------------------------------------
+
+export function createGIFixtureWorld(overrides?: Partial<GIWorld> & { money?: number; simulate?: boolean }): { world: GIWorld; liveState: any } {
+  const settings = createDefaultGameSettings();
+  const money = overrides?.money ?? 6000;
+  const inventoryList = ['Gold', 'Gold', 'Iron Ore', 'Iron Ore', 'Iron Ore'];
+  const liveState = {
+    gameState: { day: 4, turnCounter: 7, currentActorId: 'player', regionDeposits: { NSW: { player: 3000, ai: 1500 }, VIC: { ai: 2000 } }, infrastructureProjects: getBuiltinInfrastructureProjects() },
+    player: { id: 'player', name: 'Adam', money, inventory: [...inventoryList], currentRegion: 'NSW', actionsUsedThisTurn: 0, teamId: 'team_player' },
+    actorsById: {
+      player: { id: 'player', name: 'Adam', money, inventory: [...inventoryList], currentRegion: 'NSW', actionsUsedThisTurn: 0, teamId: 'team_player' },
+      ai: { id: 'ai', name: 'Riley', money: 9000, inventory: [], currentRegion: 'VIC', kind: 'ai', teamId: 'team_opponent' }
+    }
+  };
+  const regions: Record<string, GIRegionView> = {};
+  Object.keys(REGIONS).forEach(code => {
+    const nsw = code === 'NSW';
+    const vic = code === 'VIC';
+    regions[code] = {
+      code,
+      name: REGIONS[code].name || code,
+      resources: REGIONAL_RESOURCES[code] || [],
+      controllerId: nsw ? 'player' : vic ? 'ai' : null,
+      controllerLabel: nsw ? 'Adam' : vic ? 'Riley' : 'Uncontrolled',
+      controlledByPlayer: nsw,
+      controlledByRival: vic,
+      playerDeposit: nsw ? 3000 : 0,
+      rivalDeposit: nsw ? 1500 : vic ? 2000 : 0,
+      playerCostToControl: nsw ? 0 : vic ? 2001 : 1,
+      rivalCostToControl: nsw ? 1501 : vic ? 0 : 1,
+      travelCost: nsw ? 0 : 150,
+      isHere: nsw,
+      adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[code] || []),
+      devTier: 0
+    };
+  });
+  const cand = (id: string, actionType: string, title: string, utility: number, cashDelta: number, cost: number, params: Record<string, any>, extra?: any) => ({
+    id, actionType, title, description: title, category: 'economy', apCost: 1, costEstimate: cost, utilityScore: utility, riskFactor: 10, rewardScore: 60,
+    isValid: true, expectedStateDelta: { cashDelta, apDelta: -1 }, parameters: params, ...extra
+  });
+  const candidates = [
+    cand('c_sell_gold', 'sell', 'Sell Gold at market', 70, 1000, 0, { item: 'Gold', quantity: 2 }),
+    cand('c_work', 'work', 'Work for Wages', 55, 50, 0, { wage: 50 }),
+    cand('c_travel_vic', 'travel', 'Travel to Victoria', 50, -150, 150, { destinationRegion: 'VIC', region: 'VIC' }, { targetId: 'VIC' }),
+    cand('c_loan', 'take_loan', 'Take Commercial Loan', 45, 1000, 0, { principal: 1000 }),
+    cand('c_equip', 'buy_equipment', 'Acquire High-Tier Equipment', 90, -8000, 8000, {}, { isValid: false, invalidationReason: 'Need $2,000 more' })
+  ];
+  const objective: CurrentObjective = {
+    id: 'win_regions', sourceType: 'win_condition' as any, sourceId: 'regions', title: 'Control 5 regions', description: 'Win on regions.', priority: 1,
+    progress: { completed: 0, total: 1 }, requirements: [{ id: 'r', label: 'Regions controlled', satisfied: false, currentValue: 1, targetValue: 5 }], blockers: [], recommendedNextStep: null, completionState: 'active'
+  };
+  const attention: PlayerAttentionSnapshot = { state: 'good', label: 'Stable', detail: 'No immediate crisis.' };
+  const ranked = rankContextualRecommendations(candidates, objective, { apRemaining: 3, cash: money, limit: 12 });
+  const actionSet = buildContextualActionSet({ rankedRecommendations: ranked, invalidCandidates: candidates.filter(c => !c.isValid), objective, attention, apRemaining: 3, isHumanTurn: true });
+  const control = derivePlayerControlState({ gameSettings: settings, gameState: liveState.gameState, takeoverSession: null, isHumanTurn: true, currentActorName: 'Adam', apUsed: 0, apTotal: 3 });
+  const projects: GIProjectView[] = PRESET_INFRASTRUCTURE_PROJECTS.map(p => ({
+    id: p.id, title: p.title, regionId: p.regionId, totalCost: p.totalCost, invested: 0, remaining: p.totalCost, status: p.status,
+    requiredDevTier: p.requiredDevTier, regionDevTier: 0, maintenancePerTurn: p.maintenanceCostPerTurn, description: p.description, fundingIncrement: 50000
+  }));
+  const world: GIWorld = {
+    fingerprint: `fx_${money}`,
+    day: 4, totalDays: 30, turn: 7, isHumanTurn: true, currentActorName: 'Adam', isTeamMode: false, isAiOnly: false, negotiationMode: false, defaultDepositAmount: 1000,
+    player: {
+      id: 'player', name: 'Adam', money, apRemaining: 3, apUsed: 0, apTotal: 3, location: 'NSW', locationName: 'New South Wales',
+      inventory: { Gold: 2, 'Iron Ore': 3 }, loans: [], debtTotal: 0
+    },
+    reserveFloor: 1000,
+    reserveSource: 'Co-Pilot minimum cash reserve',
+    win: { id: 'regions', label: 'Win condition: most regions', metricLabel: 'Regions', playerValue: 1, opponentValue: 2, lines: ['Regions: 1 vs 2 (you trail).'], regionsTarget: 5, playerRegions: 1, rivalRegions: 2 },
+    objective,
+    attention,
+    actionSet,
+    control,
+    regions,
+    market: { Gold: 500, 'Iron Ore': 120 },
+    projects,
+    contracts: [{ id: 'ag_logistics_nsw', title: 'Agricultural Logistics Contract', regionId: 'NSW', status: 'available', requiredMoney: 15000, rewardMoney: 20000, turnsRemaining: 5, blocker: 'Contract requires $15,000 (have $6,000)', assignedToPlayer: false }],
+    actors: [
+      { id: 'player', name: 'Adam', relation: 'self', kind: 'human', money, location: 'NSW', regionsControlled: 1, visible: true },
+      { id: 'ai', name: 'Riley', relation: 'rival', kind: 'ai', money: 9000, location: 'VIC', regionsControlled: 2, visible: true }
+    ],
+    observed: [
+      { day: 3, actorId: 'ai', actorName: 'Riley', summary: 'Riley deposited $2,000 in Victoria', kind: 'region deposit' },
+      { day: 3, actorId: 'ai', actorName: 'Riley', summary: 'Riley traveled to Victoria', kind: 'travel' },
+      { day: 4, actorId: 'ai', actorName: 'Riley', summary: 'Riley deposited $500 in South Australia', kind: 'region deposit' }
+    ],
+    primaryRivalId: 'ai',
+    teammateIds: [],
+    settings: { fogOfWar: false, aiMemoryFullInspection: false, experienceLevel: 'guided' },
+    tools: {
+      simulate: overrides?.simulate === false ? undefined : (intent) => simulateGIActionOnClone(liveState, 'player', intent, settings)
+    },
+    ...overrides
+  } as GIWorld;
+  return { world, liveState };
+}
+
+export function runGameIntelligence2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const fresh = () => createGIFixtureWorld();
+  const ask = (q: string, ctx?: GIConversationContext, w?: GIWorld) => runGameIntelligenceCore(q, w || fresh().world, ctx || createGIConversationContext());
+  const text = (r: GIRunResult) => r.answer.lines.join(' ');
+
+  check('gi2_simple', '"How much money do I have?" → minimal plan, grounded, no extra tools', () => {
+    const r = ask('How much money do I have?');
+    return (r.understanding.primary === 'player_status' && r.plan.steps.length <= 2 && !r.plan.steps.some(s => s.tool === 'rank_actions') && text(r).includes('$6,000')) || `${r.understanding.primary}/${r.plan.steps.map(s => s.tool)}/${text(r)}`;
+  });
+  check('gi2_entity', '"What resources are in WA?" resolves WA', () => {
+    const r = ask('What resources are in WA?');
+    return (r.understanding.entities.some(e => e.kind === 'region' && e.id === 'WA') && text(r).includes('Iron Ore')) || text(r);
+  });
+  check('gi2_alias', '"Western Australia" resolves to WA', () => {
+    const r = ask('What resources are in Western Australia?');
+    return r.understanding.entities.some(e => e.kind === 'region' && e.id === 'WA') || JSON.stringify(r.understanding.entities);
+  });
+  check('gi2_multi_intent', '"Why am I losing and what should I do next?" → diagnosis + recommendation', () => {
+    const r = ask('Why am I losing and what should I do next?');
+    const sections = (r.answer.sections || []).map(s => s.id);
+    return (r.understanding.primary === 'strategic_diagnosis' && r.understanding.supporting.includes('action_recommendation') && r.understanding.queryType === 'compound' && sections.includes('primary') && sections.includes('recovery')) || `${r.understanding.primary}/${r.understanding.queryType}/${sections}`;
+  });
+  check('gi2_comparison', '"Should I defend NSW or travel to Victoria?" compares two real options', () => {
+    const r = ask('Should I defend NSW or travel to Victoria?');
+    const opts = r.understanding.options.map(o => o.id);
+    const optionClaims = (r.answer.sections || []).find(s => s.id === 'options')?.claims.length || 0;
+    return (r.understanding.primary === 'comparison' && opts.includes('opt_deposit_NSW') && opts.includes('opt_travel_VIC') && optionClaims === 2) || `${r.understanding.primary}/${opts}/${optionClaims}`;
+  });
+  check('gi2_afford_strategy', 'Affordability + plan combines cost, reserve and objective evidence', () => {
+    const w = fresh().world;
+    const ctx = noteGIContextEntity(createGIConversationContext(), { kind: 'project', id: 'infra_hsr_nsw_vic', label: 'Sydney-Melbourne High-Speed Rail Corridor', confidence: 1, source: 'context' });
+    const r = ask('Can I afford this project without hurting my plan?', ctx, w);
+    const tools = r.plan.steps.map(s => s.tool);
+    return (r.understanding.primary === 'affordability' && tools.includes('project_state') && tools.includes('objective_state') && (r.answer.sections || []).some(s => s.id === 'impact')) || `${r.understanding.primary}/${tools}/${(r.answer.sections || []).map(s => s.id)}`;
+  });
+  check('gi2_simulation_rollback', '"What happens if I sell my Gold?" simulates on a clone without mutating live state', () => {
+    const { world, liveState } = createGIFixtureWorld();
+    const before = JSON.stringify(liveState);
+    const rngBefore = JSON.stringify(globalRngRegistry.streams);
+    const r = runGameIntelligenceCore('What happens if I sell my Gold?', world, createGIConversationContext());
+    const after = JSON.stringify(liveState);
+    const projected = (r.answer.sections || []).find(s => s.id === 'after')?.claims || [];
+    return (r.understanding.primary === 'simulation' && before === after && rngBefore === JSON.stringify(globalRngRegistry.streams) && projected.length > 0 && projected.every(c => c.certainty !== 'confirmed')) || `${r.understanding.primary}/${before === after}/${projected.length}/${text(r)}`;
+  });
+  check('gi2_followup_reference', '"Can I afford the high-speed rail?" then "What if I wait?" keeps the project', () => {
+    const w = fresh().world;
+    const r1 = ask('Can I afford the high-speed rail?', undefined, w);
+    const r2 = ask('What if I wait?', r1.context, w);
+    return (r2.understanding.entities.some(e => e.kind === 'project' && e.id === 'infra_hsr_nsw_vic') && text(r2).includes('High-Speed Rail')) || `${JSON.stringify(r2.understanding.entities)}/${text(r2)}`;
+  });
+  check('gi2_ambiguous', 'Ambiguous "it" / "the rail" asks for clarification instead of guessing', () => {
+    let ctx = createGIConversationContext();
+    ctx = { ...ctx, lastComparison: [
+      { kind: 'project', id: 'infra_hsr_nsw_vic', label: 'High-Speed Rail', confidence: 1, source: 'context' },
+      { kind: 'project', id: 'infra_inland_rail_qld', label: 'Inland Rail Freight Hub', confidence: 1, source: 'context' }
+    ] };
+    const r1 = ask('Can I afford it?', ctx);
+    const r2 = ask('Can I afford the rail?');
+    const opts1 = r1.answer.buttons.filter(b => b.id.startsWith('clarify_')).length;
+    const opts2 = r2.answer.buttons.filter(b => b.id.startsWith('clarify_')).length;
+    return (r1.understanding.needs.clarification && opts1 === 2 && r2.understanding.needs.clarification && opts2 >= 2) || `${r1.understanding.needs.clarification}/${opts1}/${r2.understanding.needs.clarification}/${opts2}`;
+  });
+  check('gi2_hidden_info', '"What exactly will Riley do next?" does not expose hidden plans', () => {
+    const r = ask('What exactly will Riley do next?');
+    const t = text(r);
+    return (r.understanding.primary === 'rival_assessment' && /not visible/.test(t) && !/weight|internal utility|directive/i.test(t)) || t;
+  });
+  check('gi2_prediction_label', 'Predictions are labelled uncertain', () => {
+    const r = ask('Is Riley going to attack NSW next turn?');
+    const preds = (r.answer.sections || []).flatMap(s => s.claims).filter(c => c.kind === 'prediction');
+    return (preds.length > 0 && preds.every(c => c.certainty === 'moderate' || c.certainty === 'low')) || `${r.understanding.primary}/${preds.map(p => p.certainty)}`;
+  });
+  check('gi2_control', '"Go autonomous." routes to the control model and needs confirmation', () => {
+    const r = ask('Go autonomous.');
+    return (r.understanding.primary === 'control' && !r.answer.immediate && r.answer.buttons.some(b => b.kind === 'set_mode' && b.mode === 'autonomous')) || JSON.stringify(r.answer.buttons);
+  });
+  check('gi2_mode_mention', '"Why is autonomous mode risky?" explains without changing control', () => {
+    const r = ask('Why is autonomous mode risky?');
+    return (r.understanding.primary === 'control_explain' && !r.answer.immediate && !r.answer.buttons.some(b => b.kind === 'set_mode')) || r.understanding.primary;
+  });
+  check('gi2_no_invented_numbers', 'Unsupported numeric claims fail verification', () => {
+    const { world } = createGIFixtureWorld();
+    const sections: GIAnswerSection[] = [{ id: 'x', heading: null, claims: [
+      claim('You earned $99,999 last turn.', 'fact', 'confirmed', []),
+      claim('You have $6,000.', 'fact', 'confirmed', ['player.cash'])
+    ] }];
+    const v = verifyGIClaims(sections, { nodes: [], edges: [], facts: {} }, world);
+    const kept = v.sections.flatMap(s => s.claims).map(c => c.text);
+    return (!v.report.passed && kept.length === 1 && kept[0].includes('6,000')) || JSON.stringify(v.report);
+  });
+  check('gi2_tool_failure', 'A missing simulator lowers confidence and states the limitation', () => {
+    const withSim = ask('What happens if I sell my Gold?');
+    const noSim = ask('What happens if I sell my Gold?', undefined, createGIFixtureWorld({ simulate: false }).world);
+    return (/could not simulate|unavailable/i.test(text(noSim)) && (noSim.answer.gi?.confidence || 0) < (withSim.answer.gi?.confidence || 1)) || `${text(noSim)} ${noSim.answer.gi?.confidence} vs ${withSim.answer.gi?.confidence}`;
+  });
+  check('gi2_determinism', 'Same state + query + context → same plan and answer', () => {
+    const a = ask('Why am I losing and what should I do next?');
+    const b = ask('Why am I losing and what should I do next?');
+    return (a.plan.planId === b.plan.planId && JSON.stringify(a.plan.steps) === JSON.stringify(b.plan.steps) && a.answer.lines.join('|') === b.answer.lines.join('|')) || 'non-deterministic';
+  });
+  check('gi2_budget', 'Tool budgets: simple ≤ 2 steps, complex ≤ 8', () => {
+    const simple = ask('How much AP do I have?');
+    const complex = ask("I'm behind Riley, NSW looks threatened and I want to win on regions. Should I defend NSW, sell Iron Ore, or go to Victoria?");
+    return (simple.plan.steps.length <= 2 && complex.plan.steps.length <= 8 && complex.understanding.options.length >= 3) || `${simple.plan.steps.length}/${complex.plan.steps.length}/${complex.understanding.options.map(o => o.id)}`;
+  });
+  check('gi2_deficit_chain', 'Blocked build → "the money" → "sell everything" → "worth it" keeps the thread', () => {
+    const w = fresh().world;
+    const r1 = ask("Why can't I build the Sydney-Melbourne rail?", undefined, w);
+    const r2 = ask("What's the fastest way to get the money?", r1.context, w);
+    const r3 = ask('What if I sell everything?', r2.context, w);
+    const r4 = ask('Would that actually be worth it?', r3.context, w);
+    return (Boolean(r1.context.lastDeficit) && /Raising \$44,000/.test(r2.answer.title) && r3.understanding.primary === 'simulation' && r4.understanding.primary === 'comparison' && (r4.answer.sections || []).some(s => s.id === 'goal_fit'))
+      || `${JSON.stringify(r1.context.lastDeficit)} | ${r2.answer.title} | ${r3.understanding.primary} | ${r4.understanding.primary}/${(r4.answer.sections || []).map(s => s.id)}`;
+  });
+  check('gi2_economy', '"Why am I always running out of money?" prioritises causes', () => {
+    const r = ask('Why am I always running out of money?', undefined, createGIFixtureWorld({ money: 700 }).world);
+    const primary = (r.answer.sections || []).find(s => s.id === 'primary');
+    return (r.understanding.primary === 'economy_diagnosis' && Boolean(primary) && /reserve/.test(primary!.claims[0].text)) || `${r.understanding.primary}/${text(r)}`;
+  });
+  check('gi2_existing_simple_routes', 'Rules/memory style questions still delegate to Ask-the-Game', () => {
+    const r = ask('How do AP points work?');
+    return (r.delegateToAskEngine === true || r.understanding.primary !== 'ask_engine') || r.understanding.primary;
+  });
+  return results;
+}
+
+export async function runGameIntelligence2AsyncSelfTests(): Promise<V9SelfTestResult[]> {
+  const results: V9SelfTestResult[] = [];
+  try {
+    const a = createGIFixtureWorld().world;
+    const b = { ...a, fingerprint: 'changed' };
+    const r = await runGameIntelligence({
+      query: 'How do AP points work?',
+      world: a,
+      context: createGIConversationContext(),
+      askEngine: async () => null,
+      refreshWorld: () => b
+    });
+    const stale = isGIAnswerStale({ ...r.answer, gi: { ...(r.answer.gi as GIAnswerMeta), fingerprint: 'old' } }, 'new');
+    results.push({ id: 'gi2_freshness_async', name: 'State change during an async query is detected; stale answers are flagged', passed: r.answer.gi?.freshness === 'updated' && stale, detail: `${r.answer.gi?.freshness}/${stale}` });
+  } catch (e) {
+    results.push({ id: 'gi2_freshness_async', name: 'State change during an async query is detected', passed: false, detail: e instanceof Error ? e.message : String(e) });
+  }
   return results;
 }
 
@@ -131304,50 +134629,243 @@ function dispatchGameSettingsChange(
     setV9IntelFeed(prev => [...prev, answer].slice(-20));
   }, []);
 
+  // ---- Game Intelligence 2.0 -------------------------------------------------
+  // Bounded structured conversation context (transient, never saved) + recent plan diagnostics (LAB).
+  const giContextRef = useRef<GIConversationContext>(createGIConversationContext());
+  const giQueryCounterRef = useRef(0);
+  const [giDiagnostics, setGiDiagnostics] = useState<GIDiagnostics[]>([]);
+
+  const v9GiFingerprint = useMemo(() => buildGIWorldFingerprint([
+    gameState.turnCounter,
+    gameState.day,
+    gameState.currentActorId,
+    player?.money,
+    player?.actionsUsedThisTurn,
+    player?.currentRegion,
+    Array.isArray(player?.inventory) ? player.inventory.length : 0,
+    JSON.stringify(gameState.regionDeposits || {}),
+    aiPlayer?.money,
+    v9ActionSet.fingerprint,
+    takeoverSession?.status || 'none'
+  ]), [gameState.turnCounter, gameState.day, gameState.currentActorId, player?.money, player?.actionsUsedThisTurn, player?.currentRegion, player?.inventory, gameState.regionDeposits, aiPlayer?.money, v9ActionSet.fingerprint, takeoverSession?.status]);
+
+  /** Authorized, focused snapshot for one question. Built on demand — never on every render. */
+  const buildV9GIWorld = (): GIWorld => {
+    const playerId = String(player?.id || 'player');
+    const cp = resolveHumanCoPilotSettings(gameSettings, gameState);
+    const reserve = Number(cp?.spendingCaps?.minimumCashReserve || 0);
+    const inventory: Record<string, number> = {};
+    (Array.isArray(player?.inventory) ? player.inventory : []).forEach((it: any) => {
+      const k = typeof it === 'string' ? it : String(it?.name || it?.id || 'item');
+      inventory[k] = (inventory[k] || 0) + 1;
+    });
+    const loans = (Array.isArray(player?.advancedLoans) ? player.advancedLoans : []).map((l: any) => ({
+      amount: Number(l?.amount || 0),
+      rate: typeof l?.actualInterestRate === 'number' ? l.actualInterestRate : null,
+      daysRemaining: typeof l?.daysRemaining === 'number' ? l.daysRemaining : null
+    }));
+    const debtTotal = loans.length ? loans.reduce((s: number, l: any) => s + l.amount, 0) : Number(player?.debt || 0);
+    const regions: Record<string, GIRegionView> = {};
+    Object.keys(REGIONS).forEach(code => {
+      const info = getRegionControlInfo(code);
+      const controllerId = info.controllerId || null;
+      const mine = controllerId === playerControlKey;
+      const theirs = Boolean(controllerId && controllerId !== playerControlKey);
+      let travelCost: number | null = null;
+      try { travelCost = code === player?.currentRegion ? 0 : calculateTravelCost(player?.currentRegion, code); } catch { travelCost = null; }
+      regions[code] = {
+        code,
+        name: REGIONS[code]?.name || code,
+        resources: REGIONAL_RESOURCES[code] || [],
+        controllerId,
+        controllerLabel: controllerId ? getControllerDisplayName(controllerId) : 'Uncontrolled',
+        controlledByPlayer: mine,
+        controlledByRival: theirs,
+        playerDeposit: info.playerDeposit,
+        rivalDeposit: info.aiDeposit,
+        playerCostToControl: mine ? 0 : info.minimumPlayerDeposit,
+        rivalCostToControl: theirs ? 0 : info.minimumAiDeposit,
+        travelCost,
+        isHere: code === player?.currentRegion,
+        adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[code] || []),
+        devTier: typeof gameState.regionalDevLevels?.[code]?.tier === 'number' ? gameState.regionalDevLevels[code].tier : null
+      };
+    });
+    const rawProjects = gameState.infrastructureProjects || {};
+    const projects: GIProjectView[] = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).map((pr: any) => {
+      const total = Number(pr.totalCost ?? pr.costRequirement ?? 0);
+      const invested = Number(pr.totalInvestedMoney ?? pr.currentFunding ?? 0);
+      return {
+        id: String(pr.id),
+        title: String(pr.title || pr.name || pr.id),
+        regionId: String(pr.regionId || ''),
+        totalCost: total,
+        invested,
+        remaining: Math.max(0, total - invested),
+        status: String(pr.status || 'unlocked'),
+        requiredDevTier: typeof pr.requiredDevTier === 'number' ? pr.requiredDevTier : null,
+        regionDevTier: typeof gameState.regionalDevLevels?.[pr.regionId]?.tier === 'number' ? gameState.regionalDevLevels[pr.regionId].tier : null,
+        maintenancePerTurn: Number(pr.maintenanceCostPerTurn || 0),
+        description: String(pr.description || ''),
+        fundingIncrement: 50000
+      };
+    });
+    const contracts: GIContractView[] = listRegionalContracts(gameState).map((c: any) => ({
+      id: String(c.id),
+      title: String(c.title || c.id),
+      regionId: String(c.issuingRegionId || ''),
+      status: String(c.status || 'available'),
+      requiredMoney: typeof c.requirements?.requiredMoney === 'number' ? c.requirements.requiredMoney : null,
+      rewardMoney: typeof c.rewards?.money === 'number' ? c.rewards.money : null,
+      turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null,
+      blocker: c.status === 'available' || !c.status ? contractAcceptBlocker(c, player, coPilotViewState) : null,
+      assignedToPlayer: c.assignedActorId === playerId
+    }));
+    const fog = Boolean(gameSettings.fogOfWarEnabled);
+    const actors: GIActorView[] = (Object.values(actorsById) as any[]).filter(Boolean).map(a => {
+      const relation: GIActorView['relation'] = String(a.id) === playerId ? 'self' : (a.teamId && a.teamId === player?.teamId ? 'teammate' : 'rival');
+      const visible = relation !== 'rival' || !fog;
+      return {
+        id: String(a.id),
+        name: String(a.displayName || a.name || a.id),
+        relation,
+        kind: a.kind === 'ai' || String(a.id) !== playerId ? 'ai' : 'human',
+        money: visible && typeof a.money === 'number' ? a.money : null,
+        location: visible ? (a.currentRegion || null) : null,
+        regionsControlled: isTeamMode ? null : (relation === 'self' ? playerControlledRegions : relation === 'rival' ? aiControlledRegions : null),
+        visible
+      };
+    });
+    const actorByName = (msg: string) => actors.find(a => a.relation !== 'self' && msg.includes(a.name)) || null;
+    const kindOf = (msg: string) => {
+      const m = msg.toLowerCase();
+      if (/deposit/.test(m)) return 'region deposit';
+      if (/travel|moved to|arrived/.test(m)) return 'travel';
+      if (/sold|sell/.test(m)) return 'selling';
+      if (/bought|purchase/.test(m)) return 'buying';
+      if (/challenge/.test(m)) return 'challenges';
+      if (/loan|borrow/.test(m)) return 'borrowing';
+      if (/sabotage/.test(m)) return 'sabotage';
+      if (/invest/.test(m)) return 'investing';
+      if (/contract/.test(m)) return 'contracts';
+      return 'other actions';
+    };
+    const observedFromNotes: GIObservedEvent[] = (notifications || [])
+      .filter((nt: any) => nt && nt.type === 'ai' && typeof nt.message === 'string')
+      .slice()
+      .sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0))
+      .slice(-20)
+      .map((nt: any) => {
+        const who = actorByName(nt.message);
+        return { day: typeof nt.day === 'number' ? nt.day : null, actorId: who?.id || null, actorName: who?.name || 'AI', summary: String(nt.message).replace(/^🤖\s*/, '').slice(0, 160), kind: kindOf(nt.message) };
+      });
+    const ledgerActions: GIObservedEvent[] = ((gameState.gameActivityLedger?.events || []) as any[])
+      .filter(e => e && e.category === 'action' && e.actorId && String(e.actorId) !== playerId)
+      .slice(-20)
+      .map(e => ({ day: typeof e.day === 'number' ? e.day : null, actorId: String(e.actorId), actorName: actors.find(a => a.id === String(e.actorId))?.name || String(e.actorId), summary: String(e.summary || e.eventType).slice(0, 160), kind: kindOf(String(e.summary || e.eventType)) }));
+    const observed = [...ledgerActions, ...observedFromNotes].filter(ev => {
+      const actor = actors.find(a => a.id === ev.actorId);
+      return !actor || actor.visible || actor.relation !== 'rival';
+    }).slice(-24);
+    const metric = gameSettings.winCondition;
+    const worldState = { gameState: coPilotViewState, player, actorsById, aiPlayer, teamsById };
+    return {
+      fingerprint: v9GiFingerprint,
+      day: Number(gameState.day || 1),
+      totalDays: Number(gameSettings.totalDays || 0),
+      turn: Number(gameState.turnCounter || 0),
+      isHumanTurn: isPlayerTurnForCoPilot,
+      currentActorName: v9CurrentActorName,
+      isTeamMode,
+      isAiOnly: v9IsAiOnlyMatch,
+      negotiationMode: Boolean(gameSettings.negotiationMode),
+      defaultDepositAmount: Number(regionDepositInput) || null,
+      player: {
+        id: playerId,
+        name: String(player?.name || 'You'),
+        money: Number(player?.money || 0),
+        apRemaining: v9ApFinite ? v9RawApRemaining : null,
+        apUsed: v9ApUsed,
+        apTotal: v9ApFinite ? v9ApUsed + v9RawApRemaining : null,
+        location: String(player?.currentRegion || ''),
+        locationName: REGIONS[player?.currentRegion]?.name || String(player?.currentRegion || 'Unknown'),
+        inventory,
+        loans,
+        debtTotal
+      },
+      reserveFloor: reserve > 0 ? reserve : null,
+      reserveSource: reserve > 0 ? 'Co-Pilot minimum cash reserve' : null,
+      win: isLiveIntentMatch ? {
+        id: String(metric),
+        label: winConditionLabel,
+        metricLabel: WIN_METRIC_PROFILES[metric]?.label || 'Win metric',
+        playerValue: getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode }),
+        opponentValue: getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode }),
+        lines: v9WinLines,
+        regionsTarget: metric === 'regions' ? REGION_CONTROL_MAJORITY : null,
+        playerRegions: playerControlledRegions,
+        rivalRegions: aiControlledRegions
+      } : null,
+      objective: isLiveIntentMatch ? intentLayerComputed.objective : null,
+      attention: isLiveIntentMatch ? intentLayerComputed.attention : null,
+      actionSet: isLiveIntentMatch ? v9ActionSet : null,
+      control: playerControlState,
+      regions,
+      market: { ...(gameState.resourcePrices || {}) },
+      projects,
+      contracts,
+      actors,
+      observed,
+      primaryRivalId: primaryOpponentActor?.id ? String(primaryOpponentActor.id) : (actors.find(a => a.relation === 'rival')?.id || null),
+      teammateIds: actors.filter(a => a.relation === 'teammate').map(a => a.id),
+      settings: { fogOfWar: fog, aiMemoryFullInspection: gameSettings.aiMemoryFullInspectionEnabled === true, experienceLevel: getIntentPresentationLevel(gameSettings) },
+      session: takeoverSession,
+      ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
+      tools: {
+        simulate: intent => simulateGIActionOnClone(worldState, playerId, intent, gameSettings),
+        searchSettings: q => askGameToolSearchSettings(gameSettings, q),
+        validateAp: actionType => {
+          try {
+            const r = validateActionPointAction({ ...coPilotViewState, player, gameSettings }, playerId, { type: actionType, actionId: actionType }, gameSettings);
+            return { valid: Boolean(r?.valid), reason: r?.reason, apCost: typeof r?.actionCost === 'number' ? r.actionCost : undefined };
+          } catch {
+            return { valid: true };
+          }
+        }
+      }
+    };
+  };
+  const giWorldBuilderRef = useRef(buildV9GIWorld);
+  giWorldBuilderRef.current = buildV9GIWorld;
+
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
     setV9IntelQuery('');
     updateUiState({ experienceLayer: 'intelligence' });
-    const route = classifyGameIntelligenceRequest(query);
-    if (route.kind === 'control') {
-      const answer = buildIntelligenceControlAnswer(route, playerControlState, query);
-      pushIntelAnswer(answer);
-      if (answer.immediate?.kind === 'take_control') handleTakeControl();
-      else if (answer.immediate?.kind === 'set_mode') setPlayerControlMode(answer.immediate.mode);
-      return;
-    }
-    if (route.kind === 'next_step') {
-      pushIntelAnswer(buildNextStepIntelligenceAnswer({
-        query,
-        focus: route.focus,
-        actionSet: isLiveIntentMatch ? v9ActionSet : null,
-        objective: isLiveIntentMatch ? intentLayerComputed.objective : null,
-        attention: isLiveIntentMatch ? intentLayerComputed.attention : null,
-        control: playerControlState,
-        winLines: v9WinLines,
-        cash: typeof player?.money === 'number' ? player.money : null
-      }));
-      return;
-    }
-    if (route.kind === 'alternatives') {
-      pushIntelAnswer(buildAlternativesIntelligenceAnswer({ query, actionSet: isLiveIntentMatch ? v9ActionSet : null, control: playerControlState, excludeId: v9ActionSet.recommended?.id }));
-      return;
-    }
-    if (route.kind === 'activity') {
-      pushIntelAnswer(buildActivityIntelligenceAnswer({ query, control: playerControlState, session: takeoverSession, ledgerEvents: gameState.gameActivityLedger?.events || [] }));
-      return;
-    }
+    giQueryCounterRef.current += 1;
     setV9IntelBusy(true);
     try {
-      const response = await askAI.submitQuery(query);
-      pushIntelAnswer(buildAskEngineIntelligenceAnswer(query, response));
-    } catch {
+      const result = await runGameIntelligence({
+        query,
+        world: giWorldBuilderRef.current(),
+        context: giContextRef.current,
+        askEngine: async q => { try { return await askAI.submitQuery(q); } catch { return null; } },
+        refreshWorld: () => giWorldBuilderRef.current(),
+        queryId: `q${giQueryCounterRef.current}`
+      });
+      giContextRef.current = result.context;
+      pushIntelAnswer(result.answer);
+      setGiDiagnostics(prev => [...prev, result.diagnostics].slice(-8));
+      if (result.answer.immediate?.kind === 'take_control') handleTakeControl();
+      else if (result.answer.immediate?.kind === 'set_mode') setPlayerControlMode(result.answer.immediate.mode);
+    } catch (err) {
       pushIntelAnswer(buildAskEngineIntelligenceAnswer(query, null));
+      console.error('[Game Intelligence] query failed', err);
     } finally {
       setV9IntelBusy(false);
     }
-  }, [v9IntelBusy, updateUiState, playerControlState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, isLiveIntentMatch, v9ActionSet, intentLayerComputed, v9WinLines, player?.money, takeoverSession, gameState.gameActivityLedger, askAI]);
+  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI]);
 
   // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
@@ -131368,6 +134886,7 @@ function dispatchGameSettingsChange(
         return;
       case 'why':
         if (!candidate) return;
+        giContextRef.current = noteGIContextEntity(giContextRef.current, { kind: 'action', id: candidate.id, label: candidate.label, confidence: 1, source: 'context' });
         pushIntelAnswer(buildWhyActionIntelligenceAnswer({ query: `Why ${candidate.legal ? '' : 'not '}${candidate.label}?`, candidate, actionSet: v9ActionSet, control: playerControlState }));
         setExperienceLayer('intelligence');
         return;
@@ -147031,7 +150550,7 @@ function dispatchGameSettingsChange(
                     <button type="button" className="text-xs underline opacity-80" onClick={() => setV9IntelFeed([])}>Clear</button>
                   </div>
                   {v9IntelFeed.slice().reverse().map(answer => (
-                    <GameIntelligenceAnswerCard key={answer.id} answer={answer} theme={themeStyles} onButton={handleV9Button} />
+                    <GameIntelligenceAnswerCard key={answer.id} answer={answer} theme={themeStyles} onButton={handleV9Button} currentFingerprint={v9GiFingerprint} onRefresh={q => void submitIntelligenceQuery(q)} />
                   ))}
                 </div>
               )}
@@ -147127,8 +150646,13 @@ function dispatchGameSettingsChange(
           theme={themeStyles}
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
-          onRunSelfTests={() => setV9SelfTestResults(runV9ExperienceSelfTests())}
+          onRunSelfTests={() => {
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests()];
+            setV9SelfTestResults(sync);
+            void runGameIntelligence2AsyncSelfTests().then(extra => setV9SelfTestResults([...sync, ...extra]));
+          }}
           selfTestResults={v9SelfTestResults}
+          giDiagnostics={giDiagnostics}
         />
       </div>
     );
