@@ -6088,7 +6088,8 @@ export type IntentNavTarget =
   | 'governance'
   | 'sabotage'
   | 'help'
-  | 'automation';
+  | 'automation'
+  | 'diplomacy';
 
 export interface IntentNavAction {
   id: string;
@@ -10367,6 +10368,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     gi3Strategy: sanitizeGI3StrategyState(save?.gi3Strategy || gameState?.gi3Strategy),
     backgroundAI: sanitizeBackgroundAIState(save?.backgroundAI || gameState?.backgroundAI),
     settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
+    diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10537,6 +10539,7 @@ export function canonicalStateFromLiveRuntime(
     gi3Strategy: sanitizeGI3StrategyState(liveState.gi3Strategy || gameState?.gi3Strategy),
     backgroundAI: sanitizeBackgroundAIState(liveState.backgroundAI || gameState?.backgroundAI),
     settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
+    diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -21619,6 +21622,7 @@ interface SaveGameData {
   gi3Strategy?: GI3StrategyState;
   backgroundAI?: BackgroundAIState;
   settingsIntelligence?: SettingsIntelligenceState;
+  diplomacyState?: DiplomacyState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35611,7 +35615,8 @@ export const initialGameState = {
   teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState,
   gi3Strategy: createEmptyGI3StrategyState(),
   backgroundAI: createEmptyBackgroundAIState(),
-  settingsIntelligence: createEmptySettingsIntelligenceState()
+  settingsIntelligence: createEmptySettingsIntelligenceState(),
+  diplomacyState: createEmptyDiplomacyState()
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -65827,6 +65832,7 @@ export function resolveIntentNavToUiPatch(target: IntentNavTarget): Record<strin
     case 'sabotage': return { showSabotage: true };
     case 'help': return { showHelp: true };
     case 'automation': return { showSettings: true, settingsActiveTab: 'automation' };
+    case 'diplomacy': return { showAiRivalryModal: true };
     default: return {};
   }
 }
@@ -79514,6 +79520,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.backgroundAI = sanitizeBackgroundAIState(migrated.gameState.backgroundAI || migrated.backgroundAI);
   // Settings Intelligence: only acknowledgements, monitoring and recent history persist (never previews).
   if (migrated.gameState) migrated.gameState.settingsIntelligence = sanitizeSettingsIntelligenceState(migrated.gameState.settingsIntelligence || migrated.settingsIntelligence);
+  // Diplomacy 2.0: old saves load empty; legacy pacts are migrated; trust / stance / historicEvents stay untouched.
+  if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
 
@@ -100287,6 +100295,17 @@ export type GameIntelligenceButtonKind =
   | 'si_open'
   | 'si_undo'
   | 'si_keep'
+  | 'dn_send'
+  | 'dn_modify'
+  | 'dn_cancel'
+  | 'dn_open'
+  | 'dn_accept'
+  | 'dn_reject'
+  | 'dn_counter'
+  | 'dn_why'
+  | 'dn_extend'
+  | 'dn_continue_break'
+  | 'dn_view_deal'
   | 'team_cancel'
   | 'team_proposal_accept'
   | 'team_proposal_reject'
@@ -101848,6 +101867,8 @@ export interface GIWorld {
   backgroundAI?: BackgroundAIState | null;
   /** Settings Intelligence 2.0: read-only view of the configuration plus its bounded state and evidence. */
   settingsIntel?: SettingsIntelligenceWorldView | null;
+  /** Diplomacy & Negotiation 2.0: agreements, relationships and a player-perspective (fog-aware) deal world. */
+  diplomacy?: DiplomacyWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -102051,6 +102072,9 @@ export interface GIConversationContext {
   pendingGI3Draft?: { kind: 'activate' | 'adopt'; contract: GI3StrategyContract; changes: string[] } | null;
   /** Settings Intelligence: the recommendation last previewed (rebuilt from current settings at Apply time). */
   pendingSettingsRec?: { id: string; text: string; goal: string } | null;
+  /** Diplomacy 2.0: the previewed (unsent) deal draft or the counter being modified, and the counterpart in focus. */
+  pendingDeal?: DiplomaticDeal | null;
+  diplomacyCounterpartId?: string | null;
   /** Which strategy layer the last strategic exchange touched (routes "make that…" repairs). */
   lastStrategyDomain?: 'gi3' | 'team' | null;
   /** GI3 references: last goal / field / change discussed ("drop the second goal", "why did that change?"). */
@@ -102164,7 +102188,9 @@ export function sanitizeGIConversationContext(raw: unknown): GIConversationConte
     lastStrategyGoalId: typeof src.lastStrategyGoalId === 'string' ? src.lastStrategyGoalId.slice(0, 80) : null,
     lastStrategyField: ['cash', 'reserve', 'region', 'loan'].includes(src.lastStrategyField as string) ? src.lastStrategyField! : null,
     lastStrategyChange: typeof src.lastStrategyChange === 'string' ? src.lastStrategyChange.slice(0, 200) : null,
-    pendingSettingsRec: src.pendingSettingsRec && typeof src.pendingSettingsRec.id === 'string' ? { id: src.pendingSettingsRec.id.slice(0, 120), text: String(src.pendingSettingsRec.text || '').slice(0, 300), goal: String(src.pendingSettingsRec.goal || '').slice(0, 40) } : null
+    pendingSettingsRec: src.pendingSettingsRec && typeof src.pendingSettingsRec.id === 'string' ? { id: src.pendingSettingsRec.id.slice(0, 120), text: String(src.pendingSettingsRec.text || '').slice(0, 300), goal: String(src.pendingSettingsRec.goal || '').slice(0, 40) } : null,
+    pendingDeal: src.pendingDeal ? sanitizeDiplomaticDeal(src.pendingDeal) : null,
+    diplomacyCounterpartId: typeof src.diplomacyCounterpartId === 'string' ? src.diplomacyCounterpartId.slice(0, 60) : null
   };
 }
 
@@ -104477,7 +104503,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104509,6 +104535,7 @@ export interface GIQueryUnderstanding {
   backgroundTopic?: BackgroundQueryTopic;
   /** Settings Intelligence: a configuration question or desired-experience request. */
   settingsIntent?: SIIntent;
+  diplomacyQuery?: DNQuery;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104878,10 +104905,22 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // A conditional instruction ("if Riley attacks NSW, defend it; otherwise…") is a strategy to explain and validate.
   if (!isComposed && frame.conditions.some(c => c.isStrategy) && primary !== 'control') { primary = 'sequence_plan'; needs.prediction = false; addSupport('rival_assessment'); }
 
+  // ---- Diplomacy & Negotiation 2.0: deals with other actors (gameplay — never routed to settings) ----
+  let diplomacyQuery: DNQuery | undefined;
+  if (primary !== 'control' && world.diplomacy?.enabled) {
+    const dq = detectDiplomacyQuery(frame.originalQuery || query, world, ctx);
+    if (dq) {
+      diplomacyQuery = dq;
+      primary = 'diplomacy';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false; needs.recommendation = false; needs.diagnosis = false;
+    }
+  }
+
   // ---- Game Intelligence 3.0: persistent strategy (above Team OS; GI 2.1 frame is the only input) ----
   let strategyIntent: GI3IntentKind | undefined;
   let strategyControl: GI3Control | undefined;
-  if (primary !== 'control') {
+  if (primary !== 'control' && !diplomacyQuery) {
     const det = detectGI3StrategyIntent(frame, world, ctx, world.gi3?.active || null);
     // A team-coordination instruction with no multi-turn goal stays with Team Intelligence.
     const teamOnly = det.kind === 'create' && Boolean(world.team?.enabled) && !det.signals.some(sg => sg === 'mission' || sg === 'ordered goals' || sg === 'cash target') && !/\b(my plan|strategy|over the next|few turns|win)\b/.test(normalized);
@@ -104896,7 +104935,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // ---- Background AI: questions addressed to it ("what are you watching?", "what would you do?") ----
   let backgroundTopic: BackgroundQueryTopic | undefined;
-  if (primary !== 'control' && !strategyIntent) {
+  if (primary !== 'control' && !strategyIntent && !diplomacyQuery) {
     // Read the player's own words too: typo correction can rewrite rare verbs ("watching" → "catching").
     const topic = detectBackgroundAIQuery(normalizeIntelligenceQuery(frame.originalQuery || '')) || detectBackgroundAIQuery(normalized);
     if (topic) {
@@ -104911,7 +104950,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // GI3 (what the player wants in the match) stays separate: only AI / teammate / game-configuration
   // language reaches here, and a GI3 strategy never becomes settings permission.
   let settingsIntent: SIIntent | undefined;
-  if (primary !== 'control' && !strategyIntent && !backgroundTopic) {
+  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery) {
     const si = world.settingsIntel ? understandSettingsIntent(frame.originalQuery || normalized, world.actors.filter(a => a.relation === 'teammate').map(a => a.name)) : null;
     // A behaviour symptom ("why won't my teammate spend?") belongs to Settings Intelligence only when the
     // configuration actually contributes (or settings are named); otherwise the cross-system answer explains it.
@@ -104932,7 +104971,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -104952,7 +104991,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -104965,7 +105004,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -105008,11 +105047,12 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy'].includes(primary),
     teamCommand,
     strategyIntent,
     backgroundTopic,
     settingsIntent,
+    diplomacyQuery,
     strategyControl
   };
 }
@@ -105136,7 +105176,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105180,7 +105220,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   strategy_control: ['gi3_state'],
   strategy_whatif: ['gi3_state'],
   background_ai: ['bg_state'],
-  settings_intelligence: ['si_state']
+  settings_intelligence: ['si_state'],
+  diplomacy: ['dn_state']
 };
 
 export interface GIQueryPlan {
@@ -105204,7 +105245,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai'
 };
 
 function giHash(text: string): string {
@@ -105272,6 +105313,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
     if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
+    if (want('diplomacy')) add('dn_state', {}, { purpose: 'Diplomacy 2.0: agreements, proposals, relationships and leverage (read-only, fog-aware)' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -105779,6 +105821,12 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         }
       }
       return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'dn_state': {
+      const view = world.diplomacy;
+      const facts: GIFact[] = [];
+      if (view) { const f = fact('dn.state', 'Diplomatic agreements', view.state.revision, 'Diplomacy 2.0 (agreements, AI Memory relationships, visible map)', 'ai'); facts.push(f); g.fact(f); }
+      return { ...base, ok: Boolean(view), data: view ? { active: view.state.deals.filter(d => d.status === 'active').length } : null, facts };
     }
     case 'si_state': {
       const view = world.settingsIntel;
@@ -106852,6 +106900,11 @@ export function composeGI3Answer(u: GIQueryUnderstanding, world: GIWorld, convo:
   ]);
   const assumptionsAtRisk = c.assumptions.filter(a => a.status === 'violated');
   if (assumptionsAtRisk.length) say('assume', 'Assumptions', assumptionsAtRisk.map(a => gi3Claim(`No longer holding: ${a.label}.`, 'inference', 'high')));
+  // Diplomacy 2.0: agreements create temporary strategic windows. GI3 reads them; explicit goals are never rewritten.
+  if (world.diplomacy?.enabled) {
+    const notes = gi3DiplomaticWindowNotes(state, deriveDiplomaticWindows(world.diplomacy.state, world.diplomacy.playerId, world.turn, world.diplomacy.names));
+    if (notes.length) say('diplomacy', 'Diplomatic window', notes.map(n => gi3Claim(n, 'inference', 'high', giNumbersIn(n).map(x => x.value))));
+  }
   const notice = ev.state.notices.filter(n => !n.dismissed).slice(-1)[0];
   if (notice) {
     say('notice', null, [gi3Claim(notice.text, 'inference', 'moderate', giNumbersIn(notice.text).map(n => n.value))]);
@@ -107713,6 +107766,16 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'diplomacy': {
+      kind = 'next_step';
+      const part = composeDiplomacyAnswer(u.diplomacyQuery!, world, convo, u.originalQuery);
+      title = part.title || 'Diplomacy';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      Object.assign(ctx, part.ctx);
+      break;
+    }
     case 'settings_intelligence': {
       kind = 'next_step';
       const part = composeSettingsIntelligenceAnswer(u.settingsIntent!, world);
@@ -107930,6 +107993,8 @@ function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, c
     if (cu.pendingTeamDraft !== undefined) next.pendingTeamDraft = cu.pendingTeamDraft;
     if (cu.pendingGI3Draft !== undefined) next.pendingGI3Draft = cu.pendingGI3Draft;
     if (cu.pendingSettingsRec !== undefined) next.pendingSettingsRec = cu.pendingSettingsRec;
+    if (cu.pendingDeal !== undefined) next.pendingDeal = cu.pendingDeal;
+    if (cu.diplomacyCounterpartId !== undefined) next.diplomacyCounterpartId = cu.diplomacyCounterpartId;
     if (cu.lastStrategyDomain !== undefined) next.lastStrategyDomain = cu.lastStrategyDomain;
     if (cu.lastStrategyGoalId !== undefined) next.lastStrategyGoalId = cu.lastStrategyGoalId;
     if (cu.lastStrategyField !== undefined) next.lastStrategyField = cu.lastStrategyField;
@@ -108235,6 +108300,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   gi3_state: ['strategy', 'player', 'world', 'projects', 'contracts', 'team_strategy', 'team_resources'],
   bg_state: ['background', 'strategy', 'player', 'world', 'actors', 'contracts', 'team_strategy'],
   si_state: ['assistance', 'team_strategy', 'team_resources', 'history'],
+  dn_state: ['actors', 'world', 'player', 'history', 'strategy'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -109544,6 +109610,8 @@ export interface TeamOSInputs {
   observedTendencies?: string[];
   /** Planning QUALITY for AI-run teams (difficulty) — never extra information. */
   planningDepth?: 'basic' | 'standard' | 'deep';
+  /** Diplomacy 2.0: regions this team's actors promised not to pressure (strategic constraints, not game rules). */
+  diplomaticRestrictions?: DNRestriction[];
 }
 
 export interface TeamSituationSnapshot {
@@ -109688,10 +109756,13 @@ export function decomposeTeamMission(inputs: TeamOSInputs, mission: TeamMission,
     return id;
   };
   const deprioritized = new Set(command?.deprioritizedRegions || []);
+  // Diplomatic commitments: never plan ordinary aggression into a region the team promised to leave alone.
+  const dipBlocked = new Set((inputs.diplomaticRestrictions || []).filter(r => inputs.actors.some(a => a.id === r.actorId) && (r.untilTurn === null || r.untilTurn >= inputs.turn)).map(r => r.regionId));
   const regionById = (code: string) => inputs.regions.find(r => r.code === code) || null;
   const holdRegion = (code: string, reason: string, priority: number) => {
     const r = regionById(code);
     if (!r) return null;
+    if (!r.controlledByTeam && dipBlocked.has(code)) return null;
     const threat = threats.find(t => t.code === code);
     if (r.controlledByTeam) {
       const need = threat ? Math.max(1000, Math.round(threat.opponentCostToTake * 0.5)) : 0;
@@ -109704,6 +109775,7 @@ export function decomposeTeamMission(inputs: TeamOSInputs, mission: TeamMission,
     if (res.regionId && !deprioritized.has(res.regionId)) {
       if (res.focus === 'expansion') {
         const r = regionById(res.regionId);
+        if (r && !r.controlledByTeam && dipBlocked.has(r.code)) return;
         if (r && !r.controlledByTeam) add({ type: 'take_region', description: `Expand into ${r.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${r.name}`, failureCondition: `${r.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, r.teamCostToTake || 0), reason: 'You asked for this expansion.', regionId: r.code });
         else holdRegion(res.regionId, 'You asked for this region.', 1);
       } else holdRegion(res.regionId, 'You took responsibility for this region.', 1);
@@ -109718,7 +109790,7 @@ export function decomposeTeamMission(inputs: TeamOSInputs, mission: TeamMission,
   if (mission.kind === 'control_regions' && inputs.win) {
     const target = mission.targetRegions || inputs.win.regionsTarget || 0;
     if (inputs.win.teamRegions < target) {
-      const cheapest = inputs.regions.filter(r => !r.controlledByTeam && r.teamCostToTake !== null && !deprioritized.has(r.code))
+      const cheapest = inputs.regions.filter(r => !r.controlledByTeam && r.teamCostToTake !== null && !deprioritized.has(r.code) && !dipBlocked.has(r.code))
         .sort((a, b) => (a.teamCostToTake || 0) - (b.teamCostToTake || 0) || a.code.localeCompare(b.code))[0];
       if (cheapest) add({ type: 'take_region', description: `Take ${cheapest.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${cheapest.name}`, failureCondition: `${cheapest.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, cheapest.teamCostToTake || 0), reason: `The team holds ${inputs.win.teamRegions} of ${target} regions; this is the cheapest next one.`, regionId: cheapest.code });
     }
@@ -115644,7 +115716,7 @@ export interface BackgroundAIPanelProps {
 }
 
 /** PLAY: one compact card — watching, plan, next, confidence — plus the surfaced notice, if any. */
-export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: () => void; settingsObservation?: string | null }> = ({ state, theme, onAsk, onButton, onOpen, settingsObservation = null }) => {
+export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: () => void; settingsObservation?: string | null; diplomacyObservation?: string | null }> = ({ state, theme, onAsk, onButton, onOpen, settingsObservation = null, diplomacyObservation = null }) => {
   if (!state?.enabled || !state.strategicAssessment) return null;
   const top = state.attentionQueue.find(i => i.status === 'active') || null;
   const plan = state.shadowPlan;
@@ -115678,6 +115750,12 @@ export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: 
         <div className="rounded-lg border border-sky-500/50 px-2 py-1 flex flex-wrap items-center gap-2" data-testid="bg-settings-observation">
           <span className="flex-1 min-w-[12rem]">⚙️ {settingsObservation}</span>
           <button type="button" className="underline" onClick={() => onButton({ id: 'bg_analyze_settings', label: 'Analyze Settings', kind: 'bg_analyze_settings' })}>Analyze Settings</button>
+        </div>
+      )}
+      {diplomacyObservation && !quietMode && (
+        <div className="rounded-lg border border-violet-500/50 px-2 py-1 flex flex-wrap items-center gap-2" data-testid="bg-diplomacy-observation">
+          <span className="flex-1 min-w-[12rem]">🤝 {diplomacyObservation}</span>
+          <button type="button" className="underline" onClick={() => onButton({ id: 'dn_open', label: 'Open Diplomacy', kind: 'dn_open' })}>Open Diplomacy</button>
         </div>
       )}
       <div className="flex flex-wrap gap-2">
@@ -118052,6 +118130,3171 @@ export const SettingsIntelligenceInspector: React.FC<{ binding: SettingsIntellig
 };
 
 // ============================================================================
+// SECTION 20H: DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM
+// ----------------------------------------------------------------------------
+// Structured, enforceable agreements between actors. This layer never mutates game state:
+// - trust / reliability / grievance / gratitude live in AI Memory (one relationship store);
+//   the legacy rivalry trust (aiRelationshipState) is only mirrored for display;
+// - payments and resource transfers are compiled into canonical GameActions and executed by the
+//   game's own money/inventory paths (Team payments go through Team Treasury + Governance);
+// - regional terms are behavioural promises checked against canonical committed actions — a deal
+//   never transfers region ownership;
+// - AI evaluation is deterministic (no Math.random) and reads only what the evaluator may know.
+// ============================================================================
+
+export type DNDealStatus = 'draft' | 'preview' | 'sent' | 'under_review' | 'countered' | 'accepted' | 'active' | 'completed' | 'expired' | 'rejected' | 'withdrawn' | 'violated' | 'terminated' | 'superseded';
+export type DNTermKind = 'pay_cash' | 'transfer_resource' | 'avoid_region' | 'do_not_challenge_region' | 'do_not_sabotage' | 'non_aggression' | 'threat';
+export type DNPaymentTiming = 'on_acceptance' | 'next_turn' | 'per_turn' | 'on_completion';
+export type DNConditionKind = 'region_control_gained' | 'region_control_changes' | 'any_sabotage' | 'cash_below' | 'region_attacked' | 'any_violation';
+export type DNResponseKind = 'accept' | 'reject' | 'counter' | 'delay' | 'request_guarantee' | 'request_clarification';
+export type DNDecisionBand = 'strong_accept' | 'accept' | 'borderline' | 'counter' | 'reject' | 'strong_reject';
+export type DNCompliance = 'compliant' | 'at_risk' | 'violated' | 'completed' | 'expired' | 'pending';
+export type DNPersonalityKey = 'aggressive' | 'economic' | 'cooperative' | 'opportunistic' | 'balanced';
+export type DNTemplateId = 'non_aggression' | 'regional_ceasefire' | 'cash_for_withdrawal' | 'mutual_support' | 'resource_trade' | 'temporary_alliance';
+
+export interface DNCondition {
+  kind: DNConditionKind;
+  actorId?: string | null;
+  regionId?: string | null;
+  amount?: number | null;
+  /** What the condition does when it fires. */
+  effect: 'terminate' | 'activate' | 'defer_payment';
+  text: string;
+}
+
+export interface DiplomaticTerm {
+  id: string;
+  /** The actor who owes this term. */
+  actorId: string;
+  kind: DNTermKind;
+  targetActorId: string | null;
+  regionId: string | null;
+  amount: number | null;
+  resourceId: string | null;
+  quantity: number | null;
+  timing: DNPaymentTiming | null;
+  /** Money source for pay_cash: the actor's own cash or the team treasury (Governance-routed). */
+  source: 'self' | 'treasury';
+  /** avoid_region scope: 'pressure' = deposits/investments; 'presence' = also travel into it. */
+  scope: 'pressure' | 'presence' | 'all' | 'regions' | 'sabotage' | null;
+  startTurn: number | null;
+  endTurn: number | null;
+  condition: DNCondition | null;
+  status: 'pending' | 'active' | 'satisfied' | 'due' | 'violated' | 'failed' | 'inactive';
+  sourceText: string | null;
+}
+
+export interface DNDuration {
+  kind: 'this_turn' | 'turns' | 'until_turn' | 'until_broken' | 'match' | 'until_region_changes';
+  turns?: number | null;
+  turn?: number | null;
+  regionId?: string | null;
+}
+
+export interface DNHistoryEntry { turn: number; kind: string; actorId: string | null; text: string }
+
+export interface DNEvaluationFactor {
+  id: string;
+  label: string;
+  /** Signed contribution in value units ($-equivalent) from the evaluator's point of view. */
+  value: number;
+  /** 'public' factors may be explained to the counterpart; 'private' only in LAB Full Inspection. */
+  visibility: 'public' | 'private';
+  publicText: string;
+}
+
+export interface DiplomaticEvaluation {
+  evaluatorId: string;
+  counterpartId: string;
+  dealSignature: string;
+  receivedValue: number;
+  givenValue: number;
+  utility: number;
+  ratio: number;
+  threshold: number;
+  band: DNDecisionBand;
+  response: DNResponseKind;
+  betrayalRisk: number;
+  victoryBlock: boolean;
+  factors: DNEvaluationFactor[];
+  reasons: string[];
+  counter: { deal: DiplomaticDeal; ops: string[]; summary: string } | null;
+  guarantee: string | null;
+  fatigueBlocked: boolean;
+}
+
+export interface DiplomaticDeal {
+  id: string;
+  proposalId: string;
+  participants: string[];
+  initiatorActorId: string;
+  recipientActorIds: string[];
+  type: DNTemplateId | 'custom';
+  status: DNDealStatus;
+  createdTurn: number;
+  sentTurn: number | null;
+  respondedTurn: number | null;
+  startTurn: number | null;
+  expirationTurn: number | null;
+  duration: DNDuration;
+  terms: DiplomaticTerm[];
+  terminationConditions: DNCondition[];
+  guarantees: string[];
+  visibility: 'participants' | 'public';
+  negotiationRound: number;
+  parentProposalId: string | null;
+  /** Amendment of an active deal (renegotiation): the original stays active until this is accepted. */
+  amendsDealId: string | null;
+  strategicSummary: string;
+  playerFacingSummary: string;
+  evaluationSnapshot: { band: DNDecisionBand; response: DNResponseKind; ratio: number; utility: number; reasons: string[] } | null;
+  history: DNHistoryEntry[];
+  compliance: DNCompliance;
+  violatedBy: string | null;
+  violationReason: string | null;
+  closedReason: string | null;
+  source: 'player' | 'ai' | 'legacy';
+  /** Region controllers when the deal activated (for 'until region changes control' conditions). */
+  baselineControllers?: Record<string, string | null>;
+}
+
+export interface DNPersonality {
+  key: DNPersonalityKey;
+  label: string;
+  greed: number;            // cash valuation multiplier
+  territorial: number;      // region valuation multiplier
+  patience: number;         // rounds / fatigue tolerance
+  trustSensitivity: number; // how strongly trust moves the bar
+  riskTolerance: number;
+  cooperation: number;      // likes reciprocal deals
+  counterStep: number;      // how hard it pushes in counters
+  threatWillingness: number;
+  horizon: number;          // comfortable deal length (turns)
+  reliability: number;      // tendency to keep its own promises (0..1)
+}
+
+export const DN_LIMITS = { activeDeals: 10, history: 30, inbox: 12, events: 80, rounds: 4, termsPerDeal: 8, aiProposalCandidates: 3, aiProposalCooldownTurns: 4, maxDuration: 20 };
+
+/** Personality is derived from the actor's existing AI personality profile (no second personality system). */
+export function deriveDiplomaticPersonality(profile: { risk?: number; money?: number; support?: number; sabotage?: number; control?: number } | null | undefined, aiStrategy?: string | null): DNPersonality {
+  const p = { risk: 1, money: 1, support: 1, sabotage: 1, control: 1, ...(profile || {}) };
+  if (aiStrategy === 'money-focused') p.money = Math.max(p.money, 1.2);
+  if (aiStrategy === 'challenge-focused') { p.risk = Math.max(p.risk, 1.2); p.control = Math.max(p.control, 1.1); }
+  const aggression = (p.risk + p.sabotage + p.control) / 3;
+  let key: DNPersonalityKey = 'balanced';
+  if (p.sabotage >= 1.15 || (p.risk >= 1.25 && p.control >= 1.1)) key = 'aggressive';
+  else if (p.support >= 1.3) key = 'cooperative';
+  else if (p.money >= 1.12 && p.risk <= 1) key = 'economic';
+  else if (p.risk >= 1.1 && p.support <= 0.85) key = 'opportunistic';
+  const labels: Record<DNPersonalityKey, string> = { aggressive: 'Aggressive', economic: 'Economic', cooperative: 'Cooperative', opportunistic: 'Opportunistic', balanced: 'Balanced' };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    key,
+    label: labels[key],
+    greed: r2(0.8 + (p.money - 1) * 1.2 + (key === 'economic' ? 0.25 : 0)),
+    territorial: r2(Math.max(0.6, p.control * (key === 'aggressive' ? 1.35 : key === 'economic' ? 0.85 : 1))),
+    patience: key === 'aggressive' ? 2 : key === 'opportunistic' ? 2 : key === 'cooperative' ? 4 : 3,
+    trustSensitivity: r2(key === 'cooperative' ? 1.5 : key === 'aggressive' ? 0.7 : 1),
+    riskTolerance: r2(p.risk),
+    cooperation: r2(p.support),
+    counterStep: r2(key === 'opportunistic' ? 1.3 : key === 'aggressive' ? 1.2 : key === 'cooperative' ? 0.85 : 1),
+    threatWillingness: r2(Math.min(1.5, aggression)),
+    horizon: key === 'opportunistic' ? 2 : key === 'aggressive' ? 3 : key === 'economic' ? 5 : key === 'cooperative' ? 6 : 4,
+    reliability: r2(Math.max(0.35, Math.min(0.95, 0.75 + (p.support - 1) * 0.3 - (p.sabotage - 1) * 0.4 - (key === 'opportunistic' ? 0.15 : 0))))
+  };
+}
+
+// ---- Deal construction -----------------------------------------------------------------------
+
+export function dnStableId(prefix: string, parts: Array<string | number | null | undefined>): string {
+  const raw = parts.map(p => String(p ?? '')).join('|');
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return `${prefix}_${(h >>> 0).toString(36)}`;
+}
+
+export function makeDiplomaticTerm(t: Partial<DiplomaticTerm> & { actorId: string; kind: DNTermKind }): DiplomaticTerm {
+  const base: DiplomaticTerm = {
+    id: '', actorId: t.actorId, kind: t.kind, targetActorId: t.targetActorId ?? null, regionId: t.regionId ?? null,
+    amount: typeof t.amount === 'number' ? Math.max(0, Math.round(t.amount)) : null, resourceId: t.resourceId ?? null, quantity: typeof t.quantity === 'number' ? Math.max(0, Math.round(t.quantity)) : null,
+    timing: t.kind === 'pay_cash' || t.kind === 'transfer_resource' ? (t.timing || 'on_acceptance') : null,
+    source: t.source === 'treasury' ? 'treasury' : 'self',
+    scope: t.scope ?? (t.kind === 'avoid_region' ? 'pressure' : t.kind === 'non_aggression' ? 'all' : null),
+    startTurn: t.startTurn ?? null, endTurn: t.endTurn ?? null, condition: t.condition ?? null, status: t.status || 'pending', sourceText: t.sourceText ?? null
+  };
+  base.id = t.id || dnStableId('term', [base.actorId, base.kind, base.targetActorId, base.regionId, base.amount, base.resourceId, base.quantity, base.timing, base.source, base.scope]);
+  return base;
+}
+
+/** Normalises a duration into concrete start / expiration turns (null expiration = open-ended). */
+export function resolveDealWindow(duration: DNDuration, startTurn: number): { startTurn: number; expirationTurn: number | null } {
+  switch (duration.kind) {
+    case 'this_turn': return { startTurn, expirationTurn: startTurn };
+    case 'turns': return { startTurn, expirationTurn: startTurn + Math.max(1, Math.min(DN_LIMITS.maxDuration, Math.round(duration.turns || 1))) - 1 };
+    case 'until_turn': return { startTurn, expirationTurn: Math.max(startTurn, Math.round(duration.turn || startTurn)) };
+    default: return { startTurn, expirationTurn: null };
+  }
+}
+
+export function dealDurationTurns(deal: Pick<DiplomaticDeal, 'duration' | 'startTurn' | 'expirationTurn'>, nowTurn: number, turnsLeft: number): number {
+  if (deal.expirationTurn !== null && deal.expirationTurn !== undefined) return Math.max(1, deal.expirationTurn - Math.max(nowTurn, deal.startTurn ?? nowTurn) + 1);
+  return Math.max(1, Math.min(turnsLeft, DN_LIMITS.maxDuration));
+}
+
+export function createDiplomaticDeal(input: {
+  initiatorActorId: string;
+  recipientActorIds: string[];
+  terms: DiplomaticTerm[];
+  duration: DNDuration;
+  turn: number;
+  type?: DiplomaticDeal['type'];
+  terminationConditions?: DNCondition[];
+  parentProposalId?: string | null;
+  amendsDealId?: string | null;
+  round?: number;
+  source?: DiplomaticDeal['source'];
+  visibility?: DiplomaticDeal['visibility'];
+  /** Deterministic sequence (e.g. state revision) so ids never depend on module state. */
+  seq?: number;
+}): DiplomaticDeal {
+  const participants = Array.from(new Set([input.initiatorActorId, ...input.recipientActorIds]));
+  const win = resolveDealWindow(input.duration, input.turn);
+  const terms = input.terms.slice(0, DN_LIMITS.termsPerDeal).map(t => ({ ...t, startTurn: t.startTurn ?? win.startTurn, endTurn: t.endTurn ?? win.expirationTurn }));
+  const sig = dealTermsSignature({ terms, duration: input.duration, terminationConditions: input.terminationConditions || [] } as any);
+  const id = dnStableId('deal', [input.initiatorActorId, participants.join('+'), sig, input.turn, input.round ?? 1, input.parentProposalId || '', input.seq ?? 0]);
+  const deal: DiplomaticDeal = {
+    id, proposalId: dnStableId('prop', [id]), participants, initiatorActorId: input.initiatorActorId, recipientActorIds: input.recipientActorIds.slice(),
+    type: input.type || classifyDealType(terms), status: 'draft', createdTurn: input.turn, sentTurn: null, respondedTurn: null,
+    startTurn: win.startTurn, expirationTurn: win.expirationTurn, duration: { ...input.duration }, terms, terminationConditions: (input.terminationConditions || []).slice(0, 4),
+    guarantees: [], visibility: input.visibility || 'participants', negotiationRound: input.round ?? 1, parentProposalId: input.parentProposalId ?? null, amendsDealId: input.amendsDealId ?? null,
+    strategicSummary: '', playerFacingSummary: '', evaluationSnapshot: null, history: [{ turn: input.turn, kind: 'created', actorId: input.initiatorActorId, text: 'Proposal drafted.' }],
+    compliance: 'pending', violatedBy: null, violationReason: null, closedReason: null, source: input.source || 'player'
+  };
+  return deal;
+}
+
+export function classifyDealType(terms: DiplomaticTerm[]): DiplomaticDeal['type'] {
+  const kinds = new Set(terms.map(t => t.kind));
+  const actors = new Set(terms.map(t => t.actorId));
+  if (kinds.has('non_aggression')) return 'non_aggression';
+  if (kinds.has('pay_cash') && (kinds.has('avoid_region') || kinds.has('do_not_challenge_region'))) return 'cash_for_withdrawal';
+  if ((kinds.has('avoid_region') || kinds.has('do_not_challenge_region')) && actors.size >= 2) return 'regional_ceasefire';
+  if (kinds.has('transfer_resource')) return 'resource_trade';
+  if (kinds.size === 1 && kinds.has('do_not_sabotage') && actors.size >= 2) return 'mutual_support';
+  return 'custom';
+}
+
+/** Stable signature of what a deal promises (ids/turn-free) — used for caching and duplicate detection. */
+export function dealTermsSignature(deal: Pick<DiplomaticDeal, 'terms' | 'duration' | 'terminationConditions'>): string {
+  const t = deal.terms.map(x => [x.actorId, x.kind, x.targetActorId, x.regionId, x.amount, x.resourceId, x.quantity, x.timing, x.source, x.scope, x.condition ? `${x.condition.kind}:${x.condition.regionId || ''}:${x.condition.amount || ''}` : ''].join(':')).sort().join(';');
+  const d = `${deal.duration.kind}:${deal.duration.turns ?? ''}:${deal.duration.turn ?? ''}:${deal.duration.regionId ?? ''}`;
+  const c = (deal.terminationConditions || []).map(x => `${x.kind}:${x.actorId || ''}:${x.regionId || ''}`).sort().join(';');
+  return `${t}|${d}|${c}`;
+}
+
+// ---- World view used by validation / evaluation ----------------------------------------------
+
+export interface DNActorInfo {
+  id: string;
+  name: string;
+  isHuman: boolean;
+  teamId: string | null;
+  /** null when hidden from the viewer (fog of war). */
+  money: number | null;
+  inventory: Record<string, number> | null;
+  regionsControlled: number;
+  personality: DNPersonality;
+}
+
+export interface DNRegionInfo {
+  code: string;
+  name: string;
+  controllerId: string | null;
+  /** Deposits by actor id (public map information). */
+  deposits: Record<string, number>;
+  adjacent: string[];
+}
+
+export interface DNStrategyInfo {
+  /** Regions the actor is actively trying to take (its plan / Team OS / observed focus). */
+  targets: string[];
+  /** Regions it is defending. */
+  protectedRegions: string[];
+  emergency: boolean;
+  source: string;
+}
+
+export interface DNRelationship { trust: number; reliability: number; grievance: number; gratitude: number; rivalry: number; threat: number; cooperation: number }
+
+export interface DiplomacyWorld {
+  turn: number;
+  turnsLeft: number;
+  viewerId: string;
+  actors: Record<string, DNActorInfo>;
+  regions: Record<string, DNRegionInfo>;
+  win: { metric: string; regionsTarget: number | null } | null;
+  strategy: Record<string, DNStrategyInfo>;
+  /** owner's view of other (AI Memory; the viewer may only read its own or authorised memories). */
+  relationship: (ownerId: string, otherId: string) => DNRelationship;
+  /** Remembered hostile events of other against owner (count), from AI Memory. */
+  hostileHistory: (ownerId: string, otherId: string) => { sabotage: number; regionPressure: number };
+  fogOfWar: boolean;
+  teamMode: boolean;
+  treasuryAvailable: Record<string, number | null>;
+  authority: Record<string, { canSign: boolean; canCommitTreasury: boolean; requiresApproval: boolean; route: string; reason: string }>;
+  resources: string[];
+  prices?: Record<string, number>;
+  /** Live clock: diplomacy counts ROUNDS (one per player turn); the HUD turn counter advances once per actor. */
+  clock?: { hudTurn: number; actorsPerRound: number };
+}
+
+export const DN_DEFAULT_RELATIONSHIP: DNRelationship = { trust: 50, reliability: 50, grievance: 0, gratitude: 0, rivalry: 0, threat: 0, cooperation: 50 };
+
+// ---- Validation --------------------------------------------------------------------------------
+
+export interface DNValidationIssue { severity: 'error' | 'warning'; code: string; message: string; termId?: string; options?: string[] }
+export interface DNValidationResult { ok: boolean; issues: DNValidationIssue[] }
+
+const DN_SUPPORTED_TERMS: DNTermKind[] = ['pay_cash', 'transfer_resource', 'avoid_region', 'do_not_challenge_region', 'do_not_sabotage', 'non_aggression', 'threat'];
+
+function dnTermActiveWindow(t: DiplomaticTerm, deal: DiplomaticDeal): [number, number] {
+  const s = t.startTurn ?? deal.startTurn ?? 0;
+  const e = t.endTurn ?? deal.expirationTurn ?? Number.MAX_SAFE_INTEGER;
+  return [s, e];
+}
+
+/** Two regional promises contradict when the same actor must both stay out of and contest/fund the same region at overlapping times. */
+function dnTermsContradict(a: DiplomaticTerm, da: DiplomaticDeal, b: DiplomaticTerm, db: DiplomaticDeal): string | null {
+  if (a.actorId !== b.actorId) return null;
+  const [as, ae] = dnTermActiveWindow(a, da); const [bs, be] = dnTermActiveWindow(b, db);
+  if (ae < bs || be < as) return null;
+  const regionalRestrict = (t: DiplomaticTerm) => t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region';
+  // A threat to contest a region the same actor promises to avoid is contradictory.
+  if (regionalRestrict(a) && b.kind === 'threat' && b.regionId && b.regionId === a.regionId) return `${a.regionId}: cannot both promise to stay out and threaten to contest it`;
+  if (regionalRestrict(b) && a.kind === 'threat' && a.regionId && a.regionId === b.regionId) return `${b.regionId}: cannot both promise to stay out and threaten to contest it`;
+  if (a.kind === 'do_not_sabotage' && b.kind === 'threat' && !b.regionId && (a.targetActorId === b.targetActorId)) return 'cannot both promise no sabotage and threaten sabotage';
+  if (b.kind === 'do_not_sabotage' && a.kind === 'threat' && !a.regionId && (a.targetActorId === b.targetActorId)) return 'cannot both promise no sabotage and threaten sabotage';
+  return null;
+}
+
+export function validateDiplomaticDeal(deal: DiplomaticDeal, world: DiplomacyWorld, existing: DiplomaticDeal[] = []): DNValidationResult {
+  const issues: DNValidationIssue[] = [];
+  const err = (code: string, message: string, termId?: string, options?: string[]) => issues.push({ severity: 'error', code, message, termId, options });
+  const warn = (code: string, message: string, termId?: string, options?: string[]) => issues.push({ severity: 'warning', code, message, termId, options });
+  deal.participants.forEach(id => { if (!world.actors[id]) err('unknown_actor', `Unknown participant: ${id}.`); });
+  if (deal.participants.length < 2) err('participants', 'A deal needs at least two parties.');
+  if (!deal.terms.length) err('no_terms', 'The deal has no terms yet.');
+  const ownTeam = (id: string) => world.actors[id]?.teamId || null;
+  if (deal.participants.length === 2 && ownTeam(deal.participants[0]) && ownTeam(deal.participants[0]) === ownTeam(deal.participants[1])) err('same_team', 'Teammates coordinate through Team Intelligence, not diplomacy.');
+  if (deal.expirationTurn !== null && deal.startTurn !== null && deal.expirationTurn < deal.startTurn) err('duration', 'The deal ends before it starts.');
+  if (deal.duration.kind === 'turns' && (!deal.duration.turns || deal.duration.turns < 1 || deal.duration.turns > DN_LIMITS.maxDuration)) err('duration', `Duration must be 1–${DN_LIMITS.maxDuration} turns.`);
+  if (deal.duration.kind === 'until_turn' && (deal.duration.turn || 0) < world.turn) err('duration', 'That turn has already passed.');
+  if (deal.duration.kind === 'match' && world.turnsLeft > DN_LIMITS.maxDuration) warn('long_commitment', 'This commitment lasts for the rest of the match.');
+  const initiatorAuth = world.authority[deal.initiatorActorId];
+  if (initiatorAuth && !initiatorAuth.canSign) err('authority', initiatorAuth.reason || 'You do not have diplomatic authority for this team.');
+  deal.terms.forEach(t => {
+    if (!DN_SUPPORTED_TERMS.includes(t.kind)) { err('unsupported_term', `“${t.kind}” is not a supported agreement term.`, t.id); return; }
+    if (!deal.participants.includes(t.actorId)) err('term_actor', 'A term is owed by someone outside the deal.', t.id);
+    const payer = world.actors[t.actorId];
+    if ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && (!t.regionId || !world.regions[t.regionId])) err('region', `Unknown region${t.regionId ? `: ${t.regionId}` : ''}.`, t.id);
+    if (t.kind === 'threat' && t.regionId && !world.regions[t.regionId]) err('region', `Unknown region: ${t.regionId}.`, t.id);
+    if (t.kind === 'pay_cash') {
+      if (!t.amount || t.amount <= 0) err('amount', 'Payment amount must be positive.', t.id);
+      if (t.amount && t.amount % 1 !== 0) err('amount', 'Payment must be a whole amount.', t.id);
+      if (t.source === 'treasury') {
+        const auth = world.authority[t.actorId];
+        const avail = payer?.teamId ? world.treasuryAvailable[payer.teamId] : null;
+        if (!world.teamMode || avail === null || avail === undefined) err('treasury', 'Team Treasury is not available for this deal.', t.id);
+        else if ((t.amount || 0) > avail) err('treasury_funds', `The Treasury cannot currently fund $${(t.amount || 0).toLocaleString()} (available $${avail.toLocaleString()}).`, t.id, ['Change amount', 'Pay from your own cash', 'Cancel']);
+        if (auth && !auth.canCommitTreasury) err('treasury_authority', auth.reason || 'You cannot commit Treasury funds.', t.id);
+        else if (auth?.requiresApproval) warn('governance', `Treasury payment needs ${auth.route} approval before it can be sent.`, t.id);
+      } else if (payer && payer.money !== null && t.timing === 'on_acceptance' && (t.amount || 0) > payer.money && payer.id === world.viewerId) {
+        err('insufficient_funds', `You cannot currently fund the proposed upfront payment ($${(t.amount || 0).toLocaleString()} needed, $${payer.money.toLocaleString()} available).`, t.id, ['Change amount', 'Conditional payment', 'Cancel']);
+      } else if (payer && payer.money !== null && (t.amount || 0) > payer.money && payer.id === world.viewerId) {
+        warn('future_funds', `You don't have $${(t.amount || 0).toLocaleString()} yet — the payment must be affordable when due.`, t.id);
+      }
+    }
+    if (t.kind === 'transfer_resource') {
+      if (!t.resourceId || !world.resources.includes(t.resourceId)) err('resource', `Unknown resource${t.resourceId ? `: ${t.resourceId}` : ''}.`, t.id);
+      if (!t.quantity || t.quantity <= 0) err('quantity', 'Resource quantity must be positive.', t.id);
+      const have = payer?.inventory ? payer.inventory[t.resourceId || ''] || 0 : null;
+      if (have !== null && payer?.id === world.viewerId && (t.quantity || 0) > have) err('insufficient_resource', `You only have ${have} ${t.resourceId}.`, t.id);
+    }
+    if ((t.kind === 'do_not_sabotage' || t.kind === 'non_aggression') && t.targetActorId && !deal.participants.includes(t.targetActorId)) err('target', 'Non-aggression must protect a party to the deal.', t.id);
+  });
+  // Duplicate / contradictory terms inside the deal.
+  const sigs = new Set<string>();
+  deal.terms.forEach(t => { const s = `${t.actorId}:${t.kind}:${t.regionId}:${t.targetActorId}`; if (sigs.has(s) && t.kind !== 'pay_cash') warn('duplicate_term', 'The same promise appears twice.', t.id); sigs.add(s); });
+  deal.terms.forEach((a, i) => deal.terms.slice(i + 1).forEach(b => { const c = dnTermsContradict(a, deal, b, deal); if (c) err('contradiction', `Contradictory terms — ${c}.`, b.id); }));
+  // Against active agreements.
+  existing.filter(d => d.id !== deal.id && d.id !== deal.amendsDealId && (d.status === 'active' || d.status === 'accepted')).forEach(d => {
+    d.terms.forEach(a => deal.terms.forEach(b => { const c = dnTermsContradict(a, d, b, deal); if (c) err('conflicts_active', `Conflicts with an active agreement — ${c}. Renegotiate that agreement first.`, b.id, ['Renegotiate', 'Cancel']); }));
+    if (dealTermsSignature(d) === dealTermsSignature(deal) && d.participants.slice().sort().join() === deal.participants.slice().sort().join()) err('duplicate_agreement', 'An identical agreement is already active.');
+  });
+  // Deals cannot override victory: a promise that simply concedes the match is not a supported mechanic.
+  return { ok: !issues.some(i => i.severity === 'error'), issues };
+}
+
+// ---- State -------------------------------------------------------------------------------------
+
+export interface DNInboxItem {
+  id: string;
+  kind: 'proposal' | 'counteroffer' | 'warning' | 'expiring' | 'violated' | 'completed' | 'response' | 'obligation';
+  dealId: string | null;
+  fromActorId: string | null;
+  turn: number;
+  text: string;
+  status: 'unread' | 'read' | 'dismissed' | 'resolved';
+}
+
+export interface DNNegotiationTrack {
+  counterpartId: string;
+  fatigue: number;
+  blockedUntilTurn: number | null;
+  lastProposalTurn: number | null;
+  lastAiProposalTurn: number | null;
+  dismissals: number;
+  unreasonableCount: number;
+}
+
+export interface DNEvent {
+  id: string;
+  turn: number;
+  kind: 'proposal_sent' | 'counteroffer' | 'accepted' | 'rejected' | 'activated' | 'activation_failed' | 'term_completed' | 'payment' | 'expired' | 'completed' | 'violated' | 'terminated' | 'withdrawn' | 'trust_changed' | 'delayed' | 'guarantee_requested' | 'ai_proposal' | 'match_end';
+  dealId: string | null;
+  actorId: string | null;
+  counterpartId: string | null;
+  summary: string;
+  /** Replay payload: the exact deal snapshot (or relationship delta) at this event — never re-negotiated. */
+  snapshot?: DiplomaticDeal | null;
+  delta?: Record<string, number> | null;
+}
+
+export interface DiplomacyState {
+  version: 1;
+  revision: number;
+  deals: DiplomaticDeal[];
+  history: DiplomaticDeal[];
+  inbox: DNInboxItem[];
+  tracks: Record<string, DNNegotiationTrack>;
+  events: DNEvent[];
+  lastProcessedTurn: number | null;
+  /** Rolling record of completion rewards (anti-exploit: repeated trivial agreements earn less). */
+  recentCompletions: Array<{ turn: number; counterpartId: string; significance: number }>;
+}
+
+export function createEmptyDiplomacyState(): DiplomacyState {
+  return { version: 1, revision: 0, deals: [], history: [], inbox: [], tracks: {}, events: [], lastProcessedTurn: null, recentCompletions: [] };
+}
+
+const DN_STATUSES: DNDealStatus[] = ['draft', 'preview', 'sent', 'under_review', 'countered', 'accepted', 'active', 'completed', 'expired', 'rejected', 'withdrawn', 'violated', 'terminated', 'superseded'];
+const DN_OPEN_STATUSES: DNDealStatus[] = ['sent', 'under_review', 'countered', 'accepted', 'active'];
+
+function dnNum(v: unknown, d: number | null = 0): number | null { return typeof v === 'number' && Number.isFinite(v) ? v : d; }
+function dnStr(v: unknown, d: string | null = null): string | null { return typeof v === 'string' && v ? v.slice(0, 200) : d; }
+
+function sanitizeDNCondition(raw: any): DNCondition | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const kinds: DNConditionKind[] = ['region_control_gained', 'region_control_changes', 'any_sabotage', 'cash_below', 'region_attacked', 'any_violation'];
+  if (!kinds.includes(raw.kind)) return null;
+  return { kind: raw.kind, actorId: dnStr(raw.actorId), regionId: dnStr(raw.regionId), amount: dnNum(raw.amount, null), effect: ['terminate', 'activate', 'defer_payment'].includes(raw.effect) ? raw.effect : 'terminate', text: dnStr(raw.text, '') || '' };
+}
+
+function sanitizeDNTerm(raw: any): DiplomaticTerm | null {
+  if (!raw || typeof raw !== 'object' || !DN_SUPPORTED_TERMS.includes(raw.kind) || typeof raw.actorId !== 'string') return null;
+  const t = makeDiplomaticTerm({ ...raw, id: dnStr(raw.id) || undefined, condition: sanitizeDNCondition(raw.condition) });
+  t.startTurn = dnNum(raw.startTurn, null); t.endTurn = dnNum(raw.endTurn, null);
+  t.status = ['pending', 'active', 'satisfied', 'due', 'violated', 'failed', 'inactive'].includes(raw.status) ? raw.status : 'pending';
+  return t;
+}
+
+export function sanitizeDiplomaticDeal(raw: any): DiplomaticDeal | null {
+  if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !Array.isArray(raw.participants)) return null;
+  const terms = (Array.isArray(raw.terms) ? raw.terms : []).map(sanitizeDNTerm).filter(Boolean).slice(0, DN_LIMITS.termsPerDeal) as DiplomaticTerm[];
+  const durKinds: DNDuration['kind'][] = ['this_turn', 'turns', 'until_turn', 'until_broken', 'match', 'until_region_changes'];
+  const dur = raw.duration && durKinds.includes(raw.duration.kind) ? { kind: raw.duration.kind, turns: dnNum(raw.duration.turns, null), turn: dnNum(raw.duration.turn, null), regionId: dnStr(raw.duration.regionId) } : { kind: 'turns' as const, turns: 1 };
+  const ev = raw.evaluationSnapshot && typeof raw.evaluationSnapshot === 'object' ? { band: raw.evaluationSnapshot.band, response: raw.evaluationSnapshot.response, ratio: dnNum(raw.evaluationSnapshot.ratio) as number, utility: dnNum(raw.evaluationSnapshot.utility) as number, reasons: (Array.isArray(raw.evaluationSnapshot.reasons) ? raw.evaluationSnapshot.reasons : []).map(String).slice(0, 6) } : null;
+  return {
+    id: raw.id.slice(0, 80), proposalId: dnStr(raw.proposalId, raw.id) as string, participants: raw.participants.map(String).slice(0, 6), initiatorActorId: String(raw.initiatorActorId || raw.participants[0]),
+    recipientActorIds: (Array.isArray(raw.recipientActorIds) ? raw.recipientActorIds : raw.participants.slice(1)).map(String).slice(0, 5),
+    type: ['non_aggression', 'regional_ceasefire', 'cash_for_withdrawal', 'mutual_support', 'resource_trade', 'temporary_alliance', 'custom'].includes(raw.type) ? raw.type : 'custom',
+    status: DN_STATUSES.includes(raw.status) ? raw.status : 'draft', createdTurn: dnNum(raw.createdTurn) as number, sentTurn: dnNum(raw.sentTurn, null), respondedTurn: dnNum(raw.respondedTurn, null),
+    startTurn: dnNum(raw.startTurn, null), expirationTurn: dnNum(raw.expirationTurn, null), duration: dur as DNDuration, terms,
+    terminationConditions: (Array.isArray(raw.terminationConditions) ? raw.terminationConditions : []).map(sanitizeDNCondition).filter(Boolean).slice(0, 4) as DNCondition[],
+    guarantees: (Array.isArray(raw.guarantees) ? raw.guarantees : []).map(String).slice(0, 4), visibility: raw.visibility === 'public' ? 'public' : 'participants',
+    negotiationRound: Math.max(1, Math.min(10, dnNum(raw.negotiationRound, 1) as number)), parentProposalId: dnStr(raw.parentProposalId), amendsDealId: dnStr(raw.amendsDealId),
+    strategicSummary: dnStr(raw.strategicSummary, '') as string, playerFacingSummary: dnStr(raw.playerFacingSummary, '') as string, evaluationSnapshot: ev,
+    history: (Array.isArray(raw.history) ? raw.history : []).filter((h: any) => h && typeof h === 'object').slice(-12).map((h: any) => ({ turn: dnNum(h.turn) as number, kind: String(h.kind || 'note').slice(0, 30), actorId: dnStr(h.actorId), text: String(h.text || '').slice(0, 200) })),
+    compliance: ['compliant', 'at_risk', 'violated', 'completed', 'expired', 'pending'].includes(raw.compliance) ? raw.compliance : 'pending',
+    violatedBy: dnStr(raw.violatedBy), violationReason: dnStr(raw.violationReason), closedReason: dnStr(raw.closedReason), source: raw.source === 'ai' ? 'ai' : raw.source === 'legacy' ? 'legacy' : 'player',
+    baselineControllers: raw.baselineControllers && typeof raw.baselineControllers === 'object' ? Object.fromEntries(Object.entries(raw.baselineControllers).slice(0, 12).map(([k, v]) => [k, typeof v === 'string' ? v : null])) : undefined
+  };
+}
+
+/** Save/load safe. Old saves (no diplomacy state) load empty; legacy pacts are migrated when present. */
+export function sanitizeDiplomacyState(raw: unknown, legacy?: { relationships?: Array<{ actorId?: string; targetActorId?: string; pacts?: any[] }> } | null, turn = 0): DiplomacyState {
+  const out = createEmptyDiplomacyState();
+  const r: any = raw && typeof raw === 'object' ? raw : null;
+  if (r) {
+    out.revision = Math.max(0, dnNum(r.revision) as number);
+    out.deals = (Array.isArray(r.deals) ? r.deals : []).map(sanitizeDiplomaticDeal).filter((d: DiplomaticDeal | null): d is DiplomaticDeal => Boolean(d) && DN_OPEN_STATUSES.includes(d!.status)).slice(-DN_LIMITS.activeDeals);
+    out.history = (Array.isArray(r.history) ? r.history : []).map(sanitizeDiplomaticDeal).filter(Boolean).slice(-DN_LIMITS.history) as DiplomaticDeal[];
+    out.inbox = (Array.isArray(r.inbox) ? r.inbox : []).filter((i: any) => i && typeof i === 'object' && typeof i.id === 'string').slice(-DN_LIMITS.inbox).map((i: any) => ({
+      id: i.id.slice(0, 80), kind: ['proposal', 'counteroffer', 'warning', 'expiring', 'violated', 'completed', 'response', 'obligation'].includes(i.kind) ? i.kind : 'warning', dealId: dnStr(i.dealId), fromActorId: dnStr(i.fromActorId), turn: dnNum(i.turn) as number, text: String(i.text || '').slice(0, 240), status: ['unread', 'read', 'dismissed', 'resolved'].includes(i.status) ? i.status : 'read'
+    }));
+    if (r.tracks && typeof r.tracks === 'object') Object.entries(r.tracks as Record<string, any>).slice(0, 8).forEach(([k, t]) => {
+      if (!t || typeof t !== 'object') return;
+      out.tracks[k] = { counterpartId: k, fatigue: Math.max(0, Math.min(10, dnNum(t.fatigue) as number)), blockedUntilTurn: dnNum(t.blockedUntilTurn, null), lastProposalTurn: dnNum(t.lastProposalTurn, null), lastAiProposalTurn: dnNum(t.lastAiProposalTurn, null), dismissals: Math.max(0, Math.min(10, dnNum(t.dismissals) as number)), unreasonableCount: Math.max(0, Math.min(20, dnNum(t.unreasonableCount) as number)) };
+    });
+    out.events = (Array.isArray(r.events) ? r.events : []).filter((e: any) => e && typeof e === 'object' && typeof e.id === 'string').slice(-DN_LIMITS.events).map((e: any) => ({
+      id: e.id.slice(0, 100), turn: dnNum(e.turn) as number, kind: String(e.kind || 'proposal_sent') as DNEvent['kind'], dealId: dnStr(e.dealId), actorId: dnStr(e.actorId), counterpartId: dnStr(e.counterpartId), summary: String(e.summary || '').slice(0, 240),
+      snapshot: e.snapshot ? sanitizeDiplomaticDeal(e.snapshot) : null, delta: e.delta && typeof e.delta === 'object' ? Object.fromEntries(Object.entries(e.delta).filter(([, v]) => typeof v === 'number').slice(0, 8)) as Record<string, number> : null
+    }));
+    out.lastProcessedTurn = dnNum(r.lastProcessedTurn, null);
+    out.recentCompletions = (Array.isArray(r.recentCompletions) ? r.recentCompletions : []).filter((x: any) => x && typeof x === 'object').slice(-12).map((x: any) => ({ turn: dnNum(x.turn) as number, counterpartId: String(x.counterpartId || ''), significance: Math.max(0, Math.min(1, dnNum(x.significance) as number)) }));
+  }
+  // Legacy pact migration (the old modal's `diplomacy.relationships[].pacts`): converted into structured
+  // non-aggression agreements. Trust / stance / historicEvents are left untouched where they live.
+  if (!r && legacy?.relationships?.length) {
+    legacy.relationships.forEach(rel => (Array.isArray(rel?.pacts) ? rel.pacts : []).slice(0, 4).forEach((p: any, i: number) => {
+      const a = String(rel.actorId || 'player'); const b = String(rel.targetActorId || p?.targetActorId || 'ai');
+      const expires = dnNum(p?.expiresTurn ?? p?.expirationTurn, null);
+      if (expires !== null && expires < turn) return;
+      const deal = createDiplomaticDeal({ initiatorActorId: a, recipientActorIds: [b], turn, duration: expires !== null ? { kind: 'until_turn', turn: expires } : { kind: 'until_broken' }, source: 'legacy',
+        terms: [makeDiplomaticTerm({ actorId: a, kind: 'non_aggression', targetActorId: b }), makeDiplomaticTerm({ actorId: b, kind: 'non_aggression', targetActorId: a })] });
+      deal.id = `deal_legacy_${a}_${b}_${i}`; deal.status = 'active'; deal.compliance = 'compliant'; deal.history.push({ turn, kind: 'migrated', actorId: null, text: 'Migrated from a legacy pact.' });
+      out.deals.push(deal);
+    }));
+  }
+  return out;
+}
+
+
+// ---- Reliability / reputation (derived from what actually happened) ----------------------------
+
+export interface DiplomaticReliability {
+  actorId: string;
+  honored: number;
+  broken: number;
+  withdrawals: number;
+  paymentsMade: number;
+  band: 'high' | 'moderate' | 'low' | 'untested';
+  score: number;
+  evidence: string[];
+}
+
+/** Deals an observer can know about: ones it took part in, or public ones. */
+function dnKnownDeals(state: DiplomacyState, observerId: string | null): DiplomaticDeal[] {
+  const all = [...state.history, ...state.deals];
+  return observerId ? all.filter(d => d.participants.includes(observerId) || d.visibility === 'public') : all;
+}
+
+export function deriveDiplomaticReliability(state: DiplomacyState, actorId: string, observerId: string | null = null): DiplomaticReliability {
+  const deals = dnKnownDeals(state, observerId).filter(d => d.participants.includes(actorId) && d.terms.some(t => t.actorId === actorId));
+  const honored = deals.filter(d => d.status === 'completed' || (d.status === 'expired' && d.compliance !== 'violated')).length;
+  const broken = deals.filter(d => d.status === 'violated' && d.violatedBy === actorId).length;
+  const withdrawals = deals.filter(d => d.status === 'terminated' && d.closedReason === `withdrawn:${actorId}`).length;
+  const paymentsMade = state.events.filter(e => e.kind === 'payment' && e.actorId === actorId && (!observerId || e.counterpartId === observerId || e.actorId === observerId)).length;
+  const score = Math.round(((honored + paymentsMade * 0.5 + 1) / (honored + paymentsMade * 0.5 + broken * 2.5 + withdrawals * 0.7 + 2)) * 100) / 100;
+  const band: DiplomaticReliability['band'] = honored + broken + withdrawals + paymentsMade === 0 ? 'untested' : score >= 0.7 ? 'high' : score >= 0.45 ? 'moderate' : 'low';
+  const evidence: string[] = [];
+  if (honored) evidence.push(`${honored} agreement${honored === 1 ? '' : 's'} completed`);
+  if (broken) evidence.push(`${broken} broken`);
+  if (!broken && honored) evidence.push('0 broken');
+  if (withdrawals) evidence.push(`${withdrawals} early withdrawal${withdrawals === 1 ? '' : 's'}`);
+  if (paymentsMade) evidence.push(`${paymentsMade} promised payment${paymentsMade === 1 ? '' : 's'} made`);
+  if (!evidence.length) evidence.push('No agreements yet');
+  return { actorId, honored, broken, withdrawals, paymentsMade, band, score, evidence };
+}
+
+export interface DiplomaticReputation { actorId: string; labels: string[]; reliability: DiplomaticReliability }
+
+/** Bounded, derived reputation (never a stored score). */
+export function deriveDiplomaticReputation(state: DiplomacyState, actorId: string, observerId: string | null, rel: DNRelationship | null): DiplomaticReputation {
+  const reliability = deriveDiplomaticReliability(state, actorId, observerId);
+  const labels: string[] = [];
+  if (reliability.band === 'high') labels.push('reliable'); else if (reliability.band === 'low') labels.push('unreliable');
+  if (rel) { if (rel.cooperation >= 62) labels.push('cooperative'); else if (rel.rivalry >= 40 || rel.grievance >= 30) labels.push('hostile'); }
+  const paid = state.events.filter(e => e.kind === 'payment' && e.actorId === actorId).length;
+  if (paid >= 2) labels.push('generous');
+  const opportunistic = dnKnownDeals(state, observerId).filter(d => d.status === 'violated' && d.violatedBy === actorId && d.history.some(h => h.kind === 'violation' && /contest|deposit|invest/.test(h.text))).length;
+  if (opportunistic) labels.push('opportunistic'); else if (reliability.honored >= 2) labels.push('predictable');
+  return { actorId, labels: labels.slice(0, 4), reliability };
+}
+
+export type DNStanceLabel = 'allied' | 'friendly' | 'neutral' | 'wary' | 'hostile' | 'war';
+
+/** Richer player-facing stance, derived — the stored DiplomaticStance type is left unchanged. */
+export function deriveDiplomaticStanceLabel(rel: DNRelationship, activeDeals: number, recentViolations: number): DNStanceLabel {
+  const score = rel.trust - rel.grievance * 0.6 - rel.rivalry * 0.4 + rel.gratitude * 0.3 + activeDeals * 6 - recentViolations * 15;
+  if (score >= 75) return 'allied';
+  if (score >= 58) return 'friendly';
+  if (score >= 40) return 'neutral';
+  if (score >= 22) return 'wary';
+  if (score >= 5) return 'hostile';
+  return 'war';
+}
+
+// ---- Term valuation (evaluator's perspective) --------------------------------------------------
+
+const DN_DISCOUNT = 0.92;
+/** Share of a region's worth one turn of (un)contested pressure represents. */
+const DN_REGION_RATE = 0.45;
+function dnDurationFactor(turns: number): number { let s = 0; for (let t = 0; t < Math.min(DN_LIMITS.maxDuration, Math.max(1, turns)); t++) s += Math.pow(DN_DISCOUNT, t); return s; }
+const dnRoundTo = (n: number, step = 500) => Math.ceil(n / step) * step;
+
+function dnRegionWorth(world: DiplomacyWorld, code: string): number {
+  const r = world.regions[code];
+  if (!r) return 0;
+  const max = Math.max(0, ...Object.values(r.deposits || {}).map(v => Number(v) || 0));
+  return Math.max(3000, max + 1500);
+}
+
+function dnCostToTake(world: DiplomacyWorld, code: string, actorId: string): number {
+  const r = world.regions[code];
+  if (!r) return Infinity;
+  if (r.controllerId === actorId) return 0;
+  const mine = r.deposits[actorId] || 0;
+  const top = Math.max(0, ...Object.entries(r.deposits).filter(([k]) => k !== actorId).map(([, v]) => Number(v) || 0));
+  return Math.max(1, top + 1 - mine);
+}
+
+/** How much an actor cares about a region right now (0..~2). Contextual: its plan, holdings, reach and the win condition. */
+export function diplomaticRegionStake(world: DiplomacyWorld, actorId: string, code: string): { stake: number; reason: string } {
+  const r = world.regions[code];
+  const a = world.actors[actorId];
+  if (!r || !a) return { stake: 0, reason: 'unknown region' };
+  const s = world.strategy[actorId] || { targets: [], protectedRegions: [], emergency: false, source: 'none' };
+  let stake = 0.25; let reason = 'a minor interest';
+  if (s.targets.includes(code)) { stake = 1; reason = 'an active target'; }
+  else if (s.protectedRegions.includes(code) || r.controllerId === actorId) { stake = 0.8; reason = 'a region it holds'; }
+  else {
+    const adjacentToHolding = Object.values(world.regions).some(x => x.controllerId === actorId && x.adjacent.includes(code));
+    const affordable = a.money !== null && a.money >= dnCostToTake(world, code, actorId);
+    if (adjacentToHolding || affordable) { stake = 0.45; reason = 'within reach'; }
+    else { stake = 0.12; reason = 'currently out of reach'; }
+  }
+  const target = world.win?.regionsTarget || null;
+  if (world.win?.metric === 'regions' && target && r.controllerId !== actorId && a.regionsControlled + 1 >= target) { stake *= 1.6; reason += ' (win-critical)'; }
+  if (world.turnsLeft <= 4) stake *= 1.25;
+  return { stake: Math.round(stake * 100) / 100, reason };
+}
+
+/** How much pressure `other` puts on `ownerId` in a region (0..1), from public deposits + remembered behaviour. */
+function dnPressure(world: DiplomacyWorld, ownerId: string, otherId: string, code: string): number {
+  const r = world.regions[code];
+  if (!r) return 0;
+  if (r.controllerId === ownerId) {
+    const mine = r.deposits[ownerId] || 0; const theirs = r.deposits[otherId] || 0;
+    const hist = world.hostileHistory(ownerId, otherId).regionPressure;
+    if (theirs >= mine * 0.5 && theirs > 0) return 1;
+    if (hist >= 2) return 0.6;
+    return theirs > 0 ? 0.5 : 0.3;
+  }
+  const s = world.strategy[ownerId];
+  if (s?.targets.includes(code)) return 0.5;
+  return 0.08;
+}
+
+function dnBetrayalRisk(world: DiplomacyWorld, state: DiplomacyState, evaluatorId: string, counterpartId: string): { risk: number; rel: DNRelationship; rec: DiplomaticReliability } {
+  const rel = world.relationship(evaluatorId, counterpartId) || DN_DEFAULT_RELATIONSHIP;
+  const rec = deriveDiplomaticReliability(state, counterpartId, evaluatorId);
+  let risk = 0.28 - (rel.trust - 50) / 250 - (rel.reliability - 50) / 300 + rec.broken * 0.14 + rec.withdrawals * 0.04 - Math.min(0.12, rec.honored * 0.03) + rel.grievance / 400;
+  risk = Math.max(0.05, Math.min(0.75, risk));
+  return { risk: Math.round(risk * 100) / 100, rel, rec };
+}
+
+function dnCashNeed(a: DNActorInfo | undefined): number {
+  if (!a || a.money === null) return 1;
+  return a.money < 3000 ? 1.35 : a.money < 8000 ? 1.1 : 0.9;
+}
+
+interface DNTermValue { value: number; factor: DNEvaluationFactor | null }
+
+function dnValueTerm(term: DiplomaticTerm, deal: DiplomaticDeal, E: string, C: string, world: DiplomacyWorld, betrayal: number, turns: number): DNTermValue {
+  const me = world.actors[E];
+  const P = me?.personality || deriveDiplomaticPersonality(null);
+  const owedByMe = term.actorId === E;
+  const dur = dnDurationFactor(turns);
+  const region = term.regionId ? world.regions[term.regionId] : null;
+  const rname = region?.name || term.regionId || '';
+  const endgame = world.turnsLeft <= 5 ? 1.4 : 1;
+  const mk = (id: string, label: string, value: number, pub: string, vis: 'public' | 'private' = 'public'): DNTermValue => ({ value, factor: { id, label, value: Math.round(value), visibility: vis, publicText: pub } });
+  switch (term.kind) {
+    case 'pay_cash': {
+      const amt = term.amount || 0;
+      if (owedByMe) {
+        const pain = me?.money ? 1 + Math.max(0, amt / Math.max(1, me.money) - 0.3) : 1;
+        return mk(`give_cash_${term.id}`, `Pays $${amt.toLocaleString()}`, -amt * pain * Math.max(0.8, P.greed), `paying $${amt.toLocaleString()}`);
+      }
+      const upfront = term.timing === 'on_acceptance';
+      const perTurn = term.timing === 'per_turn' ? turns : 1;
+      const certainty = upfront ? 1 : (1 - betrayal) * 0.95;
+      const v = amt * perTurn * P.greed * dnCashNeed(me) * certainty;
+      return mk(`cash_${term.id}`, `Receives $${(amt * perTurn).toLocaleString()}${upfront ? ' upfront' : ' later'}`, v, `$${(amt * perTurn).toLocaleString()}${upfront ? '' : ' (paid later)'}`, 'public');
+    }
+    case 'transfer_resource': {
+      const qty = term.quantity || 0; const price = world.prices?.[term.resourceId || ''] || 200;
+      const v = qty * price * (owedByMe ? -1 : (term.timing === 'on_acceptance' ? 1 : 1 - betrayal));
+      return mk(`res_${term.id}`, `${owedByMe ? 'Gives' : 'Receives'} ${qty} ${term.resourceId}`, v, `${qty} ${term.resourceId}`);
+    }
+    case 'avoid_region':
+    case 'do_not_challenge_region': {
+      if (!region) return { value: 0, factor: null };
+      const worth = dnRegionWorth(world, region.code);
+      if (owedByMe) {
+        const { stake, reason } = diplomaticRegionStake(world, E, region.code);
+        let applies = 1;
+        if (term.kind === 'do_not_challenge_region' && region.controllerId !== C) applies = region.controllerId === E ? 0.15 : 0.45;
+        if (term.kind === 'avoid_region' && region.controllerId === E) applies = 0.6 + 0.4 * dnPressure(world, E, C, region.code);
+        const cost = worth * stake * DN_REGION_RATE * P.territorial * dur * applies * endgame;
+        return mk(`give_${term.kind}_${region.code}`, `Gives up pressure on ${rname} (${reason})`, -cost, stake >= 0.8 ? `${rname} is very important to them` : stake >= 0.45 ? `${rname} matters to them` : `${rname} is a low priority for them`, 'public');
+      }
+      const pressure = dnPressure(world, E, C, region.code);
+      const applies = term.kind === 'do_not_challenge_region' && region.controllerId !== E ? 0.5 : 1;
+      const v = worth * pressure * DN_REGION_RATE * dur * applies * (1 - betrayal) * endgame;
+      return mk(`get_${term.kind}_${region.code}`, `Relief in ${rname}`, v, pressure >= 0.6 ? `relief from your pressure on ${rname}` : `a promise about ${rname} they don't need much`, 'public');
+    }
+    case 'do_not_sabotage': {
+      const hist = world.hostileHistory(E, C).sabotage;
+      if (owedByMe) return mk(`give_nosab_${term.id}`, 'Gives up sabotage', -200 * P.threatWillingness * dur, 'giving up sabotage options');
+      return mk(`get_nosab_${term.id}`, 'Safety from sabotage', 320 * (1 + Math.min(3, hist)) * dur * (1 - betrayal), hist ? 'protection from sabotage they have experienced' : 'protection from sabotage');
+    }
+    case 'non_aggression': {
+      const scope = term.scope || 'all';
+      let v = 0; const parts: string[] = [];
+      if (scope === 'all' || scope === 'sabotage') { const s = dnValueTerm({ ...term, kind: 'do_not_sabotage' }, deal, E, C, world, betrayal, turns); v += s.value; parts.push('sabotage'); }
+      if (scope === 'all' || scope === 'regions') {
+        const other = owedByMe ? C : E;
+        const held = Object.values(world.regions).filter(r => r.controllerId === other).sort((a, b) => dnRegionWorth(world, b.code) - dnRegionWorth(world, a.code) || a.code.localeCompare(b.code)).slice(0, 3);
+        held.forEach(r => { v += dnValueTerm({ ...term, kind: 'do_not_challenge_region', regionId: r.code }, deal, E, C, world, betrayal, turns).value; });
+        parts.push('regional pressure');
+      }
+      return mk(`${owedByMe ? 'give' : 'get'}_nonagg_${term.id}`, `${owedByMe ? 'Gives up' : 'Gets relief from'} ${parts.join(' + ')}`, v, owedByMe ? 'a broad non-aggression commitment' : 'a broad non-aggression promise');
+    }
+    case 'threat': {
+      if (owedByMe) return { value: 0, factor: null };
+      // A threat is never executed by diplomacy. Its weight is the harm the evaluator expects to avoid by complying.
+      const threatener = world.actors[C];
+      const hist = world.hostileHistory(E, C);
+      let credibility = threatener?.money === null || threatener?.money === undefined ? 0.45 : threatener.money >= 1500 ? 0.6 : 0.2;
+      if (term.regionId ? hist.regionPressure > 0 : hist.sabotage > 0) credibility += 0.2;
+      if (threatener?.money && me?.money && threatener.money > me.money) credibility += 0.1;
+      credibility = Math.max(0, Math.min(1, credibility / Math.max(0.6, P.riskTolerance)));
+      const damage = term.regionId ? dnRegionWorth(world, term.regionId) * diplomaticRegionStake(world, E, term.regionId).stake * 0.5 : 900;
+      const defiance = P.key === 'aggressive' ? -0.35 * damage : 0;
+      const v = credibility >= 0.35 ? damage * credibility + defiance : defiance - 150;
+      return mk(`threat_${term.id}`, `Threat (credibility ${Math.round(credibility * 100)}%)`, v, credibility >= 0.55 ? 'your threat looks credible' : credibility >= 0.35 ? 'your threat is somewhat credible' : 'your threat does not look credible', 'public');
+    }
+  }
+  return { value: 0, factor: null };
+}
+
+/** Deals cannot override win logic: an agreement that stops the evaluator contesting a near-winning counterpart is refused. */
+function dnVictoryBlock(deal: DiplomaticDeal, E: string, C: string, world: DiplomacyWorld): string | null {
+  const target = world.win?.metric === 'regions' ? world.win.regionsTarget : null;
+  const cp = world.actors[C]; const me = world.actors[E];
+  if (!target || !cp || !me) return null;
+  const restricts = deal.terms.some(t => t.actorId === E && (t.kind === 'non_aggression' || ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && t.regionId && world.regions[t.regionId]?.controllerId === C)));
+  if (!restricts) return null;
+  if (cp.regionsControlled >= target - 1) return `${cp.name} is one region from winning — leaving them uncontested would hand over the match`;
+  if (cp.regionsControlled > me.regionsControlled && dealDurationTurns(deal, world.turn, world.turnsLeft) >= world.turnsLeft) return `the deal would run to the end of the match while ${cp.name} leads`;
+  return null;
+}
+
+// ---- Evaluation ----------------------------------------------------------------------------------
+
+function dnCounterpart(deal: DiplomaticDeal, E: string): string {
+  if (deal.initiatorActorId !== E) return deal.initiatorActorId;
+  return deal.recipientActorIds.find(r => r !== E) || deal.participants.find(p => p !== E) || '';
+}
+
+interface DNRawEval { received: number; given: number; factors: DNEvaluationFactor[]; betrayal: number; rel: DNRelationship; rec: DiplomaticReliability; threshold: number; victory: string | null; turns: number }
+
+function dnRawEvaluate(deal: DiplomaticDeal, E: string, world: DiplomacyWorld, state: DiplomacyState): DNRawEval {
+  const C = dnCounterpart(deal, E);
+  const me = world.actors[E];
+  const P = me?.personality || deriveDiplomaticPersonality(null);
+  const { risk, rel, rec } = dnBetrayalRisk(world, state, E, C);
+  const turns = dealDurationTurns(deal, world.turn, world.turnsLeft);
+  let received = 0; let given = 0; const factors: DNEvaluationFactor[] = [];
+  deal.terms.forEach(t => {
+    const tv = dnValueTerm(t, deal, E, C, world, risk, turns);
+    if (tv.value >= 0) received += tv.value; else given += -tv.value;
+    if (tv.factor) factors.push(tv.factor);
+  });
+  // Reciprocity comfort: cooperative actors value mutual commitments a little more.
+  if (deal.terms.some(t => t.actorId === E) && deal.terms.some(t => t.actorId === C && t.kind !== 'threat') && P.cooperation > 1) {
+    const bonus = Math.round(received * (P.cooperation - 1) * 0.3); received += bonus;
+    factors.push({ id: 'reciprocity', label: 'Mutual commitment', value: bonus, visibility: 'public', publicText: 'they like reciprocal agreements' });
+  }
+  // Long deals beyond the personality's comfort horizon cost extra.
+  if (turns > P.horizon && deal.terms.some(t => t.actorId === E)) {
+    const extra = Math.round(given * 0.12 * (turns - P.horizon)); given += extra;
+    factors.push({ id: 'duration', label: `Long commitment (${turns} turns)`, value: -extra, visibility: 'public', publicText: `a ${turns}-turn commitment is longer than they like` });
+  }
+  const victory = dnVictoryBlock(deal, E, C, world);
+  if (victory) factors.push({ id: 'victory', label: 'Victory consequences', value: -1e6, visibility: 'public', publicText: victory });
+  // Threshold: personality greed + trust/grievance (reused AI Memory negotiation shift) + reliability record + fatigue.
+  const track = state.tracks[C];
+  const shift = computeNegotiationThresholdShift({ trust: rel.trust, grievance: rel.grievance, gratitude: rel.gratitude } as any, { dealAffordable: true, thirdPartyThreat: 0 }).shift;
+  let threshold = 1 + (P.greed - 1) * 0.25 + shift * 2.5 * P.trustSensitivity + Math.min(0.4, rec.broken * 0.15 + rec.withdrawals * 0.05) - Math.min(0.15, rec.honored * 0.04) + (track?.fatigue || 0) * 0.05;
+  threshold = Math.round(Math.max(0.75, Math.min(2.2, threshold)) * 100) / 100;
+  if (rel.trust >= 60) factors.push({ id: 'trust', label: `Trust ${Math.round(rel.trust)}`, value: 0, visibility: 'public', publicText: 'they trust you' });
+  if (rel.trust <= 40) factors.push({ id: 'trust', label: `Trust ${Math.round(rel.trust)}`, value: 0, visibility: 'public', publicText: 'low trust raises what they need from the deal' });
+  if (rec.broken) factors.push({ id: 'reliability', label: `${rec.broken} broken agreement(s)`, value: 0, visibility: 'public', publicText: 'you broke a previous agreement' });
+  else if (rec.honored >= 2) factors.push({ id: 'reliability', label: `${rec.honored} agreements honoured`, value: 0, visibility: 'public', publicText: 'your record of keeping agreements helps' });
+  if (rel.grievance > 20) factors.push({ id: 'grievance', label: `Grievance ${Math.round(rel.grievance)}`, value: 0, visibility: 'private', publicText: 'they hold a grudge' });
+  return { received: Math.round(received), given: Math.round(given), factors, betrayal: risk, rel, rec, threshold, victory, turns };
+}
+
+function dnRatio(raw: Pick<DNRawEval, 'received' | 'given' | 'victory'>): number {
+  if (raw.victory) return 0;
+  if (raw.given <= 0) return raw.received > 0 ? 9 : 1;
+  return Math.round((raw.received / raw.given) * 1000) / 1000;
+}
+
+function dnCloneDeal(d: DiplomaticDeal): DiplomaticDeal { return JSON.parse(JSON.stringify(d)); }
+
+function dnRetime(deal: DiplomaticDeal, duration: DNDuration, turn: number): DiplomaticDeal {
+  const w = resolveDealWindow(duration, deal.startTurn ?? turn);
+  deal.duration = duration; deal.startTurn = w.startTurn; deal.expirationTurn = w.expirationTurn;
+  deal.terms = deal.terms.map(t => ({ ...t, startTurn: w.startTurn, endTurn: w.expirationTurn }));
+  return deal;
+}
+
+type DNCounterOp = 'require_upfront' | 'increase_payment' | 'add_payment' | 'reduce_duration' | 'reduce_scope' | 'add_reciprocal' | 'remove_term' | 'add_termination_clause';
+const DN_OP_SIZE: Record<DNCounterOp, number> = { require_upfront: 0.1, add_termination_clause: 0.15, increase_payment: 0.3, reduce_duration: 0.3, reduce_scope: 0.4, add_reciprocal: 0.45, remove_term: 0.5, add_payment: 0.6 };
+
+function dnApplyOp(src: DiplomaticDeal, op: DNCounterOp, E: string, C: string, world: DiplomacyWorld, state: DiplomacyState, raw: DNRawEval): { deal: DiplomaticDeal; size: number; text: string } | null {
+  const d = dnCloneDeal(src);
+  const P = world.actors[E]?.personality || deriveDiplomaticPersonality(null);
+  const shortfall = Math.max(0, raw.threshold * raw.given - raw.received);
+  const need = dnCashNeed(world.actors[E]) * Math.max(0.8, P.greed);
+  switch (op) {
+    case 'require_upfront': {
+      const t = d.terms.find(x => x.actorId === C && x.kind === 'pay_cash' && x.timing !== 'on_acceptance');
+      if (!t) return null; t.timing = 'on_acceptance';
+      return { deal: d, size: DN_OP_SIZE[op], text: 'payment upfront' };
+    }
+    case 'add_termination_clause': {
+      if (d.terminationConditions.some(c => c.kind === 'any_violation')) return null;
+      d.terminationConditions.push({ kind: 'any_violation', effect: 'terminate', text: 'ends automatically if either side breaks a term' });
+      return { deal: d, size: DN_OP_SIZE[op], text: 'an automatic termination clause' };
+    }
+    case 'increase_payment': {
+      const t = d.terms.find(x => x.actorId === C && x.kind === 'pay_cash');
+      if (!t || !t.amount || shortfall <= 0) return null;
+      const upfront = t.timing === 'on_acceptance' ? 1 : (1 - raw.betrayal) * 0.95;
+      const next = dnRoundTo(t.amount + (shortfall / (need * upfront)) * P.counterStep);
+      if (next > t.amount * 2.2) return null;
+      const payer = world.actors[C];
+      if (payer && payer.money !== null && t.timing === 'on_acceptance' && next > payer.money) return null;
+      const pct = (next - t.amount) / t.amount;
+      const prev = t.amount; t.amount = next; t.id = makeDiplomaticTerm({ ...t, id: undefined }).id;
+      return { deal: d, size: DN_OP_SIZE[op] * Math.max(0.3, pct * 2), text: `$${next.toLocaleString()} instead of $${prev.toLocaleString()}` };
+    }
+    case 'add_payment': {
+      if (d.terms.some(x => x.actorId === C && x.kind === 'pay_cash') || shortfall <= 0 || P.greed < 0.75) return null;
+      const amt = dnRoundTo(Math.max(500, (shortfall / need) * P.counterStep));
+      const payer = world.actors[C];
+      if (payer && payer.money !== null && amt > payer.money) return null;
+      d.terms.push(makeDiplomaticTerm({ actorId: C, kind: 'pay_cash', targetActorId: E, amount: amt, timing: 'on_acceptance', startTurn: d.startTurn, endTurn: d.expirationTurn }));
+      return { deal: d, size: DN_OP_SIZE[op], text: `a $${amt.toLocaleString()} payment` };
+    }
+    case 'reduce_duration': {
+      const turns = dealDurationTurns(d, world.turn, world.turnsLeft);
+      if (turns < 2 || !d.terms.some(t => t.actorId === E && t.kind !== 'pay_cash' && t.kind !== 'transfer_resource')) return null;
+      for (let n = turns - 1; n >= 1; n--) {
+        const cand = dnRetime(dnCloneDeal(d), { kind: 'turns', turns: n }, world.turn);
+        const r = dnRawEvaluate(cand, E, world, state);
+        if (dnRatio(r) >= r.threshold) return { deal: cand, size: DN_OP_SIZE[op] * ((turns - n) / turns) * 2, text: `${n} turn${n === 1 ? '' : 's'} instead of ${turns}` };
+      }
+      const one = dnRetime(dnCloneDeal(d), { kind: 'turns', turns: Math.max(1, Math.ceil(turns / 2)) }, world.turn);
+      return { deal: one, size: DN_OP_SIZE[op] * 1.2, text: `${Math.max(1, Math.ceil(turns / 2))} turns instead of ${turns}` };
+    }
+    case 'reduce_scope': {
+      const mine = d.terms.filter(t => t.actorId === E && (t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region'));
+      const na = d.terms.find(t => t.actorId === E && t.kind === 'non_aggression' && (t.scope || 'all') === 'all');
+      if (na) { na.scope = 'sabotage'; na.id = makeDiplomaticTerm({ ...na, id: undefined }).id; return { deal: d, size: DN_OP_SIZE[op], text: 'no sabotage, but regional competition stays allowed' }; }
+      if (mine.length < 2) return null;
+      const worst = mine.slice().sort((a, b) => diplomaticRegionStake(world, E, b.regionId!).stake - diplomaticRegionStake(world, E, a.regionId!).stake || a.id.localeCompare(b.id))[0];
+      d.terms = d.terms.filter(t => t.id !== worst.id);
+      return { deal: d, size: DN_OP_SIZE[op], text: `leaving ${world.regions[worst.regionId!]?.name || worst.regionId} out of it` };
+    }
+    case 'add_reciprocal': {
+      const held = Object.values(world.regions).filter(r => r.controllerId === E).map(r => ({ code: r.code, p: dnPressure(world, E, C, r.code) })).sort((a, b) => b.p - a.p || a.code.localeCompare(b.code))[0];
+      const target = world.strategy[E]?.targets.find(code => world.regions[code] && world.regions[code].controllerId !== C);
+      const code = held && held.p >= 0.5 ? held.code : target || held?.code;
+      if (!code || d.terms.some(t => t.actorId === C && t.regionId === code)) return null;
+      d.terms.push(makeDiplomaticTerm({ actorId: C, kind: 'do_not_challenge_region', regionId: code, startTurn: d.startTurn, endTurn: d.expirationTurn }));
+      return { deal: d, size: DN_OP_SIZE[op], text: `you also leave ${world.regions[code]?.name || code} alone` };
+    }
+    case 'remove_term': {
+      const mine = d.terms.filter(t => t.actorId === E && t.kind === 'do_not_sabotage');
+      if (!mine.length || d.terms.filter(t => t.actorId === E).length < 2) return null;
+      d.terms = d.terms.filter(t => t.id !== mine[0].id);
+      return { deal: d, size: DN_OP_SIZE[op], text: 'without the no-sabotage promise' };
+    }
+  }
+  return null;
+}
+
+function dnGenerateCounter(deal: DiplomaticDeal, E: string, world: DiplomacyWorld, state: DiplomacyState, raw: DNRawEval, guaranteeOnly = false): DiplomaticEvaluation['counter'] {
+  const C = dnCounterpart(deal, E);
+  const ops: DNCounterOp[] = guaranteeOnly ? ['require_upfront', 'add_termination_clause', 'reduce_duration'] : ['require_upfront', 'increase_payment', 'reduce_duration', 'reduce_scope', 'add_reciprocal', 'remove_term', 'add_payment'];
+  const pairs: Array<[DNCounterOp, DNCounterOp]> = guaranteeOnly ? [] : [['reduce_duration', 'increase_payment'], ['reduce_duration', 'add_payment'], ['reduce_scope', 'increase_payment'], ['require_upfront', 'increase_payment']];
+  const options: Array<{ deal: DiplomaticDeal; size: number; ops: string[]; text: string[]; order: number }> = [];
+  const acceptable = (d: DiplomaticDeal) => { const r = dnRawEvaluate(d, E, world, state); return guaranteeOnly ? dnRatio(r) >= r.threshold && dnGuaranteeNeeded(d, E, C, r) === null : dnRatio(r) >= r.threshold; };
+  ops.forEach((op, i) => { const res = dnApplyOp(deal, op, E, C, world, state, raw); if (res && acceptable(res.deal)) options.push({ deal: res.deal, size: res.size, ops: [op], text: [res.text], order: i }); });
+  if (!options.length) pairs.forEach(([a, b], i) => {
+    const first = dnApplyOp(deal, a, E, C, world, state, raw); if (!first) return;
+    const second = dnApplyOp(first.deal, b, E, C, world, state, dnRawEvaluate(first.deal, E, world, state)); if (!second) return;
+    if (acceptable(second.deal)) options.push({ deal: second.deal, size: first.size + second.size, ops: [a, b], text: [first.text, second.text], order: 10 + i });
+  });
+  if (!options.length) return null;
+  const best = options.sort((a, b) => a.size - b.size || a.order - b.order)[0];
+  const d = best.deal;
+  d.initiatorActorId = E; d.recipientActorIds = [C]; d.negotiationRound = deal.negotiationRound + 1; d.parentProposalId = deal.proposalId;
+  d.status = 'draft'; d.evaluationSnapshot = null; d.history = [...deal.history, { turn: world.turn, kind: 'counter', actorId: E, text: `Counter: ${best.text.join(' and ')}.` }].slice(-12);
+  d.id = dnStableId('deal', [d.initiatorActorId, dealTermsSignature(d), world.turn, d.negotiationRound, d.parentProposalId]);
+  d.proposalId = dnStableId('prop', [d.id]);
+  d.type = classifyDealType(d.terms);
+  return { deal: d, ops: best.ops, summary: best.text.join(' and ') };
+}
+
+function dnGuaranteeNeeded(deal: DiplomaticDeal, E: string, C: string, raw: DNRawEval): string | null {
+  if (raw.betrayal < 0.35) return null;
+  const deferredPay = deal.terms.some(t => t.actorId === C && t.kind === 'pay_cash' && t.timing !== 'on_acceptance');
+  const long = raw.turns > (deal.duration.kind === 'turns' ? 3 : 2) && deal.terms.some(t => t.actorId === C && t.kind !== 'pay_cash');
+  const noClause = !deal.terminationConditions.some(c => c.kind === 'any_violation');
+  if (deferredPay) return 'payment upfront';
+  if (long && noClause) return 'an automatic termination clause';
+  return null;
+}
+
+const DN_EVAL_CACHE = new Map<string, DiplomaticEvaluation>();
+
+/** Deterministic AI evaluation of a proposal from `evaluatorId`'s side, using only what it may know. */
+export function evaluateDiplomaticDeal(deal: DiplomaticDeal, evaluatorId: string, world: DiplomacyWorld, state: DiplomacyState, opts: { allowCounter?: boolean; maxRounds?: number; cacheKey?: string | null } = {}): DiplomaticEvaluation {
+  const E = evaluatorId; const C = dnCounterpart(deal, E);
+  const cacheKey = opts.cacheKey ? `${opts.cacheKey}|${E}|${dealTermsSignature(deal)}|${deal.negotiationRound}|${opts.allowCounter !== false}` : null;
+  if (cacheKey && DN_EVAL_CACHE.has(cacheKey)) return DN_EVAL_CACHE.get(cacheKey)!;
+  const raw = dnRawEvaluate(deal, E, world, state);
+  const ratio = dnRatio(raw);
+  const P = world.actors[E]?.personality || deriveDiplomaticPersonality(null);
+  const maxRounds = opts.maxRounds ?? Math.max(2, DN_LIMITS.rounds + (P.patience - 3));
+  const track = state.tracks[C];
+  const fatigueBlocked = Boolean(track?.blockedUntilTurn && track.blockedUntilTurn >= world.turn);
+  const reasons: string[] = [];
+  let band: DNDecisionBand; let response: DNResponseKind; let counter: DiplomaticEvaluation['counter'] = null; let guarantee: string | null = null;
+  const unsupported = deal.terms.length === 0 || deal.terms.every(t => t.kind === 'threat');
+  if (unsupported) { band = 'reject'; response = 'request_clarification'; reasons.push('The proposal has no concrete terms.'); }
+  else if (raw.victory) { band = 'strong_reject'; response = 'reject'; reasons.push(raw.victory); }
+  else if (fatigueBlocked) { band = 'reject'; response = 'reject'; reasons.push('They are not willing to negotiate again so soon after repeated unreasonable offers.'); }
+  else if (ratio >= raw.threshold) {
+    band = ratio >= raw.threshold * 1.3 ? 'strong_accept' : 'accept';
+    guarantee = dnGuaranteeNeeded(deal, E, C, raw);
+    if (guarantee && opts.allowCounter !== false) {
+      const g = dnGenerateCounter(deal, E, world, state, raw, true);
+      if (g) { counter = g; response = 'request_guarantee'; reasons.push(`Low confidence you will keep the deal — they want ${guarantee}.`); }
+      else response = 'accept';
+    } else response = 'accept';
+  } else if (ratio >= raw.threshold * 0.93 && P.patience >= 3 && deal.negotiationRound <= 1 && !deal.history.some(h => h.kind === 'delayed') && dnGenerateCounter(deal, E, world, state, raw) === null) {
+    band = 'borderline'; response = 'delay'; reasons.push('Close to acceptable — they want to see how the next turn goes.');
+  } else if (ratio >= raw.threshold * 0.55 && opts.allowCounter !== false && deal.negotiationRound < maxRounds) {
+    counter = dnGenerateCounter(deal, E, world, state, raw);
+    band = 'counter'; response = counter ? 'counter' : 'reject';
+    if (!counter) reasons.push('No small change would make this work for them.');
+  } else if (deal.negotiationRound >= maxRounds && ratio >= raw.threshold * 0.55) {
+    band = 'reject'; response = 'reject'; reasons.push('Negotiation has gone on long enough — the gap remains.');
+  } else {
+    band = ratio >= raw.threshold * 0.3 ? 'reject' : 'strong_reject'; response = 'reject';
+    // A pure ask (nothing offered, they pay nothing) gets a price instead of a flat no — when one is affordable.
+    const pureAsk = raw.received === 0 && !deal.terms.some(t => t.actorId === E && t.kind === 'pay_cash') && !deal.terms.some(t => t.actorId === C);
+    if (pureAsk && opts.allowCounter !== false && deal.negotiationRound < maxRounds && P.greed >= 0.75) {
+      const priced = dnApplyOp(deal, 'add_payment', E, C, world, state, raw);
+      const payer = world.actors[C];
+      const amt = priced?.deal.terms.find(t => t.actorId === C && t.kind === 'pay_cash')?.amount || 0;
+      if (priced && (payer?.money === null || payer?.money === undefined || amt <= payer.money * 0.6)) {
+        const r2 = dnRawEvaluate(priced.deal, E, world, state);
+        if (dnRatio(r2) >= r2.threshold) {
+          const d = priced.deal;
+          d.initiatorActorId = E; d.recipientActorIds = [C]; d.negotiationRound = deal.negotiationRound + 1; d.parentProposalId = deal.proposalId; d.status = 'draft'; d.evaluationSnapshot = null;
+          d.history = [...deal.history, { turn: world.turn, kind: 'counter', actorId: E, text: `Counter: ${priced.text}.` }].slice(-12);
+          d.id = dnStableId('deal', [E, dealTermsSignature(d), world.turn, d.negotiationRound, d.parentProposalId]); d.proposalId = dnStableId('prop', [d.id]); d.type = classifyDealType(d.terms);
+          counter = { deal: d, ops: ['add_payment'], summary: priced.text };
+          band = 'counter'; response = 'counter';
+        }
+      }
+    }
+  }
+  const pub = raw.factors.filter(f => f.visibility === 'public');
+  const topGiven = pub.filter(f => f.value < 0).sort((a, b) => a.value - b.value)[0];
+  const topGot = pub.filter(f => f.value > 0).sort((a, b) => b.value - a.value)[0];
+  if (response !== 'accept' && topGiven) reasons.push(`Cost to them: ${topGiven.publicText}.`);
+  if (topGot) reasons.push(`What they get: ${topGot.publicText}.`);
+  pub.filter(f => f.id === 'trust' || f.id === 'reliability' || f.id === 'duration' || f.id === 'reciprocity').forEach(f => reasons.push(f.publicText.charAt(0).toUpperCase() + f.publicText.slice(1) + '.'));
+  const out: DiplomaticEvaluation = {
+    evaluatorId: E, counterpartId: C, dealSignature: dealTermsSignature(deal), receivedValue: raw.received, givenValue: raw.given, utility: raw.received - raw.given * raw.threshold, ratio, threshold: raw.threshold,
+    band, response, betrayalRisk: raw.betrayal, victoryBlock: Boolean(raw.victory), factors: raw.factors, reasons: Array.from(new Set(reasons)).slice(0, 6), counter, guarantee, fatigueBlocked
+  };
+  if (cacheKey) { if (DN_EVAL_CACHE.size > 60) DN_EVAL_CACHE.clear(); DN_EVAL_CACHE.set(cacheKey, out); }
+  return out;
+}
+
+/** Player-facing acceptance outlook — banded, never the hidden threshold or exact numbers. */
+export function estimateDiplomaticOutlook(deal: DiplomaticDeal, recipientId: string, observerWorld: DiplomacyWorld, state: DiplomacyState): { outlook: 'promising' | 'uncertain' | 'unlikely'; text: string; reasons: string[] } {
+  const ev = evaluateDiplomaticDeal(deal, recipientId, observerWorld, state, { allowCounter: false });
+  const r = ev.victoryBlock ? 0 : ev.ratio / ev.threshold;
+  const outlook = r >= 1.1 ? 'promising' : r >= 0.8 ? 'uncertain' : 'unlikely';
+  const text = outlook === 'promising' ? 'Promising — the offer looks attractive to them.' : outlook === 'uncertain' ? (r >= 1 ? 'Uncertain — it could go either way.' : 'Uncertain — the current offer looks slightly too weak.') : 'Unlikely — the offer looks well short of what they would want.';
+  return { outlook, text, reasons: ev.reasons.filter(x => !/^Negotiation has/.test(x)).slice(0, 3) };
+}
+
+// ---- Leverage ----------------------------------------------------------------------------------
+
+export interface DiplomaticLeverageSnapshot { playerId: string; counterpartId: string; label: 'strong' | 'moderate' | 'weak'; score: number; factors: Array<{ label: string; effect: 'helps' | 'hurts' | 'neutral'; text: string }> }
+
+export function buildDiplomaticLeverageSnapshot(playerId: string, counterpartId: string, world: DiplomacyWorld, state: DiplomacyState): DiplomaticLeverageSnapshot {
+  const me = world.actors[playerId]; const them = world.actors[counterpartId];
+  const factors: DiplomaticLeverageSnapshot['factors'] = [];
+  let score = 0;
+  if (me?.money !== null && me?.money !== undefined && them?.money !== null && them?.money !== undefined) {
+    const d = me.money - them.money;
+    if (d > 2000) { score += 1; factors.push({ label: 'Economic strength', effect: 'helps', text: `You have more cash than ${them.name}.` }); }
+    else if (d < -2000) { score -= 1; factors.push({ label: 'Economic strength', effect: 'hurts', text: `${them.name} has more cash than you.` }); }
+    else factors.push({ label: 'Economic strength', effect: 'neutral', text: 'Cash positions are similar.' });
+    if (them.money < 3000) { score += 1; factors.push({ label: 'Their shortage', effect: 'helps', text: `${them.name} is short on cash — financial offers carry extra weight.` }); }
+  } else factors.push({ label: 'Economic strength', effect: 'neutral', text: `${them?.name || 'Their'} finances are hidden by fog of war.` });
+  const pressuredByThem = Object.values(world.regions).filter(r => r.controllerId === playerId && (r.deposits[counterpartId] || 0) > 0).map(r => r.name);
+  const pressuringThem = Object.values(world.regions).filter(r => r.controllerId === counterpartId && (r.deposits[playerId] || 0) > 0).map(r => r.name);
+  if (pressuringThem.length) { score += 1; factors.push({ label: 'Regional pressure', effect: 'helps', text: `You are contesting ${pressuringThem.join(', ')} — relief there is worth something to them.` }); }
+  if (pressuredByThem.length) { score -= 1; factors.push({ label: 'Regional pressure', effect: 'hurts', text: `${them?.name || 'They'} are pressuring ${pressuredByThem.join(', ')}.` }); }
+  const rel = world.relationship(counterpartId, playerId) || DN_DEFAULT_RELATIONSHIP;
+  if (rel.trust >= 60) { score += 1; factors.push({ label: 'Trust', effect: 'helps', text: 'They trust you.' }); } else if (rel.trust <= 40) { score -= 1; factors.push({ label: 'Trust', effect: 'hurts', text: 'They do not trust you much.' }); }
+  const rec = deriveDiplomaticReliability(state, playerId, counterpartId);
+  if (rec.band === 'high') { score += 1; factors.push({ label: 'Your reliability', effect: 'helps', text: `Reliable record: ${rec.evidence.join(', ')}.` }); }
+  if (rec.band === 'low') { score -= 1; factors.push({ label: 'Your reliability', effect: 'hurts', text: `Weak record: ${rec.evidence.join(', ')}.` }); }
+  if (world.turnsLeft <= 5) factors.push({ label: 'Deadline', effect: 'neutral', text: `Only ${world.turnsLeft} turns remain — long deals are worth less and regions more.` });
+  const label = score >= 2 ? 'strong' : score <= -1 ? 'weak' : 'moderate';
+  return { playerId, counterpartId, label, score, factors: factors.slice(0, 6) };
+}
+
+// ---- AI-initiated proposals ---------------------------------------------------------------------
+
+export interface DNAiProposalCandidate { deal: DiplomaticDeal; kind: string; utility: number; acceptance: number; reason: string }
+
+/** Bounded (≤3) strategy-grounded candidates; returns the best one only when it is worth sending and cooldowns allow. */
+export function generateAiDiplomaticProposals(E: string, C: string, world: DiplomacyWorld, state: DiplomacyState): { best: DNAiProposalCandidate | null; candidates: DNAiProposalCandidate[]; blocked: string | null } {
+  const me = world.actors[E]; const them = world.actors[C];
+  if (!me || !them) return { best: null, candidates: [], blocked: 'unknown actor' };
+  const track = state.tracks[C];
+  const cooldown = DN_LIMITS.aiProposalCooldownTurns + (track?.dismissals || 0) * 2;
+  if (track?.lastAiProposalTurn !== null && track?.lastAiProposalTurn !== undefined && world.turn - track.lastAiProposalTurn < cooldown) return { best: null, candidates: [], blocked: 'cooldown' };
+  if (state.deals.some(d => d.initiatorActorId === E && d.participants.includes(C) && (d.status === 'sent' || d.status === 'under_review'))) return { best: null, candidates: [], blocked: 'proposal pending' };
+  const P = me.personality;
+  const turns = Math.max(2, Math.min(P.horizon, 3));
+  const out: DNAiProposalCandidate[] = [];
+  const add = (kind: string, terms: DiplomaticTerm[], duration: DNDuration, reason: string, amendsDealId: string | null = null) => {
+    if (out.length >= DN_LIMITS.aiProposalCandidates) return;
+    const deal = createDiplomaticDeal({ initiatorActorId: E, recipientActorIds: [C], terms, duration, turn: world.turn, source: 'ai', amendsDealId, seq: state.revision + out.length });
+    if (!validateDiplomaticDeal(deal, { ...world, viewerId: E }, state.deals).ok) return;
+    const mine = evaluateDiplomaticDeal(deal, E, world, state, { allowCounter: false });
+    const theirs = evaluateDiplomaticDeal(deal, C, { ...world, viewerId: E }, state, { allowCounter: false });
+    const acceptance = theirs.band === 'strong_accept' || theirs.band === 'accept' ? 1 : theirs.band === 'borderline' || theirs.band === 'counter' ? 0.5 : 0.1;
+    deal.strategicSummary = reason;
+    out.push({ deal, kind, utility: Math.round(mine.receivedValue - mine.givenValue), acceptance, reason });
+  };
+  const myHeld = Object.values(world.regions).filter(r => r.controllerId === E).map(r => ({ r, p: dnPressure(world, E, C, r.code) })).sort((a, b) => b.p - a.p || a.r.code.localeCompare(b.r.code));
+  const theirHeld = Object.values(world.regions).filter(r => r.controllerId === C).map(r => ({ r, s: diplomaticRegionStake(world, E, r.code).stake })).sort((a, b) => a.s - b.s || a.r.code.localeCompare(b.r.code));
+  // 1. Mutual ceasefire: they pressure a region I hold, and I care little about one of theirs.
+  if (myHeld[0] && myHeld[0].p >= 0.5 && theirHeld[0] && theirHeld[0].s <= 0.45 && P.key !== 'aggressive') {
+    add('ceasefire', [makeDiplomaticTerm({ actorId: E, kind: 'do_not_challenge_region', regionId: theirHeld[0].r.code }), makeDiplomaticTerm({ actorId: C, kind: 'do_not_challenge_region', regionId: myHeld[0].r.code })], { kind: 'turns', turns }, `${them.name} is pressuring ${myHeld[0].r.name}; ${theirHeld[0].r.name} is a low priority.`);
+  }
+  // 2. Cash for withdrawal: short on cash, and pressuring one of theirs I don't really need.
+  const pressuring = Object.values(world.regions).filter(r => r.controllerId === C && (r.deposits[E] || 0) > 0 && diplomaticRegionStake(world, E, r.code).stake <= 0.5).sort((a, b) => a.code.localeCompare(b.code))[0];
+  if (pressuring && (me.money !== null && me.money < 4000 || P.greed >= 1.1)) {
+    const price = dnRoundTo(Math.max(1000, dnRegionWorth(world, pressuring.code) * DN_REGION_RATE * 0.5 * turns));
+    add('cash_for_withdrawal', [makeDiplomaticTerm({ actorId: E, kind: 'avoid_region', regionId: pressuring.code }), makeDiplomaticTerm({ actorId: C, kind: 'pay_cash', targetActorId: E, amount: price, timing: 'on_acceptance' })], { kind: 'turns', turns }, `Short-term cash is worth more than pressure on ${pressuring.name}.`);
+  }
+  // 3. Extension of a compliant agreement about to expire.
+  const expiring = state.deals.find(d => d.status === 'active' && d.participants.includes(E) && d.participants.includes(C) && d.expirationTurn !== null && d.expirationTurn - world.turn <= 1 && d.compliance === 'compliant');
+  if (expiring) {
+    add('extension', expiring.terms.map(t => makeDiplomaticTerm({ ...t, id: undefined, status: 'pending', startTurn: null, endTurn: null })).filter(t => t.kind !== 'pay_cash'), { kind: 'until_turn', turn: (expiring.expirationTurn || world.turn) + turns }, 'The current agreement has worked; extending it keeps the peace.', expiring.id);
+  }
+  // 4. Mutual no-sabotage after sabotage experienced.
+  if (world.hostileHistory(E, C).sabotage > 0 && P.key !== 'aggressive') {
+    add('no_sabotage', [makeDiplomaticTerm({ actorId: E, kind: 'do_not_sabotage', targetActorId: C }), makeDiplomaticTerm({ actorId: C, kind: 'do_not_sabotage', targetActorId: E })], { kind: 'turns', turns: turns + 1 }, 'Sabotage is hurting both sides.');
+  }
+  const ranked = out.slice().sort((a, b) => b.utility * b.acceptance - a.utility * a.acceptance || a.kind.localeCompare(b.kind));
+  const best = ranked.find(c => c.utility > 0 && c.acceptance >= 0.5) || null;
+  return { best, candidates: ranked, blocked: best ? null : 'nothing worth proposing' };
+}
+
+
+// ---- Lifecycle ---------------------------------------------------------------------------------
+
+function dnEvent(state: DiplomacyState, e: Omit<DNEvent, 'id'>): DNEvent {
+  return { ...e, id: dnStableId('dne', [e.kind, e.dealId, e.actorId, e.turn, state.events.length, state.revision]) };
+}
+
+function dnPush(state: DiplomacyState, patch: { deals?: DiplomaticDeal[]; history?: DiplomaticDeal[]; events?: DNEvent[]; inbox?: DNInboxItem[]; tracks?: Record<string, DNNegotiationTrack> }): DiplomacyState {
+  return {
+    ...state,
+    revision: state.revision + 1,
+    deals: (patch.deals ?? state.deals).slice(-DN_LIMITS.activeDeals),
+    history: (patch.history ?? state.history).slice(-DN_LIMITS.history),
+    events: (patch.events ?? state.events).slice(-DN_LIMITS.events),
+    inbox: (patch.inbox ?? state.inbox).slice(-DN_LIMITS.inbox),
+    tracks: patch.tracks ?? state.tracks
+  };
+}
+
+function dnTrack(state: DiplomacyState, id: string): DNNegotiationTrack {
+  return state.tracks[id] || { counterpartId: id, fatigue: 0, blockedUntilTurn: null, lastProposalTurn: null, lastAiProposalTurn: null, dismissals: 0, unreasonableCount: 0 };
+}
+
+function dnInbox(state: DiplomacyState, item: Omit<DNInboxItem, 'id' | 'status'>): DNInboxItem {
+  return { ...item, id: dnStableId('dni', [item.kind, item.dealId, item.turn, item.text.slice(0, 40), state.revision]), status: 'unread' };
+}
+
+function dnClose(deal: DiplomaticDeal, status: DNDealStatus, turn: number, reason: string, compliance?: DNCompliance): DiplomaticDeal {
+  return { ...deal, status, closedReason: reason, compliance: compliance || deal.compliance, history: [...deal.history, { turn, kind: status, actorId: null, text: reason }].slice(-12) };
+}
+
+/** Moves a deal between the open list and history (history keeps bounded closed records). */
+function dnReplaceDeal(state: DiplomacyState, deal: DiplomaticDeal): { deals: DiplomaticDeal[]; history: DiplomaticDeal[] } {
+  const open = ['sent', 'under_review', 'countered', 'accepted', 'active'].includes(deal.status);
+  const deals = state.deals.filter(d => d.id !== deal.id);
+  const history = state.history.filter(d => d.id !== deal.id);
+  return open ? { deals: [...deals, deal], history } : { deals, history: [...history, deal] };
+}
+
+/** The initiator sends a previewed draft. Nothing is executed. */
+export function sendDiplomaticProposal(state: DiplomacyState, deal: DiplomaticDeal, turn: number, names: Record<string, string> = {}): DiplomacyState {
+  const sent: DiplomaticDeal = { ...deal, status: 'sent', sentTurn: turn, history: [...deal.history, { turn, kind: 'sent', actorId: deal.initiatorActorId, text: 'Proposal sent.' }].slice(-12) };
+  const cp = deal.recipientActorIds[0];
+  const tracks = { ...state.tracks, [cp]: { ...dnTrack(state, cp), lastProposalTurn: turn } };
+  const { deals, history } = dnReplaceDeal(state, sent);
+  const ev = dnEvent(state, { turn, kind: deal.source === 'ai' ? 'ai_proposal' : 'proposal_sent', dealId: sent.id, actorId: deal.initiatorActorId, counterpartId: cp, summary: `${names[deal.initiatorActorId] || deal.initiatorActorId} proposed: ${describeDealShort(sent, names)}`, snapshot: sent });
+  return dnPush(state, { deals, history, events: [...state.events, ev], tracks });
+}
+
+/** Records the recipient's structured response. Accept → 'accepted' (activation needs obligations to succeed). */
+export function applyDiplomaticResponse(state: DiplomacyState, deal: DiplomaticDeal, ev: DiplomaticEvaluation, turn: number, names: Record<string, string> = {}): { state: DiplomacyState; counter: DiplomaticDeal | null } {
+  const responder = ev.evaluatorId; const other = ev.counterpartId;
+  const snap = { band: ev.band, response: ev.response, ratio: Math.round((ev.ratio / Math.max(0.01, ev.threshold)) * 100) / 100, utility: 0, reasons: ev.reasons };
+  let updated: DiplomaticDeal = { ...deal, respondedTurn: turn, evaluationSnapshot: snap };
+  let counter: DiplomaticDeal | null = null;
+  const track = { ...dnTrack(state, other) };
+  const unreasonable = !ev.victoryBlock && ev.ratio < ev.threshold * 0.35 && ev.response === 'reject';
+  if (unreasonable) {
+    track.unreasonableCount += 1; track.fatigue += 1;
+    const patience = 3;
+    if (track.fatigue >= patience) { track.blockedUntilTurn = turn + 2; track.fatigue = 1; }
+  } else if (ev.response === 'accept') track.fatigue = Math.max(0, track.fatigue - 1);
+  const events = [...state.events];
+  const inbox = [...state.inbox];
+  const nm = (id: string) => names[id] || id;
+  switch (ev.response) {
+    case 'accept':
+      updated = { ...updated, status: 'accepted', history: [...updated.history, { turn, kind: 'accepted', actorId: responder, text: 'Accepted.' }].slice(-12) };
+      events.push(dnEvent(state, { turn, kind: 'accepted', dealId: deal.id, actorId: responder, counterpartId: other, summary: `${nm(responder)} accepted: ${describeDealShort(deal, names)}`, snapshot: updated }));
+      break;
+    case 'counter':
+    case 'request_guarantee':
+      updated = { ...updated, status: 'countered', history: [...updated.history, { turn, kind: 'countered', actorId: responder, text: ev.counter ? `Countered: ${ev.counter.summary}.` : 'Countered.' }].slice(-12) };
+      if (ev.counter) {
+        counter = { ...ev.counter.deal, status: 'under_review', sentTurn: turn, source: responder === 'player' ? 'player' : 'ai', evaluationSnapshot: snap };
+        events.push(dnEvent(state, { turn, kind: ev.response === 'counter' ? 'counteroffer' : 'guarantee_requested', dealId: counter.id, actorId: responder, counterpartId: other, summary: `${nm(responder)} ${ev.response === 'counter' ? 'countered' : 'asked for a guarantee'}: ${ev.counter.summary}.`, snapshot: counter }));
+        inbox.push(dnInbox(state, { kind: 'counteroffer', dealId: counter.id, fromActorId: responder, turn, text: `${nm(responder)} countered: ${describeDealShort(counter, names)}` }));
+      }
+      break;
+    case 'delay':
+      updated = { ...updated, status: 'under_review', history: [...updated.history, { turn, kind: 'delayed', actorId: responder, text: 'Will decide next turn.' }].slice(-12) };
+      events.push(dnEvent(state, { turn, kind: 'delayed', dealId: deal.id, actorId: responder, counterpartId: other, summary: `${nm(responder)} will decide next turn.`, snapshot: updated }));
+      break;
+    case 'request_clarification':
+      updated = { ...updated, status: 'rejected', closedReason: 'needs clarification', history: [...updated.history, { turn, kind: 'clarify', actorId: responder, text: 'Asked for clearer terms.' }].slice(-12) };
+      break;
+    default:
+      updated = { ...updated, status: 'rejected', closedReason: `rejected by ${nm(responder)}`, history: [...updated.history, { turn, kind: 'rejected', actorId: responder, text: 'Rejected.' }].slice(-12) };
+      events.push(dnEvent(state, { turn, kind: 'rejected', dealId: deal.id, actorId: responder, counterpartId: other, summary: `${nm(responder)} rejected: ${describeDealShort(deal, names)}`, snapshot: updated }));
+  }
+  let next = { ...state, events, inbox, tracks: { ...state.tracks, [other]: track } };
+  const moved = dnReplaceDeal(next, updated);
+  next = { ...next, ...moved };
+  if (counter) { const m2 = dnReplaceDeal(next, counter); next = { ...next, ...m2 }; }
+  return { state: dnPush(next, {}), counter };
+}
+
+export interface DNObligation {
+  dealId: string;
+  termId: string;
+  payerId: string;
+  payeeId: string;
+  kind: 'pay_cash' | 'transfer_resource';
+  amount: number;
+  resourceId: string | null;
+  quantity: number;
+  source: 'self' | 'treasury';
+  dueTurn: number;
+  /** The canonical game action that performs this obligation (executed by the game, never here). */
+  action: GameAction;
+}
+
+export function buildCanonicalObligationAction(ob: Omit<DNObligation, 'action'>): GameAction {
+  if (ob.kind === 'pay_cash') return { type: 'transfer_cash', actorId: ob.payerId, targetActorId: ob.payeeId, price: ob.amount, parameters: { amount: ob.amount, targetActorId: ob.payeeId, reason: 'diplomatic_payment', dealId: ob.dealId, termId: ob.termId, source: ob.source } };
+  return { type: 'transfer_resource', actorId: ob.payerId, targetActorId: ob.payeeId, item: ob.resourceId || undefined, parameters: { resource: ob.resourceId, quantity: ob.quantity, targetActorId: ob.payeeId, reason: 'diplomatic_transfer', dealId: ob.dealId, termId: ob.termId } };
+}
+
+/** Pre-execution validation of an obligation — no negative money, ever. */
+export function validateDiplomaticObligation(ob: DNObligation, payer: { money: number; inventory?: Record<string, number> } | null, treasuryAvailable: number | null = null): { ok: boolean; reason: string | null } {
+  if (!payer) return { ok: false, reason: 'Payer not found.' };
+  if (ob.kind === 'pay_cash') {
+    if (ob.source === 'treasury') return treasuryAvailable !== null && treasuryAvailable >= ob.amount ? { ok: true, reason: null } : { ok: false, reason: 'The Treasury cannot cover this payment.' };
+    return payer.money >= ob.amount ? { ok: true, reason: null } : { ok: false, reason: `Needs $${ob.amount.toLocaleString()} but only $${Math.max(0, Math.floor(payer.money)).toLocaleString()} is available.` };
+  }
+  const have = payer.inventory?.[ob.resourceId || ''] || 0;
+  return have >= ob.quantity ? { ok: true, reason: null } : { ok: false, reason: `Needs ${ob.quantity} ${ob.resourceId} (has ${have}).` };
+}
+
+function dnObligationsFor(deal: DiplomaticDeal, turn: number, phase: 'acceptance' | 'turn' | 'completion'): DNObligation[] {
+  const out: DNObligation[] = [];
+  deal.terms.forEach(t => {
+    if (t.kind !== 'pay_cash' && t.kind !== 'transfer_resource') return;
+    if (t.status === 'satisfied' || t.status === 'failed') return;
+    const payee = t.targetActorId || deal.participants.find(p => p !== t.actorId) || '';
+    let due = false;
+    if (phase === 'acceptance') due = t.timing === 'on_acceptance' || !t.timing;
+    else if (phase === 'turn') due = (t.timing === 'next_turn' && turn >= (deal.startTurn ?? turn) + 1) || (t.timing === 'per_turn' && turn >= (deal.startTurn ?? turn));
+    else due = t.timing === 'on_completion';
+    if (!due) return;
+    const base = { dealId: deal.id, termId: t.id, payerId: t.actorId, payeeId: payee, kind: t.kind as 'pay_cash' | 'transfer_resource', amount: t.amount || 0, resourceId: t.resourceId, quantity: t.quantity || 0, source: t.source, dueTurn: turn };
+    out.push({ ...base, action: buildCanonicalObligationAction(base) });
+  });
+  return out;
+}
+
+/** Accepted deal → immediate obligations. The deal becomes active only once they all succeed (confirmDealActivation). */
+export function beginDealActivation(state: DiplomacyState, dealId: string, turn: number, controllers: Record<string, string | null>): { state: DiplomacyState; obligations: DNObligation[] } {
+  const deal = state.deals.find(d => d.id === dealId);
+  if (!deal || deal.status !== 'accepted') return { state, obligations: [] };
+  const w = resolveDealWindow(deal.duration, turn);
+  const activated: DiplomaticDeal = { ...deal, startTurn: w.startTurn, expirationTurn: deal.duration.kind === 'until_turn' ? deal.expirationTurn : w.expirationTurn, terms: deal.terms.map(t => ({ ...t, startTurn: w.startTurn, endTurn: deal.duration.kind === 'until_turn' ? deal.expirationTurn : w.expirationTurn })), baselineControllers: { ...controllers } };
+  const { deals, history } = dnReplaceDeal(state, activated);
+  return { state: { ...state, deals, history }, obligations: dnObligationsFor(activated, turn, 'acceptance') };
+}
+
+export function confirmDealActivation(state: DiplomacyState, dealId: string, results: Array<{ termId: string; success: boolean; reason?: string | null }>, turn: number, names: Record<string, string> = {}): { state: DiplomacyState; activated: boolean; consequences: DNConsequence[] } {
+  const deal = state.deals.find(d => d.id === dealId);
+  if (!deal) return { state, activated: false, consequences: [] };
+  const failed = results.filter(r => !r.success);
+  const events = [...state.events];
+  if (failed.length) {
+    const closed = dnClose({ ...deal, terms: deal.terms.map(t => failed.some(f => f.termId === t.id) ? { ...t, status: 'failed' as const } : t) }, 'terminated', turn, `activation failed: ${failed[0].reason || 'an immediate obligation could not be completed'}`, 'expired');
+    const moved = dnReplaceDeal(state, closed);
+    events.push(dnEvent(state, { turn, kind: 'activation_failed', dealId, actorId: null, counterpartId: null, summary: `Agreement not activated — ${failed[0].reason || 'an immediate obligation failed'}.`, snapshot: closed }));
+    const payer = deal.terms.find(t => t.id === failed[0].termId)?.actorId || null;
+    const cons: DNConsequence[] = payer ? [dnConsequence('activation_failed', closed, payer, 0.2, names)] : [];
+    return { state: dnPush({ ...state, ...moved, events }, {}), activated: false, consequences: cons };
+  }
+  const active: DiplomaticDeal = { ...deal, status: 'active', compliance: 'compliant', terms: deal.terms.map(t => results.some(r => r.termId === t.id) ? { ...t, status: 'satisfied' as const } : (t.kind === 'threat' ? { ...t, status: 'inactive' as const } : { ...t, status: t.condition?.effect === 'activate' ? 'pending' as const : 'active' as const })), history: [...deal.history, { turn, kind: 'activated', actorId: null, text: 'Agreement active.' }].slice(-12) };
+  let next = { ...state, ...dnReplaceDeal(state, active) };
+  // Renegotiation: the amended agreement is superseded only now that both parties accepted the change.
+  if (deal.amendsDealId) {
+    const old = next.deals.find(d => d.id === deal.amendsDealId);
+    if (old) { next = { ...next, ...dnReplaceDeal(next, dnClose(old, 'superseded', turn, `superseded by an amended agreement`, old.compliance)) }; }
+  }
+  events.push(dnEvent(state, { turn, kind: 'activated', dealId, actorId: null, counterpartId: null, summary: `Agreement active: ${describeDealShort(active, names)}`, snapshot: active }));
+  results.filter(r => r.success).forEach(r => { const t = deal.terms.find(x => x.id === r.termId); if (t) events.push(dnEvent(state, { turn, kind: 'payment', dealId, actorId: t.actorId, counterpartId: t.targetActorId, summary: `${names[t.actorId] || t.actorId} paid ${t.kind === 'pay_cash' ? `$${(t.amount || 0).toLocaleString()}` : `${t.quantity} ${t.resourceId}`} under the agreement.` })); });
+  return { state: dnPush({ ...next, events }, {}), activated: true, consequences: [] };
+}
+
+// ---- Compliance --------------------------------------------------------------------------------
+
+export interface DNActionProbe { actorId: string; actionType: string; regionId?: string | null; targetActorId?: string | null; amount?: number | null }
+export interface DNViolation { deal: DiplomaticDeal; term: DiplomaticTerm; text: string }
+
+/** Stable key for a confirmed pre-violation choice (same action category + target + turn). */
+export function diplomaticProbeKey(probe: DNActionProbe, turn: number): string {
+  return `${dnActionCategory(probe.actionType) || probe.actionType}:${String(probe.regionId || probe.targetActorId || '').toUpperCase()}:${turn}`;
+}
+
+function dnActionCategory(type: string): 'pressure' | 'presence' | 'sabotage' | null {
+  const t = String(type || '').toLowerCase();
+  if (/sabotag/.test(t)) return 'sabotage';
+  if (/deposit|invest|claim|contest|region_control|take_region/.test(t)) return 'pressure';
+  if (/travel|move/.test(t)) return 'presence';
+  return null;
+}
+
+function dnTermActiveAt(t: DiplomaticTerm, deal: DiplomaticDeal, turn: number): boolean {
+  if (t.status === 'inactive' || t.status === 'satisfied' || t.status === 'failed') return false;
+  if (t.condition?.effect === 'activate' && t.status !== 'active') return false;
+  const s = t.startTurn ?? deal.startTurn ?? -Infinity; const e = t.endTurn ?? deal.expirationTurn ?? Infinity;
+  return turn >= s && turn <= e;
+}
+
+/** Which active promises an action would break (or broke). Pure — used before AND after execution. */
+export function checkDiplomaticActionCompliance(state: DiplomacyState, probe: DNActionProbe, controllers: Record<string, string | null>, turn: number, names: Record<string, string> = {}): DNViolation[] {
+  const cat = dnActionCategory(probe.actionType);
+  if (!cat) return [];
+  const out: DNViolation[] = [];
+  const region = probe.regionId ? String(probe.regionId).toUpperCase() : null;
+  const nm = (id: string | null | undefined) => (id ? names[id] || id : '');
+  state.deals.filter(d => d.status === 'active' && d.participants.includes(probe.actorId)).forEach(deal => {
+    const others = deal.participants.filter(p => p !== probe.actorId);
+    deal.terms.filter(t => t.actorId === probe.actorId && dnTermActiveAt(t, deal, turn)).forEach(t => {
+      let hit: string | null = null;
+      if (t.kind === 'avoid_region' && region === t.regionId && (cat === 'pressure' || (cat === 'presence' && t.scope === 'presence'))) hit = `you promised ${others.map(nm).join(', ')} to stay out of ${t.regionId}`;
+      if (t.kind === 'do_not_challenge_region' && region === t.regionId && cat === 'pressure' && others.includes(controllers[t.regionId || ''] || '')) hit = `you promised not to challenge ${nm(controllers[t.regionId || ''])} in ${t.regionId}`;
+      if (t.kind === 'do_not_sabotage' && cat === 'sabotage' && (!t.targetActorId || t.targetActorId === probe.targetActorId)) hit = `you promised not to sabotage ${nm(t.targetActorId || others[0])}`;
+      if (t.kind === 'non_aggression' && (!t.targetActorId || others.includes(t.targetActorId))) {
+        const scope = t.scope || 'all'; const target = t.targetActorId || others[0];
+        if (cat === 'sabotage' && (scope === 'all' || scope === 'sabotage') && probe.targetActorId === target) hit = `you agreed to non-aggression with ${nm(target)}`;
+        if (cat === 'pressure' && (scope === 'all' || scope === 'regions') && region && controllers[region] === target) hit = `you agreed not to contest ${nm(target)}'s regions`;
+      }
+      if (hit) out.push({ deal, term: t, text: hit.replace(/^you /, probe.actorId === 'player' ? 'you ' : `${nm(probe.actorId)} `).replace(/\byou promised\b/, probe.actorId === 'player' ? 'you promised' : 'promised') });
+    });
+  });
+  return out;
+}
+
+export interface DNConsequence {
+  kind: 'violation' | 'completion' | 'withdrawal' | 'mutual_termination' | 'activation_failed' | 'match_end';
+  dealId: string;
+  /** Whose behaviour the consequence is about. */
+  actorId: string;
+  /** Actors whose AI Memory updates (participants + observers who can see the event). */
+  observerIds: string[];
+  significance: number;
+  deltas: { trust: number; reliability: number; grievance: number; gratitude: number; rivalry: number };
+  summary: string;
+}
+
+/** 0..1 — how much a deal actually mattered (value at stake × duration × sacrifice). Anti-exploit input. */
+export function computeDiplomaticSignificance(deal: DiplomaticDeal): number {
+  const cash = deal.terms.filter(t => t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0) * (t.timing === 'per_turn' ? 2 : 1), 0);
+  const regional = deal.terms.filter(t => t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region').length;
+  const broad = deal.terms.filter(t => t.kind === 'non_aggression').length;
+  const turns = deal.expirationTurn !== null && deal.startTurn !== null ? deal.expirationTurn - deal.startTurn + 1 : 4;
+  const stake = Math.min(1, cash / 8000 + regional * 0.22 + broad * 0.3 + deal.terms.filter(t => t.kind === 'do_not_sabotage').length * 0.1);
+  const length = Math.min(1, turns / 3);
+  return Math.round(Math.max(0, Math.min(1, stake * length)) * 100) / 100;
+}
+
+function dnConsequence(kind: DNConsequence['kind'], deal: DiplomaticDeal, actorId: string, significance: number, names: Record<string, string>, repeatFactor = 1): DNConsequence {
+  const s = significance;
+  const nm = (id: string) => names[id] || id;
+  const observerIds = deal.participants.filter(p => p !== actorId);
+  switch (kind) {
+    case 'violation': return { kind, dealId: deal.id, actorId, observerIds, significance: s, deltas: { trust: -Math.round(8 + 12 * s), reliability: -Math.round(10 + 10 * s), grievance: Math.round(10 + 10 * s), gratitude: -Math.round(4 * s), rivalry: Math.round(4 + 6 * s) }, summary: `${nm(actorId)} broke the agreement.` };
+    case 'completion': {
+      const f = repeatFactor;
+      return { kind, dealId: deal.id, actorId, observerIds, significance: s, deltas: { trust: Math.round((1 + 6 * s) * f), reliability: Math.round((2 + 6 * s) * f), grievance: -Math.round(3 * s * f), gratitude: Math.round(3 * s * f), rivalry: -Math.round(3 * s * f) }, summary: `${nm(actorId)} kept the agreement to the end.` };
+    }
+    case 'withdrawal': return { kind, dealId: deal.id, actorId, observerIds, significance: s, deltas: { trust: -Math.round(3 + 4 * s), reliability: -Math.round(3 + 3 * s), grievance: Math.round(2 + 3 * s), gratitude: 0, rivalry: 1 }, summary: `${nm(actorId)} withdrew from the agreement early.` };
+    case 'activation_failed': return { kind, dealId: deal.id, actorId, observerIds, significance: s, deltas: { trust: -2, reliability: -3, grievance: 1, gratitude: 0, rivalry: 0 }, summary: `${nm(actorId)} could not complete an immediate obligation.` };
+    default: return { kind, dealId: deal.id, actorId, observerIds, significance: s, deltas: { trust: 0, reliability: 0, grievance: 0, gratitude: 0, rivalry: 0 }, summary: 'Agreement closed without consequences.' };
+  }
+}
+
+/** Marks a deal violated (the action itself already ran canonically). Returns the relationship consequence. */
+export function applyDiplomaticViolation(state: DiplomacyState, dealId: string, actorId: string, reason: string, turn: number, names: Record<string, string> = {}, explanation: string | null = null): { state: DiplomacyState; consequence: DNConsequence | null } {
+  const deal = state.deals.find(d => d.id === dealId && d.status === 'active');
+  if (!deal) return { state, consequence: null };
+  const s = computeDiplomaticSignificance(deal);
+  const violated: DiplomaticDeal = { ...dnClose(deal, 'violated', turn, `violated by ${names[actorId] || actorId}`, 'violated'), violatedBy: actorId, violationReason: explanation || reason, history: [...deal.history, { turn, kind: 'violation', actorId, text: explanation || reason }].slice(-12) };
+  const moved = dnReplaceDeal(state, violated);
+  const cons = dnConsequence('violation', violated, actorId, s, names);
+  const events = [...state.events, dnEvent(state, { turn, kind: 'violated', dealId, actorId, counterpartId: cons.observerIds[0] || null, summary: explanation ? `${names[actorId] || actorId} broke the agreement: ${explanation}` : `${names[actorId] || actorId} broke the agreement (${reason}).`, snapshot: violated, delta: cons.deltas as any })];
+  const inbox = [...state.inbox, dnInbox(state, { kind: 'violated', dealId, fromActorId: actorId, turn, text: explanation ? `${names[actorId] || actorId} broke the agreement: ${explanation}` : `Agreement violated: ${reason}.` })];
+  return { state: dnPush({ ...state, ...moved, events, inbox }, {}), consequence: cons };
+}
+
+/** Unilateral withdrawal (trust cost) or mutual termination (no cost). */
+export function terminateDiplomaticDeal(state: DiplomacyState, dealId: string, byActorId: string, mutual: boolean, turn: number, names: Record<string, string> = {}): { state: DiplomacyState; consequence: DNConsequence | null } {
+  const deal = state.deals.find(d => d.id === dealId && (d.status === 'active' || d.status === 'accepted'));
+  if (!deal) return { state, consequence: null };
+  const closed = dnClose(deal, 'terminated', turn, mutual ? 'mutual termination' : `withdrawn:${byActorId}`, deal.compliance);
+  const moved = dnReplaceDeal(state, closed);
+  const cons = mutual ? null : dnConsequence('withdrawal', closed, byActorId, computeDiplomaticSignificance(deal), names);
+  const events = [...state.events, dnEvent(state, { turn, kind: mutual ? 'terminated' : 'withdrawn', dealId, actorId: byActorId, counterpartId: deal.participants.find(p => p !== byActorId) || null, summary: mutual ? `Agreement ended by mutual consent.` : `${names[byActorId] || byActorId} withdrew from the agreement.`, snapshot: closed, delta: cons ? cons.deltas as any : null })];
+  return { state: dnPush({ ...state, ...moved, events }, {}), consequence: cons };
+}
+
+export function withdrawDiplomaticProposal(state: DiplomacyState, dealId: string, turn: number): DiplomacyState {
+  const deal = state.deals.find(d => d.id === dealId && (d.status === 'sent' || d.status === 'under_review' || d.status === 'countered'));
+  if (!deal) return state;
+  return dnPush({ ...state, ...dnReplaceDeal(state, dnClose(deal, 'withdrawn', turn, 'proposal withdrawn')) }, {});
+}
+
+export function dismissDiplomaticProposal(state: DiplomacyState, dealId: string, turn: number, byActorId: string, names: Record<string, string> = {}): DiplomacyState {
+  const deal = state.deals.find(d => d.id === dealId && (d.status === 'under_review' || d.status === 'sent'));
+  if (!deal) return state;
+  const from = deal.initiatorActorId;
+  const tracks = { ...state.tracks, [byActorId === 'player' ? from : byActorId]: { ...dnTrack(state, byActorId === 'player' ? from : byActorId), dismissals: Math.min(10, dnTrack(state, byActorId === 'player' ? from : byActorId).dismissals + 1) } };
+  const closed = dnClose(deal, 'rejected', turn, `rejected by ${names[byActorId] || byActorId}`);
+  const events = [...state.events, dnEvent(state, { turn, kind: 'rejected', dealId, actorId: byActorId, counterpartId: from, summary: `${names[byActorId] || byActorId} rejected ${names[from] || from}'s proposal.`, snapshot: closed })];
+  return dnPush({ ...state, ...dnReplaceDeal(state, closed), events, tracks, inbox: state.inbox.map(i => i.dealId === dealId ? { ...i, status: 'resolved' as const } : i) }, {});
+}
+
+// ---- Turn processing ----------------------------------------------------------------------------
+
+export interface DNTurnInput {
+  turn: number;
+  controllers: Record<string, string | null>;
+  cash: Record<string, number | null>;
+  /** Third-party deposits observed since the last turn (for region_attacked conditions). */
+  attacks?: Array<{ regionId: string; byActorId: string }>;
+  sabotageBetween?: Array<{ actorId: string; targetActorId: string }>;
+  matchEnded?: boolean;
+}
+
+/**
+ * Deterministic, idempotent per turn: expiration/completion, termination conditions, conditional activation,
+ * due obligations (returned for canonical execution), expiring notices and fatigue decay.
+ */
+export function advanceDiplomacyTurn(state: DiplomacyState, input: DNTurnInput, names: Record<string, string> = {}): { state: DiplomacyState; consequences: DNConsequence[]; obligations: DNObligation[]; reevaluate: string[] } {
+  if (state.lastProcessedTurn !== null && state.lastProcessedTurn >= input.turn && !input.matchEnded) return { state, consequences: [], obligations: [], reevaluate: [] };
+  let next: DiplomacyState = { ...state, lastProcessedTurn: input.turn };
+  const consequences: DNConsequence[] = [];
+  const obligations: DNObligation[] = [];
+  const reevaluate: string[] = [];
+  const events = [...next.events]; const inbox = [...next.inbox];
+  const recent = next.recentCompletions.filter(c => input.turn - c.turn <= 8);
+  next.deals.slice().forEach(deal => {
+    if (deal.status === 'under_review' && deal.history.some(h => h.kind === 'delayed') && deal.initiatorActorId === 'player') reevaluate.push(deal.id);
+    if (deal.status !== 'active') {
+      // Unanswered proposals lapse after 2 turns.
+      if ((deal.status === 'sent' || deal.status === 'under_review') && deal.sentTurn !== null && input.turn - deal.sentTurn > 2) {
+        const lapsed = dnClose(deal, 'expired', input.turn, 'proposal lapsed without an answer');
+        next = { ...next, ...dnReplaceDeal(next, lapsed) };
+      }
+      return;
+    }
+    const nm = (id: string) => names[id] || id;
+    if (input.matchEnded) {
+      const closed = dnClose(deal, 'completed', input.turn, 'match ended', deal.compliance === 'violated' ? 'violated' : 'completed');
+      next = { ...next, ...dnReplaceDeal(next, closed) };
+      events.push(dnEvent(next, { turn: input.turn, kind: 'match_end', dealId: deal.id, actorId: null, counterpartId: null, summary: `Match ended — ${describeDealShort(deal, names)} closed ${deal.compliance === 'compliant' ? 'with every term kept' : 'as irrelevant'}.`, snapshot: closed }));
+      return;
+    }
+    // Termination conditions.
+    const baseline: Record<string, string | null> = deal.baselineControllers || {};
+    const fired = deal.terminationConditions.find(c =>
+      (c.kind === 'region_control_changes' && c.regionId && baseline[c.regionId] !== undefined && input.controllers[c.regionId] !== baseline[c.regionId]) ||
+      (c.kind === 'region_control_gained' && c.regionId && c.actorId && input.controllers[c.regionId] === c.actorId && baseline[c.regionId] !== c.actorId) ||
+      (c.kind === 'any_sabotage' && (input.sabotageBetween || []).some(s => deal.participants.includes(s.actorId) && deal.participants.includes(s.targetActorId))));
+    if (fired || (deal.duration.kind === 'until_region_changes' && deal.duration.regionId && baseline[deal.duration.regionId] !== undefined && input.controllers[deal.duration.regionId] !== baseline[deal.duration.regionId])) {
+      const closed = dnClose(deal, 'terminated', input.turn, `automatic termination: ${fired ? fired.text || fired.kind : 'region changed control'}`, 'completed');
+      next = { ...next, ...dnReplaceDeal(next, closed) };
+      events.push(dnEvent(next, { turn: input.turn, kind: 'terminated', dealId: deal.id, actorId: null, counterpartId: null, summary: `Agreement ended automatically (${fired ? fired.text || fired.kind.replace(/_/g, ' ') : 'region changed control'}).`, snapshot: closed }));
+      return;
+    }
+    // Conditional activation (region_attacked).
+    let updated = deal;
+    const activatedTerms = deal.terms.map(t => {
+      if (t.condition?.effect === 'activate' && t.status === 'pending' && t.condition.kind === 'region_attacked' && (input.attacks || []).some(a => a.regionId === t.condition!.regionId && (!t.condition!.actorId || a.byActorId === t.condition!.actorId) && !deal.participants.includes(a.byActorId))) return { ...t, status: 'active' as const };
+      return t;
+    });
+    if (activatedTerms.some((t, i) => t !== deal.terms[i])) updated = { ...deal, terms: activatedTerms, history: [...deal.history, { turn: input.turn, kind: 'condition', actorId: null, text: 'A conditional commitment activated.' }].slice(-12) };
+    // Expiration → completed (every term kept).
+    if (updated.expirationTurn !== null && input.turn > updated.expirationTurn) {
+      const closed = dnClose(updated, 'completed', input.turn, 'completed — every term kept', 'completed');
+      next = { ...next, ...dnReplaceDeal(next, closed) };
+      const s = computeDiplomaticSignificance(updated);
+      updated.participants.forEach(actor => {
+        if (!updated.terms.some(t => t.actorId === actor)) return;
+        const counterpart = updated.participants.find(p => p !== actor) || '';
+        const repeats = recent.filter(c => c.counterpartId === counterpart || c.counterpartId === actor).length;
+        const trivial = s < 0.15;
+        const cons = dnConsequence('completion', closed, actor, s, names, trivial ? 0 : 1 / (1 + repeats));
+        consequences.push(cons);
+      });
+      recent.push({ turn: input.turn, counterpartId: updated.participants.find(p => p !== 'player') || updated.participants[0], significance: s });
+      events.push(dnEvent(next, { turn: input.turn, kind: 'completed', dealId: deal.id, actorId: null, counterpartId: null, summary: `Agreement completed: ${describeDealShort(updated, names)}.`, snapshot: closed }));
+      inbox.push(dnInbox(next, { kind: 'completed', dealId: deal.id, fromActorId: null, turn: input.turn, text: `Agreement completed: ${describeDealShort(updated, names)}.` }));
+      return;
+    }
+    // Due obligations (deferred / per-turn payments), with the bounded cash_below deferral.
+    dnObligationsFor(updated, input.turn, 'turn').forEach(ob => {
+      const term = updated.terms.find(t => t.id === ob.termId)!;
+      if (term.timing === 'per_turn' && updated.history.some(h => h.kind === `paid_${term.id}_${input.turn}`)) return;
+      const cond = term.condition;
+      const cash = input.cash[ob.payerId];
+      if (cond?.kind === 'cash_below' && cond.effect === 'defer_payment' && cash !== null && cash !== undefined && cash < (cond.amount || 0) && !updated.history.some(h => h.kind === `deferred_${term.id}`)) {
+        updated = { ...updated, history: [...updated.history, { turn: input.turn, kind: `deferred_${term.id}`, actorId: ob.payerId, text: `Payment deferred one turn (${nm(ob.payerId)} is below $${(cond.amount || 0).toLocaleString()}).` }].slice(-12) };
+        return;
+      }
+      obligations.push(ob);
+    });
+    // Notices: expiring soon, payment due next turn, payment at risk.
+    const left = updated.expirationTurn !== null ? updated.expirationTurn - input.turn : null;
+    let compliance: DNCompliance = 'compliant';
+    updated.terms.forEach(t => {
+      if (t.kind === 'pay_cash' && t.status !== 'satisfied' && (t.timing === 'next_turn' || t.timing === 'per_turn') && input.cash[t.actorId] !== null && input.cash[t.actorId] !== undefined && (input.cash[t.actorId] as number) < (t.amount || 0)) compliance = 'at_risk';
+    });
+    if (left !== null && left <= 1 && !updated.history.some(h => h.kind === 'expiring_notice')) {
+      updated = { ...updated, history: [...updated.history, { turn: input.turn, kind: 'expiring_notice', actorId: null, text: 'Expiring soon.' }].slice(-12) };
+      inbox.push(dnInbox(next, { kind: 'expiring', dealId: deal.id, fromActorId: null, turn: input.turn, text: `${describeDealShort(updated, names)} expires ${left <= 0 ? 'this turn' : 'next turn'}.` }));
+    }
+    updated = { ...updated, compliance };
+    next = { ...next, ...dnReplaceDeal(next, updated) };
+  });
+  // Fatigue decays (one bad offer never permanently destroys diplomacy).
+  const tracks: Record<string, DNNegotiationTrack> = {};
+  Object.entries(next.tracks).forEach(([k, t]) => { tracks[k] = { ...t, fatigue: input.turn % 2 === 0 ? Math.max(0, t.fatigue - 1) : t.fatigue, blockedUntilTurn: t.blockedUntilTurn !== null && t.blockedUntilTurn < input.turn ? null : t.blockedUntilTurn }; });
+  return { state: dnPush({ ...next, events, inbox, tracks, recentCompletions: recent.slice(-12) }, {}), consequences, obligations, reevaluate };
+}
+
+/** A due deferred payment was executed (or failed) by the game — failure is a violation by the payer. */
+export function recordObligationResult(state: DiplomacyState, ob: DNObligation, success: boolean, turn: number, reason: string | null, names: Record<string, string> = {}): { state: DiplomacyState; consequence: DNConsequence | null } {
+  const deal = state.deals.find(d => d.id === ob.dealId);
+  if (!deal) return { state, consequence: null };
+  if (success) {
+    const term = deal.terms.find(t => t.id === ob.termId);
+    const updated: DiplomaticDeal = { ...deal, terms: deal.terms.map(t => t.id === ob.termId && t.timing !== 'per_turn' ? { ...t, status: 'satisfied' as const } : t), history: [...deal.history, { turn, kind: `paid_${ob.termId}_${turn}`, actorId: ob.payerId, text: `${names[ob.payerId] || ob.payerId} paid ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()}` : `${ob.quantity} ${ob.resourceId}`}.` }].slice(-12) };
+    const events = [...state.events, dnEvent(state, { turn, kind: 'payment', dealId: deal.id, actorId: ob.payerId, counterpartId: ob.payeeId, summary: `${names[ob.payerId] || ob.payerId} made a promised ${term?.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()} payment` : 'transfer'}.` })];
+    return { state: dnPush({ ...state, ...dnReplaceDeal(state, updated), events }, {}), consequence: null };
+  }
+  return applyDiplomaticViolation(state, deal.id, ob.payerId, reason || 'a promised payment was not made', turn, names, `a promised ${ob.kind === 'pay_cash' ? `$${ob.amount.toLocaleString()} payment` : 'transfer'} was not made${reason ? ` (${reason})` : ''}`);
+}
+
+export function endMatchDiplomacy(state: DiplomacyState, turn: number, names: Record<string, string> = {}): DiplomacyState {
+  return advanceDiplomacyTurn({ ...state, lastProcessedTurn: null }, { turn, controllers: {}, cash: {}, matchEnded: true }, names).state;
+}
+
+// ---- AI behaviour under agreements ---------------------------------------------------------------
+
+/** Rare, explainable, bounded: an AI breaks an agreement only under these explicit conditions. */
+export function evaluateAiDiplomaticBreach(deal: DiplomaticDeal, E: string, world: DiplomacyWorld, state: DiplomacyState): { breach: boolean; reason: string | null } {
+  const me = world.actors[E];
+  const C = deal.participants.find(p => p !== E) || '';
+  const P = me?.personality || deriveDiplomaticPersonality(null);
+  const recentBetrayal = state.history.find(d => d.participants.includes(E) && d.violatedBy === C && d.status === 'violated' && (d.history[d.history.length - 1]?.turn ?? 0) >= world.turn - 3);
+  if (recentBetrayal && P.reliability < 0.9) return { breach: true, reason: `${world.actors[E]?.name || E} broke the agreement after ${world.actors[C]?.name || 'you'} violated an agreement ${recentBetrayal.history[recentBetrayal.history.length - 1]?.turn === world.turn - 1 ? 'last turn' : 'recently'}` };
+  const restricted = deal.terms.filter(t => t.actorId === E && t.regionId).map(t => t.regionId!);
+  const vital = restricted.some(r => diplomaticRegionStake(world, E, r).stake >= 0.8);
+  if (world.strategy[E]?.emergency && vital && P.reliability < 0.7) return { breach: true, reason: `${world.actors[E]?.name || E} broke the agreement because its team entered an emergency objective state` };
+  if (dnVictoryBlock(deal, E, C, world) && P.reliability < 0.95) return { breach: true, reason: `${world.actors[E]?.name || E} broke the agreement to stop ${world.actors[C]?.name || 'you'} from winning` };
+  return { breach: false, reason: null };
+}
+
+/**
+ * Hook for AI decision scoring (solo and team AI): options that would break an active promise are pushed to the
+ * bottom (never silently executed) unless a bounded breach decision allows it.
+ */
+export function applyDiplomaticConstraintsToDecisions<T extends { type?: string; score?: number; data?: any }>(decisions: T[], actorId: string, state: DiplomacyState | null | undefined, controllers: Record<string, string | null>, turn: number, breachAllowed: (deal: DiplomaticDeal) => boolean = () => false): T[] {
+  if (!state || !Array.isArray(decisions) || !decisions.length || !state.deals.some(d => d.status === 'active' && d.participants.includes(actorId))) return decisions;
+  return decisions.map(d => {
+    const data = d.data || {};
+    const probe: DNActionProbe = { actorId, actionType: String(d.type || ''), regionId: data.region || data.regionId || data.targetRegion || null, targetActorId: data.targetActorId || data.targetId || data.target || null };
+    const v = checkDiplomaticActionCompliance(state, probe, controllers, turn);
+    if (!v.length || v.every(x => breachAllowed(x.deal))) return d;
+    return { ...d, score: (d.score || 0) - 100000, data: { ...data, diplomaticRestriction: v[0].text } };
+  });
+}
+
+export interface DNRestriction { actorId: string; regionId: string; untilTurn: number | null; dealId: string; kind: DNTermKind; counterpartId: string }
+
+/** Regions each actor has promised not to pressure — fed to Team OS as a strategic constraint. */
+export function diplomaticRestrictionsFor(state: DiplomacyState | null | undefined, actorIds: string[], turn: number, controllers: Record<string, string | null> = {}): DNRestriction[] {
+  if (!state) return [];
+  const out: DNRestriction[] = [];
+  state.deals.filter(d => d.status === 'active').forEach(deal => deal.terms.forEach(t => {
+    if (!actorIds.includes(t.actorId) || !dnTermActiveAt(t, deal, turn)) return;
+    const cp = deal.participants.find(p => p !== t.actorId) || '';
+    if ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && t.regionId) out.push({ actorId: t.actorId, regionId: t.regionId, untilTurn: t.endTurn ?? deal.expirationTurn, dealId: deal.id, kind: t.kind, counterpartId: cp });
+    if (t.kind === 'non_aggression' && (t.scope || 'all') !== 'sabotage') Object.entries(controllers).forEach(([r, c]) => { if (c && c === (t.targetActorId || cp)) out.push({ actorId: t.actorId, regionId: r, untilTurn: t.endTurn ?? deal.expirationTurn, dealId: deal.id, kind: t.kind, counterpartId: cp }); });
+  }));
+  return out;
+}
+
+// ---- GI3 / Background AI integration --------------------------------------------------------------
+
+export interface DNDiplomaticWindow { dealId: string; regionId: string; counterpartId: string; remaining: number | null; effect: string }
+
+/** Temporary strategic windows created by others' promises to the player (read by GI3 — goals are never rewritten). */
+export function deriveDiplomaticWindows(state: DiplomacyState | null | undefined, playerId: string, turn: number, names: Record<string, string> = {}): DNDiplomaticWindow[] {
+  if (!state) return [];
+  const out: DNDiplomaticWindow[] = [];
+  state.deals.filter(d => d.status === 'active' && d.participants.includes(playerId)).forEach(deal => deal.terms.forEach(t => {
+    if (t.actorId === playerId || !dnTermActiveAt(t, deal, turn)) return;
+    if ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && t.regionId) {
+      const remaining = deal.expirationTurn !== null ? deal.expirationTurn - turn + 1 : null;
+      out.push({ dealId: deal.id, regionId: t.regionId, counterpartId: t.actorId, remaining, effect: `${names[t.actorId] || t.actorId} promised not to pressure ${t.regionId}${remaining !== null ? ` for ${remaining} more turn${remaining === 1 ? '' : 's'}` : ''}` });
+    }
+  }));
+  return out.slice(0, 4);
+}
+
+export function gi3DiplomaticWindowNotes(gi3: GI3StrategyState | null | undefined, windows: DNDiplomaticWindow[]): string[] {
+  const strat = gi3?.active;
+  if (!strat || !windows.length) return [];
+  const notes: string[] = [];
+  strat.goals.forEach(g => {
+    const w = windows.find(x => x.regionId === g.regionId);
+    if (!w || !/protect|hold|defend|secure/.test(String(g.type))) return;
+    const next = strat.goals.filter(x => x.order > g.order && x.status !== 'completed').sort((a, b) => a.order - b.order)[0];
+    notes.push(`${g.label}: immediate pressure reduced — ${w.effect}.${w.remaining !== null ? ` Strategic window: ${w.remaining} turn${w.remaining === 1 ? '' : 's'}.` : ''}${next ? ` Opportunity: prioritise “${next.label}” while it lasts.` : ''}`);
+  });
+  return notes.slice(0, 3);
+}
+
+export interface DNObservation { id: string; kind: 'expiring' | 'payment_due' | 'opportunity' | 'violation_risk' | 'proposal'; text: string; dealId: string | null; counterpartId: string | null }
+
+/** Background AI watches agreements — it may recommend, never send. Grounded in visible evidence only. */
+export function deriveDiplomaticObservations(state: DiplomacyState | null | undefined, world: DiplomacyWorld, playerId: string, names: Record<string, string> = {}): DNObservation[] {
+  if (!state) return [];
+  const out: DNObservation[] = [];
+  const turn = world.turn;
+  state.deals.filter(d => d.status === 'active' && d.participants.includes(playerId)).forEach(d => {
+    const cp = d.participants.find(p => p !== playerId) || '';
+    const left = d.expirationTurn !== null ? d.expirationTurn - turn : null;
+    if (left !== null && left <= 2 && left >= 0) out.push({ id: `exp_${d.id}`, kind: 'expiring', dealId: d.id, counterpartId: cp, text: `Your ${describeDealShort(d, names)} expires in ${left + 1} turn${left === 0 ? '' : 's'}. This may be a good window to finish your current phase before pressure returns — or consider extending it.` });
+    d.terms.filter(t => t.actorId === playerId && t.kind === 'pay_cash' && t.status !== 'satisfied' && (t.timing === 'next_turn' || t.timing === 'per_turn')).forEach(t => {
+      out.push({ id: `pay_${d.id}_${t.id}`, kind: 'payment_due', dealId: d.id, counterpartId: cp, text: `Your $${(t.amount || 0).toLocaleString()} diplomatic payment to ${names[cp] || cp} is due ${t.timing === 'per_turn' ? 'every turn' : 'next turn'}.` });
+      const cash = world.actors[playerId]?.money;
+      if (cash !== null && cash !== undefined && cash < (t.amount || 0)) out.push({ id: `risk_${d.id}_${t.id}`, kind: 'violation_risk', dealId: d.id, counterpartId: cp, text: `You have $${cash.toLocaleString()} — not enough for the $${(t.amount || 0).toLocaleString()} payment. Missing it would break the agreement; renegotiating first avoids that.` });
+    });
+  });
+  const incoming = state.deals.find(d => d.status === 'under_review' && d.recipientActorIds.includes(playerId));
+  if (incoming) out.push({ id: `in_${incoming.id}`, kind: 'proposal', dealId: incoming.id, counterpartId: incoming.initiatorActorId, text: `${names[incoming.initiatorActorId] || incoming.initiatorActorId} is waiting for your answer: ${describeDealShort(incoming, names)}.` });
+  Object.values(world.actors).filter(a => a.id !== playerId && a.teamId !== world.actors[playerId]?.teamId).slice(0, 3).forEach(a => {
+    if (a.money !== null && a.money < 2500) out.push({ id: `short_${a.id}`, kind: 'opportunity', dealId: null, counterpartId: a.id, text: `${a.name} is short on cash. A financial offer may have unusually high leverage right now.` });
+    const rec = deriveDiplomaticReliability(state, playerId, a.id);
+    if (rec.band === 'high' && !state.deals.some(d => d.status === 'active' && d.participants.includes(a.id))) out.push({ id: `rel_${a.id}`, kind: 'opportunity', dealId: null, counterpartId: a.id, text: `Your reliability with ${a.name} is high (${rec.evidence.join(', ')}). A longer agreement may now be accepted.` });
+  });
+  return out.slice(0, 3);
+}
+
+// ---- Replay / debrief / description ------------------------------------------------------------
+
+/** Replay: rebuilds agreement statuses from the recorded event snapshots — negotiation is never re-run. */
+export function reconstructDiplomacyFromEvents(events: DNEvent[]): { deals: Record<string, { status: DNDealStatus; compliance: DNCompliance; terms: string }>; relationshipDeltas: Record<string, number> } {
+  const deals: Record<string, { status: DNDealStatus; compliance: DNCompliance; terms: string }> = {};
+  const relationshipDeltas: Record<string, number> = {};
+  events.forEach(e => {
+    if (e.snapshot) deals[e.snapshot.id] = { status: e.snapshot.status, compliance: e.snapshot.compliance, terms: dealTermsSignature(e.snapshot) };
+    if (e.delta && e.actorId) relationshipDeltas[e.actorId] = (relationshipDeltas[e.actorId] || 0) + (e.delta.trust || 0);
+  });
+  return { deals, relationshipDeltas };
+}
+
+export function buildDiplomacyDebrief(state: DiplomacyState, names: Record<string, string> = {}): string[] {
+  const all = [...state.history, ...state.deals];
+  const made = all.filter(d => ['active', 'completed', 'violated', 'terminated', 'superseded', 'expired'].includes(d.status) && d.history.some(h => h.kind === 'activated'));
+  const completed = all.filter(d => d.status === 'completed');
+  const broken = all.filter(d => d.status === 'violated');
+  const counters = state.events.filter(e => e.kind === 'counteroffer' || e.kind === 'guarantee_requested').length;
+  const trustDelta = state.events.reduce((s, e) => s + (e.delta?.trust || 0), 0);
+  const lines = [`Deals made: ${made.length}`, `Deals completed: ${completed.length}`, `Deals broken: ${broken.length}`, `AI counteroffers: ${counters}`];
+  if (trustDelta) lines.push(`Trust ${trustDelta >= 0 ? 'gained' : 'lost'} through diplomacy: ${Math.abs(trustDelta)}`);
+  const best = made.slice().sort((a, b) => computeDiplomaticSignificance(b) - computeDiplomaticSignificance(a))[0];
+  if (best) lines.push(`Most valuable agreement: ${describeDealShort(best, names)}`);
+  if (broken[0]) lines.push(`Most consequential violation: ${describeDealShort(broken[0], names)} — broken by ${names[broken[0].violatedBy || ''] || broken[0].violatedBy}`);
+  const windows = made.filter(d => d.terms.some(t => t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region')).length;
+  if (windows) lines.push(`Strategic windows created: ${windows}`);
+  return lines;
+}
+
+const DN_REGION_NAME = (code: string | null | undefined) => (code ? ((REGIONS as any)[code]?.name ? code : code) : '');
+
+export function describeDiplomaticTerm(t: DiplomaticTerm, names: Record<string, string> = {}, perspectiveId: string | null = null): string {
+  const who = perspectiveId && t.actorId === perspectiveId ? '' : '';
+  const tgt = t.targetActorId ? names[t.targetActorId] || t.targetActorId : 'them';
+  switch (t.kind) {
+    case 'pay_cash': return `${who}Pay $${(t.amount || 0).toLocaleString()}${t.source === 'treasury' ? ' from the Team Treasury' : ''} ${t.timing === 'on_acceptance' ? 'upon acceptance' : t.timing === 'next_turn' ? 'next turn' : t.timing === 'per_turn' ? 'every turn' : 'when the agreement completes'}${t.condition?.kind === 'cash_below' ? ` (deferred once if cash is below $${(t.condition.amount || 0).toLocaleString()})` : ''}`;
+    case 'transfer_resource': return `Give ${t.quantity} ${t.resourceId} ${t.timing === 'on_acceptance' ? 'upon acceptance' : t.timing === 'next_turn' ? 'next turn' : 'later'}`;
+    case 'avoid_region': return `Stay out of ${DN_REGION_NAME(t.regionId)} (no deposits or investments${t.scope === 'presence' ? ', no travel there' : '; travel allowed'})`;
+    case 'do_not_challenge_region': return `Do not challenge ${DN_REGION_NAME(t.regionId)}${t.condition?.kind === 'region_attacked' ? ` (only if ${t.condition.regionId} is attacked by someone else)` : ''}`;
+    case 'do_not_sabotage': return `No sabotage against ${tgt}`;
+    case 'non_aggression': return t.scope === 'sabotage' ? `No sabotage against ${tgt} (regional competition still allowed)` : t.scope === 'regions' ? `No contesting ${tgt}'s regions (sabotage not covered)` : `Non-aggression toward ${tgt} (no sabotage and no contesting their regions)`;
+    case 'threat': return t.regionId ? `Threat: may contest ${t.regionId} if refused (not an automatic action)` : `Threat: may sabotage if refused (not an automatic action)`;
+  }
+  return t.kind;
+}
+
+export function describeDealDuration(deal: Pick<DiplomaticDeal, 'duration' | 'expirationTurn'>): string {
+  const d = deal.duration;
+  switch (d.kind) {
+    case 'this_turn': return 'This turn only';
+    case 'turns': return `${d.turns} turn${d.turns === 1 ? '' : 's'}${deal.expirationTurn !== null ? ` (through Round ${deal.expirationTurn})` : ''}`;
+    case 'until_turn': return `Until Round ${d.turn}`;
+    case 'until_broken': return 'Until either side breaks it';
+    case 'match': return 'For the rest of the match';
+    case 'until_region_changes': return `Until ${d.regionId} changes control`;
+  }
+  return '';
+}
+
+export function describeDealShort(deal: DiplomaticDeal, names: Record<string, string> = {}): string {
+  const regions = Array.from(new Set(deal.terms.map(t => t.regionId).filter(Boolean)));
+  const cash = deal.terms.filter(t => t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0), 0);
+  const label = deal.type === 'non_aggression' ? 'non-aggression pact' : deal.type === 'cash_for_withdrawal' ? 'cash-for-withdrawal deal' : deal.type === 'regional_ceasefire' ? 'ceasefire' : deal.type === 'resource_trade' ? 'resource trade' : deal.type === 'mutual_support' ? 'no-sabotage pact' : deal.type === 'temporary_alliance' ? 'temporary alliance' : 'agreement';
+  return `${regions.length ? `${regions.join('–')} ` : ''}${label}${cash ? ` ($${cash.toLocaleString()})` : ''} with ${deal.participants.filter(p => p !== 'player').map(p => names[p] || p).join(', ') || names[deal.participants[1]] || 'them'}`;
+}
+
+// ---- AI Memory write-through (the one relationship store) ---------------------------------------
+
+/** Applies a diplomatic consequence to observers' AI Memory. Idempotent per stable key; bounded values. */
+export function applyDiplomaticConsequenceToAiMemories(memories: AiMemoriesByActor, cons: DNConsequence, turn: number, aiObserverIds: string[]): AiMemoriesByActor {
+  const out: AiMemoriesByActor = { ...memories };
+  const stableKey = `diplomacy:${cons.kind}:${cons.dealId}:${cons.actorId}`;
+  cons.observerIds.filter(o => aiObserverIds.includes(o) && o !== cons.actorId).forEach(ownerId => {
+    const prev = out[ownerId] || createEmptyAiActorMemory(ownerId);
+    if (prev.seenKeys.includes(stableKey)) return;
+    const rel = { ...(prev.relationships[cons.actorId] || createRelationship(cons.actorId, turn)) };
+    rel.trust = memClamp(rel.trust + cons.deltas.trust); rel.reliability = memClamp(rel.reliability + cons.deltas.reliability);
+    rel.grievance = memClamp(rel.grievance + cons.deltas.grievance); rel.gratitude = memClamp(rel.gratitude + cons.deltas.gratitude); rel.rivalry = memClamp(rel.rivalry + cons.deltas.rivalry);
+    rel.lastUpdatedTurn = turn;
+    const valence = cons.kind === 'completion' ? 0.6 : cons.kind === 'violation' ? -1 : cons.kind === 'withdrawal' || cons.kind === 'activation_failed' ? -0.4 : 0;
+    const event: AiMemoryEvent = { id: `mem_${ownerId}_${stableKey}`.slice(0, 120), turn, actionType: `diplomacy_${cons.kind}`, actorId: cons.actorId, targetId: ownerId, regionId: null, summary: cons.summary.slice(0, 200), importance: Math.max(1, Math.round((2 + cons.significance * 4) * 10) / 10), valence, stableKey };
+    out[ownerId] = { ...prev, events: [...prev.events, event].slice(-AI_MEMORY_EVENT_CAP), relationships: { ...prev.relationships, [cons.actorId]: rel }, seenKeys: [...prev.seenKeys, stableKey].slice(-AI_MEMORY_EVENT_CAP * 2) };
+  });
+  return out;
+}
+
+/** How many remembered hostile acts (sabotage / regional pressure) `other` committed against `owner`. */
+export function countRememberedHostility(memories: AiMemoriesByActor | null | undefined, ownerId: string, otherId: string): { sabotage: number; regionPressure: number } {
+  const m = memories?.[ownerId];
+  if (!m) return { sabotage: 0, regionPressure: 0 };
+  let sabotage = 0; let regionPressure = 0;
+  m.events.forEach(e => { if (e.actorId !== otherId) return; if (/sabotag/.test(e.actionType)) sabotage += 1; else if (/deposit|invest|claim/.test(e.actionType) && e.valence < 0) regionPressure += 1; });
+  return { sabotage, regionPressure };
+}
+
+
+// ---- GI 2.1 → structured deal (no second language engine) --------------------------------------
+
+export interface DNCompileResult {
+  deal: DiplomaticDeal | null;
+  counterpartId: string | null;
+  understood: string[];
+  assumptions: string[];
+  unsupported: string[];
+  negatedRequests: string[];
+  clarification: string | null;
+}
+
+const DN_NUMBER_WORDS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+const DN_RESTRAIN_AVOID = /\b(stay(s|ing)? (out of|away from|out)|keep(s|ing)? (out of|away from)|avoid(s|ing)?|withdraw(s|ing)? from|pull(s|ing)? out of|abandon(s|ing)?|get(s|ting)? out of|leave(s|ing)?(?! \S+( \S+)? alone))\b/;
+const DN_RESTRAIN_CHALLENGE = /\b(leave(s|ing)? \S+( \S+)? alone|(not|never|stop(s|ping)?|no longer|won't|will not|quit(s|ting)?) (challeng|contest|attack|pressur|touch|go(ing)? after|push|increas)\w*|stays? off|guarantee(s|ing)?|you can have|can have|(don't|do not) (challenge|contest|attack|pressure|increase))\b/;
+const DN_PAY = /\b(give|gives|pay|pays|offer|offers|send|sends|transfer|hand over)\b/;
+const DN_SABOTAGE_STOP = /\b((stop|not|no|never|quit|cease|without|no more|won't|will not|don't|do not)\b.{0,20}\bsabotag\w*|sabotag\w* each other)\b/;
+const DN_NON_AGG = /\b(non ?-?aggression|cease ?fire|truce|peace (deal|pact|treaty)|cease hostilit\w*|stop fighting|stop attacking each other)\b/;
+const DN_UNSUPPORTED = /\b(help(s)? me (defend|hold|protect)|defend \S+ for me|support me|fund your|your (infrastructure )?project|join (my|our) team|merge|surrender|let me win)\b/;
+const DN_NEGATED_REQUEST = /\b(do not|don't|never|no need to|stop) (ask|request|tell|make|get)\b|\bnever ?mind\b|\bforget (it|about)\b/;
+
+function dnParseMoney(raw: string): number | null {
+  const m = /\$?\s*([\d][\d,]*(?:\.\d+)?)\s*(k|m|thousand|million)?\b/i.exec(raw);
+  if (!m) return null;
+  let v = parseFloat(m[1].replace(/,/g, ''));
+  const u = (m[2] || '').toLowerCase();
+  if (u === 'k' || u === 'thousand') v *= 1000; if (u === 'm' || u === 'million') v *= 1e6;
+  return Number.isFinite(v) ? Math.round(v) : null;
+}
+
+function dnMoneyIn(text: string): number[] {
+  const out: number[] = [];
+  const re = /\$\s*[\d][\d,]*(?:\.\d+)?\s*(?:k|m|thousand|million)?\b|\b[\d][\d,]*(?:\.\d+)?\s*(?:k|thousand)\b(?!\s*turns?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) { const v = dnParseMoney(m[0]); if (v !== null && v > 0) out.push(v); }
+  return out;
+}
+
+function dnDurationFromText(text: string, turn: number, clock?: DiplomacyWorld['clock']): { duration: DNDuration | null; evidence: string | null } {
+  let m = /\buntil (the end of )?round (\d+)\b/.exec(text);
+  if (m) return { duration: { kind: 'until_turn', turn: Number(m[2]) }, evidence: m[0] };
+  m = /\buntil (the end of )?turn (\d+)\b/.exec(text);
+  // "Turn N" as shown on the HUD → the matching round (the diplomacy clock) when the live clock is known.
+  if (m) return { duration: { kind: 'until_turn', turn: clock ? turn + Math.max(0, Math.ceil((Number(m[2]) - clock.hudTurn) / Math.max(1, clock.actorsPerRound))) : Number(m[2]) }, evidence: m[0] };
+  m = new RegExp(`\\b(?:for |another |extra |)(\\d+|${Object.keys(DN_NUMBER_WORDS).join('|')})(?: more)?[ -]turns?\\b`).exec(text);
+  if (m) { const n = /^\d+$/.test(m[1]) ? Number(m[1]) : DN_NUMBER_WORDS[m[1]]; if (n) return { duration: { kind: 'turns', turns: n }, evidence: m[0] }; }
+  if (/\bthis turn\b/.test(text)) return { duration: { kind: 'this_turn' }, evidence: 'this turn' };
+  if (/\b(rest of the (match|game)|permanent(ly)?|forever|for good|the whole (match|game))\b/.test(text)) return { duration: { kind: 'match' }, evidence: 'rest of the match' };
+  if (/\buntil (either of us|one of us|someone|somebody|it is|it's|one side|either side)? ?(breaks?|is broken|broken)\b/.test(text)) return { duration: { kind: 'until_broken' }, evidence: 'until broken' };
+  m = /\buntil (\S+) changes (control|hands)\b/.exec(text);
+  if (m) return { duration: { kind: 'until_region_changes', regionId: m[1].toUpperCase() }, evidence: m[0] };
+  return { duration: null, evidence: null };
+}
+
+function dnRegionsInClause(c: GIClause): string[] {
+  return Array.from(new Set(c.tokens.filter(t => t.entity?.kind === 'region').map(t => t.entity!.id)));
+}
+
+function dnClauseText(c: GIClause): string { return c.tokens.filter(t => t.kind !== 'punct').map(t => t.t).join(' '); }
+
+type DNSubject = 'player' | 'counterpart' | 'both' | null;
+
+function dnClauseSubject(c: GIClause, text: string, counterpartId: string | null, rivalIds: string[]): DNSubject {
+  if (/\b(each other|let us|let's|both of us|we both|mutual(ly)?|neither of us)\b/.test(text)) return 'both';
+  if (/\byou can have\b/.test(text)) return 'player';
+  const words = c.tokens.filter(t => t.kind === 'word' && !t.filler);
+  const first = words.slice(0, 3);
+  const firstActor = c.tokens.find(t => t.entity?.kind === 'actor');
+  const firstActorIdx = firstActor ? words.indexOf(firstActor) : -1;
+  if (first.some(t => t.t === 'i' || t.t === 'we' || t.t === "i'll" || t.t === "we'll")) return 'player';
+  if (first.some(t => /^(he|she|they|you|him|them)$/.test(t.t))) return 'counterpart';
+  if (firstActor && rivalIds.includes(firstActor.entity!.id) && firstActorIdx >= 0 && firstActorIdx <= 2 && !DN_PAY.test(words.slice(0, firstActorIdx).map(t => t.t).join(' '))) return 'counterpart';
+  if (c.marker === 'if' && /\b(he|she|they|you)\b/.test(text)) return 'counterpart';
+  if (c.form === 'imperative' || /^(please )?(stay|keep|leave|stop|avoid|withdraw|pull|do not|don't|give|pay|guarantee|back off|get out)\b/.test(text)) return DN_PAY.test(text) && !/\bgive me\b|\bpay me\b/.test(text) ? 'player' : 'counterpart';
+  return null;
+}
+
+/** Compiles natural language into a DRAFT deal. Never sends anything; ambiguity becomes a clarification. */
+export function compileDiplomaticProposalFromText(query: string, gw: GIWorld, view: DiplomacyWorldView, ctx?: GIConversationContext | null): DNCompileResult {
+  const res: DNCompileResult = { deal: null, counterpartId: null, understood: [], assumptions: [], unsupported: [], negatedRequests: [], clarification: null };
+  let frame: GISemanticFrame;
+  try { frame = parseGILanguage(query, gw, ctx || createGIConversationContext()); } catch { res.clarification = 'I could not read that proposal.'; return res; }
+  const lower = ` ${frame.canonicalText.toLowerCase()} `.replace(/\s+/g, ' ');
+  const playerId = view.playerId;
+  const rivals = Object.values(view.world.actors).filter(a => a.id !== playerId && a.teamId !== view.world.actors[playerId]?.teamId).map(a => a.id);
+  const named = frame.entities.filter(e => e.kind === 'actor' && rivals.includes(e.id)).map(e => e.id);
+  const cp = named[0] || (ctx as any)?.diplomacyCounterpartId || gw.primaryRivalId || rivals[0] || null;
+  res.counterpartId = cp;
+  if (!cp) { res.clarification = 'Who is the proposal for? Name an opponent.'; return res; }
+  const terms: DiplomaticTerm[] = [];
+  const add = (t: DiplomaticTerm, why: string) => { if (!terms.some(x => x.actorId === t.actorId && x.kind === t.kind && x.regionId === t.regionId && x.targetActorId === t.targetActorId)) { terms.push(t); res.understood.push(why); } };
+  const conditions: DNCondition[] = [];
+  const treasury = /\b(from|out of|using) (the |our )?(team )?treasury\b/.test(lower);
+  const timing: DNPaymentTiming = /\b(per|each|every) turn\b/.test(lower) ? 'per_turn' : /\bnext turn\b/.test(lower) && DN_PAY.test(lower) ? 'next_turn' : /\b(at the end|on completion|when it (ends|completes)|afterwards|once it is over)\b/.test(lower) ? 'on_completion' : 'on_acceptance';
+  const nm = (id: string) => view.names[id] || id;
+  frame.clauses.forEach(c => {
+    const text = dnClauseText(c);
+    if (!text) return;
+    const regions = dnRegionsInClause(c);
+    if (DN_NEGATED_REQUEST.test(text)) { regions.forEach(r => res.negatedRequests.push(`No request about ${r} (you said not to ask).`)); if (!regions.length) res.negatedRequests.push('Ignored a request you asked me not to make.'); return; }
+    if (DN_UNSUPPORTED.test(text)) { res.unsupported.push(`“${text}” — not a game mechanic diplomacy can enforce (other actors cannot deposit into your holdings or fund your projects). Closest supported terms: a cash payment or a non-aggression promise.`); return; }
+    // Bounded condition vocabulary.
+    if (c.marker === 'if' || /^if\b/.test(text)) {
+      const gain = /\b(gain|gains|take|takes|win|wins|capture|captures|get|gets)\b/.test(text) && regions.length && !DN_RESTRAIN_AVOID.test(text) && !DN_RESTRAIN_CHALLENGE.test(text);
+      if (gain && /\b(ends?|over|terminat\w*|off|cancel\w*|void)\b/.test(lower)) { conditions.push({ kind: 'region_control_gained', actorId: /\b(i|we)\b/.test(text) ? playerId : cp, regionId: regions[0], effect: 'terminate', text: `ends if ${/\b(i|we)\b/.test(text) ? 'you gain' : `${nm(cp)} gains`} ${regions[0]}` }); res.understood.push(`Ends automatically if ${regions[0]} is gained.`); return; }
+      if (/sabotag/.test(text) && /\b(either|anyone|any of us|one of us|either side|either of us|someone)\b/.test(text)) { conditions.push({ kind: 'any_sabotage', effect: 'terminate', text: 'ends if either side sabotages the other' }); res.understood.push('Ends automatically if either side sabotages the other.'); return; }
+      const below = /\b(fall|drop|go|am|get)s? (below|under) \$?\s*([\d.,]+\s*k?)/.exec(text);
+      if (below && /\b(delay|defer|postpone|skip|push back)\b/.test(lower)) { const amt = dnParseMoney(below[3]) || 0; conditions.push({ kind: 'cash_below', actorId: playerId, amount: amt, effect: 'defer_payment', text: `payment deferred once if your cash is below $${amt.toLocaleString()}` }); res.understood.push(`Payment deferred once if your cash is below $${amt.toLocaleString()}.`); return; }
+      if (/\b(another|a third|someone else|anyone else|other|third)\b.*\b(attack|contest|challeng)\w*/.test(text) && regions.length) { conditions.push({ kind: 'region_attacked', regionId: regions[0], actorId: null, effect: 'activate', text: `activates if a third party attacks ${regions[0]}` }); res.understood.push(`Activates if a third party attacks ${regions[0]}.`); return; }
+    }
+    if (/\bchanges (control|hands)\b/.test(text) && /\b(ends?|over|until)\b/.test(lower) && regions.length) return;
+    const subj = dnClauseSubject(c, text, cp, rivals);
+    const owners = subj === 'both' ? [playerId, cp] : subj === 'player' ? [playerId] : subj === 'counterpart' ? [cp] : [];
+    // Threats ("… or I'll sabotage you") — represented, never executed.
+    if ((c.marker === 'or' || c.marker === 'otherwise' || /^(or|otherwise|or else)\b/.test(text)) && /\b(i|we)\b/.test(text) && /\b(sabotag|attack|take|contest|crush|hit)\w*/.test(text)) {
+      add(makeDiplomaticTerm({ actorId: playerId, kind: 'threat', targetActorId: cp, regionId: regions[0] || null, sourceText: text }), `Threat: ${regions[0] ? `contest ${regions[0]}` : 'sabotage'} if refused (not an automatic action).`);
+      return;
+    }
+    if (DN_NON_AGG.test(text)) {
+      const scope = /sabotag/.test(text) && !regions.length ? 'sabotage' : 'all';
+      if (regions.length) regions.forEach(r => { add(makeDiplomaticTerm({ actorId: playerId, kind: 'do_not_challenge_region', regionId: r, sourceText: text }), `You: do not challenge ${r}.`); add(makeDiplomaticTerm({ actorId: cp, kind: 'do_not_challenge_region', regionId: r, sourceText: text }), `${nm(cp)}: do not challenge ${r}.`); });
+      else { add(makeDiplomaticTerm({ actorId: playerId, kind: 'non_aggression', targetActorId: cp, scope, sourceText: text }), `You: non-aggression toward ${nm(cp)}.`); add(makeDiplomaticTerm({ actorId: cp, kind: 'non_aggression', targetActorId: playerId, scope, sourceText: text }), `${nm(cp)}: non-aggression toward you.`); }
+      return;
+    }
+    if (DN_SABOTAGE_STOP.test(text)) {
+      const who = owners.length ? owners : [playerId, cp];
+      who.forEach(o => add(makeDiplomaticTerm({ actorId: o, kind: 'do_not_sabotage', targetActorId: o === playerId ? cp : playerId, sourceText: text }), `${o === playerId ? 'You' : nm(o)}: no sabotage against ${o === playerId ? nm(cp) : 'you'}.`));
+      if (!regions.length) return;
+    }
+    const money = dnMoneyIn(text);
+    if (DN_PAY.test(text) && money.length) {
+      const payer = /\b(give|pay|send|offer) me\b|\bpays? (me|us)\b/.test(text) || subj === 'counterpart' ? cp : playerId;
+      add(makeDiplomaticTerm({ actorId: payer, kind: 'pay_cash', targetActorId: payer === playerId ? cp : playerId, amount: money[0], timing, source: payer === playerId && treasury ? 'treasury' : 'self', sourceText: text }), `${payer === playerId ? 'You pay' : `${nm(cp)} pays`} $${money[0].toLocaleString()}${payer === playerId && treasury ? ' from the Team Treasury' : ''}.`);
+      if (!regions.length) return;
+    }
+    const res2 = c.tokens.filter(t => t.entity?.kind === 'resource');
+    if (res2.length && /\b(give|trade|send|offer)\b/.test(text)) {
+      const qty = frame.quantities.find(q => q.clause === c.index && q.unit !== '$')?.value || Number((/\b(\d+)\b/.exec(text) || [])[1]) || 1;
+      const payer = subj === 'counterpart' ? cp : playerId;
+      add(makeDiplomaticTerm({ actorId: payer, kind: 'transfer_resource', targetActorId: payer === playerId ? cp : playerId, resourceId: res2[0].entity!.id, quantity: qty, timing, sourceText: text }), `${payer === playerId ? 'You give' : `${nm(cp)} gives`} ${qty} ${res2[0].entity!.label}.`);
+    }
+    if (regions.length && (DN_RESTRAIN_CHALLENGE.test(text) || DN_RESTRAIN_AVOID.test(text))) {
+      const kind: DNTermKind = DN_RESTRAIN_CHALLENGE.test(text) ? 'do_not_challenge_region' : 'avoid_region';
+      const who = owners.length ? owners : [cp];
+      who.forEach(o => regions.forEach(r => add(makeDiplomaticTerm({ actorId: o, kind, regionId: r, scope: kind === 'avoid_region' ? (/\b(don't|do not|never) (go|travel|enter)|stay out entirely|not even travel\b/.test(text) ? 'presence' : 'pressure') : null, sourceText: text }), `${o === playerId ? 'You' : nm(o)}: ${kind === 'avoid_region' ? 'stay out of' : 'do not challenge'} ${r}.`)));
+      if (!owners.length) res.assumptions.push(`Read “${text}” as a request to ${nm(cp)}.`);
+    }
+  });
+  const { duration, evidence } = dnDurationFromText(lower, view.world.turn, view.world.clock);
+  if (!terms.length) {
+    res.clarification = res.negatedRequests.length ? 'Understood — no request will be made.' : res.unsupported.length ? 'That proposal has no term the game can enforce yet.' : 'I could not find a concrete term. Try e.g. “I\'ll give Riley $8K if he stays out of NSW for 3 turns.”';
+    return res;
+  }
+  if (!duration) res.assumptions.push('No duration given — assumed 3 turns.');
+  // Conditional activation terms attach to the other side's regional promises.
+  const act = conditions.find(c => c.effect === 'activate');
+  if (act) terms.forEach(t => { if (t.actorId === cp && (t.kind === 'do_not_challenge_region' || t.kind === 'avoid_region')) t.condition = act; });
+  const defer = conditions.find(c => c.effect === 'defer_payment');
+  if (defer) terms.forEach(t => { if (t.actorId === playerId && t.kind === 'pay_cash') { t.condition = defer; if (t.timing === 'on_acceptance') t.timing = 'next_turn'; } });
+  const deal = createDiplomaticDeal({ initiatorActorId: playerId, recipientActorIds: [cp], terms, duration: duration || { kind: 'turns', turns: 3 }, turn: view.world.turn, terminationConditions: conditions.filter(c => c.effect === 'terminate'), seq: view.state.revision });
+  deal.status = 'preview';
+  deal.playerFacingSummary = describeDealShort(deal, view.names);
+  if (evidence) res.understood.push(`Duration: ${describeDealDuration(deal)}.`);
+  res.deal = deal;
+  return res;
+}
+
+/** Conversational edits change only the term the player mentioned. */
+export function modifyDiplomaticDraft(draft: DiplomaticDeal, text: string, view: DiplomacyWorldView): { deal: DiplomaticDeal; changed: string[] } {
+  const lower = ` ${String(text || '').toLowerCase()} `;
+  const d: DiplomaticDeal = JSON.parse(JSON.stringify(draft));
+  const changed: string[] = [];
+  const playerId = view.playerId;
+  const cp = d.participants.find(p => p !== playerId) || '';
+  const regionCodes = Object.keys(view.world.regions);
+  const nameToCode = (w: string) => regionCodes.find(c => c.toLowerCase() === w.toLowerCase() || (view.world.regions[c].name || '').toLowerCase() === w.toLowerCase()) || null;
+  const regionsMentioned = regionCodes.filter(c => new RegExp(`\\b(${c.toLowerCase()}|${(view.world.regions[c].name || c).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`).test(lower));
+  const money = dnMoneyIn(lower);
+  if (money.length) {
+    const t = d.terms.find(x => x.kind === 'pay_cash' && x.actorId === playerId) || d.terms.find(x => x.kind === 'pay_cash');
+    if (t) { const prev = t.amount; t.amount = money[0]; t.id = makeDiplomaticTerm({ ...t, id: undefined }).id; changed.push(`payment $${(prev || 0).toLocaleString()} → $${money[0].toLocaleString()}`); }
+    else { d.terms.push(makeDiplomaticTerm({ actorId: playerId, kind: 'pay_cash', targetActorId: cp, amount: money[0], timing: 'on_acceptance' })); changed.push(`added a $${money[0].toLocaleString()} payment`); }
+  }
+  const dur = dnDurationFromText(lower.replace(/\$\s*[\d.,]+\s*k?/g, ''), view.world.turn, view.world.clock);
+  if (dur.duration) {
+    const prev = describeDealDuration(d);
+    const w = resolveDealWindow(dur.duration, d.startTurn ?? view.world.turn);
+    d.duration = dur.duration; d.expirationTurn = w.expirationTurn; d.terms = d.terms.map(t => ({ ...t, endTurn: w.expirationTurn }));
+    changed.push(`duration ${prev} → ${describeDealDuration(d)}`);
+  }
+  if (/\b(remove|drop|without|no need for|get rid of|skip|take out)\b.*\bsabotag/.test(lower)) {
+    const before = d.terms.length;
+    d.terms = d.terms.filter(t => t.kind !== 'do_not_sabotage').map(t => (t.kind === 'non_aggression' && (t.scope || 'all') === 'all') ? { ...t, scope: 'regions' as const } : t).filter(t => !(t.kind === 'non_aggression' && t.scope === 'sabotage'));
+    changed.push(before !== d.terms.length ? 'removed the sabotage clause' : 'non-aggression now covers regions only');
+  }
+  if (/\b(only|just)\b/.test(lower) && regionsMentioned.length) {
+    const keep = new Set(regionsMentioned);
+    const next: DiplomaticTerm[] = [];
+    d.terms.forEach(t => {
+      if (t.kind === 'non_aggression' && (t.scope || 'all') !== 'sabotage') regionsMentioned.forEach(r => next.push(makeDiplomaticTerm({ actorId: t.actorId, kind: 'do_not_challenge_region', regionId: r, startTurn: t.startTurn, endTurn: t.endTurn })));
+      else if ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && t.regionId && !keep.has(t.regionId)) return;
+      else next.push(t);
+    });
+    d.terms = next;
+    changed.push(`scope limited to ${regionsMentioned.join(', ')}`);
+  } else if (/\b(add|also|plus|too|as well|include)\b/.test(lower) && regionsMentioned.length) {
+    const regional = d.terms.filter(t => t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region');
+    const owner = regional.some(t => t.actorId === cp) ? cp : regional.some(t => t.actorId === playerId) ? playerId : cp;
+    const kind = (regional.find(t => t.actorId === owner)?.kind || 'do_not_challenge_region') as DNTermKind;
+    regionsMentioned.forEach(r => { if (!d.terms.some(t => t.actorId === owner && t.regionId === r)) { d.terms.push(makeDiplomaticTerm({ actorId: owner, kind, regionId: r, startTurn: d.startTurn, endTurn: d.expirationTurn })); changed.push(`added ${r} to ${owner === playerId ? 'your' : `${view.names[owner] || owner}'s`} promise`); } });
+  }
+  if (/\b(after (he|she|they|\w+) (agrees|accepts)|on acceptance|upfront|up front|right away|immediately)\b/.test(lower)) d.terms.forEach(t => { if (t.kind === 'pay_cash' && t.actorId === playerId && t.timing !== 'on_acceptance') { t.timing = 'on_acceptance'; changed.push('payment on acceptance'); } });
+  else if (/\bnext turn\b/.test(lower) && /\bpay/.test(lower)) d.terms.forEach(t => { if (t.kind === 'pay_cash' && t.actorId === playerId) { t.timing = 'next_turn'; changed.push('payment next turn'); } });
+  void nameToCode;
+  d.type = classifyDealType(d.terms);
+  d.playerFacingSummary = describeDealShort(d, view.names);
+  d.history = [...d.history, { turn: view.world.turn, kind: 'modified', actorId: playerId, text: `Modified: ${changed.join('; ') || 'no change'}.` }].slice(-12);
+  if (changed.length && (d.status === 'under_review' || d.status === 'countered' || d.status === 'sent')) {
+    // Modifying a received counter creates the next round from the player.
+    d.initiatorActorId = playerId; d.recipientActorIds = [cp]; d.negotiationRound = draft.negotiationRound + 1; d.parentProposalId = draft.proposalId; d.status = 'preview';
+    d.id = dnStableId('deal', [playerId, dealTermsSignature(d), view.world.turn, d.negotiationRound, d.parentProposalId]); d.proposalId = dnStableId('prop', [d.id]);
+  }
+  return { deal: d, changed };
+}
+
+// ---- Templates / builder (same canonical model as natural language) ---------------------------
+
+export const DN_TEMPLATES: Array<{ id: DNTemplateId; label: string; description: string }> = [
+  { id: 'non_aggression', label: 'Non-Aggression Pact', description: 'Neither side sabotages or contests the other.' },
+  { id: 'regional_ceasefire', label: 'Regional Ceasefire', description: 'Neither side challenges one region.' },
+  { id: 'cash_for_withdrawal', label: 'Cash-for-Withdrawal', description: 'You pay; they stop pressuring a region.' },
+  { id: 'mutual_support', label: 'Mutual Support', description: 'No sabotage both ways.' },
+  { id: 'resource_trade', label: 'Resource Trade', description: 'Resources for cash.' },
+  { id: 'temporary_alliance', label: 'Temporary Alliance', description: 'Full non-aggression for a few turns (teams never merge).' }
+];
+
+export type DNBuilderSide = { kind: 'none' | 'cash' | 'resource' | 'avoid_region' | 'do_not_challenge_region' | 'no_sabotage' | 'non_aggression'; amount?: number | null; regionId?: string | null; resourceId?: string | null; quantity?: number | null; timing?: DNPaymentTiming; treasury?: boolean; scope?: DiplomaticTerm['scope'] };
+
+export interface DNBuilderInput {
+  counterpartId: string;
+  offer: DNBuilderSide[];
+  request: DNBuilderSide[];
+  duration: DNDuration;
+  terminationConditions?: DNCondition[];
+  paymentDeferIfCashBelow?: number | null;
+}
+
+function dnSideToTerm(side: DNBuilderSide, owner: string, other: string): DiplomaticTerm | null {
+  switch (side.kind) {
+    case 'cash': return side.amount ? makeDiplomaticTerm({ actorId: owner, kind: 'pay_cash', targetActorId: other, amount: side.amount, timing: side.timing || 'on_acceptance', source: side.treasury ? 'treasury' : 'self' }) : null;
+    case 'resource': return side.resourceId && side.quantity ? makeDiplomaticTerm({ actorId: owner, kind: 'transfer_resource', targetActorId: other, resourceId: side.resourceId, quantity: side.quantity, timing: side.timing || 'on_acceptance' }) : null;
+    case 'avoid_region': return side.regionId ? makeDiplomaticTerm({ actorId: owner, kind: 'avoid_region', regionId: side.regionId, scope: side.scope || 'pressure' }) : null;
+    case 'do_not_challenge_region': return side.regionId ? makeDiplomaticTerm({ actorId: owner, kind: 'do_not_challenge_region', regionId: side.regionId }) : null;
+    case 'no_sabotage': return makeDiplomaticTerm({ actorId: owner, kind: 'do_not_sabotage', targetActorId: other });
+    case 'non_aggression': return makeDiplomaticTerm({ actorId: owner, kind: 'non_aggression', targetActorId: other, scope: side.scope || 'all' });
+  }
+  return null;
+}
+
+/** Structured builder → the SAME DiplomaticDeal model as natural language. */
+export function buildDiplomaticDealFromBuilder(input: DNBuilderInput, view: DiplomacyWorldView): DiplomaticDeal {
+  const p = view.playerId; const c = input.counterpartId;
+  const terms = [...input.offer.map(s => dnSideToTerm(s, p, c)), ...input.request.map(s => dnSideToTerm(s, c, p))].filter(Boolean) as DiplomaticTerm[];
+  if (input.paymentDeferIfCashBelow) terms.forEach(t => { if (t.actorId === p && t.kind === 'pay_cash') { t.condition = { kind: 'cash_below', actorId: p, amount: input.paymentDeferIfCashBelow!, effect: 'defer_payment', text: `payment deferred once if your cash is below $${input.paymentDeferIfCashBelow!.toLocaleString()}` }; if (t.timing === 'on_acceptance') t.timing = 'next_turn'; } });
+  const deal = createDiplomaticDeal({ initiatorActorId: p, recipientActorIds: [c], terms, duration: input.duration, turn: view.world.turn, terminationConditions: input.terminationConditions || [], seq: view.state.revision });
+  deal.status = 'preview'; deal.playerFacingSummary = describeDealShort(deal, view.names);
+  return deal;
+}
+
+export function buildDiplomaticTemplate(id: DNTemplateId, counterpartId: string, view: DiplomacyWorldView, regionId?: string | null, amount?: number | null): DiplomaticDeal {
+  const held = Object.values(view.world.regions).filter(r => r.controllerId === view.playerId).map(r => r.code);
+  const pressured = held.find(code => (view.world.regions[code].deposits[counterpartId] || 0) > 0) || held[0] || Object.keys(view.world.regions)[0];
+  const r = regionId || pressured;
+  const sides: Record<DNTemplateId, { offer: DNBuilderSide[]; request: DNBuilderSide[]; turns: number }> = {
+    non_aggression: { offer: [{ kind: 'non_aggression' }], request: [{ kind: 'non_aggression' }], turns: 3 },
+    regional_ceasefire: { offer: [{ kind: 'do_not_challenge_region', regionId: r }], request: [{ kind: 'do_not_challenge_region', regionId: r }], turns: 3 },
+    cash_for_withdrawal: { offer: [{ kind: 'cash', amount: amount || 3000, timing: 'on_acceptance' }], request: [{ kind: 'do_not_challenge_region', regionId: r }], turns: 3 },
+    mutual_support: { offer: [{ kind: 'no_sabotage' }], request: [{ kind: 'no_sabotage' }], turns: 4 },
+    resource_trade: { offer: [{ kind: 'resource', resourceId: view.world.resources[0], quantity: 2 }], request: [{ kind: 'cash', amount: amount || 1000 }], turns: 1 },
+    temporary_alliance: { offer: [{ kind: 'non_aggression', scope: 'all' }], request: [{ kind: 'non_aggression', scope: 'all' }], turns: 2 }
+  };
+  const s = sides[id];
+  const deal = buildDiplomaticDealFromBuilder({ counterpartId, offer: s.offer, request: s.request, duration: { kind: 'turns', turns: s.turns } }, view);
+  deal.type = id;
+  return deal;
+}
+
+// ---- World view + previews ------------------------------------------------------------------------
+
+export interface DiplomacyWorldView {
+  enabled: boolean;
+  state: DiplomacyState;
+  /** Player perspective: fog of war applies to opponents' finances; relationships are the public view. */
+  world: DiplomacyWorld;
+  playerId: string;
+  names: Record<string, string>;
+  gi3: GI3StrategyState | null;
+  teamMode: boolean;
+  /** Guardian / Co-Pilot protected cash reserve (financial-safety warnings only — never strategy judgement). */
+  reserveFloor?: number | null;
+}
+
+export interface DNImpactPreview { give: string[]; get: string[]; impact: string[]; outlook: ReturnType<typeof estimateDiplomaticOutlook> | null; validation: DNValidationResult }
+
+export function buildDiplomaticImpactPreview(deal: DiplomaticDeal, view: DiplomacyWorldView): DNImpactPreview {
+  const p = view.playerId;
+  const cp = deal.participants.find(x => x !== p) || '';
+  const give = deal.terms.filter(t => t.actorId === p).map(t => describeDiplomaticTerm(t, view.names));
+  const get = deal.terms.filter(t => t.actorId !== p).map(t => `${view.names[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, view.names)}`);
+  const impact: string[] = [];
+  deal.terms.filter(t => t.actorId === cp && t.regionId && (t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region')).forEach(t => impact.push(`${t.regionId} pressure: likely lower${view.world.regions[t.regionId!]?.controllerId === p ? ' (you hold it)' : ''}.`));
+  const upfront = deal.terms.filter(t => t.actorId === p && t.kind === 'pay_cash' && t.source === 'self' && t.timing === 'on_acceptance').reduce((s, t) => s + (t.amount || 0), 0);
+  const cash = view.world.actors[p]?.money;
+  if (upfront && cash !== null && cash !== undefined) impact.push(`Liquidity: $${cash.toLocaleString()} → $${Math.max(0, cash - upfront).toLocaleString()} if accepted.`);
+  const treas = deal.terms.filter(t => t.actorId === p && t.kind === 'pay_cash' && t.source === 'treasury').reduce((s, t) => s + (t.amount || 0), 0);
+  if (treas) impact.push(`Team Treasury: $${treas.toLocaleString()} requested through Governance if accepted.`);
+  const cashGoal = view.gi3?.active?.goals.find(g => /cash|money|liquid/.test(String(g.type)) && g.status !== 'completed' && g.amount);
+  if (cashGoal && (upfront || treas)) impact.push(`GI3: “${cashGoal.label}” would temporarily move farther away.`);
+  const protectGoal = view.gi3?.active?.goals.find(g => g.regionId && deal.terms.some(t => t.actorId === cp && t.regionId === g.regionId));
+  if (protectGoal) impact.push(`GI3: supports “${protectGoal.label}” — a window to focus on the next phase.`);
+  deal.terms.filter(t => t.actorId === p && t.regionId).forEach(t => { const g = view.gi3?.active?.goals.find(x => x.regionId === t.regionId && x.status !== 'completed'); if (g) impact.push(`GI3 conflict: your strategy includes “${g.label}”, which this promise restricts.`); });
+  impact.push('Trust: potential increase if completed; a violation would cost trust and reliability.');
+  impact.push(`Risk: ${view.names[cp] || cp} may reject or counter.`);
+  const validation = validateDiplomaticDeal(deal, view.world, view.state.deals);
+  // Guardian: financial safety only (protected reserve / catastrophic immediate payment) — not whether the deal is wise.
+  if (upfront && cash !== null && cash !== undefined) {
+    if (view.reserveFloor && cash - upfront < view.reserveFloor) validation.issues.push({ severity: 'warning', code: 'guardian_reserve', message: `Guardian: paying $${upfront.toLocaleString()} upfront would take you below your protected reserve ($${view.reserveFloor.toLocaleString()}).` });
+    else if (upfront >= cash * 0.75) validation.issues.push({ severity: 'warning', code: 'guardian_catastrophic', message: `Guardian: this payment uses ${Math.round((upfront / Math.max(1, cash)) * 100)}% of your cash at once.` });
+  }
+  const outlook = validation.ok ? estimateDiplomaticOutlook(deal, cp, view.world, view.state) : null;
+  return { give, get, impact, outlook, validation };
+}
+
+export interface DNComparisonRow { label: string; cost: string; duration: string; alignment: string; outlook: string; constraints: string }
+
+export function compareDiplomaticOptions(deals: DiplomaticDeal[], view: DiplomacyWorldView): DNComparisonRow[] {
+  return deals.slice(0, 3).map((d, i) => {
+    const pv = buildDiplomaticImpactPreview(d, view);
+    const cost = d.terms.filter(t => t.actorId === view.playerId && t.kind === 'pay_cash').reduce((s, t) => s + (t.amount || 0), 0);
+    const align = pv.impact.filter(x => x.startsWith('GI3')).join(' ') || 'No direct effect on your strategy.';
+    return { label: `Option ${String.fromCharCode(65 + i)}`, cost: cost ? `$${cost.toLocaleString()}` : 'No cash', duration: describeDealDuration(d), alignment: align, outlook: pv.outlook ? pv.outlook.outlook : 'invalid', constraints: pv.validation.issues.filter(x => x.severity === 'error').map(x => x.message).join(' ') || 'OK' };
+  });
+}
+
+// ---- Game Intelligence routing + answers --------------------------------------------------------
+
+export type DNQueryTopic = 'propose' | 'modify' | 'list' | 'my_violations' | 'why_reject' | 'why_counter' | 'asking' | 'would_accept' | 'expiry' | 'break' | 'can_attack' | 'compliance' | 'trust' | 'leverage' | 'renegotiate' | 'best_deal' | 'compare' | 'willingness';
+export interface DNQuery { topic: DNQueryTopic; counterpartId: string | null; regionId: string | null }
+
+export function detectDiplomacyQuery(raw: string, gw: GIWorld, ctx?: GIConversationContext | null): DNQuery | null {
+  const view = gw.diplomacy;
+  if (!view || !view.enabled) return null;
+  let q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim()} `;
+  const rivals = Object.values(view.world.actors).filter(a => a.id !== view.playerId && a.teamId !== view.world.actors[view.playerId]?.teamId);
+  const named = rivals.find(a => new RegExp(`\\b${a.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q))?.id || null;
+  const cp = named || (ctx as any)?.diplomacyCounterpartId || gw.primaryRivalId || rivals[0]?.id || null;
+  // Multi-word names ("Scientist AI") become one token so the actor slot in each pattern matches them.
+  rivals.forEach(a => { const n = a.name.toLowerCase(); if (/\s/.test(n)) q = q.split(n).join(n.replace(/\s+/g, '_')); });
+  const regionId = Object.keys(view.world.regions).find(c => new RegExp(`\\b(${c.toLowerCase()}|${(view.world.regions[c].name || '').toLowerCase()})\\b`).test(q)) || null;
+  const make = (topic: DNQueryTopic): DNQuery => ({ topic, counterpartId: cp, regionId });
+  const dealWord = /\b(deals?|agreements?|pacts?|treat(y|ies)|ceasefire|truce|commitments?|promises?|obligations?)\b/;
+  if (/\bsettings?\b|\bconfigur/.test(q) && !dealWord.test(q)) return null;
+  if (/\bwhy (did|has|would) \S+ (reject|refuse|decline|turn down|say no|not accept)|\bwhy (was|is) (my|the) (offer|proposal|deal) (rejected|refused|declined)/.test(q)) return make('why_reject');
+  if (/\bwhy (did|has) \S+ counter/.test(q)) return make('why_counter');
+  if (/\bwhat (is|was|did|does) \S+ (asking|ask|counter(ing)?|counteroffer|demand|want)\b.*\b(for|with)?/.test(q) && (named || /\b(counter|asking|demand)\b/.test(q))) return make(/counter/.test(q) ? 'why_counter' : 'asking');
+  if (/\bwhat would (make|get) \S+ (to )?(accept|agree|say yes)|\bhow (can|do|could) i get \S+ to (accept|agree)/.test(q)) return make('would_accept');
+  if (/\b(have i|did i) (broken|broke|violated|kept|honou?red)\b|\b(broken|broke|violated) (any|my) (promises?|agreements?|deals?)\b/.test(q)) return make('my_violations');
+  if (/\bwhen (does|will|is) (the |my |our )?(\S+ )?(pact|deal|agreement|ceasefire|truce)\b.*\b(expire|end|run out|finish|over)\b|\bhow long (is|does|will) (the |my |our )?(\S+ )?(pact|deal|agreement|ceasefire)\b/.test(q)) return make('expiry');
+  if (/\bwhat (happens|would happen|will happen) if i (break|violate|ignore|betray|breach)\b|\bif i break (it|the|my)\b/.test(q)) return make('break');
+  if (/\bcan i (still )?(attack|contest|challenge|deposit|invest|go into|go to|enter|sabotage|take)\b/.test(q) && (regionId || named || /sabotag/.test(q)) && view.state.deals.some(d => d.status === 'active')) return make('can_attack');
+  if (/\bis \S+ (keeping|honou?ring|sticking to|following|breaking|respecting|violating)\b/.test(q)) return make('compliance');
+  if (/\b(does|do) \S+ trust (me|us)\b|\bhow much (does|do) \S+ trust\b|\bwhy (does|do|doesn't|does not|don't|do not) \S+ (not )?trust\b|\btrust (level|score) with\b/.test(q)) return make('trust');
+  if (/\b(what|how much) leverage\b|\bmy leverage\b|\bbargaining (power|position)\b|\bnegotiating position\b/.test(q)) return make('leverage');
+  if (/\bshould i (renegotiate|extend|renew|end|terminate|cancel) (the |my |our |this )?(\S+ )?(pact|deal|agreement|ceasefire)?/.test(q) || /\b(renegotiate|extend) (the |my |our )?(\S+ )?(pact|deal|agreement|ceasefire)\b/.test(q) && q.includes('?')) return make('renegotiate');
+  if (/\bwhich (deal|agreement|offer|proposal|pact) (helps|is best|fits|would help|should i)/.test(q) || /\bbest (deal|agreement|offer)\b/.test(q)) return make('best_deal');
+  if (/\bcompare\b/.test(q) && dnMoneyIn(q).length >= 2 || (/\b(vs\.?|versus|or)\b/.test(q) && dnMoneyIn(q).length >= 2 && /\bturns?\b/.test(q))) return make('compare');
+  if (/\bmake \S+ (more )?(willing|open|likely|keen) to (negotiate|deal|accept|agree|trade)\b/.test(q)) return make('willingness');
+  if (/\b(what|which|show|list|any)\b.*\b(deals?|agreements?|pacts?|treat(y|ies)|commitments?|obligations?)\b|\bwhat do i owe\b|\bmy (deals|agreements|pacts|commitments|promises)\b/.test(q) && !DN_PAY.test(q.replace(/\bpayment\b/, ''))) return make('list');
+  // Modification of the pending draft or received counter.
+  const pending = (ctx as any)?.pendingDeal as DiplomaticDeal | null | undefined;
+  if (pending && /^\s*(make (that|it|the payment)|actually|instead|change|only|just|remove|drop|add|also|and also|without|plus|pay (next|on|upfront)|for \d+|\$)/.test(q.trim()) || (pending && /\binstead\b/.test(q))) return make('modify');
+  // New proposals: promise / exchange structure aimed at an opponent (or explicit deal language).
+  const promise = /\b(i will|i'll|i'd|i would|we will|we'll|let us|let's|i can)\b.*\b(give|pay|offer|stay|leave|withdraw|avoid|stop|not|pull|back off|abandon)\b/.test(q);
+  const ask = /\b(offer|propose|suggest|pitch|ask|tell)\b.{0,20}\b(them|him|her|\S+)\b.*\b(\$|stay|leave|stop|pact|deal|ceasefire|truce|not)\b/.test(q);
+  const deal = /\b(non ?-?aggression|cease ?fire|truce|pact|treaty|deal with|agreement with|negotiate|peace)\b/.test(q);
+  const imperativeToRival = named && /^\s*(stay|keep|leave|stop|avoid|withdraw|back off|get out|pull out|do not|don't)\b/.test(q) && regionId;
+  const threat = /\b(or|otherwise|or else) (i will|i'll|we will|we'll)\b/.test(q) && /\b(leave|stay|stop|get out|back off)\b/.test(q);
+  const mutual = /\b(each other|one another|both of us|between us)\b/.test(q) && /\b(sabotag|attack|contest|challeng|fight|pressur)\w*/.test(q);
+  if ((promise || ask || deal || imperativeToRival || threat || mutual) && (named || deal || threat || mutual || /\b(him|her|them|he|she|they)\b/.test(q) && (ctx as any)?.diplomacyCounterpartId)) return make('propose');
+  return null;
+}
+
+const dnClaim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed') => claim(text, kind, certainty, ['dn.state'], { derived: giNumbersIn(text).map(n => n.value) });
+
+export function diplomacyPreviewSections(deal: DiplomaticDeal, view: DiplomacyWorldView, understood: string[] = [], assumptions: string[] = []): GIAnswerSection[] {
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const p = view.playerId; const cp = deal.participants.find(x => x !== p) || '';
+  const pv = buildDiplomaticImpactPreview(deal, view);
+  say('you', 'You agree', pv.give.length ? pv.give.map(x => dnClaim(x)) : [dnClaim('Nothing — you make no promise.')]);
+  say('them', `${view.names[cp] || cp} agrees`, deal.terms.filter(t => t.actorId === cp).map(t => dnClaim(describeDiplomaticTerm(t, view.names))));
+  say('duration', 'Duration', [dnClaim(describeDealDuration(deal)), dnClaim('Starts immediately after acceptance (payments due on acceptance are made first — the agreement activates only if they succeed).')]);
+  if (deal.terminationConditions.length) say('conditions', 'Conditions', deal.terminationConditions.map(c => dnClaim(`Ends automatically: ${c.text || c.kind}.`)));
+  say('broken', 'If broken', [dnClaim('The agreement is marked violated; trust and reliability may decrease. Nothing blocks either side — promises are commitments, not locks.', 'inference', 'high')]);
+  say('impact', 'Strategic impact', pv.impact.map(x => dnClaim(x, /^(Risk|Trust|GI3)/.test(x) || /likely/.test(x) ? 'projection' : 'fact', /^(Risk|Trust)/.test(x) || /likely/.test(x) ? 'moderate' : 'confirmed')));
+  if (pv.outlook) say('outlook', 'Acceptance outlook', [dnClaim(pv.outlook.text, 'projection', 'moderate'), ...pv.outlook.reasons.slice(0, 2).map(r => dnClaim(r, 'inference', 'moderate'))]);
+  if (pv.validation.issues.length) say('issues', 'Check before sending', pv.validation.issues.map(i => dnClaim(`${i.severity === 'error' ? 'Cannot send: ' : 'Note: '}${i.message}${i.options?.length ? ` Options: ${i.options.join(' / ')}.` : ''}`, 'caveat')));
+  if (understood.length || assumptions.length) say('understood', 'How I read it', [...understood.slice(0, 5).map(u => dnClaim(u, 'inference', 'high')), ...assumptions.map(a => dnClaim(a, 'caveat'))]);
+  return sections;
+}
+
+export function composeDiplomacyAnswer(query: DNQuery, gw: GIWorld, ctx: GIConversationContext, raw: string): GIComposePart & { shape: GIAnswerShape; ctx: Partial<GIConversationContext> } {
+  const view = gw.diplomacy!;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const ctxOut: Partial<GIConversationContext> = {};
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const p = view.playerId; const cp = query.counterpartId || '';
+  const cpName = view.names[cp] || cp || 'your opponent';
+  const st = view.state;
+  const withCp = (d: DiplomaticDeal) => !cp || d.participants.includes(cp);
+  const active = st.deals.filter(d => d.status === 'active' && d.participants.includes(p));
+  const lastResponse = [...st.history, ...st.deals].filter(d => withCp(d) && d.initiatorActorId === p && d.evaluationSnapshot && ['rejected', 'countered', 'accepted', 'active', 'completed', 'violated'].includes(d.status)).sort((a, b) => (b.respondedTurn || 0) - (a.respondedTurn || 0))[0] || null;
+  const openCounter = st.deals.find(d => d.status === 'under_review' && d.recipientActorIds.includes(p) && withCp(d)) || null;
+  const rel = view.world.relationship(cp, p) || DN_DEFAULT_RELATIONSHIP;
+  const openBtn = () => buttons.push({ id: 'dn_open', label: 'Open Diplomacy', kind: 'dn_open', candidateId: cp, tone: 'secondary' });
+  ctxOut.diplomacyCounterpartId = cp || null;
+  let title = 'Diplomacy'; let shape: GIAnswerShape = 'explanation';
+  switch (query.topic) {
+    case 'propose': {
+      const r = compileDiplomaticProposalFromText(raw, gw, view, ctx);
+      title = 'Proposed agreement'; shape = 'plan';
+      if (!r.deal) { say('clarify', null, [dnClaim(r.clarification || 'I need clearer terms.', 'caveat'), ...r.unsupported.map(u => dnClaim(u, 'caveat')), ...r.negatedRequests.map(n => dnClaim(n, 'inference', 'high'))]); openBtn(); break; }
+      sections.push(...diplomacyPreviewSections(r.deal, view, [...r.understood, ...r.negatedRequests], [...r.assumptions, ...r.unsupported]));
+      const valid = validateDiplomaticDeal(r.deal, view.world, st.deals).ok;
+      if (valid) buttons.push({ id: 'dn_send', label: 'Send Proposal', kind: 'dn_send', tone: 'primary' });
+      buttons.push({ id: 'dn_modify', label: 'Modify', kind: 'dn_modify', tone: 'secondary' }, { id: 'dn_explain', label: 'Why This Matters', kind: 'ask', query: `What leverage do I have with ${cpName}?`, tone: 'secondary' }, { id: 'dn_cancel', label: 'Cancel', kind: 'dn_cancel', tone: 'secondary' });
+      ctxOut.pendingDeal = r.deal;
+      break;
+    }
+    case 'modify': {
+      const pending = (ctx as any).pendingDeal as DiplomaticDeal | null;
+      if (!pending) { say('none', null, [dnClaim('There is no draft to change — describe the deal first.', 'caveat')]); break; }
+      const m = modifyDiplomaticDraft(pending, raw, view);
+      title = 'Updated proposal'; shape = 'plan';
+      say('changed', 'Changed', m.changed.length ? m.changed.map(c => dnClaim(c.charAt(0).toUpperCase() + c.slice(1) + '.')) : [dnClaim('Nothing changed — I could not tell which term to edit.', 'caveat')]);
+      sections.push(...diplomacyPreviewSections(m.deal, view));
+      if (validateDiplomaticDeal(m.deal, view.world, st.deals).ok) buttons.push({ id: 'dn_send', label: 'Send Proposal', kind: 'dn_send', tone: 'primary' });
+      buttons.push({ id: 'dn_cancel', label: 'Cancel', kind: 'dn_cancel', tone: 'secondary' });
+      ctxOut.pendingDeal = m.deal;
+      break;
+    }
+    case 'list':
+    case 'my_violations': {
+      title = query.topic === 'list' ? 'Your agreements' : 'Your promises';
+      if (query.topic === 'my_violations') {
+        const rec = deriveDiplomaticReliability(st, p, null);
+        say('record', null, [dnClaim(rec.broken ? `Yes — you have broken ${rec.broken} agreement${rec.broken === 1 ? '' : 's'}.` : 'No — you have not broken any agreement.'), dnClaim(`Record: ${rec.evidence.join(', ')}.`)]);
+      }
+      if (!active.length) say('none', null, [dnClaim('No active agreements.')]);
+      active.forEach(d => {
+        const left = d.expirationTurn !== null ? d.expirationTurn - view.world.turn + 1 : null;
+        say(`d_${d.id}`, describeDealShort(d, view.names), [
+          ...d.terms.filter(t => t.actorId === p).map(t => dnClaim(`You: ${describeDiplomaticTerm(t, view.names)}${t.kind === 'pay_cash' && t.status === 'satisfied' ? ' — paid' : ''}.`)),
+          ...d.terms.filter(t => t.actorId !== p).map(t => dnClaim(`${view.names[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, view.names)}.`)),
+          dnClaim(left !== null ? `Remaining: ${left} turn${left === 1 ? '' : 's'} (expires after Round ${d.expirationTurn}).` : `Duration: ${describeDealDuration(d)}.`),
+          dnClaim(`Status: ${d.compliance === 'at_risk' ? 'At risk' : 'Compliant'}.`)
+        ]);
+      });
+      const pendingIn = st.deals.filter(d => d.status === 'under_review' && d.recipientActorIds.includes(p));
+      if (pendingIn.length) say('pending', 'Waiting for your answer', pendingIn.map(d => dnClaim(`${view.names[d.initiatorActorId] || d.initiatorActorId}: ${describeDealShort(d, view.names)}.`)));
+      openBtn();
+      break;
+    }
+    case 'why_reject':
+    case 'why_counter':
+    case 'asking': {
+      const d = query.topic === 'asking' || query.topic === 'why_counter' ? (openCounter || lastResponse) : lastResponse;
+      title = query.topic === 'why_reject' ? `Why ${cpName} rejected` : query.topic === 'why_counter' ? `${cpName}'s counteroffer` : `What ${cpName} is asking for`;
+      if (!d || !d.evaluationSnapshot) { say('none', null, [dnClaim(`${cpName} has not responded to a proposal from you recently.`)]); openBtn(); break; }
+      const snap = d.evaluationSnapshot;
+      if (d === openCounter || d.status === 'under_review') {
+        say('counter', 'Counteroffer', [dnClaim(`${cpName} proposes: ${describeDealShort(d, view.names)}.`), ...d.terms.map(t => dnClaim(`${t.actorId === p ? 'You' : view.names[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, view.names)}.`)), dnClaim(`Duration: ${describeDealDuration(d)}.`)]);
+        const counterNote = d.history.slice().reverse().find(h => h.kind === 'counter');
+        if (counterNote) say('why', 'Why they countered', [dnClaim(`${cpName} was close to accepting — the counter changes ${counterNote.text.replace(/^Counter: /, '').replace(/\.$/, '')}.`, 'inference', 'high'), ...snap.reasons.slice(0, 3).map(r => dnClaim(r, 'inference', 'moderate'))]);
+        buttons.push({ id: 'dn_accept', label: 'Accept Counter', kind: 'dn_accept', candidateId: d.id, tone: 'primary' }, { id: 'dn_counter', label: 'Change Offer', kind: 'dn_counter', candidateId: d.id, tone: 'secondary' }, { id: 'dn_reject', label: 'Reject', kind: 'dn_reject', candidateId: d.id, tone: 'secondary' });
+      } else {
+        if (query.topic !== 'why_reject') title = `${cpName}'s response`;
+        say('evaluation', 'Their evaluation', [dnClaim(`${cpName} ${d.status === 'rejected' ? 'rejected' : d.status === 'countered' ? 'countered' : 'accepted'} ${describeDealShort(d, view.names)}${d.status === 'rejected' && query.topic !== 'why_reject' ? ' — there is no open counteroffer' : ''}.`), ...snap.reasons.slice(0, 4).map(r => dnClaim(r, 'inference', 'moderate'))]);
+        say('note', null, [dnClaim('This explanation uses only what you can see — their exact valuation and finances stay private.', 'caveat')]);
+      }
+      openBtn();
+      break;
+    }
+    case 'would_accept': {
+      const base = (ctx as any).pendingDeal as DiplomaticDeal | null || lastResponse;
+      title = `What would make ${cpName} accept`;
+      if (!base) { say('none', null, [dnClaim('Describe a proposal first and I can estimate what would make it work.', 'caveat')]); break; }
+      const ev = evaluateDiplomaticDeal(base, cp, view.world, st, { allowCounter: true });
+      if (ev.response === 'accept') say('ok', null, [dnClaim('As it stands, the offer already looks acceptable to them (no guarantee).', 'projection', 'moderate')]);
+      else if (ev.counter) say('hint', null, [dnClaim(`The smallest change that would likely help: ${ev.counter.summary.replace(/\$[\d,]+ instead of \$[\d,]+/, 'a larger payment')}.`, 'projection', 'moderate'), ...ev.reasons.slice(0, 2).map(r => dnClaim(r, 'inference', 'moderate'))]);
+      else say('hint', null, [dnClaim(ev.victoryBlock ? 'No offer is likely to work — the agreement would hurt their chances of winning too much.' : 'No small change looks enough; a different kind of deal (e.g. reciprocal promises) may work better.', 'projection', 'moderate'), ...ev.reasons.slice(0, 2).map(r => dnClaim(r, 'inference', 'moderate'))]);
+      say('note', null, [dnClaim('Estimates use visible information only; the exact acceptance point is never shown.', 'caveat')]);
+      break;
+    }
+    case 'expiry': {
+      title = 'Agreement timing';
+      const ds = active.filter(d => withCp(d) && (!query.regionId || d.terms.some(t => t.regionId === query.regionId)));
+      if (!ds.length) say('none', null, [dnClaim('No matching active agreement.')]);
+      ds.forEach(d => say(`e_${d.id}`, null, [dnClaim(d.expirationTurn !== null ? `The ${describeDealShort(d, view.names)} expires after Round ${d.expirationTurn} (${Math.max(0, d.expirationTurn - view.world.turn + 1)} turn${d.expirationTurn - view.world.turn + 1 === 1 ? '' : 's'} left).` : `The ${describeDealShort(d, view.names)} is open-ended: ${describeDealDuration(d)}.`)]));
+      break;
+    }
+    case 'break':
+    case 'can_attack': {
+      title = query.topic === 'break' ? 'If you break the agreement' : 'What your agreements allow';
+      const probeType = /sabotag/.test(raw.toLowerCase()) ? 'sabotage' : 'region_deposit';
+      const ctrl: Record<string, string | null> = {}; Object.values(view.world.regions).forEach(r => { ctrl[r.code] = r.controllerId; });
+      const v = query.regionId || probeType === 'sabotage' ? checkDiplomaticActionCompliance(st, { actorId: p, actionType: probeType, regionId: query.regionId, targetActorId: cp }, ctrl, view.world.turn, view.names) : [];
+      if (query.topic === 'can_attack') say('answer', null, [dnClaim(v.length ? `You can — nothing blocks it — but it would break an agreement: ${v[0].text}.` : `Yes — no active agreement restricts that${query.regionId ? ` in ${query.regionId}` : ''}.`)]);
+      const d = v[0]?.deal || active.find(withCp);
+      if (d) {
+        const s = computeDiplomaticSignificance(d);
+        say('consequence', 'Consequences', [dnClaim('The action executes normally; the agreement becomes violated.'), dnClaim(`${cpName}'s trust in you and your reliability would fall ${s >= 0.5 ? 'sharply' : 'noticeably'}; they will remember it in future negotiations.`, 'projection', 'high'), dnClaim('Future deals with them would likely need stronger guarantees or better terms.', 'projection', 'moderate')]);
+        if (d.terms.some(t => t.actorId === p && t.regionId)) say('tradeoff', null, [dnClaim(`Breaking it would free you to contest ${d.terms.filter(t => t.actorId === p && t.regionId).map(t => t.regionId).join(', ')} now — a strategic choice, not a rule.`, 'inference', 'high')]);
+      }
+      break;
+    }
+    case 'compliance': {
+      title = `Is ${cpName} keeping the agreement?`;
+      const ds = active.filter(withCp);
+      const broken = st.history.filter(d => withCp(d) && d.violatedBy === cp).slice(-2);
+      if (!ds.length && !broken.length) say('none', null, [dnClaim(`You have no active agreement with ${cpName}.`)]);
+      ds.forEach(d => say(`c_${d.id}`, null, [dnClaim(`${describeDealShort(d, view.names)}: ${d.compliance === 'at_risk' ? 'at risk' : `${cpName} is compliant so far`}.`)]));
+      broken.forEach(d => say(`b_${d.id}`, null, [dnClaim(`${cpName} broke ${describeDealShort(d, view.names)}${d.violationReason ? `: ${d.violationReason}` : ''}.`)]));
+      break;
+    }
+    case 'trust': {
+      title = `${cpName}'s trust in you`;
+      const rec = deriveDiplomaticReliability(st, p, cp);
+      const stance = deriveDiplomaticStanceLabel(rel, active.filter(withCp).length, st.history.filter(d => withCp(d) && d.status === 'violated').length);
+      say('trust', null, [dnClaim(`Trust: ${Math.round(rel.trust)}/100 (${stance}).`), dnClaim(`Your reliability toward ${cpName}: ${rec.band} — ${rec.evidence.join(', ')}.`)]);
+      const why: string[] = [];
+      if (rec.broken) why.push('You broke a previous agreement.');
+      if (rec.withdrawals) why.push('You withdrew from an agreement early.');
+      if (rel.trust < 45 && !rec.broken) why.push('Recent competitive moves against them (deposits in their regions, sabotage) lowered trust.');
+      if (rel.trust >= 55) why.push(rec.honored ? 'Kept agreements and cooperation raised trust.' : 'No major hostility recently.');
+      if (why.length) say('why', 'Why', why.map(w => dnClaim(w, 'inference', 'moderate')));
+      break;
+    }
+    case 'leverage':
+    case 'willingness': {
+      const lev = buildDiplomaticLeverageSnapshot(p, cp, view.world, st);
+      title = query.topic === 'leverage' ? `Your leverage with ${cpName}` : `Making ${cpName} more willing to negotiate`;
+      say('lev', null, [dnClaim(`Your leverage: ${lev.label.charAt(0).toUpperCase() + lev.label.slice(1)}.`, 'inference', 'moderate'), ...lev.factors.map(f => dnClaim(f.text, f.text.includes('hidden') ? 'caveat' : 'inference', 'moderate'))]);
+      if (query.topic === 'willingness') say('how', 'In the game (not settings)', [dnClaim('Keep existing agreements to raise your reliability; offer reciprocal promises; use cash when they are short; avoid pressuring their regions right before proposing.', 'recommendation', 'moderate'), dnClaim('If you meant the AI configuration instead, ask “which settings affect negotiation?”.', 'caveat')]);
+      openBtn();
+      break;
+    }
+    case 'renegotiate':
+    case 'best_deal': {
+      title = query.topic === 'renegotiate' ? 'Renegotiation' : 'Which deal helps most';
+      const obs = deriveDiplomaticObservations(st, view.world, p, view.names);
+      const windows = deriveDiplomaticWindows(st, p, view.world.turn, view.names);
+      const notes = gi3DiplomaticWindowNotes(view.gi3, windows);
+      if (query.topic === 'renegotiate') {
+        const d = active.find(withCp);
+        if (!d) say('none', null, [dnClaim(`No active agreement with ${cpName} to renegotiate.`)]);
+        else {
+          const left = d.expirationTurn !== null ? d.expirationTurn - view.world.turn + 1 : null;
+          say('state', null, [dnClaim(`${describeDealShort(d, view.names)}: ${left !== null ? `${left} turn${left === 1 ? '' : 's'} left` : describeDealDuration(d)}, ${d.compliance}.`), dnClaim(left !== null && left <= 2 ? 'It expires soon — extending now keeps the window open; the current terms stay active until an amendment is accepted.' : 'No urgency yet — renegotiating early mainly makes sense if your strategy changed.', 'inference', 'moderate')]);
+          buttons.push({ id: 'dn_extend', label: 'Propose extension', kind: 'dn_extend', candidateId: d.id, tone: 'primary' });
+        }
+      } else {
+        const candidates = [buildDiplomaticTemplate('regional_ceasefire', cp, view), buildDiplomaticTemplate('cash_for_withdrawal', cp, view), buildDiplomaticTemplate('mutual_support', cp, view)];
+        const rows = compareDiplomaticOptions(candidates, view);
+        say('options', 'Options (no option is objectively best)', rows.map((r, i) => dnClaim(`${r.label} — ${describeDealShort(candidates[i], view.names)}: cost ${r.cost}, ${r.duration}, outlook ${r.outlook}. ${r.alignment}`, 'inference', 'moderate')));
+      }
+      if (notes.length) say('gi3', 'Your strategy', notes.map(n => dnClaim(n, 'inference', 'high')));
+      if (obs.length) say('bg', 'Background AI notes', obs.map(o => dnClaim(o.text, 'inference', 'moderate')));
+      openBtn();
+      break;
+    }
+    case 'compare': {
+      title = 'Compare deals';
+      const base = (ctx as any).pendingDeal as DiplomaticDeal | null || buildDiplomaticTemplate('cash_for_withdrawal', cp, view);
+      const amounts = dnMoneyIn(raw.toLowerCase());
+      const turns = Array.from(raw.toLowerCase().matchAll(/(\d+)\s*turns?/g)).map(m => Number(m[1]));
+      const opts = amounts.slice(0, 3).map((a, i) => {
+        let d = modifyDiplomaticDraft(base, `$${a}`, view).deal;
+        if (turns[i]) d = modifyDiplomaticDraft(d, `${turns[i]} turns`, view).deal;
+        return d;
+      });
+      const rows = compareDiplomaticOptions(opts, view);
+      rows.forEach((r, i) => say(`o${i}`, r.label, [dnClaim(`Cost: ${r.cost}. Duration: ${r.duration}.`), dnClaim(`Acceptance outlook: ${r.outlook}.`, 'projection', 'moderate'), dnClaim(r.alignment, 'inference', 'moderate'), dnClaim(`Constraints: ${r.constraints}`)]));
+      say('note', null, [dnClaim('Neither option is objectively better — it depends on how much cash you can spare and how long you need the window.', 'caveat')]);
+      break;
+    }
+  }
+  return { title, sections, buttons, shape, ctx: ctxOut };
+}
+
+
+/** Contextual Actions: at most one diplomacy entry, and only when strategically relevant (never a constant nag). */
+export function diplomaticContextualSurface(state: DiplomacyState | null | undefined, playerId: string, turn: number, pressuredRegions: string[], names: Record<string, string> = {}): { id: string; label: string } | null {
+  const st = state || createEmptyDiplomacyState();
+  const incoming = st.deals.find(d => d.status === 'under_review' && d.recipientActorIds.includes(playerId));
+  if (incoming) return { id: 'dn_answer', label: names[incoming.initiatorActorId] ? `Answer ${names[incoming.initiatorActorId]}'s proposal` : 'Answer the proposal' };
+  const expiring = st.deals.find(d => d.status === 'active' && d.participants.includes(playerId) && d.expirationTurn !== null && d.expirationTurn - turn <= 1);
+  if (expiring) { const r = Array.from(new Set(expiring.terms.map(t => t.regionId).filter(Boolean))); return { id: 'dn_extend', label: `Extend ${r.length ? `${r.join('–')} ` : ''}pact` }; }
+  if (pressuredRegions.length && !st.deals.some(d => d.status === 'active' && d.participants.includes(playerId))) return { id: 'dn_ceasefire', label: `Negotiate ${pressuredRegions[0]} ceasefire` };
+  return null;
+}
+
+// ---- Dialogue (generated FROM the structured evaluation — flavour never changes terms) ---------------
+
+const DN_VOICE: Record<DNPersonalityKey, { accept: string[]; reject: string[]; counter: string[]; guarantee: string[]; delay: string[] }> = {
+  aggressive: { accept: ['Fine. We have a deal.', 'Done — don\'t make me regret it.'], reject: ['No.', 'Not a chance.'], counter: ['Not on those terms.', 'You\'ll have to do better.'], guarantee: ['I don\'t take promises on faith.'], delay: ['I\'ll think about it.'] },
+  economic: { accept: ['That works for me — agreed.', 'A fair trade. Agreed.'], reject: ['The numbers don\'t work for me.', 'That doesn\'t pay.'], counter: ['The price isn\'t right yet.', 'Close, but the numbers need to move.'], guarantee: ['I need the money on the table first.'], delay: ['Let me run the numbers next turn.'] },
+  cooperative: { accept: ['Agreed — let\'s keep this going.', 'Happy to agree.'], reject: ['I can\'t agree to that, sorry.', 'That one doesn\'t work for me.'], counter: ['I\'d like to agree — could we adjust it slightly?', 'Nearly there — one change.'], guarantee: ['I want to trust you, but I need a safeguard.'], delay: ['Let\'s see how the next turn goes.'] },
+  opportunistic: { accept: ['Deal.', 'Sure, why not.'], reject: ['Not worth it right now.', 'Pass.'], counter: ['Here\'s what I\'ll take.', 'I can do better than that.'], guarantee: ['Upfront, or nothing.'], delay: ['Ask me again next turn.'] },
+  balanced: { accept: ['Agreed.', 'Deal.'], reject: ['I\'ll pass on that.', 'That doesn\'t work for me.'], counter: ['Not quite — here\'s what I can do.', 'Close. I\'d agree to this instead.'], guarantee: ['I\'d need a guarantee first.'], delay: ['Give me a turn to consider it.'] }
+};
+
+/** Public factor text is written about the other side ("matters to them"); in their own voice it becomes first person. */
+function dnFirstPerson(text: string): string {
+  return text.replace(/\bto them\b/g, 'to me').replace(/\bfor them\b/g, 'for me').replace(/\bthey trust you\b/g, 'I trust you').replace(/\bthey like\b/g, 'I like').replace(/\bthey need\b/g, 'I need').replace(/\bthey have\b/g, 'I have').replace(/\bthey don't\b/g, "I don't").replace(/\btheir\b/g, 'my').replace(/\bthem\b/g, 'me').replace(/\bthey\b/g, 'I');
+}
+
+function dnPick(list: string[], key: string): string { let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0; return list[h % list.length]; }
+
+/** Concise, personality-aware response lines. Every term statement comes from the structured deal. */
+export function buildDiplomaticDialogue(ev: DiplomaticEvaluation, deal: DiplomaticDeal, names: Record<string, string>, personality: DNPersonality): string[] {
+  const v = DN_VOICE[personality.key] || DN_VOICE.balanced;
+  const key = `${deal.id}:${ev.response}`;
+  const lines: string[] = [];
+  const topCost = ev.factors.filter(f => f.visibility === 'public' && f.value < 0).sort((a, b) => a.value - b.value)[0];
+  const cashTerm = deal.terms.find(t => t.kind === 'pay_cash' && t.actorId !== ev.evaluatorId);
+  switch (ev.response) {
+    case 'accept': lines.push(dnPick(v.accept, key)); break;
+    case 'counter':
+    case 'request_guarantee': {
+      if (ev.response === 'request_guarantee') lines.push(dnPick(v.guarantee, key));
+      else if (topCost && cashTerm && ev.victoryBlock === false) { const t = dnFirstPerson(topCost.publicText); lines.push(`${t.charAt(0).toUpperCase() + t.slice(1)} — $${(cashTerm.amount || 0).toLocaleString()} isn't enough for that.`); }
+      else lines.push(dnPick(v.counter, key));
+      if (ev.counter) {
+        const c = ev.counter.deal;
+        const mine = c.terms.filter(t => t.actorId === ev.evaluatorId).map(t => describeDiplomaticTerm(t, names).toLowerCase());
+        const theirs = c.terms.filter(t => t.actorId !== ev.evaluatorId).map(t => describeDiplomaticTerm(t, names).toLowerCase());
+        lines.push(`I would ${mine.join(' and ') || 'agree'}${c.expirationTurn !== null ? ` for ${describeDealDuration(c).toLowerCase()}` : ''}${theirs.length ? ` if you ${theirs.join(' and ')}` : ''}.`);
+      }
+      break;
+    }
+    case 'delay': lines.push(dnPick(v.delay, key)); break;
+    case 'request_clarification': lines.push('What exactly are you offering?'); break;
+    default: lines.push(ev.victoryBlock ? 'That would hand you the match. No.' : ev.fatigueBlocked ? 'I\'m done negotiating for now.' : dnPick(v.reject, key));
+      if (!ev.victoryBlock && !ev.fatigueBlocked && topCost) { const t = dnFirstPerson(topCost.publicText); lines.push(`${t.charAt(0).toUpperCase() + t.slice(1)}.`); }
+  }
+  if (ev.response !== 'accept' && deal.history.some(h => h.kind === 'violation') === false && ev.reasons.some(r => /broke a previous/.test(r))) lines.push('You broke our last agreement. I need a stronger commitment this time.');
+  return lines.slice(0, 3);
+}
+
+/** The player's own structured decision on an AI proposal / counter (same response model as the AI). */
+export function playerDiplomaticDecision(deal: DiplomaticDeal, playerId: string, response: 'accept' | 'reject'): DiplomaticEvaluation {
+  return { evaluatorId: playerId, counterpartId: deal.initiatorActorId, dealSignature: dealTermsSignature(deal), receivedValue: 0, givenValue: 0, utility: 0, ratio: 1, threshold: 1, band: response === 'accept' ? 'accept' : 'reject', response, betrayalRisk: 0, victoryBlock: false, factors: [], reasons: [response === 'accept' ? 'You accepted.' : 'You rejected.'], counter: null, guarantee: null, fatigueBlocked: false };
+}
+
+/** Pre-action notice: an action would break an active agreement. Never a block — Continue runs the same action. */
+export function buildDiplomaticBreachAnswer(violations: DNViolation[], candidate: { id: string; label: string }, names: Record<string, string>): GameIntelligenceAnswer {
+  const v = violations[0];
+  const cp = v.deal.participants.find(p => p !== 'player') || '';
+  const s = computeDiplomaticSignificance(v.deal);
+  return {
+    id: nextIntelligenceAnswerId('dnbreach'), query: candidate.label, kind: 'why', title: 'This would break an agreement',
+    lines: [`${candidate.label} would break your active agreement with ${names[cp] || cp}: ${v.text}.`, `Continuing may reduce ${names[cp] || cp}'s trust ${s >= 0.5 ? 'sharply' : 'noticeably'} and your future negotiation leverage. The action itself is not blocked.`],
+    evidence: [{ source: 'Diplomacy 2.0', detail: `${describeDealShort(v.deal, names)} — ${describeDealDuration(v.deal)}.` }],
+    buttons: [
+      { id: `dn_break_${candidate.id}`, label: 'Continue and Break Agreement', kind: 'dn_continue_break', candidateId: candidate.id, tone: 'danger' },
+      { id: 'dn_breach_cancel', label: 'Cancel', kind: 'dn_cancel', tone: 'secondary' },
+      { id: `dn_view_${v.deal.id}`, label: 'View Agreement', kind: 'dn_view_deal', candidateId: v.deal.id, tone: 'secondary' }
+    ],
+    sourceSystems: ['Diplomacy 2.0'], grounded: true
+  };
+}
+
+// ---- Fixtures + self-tests ------------------------------------------------------------------------
+
+export interface DNFixtureOptions {
+  viewerId?: string;
+  playerMoney?: number;
+  rivalMoney?: number;
+  fog?: boolean;
+  rivalTargets?: string[];
+  rivalProfile?: { risk?: number; money?: number; support?: number; sabotage?: number; control?: number } | null;
+  rel?: Partial<DNRelationship>;
+  hist?: { sabotage: number; regionPressure: number };
+  playerRegions?: string[];
+  rivalRegions?: string[];
+  regionsTarget?: number | null;
+  turnsLeft?: number;
+  teamMode?: boolean;
+  treasury?: number | null;
+  canCommitTreasury?: boolean;
+  requiresApproval?: boolean;
+  emergency?: boolean;
+  state?: DiplomacyState;
+}
+
+export function createDiplomacyFixture(o: DNFixtureOptions = {}): { world: DiplomacyWorld; view: DiplomacyWorldView; gw: GIWorld; state: DiplomacyState } {
+  const { world: gw0 } = createGIFixtureWorld({ money: o.playerMoney ?? 18000 });
+  const viewer = o.viewerId || 'player';
+  const pRegions = o.playerRegions || ['NSW']; const rRegions = o.rivalRegions || ['VIC'];
+  const regions: Record<string, DNRegionInfo> = {};
+  Object.keys(gw0.regions).forEach(code => {
+    const deposits: Record<string, number> = {};
+    if (pRegions.includes(code)) { deposits.player = 3000; if (code === 'NSW') deposits.ai = 1500; }
+    if (rRegions.includes(code)) deposits.ai = 2000;
+    regions[code] = { code, name: gw0.regions[code].name, controllerId: pRegions.includes(code) ? 'player' : rRegions.includes(code) ? 'ai' : null, deposits, adjacent: gw0.regions[code].adjacent };
+  });
+  const hidden = (id: string) => Boolean(o.fog) && id !== viewer;
+  const actors: Record<string, DNActorInfo> = {
+    player: { id: 'player', name: 'Adam', isHuman: true, teamId: 'team_player', money: hidden('player') ? null : (o.playerMoney ?? 18000), inventory: hidden('player') ? null : { Gold: 2, 'Iron Ore': 3 }, regionsControlled: pRegions.length, personality: deriveDiplomaticPersonality(null) },
+    ai: { id: 'ai', name: 'Riley', isHuman: false, teamId: 'team_opponent', money: hidden('ai') ? null : (o.rivalMoney ?? 9000), inventory: null, regionsControlled: rRegions.length, personality: deriveDiplomaticPersonality(o.rivalProfile ?? null) }
+  };
+  const rel: DNRelationship = { ...DN_DEFAULT_RELATIONSHIP, ...(o.rel || {}) };
+  const world: DiplomacyWorld = {
+    turn: 7, turnsLeft: o.turnsLeft ?? 20, viewerId: viewer, actors, regions,
+    win: { metric: 'regions', regionsTarget: o.regionsTarget === undefined ? 5 : o.regionsTarget },
+    strategy: { ai: { targets: o.rivalTargets || [], protectedRegions: rRegions, emergency: Boolean(o.emergency), source: 'fixture' }, player: { targets: [], protectedRegions: pRegions, emergency: false, source: 'fixture' } },
+    relationship: (owner, other) => (owner === 'ai' && other === 'player' ? rel : DN_DEFAULT_RELATIONSHIP),
+    hostileHistory: (owner, other) => (owner === 'ai' && other === 'player' ? (o.hist || { sabotage: 0, regionPressure: 0 }) : { sabotage: 0, regionPressure: 0 }),
+    fogOfWar: Boolean(o.fog), teamMode: Boolean(o.teamMode),
+    treasuryAvailable: { team_player: o.treasury === undefined ? null : o.treasury, team_opponent: null },
+    authority: { player: { canSign: true, canCommitTreasury: o.canCommitTreasury !== false, requiresApproval: Boolean(o.requiresApproval), route: o.requiresApproval ? 'Governance' : 'leader', reason: o.canCommitTreasury === false ? 'Treasury spending needs Governance approval you do not have.' : '' } },
+    resources: ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices: { Gold: 500, 'Iron Ore': 120 }
+  };
+  const state = o.state || createEmptyDiplomacyState();
+  const view: DiplomacyWorldView = { enabled: true, state, world, playerId: 'player', names: { player: 'Adam', ai: 'Riley' }, gi3: null, teamMode: Boolean(o.teamMode) };
+  const gw: GIWorld = { ...gw0, diplomacy: view };
+  return { world, view, gw, state };
+}
+
+export function runDiplomacyNegotiation2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+  const compile = (text: string, o: DNFixtureOptions = {}) => { const f = createDiplomacyFixture(o); return { ...f, r: compileDiplomaticProposalFromText(text, f.gw, f.view, createGIConversationContext()) }; };
+  const aiView = (o: DNFixtureOptions = {}) => createDiplomacyFixture({ ...o, viewerId: 'ai' });
+  const has = (d: DiplomaticDeal | null, actor: string, kind: DNTermKind, region?: string) => Boolean(d && d.terms.some(t => t.actorId === actor && t.kind === kind && (!region || t.regionId === region)));
+  const hasRegional = (d: DiplomaticDeal | null, actor: string, region: string) => has(d, actor, 'avoid_region', region) || has(d, actor, 'do_not_challenge_region', region);
+  const cashDeal = (amount: number, turns: number, region = 'NSW', timing: DNPaymentTiming = 'on_acceptance') => createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'pay_cash', targetActorId: 'ai', amount, timing }), makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: region })] });
+  const activate = (state: DiplomacyState, deal: DiplomaticDeal, turn = 7) => {
+    const sent = sendDiplomaticProposal(state, deal, turn);
+    const accepted = { ...sent.deals.find(d => d.id === deal.id)!, status: 'accepted' as const };
+    const s2 = { ...sent, deals: sent.deals.map(d => d.id === deal.id ? accepted : d) };
+    const b = beginDealActivation(s2, deal.id, turn, { NSW: 'player', VIC: 'ai' });
+    return confirmDealActivation(b.state, deal.id, b.obligations.map(ob => ({ termId: ob.termId, success: true })), turn).state;
+  };
+
+  check('dn_nl_deal', 'NL: “I’ll stay out of Victoria if Riley stays away from NSW until turn 12.”', () => {
+    const { r } = compile("I'll stay out of Victoria if Riley stays away from NSW until turn 12.");
+    return (hasRegional(r.deal, 'player', 'VIC') && hasRegional(r.deal, 'ai', 'NSW') && r.deal!.expirationTurn === 12) || canon({ terms: r.deal?.terms.map(t => [t.actorId, t.kind, t.regionId]), exp: r.deal?.expirationTurn, c: r.clarification });
+  });
+  check('dn_negation', 'Negation: “Don’t ask Riley to leave NSW.” never creates “Riley avoid NSW”', () => {
+    const { r } = compile("Don't ask Riley to leave NSW.");
+    return !hasRegional(r.deal, 'ai', 'NSW') || canon(r.deal?.terms);
+  });
+  check('dn_correction', 'Correction: “Make that $12K” changes only the payment', () => {
+    const { r, view } = compile("I'll give Riley $8K if he stays out of NSW for three turns.");
+    if (!r.deal) return `no deal: ${r.clarification}`;
+    const m = modifyDiplomaticDraft(r.deal, 'Make that $12K.', view);
+    const pay = (d: DiplomaticDeal) => d.terms.find(t => t.kind === 'pay_cash')?.amount;
+    const rest = (d: DiplomaticDeal) => canon({ dur: d.duration, exp: d.expirationTurn, t: d.terms.filter(t => t.kind !== 'pay_cash').map(t => [t.actorId, t.kind, t.regionId]) });
+    return (pay(r.deal) === 8000 && pay(m.deal) === 12000 && rest(r.deal) === rest(m.deal) && m.changed.length === 1) || canon({ a: pay(r.deal), b: pay(m.deal), changed: m.changed });
+  });
+  check('dn_preview_draft', 'Preview: natural-language deals stay drafts until an explicit send', () => {
+    const { r, state } = compile("I'll give Riley $8K if he stays out of NSW for three turns.");
+    return (r.deal?.status === 'preview' && state.deals.length === 0 && state.events.length === 0) || `${r.deal?.status}`;
+  });
+  check('dn_builder_equals_nl', 'Structured builder and natural language produce the same deal model', () => {
+    const { r, view } = compile("I'll give Riley $8K if he stays out of NSW for three turns.");
+    const b = buildDiplomaticDealFromBuilder({ counterpartId: 'ai', offer: [{ kind: 'cash', amount: 8000 }], request: [{ kind: 'avoid_region', regionId: 'NSW' }], duration: { kind: 'turns', turns: 3 } }, view);
+    return (r.deal !== null && dealTermsSignature(r.deal) === dealTermsSignature(b)) || `${r.deal && dealTermsSignature(r.deal)} vs ${dealTermsSignature(b)}`;
+  });
+  check('dn_ai_accept', 'AI accepts a clearly favourable deal', () => {
+    const { world, state } = aiView();
+    const deal = cashDeal(6000, 2, 'TAS');
+    const ev = evaluateDiplomaticDeal(deal, 'ai', world, state);
+    return (ev.response === 'accept' && (ev.band === 'accept' || ev.band === 'strong_accept')) || `${ev.response}/${ev.band} r=${ev.ratio} t=${ev.threshold}`;
+  });
+  check('dn_ai_reject', 'AI rejects a clearly damaging deal', () => {
+    const { world, state } = aiView();
+    const deal = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 5 }, terms: [makeDiplomaticTerm({ actorId: 'ai', kind: 'avoid_region', regionId: 'VIC' }), makeDiplomaticTerm({ actorId: 'ai', kind: 'pay_cash', targetActorId: 'player', amount: 5000 })] });
+    const ev = evaluateDiplomaticDeal(deal, 'ai', world, state);
+    return (ev.response === 'reject') || `${ev.response}/${ev.band}`;
+  });
+  check('dn_counter', 'Counter: near-acceptable → bounded counter on the same terms (not an unrelated proposal)', () => {
+    const { world, state } = aiView({ rivalTargets: ['NSW'] });
+    const deal = cashDeal(8000, 5, 'NSW');
+    const ev = evaluateDiplomaticDeal(deal, 'ai', world, state);
+    if (ev.response !== 'counter' || !ev.counter) return `${ev.response}/${ev.band} r=${ev.ratio} t=${ev.threshold}`;
+    const c = ev.counter.deal;
+    const same = c.terms.every(t => t.kind === 'pay_cash' || t.regionId === 'NSW' || t.actorId === 'player') && c.terms.some(t => t.actorId === 'ai' && t.regionId === 'NSW');
+    const allowed = ev.counter.ops.every(op => ['require_upfront', 'increase_payment', 'reduce_duration', 'reduce_scope', 'add_reciprocal', 'remove_term', 'add_payment', 'add_termination_clause'].includes(op));
+    const accepted = evaluateDiplomaticDeal({ ...c, initiatorActorId: 'player', recipientActorIds: ['ai'] }, 'ai', world, state, { allowCounter: false });
+    return (same && allowed && ev.counter.ops.length <= 2 && (accepted.band === 'accept' || accepted.band === 'strong_accept')) || canon({ ops: ev.counter.ops, sum: ev.counter.summary, acc: accepted.band });
+  });
+  check('dn_price_counter', 'A pure ask (nothing offered) gets a price, not just a no — and a clearly damaging deal is still rejected', () => {
+    const { world, state } = aiView();
+    const ask = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 3 }, terms: [makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: 'NSW' })] });
+    const ev = evaluateDiplomaticDeal(ask, 'ai', world, state);
+    const pay = ev.counter?.deal.terms.find(t => t.kind === 'pay_cash' && t.actorId === 'player');
+    const poor = evaluateDiplomaticDeal(ask, 'ai', aiView({ playerMoney: 300 }).world, state);
+    return (ev.response === 'counter' && Boolean(pay?.amount) && ev.counter!.ops[0] === 'add_payment' && poor.response === 'reject') || canon({ r: ev.response, pay: pay?.amount, poor: poor.response });
+  });
+  check('dn_trust_effect', 'Trust: the same deal is evaluated differently at high vs low trust', () => {
+    const deal = cashDeal(4000, 3, 'NSW');
+    const hi = evaluateDiplomaticDeal(deal, 'ai', aiView({ rel: { trust: 85, reliability: 70 } }).world, createEmptyDiplomacyState());
+    const lo = evaluateDiplomaticDeal(deal, 'ai', aiView({ rel: { trust: 15, reliability: 30, grievance: 40 } }).world, createEmptyDiplomacyState());
+    return (hi.threshold < lo.threshold && hi.betrayalRisk < lo.betrayalRisk) || canon({ hi: [hi.threshold, hi.betrayalRisk], lo: [lo.threshold, lo.betrayalRisk] });
+  });
+  check('dn_strategic_value', 'Strategic value: NSW costs more to give up when Riley targets it', () => {
+    const deal = cashDeal(5000, 3, 'NSW');
+    const targeted = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalTargets: ['NSW'] }).world, createEmptyDiplomacyState());
+    const ignored = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalTargets: ['QLD'], rivalMoney: 500 }).world, createEmptyDiplomacyState());
+    return (targeted.givenValue > ignored.givenValue * 1.5 && targeted.ratio < ignored.ratio) || canon({ t: targeted.givenValue, i: ignored.givenValue });
+  });
+  check('dn_contextual_economy', 'Economic value is contextual: cash matters more to a cash-short AI', () => {
+    const deal = cashDeal(3000, 2, 'TAS');
+    const poor = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalMoney: 1200 }).world, createEmptyDiplomacyState());
+    const rich = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalMoney: 40000 }).world, createEmptyDiplomacyState());
+    return poor.receivedValue > rich.receivedValue || canon([poor.receivedValue, rich.receivedValue]);
+  });
+  check('dn_memory', 'Memory: a previously broken pact raises betrayal risk and triggers a guarantee request', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(1000, 3, 'TAS'));
+    const id = st.deals[0].id;
+    st = applyDiplomaticViolation(st, id, 'player', 'deposited in TAS', 8).state;
+    const deferred = cashDeal(9000, 2, 'TAS', 'next_turn');
+    const clean = evaluateDiplomaticDeal(deferred, 'ai', aiView().world, createEmptyDiplomacyState());
+    const burned = evaluateDiplomaticDeal(deferred, 'ai', aiView({ rel: { trust: 30, grievance: 30 } }).world, st);
+    return (burned.betrayalRisk > clean.betrayalRisk && burned.threshold > clean.threshold && (burned.response === 'request_guarantee' || burned.response === 'counter') && burned.reasons.some(r => /broke/.test(r))) || canon({ c: [clean.betrayalRisk, clean.threshold, clean.response], b: [burned.betrayalRisk, burned.threshold, burned.response, burned.reasons] });
+  });
+  check('dn_personality', 'Personality changes behaviour (cash valuation, horizon), not just dialogue', () => {
+    const econ = deriveDiplomaticPersonality({ money: 1.3, risk: 0.8 }); const aggr = deriveDiplomaticPersonality({ risk: 1.35, sabotage: 1.2, control: 1.15 }); const coop = deriveDiplomaticPersonality({ support: 1.75, sabotage: 0.45 });
+    const deal = cashDeal(4000, 3, 'TAS');
+    const e = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalProfile: { money: 1.3, risk: 0.8 } }).world, createEmptyDiplomacyState());
+    const a = evaluateDiplomaticDeal(deal, 'ai', aiView({ rivalProfile: { risk: 1.35, sabotage: 1.2, control: 1.15 } }).world, createEmptyDiplomacyState());
+    return (econ.key === 'economic' && aggr.key === 'aggressive' && coop.key === 'cooperative' && econ.greed > aggr.greed && coop.horizon > aggr.horizon && e.receivedValue > a.receivedValue) || canon({ econ, aggr, e: e.receivedValue, a: a.receivedValue });
+  });
+  check('dn_honored', 'Honoured agreement → completed with a bounded positive relationship effect', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(5000, 3, 'NSW'));
+    const out = advanceDiplomacyTurn(st, { turn: 10, controllers: { NSW: 'player', VIC: 'ai' }, cash: { player: 10000 } });
+    st = out.state;
+    const done = st.history.find(d => d.status === 'completed');
+    const c = out.consequences.find(x => x.kind === 'completion' && x.actorId === 'player');
+    return (done && c && c.deltas.trust > 0 && c.deltas.trust <= 8 && c.observerIds.includes('ai')) || canon({ h: st.history.map(d => d.status), c });
+  });
+  check('dn_player_violation', 'Player violation: pre-action warning → action executes canonically → violated + consequences', () => {
+    const deal = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 3 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'avoid_region', regionId: 'VIC' }), makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: 'NSW' })] });
+    let st = activate(createEmptyDiplomacyState(), deal);
+    const warn = checkDiplomaticActionCompliance(st, { actorId: 'player', actionType: 'region_deposit', regionId: 'VIC', amount: 2500 }, { NSW: 'player', VIC: 'ai' }, 8);
+    if (!warn.length) return 'no pre-action warning';
+    const { liveState } = createGIFixtureWorld({ money: 18000 });
+    const canonical = canonicalStateFromLiveRuntime(liveState as any);
+    const res = reduceGameAction(canonical, { type: 'region_deposit', actorId: 'player', targetRegion: 'VIC', investmentAmount: 2500 });
+    const executed = res.success !== false && (res.nextState.actorsById.player?.money ?? 0) === 18000 - 2500;
+    const v = applyDiplomaticViolation(st, warn[0].deal.id, 'player', warn[0].text, 8, { player: 'Adam', ai: 'Riley' });
+    st = v.state;
+    const mem = applyDiplomaticConsequenceToAiMemories({}, v.consequence!, 8, ['ai']);
+    return (executed && st.history.some(d => d.status === 'violated' && d.violatedBy === 'player') && v.consequence!.deltas.trust < 0 && mem.ai.relationships.player.trust < 50 && mem.ai.relationships.player.reliability < 50) || canon({ executed, money: res.nextState.actorsById.player?.money, h: st.history.map(d => d.status) });
+  });
+  check('dn_ai_violation', 'AI violation: only under an explicit bounded condition, visible and explained', () => {
+    const deal = cashDeal(2000, 3, 'NSW');
+    let st = activate(createEmptyDiplomacyState(), deal);
+    const { world } = aiView();
+    const calm = evaluateAiDiplomaticBreach(st.deals[0], 'ai', world, st);
+    const other = activate(st, createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 3 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'avoid_region', regionId: 'VIC' })] }));
+    const vid = other.deals.find(d => d.id !== st.deals[0].id)!.id;
+    st = applyDiplomaticViolation(other, vid, 'player', 'deposit in VIC', 7).state;
+    const w8 = { ...world, turn: 8 };
+    const angry = evaluateAiDiplomaticBreach(st.deals[0], 'ai', w8, st);
+    const v = applyDiplomaticViolation(st, st.deals[0].id, 'ai', 'contested NSW', 8, { player: 'Adam', ai: 'Riley' }, angry.reason);
+    const ev = v.state.events[v.state.events.length - 1];
+    return (!calm.breach && angry.breach && /after/.test(angry.reason || '') && ev.kind === 'violated' && /Riley broke the agreement/.test(ev.summary) && v.consequence!.actorId === 'ai') || canon({ calm, angry, ev: ev?.summary });
+  });
+  check('dn_expiration', 'Expiration: the agreement closes and stops constraining strategy', () => {
+    const st = activate(createEmptyDiplomacyState(), cashDeal(3000, 2, 'NSW'));
+    const before = diplomaticRestrictionsFor(st, ['ai'], 8).length;
+    const after = advanceDiplomacyTurn(st, { turn: 9, controllers: {}, cash: {} }).state;
+    return (before === 1 && diplomaticRestrictionsFor(after, ['ai'], 9).length === 0 && after.deals.length === 0 && after.history[0].status === 'completed') || canon({ before, deals: after.deals.length, h: after.history.map(d => d.status) });
+  });
+  check('dn_team_os', 'Team OS: an active “avoid NSW” pact removes ordinary NSW aggression (no second planner)', () => {
+    const fx = createEnemyTeamOSFixtureInputs();
+    // NSW is the enemy team's natural next target (the only region it can take).
+    const inputs = { ...fx, regions: fx.regions.map(r => (r.controlledByTeam || r.code === 'NSW' ? r : { ...r, teamCostToTake: null })) };
+    const base = evaluateTeamOperatingSystem(null, inputs).state.contract;
+    const restricted = evaluateTeamOperatingSystem(null, { ...inputs, diplomaticRestrictions: [{ actorId: 'ai', regionId: 'NSW', untilTurn: 12, dealId: 'd1', kind: 'do_not_challenge_region', counterpartId: 'player' }] }).state.contract;
+    const takesNsw = (c: TeamStrategyContract | null) => Boolean(c?.objectives.some(o => o.type === 'take_region' && o.regionId === 'NSW'));
+    return (takesNsw(base) && !takesNsw(restricted)) || canon({ base: base?.objectives.map(o => `${o.type}:${o.regionId}`), r: restricted?.objectives.map(o => `${o.type}:${o.regionId}`) });
+  });
+  check('dn_gi3', 'GI3: reads the diplomatic window; explicit goals stay intact', () => {
+    const f = createDiplomacyFixture();
+    const ctx = createGIConversationContext();
+    const contract = compileGI3StrategyIntent(parseGILanguage('Protect NSW, then reach $15K, then expand into VIC', f.gw, ctx), f.gw, ctx, null).contract;
+    const gi3: GI3StrategyState = { ...createEmptyGI3StrategyState(), active: contract };
+    const before = canon(gi3);
+    const st = activate(createEmptyDiplomacyState(), cashDeal(4000, 3, 'NSW'));
+    const notes = gi3DiplomaticWindowNotes(gi3, deriveDiplomaticWindows(st, 'player', 8, { ai: 'Riley' }));
+    return (notes.length > 0 && /NSW|New South Wales/.test(notes[0]) && /window/i.test(notes[0]) && canon(gi3) === before) || canon({ notes, goals: contract.goals.map(g => [g.type, g.regionId]) });
+  });
+  check('dn_background_ai', 'Background AI: surfaces an expiring pact and never renegotiates by itself', () => {
+    const f = createDiplomacyFixture();
+    const st = activate(createEmptyDiplomacyState(), cashDeal(4000, 3, 'NSW'));
+    const snap = canon(st);
+    const obs = deriveDiplomaticObservations(st, { ...f.world, turn: 8 }, 'player', { ai: 'Riley' });
+    return (obs.some(o => o.kind === 'expiring') && canon(st) === snap && st.deals.length === 1 && !st.events.some(e => e.kind === 'ai_proposal')) || canon(obs);
+  });
+  check('dn_canonical_payment', 'Payment: compiled into a canonical transfer action; the evaluator never touches balances', () => {
+    const { world, state } = aiView();
+    const frozen = JSON.stringify(world.actors);
+    const deal = cashDeal(8000, 3, 'NSW');
+    evaluateDiplomaticDeal(deal, 'ai', world, state); validateDiplomaticDeal(deal, world, []);
+    const sent = sendDiplomaticProposal(state, deal, 7);
+    const acc = { ...sent, deals: sent.deals.map(d => ({ ...d, status: 'accepted' as const })) };
+    const b = beginDealActivation(acc, deal.id, 7, {});
+    const ob = b.obligations[0];
+    const { liveState } = createGIFixtureWorld({ money: 18000 });
+    const res = reduceGameAction(canonicalStateFromLiveRuntime(liveState as any), ob.action);
+    return (ob.action.type === 'transfer_cash' && ob.amount === 8000 && res.nextState.actorsById.player.money === 10000 && res.nextState.actorsById.ai.money === 17000 && JSON.stringify(world.actors) === frozen) || canon({ a: ob?.action, p: res.nextState.actorsById.player?.money, ai: res.nextState.actorsById.ai?.money });
+  });
+  check('dn_insufficient_funds', 'Insufficient funds: $20K upfront with $5K → preview error, never negative cash', () => {
+    const f = createDiplomacyFixture({ playerMoney: 5000 });
+    const deal = cashDeal(20000, 3, 'NSW');
+    const v = validateDiplomaticDeal(deal, f.world, []);
+    const ob: DNObligation = { dealId: deal.id, termId: deal.terms[0].id, payerId: 'player', payeeId: 'ai', kind: 'pay_cash', amount: 20000, resourceId: null, quantity: 0, source: 'self', dueTurn: 7, action: buildCanonicalObligationAction({ dealId: deal.id, termId: deal.terms[0].id, payerId: 'player', payeeId: 'ai', kind: 'pay_cash', amount: 20000, resourceId: null, quantity: 0, source: 'self', dueTurn: 7 }) };
+    const ok = validateDiplomaticObligation(ob, { money: 5000 });
+    const { liveState } = createGIFixtureWorld({ money: 5000 });
+    const res = reduceGameAction(canonicalStateFromLiveRuntime(liveState as any), ob.action);
+    const issue = v.issues.find(i => i.code === 'insufficient_funds');
+    return (!v.ok && issue && issue.options?.includes('Conditional payment') && !ok.ok && res.nextState.actorsById.player.money === 5000) || canon({ v, ok, m: res.nextState.actorsById.player?.money });
+  });
+  check('dn_treasury', 'Treasury: team money goes through Treasury availability + Governance authority', () => {
+    const mk = (amt: number) => createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 3 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'pay_cash', targetActorId: 'ai', amount: amt, source: 'treasury' }), makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: 'NSW' })] });
+    const short = validateDiplomaticDeal(mk(10000), createDiplomacyFixture({ teamMode: true, treasury: 5000 }).world);
+    const gov = validateDiplomaticDeal(mk(3000), createDiplomacyFixture({ teamMode: true, treasury: 5000, requiresApproval: true }).world);
+    const noAuth = validateDiplomaticDeal(mk(3000), createDiplomacyFixture({ teamMode: true, treasury: 5000, canCommitTreasury: false }).world);
+    const solo = validateDiplomaticDeal(mk(3000), createDiplomacyFixture({ teamMode: false }).world);
+    return (short.issues.some(i => i.code === 'treasury_funds') && gov.ok && gov.issues.some(i => i.code === 'governance') && !noAuth.ok && !solo.ok) || canon({ short: short.issues, gov: gov.issues, noAuth: noAuth.issues, solo: solo.issues });
+  });
+  check('dn_fog', 'Fog of war: evaluation uses the evaluator’s knowledge; explanations never leak hidden numbers', () => {
+    const fogPlayerView = createDiplomacyFixture({ fog: true, rivalMoney: 42000 });
+    const deal = cashDeal(8000, 3, 'NSW');
+    const out = estimateDiplomaticOutlook(deal, 'ai', fogPlayerView.world, fogPlayerView.state);
+    const lev = buildDiplomaticLeverageSnapshot('player', 'ai', fogPlayerView.world, fogPlayerView.state);
+    const ev = evaluateDiplomaticDeal(deal, 'ai', aiView({ fog: true, rivalMoney: 42000 }).world, createEmptyDiplomacyState());
+    const text = [out.text, ...out.reasons, ...lev.factors.map(f => f.text), ...ev.reasons].join(' ');
+    return (fogPlayerView.world.actors.ai.money === null && !/42,?000/.test(text) && lev.factors.some(f => /hidden/.test(f.text)) && aiView({ fog: true }).world.actors.player.money === null) || text;
+  });
+  check('dn_determinism', 'Determinism: same state + same deal → same evaluation and response', () => {
+    const run = () => { const { world, state } = aiView({ rivalTargets: ['NSW'] }); const ev = evaluateDiplomaticDeal(cashDeal(8000, 5, 'NSW'), 'ai', world, state); return canon({ ...ev, counter: ev.counter ? { terms: dealTermsSignature(ev.counter.deal), ops: ev.counter.ops } : null }); };
+    return run() === run() || 'differs';
+  });
+  check('dn_save_load', 'Save/load: pending counter, active pact, payment obligation and history survive intact', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(3000, 4, 'NSW', 'next_turn'));
+    const { world } = aiView({ rivalTargets: ['NSW'] });
+    const deal = cashDeal(8000, 5, 'QLD');
+    const sent = sendDiplomaticProposal(st, deal, 7);
+    const ev = evaluateDiplomaticDeal(sent.deals.find(d => d.id === deal.id)!, 'ai', world, sent);
+    st = applyDiplomaticResponse(sent, sent.deals.find(d => d.id === deal.id)!, ev, 7).state;
+    const loaded = sanitizeDiplomacyState(JSON.parse(JSON.stringify(st)));
+    const empty = sanitizeDiplomacyState(undefined);
+    const junk = sanitizeDiplomacyState({ deals: [{ bogus: 1 }, null, 5], inbox: 'x', events: [{}] });
+    const pay = loaded.deals.find(d => d.status === 'active')?.terms.find(t => t.kind === 'pay_cash');
+    return (canon(loaded.deals.map(d => [d.id, d.status, dealTermsSignature(d)])) === canon(st.deals.map(d => [d.id, d.status, dealTermsSignature(d)])) && pay?.timing === 'next_turn' && empty.deals.length === 0 && junk.deals.length === 0) || canon({ a: st.deals.map(d => d.status), b: loaded.deals.map(d => d.status) });
+  });
+  check('dn_replay', 'Replay: proposal, response, agreement, violation and relationship change reconstruct from events', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(3000, 3, 'NSW'));
+    const id = st.deals[0].id;
+    st = applyDiplomaticViolation(st, id, 'ai', 'deposit in NSW', 8).state;
+    const rebuilt = reconstructDiplomacyFromEvents(st.events);
+    return (rebuilt.deals[id]?.status === 'violated' && st.events.some(e => e.kind === 'proposal_sent') && st.events.some(e => e.kind === 'activated') && (rebuilt.relationshipDeltas.ai || 0) < 0) || canon(rebuilt);
+  });
+  check('dn_multiple_deals', 'Multiple deals: compatible ones coexist; contradictory ones are rejected explicitly', () => {
+    const f = createDiplomacyFixture();
+    let st = activate(createEmptyDiplomacyState(), cashDeal(3000, 3, 'NSW'));
+    const compatible = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 2 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'do_not_sabotage', targetActorId: 'ai' }), makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_sabotage', targetActorId: 'player' })] });
+    const ok = validateDiplomaticDeal(compatible, f.world, st.deals);
+    const selfConflict = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 2 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'avoid_region', regionId: 'VIC' }), makeDiplomaticTerm({ actorId: 'player', kind: 'threat', targetActorId: 'ai', regionId: 'VIC' })] });
+    const bad = validateDiplomaticDeal(selfConflict, f.world, st.deals);
+    st = activate(st, compatible);
+    const cross = createDiplomaticDeal({ initiatorActorId: 'ai', recipientActorIds: ['player'], turn: 7, duration: { kind: 'turns', turns: 2 }, terms: [makeDiplomaticTerm({ actorId: 'ai', kind: 'threat', targetActorId: 'player', regionId: 'NSW' })] });
+    const crossV = validateDiplomaticDeal(cross, { ...f.world, viewerId: 'ai' }, st.deals);
+    return (ok.ok && !bad.ok && bad.issues.some(i => i.code === 'contradiction') && st.deals.length === 2 && !crossV.ok && crossV.issues.some(i => i.code === 'conflicts_active')) || canon({ ok: ok.issues, bad: bad.issues, cross: crossV.issues });
+  });
+  check('dn_ai_proposal', 'AI-initiated: one strategy-grounded proposal, then cooldown (no spam)', () => {
+    const { world } = aiView({ rivalMoney: 2500, rivalRegions: ['VIC', 'TAS'], playerRegions: ['NSW', 'QLD'] });
+    world.regions.VIC.deposits.player = 1500; // the player pressures Riley's VIC
+    world.regions.QLD.deposits.ai = 400;
+    const first = generateAiDiplomaticProposals('ai', 'player', world, createEmptyDiplomacyState());
+    if (!first.best) return canon({ blocked: first.blocked, c: first.candidates.map(c => [c.kind, c.utility, c.acceptance]) });
+    const st = sendDiplomaticProposal(createEmptyDiplomacyState(), first.best.deal, 7);
+    const tracked = { ...st, tracks: { ...st.tracks, player: { ...(st.tracks.player || { counterpartId: 'player', fatigue: 0, blockedUntilTurn: null, lastProposalTurn: null, dismissals: 0, unreasonableCount: 0 }), lastAiProposalTurn: 7 } } };
+    const second = generateAiDiplomaticProposals('ai', 'player', { ...world, turn: 8 }, tracked);
+    return (first.candidates.length <= 3 && first.best.deal.source === 'ai' && first.best.reason.length > 0 && !second.best && (second.blocked === 'cooldown' || second.blocked === 'proposal pending')) || canon({ second: second.blocked });
+  });
+  check('dn_offer_fatigue', 'Offer fatigue: repeated unreasonable offers pause negotiation temporarily, not permanently', () => {
+    const { world } = aiView({ rivalTargets: ['NSW'] });
+    let st = createEmptyDiplomacyState();
+    for (let i = 0; i < 3; i++) {
+      const d = cashDeal(1 + i, 5, 'NSW');
+      st = sendDiplomaticProposal(st, d, 7);
+      const ev = evaluateDiplomaticDeal(st.deals.find(x => x.id === d.id)!, 'ai', world, st);
+      st = applyDiplomaticResponse(st, st.deals.find(x => x.id === d.id)!, ev, 7).state;
+    }
+    const blocked = evaluateDiplomaticDeal(cashDeal(20000, 1, 'TAS'), 'ai', world, st);
+    let later = st;
+    for (let t = 8; t <= 11; t++) later = advanceDiplomacyTurn(later, { turn: t, controllers: {}, cash: {} }).state;
+    const again = evaluateDiplomaticDeal(cashDeal(20000, 1, 'TAS'), 'ai', { ...world, turn: 11 }, later);
+    return (blocked.fatigueBlocked && blocked.response === 'reject' && !again.fatigueBlocked) || canon({ track: st.tracks.player, blocked: blocked.fatigueBlocked, again: again.fatigueBlocked });
+  });
+  check('dn_victory', 'Victory awareness: a pact that lets a near-winning player go uncontested is refused', () => {
+    const { world, state } = aiView({ playerRegions: ['NSW', 'QLD', 'SA', 'WA'], regionsTarget: 5 });
+    const deal = cashDeal(50000, 2, 'NSW');
+    const ev = evaluateDiplomaticDeal(deal, 'ai', world, state);
+    return (ev.victoryBlock && ev.band === 'strong_reject' && ev.response === 'reject') || `${ev.band}/${ev.response}`;
+  });
+  check('dn_threat', 'Threats are evaluated for credibility and never executed', () => {
+    const mk = () => createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 2 }, terms: [makeDiplomaticTerm({ actorId: 'ai', kind: 'avoid_region', regionId: 'NSW' }), makeDiplomaticTerm({ actorId: 'player', kind: 'threat', targetActorId: 'ai' })] });
+    const weak = evaluateDiplomaticDeal(mk(), 'ai', aiView({ playerMoney: 300 }).world, createEmptyDiplomacyState(), { allowCounter: false });
+    const strong = evaluateDiplomaticDeal(mk(), 'ai', { ...aiView({ playerMoney: 40000 }).world, hostileHistory: () => ({ sabotage: 3, regionPressure: 0 }) }, createEmptyDiplomacyState(), { allowCounter: false });
+    const st = activate(createEmptyDiplomacyState(), mk());
+    const threatTerm = st.deals[0]?.terms.find(t => t.kind === 'threat');
+    return (strong.receivedValue > weak.receivedValue && threatTerm?.status === 'inactive') || canon({ weak: weak.receivedValue, strong: strong.receivedValue, t: threatTerm?.status });
+  });
+  check('dn_conditional', 'Conditional deals: “if you gain Victoria, the pact ends” terminates automatically', () => {
+    const { r } = compile("I'll leave Queensland alone if Riley stays out of NSW for 4 turns. If you gain Victoria, our pact ends.");
+    if (!r.deal || !r.deal.terminationConditions.some(c => c.kind === 'region_control_gained')) return canon({ c: r.deal?.terminationConditions, u: r.understood });
+    const cond = r.deal.terminationConditions[0];
+    const deal = { ...r.deal, terminationConditions: [{ ...cond, actorId: 'player', regionId: 'VIC' }] };
+    const st = activate(createEmptyDiplomacyState(), deal);
+    const out = advanceDiplomacyTurn(st, { turn: 8, controllers: { NSW: 'player', VIC: 'player' }, cash: {} }).state;
+    return (out.history.some(d => d.status === 'terminated' && /automatic/.test(d.closedReason || ''))) || canon(out.history.map(d => [d.status, d.closedReason]));
+  });
+  check('dn_deferred_payment', 'Deferred payment: tracked obligation; one cash-below deferral; missing it is a violation', () => {
+    const f = createDiplomacyFixture();
+    const b = buildDiplomaticDealFromBuilder({ counterpartId: 'ai', offer: [{ kind: 'cash', amount: 5000, timing: 'next_turn' }], request: [{ kind: 'do_not_challenge_region', regionId: 'NSW' }], duration: { kind: 'turns', turns: 4 }, paymentDeferIfCashBelow: 4000 }, f.view);
+    let st = activate(createEmptyDiplomacyState(), b);
+    const t8 = advanceDiplomacyTurn(st, { turn: 8, controllers: { NSW: 'player' }, cash: { player: 3000 } });
+    const t9 = advanceDiplomacyTurn(t8.state, { turn: 9, controllers: { NSW: 'player' }, cash: { player: 3000 } });
+    if (t8.obligations.length !== 0 || t9.obligations.length !== 1) return canon({ t8: t8.obligations.length, t9: t9.obligations.length });
+    const failed = recordObligationResult(t9.state, t9.obligations[0], false, 9, 'Needs $5,000 but only $3,000 is available.');
+    return (failed.state.history.some(d => d.status === 'violated' && d.violatedBy === 'player') && failed.consequence!.kind === 'violation') || canon(failed.state.history.map(d => d.status));
+  });
+  check('dn_renegotiation', 'Renegotiation: the original stays active until the amendment is accepted', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(3000, 2, 'NSW'));
+    const orig = st.deals[0];
+    const amend = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 8, duration: { kind: 'until_turn', turn: 12 }, terms: [makeDiplomaticTerm({ actorId: 'ai', kind: 'do_not_challenge_region', regionId: 'NSW' }), makeDiplomaticTerm({ actorId: 'player', kind: 'pay_cash', targetActorId: 'ai', amount: 5000 })], amendsDealId: orig.id, seq: 3 });
+    const f = createDiplomacyFixture();
+    const v = validateDiplomaticDeal(amend, { ...f.world, turn: 8 }, st.deals);
+    const sent = sendDiplomaticProposal(st, amend, 8);
+    const stillActive = sent.deals.find(d => d.id === orig.id)?.status === 'active';
+    st = activate(st, amend, 8);
+    return (v.ok && stillActive && st.history.some(d => d.id === orig.id && d.status === 'superseded') && st.deals.some(d => d.id === amend.id && d.status === 'active')) || canon({ v: v.issues, stillActive, h: st.history.map(d => [d.id === orig.id, d.status]) });
+  });
+  check('dn_termination', 'Termination: mutual has no trust cost; unilateral withdrawal does', () => {
+    const st = activate(createEmptyDiplomacyState(), cashDeal(3000, 3, 'NSW'));
+    const mutual = terminateDiplomaticDeal(st, st.deals[0].id, 'player', true, 8);
+    const solo = terminateDiplomaticDeal(st, st.deals[0].id, 'player', false, 8);
+    return (mutual.consequence === null && solo.consequence?.kind === 'withdrawal' && solo.consequence.deltas.trust < 0 && mutual.state.history[0].status === 'terminated') || canon({ m: mutual.consequence, s: solo.consequence });
+  });
+  check('dn_anti_exploit', 'Anti-exploit: trivial agreements earn nothing; repeated ones earn less', () => {
+    const trivial = createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 1 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'do_not_sabotage', targetActorId: 'ai' })] });
+    const t1 = advanceDiplomacyTurn(activate(createEmptyDiplomacyState(), trivial), { turn: 8, controllers: {}, cash: {} });
+    const big = cashDeal(8000, 3, 'NSW');
+    const g1 = advanceDiplomacyTurn(activate(createEmptyDiplomacyState(), big), { turn: 10, controllers: {}, cash: {} });
+    const seeded = { ...createEmptyDiplomacyState(), recentCompletions: [{ turn: 8, counterpartId: 'ai', significance: 0.9 }, { turn: 9, counterpartId: 'ai', significance: 0.9 }] };
+    const g2 = advanceDiplomacyTurn(activate(seeded, big), { turn: 10, controllers: {}, cash: {} });
+    const gain = (x: typeof t1) => x.consequences.find(c => c.actorId === 'player')?.deltas.trust ?? -1;
+    return (gain(t1) === 0 && gain(g1) > gain(g2) && gain(g2) >= 0) || canon({ trivial: gain(t1), fresh: gain(g1), repeated: gain(g2) });
+  });
+  check('dn_ai_constraints', 'AI compliance: options breaking an active promise are pushed below everything else', () => {
+    const st = activate(createEmptyDiplomacyState(), cashDeal(3000, 3, 'NSW'));
+    const ds = [{ type: 'region_deposit', score: 90, data: { region: 'NSW' } }, { type: 'work', score: 20, data: {} }];
+    const out = applyDiplomaticConstraintsToDecisions(ds, 'ai', st, { NSW: 'player', VIC: 'ai' }, 8);
+    const allowed = applyDiplomaticConstraintsToDecisions(ds, 'ai', st, { NSW: 'player', VIC: 'ai' }, 8, () => true);
+    return (out[0].score! < out[1].score! && /promised/.test((out[0].data as any).diplomaticRestriction) && allowed[0].score === 90) || canon(out.map(d => [d.type, d.score]));
+  });
+  check('dn_legacy_migration', 'Migration: legacy pacts become structured agreements; trust/stance stay where they live', () => {
+    const migrated = sanitizeDiplomacyState(undefined, { relationships: [{ actorId: 'player', targetActorId: 'ai', pacts: [{ expiresTurn: 12 }] }] }, 7);
+    return (migrated.deals.length === 1 && migrated.deals[0].source === 'legacy' && migrated.deals[0].status === 'active' && migrated.deals[0].expirationTurn === 12) || canon(migrated.deals);
+  });
+  check('dn_gi_routing', 'Game Intelligence routes diplomacy questions (and keeps other questions elsewhere)', () => {
+    const { gw } = createDiplomacyFixture();
+    const qs = ["I'll give Riley $8K if he stays out of NSW for three turns.", 'What deals do I have?', 'Why did Riley reject?', 'What would make Riley accept?', 'Does Riley trust me?', 'What leverage do I have?', 'Make Riley more willing to negotiate', 'Let\'s stop sabotaging each other until turn 15.', 'When does the NSW pact expire?'];
+    const bad = qs.filter(q => runGameIntelligenceCore(q, gw, createGIConversationContext()).understanding.primary !== 'diplomacy');
+    const other = ['Should I sell Gold?', 'What if Riley attacks NSW?', 'Are my settings good?'].map(q => runGameIntelligenceCore(q, gw, createGIConversationContext()).understanding.primary);
+    const multi = createDiplomacyFixture();
+    multi.world.actors.ai = { ...multi.world.actors.ai, name: 'Scientist AI' };
+    const multiTopic = detectDiplomacyQuery('Does Scientist AI trust me?', multi.gw, createGIConversationContext())?.topic;
+    return (!bad.length && !other.includes('diplomacy') && multiTopic === 'trust') || `not routed: ${bad.join(' | ')} / other=${other.join(',')} / multi=${multiTopic}`;
+  });
+  check('dn_gi_preview_answer', 'GI answer: preview with Send / Modify / Explain / Cancel and a pending draft (nothing sent)', () => {
+    const { gw, state } = createDiplomacyFixture();
+    const out = runGameIntelligenceCore("I'll give Riley $8K if he stays out of NSW for three turns.", gw, createGIConversationContext());
+    const kinds = out.answer.buttons.map(b => b.kind);
+    const text = (out.answer.sections || []).flatMap(s => s.claims.map(c => c.text)).join(' ');
+    return (kinds.includes('dn_send') && kinds.includes('dn_modify') && kinds.includes('dn_cancel') && Boolean(out.context.pendingDeal) && /\$18,000 → \$10,000/.test(text) && state.deals.length === 0) || canon({ kinds, text: text.slice(0, 300), pending: Boolean(out.context.pendingDeal) });
+  });
+  check('dn_claim_grounding', 'Claims separate facts, evaluations and projections', () => {
+    const { gw } = createDiplomacyFixture();
+    const out = runGameIntelligenceCore("I'll give Riley $8K if he stays out of NSW for three turns.", gw, createGIConversationContext());
+    const claims = (out.answer.sections || []).flatMap(s => s.claims);
+    return (claims.some(c => c.kind === 'fact') && claims.some(c => c.kind === 'projection') && claims.filter(c => /may reject|likely/.test(c.text)).every(c => c.kind !== 'fact')) || canon(claims.map(c => [c.kind, c.text.slice(0, 40)]));
+  });
+  check('dn_no_mutation', 'Pure core: evaluation, validation and previews never mutate their inputs', () => {
+    const f = createDiplomacyFixture();
+    const st = activate(createEmptyDiplomacyState(), cashDeal(3000, 3, 'NSW'));
+    const deal = cashDeal(8000, 5, 'NSW');
+    const snap = canon([st, deal, f.world.regions, f.world.actors]);
+    evaluateDiplomaticDeal(deal, 'ai', { ...f.world, viewerId: 'ai' }, st); validateDiplomaticDeal(deal, f.world, st.deals); buildDiplomaticImpactPreview(deal, { ...f.view, state: st }); estimateDiplomaticOutlook(deal, 'ai', f.world, st); buildDiplomaticLeverageSnapshot('player', 'ai', f.world, st); checkDiplomaticActionCompliance(st, { actorId: 'player', actionType: 'region_deposit', regionId: 'VIC' }, {}, 8);
+    return canon([st, deal, f.world.regions, f.world.actors]) === snap || 'mutated';
+  });
+  check('dn_debrief', 'Debrief: deals made / completed / broken / counters / windows', () => {
+    let st = activate(createEmptyDiplomacyState(), cashDeal(8000, 3, 'NSW'));
+    st = advanceDiplomacyTurn(st, { turn: 10, controllers: {}, cash: {} }).state;
+    const lines = buildDiplomacyDebrief(st, { ai: 'Riley' });
+    return (lines.some(l => /Deals made: 1/.test(l)) && lines.some(l => /Deals completed: 1/.test(l)) && lines.some(l => /Strategic windows created/.test(l))) || canon(lines);
+  });
+  check('dn_e2e_scenario', 'Full scenario: $8K → counter → “$10K and two turns” → accept → payment → window → violation → harder future deal', () => {
+    const names = { player: 'Adam', ai: 'Riley' };
+    const f = createDiplomacyFixture({ rivalTargets: ['NSW'] });
+    const ai = createDiplomacyFixture({ viewerId: 'ai', rivalTargets: ['NSW'] }).world;
+    const r = compileDiplomaticProposalFromText("I'll give Riley $8K if he stays out of NSW for five turns.", f.gw, f.view, createGIConversationContext());
+    if (!r.deal) return `compile: ${r.clarification}`;
+    let st = sendDiplomaticProposal(createEmptyDiplomacyState(), r.deal, 7, names);
+    const ev1 = evaluateDiplomaticDeal(st.deals[0], 'ai', ai, st);
+    if (ev1.response !== 'counter' || !ev1.counter) return `round1: ${ev1.response} r=${ev1.ratio} t=${ev1.threshold}`;
+    const resp = applyDiplomaticResponse(st, st.deals[0], ev1, 7, names);
+    st = resp.state;
+    const mod = modifyDiplomaticDraft(resp.counter!, 'Make it $10K and two turns', { ...f.view, state: st });
+    if (mod.deal.terms.find(t => t.kind === 'pay_cash')?.amount !== 10000 || mod.deal.duration.turns !== 2) return `modify: ${canon(mod.changed)}`;
+    st = sendDiplomaticProposal(st, mod.deal, 7, names);
+    const sentMod = st.deals.find(d => d.id === mod.deal.id)!;
+    const ev2 = evaluateDiplomaticDeal(sentMod, 'ai', ai, st);
+    if (ev2.response !== 'accept') return `round3: ${ev2.response} r=${ev2.ratio} t=${ev2.threshold}`;
+    st = applyDiplomaticResponse(st, sentMod, ev2, 7, names).state;
+    const b = beginDealActivation(st, sentMod.id, 7, { NSW: 'player', VIC: 'ai' });
+    if (b.obligations[0]?.amount !== 10000 || b.obligations[0].action.type !== 'transfer_cash') return 'payment obligation';
+    st = confirmDealActivation(b.state, sentMod.id, [{ termId: b.obligations[0].termId, success: true }], 7, names).state;
+    const windows = deriveDiplomaticWindows(st, 'player', 7, names);
+    if (!windows.some(w => w.regionId === 'NSW' && w.remaining === 2)) return `window: ${canon(windows)}`;
+    const extra = activate(st, createDiplomaticDeal({ initiatorActorId: 'player', recipientActorIds: ['ai'], turn: 7, duration: { kind: 'turns', turns: 3 }, terms: [makeDiplomaticTerm({ actorId: 'player', kind: 'avoid_region', regionId: 'VIC' })], seq: 99 }));
+    const warn = checkDiplomaticActionCompliance(extra, { actorId: 'player', actionType: 'region_deposit', regionId: 'VIC' }, { NSW: 'player', VIC: 'ai' }, 8, names);
+    if (!warn.length) return 'no warning';
+    const v = applyDiplomaticViolation(extra, warn[0].deal.id, 'player', warn[0].text, 8, names);
+    const burnedRel: DNRelationship = { ...DN_DEFAULT_RELATIONSHIP, trust: 50 + v.consequence!.deltas.trust, reliability: 50 + v.consequence!.deltas.reliability, grievance: v.consequence!.deltas.grievance };
+    const fresh = evaluateDiplomaticDeal(cashDeal(10000, 2, 'NSW', 'next_turn'), 'ai', { ...ai, turn: 9 }, createEmptyDiplomacyState());
+    const later = evaluateDiplomaticDeal(cashDeal(10000, 2, 'NSW', 'next_turn'), 'ai', { ...ai, turn: 9, relationship: () => burnedRel }, v.state);
+    return (later.threshold > fresh.threshold && later.response !== 'accept' && later.reasons.some(x => /broke/.test(x))) || canon({ fresh: [fresh.response, fresh.threshold], later: [later.response, later.threshold, later.reasons] });
+  });
+  return results;
+}
+
+// ---- Diplomacy 2.0 UI -----------------------------------------------------------------------------
+
+export interface DiplomacyExchange { dealId: string; counterpartId: string; lines: string[]; response: DNResponseKind; counterId: string | null; reasons: string[] }
+
+export interface DiplomacyBinding {
+  enabled: boolean;
+  view: DiplomacyWorldView;
+  counterparts: Array<{ id: string; name: string }>;
+  exchange: DiplomacyExchange | null;
+  fullInspection: boolean;
+  compile: (text: string, counterpartId: string) => DNCompileResult;
+  modify: (deal: DiplomaticDeal, text: string) => { deal: DiplomaticDeal; changed: string[] };
+  template: (id: DNTemplateId, counterpartId: string, regionId?: string | null, amount?: number | null) => DiplomaticDeal;
+  build: (input: DNBuilderInput) => DiplomaticDeal;
+  preview: (deal: DiplomaticDeal) => DNImpactPreview;
+  send: (deal: DiplomaticDeal) => void;
+  respond: (dealId: string, response: 'accept' | 'reject') => void;
+  withdraw: (dealId: string) => void;
+  terminate: (dealId: string, mutual: boolean) => void;
+  extend: (dealId: string, turns: number) => DiplomaticDeal | null;
+  dismissInbox: (id: string) => void;
+  inspect: (dealId: string) => DiplomaticEvaluation | null;
+}
+
+const dnBtn = 'px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-500/40 hover:bg-slate-500/20 disabled:opacity-40';
+const dnPrimary = 'px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40';
+const dnDanger = 'px-3 py-1 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white';
+const DN_STANCE_STYLE: Record<DNStanceLabel, string> = { allied: 'text-emerald-300 border-emerald-500', friendly: 'text-green-300 border-green-500', neutral: 'text-slate-300 border-slate-500', wary: 'text-amber-300 border-amber-500', hostile: 'text-orange-300 border-orange-500', war: 'text-red-300 border-red-500' };
+
+function dnRelationshipSummary(b: DiplomacyBinding, cpId: string) {
+  const v = b.view; const p = v.playerId;
+  const rel = v.world.relationship(cpId, p) || DN_DEFAULT_RELATIONSHIP;
+  const active = v.state.deals.filter(d => d.status === 'active' && d.participants.includes(cpId) && d.participants.includes(p));
+  const violations = v.state.history.filter(d => d.participants.includes(cpId) && d.status === 'violated').length;
+  const pressure = Object.values(v.world.regions).filter(r => r.controllerId === p && (r.deposits[cpId] || 0) > 0).map(r => r.code);
+  return { rel, stance: deriveDiplomaticStanceLabel(rel, active.length, violations), reliability: deriveDiplomaticReliability(v.state, p, cpId), pressure, active, leverage: buildDiplomaticLeverageSnapshot(p, cpId, v.world, v.state) };
+}
+
+export const DiplomacyDealPreview: React.FC<{ binding: DiplomacyBinding; deal: DiplomaticDeal; onSend?: () => void; onCancel?: () => void; onModify?: (text: string) => void; changed?: string[]; notes?: string[] }> = ({ binding, deal, onSend, onCancel, onModify, changed, notes }) => {
+  const [mod, setMod] = useState('');
+  const [explain, setExplain] = useState(false);
+  const pv = binding.preview(deal);
+  const v = binding.view; const p = v.playerId;
+  const cp = deal.participants.find(x => x !== p) || '';
+  const cpName = v.names[cp] || cp;
+  return (
+    <div className="rounded-lg border border-sky-500/40 p-3 text-xs space-y-2" data-testid="dn-preview">
+      <div className="font-bold text-sm">Proposed Agreement — {describeDealShort(deal, v.names)}</div>
+      {changed && changed.length > 0 && <div className="text-sky-300">Changed: {changed.join('; ')}</div>}
+      <div className="grid md:grid-cols-2 gap-2">
+        <div><div className="font-semibold uppercase opacity-70">You agree</div>{pv.give.length ? pv.give.map((g, i) => <div key={i}>• {g}</div>) : <div className="opacity-70">Nothing</div>}</div>
+        <div><div className="font-semibold uppercase opacity-70">{cpName} agrees</div>{deal.terms.filter(t => t.actorId === cp).map(t => <div key={t.id}>• {describeDiplomaticTerm(t, v.names)}</div>)}</div>
+      </div>
+      <div><span className="font-semibold">Duration:</span> {describeDealDuration(deal)} · <span className="font-semibold">Starts:</span> immediately after acceptance</div>
+      {deal.terminationConditions.length > 0 && <div><span className="font-semibold">Ends automatically:</span> {deal.terminationConditions.map(c => c.text || c.kind).join('; ')}</div>}
+      <div><span className="font-semibold">If broken:</span> the agreement is marked violated and trust may decrease. Nothing is locked — either side can still act.</div>
+      <div data-testid="dn-impact"><div className="font-semibold uppercase opacity-70">Strategic impact</div>{pv.impact.map((x, i) => <div key={i}>• {x}</div>)}</div>
+      {pv.outlook && <div data-testid="dn-outlook"><span className="font-semibold">Acceptance outlook:</span> <span className={pv.outlook.outlook === 'promising' ? 'text-emerald-300' : pv.outlook.outlook === 'uncertain' ? 'text-amber-300' : 'text-red-300'}>{pv.outlook.text}</span></div>}
+      {pv.validation.issues.map((i, n) => <div key={n} className={i.severity === 'error' ? 'text-red-300' : 'text-amber-300'} data-testid="dn-issue">{i.severity === 'error' ? '⛔ ' : '⚠️ '}{i.message}{i.options?.length ? ` Options: ${i.options.join(' / ')}.` : ''}</div>)}
+      {notes && notes.length > 0 && <div className="opacity-80">{notes.map((n, i) => <div key={i}>ℹ️ {n}</div>)}</div>}
+      {explain && <div className="rounded border border-slate-500/40 p-2" data-testid="dn-explain"><div className="font-semibold">Why this matters — your leverage: {dnRelationshipSummary(binding, cp).leverage.label}</div>{dnRelationshipSummary(binding, cp).leverage.factors.map((f, i) => <div key={i}>{f.effect === 'helps' ? '＋' : f.effect === 'hurts' ? '－' : '·'} {f.text}</div>)}</div>}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {onSend && <button type="button" className={dnPrimary} disabled={!pv.validation.ok} onClick={onSend} data-testid="dn-send">Send Proposal</button>}
+        {onModify && <form className="flex gap-1" onSubmit={e => { e.preventDefault(); if (mod.trim()) { onModify(mod.trim()); setMod(''); } }}><input aria-label="Modify the proposal" value={mod} onChange={e => setMod(e.target.value)} placeholder="Modify: e.g. make that $10K, two turns" className="border rounded px-2 py-1 bg-transparent border-slate-500/50 w-56" /><button type="submit" className={dnBtn}>Modify</button></form>}
+        <button type="button" className={dnBtn} onClick={() => setExplain(x => !x)}>Explain</button>
+        {onCancel && <button type="button" className={dnBtn} onClick={onCancel}>Cancel</button>}
+      </div>
+    </div>
+  );
+};
+
+export const DiplomacyPanel: React.FC<{ binding: DiplomacyBinding; isDark?: boolean; initialCounterpartId?: string | null; initialDraft?: DiplomaticDeal | null }> = ({ binding, initialCounterpartId, initialDraft }) => {
+  const v = binding.view; const p = v.playerId;
+  const [cpId, setCpId] = useState<string>(initialCounterpartId || binding.counterparts[0]?.id || '');
+  const [draft, setDraft] = useState<DiplomaticDeal | null>(initialDraft || null);
+  const [changed, setChanged] = useState<string[]>([]);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [text, setText] = useState('');
+  const [advanced, setAdvanced] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [offer, setOffer] = useState<DNBuilderSide>({ kind: 'cash', amount: 3000, timing: 'on_acceptance' });
+  const [request, setRequest] = useState<DNBuilderSide>({ kind: 'do_not_challenge_region', regionId: Object.values(v.world.regions).find(r => r.controllerId === p)?.code || Object.keys(v.world.regions)[0] });
+  const [turns, setTurns] = useState(3);
+  const [endOnSabotage, setEndOnSabotage] = useState(false);
+  const [deferBelow, setDeferBelow] = useState<number | ''>('');
+  const [confirmTerminate, setConfirmTerminate] = useState<string | null>(null);
+  const [whyOpen, setWhyOpen] = useState<string | null>(null);
+  if (!binding.enabled) return <div className="text-xs opacity-70" data-testid="dn-disabled">Diplomacy is available once a competitive match is running.</div>;
+  if (!cpId) return <div className="text-xs opacity-70">No opponent to negotiate with in this mode.</div>;
+  const cpName = v.names[cpId] || cpId;
+  const sum = dnRelationshipSummary(binding, cpId);
+  const regions = Object.values(v.world.regions);
+  const setDraftDeal = (d: DiplomaticDeal | null, ch: string[] = [], n: string[] = []) => { setDraft(d); setChanged(ch); setNotes(n); };
+  const sideEditor = (side: DNBuilderSide, set: (s: DNBuilderSide) => void, label: string, owner: 'you' | 'them') => (
+    <div className="space-y-1">
+      <div className="font-semibold uppercase opacity-70">{label}</div>
+      <select aria-label={`${label} type`} value={side.kind} onChange={e => set({ ...side, kind: e.target.value as DNBuilderSide['kind'] })} className="bg-transparent border rounded px-1 py-0.5 border-slate-500/50">
+        <option value="none">Nothing</option><option value="cash">Cash</option><option value="resource">Resource</option><option value="avoid_region">Stay out of region</option><option value="do_not_challenge_region">Don't challenge region</option><option value="no_sabotage">No sabotage</option><option value="non_aggression">Non-aggression</option>
+      </select>
+      {side.kind === 'cash' && <input aria-label={`${label} amount`} type="number" min={0} step={500} value={side.amount ?? 0} onChange={e => set({ ...side, amount: Number(e.target.value) })} className="ml-1 w-24 bg-transparent border rounded px-1 border-slate-500/50" />}
+      {(side.kind === 'avoid_region' || side.kind === 'do_not_challenge_region') && <select aria-label={`${label} region`} value={side.regionId || ''} onChange={e => set({ ...side, regionId: e.target.value })} className="ml-1 bg-transparent border rounded px-1 border-slate-500/50">{regions.map(r => <option key={r.code} value={r.code}>{r.code}</option>)}</select>}
+      {side.kind === 'resource' && <><select aria-label={`${label} resource`} value={side.resourceId || v.world.resources[0]} onChange={e => set({ ...side, resourceId: e.target.value })} className="ml-1 bg-transparent border rounded px-1 border-slate-500/50">{v.world.resources.map(r => <option key={r} value={r}>{r}</option>)}</select><input aria-label={`${label} quantity`} type="number" min={1} value={side.quantity ?? 1} onChange={e => set({ ...side, quantity: Number(e.target.value) })} className="ml-1 w-14 bg-transparent border rounded px-1 border-slate-500/50" /></>}
+      {advanced && side.kind === 'cash' && <div className="flex gap-1 flex-wrap"><select aria-label={`${label} payment timing`} value={side.timing || 'on_acceptance'} onChange={e => set({ ...side, timing: e.target.value as DNPaymentTiming })} className="bg-transparent border rounded px-1 border-slate-500/50"><option value="on_acceptance">upon acceptance</option><option value="next_turn">next turn</option><option value="per_turn">every turn</option><option value="on_completion">on completion</option></select>{owner === 'you' && v.teamMode && <label className="flex items-center gap-1"><input type="checkbox" checked={Boolean(side.treasury)} onChange={e => set({ ...side, treasury: e.target.checked })} />from Treasury</label>}</div>}
+      {advanced && side.kind === 'avoid_region' && <select aria-label={`${label} scope`} value={side.scope || 'pressure'} onChange={e => set({ ...side, scope: e.target.value as any })} className="bg-transparent border rounded px-1 border-slate-500/50"><option value="pressure">no deposits/investments</option><option value="presence">also no travel</option></select>}
+      {advanced && side.kind === 'non_aggression' && <select aria-label={`${label} scope`} value={side.scope || 'all'} onChange={e => set({ ...side, scope: e.target.value as any })} className="bg-transparent border rounded px-1 border-slate-500/50"><option value="all">sabotage + regions</option><option value="sabotage">sabotage only</option><option value="regions">regions only</option></select>}
+    </div>
+  );
+  const buildFromEditor = () => {
+    const input: DNBuilderInput = { counterpartId: cpId, offer: offer.kind === 'none' ? [] : [offer], request: request.kind === 'none' ? [] : [request], duration: { kind: 'turns', turns: Math.max(1, turns) }, terminationConditions: endOnSabotage ? [{ kind: 'any_sabotage', effect: 'terminate', text: 'ends if either side sabotages the other' }] : [], paymentDeferIfCashBelow: advanced && deferBelow ? Number(deferBelow) : null };
+    setDraftDeal(binding.build(input));
+  };
+  const inbox = v.state.inbox.filter(i => i.status === 'unread' || i.status === 'read').slice().reverse();
+  const incoming = v.state.deals.filter(d => d.status === 'under_review' && d.recipientActorIds.includes(p));
+  const active = v.state.deals.filter(d => d.status === 'active' && d.participants.includes(p));
+  const myCommitments = active.flatMap(d => d.terms.filter(t => t.actorId === p && t.status !== 'satisfied' && t.kind !== 'threat').map(t => ({ d, t })));
+  const history = v.state.history.filter(d => d.participants.includes(p)).slice(-6).reverse();
+  const ex = binding.exchange && binding.exchange.counterpartId === cpId ? binding.exchange : null;
+  const counter = ex?.counterId ? v.state.deals.find(d => d.id === ex.counterId) || null : null;
+  return (
+    <section aria-labelledby="dn-heading" className="space-y-3 text-xs" data-testid="dn-panel">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 id="dn-heading" className="font-bold text-sm">Diplomacy</h3>
+        {binding.counterparts.length > 1 && <select aria-label="Counterpart" value={cpId} onChange={e => { setCpId(e.target.value); setDraftDeal(null); }} className="bg-transparent border rounded px-1 border-slate-500/50">{binding.counterparts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
+        {binding.counterparts.length <= 1 && <span className="font-semibold">{cpName}</span>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2 rounded-lg border border-slate-600/50 p-2" data-testid="dn-relationship">
+        <div><div className="opacity-70">Stance</div><span className={`inline-block px-2 rounded-full border font-bold capitalize ${DN_STANCE_STYLE[sum.stance]}`}>{sum.stance}</span></div>
+        <div><div className="opacity-70">Trust</div><div className="font-bold">{Math.round(sum.rel.trust)}</div></div>
+        <div><div className="opacity-70">Reliability toward you</div><div className="font-bold capitalize" title={sum.reliability.evidence.join(', ')}>{sum.reliability.band}</div></div>
+        <div><div className="opacity-70">Current pressure</div><div className="font-bold">{sum.pressure.join(', ') || 'None'}</div></div>
+        <div><div className="opacity-70">Active agreements</div><div className="font-bold">{sum.active.length}</div></div>
+        <div><div className="opacity-70">Your leverage</div><div className="font-bold capitalize">{sum.leverage.label}</div></div>
+      </div>
+      <div className="flex flex-wrap gap-1.5" data-testid="dn-actions">
+        <button type="button" className={dnBtn} onClick={() => { setShowBuilder(true); setDraftDeal(null); }}>Make Proposal</button>
+        <button type="button" className={dnBtn} onClick={() => setDraftDeal(binding.template('non_aggression', cpId))}>Request Non-Aggression</button>
+        <button type="button" className={dnBtn} onClick={() => setDraftDeal(binding.template('resource_trade', cpId))}>Trade Resources</button>
+        <button type="button" className={dnBtn} onClick={() => setDraftDeal(binding.template('cash_for_withdrawal', cpId, sum.pressure[0] || null))}>Request Regional Withdrawal</button>
+        <button type="button" className={dnBtn} onClick={() => setDraftDeal(binding.template('mutual_support', cpId))}>Request Support</button>
+        <button type="button" className={dnBtn} onClick={() => { setShowBuilder(true); setAdvanced(true); setDraftDeal(null); }}>Custom Deal</button>
+      </div>
+      <details className="rounded border border-slate-600/40 p-2"><summary className="cursor-pointer font-semibold">Templates</summary><div className="flex flex-wrap gap-1.5 mt-1">{DN_TEMPLATES.map(t => <button key={t.id} type="button" className={dnBtn} title={t.description} onClick={() => setDraftDeal(binding.template(t.id, cpId))}>{t.label}</button>)}</div></details>
+      <form className="flex gap-1.5" onSubmit={e => { e.preventDefault(); if (!text.trim()) return; const r = binding.compile(text.trim(), cpId); if (r.deal) setDraftDeal(r.deal, [], [...r.assumptions, ...r.unsupported, ...r.negatedRequests]); else setNotes([r.clarification || 'I need clearer terms.', ...r.unsupported, ...r.negatedRequests]); setText(''); }}>
+        <input aria-label="Describe a deal" value={text} onChange={e => setText(e.target.value)} placeholder={`e.g. I'll give ${cpName} $8K if they stay out of NSW for 3 turns`} className="flex-1 border rounded-lg px-2 py-1 bg-transparent border-slate-500/50" />
+        <button type="submit" className={dnPrimary} disabled={!text.trim()}>Preview</button>
+      </form>
+      {!draft && notes.length > 0 && <div className="text-amber-300" data-testid="dn-notes">{notes.map((n, i) => <div key={i}>{n}</div>)}</div>}
+      {showBuilder && (
+        <div className="rounded-lg border border-slate-600/50 p-2 space-y-2" data-testid="dn-builder">
+          <div className="flex items-center gap-2"><span className="font-semibold">Deal Builder</span><label className="flex items-center gap-1"><input type="checkbox" checked={advanced} onChange={e => setAdvanced(e.target.checked)} />Advanced</label></div>
+          <div className="grid md:grid-cols-3 gap-2">
+            {sideEditor(offer, setOffer, 'You offer', 'you')}
+            {sideEditor(request, setRequest, 'You request', 'them')}
+            <div className="space-y-1"><div className="font-semibold uppercase opacity-70">Duration</div><input aria-label="Duration in turns" type="number" min={1} max={DN_LIMITS.maxDuration} value={turns} onChange={e => setTurns(Number(e.target.value))} className="w-16 bg-transparent border rounded px-1 border-slate-500/50" /> turns
+              {advanced && <label className="flex items-center gap-1"><input type="checkbox" checked={endOnSabotage} onChange={e => setEndOnSabotage(e.target.checked)} />End if either side sabotages</label>}
+              {advanced && <label className="flex items-center gap-1">Defer my payment if cash below $<input aria-label="Defer payment threshold" type="number" min={0} step={500} value={deferBelow} onChange={e => setDeferBelow(e.target.value === '' ? '' : Number(e.target.value))} className="w-20 bg-transparent border rounded px-1 border-slate-500/50" /></label>}
+            </div>
+          </div>
+          <div className="flex gap-1.5"><button type="button" className={dnPrimary} onClick={buildFromEditor}>Preview Proposal</button><button type="button" className={dnBtn} onClick={() => setShowBuilder(false)}>Close</button></div>
+        </div>
+      )}
+      {draft && <DiplomacyDealPreview binding={binding} deal={draft} changed={changed} notes={notes} onSend={() => { binding.send(draft); setDraftDeal(null); setShowBuilder(false); }} onCancel={() => setDraftDeal(null)} onModify={t => { const m = binding.modify(draft, t); setDraftDeal(m.deal, m.changed); }} />}
+      {ex && (
+        <div className="rounded-lg border border-violet-500/50 p-2 space-y-1" data-testid="dn-exchange">
+          <div><span className="font-bold">{cpName}:</span> {ex.lines.join(' ')}</div>
+          {counter && counter.status === 'under_review' && (
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" className={dnPrimary} onClick={() => binding.respond(counter.id, 'accept')} data-testid="dn-accept-counter">Accept Counter</button>
+              <button type="button" className={dnBtn} onClick={() => setDraftDeal({ ...counter }, [], ['Editing their counter — your changes become the next round.'])}>Change Offer</button>
+              <button type="button" className={dnBtn} onClick={() => binding.respond(counter.id, 'reject')}>Reject</button>
+              <button type="button" className={dnBtn} onClick={() => setWhyOpen(whyOpen === ex.dealId ? null : ex.dealId)}>Why?</button>
+            </div>
+          )}
+          {!counter && ex.response !== 'accept' && <button type="button" className={dnBtn} onClick={() => setWhyOpen(whyOpen === ex.dealId ? null : ex.dealId)}>Why?</button>}
+          {whyOpen === ex.dealId && <div className="opacity-90" data-testid="dn-why">{ex.reasons.map((r, i) => <div key={i}>• {r}</div>)}<div className="opacity-70">Based only on what you can see — their exact valuation stays private.</div></div>}
+        </div>
+      )}
+      {(incoming.length > 0 || inbox.length > 0) && (
+        <div className="rounded-lg border border-slate-600/50 p-2 space-y-1" data-testid="dn-inbox">
+          <div className="font-semibold uppercase opacity-70">Diplomatic Inbox</div>
+          {incoming.filter(d => d.id !== ex?.counterId).map(d => (
+            <div key={d.id} className="border-b border-slate-700/50 pb-1">
+              <div>📨 <span className="font-semibold">{v.names[d.initiatorActorId] || d.initiatorActorId}</span> proposes: {describeDealShort(d, v.names)} — {d.terms.map(t => `${t.actorId === p ? 'you' : v.names[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, v.names).toLowerCase()}`).join('; ')} ({describeDealDuration(d)}).</div>
+              {d.strategicSummary && whyOpen === d.id && <div className="opacity-80">Why: {d.strategicSummary}</div>}
+              <div className="flex gap-1.5 mt-1"><button type="button" className={dnPrimary} onClick={() => binding.respond(d.id, 'accept')}>Accept</button><button type="button" className={dnBtn} onClick={() => setDraftDeal({ ...d }, [], ['Editing their proposal — your changes become a counteroffer.'])}>Counter</button><button type="button" className={dnBtn} onClick={() => binding.respond(d.id, 'reject')}>Reject</button><button type="button" className={dnBtn} onClick={() => setWhyOpen(whyOpen === d.id ? null : d.id)}>Why?</button></div>
+            </div>
+          ))}
+          {inbox.slice(0, 6).map(i => <div key={i.id} className="flex justify-between gap-2"><span>{i.kind === 'violated' ? '⚠️' : i.kind === 'expiring' ? '⏳' : i.kind === 'completed' ? '✅' : i.kind === 'counteroffer' ? '↩️' : '•'} {i.text}</span><button type="button" className="opacity-60 hover:opacity-100" aria-label="Dismiss" onClick={() => binding.dismissInbox(i.id)}>✕</button></div>)}
+        </div>
+      )}
+      <div className="rounded-lg border border-slate-600/50 p-2 space-y-1" data-testid="dn-active">
+        <div className="font-semibold uppercase opacity-70">Active agreements</div>
+        {!active.length && <div className="opacity-70">None.</div>}
+        {active.map(d => {
+          const left = d.expirationTurn !== null ? d.expirationTurn - v.world.turn + 1 : null;
+          return (
+            <div key={d.id} className="border-b border-slate-700/50 pb-1">
+              <div className="font-semibold">{describeDealShort(d, v.names)}</div>
+              {d.terms.map(t => <div key={t.id}>{t.actorId === p ? 'You' : v.names[t.actorId] || t.actorId}: {describeDiplomaticTerm(t, v.names)}{t.status === 'satisfied' ? ' ✓' : ''}</div>)}
+              <div>Remaining: {left !== null ? `${left} turn${left === 1 ? '' : 's'}` : describeDealDuration(d)} · Status: <span className={d.compliance === 'at_risk' ? 'text-amber-300' : 'text-emerald-300'}>{d.compliance === 'at_risk' ? 'At risk' : 'Compliant'}</span></div>
+              <div className="flex gap-1.5 mt-1">
+                <button type="button" className={dnBtn} onClick={() => setWhyOpen(whyOpen === d.id ? null : d.id)}>View</button>
+                <button type="button" className={dnBtn} onClick={() => { const a = binding.extend(d.id, 2); if (a) setDraftDeal(a, ['extension proposal — the current agreement stays active until they accept']); }}>Renegotiate</button>
+                <button type="button" className={dnBtn} onClick={() => setConfirmTerminate(d.id)}>Terminate</button>
+              </div>
+              {whyOpen === d.id && <div className="opacity-80">{d.history.slice(-4).map((h, i) => <div key={i}>Round {h.turn}: {h.text}</div>)}</div>}
+              {confirmTerminate === d.id && (
+                <div role="alertdialog" aria-label="Terminate agreement" className="rounded border border-red-500/60 p-2 mt-1 space-y-1">
+                  <div>Ask {v.names[d.participants.find(x => x !== p) || ''] || 'them'} for a mutual termination (no trust cost if they agree), or withdraw unilaterally (costs trust and reliability).</div>
+                  <div className="flex gap-1.5"><button type="button" className={dnBtn} onClick={() => { binding.terminate(d.id, true); setConfirmTerminate(null); }}>Propose mutual termination</button><button type="button" className={dnDanger} onClick={() => { binding.terminate(d.id, false); setConfirmTerminate(null); }}>Withdraw unilaterally</button><button type="button" className={dnBtn} onClick={() => setConfirmTerminate(null)}>Cancel</button></div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="rounded-lg border border-slate-600/50 p-2" data-testid="dn-commitments">
+        <div className="font-semibold uppercase opacity-70">Your commitments</div>
+        {!myCommitments.length && <div className="opacity-70">No open promises.</div>}
+        {myCommitments.map(({ d, t }) => { const left = d.expirationTurn !== null ? d.expirationTurn - v.world.turn + 1 : null; return <div key={`${d.id}_${t.id}`}>• {describeDiplomaticTerm(t, v.names)}{t.kind === 'pay_cash' ? (t.timing === 'next_turn' ? ' — due next turn' : t.timing === 'per_turn' ? ' — due every turn' : '') : left !== null ? ` — ${left} turn${left === 1 ? '' : 's'} remaining` : ''}</div>; })}
+      </div>
+      {history.length > 0 && (
+        <details className="rounded border border-slate-600/40 p-2" data-testid="dn-history"><summary className="cursor-pointer font-semibold">Agreement history</summary>
+          {history.map(d => <div key={d.id}>{d.status === 'violated' ? '💔' : d.status === 'completed' ? '✅' : d.status === 'rejected' ? '✖️' : '•'} {describeDealShort(d, v.names)} — {d.status}{d.violationReason ? ` (${d.violationReason})` : d.closedReason && d.status !== 'completed' ? ` (${d.closedReason})` : ''}</div>)}
+        </details>
+      )}
+    </section>
+  );
+};
+
+/** LAB: structured factors only (no hidden reasoning). Private factors appear only with Full Inspection. */
+export const DiplomacyInspector: React.FC<{ binding: DiplomacyBinding; theme: any }> = ({ binding, theme }) => {
+  const v = binding.view;
+  const all = [...v.state.deals, ...v.state.history.slice(-8)];
+  const [dealId, setDealId] = useState<string>(all[all.length - 1]?.id || '');
+  const deal = all.find(d => d.id === dealId) || null;
+  const cp = deal ? deal.participants.find(x => x !== v.playerId) || '' : binding.counterparts[0]?.id || '';
+  const rel = cp ? v.world.relationship(cp, v.playerId) : DN_DEFAULT_RELATIONSHIP;
+  const ev = deal && cp ? binding.inspect(deal.id) : null;
+  const rec = deriveDiplomaticReliability(v.state, v.playerId, cp || null);
+  return (
+    <section aria-labelledby="dn-lab-heading" data-testid="dn-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs space-y-2`}>
+      <h3 id="dn-lab-heading" className="font-bold text-sm">🤝 Diplomacy Inspector</h3>
+      <div>Revision {v.state.revision} · {v.state.deals.length} open · {v.state.history.length} closed · {v.state.events.length} events</div>
+      <div><span className="font-semibold">Relationship ({v.names[cp] || cp || '—'})</span>: trust {Math.round(rel.trust)} · stance {deriveDiplomaticStanceLabel(rel, v.state.deals.filter(d => d.status === 'active' && d.participants.includes(cp)).length, 0)} · your reliability {rec.band} ({rec.evidence.join(', ')}){binding.fullInspection ? ` · grievance ${Math.round(rel.grievance)} · gratitude ${Math.round(rel.gratitude)} · rivalry ${Math.round(rel.rivalry)}` : ' · grievances hidden (enable AI Memory Full Inspection)'}</div>
+      {all.length > 0 && <select aria-label="Deal" value={dealId} onChange={e => setDealId(e.target.value)} className="bg-transparent border rounded px-1 border-slate-500/50">{all.map(d => <option key={d.id} value={d.id}>{describeDealShort(d, v.names)} — {d.status}</option>)}</select>}
+      {deal && <div><div className="font-semibold">Proposal</div>{deal.terms.map(t => <div key={t.id}>• {v.names[t.actorId] || t.actorId}: {describeDiplomaticTerm(t, v.names)} [{t.status}]</div>)}<div>Round {deal.negotiationRound} · {describeDealDuration(deal)} · compliance {deal.compliance}</div></div>}
+      {ev && (
+        <div data-testid="dn-lab-eval">
+          <div className="font-semibold">Evaluation ({v.names[ev.evaluatorId] || ev.evaluatorId})</div>
+          <div>Value received {ev.receivedValue} · value given {ev.givenValue} · decision {ev.band} → {ev.response}{binding.fullInspection ? ` · ratio ${ev.ratio} vs threshold ${ev.threshold} · betrayal risk ${Math.round(ev.betrayalRisk * 100)}%` : ''}</div>
+          {ev.factors.filter(f => binding.fullInspection || f.visibility === 'public').map(f => <div key={f.id}>• {f.label}: {binding.fullInspection ? f.value : f.publicText}</div>)}
+          {ev.counter && <div>Counter logic: {ev.counter.ops.join(' + ')} → {ev.counter.summary}</div>}
+        </div>
+      )}
+      {deal?.status === 'active' && <div><div className="font-semibold">Runtime</div><div>Remaining {deal.expirationTurn !== null ? deal.expirationTurn - v.world.turn + 1 : '∞'} turn(s) · {deal.compliance}</div></div>}
+      <details><summary className="cursor-pointer">Recent diplomatic events</summary>{v.state.events.slice(-8).reverse().map(e => <div key={e.id}>R{e.turn} {e.kind}: {e.summary}</div>)}</details>
+    </section>
+  );
+};
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -119050,6 +122293,19 @@ function AustraliaGame() {
 
   const aiMemoriesRef = useRef<AiMemoriesByActor>(gameState.aiMemoriesByActor || {});
   aiMemoriesRef.current = gameState.aiMemoriesByActor || {};
+  // Diplomacy 2.0 (wired further below): the canonical commit hook, AI decision scoring and the player's
+  // action entry points consult these refs, so agreements are monitored on every committed action.
+  const dnStateRef = useRef<DiplomacyState | null>(null);
+  dnStateRef.current = ((gameState as any).diplomacyState as DiplomacyState | undefined) || null;
+  /** Region controllers (as diplomatic leads) from the last render — i.e. BEFORE the action being checked. */
+  const dnControllersRef = useRef<Record<string, string | null>>({});
+  const dnObserveRef = useRef<((action: CommittedMemoryAction) => void) | null>(null);
+  const dnDecisionFilterRef = useRef<((actorId: string, decisions: any[]) => any[]) | null>(null);
+  /** Returns true when the action was intercepted (pre-violation notice shown, or blocked for Co-Pilot). */
+  const dnPreActionRef = useRef<((probe: DNActionProbe, proceed: () => void) => boolean) | null>(null);
+  const useActorSabotageRef = useRef<((actorId: string, sabotageId: string, targetActorId?: string, options?: { suppressLedgerEvent?: boolean }) => any) | null>(null);
+  const investForActorRef = useRef<((actorId: string, regionCode: string, options?: any) => any) | null>(null);
+  const depositInRegionRef = useRef<((regionCode: string, actorId: string, rawAmount: number, options?: { consumeAction?: boolean; reason?: string; silent?: boolean }) => boolean) | null>(null);
   const runPhase5ProactiveRef = useRef<(memories?: AiMemoriesByActor) => void>(() => {});
   const skipPersistentAbandonPromptRef = useRef(false);
   const persistentCommitInFlightRef = useRef<string | null>(null);
@@ -119101,6 +122357,9 @@ function AustraliaGame() {
   }, [actorsById]);
 
   const commitMatchMemory = useCallback((action: CommittedMemoryAction) => {
+    // Diplomacy 2.0: every committed canonical action is checked against active agreements (violations,
+    // AI compliance, conditional triggers) — independent of whether AI Memory learning is enabled.
+    try { dnObserveRef.current?.(action); } catch (err) { console.warn('[Diplomacy] compliance check skipped:', err); }
     if (gameSettings.aiMemoryEnabled === false) return;
     const skipTypes = new Set(['think', 'wait', 'end_turn', 'loan']);
     if (skipTypes.has(String(action.actionType))) return;
@@ -119170,7 +122429,7 @@ function AustraliaGame() {
     const plan = teamId
       ? sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamId]
       : null;
-    return applyAiMemoryInfluence(decisions, {
+    const influenced = applyAiMemoryInfluence(decisions, {
       actorId: actor.id,
       memory: (aiMemoriesRef.current || gameState.aiMemoriesByActor || {})[resolveAiMemoryActorId(actor.id)],
       settings: {
@@ -119186,6 +122445,10 @@ function AustraliaGame() {
       ],
       personality: getAiMemoryPersonalityScale(actor.id)
     });
+    // Diplomacy 2.0: options that would break this actor's active promises sink below everything else,
+    // unless its explicit, bounded breach logic allows it (then the violation is recorded and explained).
+    const filter = dnDecisionFilterRef.current;
+    return filter ? filter(String(actor.id), influenced) as T[] : influenced;
   }, [actorsById, gameSettings.aiMemoryEnabled, gameSettings.aiMemoryInfluenceStrength, gameSettings.aiStrategicLearningEnabled, gameSettings.aiStrategicLearningStrength, gameSettings.aiPersistentMemoryEnabled, gameState.aiMemoriesByActor, gameState.teamStrategicPlansByTeam, getAiMemoryPersonalityScale]);
 
   // RP2: consumes the flag initializeGameMode sets, once actorsById/teamsById have recomputed for
@@ -119253,6 +122516,7 @@ function AustraliaGame() {
   bgStateRef.current = ((gameState as any).backgroundAI as BackgroundAIState | undefined) || null;
   // Settings Intelligence 2.0: read-only configuration view handed to Game Intelligence (set below).
   const siWorldViewRef = useRef<SettingsIntelligenceWorldView | null>(null);
+  const dnViewRef = useRef<DiplomacyWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -121146,6 +124410,7 @@ function dispatchGameSettingsChange(
         gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
         backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
         settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
+        diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -133295,6 +136560,8 @@ function dispatchGameSettingsChange(
       }
       return false;
     }
+    // Diplomacy 2.0: a human deposit that would break an active agreement shows a notice first (never a lock).
+    if (getActorState(actorId)?.kind === 'human' && dnPreActionRef.current?.({ actorId, actionType: 'region_deposit', regionId: regionCode, amount: rawAmount }, () => depositInRegionRef.current?.(regionCode, actorId, rawAmount, options))) return false;
 
     const amount = Math.max(1, Math.floor(Number(rawAmount) || 0));
     const actorState = getActorState(actorId);
@@ -133438,6 +136705,7 @@ function dispatchGameSettingsChange(
     updateRegionControlData,
     commitMatchMemory
   ]);
+  depositInRegionRef.current = depositInRegion;
 
   const cashOutRegionPosition = useCallback((
     regionCode: string,
@@ -139598,6 +142866,7 @@ function dispatchGameSettingsChange(
     const actor = getActorState(actorId);
     const investment = REGIONAL_INVESTMENTS[regionCode];
     if (!actor || !investment || !gameSettings.investmentsEnabled) return false;
+    if (actor.kind === 'human' && dnPreActionRef.current?.({ actorId, actionType: 'invest', regionId: regionCode, amount: investment.cost }, () => investForActorRef.current?.(actorId, regionCode, options))) return false;
 
     let success = false;
     executeUniversalActionPipeline(
@@ -139662,6 +142931,7 @@ function dispatchGameSettingsChange(
 
     return success;
   }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.investmentsEnabled, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent, commitMatchMemory]);
+  investForActorRef.current = investForActor;
 
   const buyEquipmentForActor = useCallback((actorId: string, itemId: string, options?: { rootEventId?: string; parentEventId?: string; correlationChain?: string[] }) => {
     const actor = getActorState(actorId);
@@ -139744,6 +143014,7 @@ function dispatchGameSettingsChange(
     if (targetActor.teamId === actor.teamId) return false;
     if (hasActiveDebuff(targetActor.debuffs, sabotage.id)) return false;
     if (actor.money < sabotage.cost) return false;
+    if (actor.kind === 'human' && dnPreActionRef.current?.({ actorId, actionType: 'sabotage', targetActorId: targetActor.id }, () => useActorSabotageRef.current?.(actorId, sabotageId, targetActorId, options))) return false;
     if (gameSettings.regionalStandingEnabled) {
       const targetRegion = targetActor.currentRegion || 'NSW';
       const targetStanding = getActorRegionalStanding(gameState, targetActor.id, targetRegion);
@@ -139810,6 +143081,7 @@ function dispatchGameSettingsChange(
     }
     return true;
   }, [addNotification, appendTeammatePerformanceSample, deductMoney, gameSettings.sabotageEnabled, gameState.selectedMode, gameState.turnCounter, getActorDisplayName, getActorState, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent, commitMatchMemory]);
+  useActorSabotageRef.current = useActorSabotage;
 
   const useActorSpecialAbility = useCallback((actorId: string, abilityName?: string) => {
     const actor = getActorState(actorId);
@@ -149185,8 +152457,16 @@ function dispatchGameSettingsChange(
     if (gameSettings.investmentsEnabled) list.push({ id: 'investments', label: 'Investments', icon: '🏦', target: 'investments', category: 'build', legal: turn, blockReason: notTurn });
     if (gameSettings.advancedLoansEnabled && gameSettings.advancedLoansAccessMode !== 'ai_only') list.push({ id: 'loans', label: 'Loans', icon: '🏦', target: 'loans', category: 'economy', legal: turn, blockReason: notTurn });
     if (gameSettings.sabotageEnabled && isCompetitiveMode) list.push({ id: 'sabotage', label: 'Sabotage', icon: SABOTAGE_ICON, target: 'sabotage', category: 'compete', legal: turn, blockReason: notTurn });
+    // Diplomacy 2.0: one entry, only when relevant (a waiting proposal, an expiring pact, or live pressure on a region you hold).
+    if (isCompetitiveMode) {
+      const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+      const pressured = Object.keys(REGIONS).filter(code => { const e = deposits[code] || {}; return getRegionControlSnapshot(e).controllerId === playerControlKey && Object.entries(e).some(([k, v]) => k !== playerControlKey && Number(v) > 0); });
+      const names = Object.fromEntries((Object.values(actorsById || {}) as any[]).filter(Boolean).map(a => [String(a.id), getActorDisplayName(String(a.id))]));
+      const dn = diplomaticContextualSurface((gameState as any).diplomacyState, String(player?.id || 'player'), Number(gameState.turnCounter || 0), pressured, names);
+      if (dn) list.push({ id: dn.id, label: dn.label, icon: '🤝', target: 'diplomacy', category: 'compete', legal: true, blockReason: null });
+    }
     return list;
-  }, [isPlayerTurnForCoPilot, player?.currentRegion, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode]);
+  }, [isPlayerTurnForCoPilot, player?.currentRegion, player?.id, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.regionDeposits, (gameState as any).diplomacyState, gameState.turnCounter, playerControlKey, actorsById, getActorDisplayName]);
 
   const v9ActionSet = useMemo(() => buildContextualActionSet({
     rankedRecommendations: intentLayerComputed.contextualRanked,
@@ -149459,6 +152739,7 @@ function dispatchGameSettingsChange(
       gi3: gi3StateRef.current,
       backgroundAI: bgStateRef.current,
       settingsIntel: siWorldViewRef.current,
+      diplomacy: dnViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -149606,6 +152887,8 @@ function dispatchGameSettingsChange(
       fogOfWar: fog,
       authority: aiTeam ? 'autonomous' : teamOsAuthority,
       planningDepth: aiTeam ? teamOsPlanningDepthFor(difficulty) : 'standard',
+      // Diplomacy 2.0: promises made by this team's diplomatic lead are strategic constraints for the whole team.
+      diplomaticRestrictions: diplomaticRestrictionsFor(dnStateRef.current, actors.map(a => a.id).concat(teamId === TEAM_PLAYER_ID ? ['player'] : []), Number(gameState.turnCounter || 0), dnControllersRef.current).map(r => ({ ...r })),
       governorCheck: (actorId, category, cost) => {
         const a = rawActor(actorId);
         if (!a) return { approved: true, reason: 'Unknown actor.' };
@@ -150153,6 +153436,472 @@ function dispatchGameSettingsChange(
   const siBindingRef = useRef(siBinding);
   siBindingRef.current = siBinding;
 
+  // ---- Diplomacy & Negotiation 2.0: live wiring ------------------------------------------------------
+  // Deals are structured promises between diplomatic leads (the human for the player's team; the first AI
+  // of each opposing team). Payments run through the validated money/Treasury paths; regional terms are
+  // monitored on every committed action; AI evaluation is deterministic and reads only its own knowledge.
+  const dnStoredRaw = (gameState as any).diplomacyState as DiplomacyState | undefined;
+  /** Diplomacy's clock is the ROUND (one per player turn) — the HUD turn counter advances once per actor. */
+  const dnRound = Math.max(1, Number(gameState.roundNumber || 1));
+  const dnState = useMemo(() => sanitizeDiplomacyState(dnStoredRaw), [dnStoredRaw]);
+  const dnEnabled = Boolean(isLiveIntentMatch && isCompetitiveMode && !(gameState as any).isolatedReplayRuntime);
+  const dnPlayerTeamId = String(player?.teamId || (isTeamMode ? TEAM_PLAYER_ID : 'team_player'));
+  const dnAllActors = useMemo(() => (Object.values(actorsById || {}) as any[]).filter(Boolean), [actorsById]);
+  /** Diplomatic lead of each team: the human leads the player's team; the first AI (by id) leads each other team. */
+  const dnLeadOfTeam = useCallback((teamId: string | null | undefined): string | null => {
+    if (!teamId) return null;
+    if (teamId === dnPlayerTeamId) return String(player?.id || 'player');
+    const members = dnAllActors.filter(a => String(a.teamId) === String(teamId)).map(a => String(a.id)).sort((a, b) => (a === 'ai' ? -1 : b === 'ai' ? 1 : a.localeCompare(b)));
+    return members[0] || null;
+  }, [dnAllActors, dnPlayerTeamId, player?.id]);
+  const dnLeadOfActor = useCallback((actorId: string): string => {
+    const a = dnAllActors.find(x => String(x.id) === String(actorId));
+    if (!isTeamMode || !a) return String(actorId);
+    return dnLeadOfTeam(String(a.teamId)) || String(actorId);
+  }, [dnAllActors, dnLeadOfTeam, isTeamMode]);
+  const dnNames = useMemo(() => {
+    const out: Record<string, string> = {};
+    dnAllActors.forEach(a => { out[String(a.id)] = String(a.kind === 'human' || String(a.id) === 'player' ? (a.name || 'You') : getActorDisplayName(String(a.id))); });
+    return out;
+  }, [dnAllActors, getActorDisplayName]);
+  const dnControllers = useMemo(() => {
+    const out: Record<string, string | null> = {};
+    const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    Object.keys(REGIONS).forEach(code => {
+      const key = getRegionControlSnapshot(deposits[code] || {}).controllerId || null;
+      out[code] = !key ? null : isTeamMode ? (dnLeadOfTeam(key) || key) : key;
+    });
+    return out;
+  }, [gameState.regionDeposits, isTeamMode, dnLeadOfTeam]);
+  dnControllersRef.current = dnControllers;
+  const dnCounterparts = useMemo(() => {
+    const teams = Array.from(new Set(dnAllActors.map(a => String(a.teamId || '')).filter(t => t && t !== dnPlayerTeamId)));
+    const leads = isTeamMode ? teams.map(t => dnLeadOfTeam(t)).filter(Boolean) as string[] : dnAllActors.filter(a => String(a.id) !== String(player?.id || 'player') && String(a.teamId) !== dnPlayerTeamId).map(a => String(a.id));
+    return Array.from(new Set(leads)).map(id => ({ id, name: dnNames[id] || id }));
+  }, [dnAllActors, dnPlayerTeamId, dnLeadOfTeam, dnNames, isTeamMode, player?.id]);
+
+  /** Deal world from one actor's point of view: fog hides other teams' finances; relationships come from AI Memory. */
+  const buildDnWorld = useCallback((viewerId: string): DiplomacyWorld => {
+    const turn = dnRound;
+    const fog = Boolean(gameSettings.fogOfWarEnabled);
+    const viewer = dnAllActors.find(a => String(a.id) === viewerId);
+    const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    const regions: Record<string, DNRegionInfo> = {};
+    Object.keys(REGIONS).forEach(code => {
+      const dep: Record<string, number> = {};
+      Object.entries(deposits[code] || {}).forEach(([k, v]) => { const lead = isTeamMode ? (dnLeadOfTeam(k) || k) : k; dep[lead] = (dep[lead] || 0) + (Number(v) || 0); });
+      regions[code] = { code, name: REGIONS[code]?.name || code, controllerId: dnControllers[code] ?? null, deposits: dep, adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[code] || []) };
+    });
+    const count: Record<string, number> = {};
+    Object.values(dnControllers).forEach(c => { if (c) count[c] = (count[c] || 0) + 1; });
+    const actors: Record<string, DNActorInfo> = {};
+    dnAllActors.forEach(a => {
+      const id = String(a.id);
+      const sameTeam = viewer && String(viewer.teamId) === String(a.teamId);
+      const hidden = fog && id !== viewerId && !sameTeam;
+      const inv: Record<string, number> = {};
+      (Array.isArray(a.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || it?.id || ''); if (k) inv[k] = (inv[k] || 0) + 1; });
+      const profile = (AI_PERSONALITY_PROFILES_V63 as any)[a.aiPersonality || 'balanced'] || null;
+      actors[id] = { id, name: dnNames[id] || id, isHuman: a.kind === 'human' || id === 'player', teamId: a.teamId ? String(a.teamId) : null, money: hidden ? null : Math.max(0, Math.floor(Number(a.money) || 0)), inventory: hidden ? null : inv, regionsControlled: count[dnLeadOfActor(id)] || 0, personality: deriveDiplomaticPersonality(a.kind === 'human' ? null : profile, a.character?.aiStrategy || null) };
+    });
+    const strategy: Record<string, DNStrategyInfo> = {};
+    dnAllActors.forEach(a => {
+      const id = String(a.id); const lead = dnLeadOfActor(id);
+      const held = Object.keys(regions).filter(c => regions[c].controllerId === lead);
+      let targets: string[] = Object.keys(regions).filter(c => regions[c].controllerId !== lead && (regions[c].deposits[lead] || 0) > 0);
+      if (a.kind !== 'human') {
+        const enemyContract = teamOsEnemyView && String(teamOsEnemyView.inputs.teamId) === String(a.teamId) ? teamOsEnemyView.state.contract : null;
+        if (enemyContract) targets = Array.from(new Set([...enemyContract.targetRegions, ...targets]));
+        const plan = (aiMemoriesRef.current || {})[resolveAiMemoryActorId(id)]?.adaptivePlan;
+        const m = plan && /expand_([A-Z]+)/.exec(plan.objectiveId || '');
+        if (m && regions[m[1]]) targets = Array.from(new Set([m[1], ...targets]));
+      } else if (gi3Live.active) {
+        targets = Array.from(new Set([...gi3Live.active.goals.filter(g => g.type === 'control_region' && g.regionId).map(g => g.regionId!), ...targets]));
+      }
+      const emergency = Boolean(a.kind !== 'human' && (a.inEconomicRecovery || (teamOsEnemyView && String(teamOsEnemyView.inputs.teamId) === String(a.teamId) && teamOsEnemyView.state.contract?.mission.kind === 'recover_economy')));
+      strategy[id] = { targets: targets.slice(0, 4), protectedRegions: held, emergency, source: a.kind === 'human' ? 'gi3' : 'plan' };
+    });
+    const fullInspection = Boolean(gameSettings.aiMemoryFullInspectionEnabled);
+    const relationship = (owner: string, other: string): DNRelationship => {
+      const mem = (aiMemoriesRef.current || {})[resolveAiMemoryActorId(owner)];
+      const r = mem?.relationships?.[resolveAiMemoryActorId(other)];
+      if (!r) return DN_DEFAULT_RELATIONSHIP;
+      const full: DNRelationship = { trust: r.trust, reliability: r.reliability, grievance: r.grievance, gratitude: r.gratitude, rivalry: r.rivalry, threat: r.threat, cooperation: r.cooperation };
+      // Another actor's private feelings stay private: a viewer outside the owner's team sees trust only.
+      const ownerActor = dnAllActors.find(a => String(a.id) === owner);
+      const authorised = owner === viewerId || fullInspection || (viewer && ownerActor && String(viewer.teamId) === String(ownerActor.teamId));
+      return authorised ? full : { ...DN_DEFAULT_RELATIONSHIP, trust: r.trust };
+    };
+    const treasuryAvailable: Record<string, number | null> = {};
+    Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { treasuryAvailable[tid] = gameSettings.teamCompetitiveAiEnabled && gameSettings.teamTreasuryEnabled && t?.treasury ? getTreasuryAvailableAmount(t) : null; });
+    const authority: DiplomacyWorld['authority'] = {};
+    dnAllActors.forEach(a => {
+      const id = String(a.id);
+      const isLead = dnLeadOfActor(id) === id;
+      const mode = isTeamMode ? String(getTeamGovernanceMode(String(a.teamId), gameSettings) || 'LEADER_DECIDES') : 'LEADER_DECIDES';
+      authority[id] = { canSign: isLead, canCommitTreasury: isLead && isTeamMode, requiresApproval: isTeamMode && mode !== 'LEADER_DECIDES', route: mode === 'LEADER_DECIDES' ? 'leader' : 'Governance', reason: isLead ? '' : 'Only the team leader can sign agreements — AI teammates may recommend deals but never sign away team resources.' };
+    });
+    const prices = (gameState.resourcePrices || {}) as Record<string, number>;
+    return {
+      turn, turnsLeft: Math.max(1, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) + 1), viewerId, actors, regions,
+      clock: { hudTurn: Number(gameState.turnCounter || 0) + 1, actorsPerRound: Math.max(1, Array.isArray((gameState as any).turnOrder) ? (gameState as any).turnOrder.length : dnAllActors.length) },
+      win: { metric: String(gameSettings.winCondition || 'money'), regionsTarget: String(gameSettings.winCondition) === 'regions' ? REGION_CONTROL_MAJORITY : null },
+      strategy, relationship, hostileHistory: (owner, other) => countRememberedHostility(aiMemoriesRef.current, resolveAiMemoryActorId(owner), resolveAiMemoryActorId(other)),
+      fogOfWar: fog, teamMode: isTeamMode, treasuryAvailable, authority, resources: Object.keys(prices).length ? Object.keys(prices) : ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices
+    };
+  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
+
+  const dnPlayerWorld = useMemo(() => buildDnWorld(String(player?.id || 'player')), [buildDnWorld, player?.id]);
+  const dnReserveFloor = Number(gameSettings.coPilotSettings?.spendingCaps?.minimumCashReserve || 0) || null;
+  const dnView: DiplomacyWorldView = useMemo(() => ({ enabled: dnEnabled && dnCounterparts.length > 0, state: dnState, world: dnPlayerWorld, playerId: String(player?.id || 'player'), names: dnNames, gi3: gi3Live, teamMode: isTeamMode, reserveFloor: dnReserveFloor }), [dnEnabled, dnCounterparts.length, dnState, dnPlayerWorld, player?.id, dnNames, gi3Live, isTeamMode, dnReserveFloor]);
+  dnViewRef.current = dnView;
+  const [dnExchange, setDnExchange] = useState<DiplomacyExchange | null>(null);
+  const [dnBreachPrompt, setDnBreachPrompt] = useState<{ lines: string[]; dealId: string; proceed: () => void } | null>(null);
+  const dnConfirmedRef = useRef<string | null>(null);
+  const dnLeadRef = useRef(dnLeadOfActor);
+  dnLeadRef.current = dnLeadOfActor;
+  const dnAttacksRef = useRef<Array<{ regionId: string; byActorId: string; turn: number }>>([]);
+  const dnSabotageRef = useRef<Array<{ actorId: string; targetActorId: string; turn: number }>>([]);
+  const dnPendingTreasuryRef = useRef<Array<{ ob: DNObligation; requestId: string; phase: 'activation' | 'turn'; createdTurn: number }>>([]);
+
+  const persistDiplomacy = useCallback((next: DiplomacyState) => {
+    const clean = sanitizeDiplomacyState(next);
+    dnStateRef.current = clean;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { diplomacyState: clean } as any });
+  }, []);
+
+  const dnLedger = useCallback((eventType: string, summary: string, fields: Record<string, any> = {}) => {
+    appendGameActivityLedgerEvent('decision', { actorId: fields.actorId || String(player?.id || 'player'), eventType: `diplomacy_${eventType}`, summary: summary.slice(0, 240), ...fields } as any);
+  }, [appendGameActivityLedgerEvent, player?.id]);
+
+  /** Relationship consequences go into AI Memory (the one relationship store) + the legacy rivalry display. */
+  const applyDnConsequences = useCallback((cons: DNConsequence[]) => {
+    if (!cons.length) return;
+    const turn = Number(gameState.turnCounter || 0);
+    let mem = aiMemoriesRef.current || {};
+    cons.forEach(c => {
+      const aiObservers = c.observerIds.filter(id => { const a = dnAllActors.find(x => String(x.id) === id); return a && a.kind !== 'human' && String(a.id) !== 'player'; });
+      if (gameSettings.aiMemoryEnabled !== false) mem = applyDiplomaticConsequenceToAiMemories(mem, c, turn, aiObservers);
+      if (c.deltas.trust && gameSettings.aiRivalryEnabled) {
+        const other = c.actorId === String(player?.id || 'player') ? c.observerIds[0] : c.actorId;
+        if (other) dispatchGameState({ type: 'MODIFY_AI_TRUST', payload: { actorId: 'player', targetActorId: other, delta: c.deltas.trust, reason: `Diplomacy: ${c.summary}` } });
+      }
+      if (c.deltas.trust) dnLedger('trust_changed', `${c.summary} (${c.deltas.trust > 0 ? '+' : ''}${c.deltas.trust} trust)`, { actorId: c.actorId, targetActorId: c.observerIds[0] });
+    });
+    if (mem !== aiMemoriesRef.current) { aiMemoriesRef.current = mem; dispatchGameState({ type: 'LOAD_STATE', payload: { aiMemoriesByActor: mem } }); }
+  }, [dnAllActors, dnLedger, gameSettings.aiMemoryEnabled, gameSettings.aiRivalryEnabled, gameState.turnCounter, player?.id]);
+
+  /** Executes one obligation through the validated money / inventory path (never a raw balance edit). */
+  const executeDnObligation = useCallback((ob: DNObligation): { success: boolean; reason: string | null; pending?: boolean } => {
+    const payer = getActorState(ob.payerId); const payee = getActorState(ob.payeeId);
+    if (!payer || !payee) return { success: false, reason: 'A party to the deal is no longer in the match.' };
+    if (ob.kind === 'pay_cash' && ob.source === 'treasury') {
+      // Team money: Team Treasury + Governance. The approved withdrawal lands with the leader, then pays.
+      const req = createTreasuryFundingRequest(ob.payerId, { requestType: 'custom' as any, customAmount: ob.amount, reason: `Diplomatic payment to ${dnNames[ob.payeeId] || ob.payeeId}` });
+      if (!req) return { success: false, reason: 'The Team Treasury request could not be created.' };
+      const autoResolve = !gameSettings.aiActionApprovalEnabled || !gameSettings.teamTreasuryRequireApprovalForFriendlyAiWithdrawals;
+      if (!autoResolve) setPendingApprovalRequests(prev => [...prev, buildTreasuryApprovalRequest(req, payer, 0)]);
+      else { const resolution = evaluateHumanFundingRequestResolution(req); const map: Record<string, TreasuryApprovalControlAction> = { approve_full: 'approve_full', approve_partial: 'approve_partial', approve_emergency: 'emergency_only', reject: 'reject', suggest_cheaper: 'ask_cheaper' }; if (resolution.outcome !== 'delay') resolveTreasuryFundingRequest(req.id, map[resolution.outcome] || 'reject', resolution.approvedAmount); }
+      dnPendingTreasuryRef.current = [...dnPendingTreasuryRef.current, { ob: { ...ob, source: 'self' as const }, requestId: req.id, phase: 'activation' as const, createdTurn: dnRound }].slice(-6);
+      return { success: false, reason: null, pending: true };
+    }
+    const inv: Record<string, number> = {};
+    (Array.isArray(payer.inventory) ? payer.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); inv[k] = (inv[k] || 0) + 1; });
+    const spendable = getActorSpendableCash(payer, payer.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled);
+    const check = validateDiplomaticObligation(ob, { money: spendable, inventory: inv });
+    if (!check.ok) return { success: false, reason: check.reason };
+    if (payer.kind === 'ai' && ob.kind === 'pay_cash') {
+      const gov = evaluateEconomySpendingApproval(payer, 'support', ob.amount, getEffectiveGameSettingsForTeam(payer.teamId), gameState.day, { gameState });
+      if (!gov.approved) return { success: false, reason: `Economy Governor: ${gov.reason}` };
+    }
+    // The canonical action (ob.action — a transfer_cash / transfer_resource GameAction) is applied through the
+    // live actor-state path with the same validated money helpers every other transfer uses.
+    if (ob.kind === 'pay_cash') {
+      updateActorState(ob.payerId, (prev: any) => ({ ...prev, money: deductMoney(prev.money, ob.amount) }));
+      updateActorState(ob.payeeId, (prev: any) => ({ ...prev, money: addMoney(prev.money, ob.amount) }));
+    } else {
+      const consumed = consumeResourcesFromInventory(payer.inventory || [], { [ob.resourceId || '']: ob.quantity });
+      updateActorState(ob.payerId, (prev: any) => ({ ...prev, inventory: consumeResourcesFromInventory(prev.inventory || [], { [ob.resourceId || '']: ob.quantity }).nextInventory }));
+      updateActorState(ob.payeeId, (prev: any) => ({ ...prev, inventory: addResourcesToInventory(prev.inventory || [], consumed.spent) }));
+    }
+    dnLedger('payment', `${dnNames[ob.payerId] || ob.payerId} ${ob.kind === 'pay_cash' ? `paid $${ob.amount.toLocaleString()}` : `gave ${ob.quantity} ${ob.resourceId}`} to ${dnNames[ob.payeeId] || ob.payeeId} under an agreement.`, { actorId: ob.payerId, targetActorId: ob.payeeId, diagnostics: { canonicalAction: ob.action, dealId: ob.dealId } });
+    commitMatchMemory({ actionType: 'diplomatic_payment', actorId: ob.payerId, targetId: ob.payeeId, amount: ob.amount, success: true, turn: gameState.turnCounter, summary: `${dnNames[ob.payerId] || ob.payerId} made a promised payment.`, stableKey: `dnpay:${ob.dealId}:${ob.termId}:${gameState.turnCounter}` });
+    return { success: true, reason: null };
+  }, [getActorState, createTreasuryFundingRequest, dnNames, gameSettings, setPendingApprovalRequests, buildTreasuryApprovalRequest, evaluateHumanFundingRequestResolution, resolveTreasuryFundingRequest, gameState, updateActorState, deductMoney, addMoney, consumeResourcesFromInventory, addResourcesToInventory, dnLedger, commitMatchMemory]);
+
+  /** Accepted → immediate obligations → active only if they all succeed (Treasury payments complete later). */
+  const activateDnDeal = useCallback((st: DiplomacyState, dealId: string): DiplomacyState => {
+    const turn = dnRound;
+    const b = beginDealActivation(st, dealId, turn, dnControllersRef.current);
+    const results: Array<{ termId: string; success: boolean; reason?: string | null }> = [];
+    let pending = false;
+    b.obligations.forEach(ob => { const r = executeDnObligation(ob); if (r.pending) pending = true; else results.push({ termId: ob.termId, success: r.success, reason: r.reason }); });
+    if (pending) { addNotification('Agreement accepted — waiting for the Team Treasury payment to clear Governance before it activates.', 'info', true, 'system'); return b.state; }
+    const conf = confirmDealActivation(b.state, dealId, results, turn, dnNames);
+    applyDnConsequences(conf.consequences);
+    const deal = conf.state.deals.find(d => d.id === dealId) || conf.state.history.find(d => d.id === dealId);
+    if (conf.activated && deal) { dnLedger('activated', `Agreement active: ${describeDealShort(deal, dnNames)} (${describeDealDuration(deal)}).`, { targetActorId: deal.participants.find(p => p !== 'player') }); addNotification(`🤝 Agreement active: ${describeDealShort(deal, dnNames)}.`, 'success', true, 'system'); appendReplayCheckpoint(`Diplomatic agreement active: ${describeDealShort(deal, dnNames)}`, { kind: 'major_action', relatedId: dealId }); }
+    else if (deal) { dnLedger('activation_failed', `Agreement not activated: ${deal.closedReason || 'an obligation failed'}.`); addNotification(`Agreement not activated — ${deal.closedReason || 'an immediate obligation failed'}.`, 'warning', true, 'system'); }
+    return conf.state;
+  }, [gameState.turnCounter, executeDnObligation, addNotification, dnNames, applyDnConsequences, dnLedger, appendReplayCheckpoint]);
+
+  // Treasury-funded obligations complete once Governance resolves the withdrawal.
+  useEffect(() => {
+    const pending = dnPendingTreasuryRef.current;
+    if (!pending.length) return;
+    const turn = dnRound;
+    let st = dnStateRef.current || createEmptyDiplomacyState();
+    const keep: typeof pending = [];
+    let changed = false;
+    pending.forEach(p => {
+      const payer = getActorState(p.ob.payerId);
+      const team: any = payer ? teamsById?.[String(payer.teamId)] : null;
+      const req = (team?.treasury?.fundingRequests || []).find((r: any) => r.id === p.requestId);
+      const status = String(req?.status || 'pending');
+      if (status === 'pending' && turn <= p.createdTurn + 1) { keep.push(p); return; }
+      const approved = /approved|partial|resolved|funded/.test(status);
+      const res = approved ? executeDnObligation(p.ob) : { success: false, reason: status === 'pending' ? 'Governance did not approve the Treasury payment in time.' : 'Governance rejected the Treasury payment.' };
+      changed = true;
+      if (p.phase === 'activation') { const conf = confirmDealActivation(st, p.ob.dealId, [{ termId: p.ob.termId, success: res.success, reason: res.reason }], turn, dnNames); st = conf.state; applyDnConsequences(conf.consequences); addNotification(conf.activated ? '🤝 Treasury payment cleared — agreement active.' : `Agreement not activated — ${res.reason}`, conf.activated ? 'success' : 'warning', true, 'system'); }
+      else { const r2 = recordObligationResult(st, p.ob, res.success, turn, res.reason, dnNames); st = r2.state; if (r2.consequence) applyDnConsequences([r2.consequence]); }
+    });
+    dnPendingTreasuryRef.current = keep;
+    if (changed) persistDiplomacy(st);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamsById, gameState.turnCounter]);
+
+  /** The recipient responds (AI: deterministic evaluation from its own knowledge). */
+  const respondAsAi = useCallback((st: DiplomacyState, dealId: string): DiplomacyState => {
+    const deal = st.deals.find(d => d.id === dealId);
+    if (!deal) return st;
+    const responder = deal.recipientActorIds[0];
+    const actor = dnAllActors.find(a => String(a.id) === responder);
+    if (!actor || actor.kind === 'human') return st;
+    const turn = dnRound;
+    const world = buildDnWorld(responder);
+    const ev = evaluateDiplomaticDeal(deal, responder, world, st, { cacheKey: `${turn}|${st.revision}|${computeCanonicalStateHash(gameState.regionDeposits || {})}` });
+    const res = applyDiplomaticResponse(st, deal, ev, turn, dnNames);
+    let next = res.state;
+    const lines = buildDiplomaticDialogue(ev, deal, dnNames, world.actors[responder]?.personality || deriveDiplomaticPersonality(null));
+    if (deal.initiatorActorId === String(player?.id || 'player')) setDnExchange({ dealId, counterpartId: responder, lines, response: ev.response, counterId: res.counter?.id || null, reasons: ev.reasons });
+    const verb = ev.response === 'accept' ? 'accepted' : ev.response === 'counter' ? 'countered' : ev.response === 'request_guarantee' ? 'asked for a guarantee on' : ev.response === 'delay' ? 'will decide next turn on' : 'rejected';
+    dnLedger(ev.response === 'counter' || ev.response === 'request_guarantee' ? 'counteroffer' : ev.response === 'accept' ? 'accepted' : ev.response === 'delay' ? 'delayed' : 'rejected', `${dnNames[responder] || responder} ${verb} ${describeDealShort(deal, dnNames)}.`, { actorId: responder, targetActorId: deal.initiatorActorId });
+    if (deal.initiatorActorId === String(player?.id || 'player')) addNotification(`${dnNames[responder] || responder}: ${lines.join(' ')}`, ev.response === 'accept' ? 'success' : 'info', true, 'system');
+    if (ev.response === 'accept') next = activateDnDeal(next, dealId);
+    commitProposalMemory({ id: dealId, from: deal.initiatorActorId, to: responder, region: deal.terms.find(t => t.regionId)?.regionId || undefined }, ev.response === 'accept');
+    return next;
+  }, [dnAllActors, gameState, buildDnWorld, dnNames, player?.id, dnLedger, addNotification, activateDnDeal, commitProposalMemory]);
+
+  const sendDnProposal = useCallback((deal: DiplomaticDeal) => {
+    const st = dnStateRef.current || createEmptyDiplomacyState();
+    const v = validateDiplomaticDeal(deal, buildDnWorld(deal.initiatorActorId), st.deals);
+    if (!v.ok) { addNotification(`Proposal not sent: ${v.issues.find(i => i.severity === 'error')?.message || 'invalid terms'}`, 'warning', false, 'system'); return; }
+    const turn = dnRound;
+    let next = sendDiplomaticProposal(st, { ...deal, status: 'preview' }, turn, dnNames);
+    dnLedger('proposal_sent', `Proposal sent: ${describeDealShort(deal, dnNames)} — ${deal.terms.map(t => `${dnNames[t.actorId] || t.actorId}: ${describeDiplomaticTerm(t, dnNames)}`).join('; ')}.`, { targetActorId: deal.recipientActorIds[0] });
+    // A threat is a strategic statement — the recipient remembers it (hostile), it never executes anything.
+    if (deal.terms.some(t => t.kind === 'threat')) commitMatchMemory({ actionType: 'diplomatic_threat_hostile', actorId: deal.initiatorActorId, targetId: deal.recipientActorIds[0], success: true, turn, summary: `${dnNames[deal.initiatorActorId] || deal.initiatorActorId} made a threat during negotiations.`, stableKey: `dnthreat:${deal.id}` });
+    next = respondAsAi(next, deal.id);
+    persistDiplomacy(next);
+    giContextRef.current = { ...giContextRef.current, pendingDeal: null, diplomacyCounterpartId: deal.recipientActorIds[0] };
+  }, [buildDnWorld, gameState.turnCounter, dnNames, dnLedger, commitMatchMemory, respondAsAi, persistDiplomacy, addNotification]);
+
+  const respondDnAsPlayer = useCallback((dealId: string, response: 'accept' | 'reject') => {
+    let st = dnStateRef.current || createEmptyDiplomacyState();
+    const deal = st.deals.find(d => d.id === dealId && d.status === 'under_review');
+    if (!deal) return;
+    const turn = dnRound;
+    const me = String(player?.id || 'player');
+    if (response === 'reject') { st = dismissDiplomaticProposal(st, dealId, turn, me, dnNames); dnLedger('rejected', `You rejected ${describeDealShort(deal, dnNames)}.`); commitProposalMemory({ id: dealId, from: deal.initiatorActorId, to: me }, false); persistDiplomacy(st); setDnExchange(null); return; }
+    const v = validateDiplomaticDeal(deal, buildDnWorld(me), st.deals.filter(d => d.id !== dealId));
+    if (!v.ok) { addNotification(`Cannot accept: ${v.issues.find(i => i.severity === 'error')?.message}`, 'warning', true, 'system'); return; }
+    st = applyDiplomaticResponse(st, deal, playerDiplomaticDecision(deal, me, 'accept'), turn, dnNames).state;
+    dnLedger('accepted', `You accepted ${describeDealShort(deal, dnNames)}.`);
+    st = activateDnDeal(st, dealId);
+    persistDiplomacy(st);
+    setDnExchange(null);
+  }, [gameState.turnCounter, player?.id, dnNames, dnLedger, buildDnWorld, activateDnDeal, persistDiplomacy, addNotification, commitProposalMemory]);
+
+  const terminateDn = useCallback((dealId: string, mutual: boolean) => {
+    let st = dnStateRef.current || createEmptyDiplomacyState();
+    const deal = st.deals.find(d => d.id === dealId);
+    if (!deal) return;
+    const me = String(player?.id || 'player');
+    const turn = dnRound;
+    if (mutual) {
+      // The other side agrees to end it only if the remaining agreement is no longer worth it to them.
+      const cp = deal.participants.find(p => p !== me) || '';
+      const remaining = { ...deal, duration: { kind: 'turns' as const, turns: Math.max(1, (deal.expirationTurn ?? turn + 3) - turn + 1) }, negotiationRound: 99 };
+      const ev = evaluateDiplomaticDeal(remaining, cp, buildDnWorld(cp), st, { allowCounter: false });
+      if (ev.response === 'accept' && ev.band === 'strong_accept') { addNotification(`${dnNames[cp] || cp} prefers to keep the agreement — it still benefits them. You can still withdraw unilaterally.`, 'info', true, 'system'); return; }
+    }
+    const out = terminateDiplomaticDeal(st, dealId, me, mutual, turn, dnNames);
+    st = out.state;
+    if (out.consequence) applyDnConsequences([out.consequence]);
+    dnLedger(mutual ? 'terminated' : 'withdrawn', mutual ? `Agreement ended by mutual consent: ${describeDealShort(deal, dnNames)}.` : `You withdrew from ${describeDealShort(deal, dnNames)}.`);
+    persistDiplomacy(st);
+  }, [player?.id, gameState.turnCounter, buildDnWorld, dnNames, applyDnConsequences, dnLedger, persistDiplomacy, addNotification]);
+
+  const extendDn = useCallback((dealId: string, turns: number): DiplomaticDeal | null => {
+    const st = dnStateRef.current || createEmptyDiplomacyState();
+    const deal = st.deals.find(d => d.id === dealId && d.status === 'active');
+    if (!deal) return null;
+    const me = String(player?.id || 'player');
+    const cp = deal.participants.find(p => p !== me) || '';
+    const amend = createDiplomaticDeal({ initiatorActorId: me, recipientActorIds: [cp], turn: dnRound, duration: { kind: 'until_turn', turn: (deal.expirationTurn ?? dnRound) + turns }, terms: deal.terms.filter(t => t.kind !== 'pay_cash' || t.timing === 'per_turn').map(t => makeDiplomaticTerm({ ...t, id: undefined, status: 'pending', startTurn: null, endTurn: null })), amendsDealId: deal.id, terminationConditions: deal.terminationConditions, seq: st.revision });
+    amend.status = 'preview';
+    return amend;
+  }, [player?.id, gameState.turnCounter]);
+
+  // Compliance: every committed action (player, teammates, AI) against active promises.
+  dnObserveRef.current = (action: CommittedMemoryAction) => {
+    const st = dnStateRef.current;
+    if (!st || !dnEnabled) return;
+    const turn = dnRound;
+    const actor = String(action.actorId);
+    const lead = dnLeadOfActor(actor);
+    const type = String(action.actionType || '');
+    const region = action.regionId ? String(action.regionId).toUpperCase() : null;
+    if (region && /deposit|invest|claim/.test(type)) dnAttacksRef.current = [...dnAttacksRef.current, { regionId: region, byActorId: lead, turn }].slice(-12);
+    if (/sabotag/.test(type) && action.targetId) dnSabotageRef.current = [...dnSabotageRef.current, { actorId: lead, targetActorId: dnLeadOfActor(String(action.targetId)), turn }].slice(-12);
+    if (!st.deals.some(d => d.status === 'active' && d.participants.includes(lead))) return;
+    const violations = checkDiplomaticActionCompliance(st, { actorId: lead, actionType: type, regionId: region, targetActorId: action.targetId ? dnLeadOfActor(String(action.targetId)) : null, amount: typeof action.amount === 'number' ? action.amount : null }, dnControllersRef.current, turn, dnNames);
+    if (!violations.length) return;
+    let next = st;
+    const cons: DNConsequence[] = [];
+    const isHumanSide = lead === String(player?.id || 'player');
+    const seen = new Set<string>();
+    violations.forEach(v => {
+      if (seen.has(v.deal.id)) return; seen.add(v.deal.id);
+      const explanation = isHumanSide ? null : (evaluateAiDiplomaticBreach(v.deal, lead, buildDnWorld(lead), next).reason || `${dnNames[lead] || lead} broke the agreement (${String(action.summary || type).slice(0, 80)})`);
+      const out = applyDiplomaticViolation(next, v.deal.id, lead, v.text, turn, dnNames, explanation);
+      next = out.state; if (out.consequence) cons.push(out.consequence);
+      const cp = v.deal.participants.find(p => p !== lead) || '';
+      dnLedger('violated', explanation || `You broke the agreement with ${dnNames[cp] || cp}: ${v.text}.`, { actorId: lead, targetActorId: cp });
+      addNotification(isHumanSide ? `💔 Agreement with ${dnNames[cp] || cp} broken — ${v.text}.` : `💔 ${explanation}.`, 'warning', true, 'system');
+      appendReplayCheckpoint(`Diplomatic agreement violated by ${dnNames[lead] || lead}`, { kind: 'major_action', relatedId: v.deal.id });
+    });
+    persistDiplomacy(next);
+    applyDnConsequences(cons);
+  };
+
+  // Player entry points: a breaking action shows a notice first. Co-Pilot never breaks an agreement for you.
+  dnPreActionRef.current = (probe: DNActionProbe, proceed: () => void): boolean => {
+    const st = dnStateRef.current;
+    if (!st || !dnEnabled) return false;
+    const lead = dnLeadOfActor(probe.actorId);
+    const turn = dnRound;
+    const violations = checkDiplomaticActionCompliance(st, { ...probe, actorId: lead, targetActorId: probe.targetActorId ? dnLeadOfActor(probe.targetActorId) : null }, dnControllersRef.current, turn, dnNames);
+    if (!violations.length) return false;
+    const key = diplomaticProbeKey({ ...probe, targetActorId: probe.targetActorId ? dnLeadOfActor(probe.targetActorId) : null }, turn);
+    if (dnConfirmedRef.current === key) { dnConfirmedRef.current = null; return false; }
+    const coPilotActive = Boolean(takeoverSession && !['terminated', 'disabled', 'interrupted'].includes(String(takeoverSession.status)));
+    if (coPilotActive) { addNotification(`Co-Pilot skipped an action that would break your agreement (${violations[0].text}).`, 'info', false, 'system'); return true; }
+    const cp = violations[0].deal.participants.find(p => p !== lead) || '';
+    setDnBreachPrompt({ dealId: violations[0].deal.id, lines: [`This would break your active agreement with ${dnNames[cp] || cp}: ${violations[0].text}.`, 'Continuing may reduce trust and future negotiation leverage. The action itself is allowed.'], proceed: () => { dnConfirmedRef.current = key; proceed(); } });
+    return true;
+  };
+
+  // AI obligations: decision scoring pushes breaking options down unless its bounded breach logic applies.
+  dnDecisionFilterRef.current = (actorId: string, decisions: any[]) => {
+    const st = dnStateRef.current;
+    if (!st || !dnEnabled || !st.deals.some(d => d.status === 'active')) return decisions;
+    const lead = dnLeadOfActor(actorId);
+    const turn = dnRound;
+    return applyDiplomaticConstraintsToDecisions(decisions, lead, st, dnControllersRef.current, turn, deal => evaluateAiDiplomaticBreach(deal, lead, buildDnWorld(lead), st).breach);
+  };
+
+  // Turn processing: expiry/completion, conditions, deferred payments, delayed decisions, AI proposals.
+  const dnTurnProcessedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!dnEnabled) return;
+    const turn = dnRound;
+    if (dnTurnProcessedRef.current === turn) return;
+    dnTurnProcessedRef.current = turn;
+    let st = dnStateRef.current || createEmptyDiplomacyState();
+    const cash: Record<string, number | null> = {};
+    dnAllActors.forEach(a => { cash[String(a.id)] = Math.floor(Number(a.money) || 0); });
+    const out = advanceDiplomacyTurn(st, { turn, controllers: dnControllersRef.current, cash, attacks: dnAttacksRef.current.filter(a => a.turn >= turn - 2), sabotageBetween: dnSabotageRef.current.filter(a => a.turn >= turn - 2) }, dnNames);
+    st = out.state;
+    applyDnConsequences(out.consequences);
+    out.consequences.filter(c => c.kind === 'completion').slice(0, 1).forEach(c => dnLedger('completed', `Agreement completed — ${c.summary}`));
+    out.obligations.forEach(ob => {
+      const r = executeDnObligation(ob);
+      if (r.pending) return;
+      const rec = recordObligationResult(st, ob, r.success, turn, r.reason, dnNames);
+      st = rec.state;
+      if (rec.consequence) { applyDnConsequences([rec.consequence]); dnLedger('violated', `A promised payment was missed: ${r.reason || ''}`, { actorId: ob.payerId, targetActorId: ob.payeeId }); addNotification(`💔 Missed diplomatic payment to ${dnNames[ob.payeeId] || ob.payeeId} — the agreement is broken.`, 'warning', true, 'system'); }
+    });
+    out.reevaluate.forEach(id => { st = respondAsAi(st, id); });
+    // AI-initiated proposals (bounded, cooldown-limited, strategy-grounded) — only toward the human's side.
+    const me = String(player?.id || 'player');
+    if (!teamOsAiOnlyMatch && isPlayerTurnForCoPilot) {
+      dnCounterparts.forEach(cp => {
+        const gen = generateAiDiplomaticProposals(cp.id, me, buildDnWorld(cp.id), st);
+        if (!gen.best) return;
+        const deal = { ...gen.best.deal, strategicSummary: gen.best.reason };
+        st = sendDiplomaticProposal(st, deal, turn, dnNames);
+        st = { ...st, deals: st.deals.map(d => d.id === deal.id ? { ...d, status: 'under_review' as const } : d), tracks: { ...st.tracks, [me]: { ...(st.tracks[me] || { counterpartId: me, fatigue: 0, blockedUntilTurn: null, lastProposalTurn: null, dismissals: 0, unreasonableCount: 0 }), lastAiProposalTurn: turn } }, inbox: [...st.inbox, { id: `dni_ai_${deal.id}`, kind: 'proposal' as const, dealId: deal.id, fromActorId: cp.id, turn, text: `${cp.name} proposes: ${describeDealShort(deal, dnNames)}.`, status: 'unread' as const }].slice(-DN_LIMITS.inbox) };
+        dnLedger('ai_proposal', `${cp.name} proposed ${describeDealShort(deal, dnNames)} — ${gen.best.reason}`, { actorId: cp.id, targetActorId: me });
+        addNotification(`📨 ${cp.name} proposes: ${describeDealShort(deal, dnNames)}. Open Diplomacy to answer.`, 'info', true, 'system');
+      });
+    }
+    // AI-to-AI diplomacy (same evaluator, no special path) between AI teams in AI-only matches.
+    if (teamOsAiOnlyMatch && turn % 3 === 0) {
+      const leads = Array.from(new Set(dnAllActors.map(a => dnLeadOfTeam(String(a.teamId))).filter(Boolean))) as string[];
+      if (leads.length >= 2) {
+        const [a, b] = leads;
+        const gen = generateAiDiplomaticProposals(a, b, buildDnWorld(a), st);
+        if (gen.best) {
+          const deal = { ...gen.best.deal, visibility: (gameSettings.fogOfWarEnabled ? 'participants' : 'public') as DiplomaticDeal['visibility'] };
+          st = sendDiplomaticProposal(st, deal, turn, dnNames);
+          st = respondAsAi(st, deal.id);
+          if (!gameSettings.fogOfWarEnabled) dnLedger('ai_to_ai', `${dnNames[a] || a} and ${dnNames[b] || b} negotiated: ${describeDealShort(deal, dnNames)}.`, { actorId: a, targetActorId: b });
+        }
+      }
+    }
+    persistDiplomacy(st);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dnRound, dnEnabled]);
+
+  // Match end: unresolved deals close cleanly and are recorded for the debrief.
+  const dnMatchEndedRef = useRef(false);
+  useEffect(() => {
+    if (!gameState.gameOver || dnMatchEndedRef.current) { if (!gameState.gameOver) dnMatchEndedRef.current = false; return; }
+    dnMatchEndedRef.current = true;
+    const st = dnStateRef.current;
+    if (!st || !st.deals.length) return;
+    persistDiplomacy(endMatchDiplomacy(st, dnRound, dnNames));
+    dnLedger('match_end', `Match ended — ${st.deals.filter(d => d.status === 'active').length} agreement(s) closed.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.gameOver]);
+
+  const dnObservations = useMemo(() => (dnView.enabled ? deriveDiplomaticObservations(dnState, dnPlayerWorld, dnView.playerId, dnNames) : []), [dnView.enabled, dnState, dnPlayerWorld, dnView.playerId, dnNames]);
+  const dnBinding: DiplomacyBinding = {
+    enabled: dnView.enabled, view: dnView, counterparts: dnCounterparts, exchange: dnExchange, fullInspection: Boolean(gameSettings.aiMemoryFullInspectionEnabled),
+    compile: (text, cpId) => compileDiplomaticProposalFromText(text, { ...giWorldBuilderRef.current(), diplomacy: dnView }, dnView, { ...giContextRef.current, diplomacyCounterpartId: cpId } as GIConversationContext),
+    modify: (deal, text) => modifyDiplomaticDraft(deal, text, dnView),
+    template: (id, cpId, regionId, amount) => buildDiplomaticTemplate(id, cpId, dnView, regionId, amount),
+    build: input => buildDiplomaticDealFromBuilder(input, dnView),
+    preview: deal => buildDiplomaticImpactPreview(deal, dnView),
+    send: sendDnProposal,
+    respond: respondDnAsPlayer,
+    withdraw: id => persistDiplomacy(withdrawDiplomaticProposal(dnStateRef.current || createEmptyDiplomacyState(), id, dnRound)),
+    terminate: terminateDn,
+    extend: extendDn,
+    dismissInbox: id => { const st = dnStateRef.current || createEmptyDiplomacyState(); persistDiplomacy({ ...st, inbox: st.inbox.map(i => i.id === id ? { ...i, status: 'dismissed' as const } : i) }); },
+    inspect: id => {
+      const st = dnStateRef.current || createEmptyDiplomacyState();
+      const d = [...st.deals, ...st.history].find(x => x.id === id);
+      if (!d) return null;
+      // Evaluated from the non-player party's side (the AI whose decision the LAB is inspecting).
+      const evaluator = d.participants.find(p => p !== dnView.playerId) || d.recipientActorIds[0];
+      return evaluateDiplomaticDeal(d, evaluator, buildDnWorld(evaluator), st, { allowCounter: true });
+    }
+  };
+  const dnBindingRef = useRef(dnBinding);
+  dnBindingRef.current = dnBinding;
+
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
@@ -150190,9 +153939,24 @@ function dispatchGameSettingsChange(
     switch (button.kind) {
       case 'do':
       case 'gi3_continue_action':
-      case 'bg_continue_action': {
+      case 'bg_continue_action':
+      case 'dn_continue_break': {
         if (!candidate || !candidate.legal || candidate.execution?.kind !== 'copilot_candidate') return;
         const exec = candidate.execution;
+        // Diplomacy 2.0: an action that would break an active agreement shows a notice first. Continue runs the
+        // SAME canonical action; the agreement is then marked violated by the compliance monitor.
+        {
+          const ec: any = exec.candidate || {};
+          const dnTurn = Number(dnViewRef.current?.world.turn || 0);
+          const probe: DNActionProbe = { actorId: dnViewRef.current?.playerId || 'player', actionType: String(candidate.actionType || ''), regionId: String(ec.regionId || ec.targetId || ec.parameters?.region || ec.parameters?.regionCode || '').toUpperCase() || null, targetActorId: ec.parameters?.targetActorId ? dnLeadRef.current(String(ec.parameters.targetActorId)) : null };
+          const st = dnStateRef.current;
+          const violations = st && dnViewRef.current?.enabled ? checkDiplomaticActionCompliance(st, probe, dnControllersRef.current, dnTurn, dnViewRef.current?.names || {}) : [];
+          if (violations.length) {
+            if (button.kind === 'dn_continue_break') dnConfirmedRef.current = diplomaticProbeKey(probe, dnTurn);
+            else { pushIntelAnswer(buildDiplomaticBreachAnswer(violations, candidate, dnViewRef.current?.names || {})); setExperienceLayer('intelligence'); return; }
+          }
+          if (button.kind === 'dn_continue_break') { requestManualAction(() => executeIntentRecommendation(exec.candidate)); return; }
+        }
         // GI3 divergence: a material conflict with the active strategy shows a notice first. The player
         // is never blocked — Continue runs the same canonical action and records a player override.
         const gi3 = gi3StateRef.current;
@@ -150320,6 +154084,38 @@ function dispatchGameSettingsChange(
         const [kind, issueId, key] = String(button.candidateId || '').split(':');
         if (issueId && (kind === 'acknowledged' || kind === 'intentional' || kind === 'ignored')) siBindingRef.current.acknowledge(issueId, kind, key || null);
         if (kind === 'ignored') giContextRef.current = { ...giContextRef.current, pendingSettingsRec: null };
+        return;
+      }
+      case 'dn_send': {
+        const draft = giContextRef.current.pendingDeal;
+        if (!draft) { addNotification('That proposal preview has expired — describe the deal again.', 'warning', false, 'system'); return; }
+        dnBindingRef.current.send(draft);
+        setExperienceLayer('intelligence');
+        return;
+      }
+      case 'dn_cancel':
+        giContextRef.current = { ...giContextRef.current, pendingDeal: null };
+        addNotification('Nothing was sent.', 'info', false, 'system');
+        return;
+      case 'dn_modify':
+      case 'dn_open':
+      case 'dn_view_deal':
+        updateUiState({ showAiRivalryModal: true });
+        return;
+      case 'dn_counter': {
+        const d = (dnStateRef.current?.deals || []).find(x => x.id === button.candidateId);
+        if (d) giContextRef.current = { ...giContextRef.current, pendingDeal: { ...d }, diplomacyCounterpartId: d.initiatorActorId };
+        updateUiState({ showAiRivalryModal: true });
+        return;
+      }
+      case 'dn_accept':
+      case 'dn_reject':
+        if (button.candidateId) dnBindingRef.current.respond(button.candidateId, button.kind === 'dn_accept' ? 'accept' : 'reject');
+        return;
+      case 'dn_extend': {
+        const a = button.candidateId ? dnBindingRef.current.extend(button.candidateId, 2) : null;
+        if (a) giContextRef.current = { ...giContextRef.current, pendingDeal: a };
+        updateUiState({ showAiRivalryModal: true });
         return;
       }
       case 'si_open':
@@ -165932,6 +169728,7 @@ function dispatchGameSettingsChange(
             onButton={handleV9Button}
             onOpen={() => setExperienceLayer('intelligence')}
             settingsObservation={siBackgroundObservation}
+            diplomacyObservation={dnObservations[0]?.text || null}
           />
 
           <GI3PlayStrip
@@ -166163,6 +169960,7 @@ function dispatchGameSettingsChange(
         />
         <ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} />
         <SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} />
+        <DiplomacyInspector binding={dnBinding} theme={themeStyles} />
       </div>
     );
 
@@ -168104,7 +171902,7 @@ function dispatchGameSettingsChange(
 	                  onClick={() => updateUiState({ showAiRivalryModal: true })}
 	                  className={`${themeStyles.buttonSecondary} px-2 py-2 rounded text-xs font-bold transition flex items-center justify-center gap-1`}
 	                >
-	                  🤝 Rivalry
+	                  🤝 Diplomacy
 	                </button>
 	              </div>
 	              <div className="grid grid-cols-2 gap-2 mt-2">
@@ -168343,6 +172141,7 @@ function dispatchGameSettingsChange(
         {renderCareerProgressionModal()}
         {renderFogOfWarIntelModal()}
         {renderAiRivalryModal()}
+        {renderDiplomaticBreachPrompt()}
         {renderSaveMigrationModal()}
         {renderDeterminismAuditModal()}
         {renderRegionalContractsModal()}
@@ -175442,87 +179241,52 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     );
   };
 
-  // Phase 8: AI Rivalry & Diplomatic Engine Modal
+  // Diplomacy & Negotiation 2.0 (upgraded AI Rivalry & Diplomatic Engine modal). Trust is no longer edited
+  // directly here — it changes only through what actually happens between the parties.
   const renderAiRivalryModal = () => {
     if (!uiState.showAiRivalryModal) return null;
-    const playerRel = gameState.diplomacy?.relationships?.find((r: any) => r.actorId === 'player') || {
-      actorId: 'player',
-      targetActorId: 'ai_coalition',
-      trustScore: 50,
-      stance: 'neutral',
-      historicEvents: [],
-      pacts: [],
-    };
-
-    const stanceColors: Record<string, string> = {
-      allied: 'bg-green-900/60 border-green-500 text-green-300',
-      neutral: 'bg-gray-800 border-gray-600 text-gray-300',
-      hostile: 'bg-red-900/60 border-red-500 text-red-300',
-      war: 'bg-red-950 border-red-600 text-red-400 animate-pulse',
-    };
-
+    const legacyEvents: string[] = [
+      ...Object.values((gameState.aiRelationshipState?.relationshipMap || {})['player'] || {}).flatMap((r: any) => (Array.isArray(r?.historicEvents) ? r.historicEvents : [])),
+      ...((gameState as any).diplomacy?.relationships || []).flatMap((r: any) => (Array.isArray(r?.historicEvents) ? r.historicEvents : []))
+    ].slice(0, 12);
+    const close = () => { updateUiState({ showAiRivalryModal: false }); giContextRef.current = { ...giContextRef.current, pendingDeal: null }; };
     return (
-      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style={{ zIndex: globalUISurfaceManager.getZIndex("ai_rivalry_modal") }} onClick={() => updateUiState({ showAiRivalryModal: false })}>
-        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-3xl w-full max-h-[calc(100dvh-2rem)] flex flex-col p-6 overflow-hidden`} onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center pb-4 border-b border-gray-700">
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style={{ zIndex: globalUISurfaceManager.getZIndex("ai_rivalry_modal") }} onClick={close}>
+        <div role="dialog" aria-modal="true" aria-labelledby="dn-modal-title" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] flex flex-col p-4 md:p-6 overflow-hidden`} onClick={(e) => e.stopPropagation()} data-testid="dn-modal">
+          <div className="flex justify-between items-center pb-3 border-b border-gray-700">
             <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">🤝 AI Rivalry & Diplomatic Engine</h2>
-              <p className="text-xs text-gray-400">Manage coalition trust scores, diplomatic stances, and non-aggression pacts.</p>
+              <h2 id="dn-modal-title" className="text-xl md:text-2xl font-bold flex items-center gap-2">🤝 Diplomacy & Negotiation</h2>
+              <p className="text-xs text-gray-400">Structured agreements with real consequences: promises are monitored against actual moves, payments use the game's own money paths, and trust changes only through what happens.</p>
             </div>
-            <button onClick={() => updateUiState({ showAiRivalryModal: false })} className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white font-bold">✕</button>
+            <button onClick={close} aria-label="Close diplomacy" className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white font-bold">✕</button>
           </div>
-
-          <div className="my-4 p-4 bg-gray-900 border border-gray-800 rounded-xl space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <span className="text-xs text-gray-400 font-bold uppercase">Target Opponent: {playerRel.targetActorId}</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`px-3 py-1 rounded-full border text-xs font-bold uppercase ${stanceColors[playerRel.stance] || stanceColors.neutral}`}>
-                    {playerRel.stance}
-                  </span>
-                  <span className="text-xs text-gray-400">Trust Score: <strong className="text-white">{playerRel.trustScore}/100</strong></span>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => dispatchGameState({ type: 'MODIFY_AI_TRUST', payload: { actorId: 'player', targetActorId: playerRel.targetActorId, delta: 10, reason: 'Diplomatic Gift' } })}
-                  className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded"
-                >
-                  +10 Trust
-                </button>
-                <button
-                  onClick={() => dispatchGameState({ type: 'MODIFY_AI_TRUST', payload: { actorId: 'player', targetActorId: playerRel.targetActorId, delta: -10, reason: 'Border Dispute' } })}
-                  className="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded"
-                >
-                  -10 Trust
-                </button>
-              </div>
-            </div>
-
-            <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-500" style={{ width: `${playerRel.trustScore}%` }} />
-            </div>
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1 pt-3">
+            <DiplomacyPanel binding={dnBinding} initialCounterpartId={giContextRef.current.diplomacyCounterpartId || null} initialDraft={giContextRef.current.pendingDeal || null} />
+            <details className="text-xs">
+              <summary className="cursor-pointer font-bold text-gray-200">📜 Relationship event history</summary>
+              {legacyEvents.length === 0 ? <div className="p-2 text-gray-500">No earlier relationship events recorded.</div> : legacyEvents.map((evt, idx) => <div key={idx} className="p-2 mt-1 bg-gray-900 border border-gray-800 rounded text-gray-300">{evt}</div>)}
+            </details>
           </div>
-
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-            <h3 className="font-bold text-sm text-gray-200">📜 Diplomatic Event History</h3>
-            {playerRel.historicEvents.length === 0 ? (
-              <div className="p-4 text-center text-xs text-gray-500 bg-gray-900/50 rounded-lg">No diplomatic history recorded yet.</div>
-            ) : (
-              <div className="space-y-1.5">
-                {playerRel.historicEvents.map((evt: string, idx: number) => (
-                  <div key={idx} className="p-2.5 bg-gray-900 border border-gray-800 rounded-lg text-xs text-gray-300">
-                    {evt}
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="pt-3 border-t border-gray-700 flex justify-end items-center mt-3">
+            <button onClick={close} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-semibold">Close</button>
           </div>
+        </div>
+      </div>
+    );
+  };
 
-          <div className="pt-4 border-t border-gray-700 flex justify-end items-center mt-4">
-            <button onClick={() => updateUiState({ showAiRivalryModal: false })} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm font-semibold">
-              Close
-            </button>
+  /** Pre-violation notice for direct player actions (map deposit, sabotage, investment). Never a lock. */
+  const renderDiplomaticBreachPrompt = () => {
+    if (!dnBreachPrompt) return null;
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4" style={{ zIndex: globalUISurfaceManager.getZIndex("ai_rivalry_modal") + 1 }} onClick={() => setDnBreachPrompt(null)}>
+        <div role="alertdialog" aria-modal="true" aria-labelledby="dn-breach-title" className={`${themeStyles.card} border border-red-500/60 rounded-xl max-w-md w-full p-4 space-y-3`} onClick={e => e.stopPropagation()} data-testid="dn-breach-prompt">
+          <h2 id="dn-breach-title" className="font-bold text-lg">This would break an agreement</h2>
+          {dnBreachPrompt.lines.map((l, i) => <p key={i} className="text-sm">{l}</p>)}
+          <div className="flex flex-wrap gap-2 justify-end">
+            <button type="button" className="px-3 py-1.5 rounded bg-red-600 hover:bg-red-500 text-white text-sm font-bold" onClick={() => { const p = dnBreachPrompt; setDnBreachPrompt(null); p.proceed(); }}>Continue and Break Agreement</button>
+            <button type="button" className="px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm" onClick={() => setDnBreachPrompt(null)}>Cancel</button>
+            <button type="button" className="px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-sm" onClick={() => { setDnBreachPrompt(null); updateUiState({ showAiRivalryModal: true }); }}>View Agreement</button>
           </div>
         </div>
       </div>
@@ -176335,6 +180099,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <span className="font-bold text-blue-400">Executive Briefing: </span>
 	            {debrief.summary}
 	          </div>
+	          {(dnStateRef.current?.events.length || 0) > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-violet-700/40 text-xs leading-relaxed" data-testid="dn-debrief">
+	              <span className="font-bold text-violet-300">Diplomacy: </span>
+	              {buildDiplomacyDebrief(dnStateRef.current || createEmptyDiplomacyState(), dnNames).join(' · ')}
+	            </div>
+	          )}
 
 	          {/* Main View Toggle */}
 	          {activeTab === 'fullStats' ? (
