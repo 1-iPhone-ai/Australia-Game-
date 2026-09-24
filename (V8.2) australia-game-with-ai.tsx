@@ -10376,6 +10376,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
+    livingRegions: sanitizeLivingRegionsState((save as any)?.livingRegions || (gameState as any)?.livingRegions),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10548,6 +10549,7 @@ export function canonicalStateFromLiveRuntime(
     settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
+    livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -21632,6 +21634,7 @@ interface SaveGameData {
   settingsIntelligence?: SettingsIntelligenceState;
   diplomacyState?: DiplomacyState;
   worldReaction?: WorldReactionState;
+  livingRegions?: LivingRegionsState | null;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35626,7 +35629,9 @@ export const initialGameState = {
   backgroundAI: createEmptyBackgroundAIState(),
   settingsIntelligence: createEmptySettingsIntelligenceState(),
   diplomacyState: createEmptyDiplomacyState(),
-  worldReaction: createEmptyWorldReactionState()
+  worldReaction: createEmptyWorldReactionState(),
+  // Living Regions initialises from canonical state on the first live pass (history starts then).
+  livingRegions: null as LivingRegionsState | null
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -79535,6 +79540,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // Diplomacy 2.0: old saves load empty; legacy pacts are migrated; trust / stance / historicEvents stay untouched.
   // World Reaction: old saves start with empty history / windows / deferred queue (no ledger back-fill).
   if (migrated.gameState) migrated.gameState.worldReaction = sanitizeWorldReactionState(migrated.gameState.worldReaction || migrated.worldReaction);
+  // Living Regions: old saves carry none — it initialises from current canonical systems on load (no fake history).
+  if (migrated.gameState) migrated.gameState.livingRegions = sanitizeLivingRegionsState(migrated.gameState.livingRegions || migrated.livingRegions);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -101885,6 +101892,8 @@ export interface GIWorld {
   diplomacy?: DiplomacyWorldView | null;
   /** Strategic Consequence / World Reaction: the causal record, windows and conditions (viewer-filtered on use). */
   worldReaction?: WorldReactionWorldView | null;
+  /** Living Regions 2.0 view (public regional condition; fog-aware presence). */
+  livingRegions?: LivingRegionsWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -104519,7 +104528,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy' | 'world_reaction';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy' | 'world_reaction' | 'living_regions';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104553,6 +104562,7 @@ export interface GIQueryUnderstanding {
   settingsIntent?: SIIntent;
   diplomacyQuery?: DNQuery;
   worldReactionQuery?: SWRQuery;
+  livingRegionsQuery?: LRQuery;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104934,9 +104944,21 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     }
   }
 
+  // ---- Living Regions: questions about a region's condition, needs, value and trajectory ----
+  let livingRegionsQuery: LRQuery | undefined;
+  if (primary !== 'control' && !diplomacyQuery && world.livingRegions) {
+    const lq = detectLivingRegionsQuery(frame.originalQuery || query, world);
+    if (lq) {
+      livingRegionsQuery = lq;
+      primary = 'living_regions';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false; needs.recommendation = false; needs.diagnosis = false;
+    }
+  }
+
   // ---- World Reaction: causal questions about what changed and why (only when causal records exist) ----
   let worldReactionQuery: SWRQuery | undefined;
-  if (primary !== 'control' && !diplomacyQuery && world.worldReaction) {
+  if (primary !== 'control' && !diplomacyQuery && !livingRegionsQuery && world.worldReaction) {
     const wq = detectWorldReactionQuery(frame.originalQuery || query, world);
     if (wq) {
       worldReactionQuery = wq;
@@ -104949,7 +104971,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Game Intelligence 3.0: persistent strategy (above Team OS; GI 2.1 frame is the only input) ----
   let strategyIntent: GI3IntentKind | undefined;
   let strategyControl: GI3Control | undefined;
-  if (primary !== 'control' && !diplomacyQuery && !worldReactionQuery) {
+  if (primary !== 'control' && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
     const det = detectGI3StrategyIntent(frame, world, ctx, world.gi3?.active || null);
     // A team-coordination instruction with no multi-turn goal stays with Team Intelligence.
     const teamOnly = det.kind === 'create' && Boolean(world.team?.enabled) && !det.signals.some(sg => sg === 'mission' || sg === 'ordered goals' || sg === 'cash target') && !/\b(my plan|strategy|over the next|few turns|win)\b/.test(normalized);
@@ -104964,7 +104986,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // ---- Background AI: questions addressed to it ("what are you watching?", "what would you do?") ----
   let backgroundTopic: BackgroundQueryTopic | undefined;
-  if (primary !== 'control' && !strategyIntent && !diplomacyQuery && !worldReactionQuery) {
+  if (primary !== 'control' && !strategyIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
     // Read the player's own words too: typo correction can rewrite rare verbs ("watching" → "catching").
     const topic = detectBackgroundAIQuery(normalizeIntelligenceQuery(frame.originalQuery || '')) || detectBackgroundAIQuery(normalized);
     if (topic) {
@@ -104979,7 +105001,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // GI3 (what the player wants in the match) stays separate: only AI / teammate / game-configuration
   // language reaches here, and a GI3 strategy never becomes settings permission.
   let settingsIntent: SIIntent | undefined;
-  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery && !worldReactionQuery) {
+  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
     const si = world.settingsIntel ? understandSettingsIntent(frame.originalQuery || normalized, world.actors.filter(a => a.relation === 'teammate').map(a => a.name)) : null;
     // A behaviour symptom ("why won't my teammate spend?") belongs to Settings Intelligence only when the
     // configuration actually contributes (or settings are named); otherwise the cross-system answer explains it.
@@ -105000,7 +105022,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery && !worldReactionQuery) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -105020,7 +105042,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -105033,7 +105055,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation', world_reaction: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation', world_reaction: 'explanation', living_regions: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -105076,13 +105098,14 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions'].includes(primary),
     teamCommand,
     strategyIntent,
     backgroundTopic,
     settingsIntent,
     diplomacyQuery,
     worldReactionQuery,
+    livingRegionsQuery,
     strategyControl
   };
 }
@@ -105206,7 +105229,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state' | 'swr_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state' | 'swr_state' | 'lr_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105252,7 +105275,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   background_ai: ['bg_state'],
   settings_intelligence: ['si_state'],
   diplomacy: ['dn_state'],
-  world_reaction: ['swr_state']
+  world_reaction: ['swr_state'],
+  living_regions: ['lr_state']
 };
 
 export interface GIQueryPlan {
@@ -105276,7 +105300,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai', swr_state: 'ai'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai', swr_state: 'ai', lr_state: 'ai'
 };
 
 function giHash(text: string): string {
@@ -105345,6 +105369,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
     if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
     if (want('world_reaction')) add('swr_state', {}, { purpose: 'World Reaction: causal chain of meaningful world changes, windows and conditions (viewer-filtered)' });
+    if (want('living_regions')) add('lr_state', {}, { purpose: 'Living Regions: persistent regional condition (development, momentum, specialization, needs, value; fog-aware)' });
     if (want('diplomacy')) add('dn_state', {}, { purpose: 'Diplomacy 2.0: agreements, proposals, relationships and leverage (read-only, fog-aware)' });
   }
 
@@ -105853,6 +105878,12 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         }
       }
       return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'lr_state': {
+      const view = world.livingRegions;
+      const facts: GIFact[] = [];
+      if (view) { const f = fact('lr.state', 'Regional condition record', view.state.revision, 'Living Regions (canonical regional systems + world events)', 'ai'); facts.push(f); g.fact(f); }
+      return { ...base, ok: Boolean(view), data: view ? { regions: Object.keys(view.state.regions).length } : null, facts };
     }
     case 'swr_state': {
       const view = world.worldReaction;
@@ -107804,6 +107835,15 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'living_regions': {
+      kind = 'next_step';
+      const part = composeLivingRegionsAnswer(u.livingRegionsQuery!, world);
+      title = part.title || 'Regions';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      break;
+    }
     case 'world_reaction': {
       kind = 'next_step';
       const part = composeWorldReactionAnswer(u.worldReactionQuery!, world, u.originalQuery);
@@ -108350,6 +108390,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   dn_state: ['actors', 'world', 'player', 'history', 'strategy'],
   // World reactions derive from canonical changes in these domains (not from ledger/notification churn).
   swr_state: ['actors', 'world', 'player', 'strategy', 'contracts'],
+  lr_state: ['world', 'projects', 'contracts', 'market', 'strategy'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -109631,6 +109672,8 @@ export interface TeamOSRegionInput {
   /** Deposit the team needs to take it (0 when already held). */
   teamCostToTake: number | null;
   travelCostFor: Record<string, number | null>;
+  /** Living Regions: regional value (0..100), opportunity/risk weight and a short label (ranking input only). */
+  regional?: { value: number; opportunity: number; risk: number; label: string };
 }
 
 export interface TeamOSInputs {
@@ -109841,9 +109884,11 @@ export function decomposeTeamMission(inputs: TeamOSInputs, mission: TeamMission,
   if (mission.kind === 'control_regions' && inputs.win) {
     const target = mission.targetRegions || inputs.win.regionsTarget || 0;
     if (inputs.win.teamRegions < target) {
+      // Cost-effectiveness: regional value/opportunity (Living Regions) lowers the effective cost; risk raises it.
+      const effCost = (r: TeamOSRegionInput) => (r.teamCostToTake || 0) / (r.regional ? Math.max(0.6, 1 + (r.regional.value - 50) / 200 + r.regional.opportunity * 0.05 - r.regional.risk * 0.04) : 1);
       const cheapest = inputs.regions.filter(r => !r.controlledByTeam && r.teamCostToTake !== null && !deprioritized.has(r.code) && !dipBlocked.has(r.code))
-        .sort((a, b) => (a.teamCostToTake || 0) - (b.teamCostToTake || 0) || a.code.localeCompare(b.code))[0];
-      if (cheapest) add({ type: 'take_region', description: `Take ${cheapest.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${cheapest.name}`, failureCondition: `${cheapest.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, cheapest.teamCostToTake || 0), reason: `The team holds ${inputs.win.teamRegions} of ${target} regions; this is the cheapest next one.`, regionId: cheapest.code });
+        .sort((a, b) => effCost(a) - effCost(b) || a.code.localeCompare(b.code))[0];
+      if (cheapest) add({ type: 'take_region', description: `Take ${cheapest.name}`, priority: 2, tier: 8, completionCondition: `The team controls ${cheapest.name}`, failureCondition: `${cheapest.name} stays out of reach for 3 turns`, requiredCash: Math.max(0, cheapest.teamCostToTake || 0), reason: `The team holds ${inputs.win.teamRegions} of ${target} regions; this is the ${cheapest.regional ? 'most cost-effective' : 'cheapest'} next one.${cheapest.regional ? ` (${cheapest.regional.label})` : ''}`, regionId: cheapest.code });
     }
   }
   const recovering = inputs.actors.filter(a => a.inRecovery && !a.isHuman);
@@ -114224,7 +114269,8 @@ export function computeBackgroundDomainHashes(world: GIWorld): Record<BGDomain, 
   const team = world.team;
   return {
     economy: bgHash([world.player.money, world.player.debtTotal, inv, Object.entries(world.market).sort().map(([k, v]) => `${k}${Math.round(v)}`).join(','), world.contracts.map(c => `${c.id}:${c.status}:${c.turnsRemaining ?? ''}`).join(','), world.projects.map(p => `${p.id}:${p.invested}`).join(','), world.systems?.team?.treasuryBalance ?? ''].join('#')),
-    regions: bgHash(`${regions}#${actors}#${world.player.location}`),
+    // Living Regions: a region's semantic condition (momentum band, needs, risks) re-triggers the regions domain.
+    regions: bgHash(`${regions}#${actors}#${world.player.location}#${world.livingRegions ? Object.values(world.livingRegions.state.regions).map(r => `${r.regionId}:${r.momentum.band}:${r.needs.filter(n => n.status === 'open').map(n => n.category + n.severity).join('/')}:${r.risks.map(x => x.kind).join('/')}`).join(',') : ''}`),
     team: bgHash(team ? [team.state.contract?.id, team.state.contract?.revision, team.evaluation.health.health, (team.state.contract?.taskGraph || []).map(t => `${t.id}:${t.status}`).join(','), team.inputs.actors.map(a => `${a.id}:${a.money}:${a.inRecovery ? 1 : 0}`).join(',')].join('#') : 'none'),
     strategy: bgHash([g3 ? `${g3.id}:${g3.revision}:${g3.status}:${g3.phaseIndex}` : 'none', world.objective ? `${world.objective.id}:${world.objective.progress.completed}/${world.objective.progress.total}` : 'none', world.win ? `${world.win.playerValue}:${world.win.opponentValue}` : '',
       // World Reaction: new observable major consequences / windows make Background AI look again.
@@ -114971,7 +115017,10 @@ export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefine
   const hypotheses = recompute.has('hypotheses') ? deriveBackgroundHypotheses(world, prev.observation, prev.hypotheses, cashHistory, budget.hypotheses) : prev.hypotheses;
   const diagnoses = recompute.has('diagnoses') ? deriveBackgroundDiagnoses(world, assessment, threats, hypotheses, opportunities) : prev.diagnoses;
   // World Reaction: recent observable consequences + open windows feed attention/opportunities (Background AI ranks them).
-  const worldInputs = backgroundWorldReactionInputs(world);
+  const worldInputsRaw = backgroundWorldReactionInputs(world);
+  // Living Regions: regional trends (bottlenecks, critical needs, growth phases) are observed inputs too.
+  const regionInputs = backgroundLivingRegionInputs(world);
+  const worldInputs = { attention: [...worldInputsRaw.attention, ...regionInputs.attention.filter(r => !worldInputsRaw.attention.some(w => w.subject === r.subject && w.id === r.id))].slice(0, 6), opportunities: [...worldInputsRaw.opportunities, ...regionInputs.opportunities].slice(0, 5) };
   const opportunitiesAll = worldInputs.opportunities.length ? [...opportunities.filter(o => !worldInputs.opportunities.some(w => w.id === o.id)), ...worldInputs.opportunities].slice(0, 8) : opportunities;
   const attentionBase = deriveBackgroundAttention(world, threats, opportunitiesAll, predictions, prev.attentionQueue);
   const attentionQueue = worldInputs.attention.length ? [...attentionBase.filter(a => !worldInputs.attention.some(w => w.id === a.id)), ...worldInputs.attention.filter(w => !attentionBase.some(a => a.subject === w.subject && a.reason === w.reason))].sort((a, b) => ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[b.importance] - ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[a.importance]).slice(0, Math.max(attentionBase.length, 6)) : attentionBase;
@@ -118505,6 +118554,8 @@ export interface DiplomacyWorld {
   prices?: Record<string, number>;
   /** Live clock: diplomacy counts ROUNDS (one per player turn); the HUD turn counter advances once per actor. */
   clock?: { hudTurn: number; actorsPerRound: number };
+  /** Living Regions: regional value/core context (an INPUT to valuation; Diplomacy decides the response). */
+  regional?: Record<string, { valueMultiplier: number; coreFor: string | null; label: string; momentum?: string; development?: string }>;
 }
 
 export const DN_DEFAULT_RELATIONSHIP: DNRelationship = { trust: 50, reliability: 50, grievance: 0, gratitude: 0, rivalry: 0, threat: 0, cooperation: 50 };
@@ -118806,7 +118857,8 @@ function dnRegionWorth(world: DiplomacyWorld, code: string): number {
   const r = world.regions[code];
   if (!r) return 0;
   const max = Math.max(0, ...Object.values(r.deposits || {}).map(v => Number(v) || 0));
-  return Math.max(3000, max + 1500);
+  // A developed, growing or core region is worth more than its deposits alone (bounded multiplier).
+  return Math.round(Math.max(3000, max + 1500) * (world.regional?.[code]?.valueMultiplier ?? 1));
 }
 
 function dnCostToTake(world: DiplomacyWorld, code: string, actorId: string): number {
@@ -118825,7 +118877,10 @@ export function diplomaticRegionStake(world: DiplomacyWorld, actorId: string, co
   if (!r || !a) return { stake: 0, reason: 'unknown region' };
   const s = world.strategy[actorId] || { targets: [], protectedRegions: [], emergency: false, source: 'none' };
   let stake = 0.25; let reason = 'a minor interest';
+  const core = world.regional?.[code]?.coreFor;
+  const isCore = Boolean(core && (core === actorId || (a.teamId && core === a.teamId)));
   if (s.targets.includes(code)) { stake = 1; reason = 'an active target'; }
+  else if (isCore) { stake = 0.95; reason = `its core region (${world.regional![code].label})`; }
   else if (s.protectedRegions.includes(code) || r.controllerId === actorId) { stake = 0.8; reason = 'a region it holds'; }
   else {
     const adjacentToHolding = Object.values(world.regions).some(x => x.controllerId === actorId && x.adjacent.includes(code));
@@ -121381,7 +121436,9 @@ export type SWRKind =
   | 'actor_recovered' | 'actor_became_constrained'
   | 'objective_unblocked' | 'objective_blocked' | 'objective_completed'
   | 'victory_pressure_changed'
-  | 'rival_target_reassessed';
+  | 'rival_target_reassessed'
+  // Living Regions 2.0 (derived, emitted back through World Reaction; Living Regions never consumes these).
+  | 'region_entered_boom' | 'regional_growth_accelerated' | 'regional_decline_started' | 'regional_need_became_critical' | 'specialization_established' | 'core_region_emerged';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -121484,7 +121541,7 @@ export function buildStrategicSnapshot(inputs: SWRInputs): SWRSnapshot {
 
 // ---- State ----------------------------------------------------------------------------------------
 
-export type SWRTargetSystem = 'rival_strategy' | 'team_os' | 'gi3' | 'background_ai' | 'diplomacy' | 'market' | 'contracts' | 'stability' | 'crisis' | 'national_events' | 'ai_memory' | 'objectives' | 'contextual_actions';
+export type SWRTargetSystem = 'rival_strategy' | 'team_os' | 'gi3' | 'background_ai' | 'diplomacy' | 'market' | 'contracts' | 'stability' | 'crisis' | 'national_events' | 'ai_memory' | 'objectives' | 'contextual_actions' | 'living_regions';
 export type SWRTiming = 'immediate' | 'actor_boundary' | 'turn_end' | 'day_end' | 'next_match';
 
 export interface WorldReactionIntent {
@@ -121882,29 +121939,34 @@ export interface SWRSubscription {
 }
 
 const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 'region_became_contested', 'region_secured', 'region_lost', 'region_weakened'];
+/** Regional shifts Living Regions emits (consumed by other systems; never by Living Regions itself). */
+const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: [...SWR_REGION_KINDS, 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: [...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => ((e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
-  { system: 'contracts', label: 'Contracts', kinds: ['liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'contracts', label: 'Contracts', kinds: ['liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed'], minSignificance: 'meaningful', evaluation: e => (e.kind === 'crisis_resolved' && e.tags.includes('failed') ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
   { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
   { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' }
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
+  { system: 'living_regions', label: 'Living Regions', kinds: [...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+    relevant: e => e.sourceSystem !== 'living_regions' }
 ];
 
 export const SWR_SYSTEM_LABELS: Record<SWRTargetSystem, string> = Object.fromEntries(SWR_SUBSCRIPTIONS.map(s => [s.system, s.label])) as Record<SWRTargetSystem, string>;
@@ -121971,7 +122033,7 @@ export interface SWRProcessResult {
  * suppression. Immediate intents are delivered to `handlers` (each system's own entry point); others wait
  * for their timing boundary. Handlers may NOT return actions — at most an observable derived event.
  */
-export function processWorldReactions(stateIn: WorldReactionState, roots: StrategicWorldEvent[], s: SWRInputs, opts: { handlers?: Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => void>>; budgets?: typeof SWR_BUDGETS; persist?: boolean } = {}): SWRProcessResult {
+export function processWorldReactions(stateIn: WorldReactionState, roots: StrategicWorldEvent[], s: SWRInputs, opts: { handlers?: Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => void>>; budgets?: typeof SWR_BUDGETS; persist?: boolean; derive?: Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => StrategicWorldEvent[]>> } = {}): SWRProcessResult {
   const budgets = opts.budgets || SWR_BUDGETS;
   const turn = s.turn;
   const state: WorldReactionState = { ...stateIn, cooldowns: { ...stateIn.cooldowns }, patterns: { ...stateIn.patterns }, diagnostics: { ...stateIn.diagnostics, lastSuppressions: [] } };
@@ -122024,6 +122086,17 @@ export function processWorldReactions(stateIn: WorldReactionState, roots: Strate
           queue.push({ ...derived, id: `swe_${turn}_${swrHash([derived.kind, derived.subjectId, derived.actorId, derived.dedupeKey, e.id])}` });
           queue.sort((a, b) => SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance]);
         }
+        // A receiving system may emit its own meaningful derived events (e.g. Living Regions). They enter the
+        // SAME queue under the same root, depth, new-event budget and dedupe rules — no side channel, no loop.
+        let extra: StrategicWorldEvent[] = [];
+        try { extra = opts.derive?.[intent.targetSystem]?.(intent, e) || []; } catch (err) { suppress(intent, e.id, `derive error: ${err instanceof Error ? err.message : String(err)}`); }
+        extra.forEach(x => {
+          if (stats.newEvents >= budget.maxNewEvents) { suppress(intent, e.id, `new-event budget ${budget.maxNewEvents} exhausted`); return; }
+          if ([...all, ...queue, ...state.events].some(y => y.dedupeKey === x.dedupeKey)) { state.diagnostics.deduped += 1; return; }
+          stats.newEvents += 1;
+          queue.push({ ...x, rootEventId: e.rootEventId, causedByEventId: x.causedByEventId || e.id, reactionDepth: e.reactionDepth + 1 });
+        });
+        if (extra.length) queue.sort((a, b) => SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance]);
       } else deferred.push(intent);
       history.push({ turn, eventId: e.id, intentId: intent.id, text: `${SWR_SYSTEM_LABELS[intent.targetSystem]} → ${intent.requestedEvaluation.replace(/_/g, ' ')}${intent.timing !== 'immediate' ? ` (${intent.timing.replace('_', ' ')})` : ''}`, kind: 'intent' });
     });
@@ -122559,7 +122632,7 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
   region_reinforced: 'Reinforced', region_became_safe: 'Threat ↓', region_became_contested: 'Pressure ↑', region_lost: 'Lost', region_secured: 'Secured', rival_pressure_increased: 'Pressure ↑', rival_pressure_decreased: 'Pressure ↓',
-  rival_target_reassessed: 'Target reconsidered', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
+  rival_target_reassessed: 'Target reconsidered', regional_growth_accelerated: 'Region growing', region_entered_boom: 'Boom', regional_decline_started: 'Region weakening', regional_need_became_critical: 'Critical need', specialization_established: 'Specialization', core_region_emerged: 'Core region', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
 };
 
 export const WorldConsequenceChainStrip: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId: string | null; turn: number; names: Record<string, string>; onWhy: (eventId: string) => void }> = ({ state, viewerId, viewerTeamId, turn, names, onWhy }) => {
@@ -122814,7 +122887,7 @@ export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
     const next = mut(base, x => { cash(x, 'player', 90000); dep(x, 'NSW', 'player', 40000); x.teams[0].freeCash = 90000; });
     const before = canon(next);
     const r = step(seed(base), base, next);
-    const allowed = new Set(['reconsider_region_target', 'reassess_task_priority', 'refresh_progress', 'evaluate_replan', 'update_attention', 'reassess_leverage', 'contract_relevance', 'refresh_objective', 'relevance_update', 'record_pattern', 'demand_pressure', 'supply_pressure', 'volatility_pressure', 'stability_positive', 'stability_negative', 'crisis_context', 'event_context']);
+    const allowed = new Set(['reconsider_region_target', 'reassess_task_priority', 'refresh_progress', 'evaluate_replan', 'update_attention', 'reassess_leverage', 'contract_relevance', 'refresh_objective', 'relevance_update', 'record_pattern', 'demand_pressure', 'supply_pressure', 'volatility_pressure', 'stability_positive', 'stability_negative', 'crisis_context', 'event_context', 'update_region', 'regional_context']);
     return (canon(next) === before && r.out.delivered.concat(r.out.deferred).every(i => allowed.has(i.requestedEvaluation)) && !r.out.events.some(e => /bonus|catch/.test(e.kind))) || canon(r.out.delivered.map(i => i.requestedEvaluation));
   });
   const chainRun = () => {
@@ -122932,6 +123005,1776 @@ export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+// ============================================================================
+// SECTION 20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM
+// ============================================================================
+// Persistent regional CONDITION (development, economy, momentum, specialization, needs, opportunities,
+// risks, conditions, history, identity). It interprets canonical systems and World Reaction events; it never
+// owns deposits, control, standing, projects, contracts, prices, stability or crises, and never picks actions.
+// Updates are event-driven (World Reaction events, round boundaries, canonical hash changes). Deterministic.
+
+export type LRSector = 'mining' | 'agriculture' | 'technology' | 'finance' | 'manufacturing' | 'energy' | 'renewables' | 'tourism' | 'trade' | 'logistics' | 'research' | 'defense' | 'infrastructure';
+export type LRDevTier = 'underdeveloped' | 'emerging' | 'developing' | 'advanced' | 'highly_developed';
+export type LREconomyBand = 'depressed' | 'weak' | 'moderate' | 'strong' | 'booming';
+export type LRMomentumBand = 'declining' | 'weakening' | 'stable' | 'growing' | 'rapid_growth' | 'booming';
+export type LRNeedCategory = 'capital' | 'transport' | 'energy' | 'water' | 'security' | 'trade' | 'resources' | 'workforce' | 'technology' | 'infrastructure' | 'stability' | 'emergency_relief' | 'housing' | 'development';
+export type LRSeverity = 'low' | 'moderate' | 'high' | 'critical';
+export type LRInfraBand = 'poor' | 'basic' | 'moderate' | 'strong' | 'excellent';
+export type LRTrajectory = 'improving' | 'stable' | 'deteriorating' | 'volatile';
+export type LRInvestmentBand = 'low' | 'normal' | 'high' | 'overheated';
+export type LROpportunityKind = 'commodity_boom' | 'export_expansion' | 'cheap_entry' | 'infrastructure_gap' | 'contract_wave' | 'recovery_investment' | 'renewable_growth' | 'technology_expansion' | 'development_potential';
+export type LRRiskKind = 'overdependence' | 'high_rivalry' | 'instability' | 'underinvestment' | 'infrastructure_bottleneck' | 'market_exposure' | 'crisis_vulnerability' | 'capital_flight';
+export type LRConditionKind = 'commodity_boom' | 'infrastructure_bottleneck' | 'post_crisis_recovery' | 'investment_surge' | 'regional_stagnation' | 'technology_expansion' | 'high_rival_pressure' | 'diplomatic_safety_window' | 'crisis_active';
+export type LRDerivedKind = 'region_entered_boom' | 'regional_growth_accelerated' | 'regional_decline_started' | 'regional_need_became_critical' | 'specialization_established' | 'core_region_emerged';
+export type LRClaim = 'fact' | 'calculated' | 'inference' | 'projection';
+
+export interface RegionalNeed { id: string; category: LRNeedCategory; severity: LRSeverity; score: number; trend: 'rising' | 'steady' | 'easing'; reason: string; sourceEvents: string[]; openedTurn: number; lastUpdatedTurn: number; status: 'open' | 'resolved' }
+export interface RegionalOpportunity { id: string; kind: LROpportunityKind; label: string; reason: string; strength: 'low' | 'moderate' | 'high'; sinceTurn: number }
+export interface RegionalRisk { id: string; kind: LRRiskKind; label: string; reason: string; severity: LRSeverity; sinceTurn: number }
+export interface RegionalCondition { id: string; kind: LRConditionKind; label: string; source: string; sourceEventId: string | null; startTurn: number; expiresTurn: number | null; severity: LRSeverity; effects: string[] }
+export interface RegionalHistoryEntry { turn: number; kind: string; text: string; sourceEventId: string | null; significance: 'meaningful' | 'major' | 'critical' }
+export interface LRCapacity { transport: number; energy: number; water: number; technology: number; trade: number }
+
+export interface DynamicRegionalState {
+  regionId: string;
+  name: string;
+  development: { score: number; tier: LRDevTier; structural: number; canonicalTier: number };
+  economy: { score: number; band: LREconomyBand; lastRoundScore: number };
+  momentum: { value: number; band: LRMomentumBand; history: number[] };
+  stability: { value: number | null; band: 'fragile' | 'unsettled' | 'stable' | 'high' | 'unknown' };
+  infrastructure: { quality: number; band: LRInfraBand; capacity: LRCapacity; active: string[]; building: string[]; damaged: string[] };
+  /** Specialization evidence (0..100). Only sectors with evidence are kept. */
+  sectors: Partial<Record<LRSector, number>>;
+  specializations: { primary: LRSector | null; secondary: LRSector | null; emerging: LRSector | null; established: LRSector[]; pending: { sector: LRSector; change: 'establish' | 'primary'; since: number } | null };
+  needs: RegionalNeed[];
+  opportunities: RegionalOpportunity[];
+  risks: RegionalRisk[];
+  conditions: RegionalCondition[];
+  history: RegionalHistoryEntry[];
+  identity: { label: string; since: number; candidate: string | null; candidateSince: number | null };
+  investment: { band: LRInvestmentBand; recent: number[]; highStreak: number };
+  trajectory: LRTrajectory;
+  strategicValue: { score: number; band: 'low' | 'moderate' | 'high' | 'very_high'; inputs: Record<string, number> };
+  core: { ownerKey: string | null; since: number | null; controller: string | null; controlSince: number | null };
+  /** Short causal trail for explanations ("why is it growing?") — bounded. */
+  evidence: Array<{ turn: number; text: string; sourceEventId: string | null; effect: string }>;
+  lastMeaningfulTurn: number;
+  revision: number;
+}
+
+export interface LRDerivedEvent { id: string; turn: number; kind: LRDerivedKind; regionId: string; text: string; significance: 'meaningful' | 'major'; causedByEventId: string | null; rootEventId: string | null; reactionDepth: number; actorKey: string | null; evidence: string[] }
+export interface LRMilestone { id: string; turn: number; regionId: string; label: string }
+export interface LRDiagnostics { eventsApplied: number; eventsIgnored: number; roundsAdvanced: number; syncs: number; derivedEmitted: number; lastMs: number; lastRegions: string[] }
+
+export interface LivingRegionsState {
+  version: 1;
+  revision: number;
+  initializedTurn: number | null;
+  lastRound: number | null;
+  regions: Record<string, DynamicRegionalState>;
+  derived: LRDerivedEvent[];
+  milestones: LRMilestone[];
+  hashes: Record<string, string>;
+  diagnostics: LRDiagnostics;
+}
+
+/** Compact canonical inputs (built from the live game; never a state dump). */
+export interface LRInputs {
+  turn: number;
+  fogOfWar: boolean;
+  regions: Array<{ code: string; name: string; controller: string | null; deposits: Record<string, number>; devTier: number; devProgress: number; investedCapital: number; adjacent: string[]; resources: string[]; stability: number | null }>;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; progress: number; remainingCost: number; completionTurn: number | null }>;
+  contracts: Array<{ id: string; title: string; regionId: string | null; contractType: string; status: string; assignedActorId: string | null; completedAtTurn: number | null; rewardMoney: number }>;
+  /** Canonical standing by ACTOR id then region (−100..100). */
+  standing: Record<string, Record<string, number>>;
+  prices: Record<string, number>;
+  basePrices: Record<string, number>;
+  crises: Array<{ id: string; name: string; status: string; stageIndex: number; category: string; affectedRegions: string[] }>;
+  nationalStability: number | null;
+  ownerNames: Record<string, string>;
+  ownerTeams: Record<string, string | null>;
+  /** World Reaction windows (referenced, never duplicated). */
+  windows: Array<{ id: string; type: string; subject: string; status: string; expiresTurn: number | null; reason: string }>;
+  winRegionsTarget: number | null;
+}
+
+export const LR_LIMITS = { needs: 4, opportunities: 3, risks: 3, conditions: 5, history: 12, evidence: 8, derived: 24, milestones: 12, momentumHistory: 6, investmentHistory: 4 };
+export const LR_SECTORS: LRSector[] = ['mining', 'agriculture', 'technology', 'finance', 'manufacturing', 'energy', 'renewables', 'tourism', 'trade', 'logistics', 'research', 'defense', 'infrastructure'];
+export const LR_SECTOR_LABEL: Record<LRSector, string> = { mining: 'Mining', agriculture: 'Agricultural', technology: 'Technology', finance: 'Financial', manufacturing: 'Manufacturing', energy: 'Energy', renewables: 'Renewable Energy', tourism: 'Tourism', trade: 'Trade', logistics: 'Logistics', research: 'Research', defense: 'Defence', infrastructure: 'Infrastructure' };
+export const LR_SECTOR_ICON: Record<LRSector, string> = { mining: '⛏', agriculture: '🌾', technology: '💻', finance: '🏦', manufacturing: '🏭', energy: '⚡', renewables: '🌬', tourism: '🏝', trade: '🚢', logistics: '🚆', research: '🔬', defense: '🛡', infrastructure: '🏗' };
+export const LR_DEV_LABEL: Record<LRDevTier, string> = { underdeveloped: 'Underdeveloped', emerging: 'Emerging', developing: 'Developing', advanced: 'Advanced', highly_developed: 'Highly Developed' };
+export const LR_MOMENTUM_LABEL: Record<LRMomentumBand, string> = { declining: 'Declining', weakening: 'Weakening', stable: 'Stable', growing: 'Growing', rapid_growth: 'Rapid Growth', booming: 'Booming' };
+export const LR_ECON_LABEL: Record<LREconomyBand, string> = { depressed: 'Depressed', weak: 'Weak', moderate: 'Moderate', strong: 'Strong', booming: 'Booming' };
+export const LR_NEED_LABEL: Record<LRNeedCategory, string> = { capital: 'Capital', transport: 'Transport', energy: 'Energy', water: 'Water', security: 'Security', trade: 'Trade', resources: 'Resources', workforce: 'Workforce', technology: 'Technology', infrastructure: 'Infrastructure', stability: 'Stability', emergency_relief: 'Emergency Relief', housing: 'Housing', development: 'Development' };
+const LR_SEV_RANK: Record<LRSeverity, number> = { low: 1, moderate: 2, high: 3, critical: 4 };
+const LR_MOM_RANK: Record<LRMomentumBand, number> = { declining: 0, weakening: 1, stable: 2, growing: 3, rapid_growth: 4, booming: 5 };
+
+/** Initial tendencies come from existing world data (regional resources) — low seeds, never an identity. */
+const LR_RESOURCE_SECTOR: Record<string, LRSector[]> = {
+  Coral: ['tourism'], 'Tropical Fruit': ['agriculture'], 'Sugar Cane': ['agriculture'], Opals: ['mining'], Wine: ['agriculture', 'tourism'], Coal: ['mining', 'energy'], Dairy: ['agriculture'], Wool: ['agriculture'], Wheat: ['agriculture'],
+  Timber: ['agriculture'], Seafood: ['agriculture'], Hydropower: ['renewables'], Uranium: ['mining', 'energy'], 'Iron Ore': ['mining'], Gold: ['mining', 'finance'], 'Natural Gas': ['energy'], 'Crocodile Leather': ['trade'], 'Aboriginal Art': ['tourism'],
+  'Government Grants': ['finance'], 'Research Funds': ['research'], Education: ['research']
+};
+/** Structural inputs by EXISTING project type (capacity) and sector evidence. */
+export const LR_PROJECT_PROFILE: Record<string, { capacity: Partial<LRCapacity>; sectors: LRSector[]; label: string }> = {
+  high_speed_rail: { capacity: { transport: 40, trade: 15 }, sectors: ['logistics', 'trade'], label: 'rail' },
+  inland_rail_hub: { capacity: { transport: 45, trade: 15 }, sectors: ['logistics', 'trade', 'mining'], label: 'rail' },
+  desalination_plant: { capacity: { water: 50 }, sectors: ['infrastructure', 'agriculture'], label: 'desalination' },
+  green_hydrogen_terminal: { capacity: { energy: 30, trade: 15 }, sectors: ['renewables', 'energy', 'trade'], label: 'hydrogen' },
+  subsea_cable_hub: { capacity: { technology: 40, trade: 20 }, sectors: ['technology', 'trade'], label: 'cable' },
+  offshore_wind_farm: { capacity: { energy: 40 }, sectors: ['renewables', 'energy'], label: 'wind' },
+  hydro_expansion: { capacity: { energy: 40, water: 10 }, sectors: ['renewables', 'energy'], label: 'hydro' },
+  tech_innovation_park: { capacity: { technology: 45 }, sectors: ['technology', 'research'], label: 'tech park' }
+};
+/** Existing contract types → the sectors they evidence. */
+export const LR_CONTRACT_SECTORS: Record<string, LRSector[]> = {
+  agricultural_logistics: ['agriculture', 'logistics'], renewable_energy_grid: ['renewables', 'energy'], mining_tech_initiative: ['mining', 'technology'], maritime_export_hub: ['trade', 'logistics'],
+  eco_tourism_network: ['tourism'], ai_research_center: ['technology', 'research'], disaster_relief_supply: ['logistics'], defense_logistics_hub: ['defense', 'logistics']
+};
+/** Which existing contract types answer which regional need (relevance only — contracts stay canonical). */
+export const LR_NEED_CONTRACTS: Partial<Record<LRNeedCategory, string[]>> = {
+  transport: ['agricultural_logistics', 'maritime_export_hub', 'defense_logistics_hub'], energy: ['renewable_energy_grid'], emergency_relief: ['disaster_relief_supply'], technology: ['ai_research_center', 'mining_tech_initiative'],
+  trade: ['maritime_export_hub'], security: ['defense_logistics_hub'], water: ['disaster_relief_supply'], development: ['agricultural_logistics', 'eco_tourism_network']
+};
+const LR_NEED_CAPACITY: Partial<Record<LRNeedCategory, keyof LRCapacity>> = { transport: 'transport', energy: 'energy', water: 'water', technology: 'technology', trade: 'trade' };
+
+const lrClamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const lrR = (v: number, d = 2) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
+function lrHash(v: unknown): string { const raw = JSON.stringify(v); let h = 2166136261; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+
+export function lrSeedSectors(resources: string[]): Partial<Record<LRSector, number>> {
+  const out: Partial<Record<LRSector, number>> = {};
+  resources.forEach(r => (LR_RESOURCE_SECTOR[r] || []).forEach((s, i) => { out[s] = lrR((out[s] || 0) + (i === 0 ? 8 : 4), 1); }));
+  return out;
+}
+
+// ---- Bands (all with hysteresis) --------------------------------------------------------------------
+
+const LR_DEV_BOUNDS: Array<[LRDevTier, number]> = [['underdeveloped', 0], ['emerging', 12], ['developing', 26], ['advanced', 44], ['highly_developed', 64]];
+export function lrDevTier(score: number, prev?: LRDevTier): LRDevTier {
+  let raw: LRDevTier = 'underdeveloped';
+  LR_DEV_BOUNDS.forEach(([t, lo]) => { if (score >= lo) raw = t; });
+  if (!prev || prev === raw) return raw;
+  const idx = (t: LRDevTier) => LR_DEV_BOUNDS.findIndex(x => x[0] === t);
+  // Leaving a tier needs a clear margin in either direction (no flicker at a boundary).
+  if (idx(raw) > idx(prev)) return score >= LR_DEV_BOUNDS[idx(raw)][1] + 1.5 ? raw : prev;
+  return score < LR_DEV_BOUNDS[idx(prev)][1] - 3 ? raw : prev;
+}
+export function lrEconomyBand(score: number, prev?: LREconomyBand): LREconomyBand {
+  const b: Array<[LREconomyBand, number]> = [['depressed', 0], ['weak', 20], ['moderate', 38], ['strong', 58], ['booming', 78]];
+  let raw: LREconomyBand = 'depressed';
+  b.forEach(([t, lo]) => { if (score >= lo) raw = t; });
+  if (!prev || prev === raw) return raw;
+  const idx = (t: LREconomyBand) => b.findIndex(x => x[0] === t);
+  if (idx(raw) > idx(prev)) return score >= b[idx(raw)][1] + 2 ? raw : prev;
+  return score < b[idx(prev)][1] - 4 ? raw : prev;
+}
+/** Momentum is DIRECTION (−1..1), separate from the economy level. Up-moves need +0.04, down-moves −0.06. */
+export function lrMomentumBand(value: number, prev?: LRMomentumBand): LRMomentumBand {
+  const cuts: Array<[LRMomentumBand, number]> = [['declining', -Infinity], ['weakening', -0.45], ['stable', -0.15], ['growing', 0.18], ['rapid_growth', 0.45], ['booming', 0.72]];
+  let raw: LRMomentumBand = 'declining';
+  cuts.forEach(([t, lo]) => { if (value >= lo) raw = t; });
+  if (!prev || prev === raw) return raw;
+  const idx = (t: LRMomentumBand) => cuts.findIndex(x => x[0] === t);
+  if (idx(raw) > idx(prev)) { let t: LRMomentumBand = prev; for (let i = idx(prev) + 1; i <= idx(raw); i++) if (value >= cuts[i][1] + 0.04) t = cuts[i][0]; return t; }
+  let t: LRMomentumBand = prev; for (let i = idx(prev); i > idx(raw); i--) if (value < cuts[i][1] - 0.06) t = cuts[i - 1][0]; return t;
+}
+function lrInfraBand(q: number): LRInfraBand { return q < 25 ? 'poor' : q < 40 ? 'basic' : q < 55 ? 'moderate' : q < 70 ? 'strong' : 'excellent'; }
+function lrStabilityBand(v: number | null): DynamicRegionalState['stability']['band'] { return v === null ? 'unknown' : v < 35 ? 'fragile' : v < 50 ? 'unsettled' : v < 72 ? 'stable' : 'high'; }
+function lrSeverity(score: number): LRSeverity | null { return score >= 75 ? 'critical' : score >= 55 ? 'high' : score >= 35 ? 'moderate' : score >= 20 ? 'low' : null; }
+
+// ---- Canonical readers (reference, never duplicate) ----------------------------------------------
+
+const lrRegionIn = (s: LRInputs, code: string) => s.regions.find(r => r.code === code) || null;
+function lrTotalDeposits(r: LRInputs['regions'][number]): number { return Object.values(r.deposits).reduce((a, b) => a + Math.max(0, Number(b) || 0), 0); }
+function lrResourceIndex(s: LRInputs, r: LRInputs['regions'][number]): number {
+  const idx = r.resources.map(x => (s.basePrices[x] ? (s.prices[x] ?? s.basePrices[x]) / s.basePrices[x] : 1)).filter(Number.isFinite);
+  return idx.length ? idx.reduce((a, b) => a + b, 0) / idx.length : 1;
+}
+function lrRegionCrises(s: LRInputs, code: string) { return s.crises.filter(c => (c.status === 'active' || c.status === 'triggered') && (c.affectedRegions.includes(code) || c.affectedRegions.includes('ALL'))); }
+
+/** Capacities from canonical projects: base by the canonical dev tier, active projects add (repeats halved). */
+export function lrComputeInfrastructure(s: LRInputs, code: string): DynamicRegionalState['infrastructure'] {
+  const r = lrRegionIn(s, code);
+  const tier = r ? r.devTier : 0;
+  const cap: LRCapacity = { transport: 15 + tier * 6, energy: 15 + tier * 6, water: 20 + tier * 5, technology: 10 + tier * 6, trade: 15 + tier * 6 };
+  const mine = s.projects.filter(p => p.regionId === code);
+  const active = mine.filter(p => /^(active|upgraded|complet)/.test(p.status));
+  const seen: Record<string, number> = {};
+  active.forEach(p => {
+    const prof = LR_PROJECT_PROFILE[p.projectType];
+    if (!prof) return;
+    const n = (seen[p.projectType] = (seen[p.projectType] || 0) + 1);
+    (Object.keys(prof.capacity) as Array<keyof LRCapacity>).forEach(k => { cap[k] += (prof.capacity[k] || 0) / n; });
+  });
+  // Bounded network effect: a well-connected neighbour lifts trade capacity a little.
+  (r?.adjacent || []).forEach(adj => {
+    const nActive = s.projects.filter(p => p.regionId === adj && /^(active|upgraded|complet)/.test(p.status) && (LR_PROJECT_PROFILE[p.projectType]?.capacity.transport || 0) > 0);
+    if (nActive.length) cap.trade += 5;
+  });
+  (Object.keys(cap) as Array<keyof LRCapacity>).forEach(k => { cap[k] = Math.round(lrClamp(cap[k], 0, 100)); });
+  const quality = Math.round((cap.transport + cap.energy + cap.water + cap.technology) / 4);
+  return { quality, band: lrInfraBand(quality), capacity: cap, active: active.map(p => p.id).slice(0, 8), building: mine.filter(p => p.status === 'under_construction').map(p => p.id).slice(0, 8), damaged: mine.filter(p => p.status === 'damaged').map(p => p.id).slice(0, 8) };
+}
+
+/** Current economic activity (0..100) from canonical signals. Specialization amplifies commodity exposure. */
+export function lrRawEconomy(s: LRInputs, code: string, reg: DynamicRegionalState | null): number {
+  const r = lrRegionIn(s, code);
+  if (!r) return 30;
+  const capital = Math.min(30, (Math.log10(lrTotalDeposits(r) + 1) / Math.log10(50000)) * 30);
+  const commoditySectors = new Set<LRSector>(r.resources.flatMap(x => LR_RESOURCE_SECTOR[x] || []));
+  const exposure = 1 + Math.max(0, ...Array.from(commoditySectors).map(sc => reg?.sectors[sc] || 0)) / 100;
+  const resource = lrClamp(12 + (lrResourceIndex(s, r) - 1) * 60 * exposure, 0, 25);
+  const mine = s.projects.filter(p => p.regionId === code);
+  const activity = Math.min(20, mine.filter(p => /^(active|upgraded|complet)/.test(p.status)).length * 6 + mine.filter(p => p.status === 'under_construction').length * 4 + s.contracts.filter(c => c.regionId === code && c.status === 'active').length * 4);
+  const stab = r.stability !== null ? ((r.stability - 50) / 50) * 10 : 0;
+  const crisis = lrRegionCrises(s, code).length ? -15 : 0;
+  const dev = Math.min(15, r.devTier * 3);
+  // Baseline 24: every region has an existing economy before anyone invests (a fresh region reads "moderate").
+  return Math.round(lrClamp(capital + resource + activity + stab + crisis + dev + 24, 0, 100));
+}
+
+// ---- Construction / migration --------------------------------------------------------------------
+
+function lrBlankRegion(code: string, name: string): DynamicRegionalState {
+  return {
+    regionId: code, name, development: { score: 0, tier: 'underdeveloped', structural: 0, canonicalTier: 0 }, economy: { score: 30, band: 'weak', lastRoundScore: 30 }, momentum: { value: 0, band: 'stable', history: [] },
+    stability: { value: null, band: 'unknown' }, infrastructure: { quality: 0, band: 'poor', capacity: { transport: 0, energy: 0, water: 0, technology: 0, trade: 0 }, active: [], building: [], damaged: [] },
+    sectors: {}, specializations: { primary: null, secondary: null, emerging: null, established: [], pending: null }, needs: [], opportunities: [], risks: [], conditions: [], history: [],
+    identity: { label: '', since: 0, candidate: null, candidateSince: null }, investment: { band: 'normal', recent: [], highStreak: 0 }, trajectory: 'stable', strategicValue: { score: 0, band: 'low', inputs: {} },
+    core: { ownerKey: null, since: null, controller: null, controlSince: null }, evidence: [], lastMeaningfulTurn: 0, revision: 0
+  };
+}
+
+export function createEmptyLivingRegionsState(): LivingRegionsState {
+  return { version: 1, revision: 0, initializedTurn: null, lastRound: null, regions: {}, derived: [], milestones: [], hashes: {}, diagnostics: { eventsApplied: 0, eventsIgnored: 0, roundsAdvanced: 0, syncs: 0, derivedEmitted: 0, lastMs: 0, lastRegions: [] } };
+}
+
+/**
+ * Old saves / new matches: initialise from CURRENT canonical systems only (dev tiers, active projects,
+ * completed contracts, deposits, stability). No fake history — history begins at this point.
+ */
+export function initializeLivingRegions(s: LRInputs): LivingRegionsState {
+  const st = createEmptyLivingRegionsState();
+  st.initializedTurn = s.turn; st.lastRound = s.turn;
+  s.regions.forEach(r => {
+    const reg = lrBlankRegion(r.code, r.name);
+    reg.sectors = lrSeedSectors(r.resources);
+    // Structural baseline from what already exists (never from the state's name).
+    const mine = s.projects.filter(p => p.regionId === r.code);
+    reg.development.structural = lrClamp(10 + mine.filter(p => p.status !== 'locked').length * 2 + mine.filter(p => /^(active|upgraded|complet)/.test(p.status)).length * 5, 0, 30);
+    mine.filter(p => /^(active|upgraded|complet)/.test(p.status)).forEach(p => (LR_PROJECT_PROFILE[p.projectType]?.sectors || []).forEach((sc, i) => { reg.sectors[sc] = lrR(lrGain(reg.sectors[sc] || 0, i === 0 ? 16 : 8), 1); }));
+    s.contracts.filter(c => c.regionId === r.code && /complet/.test(c.status)).forEach(c => (LR_CONTRACT_SECTORS[c.contractType] || []).forEach((sc, i) => { reg.sectors[sc] = lrR(lrGain(reg.sectors[sc] || 0, i === 0 ? 12 : 6), 1); }));
+    reg.economy.score = reg.economy.lastRoundScore = lrRawEconomy(s, r.code, reg);
+    reg.economy.band = lrEconomyBand(reg.economy.score);
+    reg.investment.recent = [lrTotalDeposits(r)];
+    reg.core.controller = r.controller; reg.core.controlSince = r.controller ? s.turn : null;
+    st.regions[r.code] = lrRecompute(reg, s, { initial: true }).region;
+  });
+  st.hashes = lrInputHashes(s);
+  return st;
+}
+
+/** Diminishing + path-dependent gain: an established sector grows a little easier, a saturated one slower. */
+export function lrGain(current: number, amount: number): number {
+  const c = lrClamp(current, 0, 100);
+  return lrClamp(c + amount * (0.75 + c / 100) * (1 - c / 110), 0, 100);
+}
+
+// ---- Recompute derived views (needs, opportunities, risks, conditions, identity, value) --------
+
+interface LRRecomputeCtx { initial?: boolean; boundary?: boolean; sourceEventId?: string | null }
+interface LRRecomputeOut { region: DynamicRegionalState; derived: Array<Omit<LRDerivedEvent, 'id' | 'turn' | 'causedByEventId' | 'rootEventId' | 'reactionDepth'>>; milestones: string[] }
+
+function lrSortedSectors(reg: DynamicRegionalState): Array<[LRSector, number]> {
+  return (Object.entries(reg.sectors) as Array<[LRSector, number]>).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function lrUpdateSpecializations(reg: DynamicRegionalState, turn: number, boundary: boolean, initial: boolean): { established: LRSector | null } {
+  const sp = { ...reg.specializations, established: [...reg.specializations.established] };
+  let newlyEstablished: LRSector | null = null;
+  const sorted = lrSortedSectors(reg);
+  // Established membership: enter at ≥42 (after persisting one round boundary), leave below 34.
+  sp.established = sp.established.filter(sc => (reg.sectors[sc] || 0) >= 34);
+  sorted.forEach(([sc, v]) => {
+    if (v < 42 || sp.established.includes(sc)) return;
+    if (initial) { sp.established.push(sc); return; }
+    if (sp.pending && sp.pending.sector === sc && sp.pending.change === 'establish') {
+      if (boundary && turn > sp.pending.since) { sp.established.push(sc); sp.pending = null; newlyEstablished = newlyEstablished || sc; }
+    } else if (!sp.pending || sp.pending.change !== 'establish') sp.pending = { sector: sc, change: 'establish', since: turn };
+  });
+  if (sp.pending && sp.pending.change === 'establish' && (reg.sectors[sp.pending.sector] || 0) < 42) sp.pending = null;
+  const est = sp.established.slice().sort((a, b) => (reg.sectors[b] || 0) - (reg.sectors[a] || 0) || a.localeCompare(b));
+  // Primary is sticky: a challenger must lead by 6+ at two consecutive round boundaries (no identity thrash).
+  let primary = sp.primary && est.includes(sp.primary) ? sp.primary : (est[0] || null);
+  const challenger = est.find(x => x !== primary) || null;
+  if (primary && challenger && (reg.sectors[challenger] || 0) > (reg.sectors[primary] || 0) + 6) {
+    if (sp.pending && sp.pending.change === 'primary' && sp.pending.sector === challenger) { if (boundary && turn > sp.pending.since) { primary = challenger; sp.pending = null; } }
+    else if (!sp.pending) sp.pending = { sector: challenger, change: 'primary', since: turn };
+  } else if (sp.pending && sp.pending.change === 'primary') sp.pending = null;
+  const rest = est.filter(x => x !== primary);
+  const secondary = rest[0] || sorted.map(x => x[0]).find(x => x !== primary && (reg.sectors[x] || 0) >= 22) || null;
+  const emerging = sorted.map(x => x[0]).find(x => x !== primary && x !== secondary && (reg.sectors[x] || 0) >= 22) || null;
+  reg.specializations = { ...sp, primary, secondary, emerging };
+  return { established: newlyEstablished };
+}
+
+function lrDeriveIdentity(reg: DynamicRegionalState): string {
+  const sp = reg.specializations;
+  const dev = reg.development.tier;
+  const primaryEst = sp.primary && sp.established.includes(sp.primary);
+  if (!primaryEst) {
+    const lead = sp.secondary || sp.emerging;
+    const early = dev === 'underdeveloped' || dev === 'emerging';
+    if (lead) return early ? `Emerging ${LR_SECTOR_LABEL[lead]} Economy` : `${LR_SECTOR_LABEL[lead]}-leaning ${dev === 'developing' ? 'Regional Hub' : 'Regional Center'}`;
+    return early ? 'Untapped Frontier' : 'Diversified Regional Economy';
+  }
+  const secEst = sp.secondary && sp.established.includes(sp.secondary) ? sp.secondary : null;
+  const part = secEst ? `${LR_SECTOR_LABEL[sp.primary!]} & ${secEst === 'trade' && sp.primary === 'mining' ? 'Export' : LR_SECTOR_LABEL[secEst]}` : LR_SECTOR_LABEL[sp.primary!];
+  // "Growth Hub" is sticky: kept while the region is still growing (hysteresis against momentum wobble).
+  const fast = LR_MOM_RANK[reg.momentum.band] >= 4 || (reg.identity.label.endsWith('Growth Hub') && LR_MOM_RANK[reg.momentum.band] >= 3);
+  if (fast && (dev === 'emerging' || dev === 'developing' || dev === 'underdeveloped')) return `${part} Growth Hub`;
+  if (dev === 'highly_developed') return `${part} Powerhouse`;
+  if (dev === 'advanced') return reg.core.ownerKey && LR_MOM_RANK[reg.momentum.band] >= 2 ? `${part} Stronghold` : `${part} Center`;
+  if (dev === 'developing') return `${part} Hub`;
+  return `Emerging ${part} Economy`;
+}
+
+function lrComputeNeeds(reg: DynamicRegionalState, s: LRInputs, turn: number, sourceEventId: string | null): RegionalNeed[] {
+  const cap = reg.infrastructure.capacity;
+  const sec = (x: LRSector) => reg.sectors[x] || 0;
+  const momPos = Math.max(0, reg.momentum.value);
+  const crises = lrRegionCrises(s, reg.regionId);
+  const r = lrRegionIn(s, reg.regionId);
+  const raw: Array<{ category: LRNeedCategory; score: number; reason: string }> = [];
+  const tDemand = Math.max(sec('trade'), sec('logistics'), sec('mining'), sec('agriculture')) * 0.75 + momPos * 70 + (Math.max(sec('trade'), sec('logistics')) >= 30 ? 8 : 0);
+  raw.push({ category: 'transport', score: tDemand - cap.transport * 0.9, reason: `${momPos > 0.15 ? 'Growth' : 'Activity'} and ${sec('mining') >= sec('trade') ? 'resource' : 'trade'} demand are outpacing transport capacity (${cap.transport}/100)` });
+  const eDemand = Math.max(sec('technology'), sec('manufacturing'), sec('mining'), sec('research')) / 100 * 60 + reg.economy.score / 100 * 25 + momPos * 15;
+  raw.push({ category: 'energy', score: eDemand - cap.energy * 0.8, reason: `Energy demand from ${sec('technology') >= sec('mining') ? 'technology' : 'industry'} exceeds generation capacity (${cap.energy}/100)` });
+  const wDemand = sec('agriculture') / 100 * 40 + (crises.some(c => c.category === 'environmental') ? 40 : 0) + (reg.stability.value !== null && reg.stability.value < 45 ? 10 : 0);
+  raw.push({ category: 'water', score: wDemand - cap.water * 0.9, reason: `Water security is thin (${cap.water}/100) for current agricultural and environmental pressure` });
+  const relief = crises.length ? 60 + Math.min(3, Math.max(...crises.map(c => c.stageIndex))) * 10 : reg.infrastructure.damaged.length ? 55 : reg.conditions.some(c => c.kind === 'post_crisis_recovery') ? 30 : 0;
+  raw.push({ category: 'emergency_relief', score: relief, reason: crises.length ? `An active crisis (${crises[0].name}) is hitting the region` : reg.infrastructure.damaged.length ? 'Infrastructure has been damaged' : 'The region is still recovering from a crisis' });
+  const capital = reg.economy.score < 30 ? 40 + (30 - reg.economy.score) : reg.momentum.value > 0.18 && reg.development.score < 44 ? 30 + momPos * 40 - Math.min(20, (r ? lrTotalDeposits(r) : 0) / 1000) : 0;
+  raw.push({ category: 'capital', score: capital, reason: reg.economy.score < 30 ? 'Economic activity is weak and capital is scarce' : 'Growth is outpacing the capital invested in the region' });
+  if (reg.stability.value !== null && reg.stability.value < 45) raw.push({ category: 'stability', score: (45 - reg.stability.value) * 2 + 20, reason: `Regional stability is low (${Math.round(reg.stability.value)})` });
+  if (sec('technology') >= 22) raw.push({ category: 'technology', score: 25 + sec('technology') / 2 - cap.technology, reason: `A growing technology sector lacks digital capacity (${cap.technology}/100)` });
+  if (reg.development.score >= 26 && reg.infrastructure.quality < 25) raw.push({ category: 'infrastructure', score: 30 + (26 - reg.infrastructure.quality), reason: 'Development has run ahead of basic infrastructure' });
+  const prevBy = new Map(reg.needs.map(n => [n.category, n]));
+  const out: RegionalNeed[] = [];
+  raw.map(x => ({ ...x, score: Math.round(lrClamp(x.score, 0, 100)) })).sort((a, b) => b.score - a.score || a.category.localeCompare(b.category)).forEach(x => {
+    const prev = prevBy.get(x.category);
+    const open = prev && prev.status === 'open';
+    // Open at 20+, resolve below 14 (hysteresis).
+    if (x.score < (open ? 14 : 20)) { if (open) out.push({ ...prev!, status: 'resolved', score: x.score, trend: 'easing', lastUpdatedTurn: turn }); return; }
+    const sev = lrSeverity(Math.max(20, x.score))!;
+    const trend: RegionalNeed['trend'] = prev ? (x.score > prev.score + 5 ? 'rising' : x.score < prev.score - 5 ? 'easing' : 'steady') : 'rising';
+    out.push({ id: `need_${reg.regionId}_${x.category}`, category: x.category, severity: sev, score: x.score, trend, reason: x.reason, sourceEvents: [...new Set([...(prev?.sourceEvents || []), ...(sourceEventId && (!prev || x.score !== prev.score) ? [sourceEventId] : [])])].slice(-3), openedTurn: open ? prev!.openedTurn : turn, lastUpdatedTurn: turn, status: 'open' });
+  });
+  const opens = out.filter(n => n.status === 'open').slice(0, LR_LIMITS.needs);
+  const resolved = out.filter(n => n.status === 'resolved').slice(0, 2);
+  return [...opens, ...resolved];
+}
+
+function lrComputeOpportunities(reg: DynamicRegionalState, s: LRInputs, turn: number): RegionalOpportunity[] {
+  const r = lrRegionIn(s, reg.regionId);
+  const sec = (x: LRSector) => reg.sectors[x] || 0;
+  const prev = new Map(reg.opportunities.map(o => [o.kind, o.sinceTurn]));
+  const out: Array<RegionalOpportunity & { rank: number }> = [];
+  const add = (kind: LROpportunityKind, label: string, reason: string, strength: RegionalOpportunity['strength'], rank: number) => out.push({ id: `opp_${reg.regionId}_${kind}`, kind, label, reason, strength, sinceTurn: prev.get(kind) ?? turn, rank });
+  if (r) r.resources.forEach(res => {
+    const base = s.basePrices[res]; const p = s.prices[res];
+    const sc = (LR_RESOURCE_SECTOR[res] || [])[0];
+    if (base && p && p / base >= 1.12 && sc && sec(sc) >= 22) add('commodity_boom', `${res} boom`, `${res} trades ${Math.round((p / base - 1) * 100)}% above normal and ${reg.name} has a ${LR_SECTOR_LABEL[sc].toLowerCase()} base.`, p / base >= 1.25 ? 'high' : 'moderate', 9);
+  });
+  if (Math.max(sec('trade'), sec('logistics')) >= 30 && reg.infrastructure.capacity.transport >= 50 && reg.momentum.value >= 0.18) add('export_expansion', 'Export expansion', `Strong transport links and a ${sec('trade') >= sec('logistics') ? 'trade' : 'logistics'} base support growing exports.`, 'high', 8);
+  const top = r ? Math.max(0, ...Object.values(r.deposits).map(v => Number(v) || 0)) : 0;
+  if (r && (!r.controller || top < 1500)) add('cheap_entry', 'Cheap regional entry', !r.controller ? 'Nobody controls the region yet.' : 'The current hold is thin, so entry is cheap.', !r.controller ? 'high' : 'moderate', 6);
+  const bigNeed = reg.needs.find(n => n.status === 'open' && LR_SEV_RANK[n.severity] >= 3 && LR_NEED_CAPACITY[n.category]);
+  if (bigNeed) {
+    const proj = s.projects.find(p => p.regionId === reg.regionId && (p.status === 'unlocked' || p.status === 'under_construction') && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[bigNeed.category]!] || 0) > 0);
+    if (proj) add('infrastructure_gap', `Infrastructure gap: ${proj.title}`, `${LR_NEED_LABEL[bigNeed.category]} need is ${bigNeed.severity}; ${proj.title} would add the missing capacity.`, 'high', 10);
+  }
+  const avail = s.contracts.filter(c => c.regionId === reg.regionId && c.status === 'available');
+  if (avail.length >= 2 || avail.some(c => reg.needs.some(n => n.status === 'open' && (LR_NEED_CONTRACTS[n.category] || []).includes(c.contractType)))) add('contract_wave', 'Relevant contracts', `${avail.length} open contract${avail.length === 1 ? '' : 's'} match what the region needs.`, avail.length >= 2 ? 'high' : 'moderate', 5);
+  if (reg.conditions.some(c => c.kind === 'post_crisis_recovery')) add('recovery_investment', 'Recovery investment', 'Post-crisis rebuilding raises the value of relief contracts and infrastructure.', 'moderate', 7);
+  if (sec('renewables') >= 22 && (reg.momentum.value >= 0.18 || reg.needs.some(n => n.category === 'energy' && n.status === 'open'))) add('renewable_growth', 'Renewable growth', 'A renewable base meets rising energy demand.', 'moderate', 6);
+  if (sec('technology') >= 30 && reg.momentum.value > 0) add('technology_expansion', 'Technology expansion', 'Technology activity is building on positive momentum.', 'moderate', 6);
+  if ((reg.development.tier === 'underdeveloped' || reg.development.tier === 'emerging') && reg.needs.filter(n => n.status === 'open').length >= 2) add('development_potential', 'High improvement potential', 'Unmet needs mean new infrastructure or contracts change this region more than a developed one.', 'moderate', 4);
+  return out.sort((a, b) => b.rank - a.rank || a.kind.localeCompare(b.kind)).slice(0, LR_LIMITS.opportunities).map(({ rank, ...o }) => o);
+}
+
+function lrComputeRisks(reg: DynamicRegionalState, s: LRInputs, turn: number): RegionalRisk[] {
+  const r = lrRegionIn(s, reg.regionId);
+  const sec = (x: LRSector) => reg.sectors[x] || 0;
+  const prev = new Map(reg.risks.map(o => [o.kind, o.sinceTurn]));
+  const out: RegionalRisk[] = [];
+  const add = (kind: LRRiskKind, label: string, reason: string, severity: LRSeverity) => out.push({ id: `risk_${reg.regionId}_${kind}`, kind, label, reason, severity, sinceTurn: prev.get(kind) ?? turn });
+  const sp = reg.specializations;
+  if (sp.primary && sec(sp.primary) >= 55 && (sp.secondary ? sec(sp.secondary) : 0) < sec(sp.primary) * 0.45) add('overdependence', `${LR_SECTOR_LABEL[sp.primary]} dependence`, `The economy leans heavily on ${LR_SECTOR_LABEL[sp.primary].toLowerCase()}; a downturn there would hit hard.`, sec(sp.primary) >= 70 ? 'high' : 'moderate');
+  if (r && r.controller) {
+    const holder = Number(r.deposits[r.controller]) || 0;
+    const challenger = Math.max(0, ...Object.entries(r.deposits).filter(([k]) => k !== r.controller).map(([, v]) => Number(v) || 0));
+    if ((challenger > 0 && holder > 0 && challenger / holder >= 0.6) || reg.conditions.some(c => c.kind === 'high_rival_pressure')) add('high_rivalry', 'High rival competition', 'Control is actively contested.', challenger >= holder * 0.85 ? 'high' : 'moderate');
+  } else if (reg.conditions.some(c => c.kind === 'high_rival_pressure')) add('high_rivalry', 'High rival competition', 'Rivals are pressing into the region.', 'moderate');
+  if (reg.stability.value !== null && reg.stability.value < 45) add('instability', 'Instability', `Regional stability is ${reg.stability.band}.`, reg.stability.value < 35 ? 'high' : 'moderate');
+  if (reg.momentum.value < -0.15 && r && lrTotalDeposits(r) < 2000) add('underinvestment', 'Underinvestment', 'Momentum is falling and little capital is committed.', 'moderate');
+  if (reg.momentum.value >= 0.18 && reg.needs.some(n => n.status === 'open' && (n.category === 'transport' || n.category === 'energy') && LR_SEV_RANK[n.severity] >= 3)) add('infrastructure_bottleneck', 'Infrastructure bottleneck', 'Growth is outrunning transport/energy capacity; it will cap further gains.', 'high');
+  if (r) {
+    const down = r.resources.find(res => { const b = s.basePrices[res]; const p = s.prices[res]; const sc = (LR_RESOURCE_SECTOR[res] || [])[0]; return b && p && p / b <= 0.88 && sc && sec(sc) >= 30; });
+    const commodityHeavy = sp.primary && ['mining', 'agriculture', 'energy'].includes(sp.primary) && sec(sp.primary) >= 55;
+    if (down || commodityHeavy) add('market_exposure', 'Commodity exposure', down ? `${down} prices are down and the region depends on them.` : `A ${LR_SECTOR_LABEL[sp.primary!].toLowerCase()}-led economy is sensitive to commodity prices.`, down ? 'high' : 'moderate');
+  }
+  const crisisNow = s.crises.some(c => c.status === 'active' || c.status === 'triggered');
+  if ((crisisNow && reg.needs.some(n => n.status === 'open' && (n.category === 'water' || n.category === 'emergency_relief'))) || (reg.stability.value !== null && reg.stability.value < 50 && reg.infrastructure.capacity.water < 30)) add('crisis_vulnerability', 'Crisis vulnerability', 'Weak resilience infrastructure under stress.', 'moderate');
+  if (sec('finance') >= 30 && reg.momentum.value < -0.15) add('capital_flight', 'Capital flight', 'A finance-heavy region losing momentum can see investment leave.', 'moderate');
+  return out.sort((a, b) => LR_SEV_RANK[b.severity] - LR_SEV_RANK[a.severity] || a.kind.localeCompare(b.kind)).slice(0, LR_LIMITS.risks);
+}
+
+const LR_CONDITION_LABEL: Record<LRConditionKind, string> = { commodity_boom: 'Commodity Boom', infrastructure_bottleneck: 'Infrastructure Bottleneck', post_crisis_recovery: 'Post-Crisis Recovery', investment_surge: 'Investment Surge', regional_stagnation: 'Regional Stagnation', technology_expansion: 'Technology Expansion', high_rival_pressure: 'High Rival Pressure', diplomatic_safety_window: 'Diplomatic Safety Window', crisis_active: 'Crisis' };
+const LR_CONDITION_EFFECTS: Record<LRConditionKind, string[]> = {
+  commodity_boom: ['resource contract relevance ↑', 'economy ↑ (exposure)'], infrastructure_bottleneck: ['growth capped (positive momentum halved)', 'infrastructure need ↑', 'crisis vulnerability ↑'],
+  post_crisis_recovery: ['relief contract relevance ↑', 'infrastructure value ↑', 'short-term risk ↑'], investment_surge: ['entry more expensive', 'overheating risk'], regional_stagnation: ['opportunities fade', 'development stalls'],
+  technology_expansion: ['technology contracts ↑', 'energy need ↑'], high_rival_pressure: ['holding costs ↑', 'strategic value ↑'], diplomatic_safety_window: ['agreed protection (see agreement)'], crisis_active: ['economy ↓', 'relief need ↑']
+};
+
+function lrSetCondition(reg: DynamicRegionalState, kind: LRConditionKind, turn: number, opts: { expires?: number | null; severity?: LRSeverity; source?: string; sourceEventId?: string | null; label?: string }): void {
+  const ex = reg.conditions.find(c => c.kind === kind);
+  const expiresTurn = opts.expires === undefined ? null : opts.expires;
+  if (ex) { ex.expiresTurn = expiresTurn === null ? ex.expiresTurn : Math.max(ex.expiresTurn ?? 0, expiresTurn); if (opts.severity && LR_SEV_RANK[opts.severity] > LR_SEV_RANK[ex.severity]) ex.severity = opts.severity; return; }
+  reg.conditions = [...reg.conditions, { id: `cond_${reg.regionId}_${kind}`, kind, label: opts.label || LR_CONDITION_LABEL[kind], source: opts.source || 'living_regions', sourceEventId: opts.sourceEventId || null, startTurn: turn, expiresTurn, severity: opts.severity || 'moderate', effects: LR_CONDITION_EFFECTS[kind] }]
+    .sort((a, b) => LR_SEV_RANK[b.severity] - LR_SEV_RANK[a.severity] || a.kind.localeCompare(b.kind)).slice(0, LR_LIMITS.conditions);
+}
+
+function lrPushHistory(reg: DynamicRegionalState, entry: RegionalHistoryEntry): void {
+  if (reg.history.some(h => h.turn === entry.turn && h.text === entry.text)) return;
+  reg.history = [...reg.history, entry].slice(-LR_LIMITS.history);
+  reg.lastMeaningfulTurn = Math.max(reg.lastMeaningfulTurn, entry.turn);
+}
+function lrPushEvidence(reg: DynamicRegionalState, turn: number, text: string, effect: string, sourceEventId: string | null): void {
+  reg.evidence = [...reg.evidence, { turn, text, effect, sourceEventId }].slice(-LR_LIMITS.evidence);
+}
+
+function lrStrategicValue(reg: DynamicRegionalState, s: LRInputs): DynamicRegionalState['strategicValue'] {
+  const r = lrRegionIn(s, reg.regionId);
+  const maxSector = Math.max(0, ...Object.values(reg.sectors).map(v => v || 0));
+  const resIdx = r ? lrClamp((lrResourceIndex(s, r) - 0.7) / 0.6 * 100, 0, 100) : 50;
+  const contracts = Math.min(100, s.contracts.filter(c => c.regionId === reg.regionId && (c.status === 'available' || c.status === 'active')).length * 25);
+  const control = s.winRegionsTarget ? 70 : 40;
+  const inputs: Record<string, number> = { economy: reg.economy.score, development: reg.development.score / 94 * 100, specialization: maxSector, infrastructure: reg.infrastructure.quality, resources: resIdx, contracts, momentum: (reg.momentum.value + 1) * 50, control };
+  const w: Record<string, number> = { economy: 0.22, development: 0.2, specialization: 0.12, infrastructure: 0.1, resources: 0.1, contracts: 0.08, momentum: 0.1, control: 0.08 };
+  const score = Math.round(Object.keys(w).reduce((a, k) => a + w[k] * inputs[k], 0));
+  Object.keys(inputs).forEach(k => { inputs[k] = Math.round(inputs[k]); });
+  return { score, band: score >= 72 ? 'very_high' : score >= 55 ? 'high' : score >= 35 ? 'moderate' : 'low', inputs };
+}
+
+/** Core regions: long control + dominant share + (standing, projects or development). World fact, not strategy. */
+function lrCoreOwner(reg: DynamicRegionalState, s: LRInputs, turn: number): string | null {
+  const r = lrRegionIn(s, reg.regionId);
+  if (!r || !r.controller || reg.core.controller !== r.controller || reg.core.controlSince === null || turn - reg.core.controlSince < 3) return null;
+  const total = lrTotalDeposits(r);
+  const share = total > 0 ? (Number(r.deposits[r.controller]) || 0) / total : 0;
+  const actors = Object.keys(s.standing).filter(a => a === r.controller || s.ownerTeams[a] === r.controller);
+  const standing = Math.max(0, ...actors.map(a => s.standing[a]?.[reg.regionId] || 0));
+  const structural = reg.infrastructure.active.length > 0 || LR_DEV_BOUNDS.findIndex(x => x[0] === reg.development.tier) >= 2;
+  return share >= 0.6 && (standing >= 20 || structural) ? r.controller : null;
+}
+
+/** Recompute every derived view of one region; returns derived events for MATERIAL changes only. */
+export function lrRecompute(regIn: DynamicRegionalState, s: LRInputs, ctx: LRRecomputeCtx = {}): LRRecomputeOut {
+  const reg: DynamicRegionalState = { ...regIn, sectors: { ...regIn.sectors }, conditions: regIn.conditions.map(c => ({ ...c })), history: [...regIn.history], evidence: [...regIn.evidence], development: { ...regIn.development }, economy: { ...regIn.economy }, momentum: { ...regIn.momentum }, core: { ...regIn.core }, identity: { ...regIn.identity } };
+  const turn = s.turn;
+  const r = lrRegionIn(s, reg.regionId);
+  const derived: LRRecomputeOut['derived'] = [];
+  const milestones: string[] = [];
+  const before = { momentum: regIn.momentum.band, dev: regIn.development.tier, core: regIn.core.ownerKey, needs: new Map(regIn.needs.filter(n => n.status === 'open').map(n => [n.category, n.severity])), identity: regIn.identity.label };
+  reg.infrastructure = lrComputeInfrastructure(s, reg.regionId);
+  reg.stability = { value: r ? r.stability : null, band: lrStabilityBand(r ? r.stability : null) };
+  reg.development.canonicalTier = r ? r.devTier : 0;
+  reg.development.score = Math.round(reg.development.canonicalTier * 12 + reg.development.structural + (r ? r.devProgress * 4 : 0));
+  reg.development.tier = lrDevTier(reg.development.score, ctx.initial ? undefined : regIn.development.tier);
+  reg.economy.band = lrEconomyBand(reg.economy.score, ctx.initial ? undefined : regIn.economy.band);
+  reg.momentum.band = lrMomentumBand(reg.momentum.value, ctx.initial ? undefined : regIn.momentum.band);
+  // Control tracking (canonical controller is only referenced).
+  const controller = r ? r.controller : null;
+  if (controller !== reg.core.controller) { reg.core.controller = controller; reg.core.controlSince = controller ? turn : null; }
+  const spec = lrUpdateSpecializations(reg, turn, Boolean(ctx.boundary), Boolean(ctx.initial));
+  // Conditions: expiry + state-driven conditions.
+  reg.conditions = reg.conditions.filter(c => c.expiresTurn === null || c.expiresTurn >= turn);
+  const crises = lrRegionCrises(s, reg.regionId);
+  if (crises.length) lrSetCondition(reg, 'crisis_active', turn, { severity: crises.some(c => c.stageIndex >= 2) ? 'critical' : 'high', source: 'crisis chains', label: `Crisis: ${crises[0].name}` });
+  else reg.conditions = reg.conditions.filter(c => c.kind !== 'crisis_active');
+  s.windows.filter(w => w.status === 'open' && w.subject === reg.regionId && /diplomatic/.test(w.type)).forEach(w => lrSetCondition(reg, 'diplomatic_safety_window', turn, { expires: w.expiresTurn, severity: 'low', source: 'world_reaction', sourceEventId: w.id }));
+  reg.conditions = reg.conditions.filter(c => c.kind !== 'diplomatic_safety_window' || s.windows.some(w => w.id === c.sourceEventId && w.status === 'open'));
+  reg.needs = lrComputeNeeds(reg, s, turn, ctx.sourceEventId || null);
+  reg.risks = lrComputeRisks(reg, s, turn);
+  if (reg.risks.some(x => x.kind === 'infrastructure_bottleneck')) lrSetCondition(reg, 'infrastructure_bottleneck', turn, { severity: 'high' });
+  else reg.conditions = reg.conditions.filter(c => c.kind !== 'infrastructure_bottleneck');
+  reg.opportunities = lrComputeOpportunities(reg, s, turn);
+  if (reg.opportunities.some(o => o.kind === 'commodity_boom' && o.strength === 'high')) lrSetCondition(reg, 'commodity_boom', turn, { expires: turn + 2, severity: 'moderate' });
+  if ((reg.sectors.technology || 0) >= 30 && reg.momentum.value >= 0.18) lrSetCondition(reg, 'technology_expansion', turn, { expires: turn + 2, severity: 'low' });
+  // Post-crisis recovery resolves only after sustained non-negative momentum.
+  const rec = reg.conditions.find(c => c.kind === 'post_crisis_recovery');
+  if (rec && ctx.boundary && turn - rec.startTurn >= 2 && reg.momentum.history.slice(-2).length === 2 && reg.momentum.history.slice(-2).every(v => v >= -0.15)) {
+    reg.conditions = reg.conditions.filter(c => c.kind !== 'post_crisis_recovery');
+    lrPushHistory(reg, { turn, kind: 'recovery_complete', text: `${reg.name} completed its post-crisis recovery.`, sourceEventId: rec.sourceEventId, significance: 'major' });
+    milestones.push('Post-Crisis Recovery Complete');
+  }
+  // Core region (world fact) — emitted once when it emerges.
+  const core = lrCoreOwner(reg, s, turn);
+  if (core !== reg.core.ownerKey) { reg.core.ownerKey = core; reg.core.since = core ? turn : null; }
+  reg.strategicValue = lrStrategicValue(reg, s);
+  // Identity: a candidate must survive a round boundary before it replaces the current label.
+  const cand = lrDeriveIdentity(reg);
+  if (ctx.initial || !reg.identity.label) { reg.identity = { label: cand, since: turn, candidate: null, candidateSince: null }; }
+  else if (cand === reg.identity.label) { reg.identity.candidate = null; reg.identity.candidateSince = null; }
+  else if (reg.identity.candidate !== cand) { reg.identity.candidate = cand; reg.identity.candidateSince = turn; }
+  else if (ctx.boundary && reg.identity.candidateSince !== null && turn - reg.identity.candidateSince >= 2 && turn - reg.identity.since >= 3) {
+    lrPushHistory(reg, { turn, kind: 'identity', text: `${reg.name} is now a ${cand} (was ${reg.identity.label}).`, sourceEventId: null, significance: 'major' });
+    reg.identity = { label: cand, since: turn, candidate: null, candidateSince: null };
+  }
+  if (!ctx.initial) {
+    const mb = reg.momentum.band; const mr = LR_MOM_RANK[mb]; const pr = LR_MOM_RANK[before.momentum];
+    if (mr !== pr) {
+      const txt = `${reg.name}: ${LR_MOMENTUM_LABEL[before.momentum]} → ${LR_MOMENTUM_LABEL[mb]}.`;
+      lrPushHistory(reg, { turn, kind: 'momentum', text: `${reg.name}'s economy entered ${LR_MOMENTUM_LABEL[mb].toLowerCase()}.`, sourceEventId: ctx.sourceEventId || null, significance: mr >= 4 || mr <= 1 ? 'major' : 'meaningful' });
+      if (mb === 'booming' || (mr >= 4 && pr < 4)) { derived.push({ kind: mb === 'booming' ? 'region_entered_boom' : 'regional_growth_accelerated', regionId: reg.regionId, text: `${reg.name} entered ${LR_MOMENTUM_LABEL[mb].toLowerCase()}.`, significance: 'major', actorKey: null, evidence: [txt, ...reg.evidence.slice(-2).map(e => e.text)] }); if (mb === 'booming') milestones.push('Regional Boom'); }
+      else if (mr === 3 && pr === 2) derived.push({ kind: 'regional_growth_accelerated', regionId: reg.regionId, text: `${reg.name} moved from stable to growing.`, significance: 'meaningful', actorKey: null, evidence: [txt, ...reg.evidence.slice(-2).map(e => e.text)] });
+      else if (mr <= 1 && pr >= 2) derived.push({ kind: 'regional_decline_started', regionId: reg.regionId, text: `${reg.name}'s economy started ${mb === 'declining' ? 'declining' : 'weakening'}.`, significance: mr === 0 ? 'major' : 'meaningful', actorKey: null, evidence: [txt, ...reg.evidence.slice(-2).map(e => e.text)] });
+    }
+    if (reg.development.tier !== before.dev && LR_DEV_BOUNDS.findIndex(x => x[0] === reg.development.tier) > LR_DEV_BOUNDS.findIndex(x => x[0] === before.dev)) {
+      lrPushHistory(reg, { turn, kind: 'development', text: `${reg.name} reached ${LR_DEV_LABEL[reg.development.tier]} development.`, sourceEventId: ctx.sourceEventId || null, significance: 'major' });
+      if (reg.development.tier === 'advanced') milestones.push('First Advanced Region');
+    }
+    if (spec.established) {
+      lrPushHistory(reg, { turn, kind: 'specialization', text: `${reg.name} established a ${LR_SECTOR_LABEL[spec.established].toLowerCase()} specialization.`, sourceEventId: null, significance: 'major' });
+      derived.push({ kind: 'specialization_established', regionId: reg.regionId, text: `${reg.name} developed an established ${LR_SECTOR_LABEL[spec.established].toLowerCase()} specialization.`, significance: 'meaningful', actorKey: null, evidence: reg.evidence.filter(e => e.effect.includes(spec.established!)).slice(-3).map(e => e.text) });
+      milestones.push('Specialization Established');
+    }
+    reg.needs.filter(n => n.status === 'open' && n.severity === 'critical' && before.needs.get(n.category) !== 'critical').forEach(n => {
+      lrPushHistory(reg, { turn, kind: 'need', text: `${reg.name}'s ${LR_NEED_LABEL[n.category].toLowerCase()} need became critical.`, sourceEventId: ctx.sourceEventId || null, significance: 'major' });
+      derived.push({ kind: 'regional_need_became_critical', regionId: reg.regionId, text: `${reg.name}'s ${LR_NEED_LABEL[n.category].toLowerCase()} need became critical: ${n.reason}.`, significance: 'major', actorKey: null, evidence: [n.reason] });
+    });
+    reg.needs.filter(n => n.status === 'resolved' && before.needs.has(n.category) && LR_SEV_RANK[before.needs.get(n.category)!] >= 3).forEach(n => lrPushHistory(reg, { turn, kind: 'need_resolved', text: `${reg.name}'s ${LR_NEED_LABEL[n.category].toLowerCase()} need was resolved.`, sourceEventId: ctx.sourceEventId || null, significance: 'meaningful' }));
+    if (reg.core.ownerKey && reg.core.ownerKey !== before.core) {
+      const who = s.ownerNames[reg.core.ownerKey] || reg.core.ownerKey;
+      const poss = who === 'You' ? 'your' : `${who}'s`;
+      lrPushHistory(reg, { turn, kind: 'core', text: `${reg.name} became ${poss} core region.`, sourceEventId: null, significance: 'major' });
+      derived.push({ kind: 'core_region_emerged', regionId: reg.regionId, text: `${reg.name} appears to have become ${poss} core region.`, significance: 'major', actorKey: reg.core.ownerKey, evidence: [`${who} has held ${reg.name} since round ${reg.core.controlSince}`] });
+    }
+    if (reg.infrastructure.band === 'excellent' && regIn.infrastructure.band !== 'excellent') milestones.push('Infrastructure Hub');
+  }
+  // Trajectory from recent momentum values (short, bounded).
+  const hist = reg.momentum.history;
+  const signFlips = hist.slice(1).filter((v, i) => Math.sign(v) !== Math.sign(hist[i]) && Math.abs(v - hist[i]) > 0.3).length;
+  const avg = hist.length ? hist.reduce((a, b) => a + b, 0) / hist.length : reg.momentum.value;
+  reg.trajectory = signFlips >= 2 ? 'volatile' : avg > 0.15 ? 'improving' : avg < -0.15 ? 'deteriorating' : 'stable';
+  const changed = JSON.stringify([reg.needs, reg.opportunities, reg.risks, reg.conditions, reg.identity, reg.momentum.band, reg.development.tier, reg.specializations, reg.core.ownerKey]) !== JSON.stringify([regIn.needs, regIn.opportunities, regIn.risks, regIn.conditions, regIn.identity, regIn.momentum.band, regIn.development.tier, regIn.specializations, regIn.core.ownerKey]);
+  if (changed || ctx.initial) reg.revision = regIn.revision + 1;
+  return { region: reg, derived, milestones };
+}
+
+// ---- World Reaction input → regional change ------------------------------------------------------
+
+/** The regions a world event concerns (projects/contracts/crises resolve through canonical ids). */
+export function lrEventRegions(e: Pick<StrategicWorldEvent, 'subjectType' | 'subjectId' | 'kind' | 'tags'>, s: LRInputs): string[] {
+  if (e.subjectType === 'region') return s.regions.some(r => r.code === e.subjectId) ? [e.subjectId] : [];
+  if (e.subjectType === 'project') { const p = s.projects.find(x => x.id === e.subjectId); return p?.regionId ? [p.regionId] : []; }
+  if (e.subjectType === 'contract') { const c = s.contracts.find(x => x.id === e.subjectId); return c?.regionId ? [c.regionId] : []; }
+  if (e.subjectType === 'crisis') { const c = s.crises.find(x => x.id === e.subjectId); return c ? (c.affectedRegions.includes('ALL') ? s.regions.map(r => r.code) : c.affectedRegions.filter(x => s.regions.some(r => r.code === x))) : []; }
+  if (e.subjectType === 'market') return s.regions.filter(r => r.resources.includes(e.subjectId)).map(r => r.code);
+  if (e.subjectType === 'nation' && e.kind === 'stability_shift_major') return s.regions.map(r => r.code);
+  if (e.subjectType === 'deal') return e.tags.filter(t => t.startsWith('region:')).map(t => t.slice(7)).filter(c => s.regions.some(r => r.code === c));
+  return [];
+}
+
+const LR_SKIP_KINDS = new Set<string>(['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged']);
+
+/** Apply one World Reaction event to the regions it concerns. Structural effects are bounded and slow. */
+export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorldEvent, s: LRInputs): { state: LivingRegionsState; derived: LRDerivedEvent[]; touched: string[] } {
+  // Never react to our own derived events (World Reaction processes them once; no feedback loop).
+  if (LR_SKIP_KINDS.has(e.kind)) return { state: stateIn, derived: [], touched: [] };
+  const codes = lrEventRegions(e, s).filter(c => stateIn.regions[c]);
+  if (!codes.length) return { state: { ...stateIn, diagnostics: { ...stateIn.diagnostics, eventsIgnored: stateIn.diagnostics.eventsIgnored + 1 } }, derived: [], touched: [] };
+  const state: LivingRegionsState = { ...stateIn, regions: { ...stateIn.regions }, diagnostics: { ...stateIn.diagnostics } };
+  const derived: LRDerivedEvent[] = [];
+  const turn = s.turn;
+  codes.forEach(code => {
+    const base = state.regions[code];
+    const reg: DynamicRegionalState = { ...base, sectors: { ...base.sectors }, development: { ...base.development }, economy: { ...base.economy }, momentum: { ...base.momentum }, conditions: base.conditions.map(c => ({ ...c })), history: [...base.history], evidence: [...base.evidence] };
+    const bottleneck = reg.conditions.some(c => c.kind === 'infrastructure_bottleneck');
+    const pulse = (v: number) => { const p = v > 0 ? v * (1 - Math.max(0, reg.momentum.value)) * (bottleneck ? 0.5 : 1) : v * (1 + Math.min(0, reg.momentum.value) * 0.5); reg.momentum.value = lrR(lrClamp(reg.momentum.value + p, -1, 1)); };
+    const grow = (sectors: LRSector[], first: number, rest: number, why: string) => sectors.forEach((sc, i) => { reg.sectors[sc] = lrR(lrGain(reg.sectors[sc] || 0, i === 0 ? first : rest), 1); lrPushEvidence(reg, turn, why, `sector:${sc}`, e.id); });
+    const structural = (v: number) => { reg.development.structural = lrR(lrClamp(reg.development.structural + (v > 0 ? v * (1 - reg.development.structural / 40) : v), 0, 30), 1); };
+    const econ = (v: number) => { reg.economy.score = Math.round(lrClamp(reg.economy.score + v, 0, 100)); };
+    switch (e.kind) {
+      case 'project_completed': {
+        const p = s.projects.find(x => x.id === e.subjectId);
+        const prof = p ? LR_PROJECT_PROFILE[p.projectType] : null;
+        const repeat = p ? s.projects.filter(x => x.regionId === code && x.projectType === p.projectType && x.id !== p.id && /^(active|upgraded|complet)/.test(x.status)).length : 0;
+        const k = repeat ? 0.5 : 1; // diminishing returns for identical infrastructure in the same region
+        if (prof) grow(prof.sectors, 20 * k, 10 * k, `${p!.title} completed`);
+        structural(7 * k); pulse(0.35 * k); econ(6);
+        lrPushHistory(reg, { turn, kind: 'project', text: `${p?.title || 'A major project'} completed.`, sourceEventId: e.id, significance: 'major' });
+        lrPushEvidence(reg, turn, `${p?.title || 'A project'} completed`, 'infrastructure', e.id);
+        break;
+      }
+      case 'project_started': { const p = s.projects.find(x => x.id === e.subjectId); const prof = p ? LR_PROJECT_PROFILE[p.projectType] : null; if (prof) grow(prof.sectors.slice(0, 1), 4, 0, `${p!.title} under construction`); pulse(0.08); break; }
+      case 'project_stalled': pulse(-0.1); break;
+      case 'contract_completed': {
+        const c = s.contracts.find(x => x.id === e.subjectId);
+        grow(LR_CONTRACT_SECTORS[c?.contractType || ''] || [], 14, 7, `${c?.title || 'A contract'} completed`);
+        structural(3); pulse(0.2); econ(4);
+        lrPushHistory(reg, { turn, kind: 'contract', text: `${c?.title || 'A regional contract'} completed.`, sourceEventId: e.id, significance: 'major' });
+        break;
+      }
+      case 'contract_failed': pulse(-0.12); lrPushHistory(reg, { turn, kind: 'contract', text: `${s.contracts.find(x => x.id === e.subjectId)?.title || 'A contract'} failed.`, sourceEventId: e.id, significance: 'meaningful' }); break;
+      case 'crisis_escalated': {
+        pulse(-0.35); structural(-3); econ(-8);
+        lrSetCondition(reg, 'crisis_active', turn, { severity: 'high', source: 'crisis chains', sourceEventId: e.id, label: `Crisis: ${s.crises.find(x => x.id === e.subjectId)?.name || 'active crisis'}` });
+        lrPushHistory(reg, { turn, kind: 'crisis', text: `${s.crises.find(x => x.id === e.subjectId)?.name || 'A crisis'} escalated here.`, sourceEventId: e.id, significance: 'critical' });
+        lrPushEvidence(reg, turn, `${s.crises.find(x => x.id === e.subjectId)?.name || 'Crisis'} escalated`, 'crisis', e.id);
+        break;
+      }
+      case 'crisis_resolved': {
+        const failed = e.tags.includes('failed');
+        reg.conditions = reg.conditions.filter(c => c.kind !== 'crisis_active');
+        lrSetCondition(reg, 'post_crisis_recovery', turn, { expires: turn + 8, severity: failed ? 'high' : 'moderate', sourceEventId: e.id });
+        pulse(failed ? -0.1 : 0.1);
+        lrPushHistory(reg, { turn, kind: 'crisis', text: `${s.crises.find(x => x.id === e.subjectId)?.name || 'The crisis'} ${failed ? 'ended badly' : 'was resolved'}; recovery began.`, sourceEventId: e.id, significance: 'major' });
+        break;
+      }
+      case 'rival_pressure_increased': case 'region_became_contested': lrSetCondition(reg, 'high_rival_pressure', turn, { expires: turn + 3, severity: SWR_SIG_RANK[e.significance] >= 3 ? 'high' : 'moderate', source: 'world_reaction', sourceEventId: e.id }); break;
+      case 'rival_pressure_decreased': case 'region_became_safe': reg.conditions = reg.conditions.filter(c => c.kind !== 'high_rival_pressure'); break;
+      case 'region_secured': case 'region_lost': {
+        const who = s.ownerNames[e.actorId || ''] || e.actorId || 'A new holder';
+        if (SWR_SIG_RANK[e.significance] >= 3) lrPushHistory(reg, { turn, kind: 'control', text: e.kind === 'region_secured' ? `${who} took control of ${reg.name}.` : `Control of ${reg.name} changed hands.`, sourceEventId: e.id, significance: 'major' });
+        break;
+      }
+      case 'region_reinforced': {
+        // Capital commitment is weak evidence (a single deposit never transforms a region).
+        if (SWR_SIG_RANK[e.significance] >= 3) { grow(['finance'], reg.investment.band === 'overheated' ? 1 : 2, 0, 'major capital commitment'); pulse(0.05); }
+        break;
+      }
+      case 'market_shift_major': {
+        const res = e.subjectId; const sc = (LR_RESOURCE_SECTOR[res] || [])[0];
+        const up = Number(e.after?.price ?? 0) >= Number(e.before?.price ?? 0);
+        const exposure = sc ? (reg.sectors[sc] || 0) / 100 : 0;
+        pulse((up ? 0.1 : -0.1) * (0.5 + exposure)); econ((up ? 3 : -3) * (0.5 + exposure));
+        lrPushEvidence(reg, turn, `${res} prices ${up ? 'rose' : 'fell'}`, sc ? `market:${sc}` : 'market', e.id);
+        break;
+      }
+      case 'stability_shift_major': if (e.tags.includes('worse')) pulse(-0.08); break;
+      case 'diplomatic_pact_started': break; // referenced via World Reaction windows in recompute
+      default: break;
+    }
+    const out = lrRecompute(reg, s, { sourceEventId: e.id });
+    state.regions[code] = out.region;
+    out.derived.forEach(d => derived.push({ ...d, id: `lre_${turn}_${lrHash([d.kind, d.regionId, e.id])}`, turn, causedByEventId: e.id, rootEventId: e.rootEventId, reactionDepth: e.reactionDepth + 1 }));
+    out.milestones.forEach(m => lrAddMilestone(state, turn, code, m));
+  });
+  state.derived = [...state.derived, ...derived].slice(-LR_LIMITS.derived);
+  state.diagnostics.eventsApplied += 1; state.diagnostics.derivedEmitted += derived.length; state.diagnostics.lastRegions = codes;
+  state.revision += 1;
+  return { state, derived, touched: codes };
+}
+
+function lrAddMilestone(state: LivingRegionsState, turn: number, code: string, label: string): void {
+  // National "firsts" are recorded once; regional milestones once per region.
+  const national = label === 'First Advanced Region';
+  if (state.milestones.some(m => m.label === label && (national || m.regionId === code))) return;
+  state.milestones = [...state.milestones, { id: `lrm_${code}_${label.replace(/\W+/g, '_').toLowerCase()}`, turn, regionId: code, label }].slice(-LR_LIMITS.milestones);
+}
+
+/** Round boundary: momentum settles (decay + economic direction), evidence decays toward the seed, persistence rules fire. */
+export function lrAdvanceRound(stateIn: LivingRegionsState, s: LRInputs): { state: LivingRegionsState; derived: LRDerivedEvent[] } {
+  if (stateIn.lastRound !== null && s.turn <= stateIn.lastRound) return { state: stateIn, derived: [] };
+  const state: LivingRegionsState = { ...stateIn, regions: { ...stateIn.regions }, diagnostics: { ...stateIn.diagnostics } };
+  const derived: LRDerivedEvent[] = [];
+  const turn = s.turn;
+  Object.keys(state.regions).sort().forEach(code => {
+    const base = state.regions[code];
+    const r = lrRegionIn(s, code);
+    const seed = lrSeedSectors(r?.resources || []);
+    const reg: DynamicRegionalState = { ...base, sectors: { ...base.sectors }, economy: { ...base.economy }, momentum: { ...base.momentum, history: [...base.momentum.history] }, investment: { ...base.investment, recent: [...base.investment.recent] }, development: { ...base.development } };
+    // Economy: smoothed toward the canonical reading; momentum = decayed momentum + direction of the economy.
+    const raw = lrRawEconomy(s, code, reg);
+    const prevEcon = reg.economy.lastRoundScore;
+    reg.economy.score = Math.round(0.6 * reg.economy.score + 0.4 * raw);
+    reg.momentum.value = lrR(lrClamp(reg.momentum.value * 0.8 + (reg.economy.score - prevEcon) / 25, -1, 1));
+    reg.economy.lastRoundScore = reg.economy.score;
+    reg.momentum.history = [...reg.momentum.history, reg.momentum.value].slice(-LR_LIMITS.momentumHistory);
+    // Evidence slowly relaxes toward the region's seed (history persists, but only sustained activity holds a specialization).
+    (Object.keys(reg.sectors) as LRSector[]).forEach(sc => { const sd = seed[sc] || 0; const v = (reg.sectors[sc] || 0) - ((reg.sectors[sc] || 0) - sd) * 0.03; if (v < 0.5 && !sd) delete reg.sectors[sc]; else reg.sectors[sc] = lrR(v, 1); });
+    // Investment pressure from the canonical deposit history.
+    const total = r ? lrTotalDeposits(r) : 0;
+    const last = reg.investment.recent.length ? reg.investment.recent[reg.investment.recent.length - 1] : total;
+    const inflow = total - last;
+    reg.investment.recent = [...reg.investment.recent, total].slice(-LR_LIMITS.investmentHistory);
+    const high = inflow >= 3000 || (last > 0 && inflow / last >= 0.4 && inflow >= 1000);
+    reg.investment.highStreak = high ? reg.investment.highStreak + 1 : 0;
+    reg.investment.band = high ? (reg.investment.highStreak >= 2 && total >= 15000 ? 'overheated' : 'high') : inflow <= 0 && total < 1000 ? 'low' : 'normal';
+    if (high) {
+      const surgeCond: RegionalCondition = { id: `cond_${code}_investment_surge`, kind: 'investment_surge', label: 'Investment Surge', source: 'living_regions', sourceEventId: null, startTurn: turn, expiresTurn: turn + 2, severity: reg.investment.band === 'overheated' ? 'high' : 'moderate', effects: LR_CONDITION_EFFECTS.investment_surge };
+      reg.conditions = [...reg.conditions.filter(c => c.kind !== 'investment_surge'), surgeCond].slice(-LR_LIMITS.conditions);
+      // Sustained investment is slow structural evidence (bounded; overheated regions gain less).
+      if (reg.investment.highStreak >= 2) reg.development.structural = lrR(lrClamp(reg.development.structural + (reg.investment.band === 'overheated' ? 0.5 : 1), 0, 30), 1);
+    }
+    if (reg.momentum.history.slice(-3).length === 3 && reg.momentum.history.slice(-3).every(v => v < -0.15)) {
+      const stag: RegionalCondition = { id: `cond_${code}_regional_stagnation`, kind: 'regional_stagnation', label: 'Regional Stagnation', source: 'living_regions', sourceEventId: null, startTurn: turn, expiresTurn: turn + 2, severity: 'moderate', effects: LR_CONDITION_EFFECTS.regional_stagnation };
+      reg.conditions = [...reg.conditions.filter(c => c.kind !== 'regional_stagnation'), stag].slice(-LR_LIMITS.conditions);
+    }
+    const out = lrRecompute(reg, s, { boundary: true });
+    state.regions[code] = out.region;
+    out.derived.forEach(d => derived.push({ ...d, id: `lre_${turn}_${lrHash([d.kind, d.regionId, 'round'])}`, turn, causedByEventId: null, rootEventId: null, reactionDepth: 0 }));
+    out.milestones.forEach(m => lrAddMilestone(state, turn, code, m));
+  });
+  state.lastRound = turn;
+  state.derived = [...state.derived, ...derived].slice(-LR_LIMITS.derived);
+  state.diagnostics.roundsAdvanced += 1; state.diagnostics.derivedEmitted += derived.length;
+  state.hashes = lrInputHashes(s);
+  state.revision += 1;
+  return { state, derived };
+}
+
+/** Per-domain hashes: only regions whose canonical inputs changed are re-read on a sync. */
+export function lrInputHashes(s: LRInputs): Record<string, string> {
+  const out: Record<string, string> = {};
+  s.regions.forEach(r => {
+    out[r.code] = lrHash([r.controller, r.devTier, Math.round(r.devProgress * 10), r.stability === null ? null : Math.round(r.stability), s.projects.filter(p => p.regionId === r.code).map(p => [p.id, p.status]), s.contracts.filter(c => c.regionId === r.code).map(c => [c.id, c.status]), lrRegionCrises(s, r.code).map(c => c.id), s.windows.filter(w => w.subject === r.code && w.status === 'open').map(w => w.id), r.resources.map(x => Math.round(((s.prices[x] || 0) / (s.basePrices[x] || 1)) * 20))]);
+  });
+  return out;
+}
+
+/** Canonical changes without a world event (e.g. a project status flip): re-read ONLY impacted regions. */
+export function lrSyncCanonical(stateIn: LivingRegionsState, s: LRInputs): { state: LivingRegionsState; derived: LRDerivedEvent[]; touched: string[] } {
+  const hashes = lrInputHashes(s);
+  const touched = Object.keys(hashes).filter(k => stateIn.hashes[k] !== hashes[k] && stateIn.regions[k]);
+  // New regions (e.g. an expansion) are initialised from canonical state.
+  const missing = s.regions.filter(r => !stateIn.regions[r.code]);
+  if (!touched.length && !missing.length) return { state: stateIn, derived: [], touched: [] };
+  const state: LivingRegionsState = { ...stateIn, regions: { ...stateIn.regions }, diagnostics: { ...stateIn.diagnostics, syncs: stateIn.diagnostics.syncs + 1, lastRegions: touched } };
+  const derived: LRDerivedEvent[] = [];
+  missing.forEach(r => { state.regions[r.code] = initializeLivingRegions({ ...s, regions: [r] }).regions[r.code]; });
+  touched.forEach(code => {
+    const out = lrRecompute(state.regions[code], s, {});
+    state.regions[code] = out.region;
+    out.derived.forEach(d => derived.push({ ...d, id: `lre_${s.turn}_${lrHash([d.kind, d.regionId, 'sync', hashes[code]])}`, turn: s.turn, causedByEventId: null, rootEventId: null, reactionDepth: 0 }));
+    out.milestones.forEach(m => lrAddMilestone(state, s.turn, code, m));
+  });
+  state.hashes = hashes;
+  state.derived = [...state.derived, ...derived].slice(-LR_LIMITS.derived);
+  // Only a MATERIAL regional change bumps the revision (GI answers stay fresh through cosmetic re-reads).
+  const material = missing.length > 0 || touched.some(code => state.regions[code].revision !== stateIn.regions[code]?.revision);
+  if (material) state.revision += 1;
+  return { state, derived, touched: material ? touched : [] };
+}
+
+/** A Living Regions derived event as a World Reaction event (public: it is interpreted from public world state). */
+export function lrToWorldEvent(d: LRDerivedEvent, s: LRInputs, observers: string[], day = 0): StrategicWorldEvent {
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'living_regions', sourceEventId: d.causedByEventId, actorId: d.actorKey, teamId: d.actorKey ? (s.ownerTeams[d.actorKey] ?? null) : null, kind: d.kind as SWRKind, subjectType: 'region', subjectId: d.regionId, magnitude: 0,
+    significance: d.significance, visibility: 'public', observers, evidence: d.evidence.slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'economy'], tags: ['living_regions', `region:${d.regionId}`], layer: 'world',
+    confidence: d.kind === 'core_region_emerged' ? 'moderate' : 'high', claimKind: d.kind === 'core_region_emerged' ? 'inference' : 'calculated', causedByEventId: d.causedByEventId, contributingCauses: [], rootEventId: d.rootEventId || d.id, reactionDepth: d.reactionDepth,
+    expiresTurn: d.turn + 3, dedupeKey: `lr:${d.kind}:${d.regionId}:${d.turn}`
+  };
+}
+
+// ---- Persistence ---------------------------------------------------------------------------------
+
+export function sanitizeLivingRegionsState(raw: unknown): LivingRegionsState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw;
+  const out = createEmptyLivingRegionsState();
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const str = (v: any, d = '') => (typeof v === 'string' ? v.slice(0, 200) : d);
+  const oneOf = <T extends string>(v: any, list: readonly T[], d: T): T => (list.includes(v) ? v : d);
+  out.revision = Math.max(0, num(r.revision)); out.initializedTurn = r.initializedTurn === null ? null : num(r.initializedTurn, 0); out.lastRound = r.lastRound === null || r.lastRound === undefined ? null : num(r.lastRound);
+  const tiers: LRDevTier[] = ['underdeveloped', 'emerging', 'developing', 'advanced', 'highly_developed'];
+  const econ: LREconomyBand[] = ['depressed', 'weak', 'moderate', 'strong', 'booming'];
+  const mom: LRMomentumBand[] = ['declining', 'weakening', 'stable', 'growing', 'rapid_growth', 'booming'];
+  const sev: LRSeverity[] = ['low', 'moderate', 'high', 'critical'];
+  Object.entries(r.regions && typeof r.regions === 'object' ? r.regions : {}).slice(0, 16).forEach(([code, g]: [string, any]) => {
+    if (!g || typeof g !== 'object') return;
+    const reg = lrBlankRegion(code.slice(0, 8), str(g.name, code));
+    reg.development = { score: num(g.development?.score), tier: oneOf(g.development?.tier, tiers, 'underdeveloped'), structural: lrClamp(num(g.development?.structural), 0, 30), canonicalTier: num(g.development?.canonicalTier) };
+    reg.economy = { score: lrClamp(num(g.economy?.score, 30), 0, 100), band: oneOf(g.economy?.band, econ, 'weak'), lastRoundScore: lrClamp(num(g.economy?.lastRoundScore, 30), 0, 100) };
+    reg.momentum = { value: lrClamp(num(g.momentum?.value), -1, 1), band: oneOf(g.momentum?.band, mom, 'stable'), history: (Array.isArray(g.momentum?.history) ? g.momentum.history : []).map((x: any) => lrClamp(num(x), -1, 1)).slice(-LR_LIMITS.momentumHistory) };
+    if (g.infrastructure && typeof g.infrastructure === 'object') reg.infrastructure = { quality: num(g.infrastructure.quality), band: oneOf(g.infrastructure.band, ['poor', 'basic', 'moderate', 'strong', 'excellent'] as const, 'poor'), capacity: { transport: num(g.infrastructure.capacity?.transport), energy: num(g.infrastructure.capacity?.energy), water: num(g.infrastructure.capacity?.water), technology: num(g.infrastructure.capacity?.technology), trade: num(g.infrastructure.capacity?.trade) }, active: (g.infrastructure.active || []).map(String).slice(0, 8), building: (g.infrastructure.building || []).map(String).slice(0, 8), damaged: (g.infrastructure.damaged || []).map(String).slice(0, 8) };
+    Object.entries(g.sectors && typeof g.sectors === 'object' ? g.sectors : {}).forEach(([k, v]) => { if (LR_SECTORS.includes(k as LRSector) && typeof v === 'number') reg.sectors[k as LRSector] = lrClamp(v, 0, 100); });
+    const spec = g.specializations || {};
+    const sec = (v: any) => (LR_SECTORS.includes(v) ? v as LRSector : null);
+    reg.specializations = { primary: sec(spec.primary), secondary: sec(spec.secondary), emerging: sec(spec.emerging), established: (Array.isArray(spec.established) ? spec.established : []).map(sec).filter(Boolean).slice(0, 4) as LRSector[], pending: spec.pending && sec(spec.pending.sector) ? { sector: sec(spec.pending.sector)!, change: spec.pending.change === 'primary' ? 'primary' : 'establish', since: num(spec.pending.since) } : null };
+    reg.needs = (Array.isArray(g.needs) ? g.needs : []).filter((n: any) => n && typeof n.category === 'string').slice(0, LR_LIMITS.needs + 2).map((n: any) => ({ id: str(n.id), category: n.category, severity: oneOf(n.severity, sev, 'low'), score: lrClamp(num(n.score), 0, 100), trend: oneOf(n.trend, ['rising', 'steady', 'easing'] as const, 'steady'), reason: str(n.reason), sourceEvents: (n.sourceEvents || []).map(String).slice(-3), openedTurn: num(n.openedTurn), lastUpdatedTurn: num(n.lastUpdatedTurn), status: n.status === 'resolved' ? 'resolved' : 'open' }));
+    reg.opportunities = (Array.isArray(g.opportunities) ? g.opportunities : []).filter((o: any) => o && typeof o.kind === 'string').slice(0, LR_LIMITS.opportunities).map((o: any) => ({ id: str(o.id), kind: o.kind, label: str(o.label), reason: str(o.reason), strength: oneOf(o.strength, ['low', 'moderate', 'high'] as const, 'moderate'), sinceTurn: num(o.sinceTurn) }));
+    reg.risks = (Array.isArray(g.risks) ? g.risks : []).filter((o: any) => o && typeof o.kind === 'string').slice(0, LR_LIMITS.risks).map((o: any) => ({ id: str(o.id), kind: o.kind, label: str(o.label), reason: str(o.reason), severity: oneOf(o.severity, sev, 'moderate'), sinceTurn: num(o.sinceTurn) }));
+    reg.conditions = (Array.isArray(g.conditions) ? g.conditions : []).filter((c: any) => c && typeof c.kind === 'string').slice(0, LR_LIMITS.conditions).map((c: any) => ({ id: str(c.id), kind: c.kind, label: str(c.label), source: str(c.source), sourceEventId: c.sourceEventId ? str(c.sourceEventId) : null, startTurn: num(c.startTurn), expiresTurn: c.expiresTurn === null || c.expiresTurn === undefined ? null : num(c.expiresTurn), severity: oneOf(c.severity, sev, 'moderate'), effects: (c.effects || []).map(String).slice(0, 4) }));
+    reg.history = (Array.isArray(g.history) ? g.history : []).filter((h: any) => h && typeof h.text === 'string').slice(-LR_LIMITS.history).map((h: any) => ({ turn: num(h.turn), kind: str(h.kind), text: str(h.text), sourceEventId: h.sourceEventId ? str(h.sourceEventId) : null, significance: oneOf(h.significance, ['meaningful', 'major', 'critical'] as const, 'meaningful') }));
+    reg.identity = { label: str(g.identity?.label), since: num(g.identity?.since), candidate: g.identity?.candidate ? str(g.identity.candidate) : null, candidateSince: g.identity?.candidateSince === null || g.identity?.candidateSince === undefined ? null : num(g.identity.candidateSince) };
+    reg.investment = { band: oneOf(g.investment?.band, ['low', 'normal', 'high', 'overheated'] as const, 'normal'), recent: (g.investment?.recent || []).map((x: any) => num(x)).slice(-LR_LIMITS.investmentHistory), highStreak: num(g.investment?.highStreak) };
+    reg.trajectory = oneOf(g.trajectory, ['improving', 'stable', 'deteriorating', 'volatile'] as const, 'stable');
+    reg.core = { ownerKey: g.core?.ownerKey ? str(g.core.ownerKey) : null, since: g.core?.since === null || g.core?.since === undefined ? null : num(g.core.since), controller: g.core?.controller ? str(g.core.controller) : null, controlSince: g.core?.controlSince === null || g.core?.controlSince === undefined ? null : num(g.core.controlSince) };
+    reg.evidence = (Array.isArray(g.evidence) ? g.evidence : []).slice(-LR_LIMITS.evidence).map((x: any) => ({ turn: num(x.turn), text: str(x.text), effect: str(x.effect), sourceEventId: x.sourceEventId ? str(x.sourceEventId) : null }));
+    reg.stability = { value: g.stability?.value === null || g.stability?.value === undefined ? null : num(g.stability.value), band: oneOf(g.stability?.band, ['fragile', 'unsettled', 'stable', 'high', 'unknown'] as const, 'unknown') };
+    if (g.strategicValue && typeof g.strategicValue === 'object') reg.strategicValue = { score: num(g.strategicValue.score), band: oneOf(g.strategicValue.band, ['low', 'moderate', 'high', 'very_high'] as const, 'low'), inputs: Object.fromEntries(Object.entries(g.strategicValue.inputs || {}).filter(([, v]) => typeof v === 'number').slice(0, 12)) as Record<string, number> };
+    reg.lastMeaningfulTurn = num(g.lastMeaningfulTurn); reg.revision = num(g.revision);
+    out.regions[reg.regionId] = reg;
+  });
+  out.derived = (Array.isArray(r.derived) ? r.derived : []).filter((d: any) => d && typeof d.kind === 'string').slice(-LR_LIMITS.derived).map((d: any) => ({ id: str(d.id), turn: num(d.turn), kind: d.kind, regionId: str(d.regionId), text: str(d.text), significance: d.significance === 'major' ? 'major' : 'meaningful', causedByEventId: d.causedByEventId ? str(d.causedByEventId) : null, rootEventId: d.rootEventId ? str(d.rootEventId) : null, reactionDepth: num(d.reactionDepth), actorKey: d.actorKey ? str(d.actorKey) : null, evidence: (d.evidence || []).map(String).slice(0, 3) }));
+  out.milestones = (Array.isArray(r.milestones) ? r.milestones : []).filter((m: any) => m && typeof m.label === 'string').slice(-LR_LIMITS.milestones).map((m: any) => ({ id: str(m.id), turn: num(m.turn), regionId: str(m.regionId), label: str(m.label) }));
+  if (r.hashes && typeof r.hashes === 'object') Object.entries(r.hashes).slice(0, 16).forEach(([k, v]) => { if (typeof v === 'string') out.hashes[k.slice(0, 8)] = v.slice(0, 16); });
+  const d: any = r.diagnostics || {};
+  out.diagnostics = { eventsApplied: num(d.eventsApplied), eventsIgnored: num(d.eventsIgnored), roundsAdvanced: num(d.roundsAdvanced), syncs: num(d.syncs), derivedEmitted: num(d.derivedEmitted), lastMs: num(d.lastMs), lastRegions: (d.lastRegions || []).map(String).slice(0, 8) };
+  return out;
+}
+
+// ---- Living Regions → consumers (each system keeps ownership of its own decision) -------------------
+
+/** What an observer may see about who is invested where. Under fog only public control is exact. */
+export function lrVisiblePresence(s: LRInputs, code: string, viewerKeys: string[]): Array<{ ownerKey: string; name: string; amount: number | null; band: 'none' | 'small' | 'significant' | 'dominant' | 'unknown'; controls: boolean }> {
+  const r = s.regions.find(x => x.code === code);
+  if (!r) return [];
+  const total = Object.values(r.deposits).reduce((a, b) => a + Math.max(0, b || 0), 0);
+  return Object.entries(r.deposits).filter(([, v]) => v > 0).map(([k, v]) => {
+    const own = viewerKeys.includes(k);
+    const controls = r.controller === k;
+    const band = total > 0 ? (v / total >= 0.6 ? 'dominant' : v / total >= 0.3 ? 'significant' : 'small') : 'none';
+    if (own || !s.fogOfWar) return { ownerKey: k, name: s.ownerNames[k] || k, amount: v, band, controls } as const;
+    // Fog: never reveal hidden amounts — only what control publicly shows.
+    return { ownerKey: k, name: s.ownerNames[k] || k, amount: null, band: controls ? 'significant' : 'unknown', controls } as const;
+  }).filter(p => !s.fogOfWar || p.amount !== null || p.controls).sort((a, b) => Number(b.controls) - Number(a.controls) || a.ownerKey.localeCompare(b.ownerKey));
+}
+
+/**
+ * STRATEGY-SIDE, actor-specific importance of a region (0.8..1.6). Living Regions only supplies world state;
+ * this valuation is what a rival/diplomacy/Team OS computes for ITSELF, from what it may know.
+ */
+export function lrActorRegionValuation(lr: LivingRegionsState | null | undefined, s: LRInputs | null, code: string, ownerKey: string, ownActorIds: string[] = [ownerKey]): { multiplier: number; reasons: string[] } {
+  const reg = lr?.regions[code];
+  if (!reg) return { multiplier: 1, reasons: [] };
+  let m = 1; const reasons: string[] = [];
+  const sv = reg.strategicValue.band;
+  if (sv === 'very_high') { m += 0.2; reasons.push(`${reg.name} is very valuable (${reg.identity.label})`); } else if (sv === 'high') { m += 0.1; reasons.push(`${reg.name} is valuable`); } else if (sv === 'low') m -= 0.1;
+  if (reg.core.ownerKey === ownerKey) { m += 0.35; reasons.push(`${reg.name} is its core region`); }
+  const r = s?.regions.find(x => x.code === code);
+  const own = r ? ownActorIds.reduce((a, id) => a + (Number(r.deposits[id]) || 0), 0) + (Number(r.deposits[ownerKey]) || 0) : 0;
+  const standing = s ? Math.max(0, ...ownActorIds.map(id => s.standing[id]?.[code] || 0)) : 0;
+  if (standing >= 40) { m += 0.08; reasons.push('strong local standing'); }
+  if (own > 0 && reg.infrastructure.active.length) { m += 0.05; reasons.push('existing investment and infrastructure there'); }
+  if (LR_MOM_RANK[reg.momentum.band] >= 3) { m += 0.08; reasons.push(`${reg.name} is ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()}`); }
+  else if (LR_MOM_RANK[reg.momentum.band] <= 1) m -= 0.06;
+  if (reg.opportunities.some(o => o.strength === 'high')) { m += 0.06; reasons.push(reg.opportunities.find(o => o.strength === 'high')!.label.toLowerCase()); }
+  if (reg.risks.some(x => x.kind === 'market_exposure' && x.severity === 'high')) m -= 0.05;
+  return { multiplier: lrR(lrClamp(m, 0.8, 1.6)), reasons: reasons.slice(0, 3) };
+}
+
+/** Rival AI: bounded score adjustment on region-targeting candidates (never removes or adds options). */
+export function lrAdjustAiDecisions<T extends { type?: string; score?: number; data?: any; plan?: any }>(decisions: T[], lr: LivingRegionsState | null | undefined, s: LRInputs | null, actorId: string, ownerKey: string): T[] {
+  if (!lr || !decisions.length) return decisions;
+  return decisions.map(d => {
+    const data = d.data || {};
+    const region: string | undefined = data.region || data.regionId || data.targetRegion || d.plan?.target;
+    if (!region || !lr.regions[region] || !/deposit|invest|challenge|claim|control|defend|reinforce|travel|contract|project/i.test(String(d.type || ''))) return d;
+    const v = lrActorRegionValuation(lr, s, region, ownerKey, [actorId]);
+    const bonus = lrR(lrClamp((v.multiplier - 1) * 20, -6, 12), 1);
+    if (!bonus) return d;
+    return { ...d, score: (d.score || 0) + bonus, regionalInfluence: bonus, regionalReasons: v.reasons } as T;
+  });
+}
+
+/** Diplomacy: regional bargaining context (value multiplier + core status). Diplomacy decides the response. */
+export function lrDiplomacyContext(lr: LivingRegionsState | null | undefined): Record<string, { valueMultiplier: number; coreFor: string | null; label: string; momentum: LRMomentumBand; development: LRDevTier }> {
+  const out: Record<string, { valueMultiplier: number; coreFor: string | null; label: string; momentum: LRMomentumBand; development: LRDevTier }> = {};
+  Object.values(lr?.regions || {}).forEach(reg => {
+    const band = reg.strategicValue.band;
+    const base = band === 'very_high' ? 1.35 : band === 'high' ? 1.18 : band === 'moderate' ? 1 : 0.9;
+    const mom = LR_MOM_RANK[reg.momentum.band] >= 3 ? 0.08 : LR_MOM_RANK[reg.momentum.band] <= 1 ? -0.06 : 0;
+    const dev = LR_DEV_BOUNDS.findIndex(x => x[0] === reg.development.tier) >= 3 ? 0.1 : 0;
+    const econ = reg.economy.band === 'strong' || reg.economy.band === 'booming' ? 0.05 : 0;
+    out[reg.regionId] = { valueMultiplier: lrR(lrClamp(base + mom + dev + econ, 0.85, 1.5)), coreFor: reg.core.ownerKey, label: reg.identity.label, momentum: reg.momentum.band, development: reg.development.tier };
+  });
+  return out;
+}
+
+/** Team OS: regional opportunity/risk/value as ranking inputs (Team OS assigns tasks). */
+export function lrTeamOsRegional(lr: LivingRegionsState | null | undefined, code: string): { value: number; opportunity: number; risk: number; label: string } | undefined {
+  const reg = lr?.regions[code];
+  if (!reg) return undefined;
+  const opp = reg.opportunities.reduce((a, o) => a + (o.strength === 'high' ? 2 : o.strength === 'moderate' ? 1 : 0.5), 0);
+  const risk = reg.risks.reduce((a, x) => a + LR_SEV_RANK[x.severity] / 2, 0);
+  return { value: reg.strategicValue.score, opportunity: lrR(opp, 1), risk: lrR(risk, 1), label: `${reg.identity.label}; ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()}${reg.opportunities[0] ? `; ${reg.opportunities[0].label.toLowerCase()}` : ''}` };
+}
+
+/** GI3 (owner decides): a regional shift in a goal region becomes a strategy notice; goals are never changed. */
+export function gi3ConsiderRegionalChange(state: GI3StrategyState, e: StrategicWorldEvent): GI3StrategyState {
+  const active = state.active;
+  if (!active || active.status !== 'active' || e.sourceSystem !== 'living_regions') return state;
+  const goal = active.goals.find(g => g.regionId === e.subjectId && g.status !== 'completed' && g.status !== 'removed');
+  if (!goal) return state;
+  const id = `lr_${e.kind}_${e.subjectId}_${e.turn}`.slice(0, 80);
+  if (state.notices.some(n => n.id === id)) return state;
+  const positive = e.kind === 'regional_growth_accelerated' || e.kind === 'region_entered_boom' || e.kind === 'specialization_established';
+  const text = positive ? `${e.strategicMeaning} Your “${goal.label}” goal is now more attractive — and likely more contested.` : e.kind === 'regional_need_became_critical' ? `${e.strategicMeaning} This affects your “${goal.label}” goal.` : e.kind === 'core_region_emerged' ? `${e.strategicMeaning} Expect stronger resistance to “${goal.label}”.` : `${e.strategicMeaning} Your “${goal.label}” goal is less rewarding than it was.`;
+  return { ...state, notices: [...state.notices, { id, kind: 'recommend_change' as const, text: text.slice(0, 240), revision: active.revision, turn: e.turn, dismissed: false }].slice(-GI3_LIMITS.notices) };
+}
+
+/** Background AI (owner ranks): regional trends as attention items / opportunities, from public regional state. */
+export function backgroundLivingRegionInputs(world: GIWorld): { attention: BackgroundAttentionItem[]; opportunities: BackgroundOpportunity[] } {
+  const v = world.livingRegions;
+  if (!v) return { attention: [], opportunities: [] };
+  const attention: BackgroundAttentionItem[] = [];
+  const opportunities: BackgroundOpportunity[] = [];
+  Object.values(v.state.regions).sort((a, b) => b.strategicValue.score - a.strategicValue.score || a.regionId.localeCompare(b.regionId)).forEach(reg => {
+    const bottleneck = reg.risks.find(x => x.kind === 'infrastructure_bottleneck');
+    const critical = reg.needs.find(n => n.status === 'open' && n.severity === 'critical');
+    if (bottleneck) {
+      const need = reg.needs.find(n => n.status === 'open' && (n.category === 'transport' || n.category === 'energy'));
+      const proj = v.inputs?.projects.find(p => p.regionId === reg.regionId && (p.status === 'unlocked' || p.status === 'under_construction') && need && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[need.category]!] || 0) > 0);
+      attention.push({ id: `lr_bn_${reg.regionId}`, domain: 'regions', subject: reg.regionId, importance: 'high', urgency: 'soon', confidence: 'moderate', reversibility: 'reversible', deadline: null, trend: 'rising', reason: `${reg.name} is growing faster than its ${need ? LR_NEED_LABEL[need.category].toLowerCase() : 'infrastructure'} capacity.${proj ? ` Completing ${proj.title} would support its ${reg.specializations.primary ? LR_SECTOR_LABEL[reg.specializations.primary].toLowerCase() + ' ' : ''}expansion.` : ''}`, evidence: [bottleneck.reason, need?.reason || ''].filter(Boolean).slice(0, 2), lastUpdated: world.turn, status: 'active' });
+    }
+    if (critical) attention.push({ id: `lr_need_${reg.regionId}_${critical.category}`, domain: 'regions', subject: reg.regionId, importance: 'high', urgency: 'soon', confidence: 'high', reversibility: 'reversible', deadline: null, trend: critical.trend === 'rising' ? 'rising' : 'stable', reason: `${reg.name}'s ${LR_NEED_LABEL[critical.category].toLowerCase()} need is critical: ${critical.reason}.`, evidence: [critical.reason], lastUpdated: world.turn, status: 'active' });
+    if (LR_MOM_RANK[reg.momentum.band] >= 4 || (reg.momentum.band === 'growing' && reg.history.some(h => h.kind === 'momentum' && world.turn - h.turn <= 1))) attention.push({ id: `lr_grow_${reg.regionId}`, domain: 'regions', subject: reg.regionId, importance: 'medium', urgency: 'soon', confidence: 'high', reversibility: 'reversible', deadline: null, trend: 'rising', reason: `${reg.name} is entering a growth phase (${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()}): ${lrStorySummary(reg, v.inputs, v.viewerKeys)}`, evidence: reg.evidence.slice(-2).map(e => e.text), lastUpdated: world.turn, status: 'active' });
+    reg.opportunities.filter(o => o.strength === 'high').slice(0, 1).forEach(o => opportunities.push({ id: `lr_${o.id}`.slice(0, 80), type: o.kind === 'cheap_entry' ? 'cheap_expansion' : o.kind === 'infrastructure_gap' ? 'infrastructure_affordable' : o.kind === 'contract_wave' ? 'profitable_contract' : 'strategic_window', subject: reg.regionId, value: null, urgency: 'soon', confidence: 'moderate', expiresTurn: null, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${reg.name}: ${o.reason}`, actionIds: [] }));
+  });
+  return { attention: attention.slice(0, 4), opportunities: opportunities.slice(0, 3) };
+}
+
+/** Contextual Actions: legal actions touching a region with an open need/opportunity rank higher (never invented). */
+export function annotateContextualActionsWithRegions(set: ContextualActionSet, lr: LivingRegionsState | null | undefined): ContextualActionSet {
+  if (!lr) return set;
+  const touch = (c: ContextualActionCandidate): ContextualActionCandidate => {
+    if (!c.legal) return c;
+    const text = `${c.label} ${c.description}`;
+    const reg = Object.values(lr.regions).find(r => new RegExp(`\\b(${r.regionId}|${r.name})\\b`).test(text));
+    if (!reg) return c;
+    const up = text.toUpperCase();
+    const need = reg.needs.find(n => n.status === 'open' && LR_SEV_RANK[n.severity] >= 3 && ((n.category === 'transport' && /RAIL|LOGISTIC|TRANSPORT/.test(up)) || (n.category === 'energy' && /ENERGY|WIND|HYDRO|HYDROGEN|RENEWABLE|GRID/.test(up)) || (n.category === 'water' && /DESAL|WATER/.test(up)) || (n.category === 'technology' && /CABLE|TECH|RESEARCH/.test(up)) || (n.category === 'emergency_relief' && /RELIEF|DISASTER/.test(up)) || (n.category === 'capital' && /DEPOSIT|INVEST/.test(up))));
+    const opp = reg.opportunities.find(o => o.strength === 'high' && ((o.kind === 'cheap_entry' && /DEPOSIT|CLAIM|CONTROL/.test(up)) || (o.kind === 'infrastructure_gap' && /INVEST|PROJECT|BUILD/.test(up)) || (o.kind === 'contract_wave' && /CONTRACT/.test(up))));
+    if (!need && !opp) return c;
+    const why = need ? `Region: ${reg.name} has a ${need.severity} ${LR_NEED_LABEL[need.category].toLowerCase()} need` : `Region: ${opp!.label} in ${reg.name}`;
+    if (c.reasons.includes(why)) return c;
+    return { ...c, relevance: c.relevance + (need ? 6 : 4), reasons: [...c.reasons, why].slice(0, 6) };
+  };
+  return { ...set, recommended: set.recommended ? touch(set.recommended) : null, useful: set.useful.map(touch), available: set.available.map(touch), ranked: set.ranked.map(touch) };
+}
+
+/** Contract relevance from regional needs/specialization/momentum (the Contract Engine stays canonical). */
+export function lrContractRelevance(lr: LivingRegionsState | null | undefined, contract: { regionId?: string | null; issuingRegionId?: string | null; contractType?: string }): { score: number; reasons: string[] } {
+  const code = contract.regionId || contract.issuingRegionId || null;
+  const reg = code ? lr?.regions[code] : null;
+  if (!reg || !contract.contractType) return { score: 0, reasons: [] };
+  let score = 0; const reasons: string[] = [];
+  reg.needs.filter(n => n.status === 'open' && (LR_NEED_CONTRACTS[n.category] || []).includes(contract.contractType!)).forEach(n => { score += LR_SEV_RANK[n.severity] * 10; reasons.push(`${reg.name} has ${n.severity === 'critical' ? 'a critical' : n.severity === 'high' ? 'high' : 'some'} ${LR_NEED_LABEL[n.category].toLowerCase()} demand`); });
+  (LR_CONTRACT_SECTORS[contract.contractType] || []).forEach(sc => {
+    const v = reg.sectors[sc] || 0;
+    if (reg.specializations.established.includes(sc)) { score += 12; reasons.push(`an established ${LR_SECTOR_LABEL[sc].toLowerCase()} specialization`); }
+    else if (v >= 22) { score += 7; reasons.push(`a growing ${LR_SECTOR_LABEL[sc].toLowerCase()} specialization`); }
+  });
+  if (LR_MOM_RANK[reg.momentum.band] >= 3) { score += 5; reasons.push(`${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()} momentum`); }
+  if (reg.conditions.some(c => c.kind === 'post_crisis_recovery') && contract.contractType === 'disaster_relief_supply') { score += 15; reasons.push('post-crisis recovery'); }
+  if (reg.risks.some(x => x.kind === 'infrastructure_bottleneck')) { score += 4; reasons.push('infrastructure has not kept pace with growth'); }
+  return { score: Math.min(100, score), reasons: Array.from(new Set(reasons)).slice(0, 3) };
+}
+
+/** Crisis / national-event CONTEXT: vulnerable regions nudge eligibility (bounded; never a crisis generator). */
+export function livingRegionsCrisisContext(lr: LivingRegionsState | null | undefined): { vulnerableRegions: string[]; chanceMultiplier: number } {
+  const vulnerable = Object.values(lr?.regions || {}).filter(r => r.risks.some(x => x.kind === 'crisis_vulnerability') || r.needs.some(n => n.status === 'open' && (n.category === 'water' || n.category === 'emergency_relief') && LR_SEV_RANK[n.severity] >= 3)).map(r => r.regionId).sort();
+  return { vulnerableRegions: vulnerable, chanceMultiplier: lrR(Math.min(1.2, 1 + vulnerable.length * 0.05)) };
+}
+
+/** World Reaction crisis context + regional vulnerability, still capped (×1.5) — eligibility weighting only. */
+export function mergeRegionalCrisisContext<T extends { chanceMultiplier: number }>(ctx: T, lr: LivingRegionsState | null | undefined): T {
+  const r = livingRegionsCrisisContext(lr);
+  return { ...ctx, chanceMultiplier: Math.round(Math.min(1.5, ctx.chanceMultiplier * r.chanceMultiplier) * 100) / 100 };
+}
+
+/** Debrief: how the map changed during the match (identity shifts, specializations, cores, milestones). */
+export function buildLivingRegionsDebrief(lr: LivingRegionsState | null | undefined): string[] {
+  if (!lr) return [];
+  const rows = Object.values(lr.regions).flatMap(r => r.history.filter(h => ['identity', 'specialization', 'core', 'recovery_complete', 'development'].includes(h.kind)).map(h => ({ ...h, code: r.regionId })));
+  const lines = rows.sort((a, b) => a.turn - b.turn || a.code.localeCompare(b.code)).slice(-4).map(h => `R${h.turn}: ${h.text.replace(/\.$/, '')}`);
+  const ms = lr.milestones.slice(-3).map(m => `${m.label} — ${lr.regions[m.regionId]?.name || m.regionId}`);
+  return [...lines, ...ms];
+}
+
+/** National aggregate (read-only summary; no redundant national economy). */
+export function lrNationalTrend(lr: LivingRegionsState | null | undefined): { growing: string[]; declining: string[]; label: string } {
+  const regs = Object.values(lr?.regions || {});
+  const growing = regs.filter(r => LR_MOM_RANK[r.momentum.band] >= 3).sort((a, b) => b.momentum.value - a.momentum.value).map(r => r.regionId);
+  const declining = regs.filter(r => LR_MOM_RANK[r.momentum.band] <= 1).sort((a, b) => a.momentum.value - b.momentum.value).map(r => r.regionId);
+  const label = growing.length >= 3 && growing.length > declining.length * 2 ? 'broad national expansion' : declining.length >= 3 ? 'national slowdown' : growing.length > declining.length ? 'modest growth' : declining.length > growing.length ? 'softening' : 'steady';
+  return { growing, declining, label };
+}
+
+/** Plain-language story of a region, derived from structured state only. */
+export function lrStorySummary(reg: DynamicRegionalState, s?: LRInputs | null, viewerKeys: string[] = []): string {
+  const sp = reg.specializations;
+  const mom = LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase();
+  const kind = sp.primary ? `${LR_SECTOR_LABEL[sp.primary].toLowerCase()}${sp.secondary && sp.established.includes(sp.secondary) ? `/${LR_SECTOR_LABEL[sp.secondary].toLowerCase()}` : ''} region` : sp.secondary || sp.emerging ? `region with an emerging ${LR_SECTOR_LABEL[(sp.secondary || sp.emerging)!].toLowerCase()} base` : 'region without a clear specialization yet';
+  const parts = [`${reg.name} is a ${reg.momentum.band === 'stable' ? 'stable' : mom} ${kind} (${LR_DEV_LABEL[reg.development.tier].toLowerCase()} development).`];
+  const driver = reg.evidence.slice().reverse().find(e => e.effect === 'infrastructure' || e.effect.startsWith('sector:'));
+  if (driver && LR_MOM_RANK[reg.momentum.band] >= 3) parts.push(`Recent driver: ${driver.text.toLowerCase()}.`);
+  const risk = reg.risks[0]; const opp = reg.opportunities[0];
+  if (risk) parts.push(`${risk.label}: ${risk.reason}`);
+  else if (opp) parts.push(`Opportunity: ${opp.reason}`);
+  if (reg.core.ownerKey && s) { const who = s.ownerNames[reg.core.ownerKey] || reg.core.ownerKey; parts.push(viewerKeys.includes(reg.core.ownerKey) ? 'It is one of your core regions.' : `It appears to be ${who}'s core region.`); }
+  return parts.join(' ');
+}
+
+/** What-if (projection): the regional effect of completing a project — no state is changed. */
+export function lrPreviewProject(lr: LivingRegionsState, s: LRInputs, projectId: string): { immediate: string[]; regional: string[]; likely: string[]; second: string[] } | null {
+  const p = s.projects.find(x => x.id === projectId);
+  if (!p || !p.regionId || !lr.regions[p.regionId]) return null;
+  const sim: LRInputs = { ...s, projects: s.projects.map(x => (x.id === projectId ? { ...x, status: 'active', progress: 1 } : x)) };
+  const fakeEvent = { id: `preview_${projectId}`, turn: s.turn, day: 0, sourceSystem: 'preview', sourceEventId: null, actorId: null, teamId: null, kind: 'project_completed', subjectType: 'project', subjectId: projectId, magnitude: 100, significance: 'major', visibility: 'public', observers: [], evidence: [], before: {}, after: {}, delta: {}, strategicMeaning: '', affectedDomains: ['projects'], tags: [], layer: 'world', confidence: 'moderate', claimKind: 'projection', causedByEventId: null, contributingCauses: [], rootEventId: `preview_${projectId}`, reactionDepth: 0, expiresTurn: null, dedupeKey: `preview:${projectId}` } as StrategicWorldEvent;
+  const before = lr.regions[p.regionId];
+  const after = lrApplyWorldEvent(lr, fakeEvent, sim).state.regions[p.regionId];
+  const immediate = p.remainingCost > 0 ? [`−$${Math.round(p.remainingCost).toLocaleString()} to finish ${p.title}`] : [`${p.title} is already funded`];
+  const regional: string[] = [];
+  (Object.keys(after.infrastructure.capacity) as Array<keyof LRCapacity>).forEach(k => { const d = after.infrastructure.capacity[k] - before.infrastructure.capacity[k]; if (d >= 5) regional.push(`${k[0].toUpperCase()}${k.slice(1)} capacity ↑ (${before.infrastructure.capacity[k]} → ${after.infrastructure.capacity[k]})`); });
+  if (after.infrastructure.band !== before.infrastructure.band) regional.push(`Infrastructure ${before.infrastructure.band} → ${after.infrastructure.band}`);
+  before.needs.filter(n => n.status === 'open').forEach(n => { const a = after.needs.find(x => x.category === n.category); if (!a || a.status === 'resolved') regional.push(`${LR_NEED_LABEL[n.category]} need ${n.severity} → resolved`); else if (a.severity !== n.severity) regional.push(`${LR_NEED_LABEL[n.category]} need ${n.severity} → ${a.severity}`); });
+  const likely: string[] = [];
+  if (after.momentum.value > before.momentum.value) likely.push(`${before.name} growth potential ↑ (momentum ${LR_MOMENTUM_LABEL[before.momentum.band].toLowerCase()} → ${LR_MOMENTUM_LABEL[after.momentum.band].toLowerCase()})`);
+  if (before.risks.some(x => x.kind === 'infrastructure_bottleneck') && !after.risks.some(x => x.kind === 'infrastructure_bottleneck')) likely.push('The infrastructure bottleneck would ease');
+  const second: string[] = [];
+  after.opportunities.filter(o => !before.opportunities.some(b => b.kind === o.kind)).forEach(o => second.push(`${o.label} could open`));
+  const gained = (LR_PROJECT_PROFILE[p.projectType]?.sectors || []).filter(sc => (after.sectors[sc] || 0) > (before.sectors[sc] || 0)).map(sc => LR_SECTOR_LABEL[sc].toLowerCase());
+  if (gained.length) second.push(`${gained.join('/')} specialization would strengthen`);
+  return { immediate, regional: regional.slice(0, 4), likely: likely.slice(0, 2), second: second.slice(0, 3) };
+}
+
+/** Bounded 1-step comparison of where investment changes the most (catch-up comes from real needs, not bonuses). */
+export function lrRankInvestment(lr: LivingRegionsState, s: LRInputs, viewerKeys: string[]): Array<{ code: string; score: number; reasons: string[] }> {
+  return Object.values(lr.regions).map(reg => {
+    const reasons: string[] = []; let score = reg.strategicValue.score * 0.5;
+    const open = reg.needs.filter(n => n.status === 'open');
+    if (open.length) { score += open.reduce((a, n) => a + LR_SEV_RANK[n.severity] * 3, 0); reasons.push(`unmet ${open.slice(0, 2).map(n => LR_NEED_LABEL[n.category].toLowerCase()).join(' and ')} needs`); }
+    const hi = reg.opportunities.find(o => o.strength === 'high'); if (hi) { score += 10; reasons.push(hi.label.toLowerCase()); }
+    if (LR_MOM_RANK[reg.momentum.band] >= 3) { score += 6; reasons.push(`${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()} momentum`); }
+    if (reg.investment.band === 'overheated') { score -= 12; reasons.push('already overheated (expensive, diminishing returns)'); }
+    const r = s.regions.find(x => x.code === reg.regionId);
+    if (r && r.controller && !viewerKeys.includes(r.controller) && reg.core.ownerKey === r.controller) { score -= 8; reasons.push(`a rival's core region (expensive to contest)`); }
+    if (reg.risks.some(x => x.severity === 'high')) { score -= 5; reasons.push(reg.risks.find(x => x.severity === 'high')!.label.toLowerCase()); }
+    return { code: reg.regionId, score: Math.round(score), reasons: reasons.slice(0, 3) };
+  }).sort((a, b) => b.score - a.score || a.code.localeCompare(b.code));
+}
+
+// ---- Living Regions: Game Intelligence ------------------------------------------------------------
+
+export interface LivingRegionsWorldView {
+  state: LivingRegionsState;
+  inputs: LRInputs | null;
+  viewerId: string;
+  /** Owner keys that count as "you" (player id, and the player's team id in team modes). */
+  viewerKeys: string[];
+  names: Record<string, string>;
+}
+
+export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview';
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null }
+
+function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
+  const regs = Object.values(v.state.regions);
+  const byName = regs.find(r => new RegExp(`\\b${r.name.toLowerCase()}\\b`).test(q));
+  if (byName) return byName.regionId;
+  return regs.find(r => new RegExp(`\\b${r.regionId.toLowerCase()}\\b`).test(q))?.regionId || null;
+}
+
+export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | null {
+  const v = gw.livingRegions;
+  if (!v || !Object.keys(v.state.regions).length) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const regionId = lrRegionInText(q, v);
+  const actor = gw.actors.find(a => a.relation !== 'self' && new RegExp(`\\b${a.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)) || null;
+  const actorKey = actor ? actor.id : null;
+  const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
+  // What-if on an existing infrastructure project.
+  if (/\bwhat (happens|would happen|if)\b.{0,30}\b(build|complete|finish|fund)\b|\bif i (build|complete|finish|fund)\b/.test(q) && v.inputs) {
+    const words = q.replace(/\b(the|a|an|what|happens|would|happen|if|i|build|complete|finish|fund|project|in)\b/g, ' ').split(/\s+/).filter(w => w.length > 2);
+    const proj = v.inputs.projects.map(p => ({ p, hit: words.filter(w => p.title.toLowerCase().includes(w) || p.projectType.replace(/_/g, ' ').includes(w)).length + (regionId && p.regionId === regionId ? 1 : 0) })).filter(x => x.hit > 0).sort((a, b) => b.hit - a.hit || a.p.id.localeCompare(b.p.id))[0];
+    if (proj) return mk('project_preview', { projectId: proj.p.id, regionId: proj.p.regionId });
+  }
+  if (/\bwhy (did|does|is) (this|the|that)?\s?.{0,40}\bcontract\b.{0,30}\b(appear|here|show|available|exist|there)\b|\bwhy (is there|was there) an? .{0,40}\bcontract\b/.test(q) && v.inputs) {
+    const words = q.split(/\s+/).filter(w => w.length > 3 && !['why', 'this', 'that', 'contract', 'appear', 'here', 'there', 'available'].includes(w));
+    const c = v.inputs.contracts.filter(x => x.regionId && (!regionId || x.regionId === regionId)).map(x => ({ x, hit: words.filter(w => x.title.toLowerCase().includes(w) || x.contractType.replace(/_/g, ' ').includes(w)).length })).sort((a, b) => b.hit - a.hit || (a.x.status === 'available' ? -1 : 1))[0];
+    if (c) return mk('contract_why', { contractId: c.x.id, regionId: c.x.regionId });
+  }
+  if (/\bwhich regions? (is|are) (growing|booming) (the )?fastest\b|\bfastest[- ]growing (region|state)\b|\bwhich regions? (is|are) (growing|booming)\b|\bwhere is (the )?growth\b/.test(q)) return mk('fastest');
+  if (/\bwhich regions? (have|has) (an? )?infrastructure (problems?|issues?|bottlenecks?|gaps?)\b|\binfrastructure bottlenecks?\b.{0,20}\bwhere\b|\bwhere are the (infrastructure )?bottlenecks\b/.test(q)) return mk('infra_problems');
+  if (actorKey && /\b(which|what) (region|state)s? (is|are|has) .{0,20}\b(most )?(invested|investing|focused)\b|\bwhere is .{0,20}\b(most )?invested\b|\bcore region\b/.test(q)) return mk('rival_invested');
+  if (/\bwhere should (i|we) (invest|expand|build|put (my|our) money)\b|\bbest (region|place) to invest\b|\bwhich region should (i|we) invest in\b/.test(q)) return mk('invest_where');
+  if (!regionId) return null;
+  if (/\bwhy (is|are|has|does)\b.{0,30}\b(declin|weaken|shrink|falling|slow|stagnat)/.test(q)) return mk('decline');
+  if (/\bwhy (is|are|has|does)\b.{0,30}\b(grow|boom|accelerat|expand)/.test(q)) return mk('growth_why');
+  if (/\bwhy (is|are)\b.{0,30}\b(valuable|important|worth)\b|\bwhy does .{0,30}\bcare about\b|\bhow (valuable|important) is\b/.test(q)) return mk('value');
+  if (/\bwhat does .{0,30}\bneed\b|\b(needs|shortages?) (of|in|for)\b|\bwhat is .{0,20}\bshort of\b/.test(q)) return mk('needs');
+  if (/\bwhat'?s (happening|going on) (in|with)\b|\bwhat is (happening|going on) (in|with)\b|\bwhat (has )?changed in\b|\bhow is .{0,25}\bdoing\b|\btell me about\b|\bregion(al)? (status|summary|report)\b/.test(q)) return mk('status');
+  return null;
+}
+
+const lrClaimOf = (text: string, kind: LRClaim, certainty?: GICertainty) => claim(text, kind === 'fact' || kind === 'calculated' ? 'fact' : kind === 'projection' ? 'projection' : 'inference', certainty || (kind === 'fact' ? 'confirmed' : kind === 'calculated' ? 'high' : kind === 'inference' ? 'moderate' : 'low'), ['lr.state'], { derived: giNumbersIn(text).map(n => n.value) });
+
+function lrScorecard(reg: DynamicRegionalState): string {
+  return `Economy ${LR_ECON_LABEL[reg.economy.band]} · Momentum ${LR_MOMENTUM_LABEL[reg.momentum.band]} · Infrastructure ${reg.infrastructure.band} · Stability ${reg.stability.band === 'unknown' ? 'n/a' : reg.stability.band} · Opportunity ${reg.opportunities.some(o => o.strength === 'high') ? 'high' : reg.opportunities.length ? 'moderate' : 'low'} · Risk ${reg.risks.some(x => LR_SEV_RANK[x.severity] >= 3) ? 'high' : reg.risks.length ? 'moderate' : 'low'}`;
+}
+
+export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.livingRegions!;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const reg = query.regionId ? v.state.regions[query.regionId] : null;
+  const s = v.inputs;
+  const who = (k: string | null) => (k ? (v.viewerKeys.includes(k) ? 'you' : v.names[k] || s?.ownerNames[k] || k) : 'nobody');
+  const projCount = (code: string) => (s ? s.projects.filter(p => p.regionId === code && /^(active|upgraded|complet)/.test(p.status)).length : 0);
+  let title = 'Regions'; let shape: GIAnswerShape = 'status';
+  const facts = (r: DynamicRegionalState) => [
+    lrClaimOf(`${r.name} has ${projCount(r.regionId)} active infrastructure project${projCount(r.regionId) === 1 ? '' : 's'}${r.infrastructure.building.length ? ` and ${r.infrastructure.building.length} under construction` : ''}.`, 'fact'),
+    lrClaimOf(`Development: ${LR_DEV_LABEL[r.development.tier]} (canonical tier ${r.development.canonicalTier}). Current economy: ${LR_ECON_LABEL[r.economy.band]}. Momentum: ${LR_MOMENTUM_LABEL[r.momentum.band]}.`, 'calculated')
+  ];
+  switch (query.topic) {
+    case 'status': {
+      if (!reg) break;
+      title = `${reg.name}: ${reg.identity.label}`; shape = 'status';
+      say('story', null, [lrClaimOf(lrStorySummary(reg, s, v.viewerKeys), 'inference', 'high')]);
+      say('facts', 'Condition', [...facts(reg), lrClaimOf(lrScorecard(reg) + '.', 'calculated')]);
+      const spec = [reg.specializations.primary ? `primary ${LR_SECTOR_LABEL[reg.specializations.primary].toLowerCase()}` : '', reg.specializations.secondary ? `secondary ${LR_SECTOR_LABEL[reg.specializations.secondary].toLowerCase()}` : '', reg.specializations.emerging ? `emerging ${LR_SECTOR_LABEL[reg.specializations.emerging].toLowerCase()}` : ''].filter(Boolean);
+      if (spec.length) say('spec', 'Specialization', [lrClaimOf(`${spec.join(', ')}.`, 'calculated')]);
+      const open = reg.needs.filter(n => n.status === 'open');
+      if (open.length) say('needs', 'Needs', open.slice(0, 2).map(n => lrClaimOf(`${LR_NEED_LABEL[n.category]} (${n.severity}): ${n.reason}.`, 'calculated')));
+      const recent = reg.history.filter(h => gw.turn - h.turn <= 4).slice(-3);
+      if (recent.length) say('changed', 'Recent history', recent.map(h => lrClaimOf(`Round ${h.turn}: ${personalizeWorldText(h.text, v.names[v.viewerId])}`, 'fact')));
+      break;
+    }
+    case 'value': {
+      if (!reg) break;
+      title = `Why ${reg.name} matters`; shape = 'explanation';
+      const sv = reg.strategicValue;
+      const top = Object.entries(sv.inputs).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, x]) => `${k} ${x}/100`);
+      say('value', null, [lrClaimOf(`${reg.name}'s strategic value is ${sv.band.replace('_', ' ')} (${sv.score}/100). Strongest inputs: ${top.join(', ')}.`, 'calculated'), lrClaimOf(`Identity: ${reg.identity.label}.`, 'calculated')]);
+      if (query.actorKey && s) {
+        const ownerKey = s.ownerTeams[query.actorKey] && s.regions.some(r => r.controller === s.ownerTeams[query.actorKey!]) ? s.ownerTeams[query.actorKey]! : query.actorKey;
+        const val = lrActorRegionValuation(v.state, s.fogOfWar ? { ...s, regions: s.regions.map(r => ({ ...r, deposits: {} })), standing: {} } : s, reg.regionId, ownerKey, [query.actorKey]);
+        say('actor', `Why ${v.names[query.actorKey] || query.actorKey} cares`, [lrClaimOf(val.reasons.length ? `${v.names[query.actorKey] || query.actorKey} likely values it for: ${val.reasons.join('; ')}.` : `Nothing visible marks ${reg.name} as special to ${v.names[query.actorKey] || query.actorKey}.`, 'inference')]);
+        if (s.fogOfWar) say('fog', null, [lrClaimOf('Fog of war hides exact rival investment; this is based on control, public infrastructure and regional condition only.', 'inference', 'high')]);
+      }
+      if (reg.core.ownerKey) say('core', null, [lrClaimOf(v.viewerKeys.includes(reg.core.ownerKey) ? `${reg.name} is one of your core regions — losing it would cost more than its deposits.` : `${reg.name} appears to be ${who(reg.core.ownerKey)}'s core region (held since round ${reg.core.controlSince}); expect it to be defended hard.`, 'inference')]);
+      break;
+    }
+    case 'fastest': {
+      title = 'Where the growth is'; shape = 'comparison';
+      const ranked = Object.values(v.state.regions).sort((a, b) => b.momentum.value - a.momentum.value || a.regionId.localeCompare(b.regionId));
+      const growing = ranked.filter(r => LR_MOM_RANK[r.momentum.band] >= 3);
+      say('rank', null, (growing.length ? growing : ranked.slice(0, 1)).slice(0, 4).map((r, i) => lrClaimOf(`${i + 1}. ${r.name} — ${LR_MOMENTUM_LABEL[r.momentum.band]} (${r.identity.label}).`, 'calculated')));
+      if (!growing.length) say('none', null, [lrClaimOf('No region is growing strongly right now.', 'calculated')]);
+      const nat = lrNationalTrend(v.state);
+      say('nation', 'Nationally', [lrClaimOf(`${nat.growing.length} growing, ${nat.declining.length} declining — ${nat.label}.`, 'calculated')]);
+      break;
+    }
+    case 'decline': case 'growth_why': {
+      if (!reg) break;
+      const growingQ = query.topic === 'growth_why';
+      title = growingQ ? `Why ${reg.name} is growing` : `Why ${reg.name} is weakening`; shape = 'explanation';
+      const actually = growingQ ? LR_MOM_RANK[reg.momentum.band] >= 3 : LR_MOM_RANK[reg.momentum.band] <= 1;
+      say('now', null, [lrClaimOf(`${reg.name}'s momentum is ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()} (economy ${LR_ECON_LABEL[reg.economy.band].toLowerCase()}).${actually ? '' : ` It is not currently ${growingQ ? 'growing' : 'declining'}.`}`, 'calculated')]);
+      const drivers = reg.evidence.slice().reverse().filter(e => growingQ ? !/crisis|fell/.test(e.text) : /crisis|fell|failed/.test(e.text) || e.effect === 'crisis').filter((e, i, arr) => arr.findIndex(x => x.text === e.text && x.turn === e.turn) === i).slice(0, 3);
+      if (drivers.length) say('drivers', 'Drivers (from the record)', drivers.map(d => lrClaimOf(`Round ${d.turn}: ${d.text}.`, 'fact')));
+      const hist = reg.history.filter(h => /project|contract|crisis|momentum|specialization/.test(h.kind)).slice(-3);
+      if (hist.length) say('chain', 'How it unfolded', [lrClaimOf(hist.map(h => h.text.replace(/\.$/, '')).join(' → ') + '.', 'fact')]);
+      const bn = reg.risks.find(x => x.kind === 'infrastructure_bottleneck' || x.kind === 'market_exposure' || x.kind === 'overdependence');
+      if (bn) say('watch', 'Watch', [lrClaimOf(`${bn.label}: ${bn.reason}`, 'inference')]);
+      if (!drivers.length && !hist.length) say('none', null, [lrClaimOf('No single recorded event explains it; the change comes from the region’s overall economic reading (deposits, prices, projects, stability).', 'inference')]);
+      break;
+    }
+    case 'needs': {
+      if (!reg) break;
+      title = `What ${reg.name} needs`; shape = 'status';
+      const open = reg.needs.filter(n => n.status === 'open');
+      say('needs', null, open.length ? open.map(n => lrClaimOf(`${LR_NEED_LABEL[n.category]} — ${n.severity}${n.trend === 'rising' ? ' and rising' : n.trend === 'easing' ? ', easing' : ''}: ${n.reason}.`, 'calculated')) : [lrClaimOf(`${reg.name} has no pressing needs right now.`, 'calculated')]);
+      if (s) {
+        const helps = s.projects.filter(p => p.regionId === reg.regionId && (p.status === 'unlocked' || p.status === 'under_construction') && open.some(n => (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[n.category]!] || 0) > 0));
+        const contracts = s.contracts.filter(c => c.regionId === reg.regionId && c.status === 'available' && open.some(n => (LR_NEED_CONTRACTS[n.category] || []).includes(c.contractType)));
+        if (helps.length || contracts.length) say('answers', 'What would help', [...helps.slice(0, 2).map(p => lrClaimOf(`${p.title} (infrastructure project).`, 'fact')), ...contracts.slice(0, 2).map(c => lrClaimOf(`${c.title} (open contract).`, 'fact'))]);
+      }
+      break;
+    }
+    case 'contract_why': {
+      const c = s?.contracts.find(x => x.id === query.contractId);
+      const r2 = c?.regionId ? v.state.regions[c.regionId] : null;
+      if (!c || !r2) break;
+      title = `Why “${c.title}” is in ${r2.name}`; shape = 'explanation';
+      const rel = lrContractRelevance(v.state, c);
+      say('fact', null, [lrClaimOf(`${c.title} is a standing ${r2.name} contract offered by the contract system (status: ${c.status}).`, 'fact')]);
+      if (rel.reasons.length) say('why', 'Why it is especially relevant now', [lrClaimOf(`${r2.name} currently has ${rel.reasons.join(', ')}. That makes this contract ${rel.score >= 30 ? 'especially' : 'somewhat'} relevant (${rel.score}/100).`, 'calculated')]);
+      else say('why', null, [lrClaimOf(`Nothing in ${r2.name}'s current condition makes it unusually relevant.`, 'calculated')]);
+      say('note', null, [lrClaimOf('Living Regions ranks relevance; it does not create or change contracts.', 'inference', 'high')]);
+      break;
+    }
+    case 'rival_invested': {
+      if (!query.actorKey || !s) break;
+      const name = v.names[query.actorKey] || query.actorKey;
+      const keys = [query.actorKey, s.ownerTeams[query.actorKey] || ''].filter(Boolean);
+      title = `Where ${name} is invested`; shape = 'comparison';
+      const rows = Object.values(v.state.regions).map(r => {
+        const pres = lrVisiblePresence(s, r.regionId, v.viewerKeys).filter(p => keys.includes(p.ownerKey));
+        const amount = pres.reduce((a, p) => a + (p.amount || 0), 0);
+        const controls = pres.some(p => p.controls);
+        const core = r.core.ownerKey && keys.includes(r.core.ownerKey);
+        return { r, amount, controls, core, visible: pres.length > 0 };
+      }).filter(x => x.visible || x.core).sort((a, b) => Number(b.core) - Number(a.core) || b.amount - a.amount || Number(b.controls) - Number(a.controls) || a.r.regionId.localeCompare(b.r.regionId));
+      if (!rows.length) say('none', null, [lrClaimOf(`You can't see any ${name} holdings right now.`, 'fact')]);
+      else say('rank', null, rows.slice(0, 3).map((x, i) => lrClaimOf(`${i + 1}. ${x.r.name}${x.core ? ' — appears to be its core region' : ''}${x.controls ? `; controlled since round ${x.r.core.controlSince}` : ''}${!s.fogOfWar && x.amount ? `; $${x.amount.toLocaleString()} deposited` : ''}.`, x.core ? 'inference' : 'fact')));
+      if (s.fogOfWar) say('fog', null, [lrClaimOf('Fog of war: exact rival deposits are hidden, so this uses control and regional history only.', 'inference', 'high')]);
+      break;
+    }
+    case 'infra_problems': {
+      title = 'Infrastructure problems'; shape = 'comparison';
+      const probs = Object.values(v.state.regions).map(r => ({ r, n: r.needs.filter(n => n.status === 'open' && ['transport', 'energy', 'water', 'technology', 'infrastructure'].includes(n.category)).sort((a, b) => b.score - a.score)[0], bn: r.risks.some(x => x.kind === 'infrastructure_bottleneck') })).filter(x => x.n && (LR_SEV_RANK[x.n.severity] >= 2 || x.bn)).sort((a, b) => Number(b.bn) - Number(a.bn) || b.n!.score - a.n!.score);
+      say('rows', null, probs.length ? probs.slice(0, 4).map(x => lrClaimOf(`${x.r.name}: ${LR_NEED_LABEL[x.n!.category].toLowerCase()} ${x.n!.severity}${x.bn ? ' — a bottleneck on current growth' : ''} (${x.n!.reason}).`, 'calculated')) : [lrClaimOf('No region has a significant infrastructure gap right now.', 'calculated')]);
+      break;
+    }
+    case 'invest_where': {
+      if (!s) break;
+      title = 'Where investment changes the most'; shape = 'comparison';
+      const ranked = lrRankInvestment(v.state, s, v.viewerKeys).slice(0, 3);
+      say('rank', null, ranked.map((x, i) => lrClaimOf(`${i + 1}. ${v.state.regions[x.code].name} — ${x.reasons.join('; ') || 'solid overall value'}.`, 'inference')));
+      say('note', null, [lrClaimOf('Regional ranking only (1-step, from visible regional condition) — check cash, reserve and control costs before committing.', 'projection', 'moderate')]);
+      break;
+    }
+    case 'project_preview': {
+      const p = s?.projects.find(x => x.id === query.projectId);
+      const prev = p && s ? lrPreviewProject(v.state, s, p.id) : null;
+      if (!p || !prev) break;
+      title = `If you complete ${p.title}`; shape = 'simulation';
+      say('immediate', 'Immediate', prev.immediate.map(t => lrClaimOf(t + '.', 'calculated')));
+      if (prev.regional.length) say('regional', 'Regional', prev.regional.map(t => lrClaimOf(t + '.', 'projection', 'moderate')));
+      if (prev.likely.length) say('likely', 'Likely strategic effect', prev.likely.map(t => lrClaimOf(t + '.', 'projection', 'moderate')));
+      if (prev.second.length) say('second', 'Possible second-order effect', prev.second.map(t => lrClaimOf(t + '.', 'projection', 'low')));
+      say('note', null, [lrClaimOf('Projection from current regional condition — nothing was changed.', 'projection', 'moderate')]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [lrClaimOf('I could not find regional information for that.', 'inference', 'low')]);
+  return { title, sections, buttons, shape };
+}
+
+// ---- Living Regions UI ------------------------------------------------------------------------------
+
+/** Compact semantic chips (never raw scores). */
+export function lrStatusChips(reg: DynamicRegionalState): Array<{ key: string; text: string; tone: 'good' | 'bad' | 'neutral' }> {
+  const chips: Array<{ key: string; text: string; tone: 'good' | 'bad' | 'neutral' }> = [];
+  const mr = LR_MOM_RANK[reg.momentum.band];
+  chips.push({ key: 'mom', text: `${mr >= 3 ? '📈' : mr <= 1 ? '📉' : '➖'} ${LR_MOMENTUM_LABEL[reg.momentum.band]}`, tone: mr >= 3 ? 'good' : mr <= 1 ? 'bad' : 'neutral' });
+  const sp = reg.specializations;
+  if (sp.primary && sp.established.includes(sp.primary)) chips.push({ key: 'spec', text: `${LR_SECTOR_ICON[sp.primary]} ${LR_SECTOR_LABEL[sp.primary]} Hub`, tone: 'neutral' });
+  else if (sp.secondary || sp.emerging) chips.push({ key: 'spec', text: `${LR_SECTOR_ICON[(sp.secondary || sp.emerging)!]} Emerging ${LR_SECTOR_LABEL[(sp.secondary || sp.emerging)!]}`, tone: 'neutral' });
+  if (reg.infrastructure.band === 'strong' || reg.infrastructure.band === 'excellent') chips.push({ key: 'infra', text: '🚆 Strong Infrastructure', tone: 'good' });
+  const risk = reg.risks.find(x => LR_SEV_RANK[x.severity] >= 3);
+  if (risk) chips.push({ key: 'risk', text: `⚠ ${risk.label}`, tone: 'bad' });
+  const need = reg.needs.find(n => n.status === 'open' && LR_SEV_RANK[n.severity] >= 3);
+  if (need) chips.push({ key: 'need', text: `${need.category === 'energy' ? '⚡' : need.category === 'transport' ? '🚚' : need.category === 'water' ? '💧' : '❗'} ${LR_NEED_LABEL[need.category]} Need`, tone: 'bad' });
+  if (reg.stability.band === 'stable' || reg.stability.band === 'high') chips.push({ key: 'stab', text: '🟢 Stable', tone: 'good' });
+  else if (reg.stability.band === 'fragile' || reg.stability.band === 'unsettled') chips.push({ key: 'stab', text: '🟠 Unsettled', tone: 'bad' });
+  return chips.slice(0, 5);
+}
+
+const lrToneClass = (t: 'good' | 'bad' | 'neutral') => (t === 'good' ? 'border-emerald-500/50 text-emerald-300' : t === 'bad' ? 'border-amber-500/60 text-amber-300' : 'border-slate-500/50');
+
+/** Region detail: identity, chips, semantic scorecard, needs/opportunity/risk, story, history (fog-safe). */
+export const LivingRegionCard: React.FC<{ view: LivingRegionsWorldView | null; regionId: string; onAsk?: (q: string) => void; compact?: boolean }> = ({ view, regionId, onAsk, compact }) => {
+  const [showHistory, setShowHistory] = useState(false);
+  const reg = view?.state.regions[regionId];
+  if (!view || !reg) return null;
+  const need = reg.needs.find(n => n.status === 'open');
+  const opp = reg.opportunities[0]; const risk = reg.risks[0];
+  const presence = view.inputs ? lrVisiblePresence(view.inputs, regionId, view.viewerKeys) : [];
+  const rows: Array<[string, string]> = [['Identity', reg.identity.label], ['Development', LR_DEV_LABEL[reg.development.tier]], ['Economy', LR_ECON_LABEL[reg.economy.band]], ['Momentum', LR_MOMENTUM_LABEL[reg.momentum.band]], ['Infrastructure', reg.infrastructure.band[0].toUpperCase() + reg.infrastructure.band.slice(1)], ['Primary Need', need ? `${LR_NEED_LABEL[need.category]} (${need.severity})` : 'None'], ['Opportunity', opp ? opp.label : '—'], ['Risk', risk ? risk.label : '—']];
+  return (
+    <section aria-labelledby={`lr-card-${regionId}`} data-testid="lr-card" className="rounded-xl border border-slate-600/50 p-3 text-xs space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 id={`lr-card-${regionId}`} className="text-sm font-bold">{reg.name.toUpperCase()}</h4>
+        <span className="opacity-70">{LR_MOMENTUM_LABEL[reg.momentum.band]}</span>
+      </div>
+      <div className="flex flex-wrap gap-1" data-testid="lr-chips">{lrStatusChips(reg).map(c => <span key={c.key} className={`px-1.5 py-0.5 rounded border ${lrToneClass(c.tone)}`}>{c.text}</span>)}</div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5">{rows.slice(0, compact ? 5 : rows.length).map(([k, v]) => <React.Fragment key={k}><dt className="opacity-70">{k}</dt><dd className="font-semibold">{v}</dd></React.Fragment>)}</dl>
+      {!compact && <p className="opacity-90" data-testid="lr-story">{lrStorySummary(reg, view.inputs, view.viewerKeys)}</p>}
+      {!compact && presence.length > 0 && (
+        <div data-testid="lr-presence"><span className="opacity-70">Presence: </span>{presence.map(p => `${view.viewerKeys.includes(p.ownerKey) ? 'You' : p.name}${p.controls ? ' (controls)' : ''}${p.amount !== null ? ` $${p.amount.toLocaleString()}` : p.band === 'unknown' ? ' (hidden)' : ' (significant, estimated)'}`).join(' · ')}</div>
+      )}
+      {!compact && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="underline" aria-expanded={showHistory} onClick={() => setShowHistory(x => !x)}>{showHistory ? 'Hide' : 'Recent'} history</button>
+          {onAsk && <button type="button" className="underline" onClick={() => onAsk(`What's happening in ${reg.name}?`)}>What's happening here?</button>}
+          {onAsk && need && <button type="button" className="underline" onClick={() => onAsk(`What does ${reg.name} need?`)}>What does it need?</button>}
+        </div>
+      )}
+      {showHistory && (
+        <ol className="space-y-0.5" data-testid="lr-history">{reg.history.length ? reg.history.slice().reverse().slice(0, 6).map((h, i) => <li key={`${h.turn}_${i}`}><span className="opacity-60">Round {h.turn}</span> — {personalizeWorldText(h.text, view.names[view.viewerId])}</li>) : <li className="opacity-70">No regional history recorded yet (tracking began round {view.state.initializedTurn ?? '—'}).</li>}</ol>
+      )}
+    </section>
+  );
+};
+
+export type LRMapMode = 'control' | 'economy' | 'development' | 'momentum' | 'specialization' | 'rival_pressure' | 'opportunity' | 'infrastructure';
+export const LR_MAP_MODES: Array<[LRMapMode, string]> = [['control', 'Control'], ['economy', 'Economy'], ['development', 'Development'], ['momentum', 'Momentum'], ['specialization', 'Specialization'], ['rival_pressure', 'Rival Pressure'], ['opportunity', 'Opportunity'], ['infrastructure', 'Infrastructure']];
+
+/** One semantic badge per region for the chosen map layer (no raw numbers). */
+export function lrMapBadge(reg: DynamicRegionalState | undefined, mode: LRMapMode): { text: string; title: string } | null {
+  if (!reg || mode === 'control') return null;
+  switch (mode) {
+    case 'economy': return { text: LR_ECON_LABEL[reg.economy.band], title: `Economy: ${LR_ECON_LABEL[reg.economy.band]}` };
+    case 'development': return { text: LR_DEV_LABEL[reg.development.tier].replace('Highly Developed', 'Highly Dev.'), title: `Development: ${LR_DEV_LABEL[reg.development.tier]}` };
+    case 'momentum': { const r = LR_MOM_RANK[reg.momentum.band]; return { text: `${r >= 4 ? '⇈' : r === 3 ? '↑' : r <= 0 ? '⇊' : r === 1 ? '↓' : '→'} ${LR_MOMENTUM_LABEL[reg.momentum.band]}`, title: `Momentum: ${LR_MOMENTUM_LABEL[reg.momentum.band]}` }; }
+    case 'specialization': { const sc = reg.specializations.primary || reg.specializations.secondary || reg.specializations.emerging; return sc ? { text: `${LR_SECTOR_ICON[sc]} ${LR_SECTOR_LABEL[sc]}`, title: reg.identity.label } : { text: '·', title: reg.identity.label }; }
+    case 'rival_pressure': { const hr = reg.risks.find(x => x.kind === 'high_rivalry'); return { text: hr ? (hr.severity === 'high' ? '⚠ High' : '⚠ Moderate') : 'Low', title: hr ? hr.reason : 'No active contest' }; }
+    case 'opportunity': { const o = reg.opportunities[0]; return o ? { text: `✦ ${o.strength === 'high' ? 'High' : 'Some'}`, title: o.label } : { text: '—', title: 'No notable opportunity' }; }
+    case 'infrastructure': return { text: reg.infrastructure.band[0].toUpperCase() + reg.infrastructure.band.slice(1), title: `Infrastructure: ${reg.infrastructure.band}` };
+  }
+  return null;
+}
+
+/** PLAY: only strategically relevant regional shifts, from the latest round; dismissible. */
+export function pickRegionalShifts(state: LivingRegionsState, turn: number, dismissed: string[] = []): LRDerivedEvent[] {
+  return state.derived.filter(d => turn - d.turn <= 1 && !dismissed.includes(d.id) && (d.significance === 'major' || d.kind === 'regional_growth_accelerated' || d.kind === 'specialization_established'))
+    .sort((a, b) => b.turn - a.turn || (a.significance === 'major' ? -1 : 1) || a.id.localeCompare(b.id))
+    .filter((d, i, arr) => arr.findIndex(x => x.regionId === d.regionId && x.kind === d.kind) === i).slice(0, 2);
+}
+
+export const LivingRegionsPlayStrip: React.FC<{ view: LivingRegionsWorldView | null; turn: number; onView: (regionId: string) => void }> = ({ view, turn, onView }) => {
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  if (!view) return null;
+  const shifts = pickRegionalShifts(view.state, turn, dismissed);
+  if (!shifts.length) return null;
+  return (
+    <div className="rounded-xl border border-teal-500/50 bg-teal-500/5 p-2 text-xs space-y-1" data-testid="lr-play-strip" aria-label="Regional shifts">
+      {shifts.map(d => {
+        const reg = view.state.regions[d.regionId];
+        const why = reg?.evidence.slice(-2).map(e => e.text).join(' and ');
+        return (
+          <div key={d.id} className="flex items-start gap-2">
+            <div className="flex-1"><span className="font-semibold">🗺 {personalizeWorldText(d.text, view.names[view.viewerId])}</span>{why ? <div className="opacity-80">{why}.</div> : null}</div>
+            <button type="button" className="underline" onClick={() => onView(d.regionId)}>View Region</button>
+            <button type="button" className="opacity-60 hover:opacity-100" aria-label="Dismiss regional shift" onClick={() => setDismissed(x => [...x, d.id])}>✕</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** LAB: raw diagnostics per region (world truth — LAB is a developer surface). */
+export const LivingRegionsInspector: React.FC<{ view: LivingRegionsWorldView | null; theme: any }> = ({ view, theme }) => {
+  const codes = Object.keys(view?.state.regions || {}).sort();
+  const [code, setCode] = useState<string>('');
+  if (!view || !codes.length) return null;
+  const sel = view.state.regions[code] ? code : codes[0];
+  const reg = view.state.regions[sel];
+  const d = view.state.diagnostics;
+  const line = (k: string, v: React.ReactNode) => <div><span className="opacity-70">{k}: </span>{v}</div>;
+  return (
+    <section aria-labelledby="lr-lab-heading" data-testid="lr-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs space-y-2`}>
+      <h3 id="lr-lab-heading" className="font-bold text-sm">🗺 Living Regions Inspector</h3>
+      <label className="flex items-center gap-2">Region <select aria-label="Inspect region" value={sel} onChange={e => setCode(e.target.value)} className="bg-transparent border rounded px-1">{codes.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+      <div data-testid="lr-lab-diag">Applied {d.eventsApplied} · ignored {d.eventsIgnored} · rounds {d.roundsAdvanced} · syncs {d.syncs} · derived {d.derivedEmitted} · last {d.lastMs} ms · last regions {d.lastRegions.join(',') || '—'} · state rev {view.state.revision} · region rev {reg.revision} · hash {view.state.hashes[sel] || '—'}</div>
+      {line('Development', `${LR_DEV_LABEL[reg.development.tier]} (score ${reg.development.score}; canonical tier ${reg.development.canonicalTier}; structural ${reg.development.structural})`)}
+      {line('Economic condition', `${LR_ECON_LABEL[reg.economy.band]} (${reg.economy.score}; last round ${reg.economy.lastRoundScore})`)}
+      {line('Momentum', `${LR_MOMENTUM_LABEL[reg.momentum.band]} (${reg.momentum.value}; history ${reg.momentum.history.join(', ') || '—'}) · trajectory ${reg.trajectory}`)}
+      {line('Specializations', `primary ${reg.specializations.primary || '—'} · secondary ${reg.specializations.secondary || '—'} · emerging ${reg.specializations.emerging || '—'} · established [${reg.specializations.established.join(', ')}]${reg.specializations.pending ? ` · pending ${reg.specializations.pending.change} ${reg.specializations.pending.sector} (R${reg.specializations.pending.since})` : ''}`)}
+      {line('Sector evidence', lrSortedSectors(reg).map(([k, v]) => `${k} ${v}`).join(' · ') || '—')}
+      {line('Needs', reg.needs.map(n => `${n.category} ${n.severity}/${n.score} ${n.trend} ${n.status}`).join(' · ') || '—')}
+      {line('Opportunities', reg.opportunities.map(o => `${o.kind} (${o.strength})`).join(' · ') || '—')}
+      {line('Risks', reg.risks.map(x => `${x.kind} (${x.severity})`).join(' · ') || '—')}
+      {line('Conditions', reg.conditions.map(c => `${c.kind} ${c.severity} R${c.startTurn}→${c.expiresTurn ?? '∞'} [${c.source}]`).join(' · ') || '—')}
+      {line('Infrastructure signals', `${reg.infrastructure.band} (${reg.infrastructure.quality}) · ${Object.entries(reg.infrastructure.capacity).map(([k, v]) => `${k} ${v}`).join(' ')} · active [${reg.infrastructure.active.join(', ')}] building [${reg.infrastructure.building.join(', ')}] damaged [${reg.infrastructure.damaged.join(', ')}]`)}
+      {line('Contract signals', (view.inputs?.contracts || []).filter(c => c.regionId === sel).map(c => `${c.id}:${c.status} rel ${lrContractRelevance(view.state, c).score}`).join(' · ') || '—')}
+      {line('Stability signals', `${reg.stability.band}${reg.stability.value !== null ? ` (${Math.round(reg.stability.value)})` : ''}`)}
+      {line('Actor standing (canonical)', Object.entries(view.inputs?.standing || {}).map(([a, m]) => `${a} ${m[sel] ?? 0}`).join(' · ') || '—')}
+      {line('Strategic value inputs', `${reg.strategicValue.band} ${reg.strategicValue.score} · ${Object.entries(reg.strategicValue.inputs).map(([k, v]) => `${k} ${v}`).join(' ')}`)}
+      {line('Core', reg.core.ownerKey ? `${reg.core.ownerKey} since R${reg.core.since}` : `none (controller ${reg.core.controller || '—'} since ${reg.core.controlSince ?? '—'})`)}
+      {line('Investment pressure', `${reg.investment.band} · recent ${reg.investment.recent.join(', ')} · streak ${reg.investment.highStreak}`)}
+      {line('Identity', `${reg.identity.label} (since R${reg.identity.since})${reg.identity.candidate ? ` · candidate "${reg.identity.candidate}" since R${reg.identity.candidateSince}` : ''}`)}
+      {line('World Reaction inputs (evidence)', reg.evidence.map(e => `R${e.turn} ${e.text} → ${e.effect}${e.sourceEventId ? ` [${e.sourceEventId}]` : ''}`).join(' | ') || '—')}
+      {line('Regional history', reg.history.map(h => `R${h.turn} ${h.text}`).join(' | ') || '—')}
+      {line('Derived events', view.state.derived.filter(x => x.regionId === sel).map(x => `R${x.turn} ${x.kind} depth ${x.reactionDepth}${x.causedByEventId ? ` ← ${x.causedByEventId}` : ''}`).join(' | ') || '—')}
+      {line('Milestones', view.state.milestones.map(m => `R${m.turn} ${m.regionId} ${m.label}`).join(' · ') || '—')}
+    </section>
+  );
+};
+
+// ---- Living Regions 2.0 self-tests (deterministic fixtures) --------------------------------------
+
+export function createLRFixtureInputs(o: Partial<LRInputs> = {}): LRInputs {
+  const codes = Object.keys(REGIONS);
+  const resources = Array.from(new Set(codes.flatMap(c => REGIONAL_RESOURCES[c] || [])));
+  const basePrices: Record<string, number> = Object.fromEntries(resources.map(r => [r, 100]));
+  return {
+    turn: 5, fogOfWar: false,
+    regions: codes.map(code => ({ code, name: REGIONS[code]?.name || code, controller: null, deposits: {}, devTier: 0, devProgress: 0, investedCapital: 0, adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[code] || []), resources: REGIONAL_RESOURCES[code] || [], stability: 60 })),
+    projects: PRESET_INFRASTRUCTURE_PROJECTS.map(p => ({ id: p.id, title: p.title, regionId: p.regionId, projectType: p.projectType, status: p.status, progress: 0, remainingCost: p.totalCost, completionTurn: null })),
+    contracts: PRESET_REGIONAL_CONTRACTS.map(c => ({ id: c.id, title: c.title, regionId: c.issuingRegionId, contractType: c.contractType, status: c.status, assignedActorId: null, completedAtTurn: null, rewardMoney: c.rewards.money || 0 })),
+    standing: {}, prices: { ...basePrices }, basePrices, crises: [], nationalStability: 60,
+    ownerNames: { player: 'You', ai: 'Riley', ai2: 'Jordan' }, ownerTeams: { player: null, ai: null, ai2: null }, windows: [], winRegionsTarget: null,
+    ...o
+  };
+}
+
+export function runLivingRegions2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+  let seq = 0;
+  const ev = (kind: SWRKind, subjectType: StrategicWorldEvent['subjectType'], subjectId: string, x: Partial<StrategicWorldEvent> = {}): StrategicWorldEvent => {
+    const id = x.id || `t_ev_${++seq}`;
+    return { id, turn: 5, day: 1, sourceSystem: 'state_delta', sourceEventId: null, actorId: null, teamId: null, kind, subjectType, subjectId, magnitude: 1, significance: 'major', visibility: 'public', observers: ['player', 'ai'], evidence: [], before: {}, after: {}, delta: {}, strategicMeaning: `${kind} ${subjectId}`, affectedDomains: [], tags: [], layer: 'world', confidence: 'high', claimKind: 'fact', causedByEventId: null, contributingCauses: [], rootEventId: id, reactionDepth: 0, expiresTurn: null, dedupeKey: `t:${id}`, ...x };
+  };
+  const setProject = (s: LRInputs, id: string, status: string, turn = s.turn): LRInputs => ({ ...s, turn, projects: s.projects.map(p => (p.id === id ? { ...p, status, progress: status === 'active' ? 1 : p.progress } : p)) });
+  const setContract = (s: LRInputs, id: string, status: string): LRInputs => ({ ...s, contracts: s.contracts.map(c => (c.id === id ? { ...c, status } : c)) });
+  const addProject = (s: LRInputs, id: string, type: string, regionId: string, status = 'unlocked'): LRInputs => ({ ...s, projects: [...s.projects, { id, title: `${regionId} ${type.replace(/_/g, ' ')}`, regionId, projectType: type, status, progress: 0, remainingCost: 50000, completionTurn: null }] });
+  const addContract = (s: LRInputs, id: string, type: string, regionId: string, status = 'available'): LRInputs => ({ ...s, contracts: [...s.contracts, { id, title: `${regionId} ${type.replace(/_/g, ' ')}`, regionId, contractType: type, status, assignedActorId: null, completedAtTurn: null, rewardMoney: 20000 }] });
+  const apply = (st: LivingRegionsState, e: StrategicWorldEvent, s: LRInputs) => lrApplyWorldEvent(st, e, s).state;
+  const round = (st: LivingRegionsState, s: LRInputs, turn: number) => lrAdvanceRound(st, { ...s, turn }).state;
+  const base = createLRFixtureInputs();
+
+  check('lr_init', 'Every supported region has persistent dynamic state; no fake history', () => {
+    const st = initializeLivingRegions(base);
+    const codes = Object.keys(REGIONS);
+    return (codes.every(c => st.regions[c] && st.regions[c].identity.label && st.regions[c].history.length === 0) && st.initializedTurn === 5) || canon(Object.keys(st.regions));
+  });
+
+  check('lr_infrastructure', 'Major infrastructure: capacity ↑, development signal ↑, history records the project', () => {
+    const st0 = initializeLivingRegions(base);
+    const s1 = setProject(base, 'infra_inland_rail_qld', 'active');
+    const st1 = apply(st0, ev('project_completed', 'project', 'infra_inland_rail_qld'), s1);
+    const a = st0.regions.QLD; const b = st1.regions.QLD;
+    return (b.infrastructure.capacity.transport > a.infrastructure.capacity.transport + 30 && b.development.structural > a.development.structural && b.history.some(h => /Rail/i.test(h.text)) && b.momentum.value > a.momentum.value) || canon({ a: a.infrastructure.capacity, b: b.infrastructure.capacity, h: b.history });
+  });
+
+  check('lr_contract', 'Regional contract: history records it, specialization evidence changes, standing stays canonical', () => {
+    const standing = { ai: { WA: 30 } };
+    const s0 = createLRFixtureInputs({ standing });
+    const st0 = initializeLivingRegions(s0);
+    const s1 = setContract(s0, 'mining_tech_wa', 'completed');
+    const st1 = apply(st0, ev('contract_completed', 'contract', 'mining_tech_wa'), s1);
+    return (st1.regions.WA.history.some(h => h.kind === 'contract') && (st1.regions.WA.sectors.mining || 0) > (st0.regions.WA.sectors.mining || 0) && (st1.regions.WA.sectors.technology || 0) > 0 && canon(s1.standing) === canon(standing)) || canon({ s: st1.regions.WA.sectors, c: s0.contracts.map(c => c.id) });
+  });
+
+  // WA mining sequence used by several tests.
+  const waMining = () => {
+    seq = 1000; // identical event ids on every run (the determinism check compares whole states)
+    let s = addProject(addProject(base, 'wa_rail', 'inland_rail_hub', 'WA'), 'wa_rail2', 'high_speed_rail', 'WA');
+    s = addContract(addContract(s, 'wa_m1', 'mining_tech_initiative', 'WA'), 'wa_m2', 'mining_tech_initiative', 'WA');
+    let st = initializeLivingRegions(s);
+    const steps: Array<[string, SWRKind, StrategicWorldEvent['subjectType']]> = [['mining_tech_wa', 'contract_completed', 'contract'], ['wa_m1', 'contract_completed', 'contract'], ['wa_rail', 'project_completed', 'project'], ['wa_m2', 'contract_completed', 'contract']];
+    let turn = 5;
+    steps.forEach(([id, kind, t]) => { turn += 1; s = t === 'contract' ? setContract({ ...s, turn }, id, 'completed') : setProject({ ...s, turn }, id, 'active'); st = apply(st, ev(kind, t, id, { turn }), s); st = round(st, s, turn); });
+    turn += 1; st = round(st, s, turn); turn += 1; st = round(st, s, turn);
+    return { st, s: { ...s, turn } };
+  };
+
+  check('lr_spec_formation', 'Specialization forms from repeated evidence (emerging → established), not from one action', () => {
+    const s0 = base; let st = initializeLivingRegions(s0);
+    const one = apply(st, ev('contract_completed', 'contract', 'mining_tech_wa'), setContract(s0, 'mining_tech_wa', 'completed'));
+    const afterOne = round(one, setContract(s0, 'mining_tech_wa', 'completed'), 6);
+    const oneEst = afterOne.regions.WA.specializations.established.includes('mining');
+    const { st: many } = waMining();
+    return (!oneEst && many.regions.WA.specializations.established.includes('mining') && many.regions.WA.specializations.primary === 'mining') || canon({ one: afterOne.regions.WA.specializations, oneSec: afterOne.regions.WA.sectors, many: many.regions.WA.specializations, sec: many.regions.WA.sectors });
+  });
+
+  check('lr_spec_stability', 'One technology action after strong mining history: mining stays dominant, identity does not thrash', () => {
+    const { st, s } = waMining();
+    const idBefore = st.regions.WA.identity.label;
+    let s2 = addContract(s, 'wa_ai', 'ai_research_center', 'WA');
+    s2 = setContract(s2, 'wa_ai', 'completed');
+    let st2 = apply(st, ev('contract_completed', 'contract', 'wa_ai', { turn: s.turn + 1 }), { ...s2, turn: s.turn + 1 });
+    st2 = round(st2, s2, s.turn + 1);
+    return (st2.regions.WA.specializations.primary === 'mining' && st2.regions.WA.identity.label === idBefore) || canon({ sp: st2.regions.WA.specializations, id: [idBefore, st2.regions.WA.identity] });
+  });
+
+  check('lr_diversification', 'Sustained renewable investment grows a secondary specialization over time (primary unchanged)', () => {
+    let { st, s } = waMining();
+    const before = st.regions.WA.sectors.renewables || 0;
+    let turn = s.turn;
+    for (let i = 0; i < 4; i++) {
+      turn += 1; const id = `wa_wind_${i}`;
+      s = addProject({ ...s, turn }, id, i % 2 ? 'hydro_expansion' : 'offshore_wind_farm', 'WA', 'active');
+      st = apply(st, ev('project_completed', 'project', id, { turn }), s); st = round(st, s, turn);
+    }
+    const sp = st.regions.WA.specializations;
+    return ((st.regions.WA.sectors.renewables || 0) > before + 20 && sp.primary === 'mining' && (sp.secondary === 'renewables' || sp.secondary === 'energy' || sp.emerging === 'renewables')) || canon({ sp, sec: st.regions.WA.sectors });
+  });
+
+  // QLD: strong mining/export activity with thin transport.
+  const qldGrowth = () => {
+    let s = createLRFixtureInputs();
+    let st = initializeLivingRegions(s);
+    const q = st.regions.QLD;
+    st = { ...st, regions: { ...st.regions, QLD: { ...q, sectors: { ...q.sectors, mining: 55, trade: 40 }, momentum: { ...q.momentum, value: 0.4, band: 'growing' } } } };
+    const out = lrRecompute(st.regions.QLD, s, {});
+    st = { ...st, regions: { ...st.regions, QLD: out.region } };
+    return { st, s };
+  };
+
+  check('lr_need_transport', 'High growth + weak transport → Transport need High (emerges from conditions)', () => {
+    const { st } = qldGrowth();
+    const n = st.regions.QLD.needs.find(x => x.category === 'transport' && x.status === 'open');
+    return (Boolean(n) && LR_SEV_RANK[n!.severity] >= 3) || canon(st.regions.QLD.needs);
+  });
+
+  check('lr_need_resolution', 'Transport infrastructure completed → transport need decreases/resolves', () => {
+    const { st, s } = qldGrowth();
+    const before = st.regions.QLD.needs.find(x => x.category === 'transport')!;
+    const s1 = setProject(s, 'infra_inland_rail_qld', 'active');
+    const st1 = apply(st, ev('project_completed', 'project', 'infra_inland_rail_qld'), s1);
+    const after = st1.regions.QLD.needs.find(x => x.category === 'transport');
+    return (!after || after.status === 'resolved' || after.score < before.score - 20) || canon({ before, after });
+  });
+
+  check('lr_momentum', 'Several positive events: Stable → Growing only after a sufficient threshold', () => {
+    const s0 = addContract(addContract(base, 'nsw_c2', 'maritime_export_hub', 'NSW'), 'nsw_c3', 'maritime_export_hub', 'NSW');
+    const st0 = initializeLivingRegions(s0);
+    const one = apply(st0, ev('contract_completed', 'contract', 'nsw_c2'), setContract(s0, 'nsw_c2', 'completed'));
+    const two = apply(one, ev('contract_completed', 'contract', 'nsw_c3'), setContract(setContract(s0, 'nsw_c2', 'completed'), 'nsw_c3', 'completed'));
+    return (st0.regions.NSW.momentum.band === 'stable' && one.regions.NSW.momentum.band === 'stable' && two.regions.NSW.momentum.band === 'growing') || canon([st0.regions.NSW.momentum, one.regions.NSW.momentum, two.regions.NSW.momentum]);
+  });
+
+  check('lr_momentum_hysteresis', 'A small negative event does not instantly drop a growing region back to Stable', () => {
+    const st0 = initializeLivingRegions(base);
+    const n = st0.regions.NSW;
+    const st = { ...st0, regions: { ...st0.regions, NSW: { ...n, momentum: { ...n.momentum, value: 0.26, band: 'growing' as LRMomentumBand } } } };
+    const after = apply(st, ev('contract_failed', 'contract', 'ag_logistics_nsw', { significance: 'meaningful' }), setContract(base, 'ag_logistics_nsw', 'failed'));
+    return (after.regions.NSW.momentum.band === 'growing' && after.regions.NSW.momentum.value < 0.26) || canon(after.regions.NSW.momentum);
+  });
+
+  check('lr_crisis', 'Regional crisis: condition worsens appropriately; specializations are not deleted', () => {
+    const { st, s } = waMining();
+    const crisis = { id: 'cr1', name: 'Mine Collapse', status: 'active', stageIndex: 1, category: 'infrastructure', affectedRegions: ['WA'] };
+    const s1 = { ...s, crises: [crisis] };
+    const after = apply(st, ev('crisis_escalated', 'crisis', 'cr1', { turn: s.turn }), s1);
+    const a = st.regions.WA; const b = after.regions.WA;
+    return (b.momentum.value < a.momentum.value && b.economy.score < a.economy.score && b.conditions.some(c => c.kind === 'crisis_active') && b.specializations.established.includes('mining') && b.needs.some(n => n.category === 'emergency_relief' && n.status === 'open')) || canon({ a: a.momentum, b: b.momentum, c: b.conditions, sp: b.specializations });
+  });
+
+  check('lr_recovery', 'Sustained recovery: the post-crisis condition eventually resolves', () => {
+    const { st, s } = waMining();
+    const crisis = { id: 'cr1', name: 'Mine Collapse', status: 'active', stageIndex: 1, category: 'infrastructure', affectedRegions: ['WA'] };
+    let st1 = apply(st, ev('crisis_escalated', 'crisis', 'cr1', { turn: s.turn }), { ...s, crises: [crisis] });
+    const resolved = { ...s, crises: [{ ...crisis, status: 'resolved' }] };
+    st1 = apply(st1, ev('crisis_resolved', 'crisis', 'cr1', { turn: s.turn + 1 }), { ...resolved, turn: s.turn + 1 });
+    const hadRecovery = st1.regions.WA.conditions.some(c => c.kind === 'post_crisis_recovery');
+    let turn = s.turn + 1;
+    for (let i = 0; i < 6 && st1.regions.WA.conditions.some(c => c.kind === 'post_crisis_recovery'); i++) { turn += 1; st1 = round(st1, resolved, turn); }
+    return (hadRecovery && !st1.regions.WA.conditions.some(c => c.kind === 'post_crisis_recovery') && st1.regions.WA.history.some(h => h.kind === 'recovery_complete')) || canon({ c: st1.regions.WA.conditions, m: st1.regions.WA.momentum });
+  });
+
+  // Riley deeply invested in VIC with infrastructure and long control.
+  const rileyVic = () => {
+    let s = createLRFixtureInputs({ standing: { ai: { VIC: 60 } } });
+    s = { ...s, regions: s.regions.map(r => (r.code === 'VIC' ? { ...r, controller: 'ai', deposits: { ai: 20000, player: 2000 }, devTier: 3, devProgress: 0.5 } : r)) };
+    s = addProject(s, 'vic_park', 'tech_innovation_park', 'VIC', 'active');
+    let st = initializeLivingRegions({ ...s, turn: 1 });
+    for (let t = 2; t <= 6; t++) st = round(st, s, t);
+    return { st, s: { ...s, turn: 6 } };
+  };
+
+  check('lr_diplomacy_value', 'Diplomacy receives high VIC importance (core region); Living Regions does not decide the response', () => {
+    const { st } = rileyVic();
+    const ctx = lrDiplomacyContext(st);
+    const f = createDiplomacyFixture();
+    const worldCtx: DiplomacyWorld = { ...f.world, regional: ctx };
+    const plain = diplomaticRegionStake(f.world, 'ai', 'VIC').stake;
+    const rich = diplomaticRegionStake(worldCtx, 'ai', 'VIC');
+    const deals = canon(f.state);
+    return (ctx.VIC.coreFor === 'ai' && ctx.VIC.valueMultiplier >= 1.1 && rich.stake >= plain && /core/.test(rich.reason) && canon(f.state) === deals) || canon({ vic: ctx.VIC, plain, rich });
+  });
+
+  check('lr_rival_ai', 'Rival AI receives richer regional value as a bounded score input; targets are not set directly', () => {
+    const { st, s } = rileyVic();
+    const decisions = [{ type: 'deposit_region', score: 50, data: { region: 'VIC' } }, { type: 'deposit_region', score: 50, data: { region: 'NT' } }, { type: 'rest', score: 40, data: {} }];
+    const out = lrAdjustAiDecisions(decisions, st, s, 'ai', 'ai');
+    return (out.length === 3 && out[0].score! > out[1].score! && out[0].score! - 50 <= 12 && out[2].score === 40 && decisions[0].score === 50) || canon(out);
+  });
+
+  check('lr_gi3', 'GI3 consumes regional context as a notice; the explicit strategy is not overwritten', () => {
+    const f = createGIFixtureWorld();
+    const ctx = createGIConversationContext();
+    const contract = compileGI3StrategyIntent(parseGILanguage('Protect NSW, then reach $15K, then expand into VIC', f.world, ctx), f.world, ctx, null).contract;
+    const gi3: GI3StrategyState = { ...createEmptyGI3StrategyState(), active: { ...contract, status: 'active' } };
+    const d: LRDerivedEvent = { id: 'lre_x', turn: 6, kind: 'regional_growth_accelerated', regionId: 'VIC', text: 'Victoria moved from stable to growing.', significance: 'meaningful', causedByEventId: null, rootEventId: null, reactionDepth: 0, actorKey: null, evidence: [] };
+    const e = lrToWorldEvent(d, base, ['player']);
+    const next = gi3ConsiderRegionalChange(gi3, e);
+    return (next.notices.length === gi3.notices.length + 1 && canon(next.active!.goals) === canon(gi3.active!.goals) && /more attractive/.test(next.notices[next.notices.length - 1].text)) || canon(next.notices);
+  });
+
+  check('lr_background_ai', 'Background AI may surface a transport bottleneck; Living Regions itself does not interrupt', () => {
+    const { st, s } = qldGrowth();
+    const hasBn = st.regions.QLD.risks.some(x => x.kind === 'infrastructure_bottleneck');
+    const f = createGIFixtureWorld();
+    const gw: GIWorld = { ...f.world, livingRegions: { state: st, inputs: s, viewerId: 'player', viewerKeys: ['player'], names: s.ownerNames } };
+    const bg = backgroundLivingRegionInputs(gw);
+    const item = bg.attention.find(a => a.subject === 'QLD' && /transport/i.test(a.reason));
+    return (hasBn && Boolean(item) && /Queensland/.test(item!.reason)) || canon({ risks: st.regions.QLD.risks, bg });
+  });
+
+  check('lr_contract_relevance', 'SA high energy need: energy contract relevance ↑ (the contract engine stays canonical)', () => {
+    let s = createLRFixtureInputs();
+    let st = initializeLivingRegions(s);
+    const sa = st.regions.SA;
+    st = { ...st, regions: { ...st.regions, SA: lrRecompute({ ...sa, sectors: { ...sa.sectors, renewables: 35, technology: 40, mining: 45 }, economy: { ...sa.economy, score: 60 }, momentum: { ...sa.momentum, value: 0.4, band: 'growing' } }, s, {}).region } };
+    const grid = s.contracts.find(c => c.contractType === 'renewable_energy_grid')!;
+    const eco = { ...grid, id: 'x', contractType: 'eco_tourism_network' };
+    const a = lrContractRelevance(st, grid); const b = lrContractRelevance(st, eco);
+    const energyNeed = st.regions.SA.needs.find(n => n.category === 'energy' && n.status === 'open');
+    return (Boolean(energyNeed) && a.score > b.score + 10 && a.reasons.some(r => /energy/.test(r)) && s.contracts.length === PRESET_REGIONAL_CONTRACTS.length) || canon({ a, b, needs: st.regions.SA.needs });
+  });
+
+  check('lr_history', 'History keeps major project/contract/crisis events, ignores minor ones, stays bounded', () => {
+    let s = base; let st = initializeLivingRegions(s);
+    st = apply(st, ev('project_started', 'project', 'infra_hsr_nsw_vic', { significance: 'minor' }), setProject(s, 'infra_hsr_nsw_vic', 'under_construction'));
+    st = apply(st, ev('market_shift_major', 'market', 'Coal', { significance: 'meaningful', before: { price: 100 }, after: { price: 110 } }), s);
+    const minorKept = st.regions.NSW.history.length;
+    for (let i = 0; i < 20; i++) { s = addContract({ ...s, turn: 6 + i }, `nsw_h${i}`, 'agricultural_logistics', 'NSW', 'completed'); st = apply(st, ev('contract_completed', 'contract', `nsw_h${i}`, { turn: 6 + i }), s); }
+    return (minorKept === 0 && st.regions.NSW.history.length <= LR_LIMITS.history && st.regions.NSW.history.some(h => h.kind === 'contract')) || canon({ minorKept, n: st.regions.NSW.history.length });
+  });
+
+  check('lr_fog', 'Fog of war: the player view never reveals exact hidden rival investment', () => {
+    const { st, s } = rileyVic();
+    const fog = { ...s, fogOfWar: true };
+    const pres = lrVisiblePresence(fog, 'VIC', ['player']);
+    const riley = pres.find(p => p.ownerKey === 'ai');
+    const mine = pres.find(p => p.ownerKey === 'player');
+    const story = lrStorySummary(st.regions.VIC, fog, ['player']);
+    return (Boolean(riley) && riley!.amount === null && mine?.amount === 2000 && !/20,?000/.test(story)) || canon({ pres, story });
+  });
+
+  check('lr_world_reaction_loop', 'A regional derived event is processed by World Reaction once — no feedback loop', () => {
+    const { st: st0, s } = qldGrowth();
+    let lr = st0;
+    const s1 = setProject(s, 'infra_inland_rail_qld', 'active');
+    const swrS = createSWRFixtureInputs();
+    let calls = 0;
+    const derive = { living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { calls += 1; const r = lrApplyWorldEvent(lr, e, s1); lr = r.state; return r.derived.map(d => lrToWorldEvent(d, s1, ['player', 'ai'])); } };
+    const root = ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 5 });
+    const out = processWorldReactions(createEmptyWorldReactionState(), [root], swrS, { derive });
+    const lrEvents = out.events.filter(e => e.sourceSystem === 'living_regions');
+    const again = processWorldReactions(out.state, lrEvents, swrS, { derive });
+    return (lrEvents.length >= 1 && calls === 1 && lrEvents.every(e => e.rootEventId === root.id && e.reactionDepth === 1) && again.events.filter(e => e.sourceSystem === 'living_regions').length === lrEvents.length && calls === 1) || canon({ calls, kinds: out.events.map(e => [e.kind, e.reactionDepth]), n: lrEvents.length });
+  });
+
+  check('lr_determinism', 'Same sequence → same regional state', () => {
+    const a = waMining(); const b = waMining();
+    return canon(a.st) === canon(b.st) || 'diverged';
+  });
+
+  check('lr_save_load', 'Save/load: a growing mining-specialized WA keeps development, momentum, specialization, needs and history', () => {
+    const { st } = waMining();
+    const back = sanitizeLivingRegionsState(clone(st))!;
+    const k = (r: DynamicRegionalState) => canon([r.development, r.momentum, r.specializations, r.needs, r.history, r.identity, r.sectors]);
+    return (k(back.regions.WA) === k(st.regions.WA) && back.revision === st.revision) || 'mismatch';
+  });
+
+  check('lr_old_save', 'Old save without Living Regions: safe initialisation from canonical systems', () => {
+    const none = sanitizeLivingRegionsState(undefined);
+    let s = setContract(base, 'green_energy_sa', 'completed');
+    s = { ...s, regions: s.regions.map(r => (r.code === 'SA' ? { ...r, devTier: 2 } : r)) };
+    const st = initializeLivingRegions(s);
+    return (none === null && st.regions.SA.development.canonicalTier === 2 && (st.regions.SA.sectors.renewables || 0) > 0 && st.regions.SA.history.length === 0) || canon(st.regions.SA.development);
+  });
+
+  check('lr_ai_vs_ai', 'AI vs AI: an AI investment changes a region with no human involved', () => {
+    let s = createLRFixtureInputs({ ownerNames: { ai: 'Riley', ai2: 'Jordan' } });
+    s = { ...s, regions: s.regions.map(r => (r.code === 'NT' ? { ...r, controller: 'ai2', deposits: { ai2: 8000 } } : r)) };
+    let st = initializeLivingRegions(s);
+    const s1 = setProject(s, 'infra_subsea_nt', 'active');
+    const id = s.projects.find(p => p.regionId === 'NT')?.id || 'infra_subsea_nt';
+    const s2 = setProject(s, id, 'active');
+    st = apply(st, ev('project_completed', 'project', id, { actorId: 'ai2' }), s2);
+    return (st.regions.NT.history.length > 0 && st.regions.NT.infrastructure.capacity.technology > 40 && Boolean(s1)) || canon(st.regions.NT);
+  });
+
+  check('lr_bounded', 'All regional arrays stay bounded under heavy event load', () => {
+    let s = base; let st = initializeLivingRegions(s);
+    for (let i = 0; i < 40; i++) { s = addContract({ ...s, turn: 6 + i }, `b${i}`, i % 2 ? 'renewable_energy_grid' : 'ai_research_center', 'SA', 'completed'); st = apply(st, ev('contract_completed', 'contract', `b${i}`, { turn: 6 + i }), s); st = round(st, s, 6 + i); }
+    const r = st.regions.SA;
+    return (r.history.length <= LR_LIMITS.history && r.needs.length <= LR_LIMITS.needs + 2 && r.opportunities.length <= LR_LIMITS.opportunities && r.risks.length <= LR_LIMITS.risks && r.conditions.length <= LR_LIMITS.conditions && r.evidence.length <= LR_LIMITS.evidence && st.derived.length <= LR_LIMITS.derived && r.momentum.history.length <= LR_LIMITS.momentumHistory && Object.keys(r.sectors).length <= LR_SECTORS.length) || canon({ h: r.history.length, e: r.evidence.length, d: st.derived.length });
+  });
+
+  check('lr_dev_slow', 'Development is slow: one deposit never makes a region Advanced', () => {
+    const st0 = initializeLivingRegions(base);
+    const s1 = { ...base, regions: base.regions.map(r => (r.code === 'TAS' ? { ...r, controller: 'player', deposits: { player: 2000 } } : r)) };
+    const st1 = apply(st0, ev('region_reinforced', 'region', 'TAS', { actorId: 'player' }), s1);
+    return (st1.regions.TAS.development.tier === st0.regions.TAS.development.tier && st1.regions.TAS.development.structural === st0.regions.TAS.development.structural) || canon([st0.regions.TAS.development, st1.regions.TAS.development]);
+  });
+
+  check('lr_full_ripple', 'QLD: rail hub + mining contract → growth, specialization and a traceable story', () => {
+    let s = addContract(createLRFixtureInputs(), 'qld_mine', 'mining_tech_initiative', 'QLD');
+    let st = initializeLivingRegions(s);
+    const q = st.regions.QLD;
+    st = { ...st, regions: { ...st.regions, QLD: lrRecompute({ ...q, sectors: { ...q.sectors, mining: 30, trade: 20 } }, s, {}).region } };
+    s = setProject({ ...s, turn: 6 }, 'infra_inland_rail_qld', 'active');
+    const r1 = lrApplyWorldEvent(st, ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 6 }), s); st = r1.state; st = round(st, s, 6);
+    s = setContract({ ...s, turn: 8 }, 'qld_mine', 'completed');
+    st = apply(st, ev('contract_completed', 'contract', 'qld_mine', { turn: 8 }), s);
+    for (let t = 8; t <= 10; t++) st = round(st, s, t);
+    const reg = st.regions.QLD;
+    const derivedGrowth = r1.derived.some(d => d.kind === 'regional_growth_accelerated');
+    return (derivedGrowth && reg.history.some(h => /Rail/i.test(h.text)) && reg.history.some(h => h.kind === 'contract') && (reg.sectors.mining || 0) > 40 && reg.infrastructure.capacity.transport >= 60) || canon({ d: r1.derived.map(x => x.kind), h: reg.history, sec: reg.sectors, m: reg.momentum });
+  });
+
+  check('lr_what_if', 'What-if: completing the QLD rail projects capacity gains and changes nothing', () => {
+    const { st, s } = qldGrowth();
+    const before = canon(st);
+    const p = lrPreviewProject(st, s, 'infra_inland_rail_qld');
+    return (Boolean(p) && p!.regional.some(x => /Transport capacity ↑/.test(x)) && p!.immediate[0].startsWith('−$') && canon(st) === before) || canon(p);
+  });
+
+  check('lr_contextual', 'Contextual Actions: a legal action matching a regional need ranks higher; illegal ones untouched', () => {
+    const { st } = qldGrowth();
+    const mk = (id: string, legal: boolean) => ({ id, label: 'Invest in Inland Rail Hub (QLD)', description: 'Fund rail in Queensland', legal, relevance: 10, reasons: [] as string[] }) as unknown as ContextualActionCandidate;
+    const set = { recommended: null, useful: [mk('a', true)], available: [mk('b', false)], ranked: [mk('a', true), mk('b', false)] } as unknown as ContextualActionSet;
+    const out = annotateContextualActionsWithRegions(set, st);
+    return (out.useful[0].relevance > 10 && out.useful[0].reasons.some(r => /transport/.test(r)) && out.available[0].relevance === 10) || canon(out);
+  });
+
+  check('lr_gi_routing', 'GI: region questions route to Living Regions; existing phrasings are not hijacked', () => {
+    const { st, s } = rileyVic();
+    const f = createGIFixtureWorld();
+    const gw: GIWorld = { ...f.world, livingRegions: { state: st, inputs: s, viewerId: 'player', viewerKeys: ['player'], names: s.ownerNames } };
+    const t = (q: string) => detectLivingRegionsQuery(q, gw)?.topic || null;
+    const got = { happening: t("What's happening in Queensland?"), valuable: t('Why is Victoria valuable?'), fastest: t('Which region is growing fastest?'), needs: t('What does South Australia need?'), infra: t('Which regions have infrastructure problems?'), invest: t('Where should I invest?'), preview: t('What happens if I build the Tasmania wind farm?'), cheapest: t('Which region is cheapest to take next?'), changed: t('What changed?'), cash: t('How much money do I have?') };
+    return canon(got) === canon({ happening: 'status', valuable: 'value', fastest: 'fastest', needs: 'needs', infra: 'infra_problems', invest: 'invest_where', preview: 'project_preview', cheapest: null, changed: null, cash: null }) || canon(got);
+  });
+
+  check('lr_gi_fog', 'GI: under fog, rival-investment answers never state hidden amounts; projections are labelled', () => {
+    const { st, s } = rileyVic();
+    const f = createGIFixtureWorld();
+    const actors = [...f.world.actors.filter(a => a.id !== 'ai'), { ...(f.world.actors.find(a => a.id === 'ai') as any), id: 'ai', name: 'Riley', relation: 'rival' }] as GIWorld['actors'];
+    const gw: GIWorld = { ...f.world, actors, livingRegions: { state: st, inputs: { ...s, fogOfWar: true }, viewerId: 'player', viewerKeys: ['player'], names: s.ownerNames } };
+    const q1 = detectLivingRegionsQuery('Which region is Riley most invested in?', gw)!;
+    const q2 = detectLivingRegionsQuery('Why does Riley care about Victoria?', gw)!;
+    const text = [composeLivingRegionsAnswer(q1, gw), composeLivingRegionsAnswer(q2, gw)].flatMap(a => a.sections.flatMap(x => x.claims.map(c => c.text))).join(' ');
+    const prev = composeLivingRegionsAnswer(detectLivingRegionsQuery('What happens if I build the Tasmania wind farm?', gw)!, gw);
+    const projOk = prev.sections.filter(x => x.id === 'regional' || x.id === 'likely' || x.id === 'second').every(x => x.claims.every(c => c.kind === 'projection'));
+    return (!/20,?000/.test(text) && /Fog of war/.test(text) && /Victoria/.test(text) && projOk) || text.slice(0, 400);
+  });
+
+  check('lr_market_exposure', 'Specialization amplifies commodity exposure (no regional price is created)', () => {
+    const { st, s } = waMining();
+    const plain = initializeLivingRegions(s);
+    const boom = { ...s, prices: { ...s.prices, 'Iron Ore': 130, Gold: 130 } };
+    const a = lrRawEconomy(boom, 'WA', st.regions.WA) - lrRawEconomy(s, 'WA', st.regions.WA);
+    const b = lrRawEconomy(boom, 'WA', { ...plain.regions.WA, sectors: {} }) - lrRawEconomy(s, 'WA', { ...plain.regions.WA, sectors: {} });
+    return (a > b && canon(boom.basePrices) === canon(s.basePrices)) || canon({ a, b });
+  });
+
+  return results;
+}
+
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -123939,6 +125782,11 @@ function AustraliaGame() {
   swrStateRef.current = ((gameState as any).worldReaction as WorldReactionState | undefined) || null;
   /** The most recent committed canonical action (provenance for the next detection pass). */
   const swrActionRef = useRef<SWRActionRef | null>(null);
+  // Living Regions 2.0 (wired further below): regional condition read by AI scoring, Diplomacy, Team OS and crises.
+  const lrStateRef = useRef<LivingRegionsState | null>(null);
+  lrStateRef.current = ((gameState as any).livingRegions as LivingRegionsState | null | undefined) || null;
+  /** Rival AI: bounded regional-value adjustment of scored candidates (set once the live inputs exist). */
+  const lrDecisionAdjustRef = useRef<((actorId: string, decisions: any[]) => any[]) | null>(null);
   const dnStateRef = useRef<DiplomacyState | null>(null);
   dnStateRef.current = ((gameState as any).diplomacyState as DiplomacyState | undefined) || null;
   /** Region controllers (as diplomatic leads) from the last render — i.e. BEFORE the action being checked. */
@@ -124090,10 +125938,12 @@ function AustraliaGame() {
       ],
       personality: getAiMemoryPersonalityScale(actor.id)
     });
+    // Living Regions: richer regional value is a bounded score INPUT (the AI still chooses; nothing is removed).
+    const regional = lrDecisionAdjustRef.current ? lrDecisionAdjustRef.current(String(actor.id), influenced) as T[] : influenced;
     // Diplomacy 2.0: options that would break this actor's active promises sink below everything else,
     // unless its explicit, bounded breach logic allows it (then the violation is recorded and explained).
     const filter = dnDecisionFilterRef.current;
-    return filter ? filter(String(actor.id), influenced) as T[] : influenced;
+    return filter ? filter(String(actor.id), regional) as T[] : regional;
   }, [actorsById, gameSettings.aiMemoryEnabled, gameSettings.aiMemoryInfluenceStrength, gameSettings.aiStrategicLearningEnabled, gameSettings.aiStrategicLearningStrength, gameSettings.aiPersistentMemoryEnabled, gameState.aiMemoriesByActor, gameState.teamStrategicPlansByTeam, getAiMemoryPersonalityScale]);
 
   // RP2: consumes the flag initializeGameMode sets, once actorsById/teamsById have recomputed for
@@ -124163,6 +126013,7 @@ function AustraliaGame() {
   const siWorldViewRef = useRef<SettingsIntelligenceWorldView | null>(null);
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
   const swrViewRef = useRef<WorldReactionWorldView | null>(null);
+  const lrViewRef = useRef<LivingRegionsWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -126058,6 +127909,7 @@ function dispatchGameSettingsChange(
         settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
         diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
         worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
+        livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -137590,7 +139442,7 @@ function dispatchGameSettingsChange(
 
   const handleTurnTransition = useCallback((_sourcePlayer: 'player' | 'ai') => {
     const activeRegs = Object.keys(REGIONS || {});
-    const dynamicEvt = generateDynamicEvent(gameState, gameState.day || 1, activeRegs, worldCrisisContext(swrStateRef.current));
+    const dynamicEvt = generateDynamicEvent(gameState, gameState.day || 1, activeRegs, mergeRegionalCrisisContext(worldCrisisContext(swrStateRef.current), lrStateRef.current));
     if (dynamicEvt && dynamicEvt.name) {
       dispatchGameState({ type: 'SET_DYNAMIC_EVENT', payload: dynamicEvt });
     }
@@ -142125,7 +143977,7 @@ function dispatchGameSettingsChange(
     let nextState: GameStateSnapshot = gameState;
 
     if (gameSettings?.dynamicCrisisChainsEnabled) {
-      nextState = evaluateTurnCrisisChains(nextState, gameSettings, worldCrisisContext(swrStateRef.current));
+      nextState = evaluateTurnCrisisChains(nextState, gameSettings, mergeRegionalCrisisContext(worldCrisisContext(swrStateRef.current), lrStateRef.current));
     }
     if (gameSettings?.narrativeEngineEnabled) {
       nextState = evaluateNarrativeDecisions(nextState);
@@ -154174,7 +156026,7 @@ function dispatchGameSettingsChange(
         (Array.isArray(player?.advancedLoans) ? player.advancedLoans : []).map((l: any) => [l?.amount, l?.daysRemaining]),
         player?.debt ?? 0
       ],
-      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}],
+      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}, Number((gameState as any).livingRegions?.revision || 0)],
       market: gameState.resourcePrices || {},
       projects: projectSlice,
       contracts: contractSlice,
@@ -154388,6 +156240,7 @@ function dispatchGameSettingsChange(
       settingsIntel: siWorldViewRef.current,
       diplomacy: dnViewRef.current,
       worldReaction: swrViewRef.current,
+      livingRegions: lrViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -154494,7 +156347,7 @@ function dispatchGameSettingsChange(
         if (!a.location) { travelCostFor[a.id] = null; return; }
         try { travelCostFor[a.id] = a.location === code ? 0 : Number(calculateTravelCost(a.location, code)); } catch { travelCostFor[a.id] = null; }
       });
-      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? rivalCost : null, teamCostToTake: mine ? 0 : ownCost, travelCostFor };
+      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? rivalCost : null, teamCostToTake: mine ? 0 : ownCost, travelCostFor, regional: lrTeamOsRegional(lrStateRef.current, code) };
     });
     const metric = gameSettings.winCondition;
     const plan: any = isFriendly && !aiTeam ? sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamId] || null : null;
@@ -154948,7 +156801,7 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), [v9ActionSet, bgLive, (gameState as any).worldReaction, player?.id]);
+  const v9ActionSetView = useMemo(() => annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), (gameState as any).livingRegions), [v9ActionSet, bgLive, (gameState as any).livingRegions, (gameState as any).worldReaction, player?.id]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -155199,9 +157052,11 @@ function dispatchGameSettingsChange(
       clock: { hudTurn: Number(gameState.turnCounter || 0) + 1, actorsPerRound: Math.max(1, Array.isArray((gameState as any).turnOrder) ? (gameState as any).turnOrder.length : dnAllActors.length) },
       win: { metric: String(gameSettings.winCondition || 'money'), regionsTarget: String(gameSettings.winCondition) === 'regions' ? REGION_CONTROL_MAJORITY : null },
       strategy, relationship, hostileHistory: (owner, other) => countRememberedHostility(aiMemoriesRef.current, resolveAiMemoryActorId(owner), resolveAiMemoryActorId(other)),
-      fogOfWar: fog, teamMode: isTeamMode, treasuryAvailable, authority, resources: Object.keys(prices).length ? Object.keys(prices) : ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices
+      fogOfWar: fog, teamMode: isTeamMode, treasuryAvailable, authority, resources: Object.keys(prices).length ? Object.keys(prices) : ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices,
+      // Living Regions: public regional value / core status as a valuation INPUT.
+      regional: lrDiplomacyContext(lrStateRef.current)
     };
-  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
+  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, (gameState as any).livingRegions, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
 
   const dnPlayerWorld = useMemo(() => buildDnWorld(String(player?.id || 'player')), [buildDnWorld, player?.id]);
   const dnReserveFloor = Number(gameSettings.coPilotSettings?.spendingCaps?.minimumCashReserve || 0) || null;
@@ -155568,7 +157423,7 @@ function dispatchGameSettingsChange(
     Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { ownerNames[tid] = String(t?.name || (tid === TEAM_PLAYER_ID ? 'Your team' : 'Rival team')); ownerTeams[tid] = tid; });
     const inv = (a: any) => { const out: Record<string, number> = {}; (Array.isArray(a?.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); if (k) out[k] = (out[k] || 0) + 1; }); return out; };
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
     let contracts: SWRInputs['contracts'] = [];
     try { contracts = listRegionalContracts(gameState).slice(0, 16).map((c: any) => ({ id: String(c.id), title: String(c.title || c.name || c.id), regionId: c.regionId ? String(c.regionId) : null, status: String(c.status || 'available'), rewardMoney: Number(c.rewardMoney ?? c.reward ?? c.payout ?? 0), turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null, assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null })); } catch { contracts = []; }
     const teams: SWRInputs['teams'] = isTeamMode ? Object.entries(teamsById || {}).map(([tid, t]: [string, any]) => {
@@ -155609,6 +157464,60 @@ function dispatchGameSettingsChange(
   const swrOwnerToActor = useCallback((k: string) => (isTeamMode ? (dnLeadOfTeam(k) || k) : k), [isTeamMode, dnLeadOfTeam]);
   swrViewRef.current = swrEnabled ? { state: swrState, viewerId: String(player?.id || 'player'), viewerTeamId: player?.teamId ? String(player.teamId) : null, names: swrInputs.ownerNames, inputs: swrInputs } : null;
 
+
+  // ---- Living Regions 2.0: live wiring ----------------------------------------------------------------
+  // Regional condition is interpreted from canonical systems + World Reaction events. Updates happen only on
+  // (a) World Reaction events (via the router's derive hook), (b) round boundaries, (c) regional hash changes.
+  const lrStoredRaw = (gameState as any).livingRegions as LivingRegionsState | null | undefined;
+  const lrState = useMemo(() => sanitizeLivingRegionsState(lrStoredRaw), [lrStoredRaw]);
+  const lrInputs = useMemo<LRInputs>(() => {
+    const devs = (gameState.regionalDevLevels || {}) as Record<string, any>;
+    const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? (gameState.publicStabilityState.regionalStability || {}) as Record<string, number> : null;
+    const rawProjects = gameState.infrastructureProjects || {};
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 24).map((p: any) => {
+      const total = Number(p.totalCost || 0); const inv = Number(p.totalInvestedMoney || 0);
+      return { id: String(p.id), title: String(p.title || p.id), regionId: p.regionId ? String(p.regionId) : null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), progress: total > 0 ? Math.max(0, Math.min(1, inv / total)) : 0, remainingCost: Math.max(0, total - inv), completionTurn: typeof p.completionTurn === 'number' ? p.completionTurn : null };
+    });
+    let contracts: LRInputs['contracts'] = [];
+    try { contracts = listRegionalContracts(gameState).slice(0, 24).map((c: any) => ({ id: String(c.id), title: String(c.title || c.id), regionId: c.issuingRegionId ? String(c.issuingRegionId) : c.regionId ? String(c.regionId) : null, contractType: String(c.contractType || ''), status: String(c.status || 'available'), assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null, completedAtTurn: typeof c.completedAtTurn === 'number' ? c.completedAtTurn : null, rewardMoney: Number(c.rewards?.money || c.rewardMoney || 0) })); } catch { contracts = []; }
+    const crises = gameSettings.dynamicCrisisChainsEnabled ? ((gameState as any).crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0), category: String(c.category || ''), affectedRegions: Array.isArray(c.affectedRegions) ? c.affectedRegions.map(String) : [] })) : [];
+    return {
+      turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled),
+      regions: swrInputs.regions.map(r => {
+        const d = devs[r.code] || {};
+        return { code: r.code, name: r.name, controller: r.controller, deposits: r.deposits, devTier: Number(d.tier || 0), devProgress: d.expToNextTier ? Math.max(0, Math.min(1, Number(d.currentExp || 0) / Number(d.expToNextTier))) : 0, investedCapital: Number(d.totalInvestedCapital || 0), adjacent: ((ADJACENT_REGIONS as Record<string, string[]>)[r.code] || []), resources: REGIONAL_RESOURCES[r.code] || [], stability: stab && typeof stab[r.code] === 'number' ? stab[r.code] : null };
+      }),
+      projects, contracts,
+      standing: gameSettings.regionalStandingEnabled === false ? {} : JSON.parse(JSON.stringify((gameState as any).standingPerActor || {})),
+      prices: swrInputs.prices, basePrices: swrInputs.basePrices, crises, nationalStability: swrInputs.stability?.national ?? null,
+      ownerNames: swrInputs.ownerNames, ownerTeams: swrInputs.ownerTeams,
+      windows: swrState.windows.map(w => ({ id: w.id, type: w.type, subject: w.subject, status: w.status, expiresTurn: w.expiresTurn, reason: w.reason })),
+      winRegionsTarget: swrInputs.win?.target ?? null
+    };
+  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, (gameState as any).regionalContracts, (gameState as any).crisisChainState, (gameState as any).standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
+  const lrViewerKeys = useMemo(() => [String(player?.id || 'player'), ...(isTeamMode && player?.teamId ? [String(player.teamId)] : [])], [player?.id, player?.teamId, isTeamMode]);
+  lrViewRef.current = swrEnabled && lrState ? { state: lrState, inputs: lrInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
+  const lrInputsRef = useRef(lrInputs); lrInputsRef.current = lrInputs;
+  // Rival AI: regional valuation as a bounded scoring input (uses only public regional state + the AI's own holdings).
+  lrDecisionAdjustRef.current = swrEnabled && lrState ? (actorId: string, decisions: any[]) => {
+    const a = dnAllActors.find(x => String(x.id) === actorId);
+    const ownerKey = isTeamMode && a?.teamId ? String(a.teamId) : actorId;
+    return lrAdjustAiDecisions(decisions, lrStateRef.current, lrInputsRef.current, actorId, ownerKey);
+  } : null;
+  const persistLivingRegions = useCallback((next: LivingRegionsState) => {
+    const clean = sanitizeLivingRegionsState(next);
+    lrStateRef.current = clean;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { livingRegions: clean } as any });
+  }, []);
+  /** Ledger: only meaningful regional shifts and new milestones (never raw score changes). */
+  const logRegionalShifts = useCallback((events: StrategicWorldEvent[], before: LivingRegionsState | null, after: LivingRegionsState) => {
+    events.filter(e => e.sourceSystem === 'living_regions').slice(0, 3).forEach(e => appendGameActivityLedgerEvent('decision', { actorId: e.actorId || 'system', eventType: `living_regions_${e.kind}`, summary: e.strategicMeaning.slice(0, 240) } as any));
+    after.milestones.filter(m => !(before?.milestones || []).some(x => x.id === m.id)).slice(0, 2).forEach(m => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: 'living_regions_milestone', summary: `Regional milestone: ${m.label} (${after.regions[m.regionId]?.name || m.regionId}).` } as any));
+  }, [appendGameActivityLedgerEvent]);
+  const lrObservers = useMemo(() => swrInputs.actors.map(a => a.id), [swrInputs.actors]);
+  const [lrMapMode, setLrMapMode] = useState<LRMapMode>('control');
+  const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
+
   const persistWorldReaction = useCallback((next: WorldReactionState) => {
     const clean = sanitizeWorldReactionState(next);
     swrStateRef.current = clean;
@@ -155626,9 +157535,9 @@ function dispatchGameSettingsChange(
     },
     // GI3 owns the decision: a replan-worthy change becomes a notice; explicit goals never change here.
     gi3: (i, e) => {
-      if (i.requestedEvaluation !== 'evaluate_replan') return;
+      if (i.requestedEvaluation !== 'evaluate_replan' && i.requestedEvaluation !== 'regional_context') return;
       const base = sanitizeGI3StrategyState(gi3StateRef.current);
-      const next = gi3ConsiderWorldReaction(base, i, e);
+      const next = i.requestedEvaluation === 'regional_context' ? gi3ConsiderRegionalChange(base, e) : gi3ConsiderWorldReaction(base, i, e);
       if (next !== base) persistGI3State(next, 'live evaluation');
     },
     // Diplomacy: leverage changed — cached deal valuations are stale (no deal is ever created here).
@@ -155668,12 +157577,20 @@ function dispatchGameSettingsChange(
       // First pass after mount / load: seed bands silently and revalidate windows (rehydration).
       const det = detectStrategicConsequences(null, swrSnapshot, st);
       persistWorldReaction(rehydrateWorldReactionState({ ...st, bands: det.bands }, swrInputs));
+      // Living Regions: old saves / new matches initialise from current canonical systems (history starts now).
+      if (!lrStateRef.current) persistLivingRegions(initializeLivingRegions(lrInputsRef.current));
       return;
     }
     const det = detectStrategicConsequences(prev, swrSnapshot, st, { action: swrActionRef.current, ownerToActor: swrOwnerToActor });
     swrActionRef.current = null;
     st = { ...st, bands: det.bands, diagnostics: { ...st.diagnostics, ignored: st.diagnostics.ignored + det.ignored, deduped: st.diagnostics.deduped + det.deduped, lastChangedDomains: det.changedDomains } };
-    const out = processWorldReactions(st, det.events, swrInputs, { handlers: swrHandlers });
+    // Living Regions receives each routed event at its own entry point; its derived regional shifts re-enter
+    // the SAME queue (root/depth/budget/dedupe apply) and are processed once by the other systems.
+    const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : initializeLivingRegions(lrInputsRef.current);
+    let lrWork: LivingRegionsState = lrBefore!;
+    const lrT0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const derive = { living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(d => lrToWorldEvent(d, lrInputsRef.current, lrObservers, Number(gameState.day || 1))); } };
+    const out = processWorldReactions(st, det.events, swrInputs, { handlers: swrHandlers, derive });
     st = updateWorldSignals(updateStrategicWindows(out.state, swrInputs, out.events), swrInputs, out.events);
     const ms = typeof performance !== 'undefined' ? Math.round((performance.now() - t0) * 10) / 10 : 0;
     st = { ...st, diagnostics: { ...st.diagnostics, evaluations: st.diagnostics.evaluations + 1, lastMs: ms } };
@@ -155682,6 +157599,11 @@ function dispatchGameSettingsChange(
       appendGameActivityLedgerEvent('decision', { actorId: e.actorId || 'system', eventType: `world_reaction_${e.kind}`, summary: e.strategicMeaning.slice(0, 240) } as any);
       if (e.significance === 'critical') appendReplayCheckpoint(`World change: ${e.strategicMeaning}`.slice(0, 120), { kind: 'major_action', relatedId: e.id });
     });
+    if (lrWork !== lrBefore) {
+      lrWork = { ...lrWork, diagnostics: { ...lrWork.diagnostics, lastMs: typeof performance !== 'undefined' ? Math.round((performance.now() - lrT0) * 10) / 10 : 0 } };
+      logRegionalShifts(out.events, lrBefore, lrWork);
+      persistLivingRegions(lrWork);
+    }
     const prevOpen = new Set((swrStateRef.current?.windows || []).filter(w => w.status === 'open').map(w => w.id));
     st.windows.filter(w => w.status === 'open' && !prevOpen.has(w.id) && w.observers.includes(String(player?.id || 'player'))).slice(0, 2).forEach(w => appendGameActivityLedgerEvent('decision', { actorId: String(player?.id || 'player'), eventType: 'world_reaction_window_opened', summary: `Strategic window: ${w.reason}`.slice(0, 240) } as any));
     persistWorldReaction(st);
@@ -155697,6 +157619,20 @@ function dispatchGameSettingsChange(
     let boundary: SWRTiming | null = null;
     if (day !== b.day) boundary = 'day_end'; else if (dnRound !== b.round) boundary = 'turn_end';
     swrBoundaryRef.current = { round: dnRound, day };
+    // Living Regions: once per round — momentum settles, persistence rules (specialization, identity, recovery) fire.
+    if (dnRound !== b.round && lrStateRef.current) {
+      const before = sanitizeLivingRegionsState(lrStateRef.current)!;
+      const adv = lrAdvanceRound(before, lrInputsRef.current);
+      if (adv.state !== before) {
+        if (adv.derived.length) {
+          const roots = adv.derived.map(d => lrToWorldEvent(d, lrInputsRef.current, lrObservers, day));
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+          logRegionalShifts(out.events, before, adv.state);
+        } else logRegionalShifts([], before, adv.state);
+        persistLivingRegions(adv.state);
+      }
+    }
     if (!boundary || !swrStateRef.current?.deferred.length) return;
     const rel = releaseDeferredReactions(sanitizeWorldReactionState(swrStateRef.current), boundary, dnRound);
     if (!rel.released.length) return;
@@ -155704,6 +157640,24 @@ function dispatchGameSettingsChange(
     persistWorldReaction(rel.state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dnRound, gameState.day, swrEnabled]);
+
+  // Living Regions: canonical regional changes with no world event (dev tier, regional stability, crisis scope,
+  // commodity index) re-read ONLY the impacted regions (per-region hashes).
+  const lrHashKey = useMemo(() => JSON.stringify(lrInputHashes(lrInputs)), [lrInputs]);
+  useEffect(() => {
+    if (!swrEnabled || !lrStateRef.current) return;
+    const before = sanitizeLivingRegionsState(lrStateRef.current)!;
+    const sync = lrSyncCanonical(before, lrInputsRef.current);
+    if (!sync.touched.length && sync.state === before) return;
+    if (sync.derived.length) {
+      const roots = sync.derived.map(d => lrToWorldEvent(d, lrInputsRef.current, lrObservers, Number(gameState.day || 1)));
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+      persistWorldReaction(out.state);
+      logRegionalShifts(out.events, before, sync.state);
+    }
+    persistLivingRegions(sync.state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lrHashKey, swrEnabled]);
 
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
@@ -171546,6 +173500,10 @@ function dispatchGameSettingsChange(
             <WorldConsequenceChainStrip state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} />
           )}
 
+          {swrEnabled && (
+            <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />
+          )}
+
           <GI3PlayStrip
             state={gi3Live}
             theme={themeStyles}
@@ -171781,6 +173739,7 @@ function dispatchGameSettingsChange(
         <SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} />
         <DiplomacyInspector binding={dnBinding} theme={themeStyles} />
         <WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} />
+        <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
       </div>
     );
 
@@ -173082,6 +175041,13 @@ function dispatchGameSettingsChange(
             <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-6 ${themeStyles.shadow} lg:col-span-2`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
+                {lrState && (
+                  <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={lrMapMode} onChange={e => setLrMapMode(e.target.value as LRMapMode)} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                      {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </label>
+                )}
                 <button
                   onClick={() => updateUiState({ showMap: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded text-sm`}
@@ -173162,6 +175128,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
+                          {(() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -173194,6 +175161,7 @@ function dispatchGameSettingsChange(
                         <div className="absolute left-1/2 transform -translate-x-1/2 bottom-full mb-8 hidden group-hover:block z-40">
                           <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs shadow-lg min-w-32`}>
                             <div className="font-bold mb-1">{region.name}</div>
+                            {lrState?.regions[code] && <div className="opacity-90 mb-1">{lrState.regions[code].identity.label} · {LR_MOMENTUM_LABEL[lrState.regions[code].momentum.band]}</div>}
                             <div className={canAfford ? 'text-green-400' : 'text-red-400'}>
                               Travel: ${travelCost}
                             </div>
@@ -173227,6 +175195,20 @@ function dispatchGameSettingsChange(
                   );
 	                })}
               </div>
+
+              {lrState && !(interactiveMapActive && selectedPreviewRegion) && (() => {
+                const focus = lrFocusRegion && lrState.regions[lrFocusRegion] ? lrFocusRegion : (lrState.regions[player.currentRegion] ? player.currentRegion : Object.keys(lrState.regions)[0]);
+                return (
+                  <div className="mt-4 space-y-2" data-testid="lr-region-detail">
+                    <label className="text-xs flex items-center gap-1">Region
+                      <select aria-label="Region details" value={focus} onChange={e => setLrFocusRegion(e.target.value)} className="bg-transparent border rounded px-1 py-0.5">
+                        {Object.keys(lrState.regions).map(c => <option key={c} value={c}>{lrState.regions[c].name}</option>)}
+                      </select>
+                    </label>
+                    <LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} />
+                  </div>
+                );
+              })()}
 
               {interactiveMapActive && selectedPreviewRegion && (
                 <div className={`${themeStyles.border} border rounded-lg p-4 mt-4`}>
@@ -173262,6 +175244,7 @@ function dispatchGameSettingsChange(
                           <div>{selectedPreviewActiveEvent ? `Event: ${selectedPreviewActiveEvent.name}` : 'No active event'}</div>
                         </div>
                       </div>
+                      <div className="mt-3"><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /></div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
@@ -181251,7 +183234,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     if (!uiState.showRegionalContractsModal) return null;
     const contracts = listRegionalContracts(gameState);
     const activeContracts = contracts.filter((c: any) => c.status === 'active');
-    const availableContracts = contracts.filter((c: any) => c.status === 'available');
+    // Living Regions ranks relevance only (the contract system still decides what exists and what it pays).
+    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c) })).sort((a: any, b: any) => b.rel.score - a.rel.score || a.i - b.i).map((x: any) => x.c);
     const completedContracts = contracts.filter((c: any) => c.status === 'completed' || c.status === 'failed');
 
     return (
@@ -181324,6 +183308,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                       <span className="text-[10px] px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 font-mono uppercase">{c.targetRegion || 'Global'}</span>
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
+                    {(() => { const rel = lrContractRelevance(lrState, c); const reg = lrState?.regions[c.issuingRegionId || c.regionId]; return rel.reasons.length && reg ? <div className="text-[11px] text-teal-300" data-testid="lr-contract-why">Why here: {reg.name} has {rel.reasons.join(', ')}.</div> : null; })()}
                     <div className="text-xs text-emerald-400 font-semibold">
                       Reward: +${(c.rewardCash || 0).toLocaleString()} | +{c.rewardPrestige || 0} Prestige
                     </div>
@@ -181929,6 +183914,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="swr-debrief">
 	              <span className="font-bold text-amber-300">Turning points: </span>
 	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).join(' · ')}
+	            </div>
+	          )}
+	          {buildLivingRegionsDebrief(lrStateRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-teal-700/40 text-xs leading-relaxed" data-testid="lr-debrief">
+	              <span className="font-bold text-teal-300">How the map changed: </span>
+	              {buildLivingRegionsDebrief(lrStateRef.current).join(' · ')}
 	            </div>
 	          )}
 
