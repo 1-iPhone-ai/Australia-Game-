@@ -13807,6 +13807,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   groupedInventoryCardsEnabled: false,
   playerIntentOnboardingEnabled: true,
   playerIntentOnboardingDismissed: [] as string[],
+  /** V9.2 Guided Learning progression (UI/player preference state — never AI memory). null = fresh. */
+  guidedLearning: null as any,
   playerIntentExplainRoutineActions: false,
   playerIntentExplainMode: 'high_impact' as CoPilotExplainMode,
   teamModeAiSystemsEnabled: false,
@@ -26135,6 +26137,7 @@ export type GameSettingsState = {
   groupedInventoryCardsEnabled: boolean;
   playerIntentOnboardingEnabled: boolean;
   playerIntentOnboardingDismissed: string[];
+  guidedLearning?: any;
   playerIntentExplainRoutineActions: boolean;
   playerIntentExplainMode: CoPilotExplainMode;
   teamModeAiSystemsEnabled: boolean;
@@ -79840,6 +79843,10 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
     migrated.gameSettings.playerIntentOnboardingEnabled = true;
     patches.push('Defaulted playerIntentOnboardingEnabled.');
   }
+  if (migrated.gameSettings.guidedLearning !== undefined && migrated.gameSettings.guidedLearning !== null && typeof migrated.gameSettings.guidedLearning !== 'object') {
+    migrated.gameSettings.guidedLearning = null;
+    patches.push('Reset malformed guidedLearning.');
+  }
   if (!Array.isArray(migrated.gameSettings.playerIntentOnboardingDismissed)) {
     migrated.gameSettings.playerIntentOnboardingDismissed = [];
   }
@@ -126896,7 +126903,7 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding }) => {
+export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
@@ -126920,6 +126927,7 @@ export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (()
           </span>
         )}
       </div>
+      {coachNode}
     </header>
   );
 };
@@ -126932,7 +126940,10 @@ export interface V9PlayHandlers {
 
 export interface V9AfterAction { rootId: string; did: string; changed: string[]; affected: string[] }
 
-export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter }) => {
+export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void; coach?: { target: LearningCoachTarget; node: React.ReactNode } | null }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter, coach = null }) => {
+  // Guided Learning coach callout sits beside the element it explains (never modal; the section stays usable).
+  const coachAtFocus = coach && coach.target === 'focus' && !c.decision && !c.waiting ? coach.node : null;
+  const coachAtRec = coach && !coachAtFocus ? coach.node : null;
   const card = `${theme.card} ${theme.border} border rounded-xl ${theme.shadow}`;
   const label = 'text-[11px] font-bold uppercase tracking-wider opacity-70';
   const alerts = c.attention.filter(a => a.id.startsWith('bg_'));
@@ -126994,6 +127005,7 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
             <button type="button" className="underline" onClick={h.onViewPlan}>View Plan</button>
             <button type="button" className="underline" onClick={h.onViewPlan}>Change Goal</button>
           </div>
+          {coachAtFocus}
         </section>
       )}
 
@@ -127050,6 +127062,7 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
           </div>
         )}
         <button type="button" className="text-xs underline mt-2" onClick={h.onAllActions} data-testid="v9-view-all-actions">View All Actions</button>
+        {coachAtRec}
       </section>
 
       {(c.upcoming.length > 0 || c.commitments.length > 0) && (
@@ -127136,7 +127149,7 @@ export const V9StrategicBrief: React.FC<{ c: V9Cohesion; theme: any; strategyLin
   </section>
 );
 
-export const V9_INTEL_SECTIONS: Array<[string, string]> = [['ask', 'Ask'], ['strategy', 'Strategy'], ['situation', 'Situation'], ['world', 'World'], ['team', 'Team'], ['rivals', 'Rivals'], ['diplomacy', 'Diplomacy'], ['whatif', 'What-If']];
+export const V9_INTEL_SECTIONS: Array<[string, string]> = [['ask', 'Ask'], ['learn', 'Learn'], ['strategy', 'Strategy'], ['situation', 'Situation'], ['world', 'World'], ['team', 'Team'], ['rivals', 'Rivals'], ['diplomacy', 'Diplomacy'], ['whatif', 'What-If']];
 export const V9IntelNav: React.FC<{ onGo: (id: string) => void; onAsk: (q: string) => void; region: string | null }> = ({ onGo, onAsk, region }) => (
   <nav aria-label="Intelligence sections" className="flex flex-wrap gap-1.5 text-xs" data-testid="v9-intel-nav">
     {V9_INTEL_SECTIONS.map(([id, l]) => <button key={id} type="button" className="px-2.5 py-1 rounded-full border border-slate-500/50" onClick={() => (id === 'whatif' ? onAsk('What if I end my turn now?') : onGo(id))}>{l}</button>)}
@@ -128259,6 +128272,783 @@ export function runStrategicDepthBalanceSelfTests(): V9SelfTestResult[] {
   check('bal_change_record', 'Every tuning change records problem, evidence, expected effect and risk', () => {
     const t = V91_BALANCE_CHANGES.filter(c => c.kind === 'tuning');
     return (t.length >= 3 && V91_BALANCE_CHANGES.every(c => c.problem && c.evidence && c.expectedEffect && c.risk && c.before && c.after)) || 'incomplete record';
+  });
+  return results;
+}
+
+// ============================================================================
+// SECTION 20N: V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM
+// ============================================================================
+// The game teaches itself through the real match. This layer owns ONLY learning progression, lesson timing,
+// explanation depth and progressive disclosure. It never executes actions, never changes Co-Pilot authority,
+// never changes difficulty or mechanics, and reads only what the player can already see (fog of war).
+// Preference reuse: the existing Guidance preference (smartSettingsProfile.guidance) + onboarding toggle.
+
+export type LearningMode = 'off' | 'minimal' | 'important_only' | 'guided' | 'teaching';
+export type LearningConceptStatus = 'unseen' | 'introduced' | 'practiced' | 'understood' | 'mastered';
+export type LearningCategory = 'basics' | 'economy' | 'regions' | 'strategy' | 'rivals' | 'contracts' | 'advanced';
+export type LearningSurface = 'inline' | 'card' | 'coach' | 'after_action' | 'blocked';
+export type LearningCoachTarget = 'focus' | 'recommended' | 'ap' | 'end_turn' | 'map' | 'useful' | null;
+
+export interface LearningConceptState {
+  status: LearningConceptStatus; firstRelevantTurn: number | null; firstSeenTurn: number | null; firstUsedTurn: number | null;
+  successfulUses: number; mistakeCount: number; lastHintTurn: number | null; dismissed: boolean; masteryEvidence: string[]; helpLevel: number;
+}
+
+export interface PlayerLearningState {
+  version: 1;
+  welcome: 'pending' | 'started' | 'basics' | 'skipped';
+  basicsStep: number | null;
+  skipGuidance: boolean;
+  concepts: Record<string, LearningConceptState>;
+  activeLessonId: string | null;
+  completedLessons: string[];
+  dismissedClasses: LearningCategory[];
+  recentHints: Array<{ id: string; turn: number; surface: LearningSurface }>;
+  lastHintTurn: number | null;
+  sessionHintsShown: number;
+  totalHintsShown: number;
+  matchesStarted: number;
+  forcedLessonId: string | null;
+  events: Array<{ turn: number; kind: string; conceptId: string | null; detail: string }>;
+  revision: number;
+}
+
+export const LEARNING_LIMITS = { recentHints: 12, events: 30, evidence: 4, completed: 60, perTurn: 1, windowTurns: 4, perWindow: 3 };
+
+export function createEmptyLearningState(): PlayerLearningState {
+  return { version: 1, welcome: 'pending', basicsStep: null, skipGuidance: false, concepts: {}, activeLessonId: null, completedLessons: [], dismissedClasses: [], recentHints: [], lastHintTurn: null, sessionHintsShown: 0, totalHintsShown: 0, matchesStarted: 0, forcedLessonId: null, events: [], revision: 0 };
+}
+
+const LEARNING_STATUSES: LearningConceptStatus[] = ['unseen', 'introduced', 'practiced', 'understood', 'mastered'];
+const LEARNING_CATEGORIES: LearningCategory[] = ['basics', 'economy', 'regions', 'strategy', 'rivals', 'contracts', 'advanced'];
+
+function newConceptState(): LearningConceptState {
+  return { status: 'unseen', firstRelevantTurn: null, firstSeenTurn: null, firstUsedTurn: null, successfulUses: 0, mistakeCount: 0, lastHintTurn: null, dismissed: false, masteryEvidence: [], helpLevel: 0 };
+}
+
+/** Save/load + migration: bounded, typed, unknown concepts dropped. Never throws. */
+export function sanitizeLearningState(raw: any): PlayerLearningState {
+  const base = createEmptyLearningState();
+  if (!raw || typeof raw !== 'object') return base;
+  const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const concepts: Record<string, LearningConceptState> = {};
+  Object.entries(raw.concepts || {}).forEach(([id, c]: [string, any]) => {
+    if (!LEARNING_CONCEPT_BY_ID[id] || !c || typeof c !== 'object') return;
+    concepts[id] = {
+      status: LEARNING_STATUSES.includes(c.status) ? c.status : 'unseen', firstRelevantTurn: num(c.firstRelevantTurn), firstSeenTurn: num(c.firstSeenTurn), firstUsedTurn: num(c.firstUsedTurn),
+      successfulUses: Math.max(0, Math.min(99, num(c.successfulUses) || 0)), mistakeCount: Math.max(0, Math.min(99, num(c.mistakeCount) || 0)), lastHintTurn: num(c.lastHintTurn),
+      dismissed: c.dismissed === true, masteryEvidence: Array.isArray(c.masteryEvidence) ? c.masteryEvidence.filter((x: any) => typeof x === 'string').slice(-LEARNING_LIMITS.evidence) : [], helpLevel: Math.max(0, Math.min(4, num(c.helpLevel) || 0))
+    };
+  });
+  return {
+    version: 1, welcome: ['pending', 'started', 'basics', 'skipped'].includes(raw.welcome) ? raw.welcome : 'pending', basicsStep: num(raw.basicsStep),
+    skipGuidance: raw.skipGuidance === true, concepts, activeLessonId: typeof raw.activeLessonId === 'string' && LEARNING_CONCEPT_BY_ID[raw.activeLessonId] ? raw.activeLessonId : null,
+    completedLessons: Array.isArray(raw.completedLessons) ? raw.completedLessons.filter((x: any) => typeof x === 'string').slice(-LEARNING_LIMITS.completed) : [],
+    dismissedClasses: Array.isArray(raw.dismissedClasses) ? raw.dismissedClasses.filter((x: any) => LEARNING_CATEGORIES.includes(x)) : [],
+    recentHints: Array.isArray(raw.recentHints) ? raw.recentHints.filter((h: any) => h && typeof h.id === 'string' && typeof h.turn === 'number').slice(-LEARNING_LIMITS.recentHints) : [],
+    lastHintTurn: num(raw.lastHintTurn), sessionHintsShown: Math.max(0, num(raw.sessionHintsShown) || 0), totalHintsShown: Math.max(0, num(raw.totalHintsShown) || 0), matchesStarted: Math.max(0, num(raw.matchesStarted) || 0),
+    // A pending "show again" request survives in-session updates; a new match (match_start) clears it.
+    forcedLessonId: typeof raw.forcedLessonId === 'string' && LEARNING_CONCEPT_BY_ID[raw.forcedLessonId] ? raw.forcedLessonId : null, events: Array.isArray(raw.events) ? raw.events.filter((e: any) => e && typeof e.kind === 'string').slice(-LEARNING_LIMITS.events) : [], revision: Math.max(0, num(raw.revision) || 0)
+  };
+}
+
+/** Effective learning mode from EXISTING preferences (no new tutorial sliders). */
+export function resolveLearningMode(settings: any, learning: PlayerLearningState | null): LearningMode {
+  if (settings?.playerIntentOnboardingEnabled === false || learning?.skipGuidance) return 'off';
+  const g = settings?.smartSettingsProfile?.guidance;
+  return g === 'minimal' ? 'minimal' : g === 'important_only' ? 'important_only' : g === 'teaching' ? 'teaching' : 'guided';
+}
+
+/** Proactive teaching level 0–4, reduced by presentation depth (Advanced/Expert see less, never nothing on request). */
+export function resolveLearningLevel(mode: LearningMode, presentation: string): number {
+  const base = mode === 'off' ? 0 : mode === 'minimal' ? 1 : mode === 'important_only' ? 2 : mode === 'guided' ? 3 : 4;
+  if (presentation === 'expert') return Math.min(base, 1);
+  if (presentation === 'advanced') return Math.min(base, 2);
+  return base;
+}
+
+export const LEARNING_MODE_OPTIONS: Array<{ id: LearningMode; label: string; detail: string }> = [
+  { id: 'off', label: 'Off', detail: 'No proactive tips. Help stays available on request.' },
+  { id: 'minimal', label: 'Minimal', detail: 'Only when you cannot proceed.' },
+  { id: 'important_only', label: 'Important tips', detail: 'Core mechanics the first time they matter.' },
+  { id: 'guided', label: 'Learn as I play', detail: 'Contextual lessons, results after first use, tradeoffs.' },
+  { id: 'teaching', label: 'Teaching', detail: 'Everything above plus how systems connect.' }
+];
+
+// ---- Learning context: a small read-only view of what the player can SEE right now -------------------------
+
+export interface LearningContext {
+  turn: number; day: number; totalDays: number; isHumanTurn: boolean; apFinite: boolean; apRemaining: number | null; apTotal: number;
+  cash: number; netWorth: number; inventoryCount: number; inventoryValue: number;
+  currentRegion: string; currentRegionName: string; standingHere: number | null; standingEnabled: boolean;
+  myDepositHere: number; controllerHere: 'you' | 'rival' | 'none'; regionsControlled: number; rivalRegionsControlled: number; minStake: number;
+  focusTitle: string; focusSource: string; recommendedLabel: string | null; recommendedIsTravel: boolean; usefulCount: number; recommendedCostShare: number;
+  strategyPhases: string[]; strategyPhaseIndex: number; strategyActive: boolean;
+  winLabel: string; winMetric: string; leading: boolean | null; daysLeft: number;
+  rivalName: string; teamMode: boolean; teamMission: string | null; teamRole: string | null;
+  contractsEnabled: boolean; contractAvailableTitle: string | null; contractActiveTitle: string | null;
+  infrastructureEnabled: boolean; infrastructureHint: string | null; investmentsEnabled: boolean;
+  loanCount: number; loansPossible: boolean; liquidityProblem: boolean;
+  decisionActive: boolean; criticalActive: boolean; copilotControlling: boolean; playerBusy: boolean;
+  worldChain: string | null; regionShift: string | null; stakeholder: string | null; diplomacyOpportunity: string | null;
+  lostRegion: string | null; overrideOfAdvice: boolean; blocked: { kind: string; text: string } | null;
+}
+
+export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
+
+export interface LearningConceptDefinition {
+  id: string; title: string; category: LearningCategory; tier: 'core' | 'secondary' | 'interaction';
+  /** 1 = cannot proceed … 6 = optional tip (Part 98). */
+  priority: number; minLevel: number; requires: string[]; directoryId: string; askPrompt: string; related: string[];
+  relevant: (c: LearningContext) => string | null;
+  lesson: (c: LearningContext) => LearningLesson;
+}
+
+const glMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
+/** Concept registry. Text is short, uses live values, teaches meaning + tradeoffs; the Mechanics Directory holds depth. */
+export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
+  { id: 'current_focus', title: 'Current Focus', category: 'basics', tier: 'core', priority: 3, minLevel: 1, requires: [], directoryId: 'focus', askPrompt: 'What should I focus on?', related: ['recommended_action', 'strategy'],
+    relevant: c => (c.isHumanTurn ? 'always relevant on your turn; teaches what matters right now' : null),
+    lesson: c => ({ headline: 'Current Focus', lines: [`“${c.focusTitle}” is the most important thing to work toward right now.`, 'You can always choose a different strategy.'], target: 'focus', surface: 'coach' }) },
+  { id: 'recommended_action', title: 'Recommended Action', category: 'basics', tier: 'core', priority: 3, minLevel: 2, requires: ['current_focus'], directoryId: 'focus', askPrompt: 'Why is this the recommended action?', related: ['current_focus'],
+    relevant: c => (c.isHumanTurn && c.recommendedLabel ? `a recommendation exists (${c.recommendedLabel})` : null),
+    lesson: c => ({ headline: 'Recommended Action', lines: [`${c.recommendedLabel} is one useful move based on your current goal and position.`, "It's advice, not a requirement — Other Useful Options show different priorities."], target: 'recommended', surface: 'coach' }) },
+  { id: 'action_points', title: 'Actions per turn', category: 'basics', tier: 'core', priority: 3, minLevel: 1, requires: [], directoryId: 'action_limits', askPrompt: 'How do Actions work?', related: ['end_turn'],
+    relevant: c => (c.isHumanTurn && c.apFinite && c.apRemaining !== null && c.apRemaining < c.apTotal ? `you have used an action (${c.apRemaining}/${c.apTotal} left)` : null),
+    lesson: c => ({ headline: 'Actions', lines: [`${c.apRemaining} / ${c.apTotal} remaining this turn.`, 'Most major moves use one Action. When you are out, end the turn — they refresh next turn.'], target: 'ap', surface: 'coach' }) },
+  { id: 'end_turn', title: 'Ending your turn', category: 'basics', tier: 'core', priority: 1, minLevel: 1, requires: [], directoryId: 'action_limits', askPrompt: 'What happens when I end my turn?', related: ['action_points', 'rivals'],
+    relevant: c => (c.isHumanTurn && c.apFinite && c.apRemaining === 0 ? 'no actions left — you cannot proceed without ending the turn' : null),
+    lesson: () => ({ headline: 'End Turn', lines: ['You are out of Actions. End Turn passes play to your rival, and your Actions refresh when your turn returns.'], target: 'end_turn', surface: 'coach' }) },
+  { id: 'travel', title: 'Travel', category: 'regions', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'regions', askPrompt: 'Where should I travel?', related: ['regions'],
+    relevant: c => (c.isHumanTurn && (c.recommendedIsTravel || c.turn >= 2) ? (c.recommendedIsTravel ? 'the recommended move is travel' : 'you have not travelled yet') : null),
+    lesson: c => ({ headline: 'Travel', lines: [`You are in ${c.currentRegionName}. Travelling uses an Action and some cash, and each region has its own challenges, resources and opportunities.`], action: { label: 'Open Map', nav: navAction('travel', 'Open Map') }, target: 'map', surface: 'card' }) },
+  { id: 'challenges', title: 'Challenges', category: 'economy', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'challenges', askPrompt: 'Which challenge should I try?', related: ['cash'],
+    relevant: c => (c.isHumanTurn && c.cash > 0 ? `challenges are available in ${c.currentRegionName}` : null),
+    lesson: c => ({ headline: 'Challenges', lines: [`${c.currentRegionName}'s challenges pay a multiple of your wager when you succeed — and cost the wager when you don't.`, 'Bigger wagers mean bigger swings.'], action: { label: 'Show region challenges', nav: navAction('challenges', 'Show challenges') }, surface: 'card' }) },
+  { id: 'market', title: 'Resources & Market', category: 'economy', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'resources', askPrompt: 'Should I sell my resources now?', related: ['cash'],
+    relevant: c => (c.inventoryCount >= 3 ? `you hold ${c.inventoryCount} resources (~${glMoney(c.inventoryValue)})` : null),
+    lesson: c => ({ headline: 'You have resources worth selling', lines: [`${c.inventoryCount} items, worth about ${glMoney(c.inventoryValue)} at today's prices. Prices move daily — selling now gives cash; holding may pay more or less.`], action: { label: 'Open Market', nav: navAction('market', 'Open Market') }, surface: 'inline' }) },
+  { id: 'win_condition', title: 'How you win', category: 'basics', tier: 'core', priority: 3, minLevel: 1, requires: ['current_focus'], directoryId: 'win', askPrompt: 'How do I win this match?', related: ['cash_vs_networth'],
+    relevant: c => (c.turn >= 2 ? `turn ${c.turn}: the win condition shapes every choice` : null),
+    lesson: c => ({ headline: 'How you win', lines: [`This match is decided by ${c.winLabel} after ${c.totalDays} days (${c.daysLeft} left).`, c.leading === null ? 'The header shows the standing.' : c.leading ? 'You are currently ahead.' : `${c.rivalName} is currently ahead — there is time to change that.`], surface: 'inline' }) },
+  { id: 'ask_game', title: 'Ask the game', category: 'basics', tier: 'core', priority: 5, minLevel: 2, requires: ['current_focus'], directoryId: 'focus', askPrompt: 'How do I make money?', related: [],
+    relevant: c => (c.turn >= 2 ? 'teach the universal help early' : null),
+    lesson: () => ({ headline: 'You can ask the game', lines: ['Ask questions in plain language — the answers come from your live match.'], asks: ['What should I do?', 'How do I make money?', 'How do I control a region?'], surface: 'inline' }) },
+  { id: 'cash_vs_networth', title: 'Cash vs Net Worth', category: 'economy', tier: 'core', priority: 5, minLevel: 3, requires: [], directoryId: 'win', askPrompt: 'What is the difference between cash and net worth?', related: ['win_condition'],
+    relevant: c => (c.netWorth - c.cash >= 1000 ? `${glMoney(c.netWorth - c.cash)} of your value is held in assets` : null),
+    lesson: c => ({ headline: 'Cash vs Net Worth', lines: [`Cash (${glMoney(c.cash)}) is money available now. Net Worth (${glMoney(c.netWorth)}) also counts what you own.`, c.winMetric === 'money' ? 'This match counts cash — assets only help once sold.' : 'Assets count toward this match, but you cannot spend them directly.'], surface: 'inline' }) },
+  { id: 'standing', title: 'Regional standing', category: 'regions', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'regions', askPrompt: 'How do I increase my standing?', related: ['regional_control', 'contracts'],
+    relevant: c => (c.standingEnabled && c.standingHere !== null && c.standingHere !== 0 ? `your ${c.currentRegion} standing is ${c.standingHere}` : null),
+    lesson: c => ({ headline: 'Regional Standing', lines: [`Your standing in ${c.currentRegionName} is ${c.standingHere}. Standing is your reputation there — it can unlock contracts and better terms.`, 'Standing is not control: control goes to the biggest regional stake.'], surface: 'card' }) },
+  { id: 'regional_control', title: 'Region control', category: 'regions', tier: 'core', priority: 4, minLevel: 2, requires: ['travel'], directoryId: 'regions', askPrompt: `How do I control a region?`, related: ['standing'],
+    relevant: c => (c.isHumanTurn && c.cash >= c.minStake && c.controllerHere !== 'you' ? `you can afford a ${glMoney(c.minStake)} stake in ${c.currentRegion}` : c.regionsControlled > 0 ? 'you control a region' : null),
+    lesson: c => ({ headline: 'Region control', lines: [c.controllerHere === 'rival' ? `${c.rivalName} controls ${c.currentRegionName}. To take it you must out-stake them (at least ${glMoney(c.minStake)}).` : `Staking at least ${glMoney(c.minStake)} in ${c.currentRegionName} gives you control while your stake is the largest.`, 'The tradeoff: staked cash is tied up — it is no longer available for other moves.'], surface: 'card' }) },
+  { id: 'contracts', title: 'Contracts', category: 'contracts', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'contracts', askPrompt: 'Is this contract worth it?', related: ['standing'],
+    relevant: c => (c.contractsEnabled && (c.contractAvailableTitle || c.contractActiveTitle) ? `contract "${c.contractActiveTitle || c.contractAvailableTitle}" is on offer` : null),
+    lesson: c => ({ headline: 'Contracts', lines: [`${c.contractActiveTitle || c.contractAvailableTitle}: contracts give you a specific objective, requirements, a deadline and a reward.`, 'You do not need to accept every one — the reward has to be worth the capital, actions and travel.'], action: { label: 'Open Contracts', nav: navAction('contracts', 'Open Contracts') }, asks: ['Is this contract worth it?'], surface: 'card' }) },
+  { id: 'strategy', title: 'Strategy vs Current Focus', category: 'strategy', tier: 'core', priority: 3, minLevel: 2, requires: ['current_focus'], directoryId: 'focus', askPrompt: 'How is my strategy going?', related: ['current_focus'],
+    relevant: c => (c.strategyActive && c.strategyPhases.length > 1 ? `a multi-phase plan is active (${c.strategyPhases.length} phases)` : null),
+    lesson: c => ({ headline: 'Strategy', lines: [c.strategyPhases.join(' → '), 'Your Strategy is the larger plan. Current Focus is the part you are working on now.'], target: 'focus', surface: 'coach' }) },
+  { id: 'tradeoffs', title: 'There is not always one best move', category: 'strategy', tier: 'secondary', priority: 5, minLevel: 3, requires: ['recommended_action'], directoryId: 'focus', askPrompt: 'What are my best alternatives?', related: [],
+    relevant: c => (c.isHumanTurn && c.usefulCount >= 2 && !c.decisionActive ? `${c.usefulCount + 1} viable options this turn` : null),
+    lesson: () => ({ headline: "There isn't always one best move", lines: ['The Recommended Action and the Other Useful Options serve different priorities — cash now, position, or safety. Choose based on what matters more to you.'], target: 'useful', surface: 'coach' }) },
+  { id: 'legal_vs_good', title: 'Legal vs recommended', category: 'strategy', tier: 'secondary', priority: 5, minLevel: 3, requires: ['recommended_action'], directoryId: 'focus', askPrompt: 'What does the Guardian protect me from?', related: [],
+    relevant: c => (c.overrideOfAdvice ? 'you chose something other than the advice' : null),
+    lesson: () => ({ headline: 'Your call', lines: ['The game allows many moves it would not recommend. Guardian only stops the serious mistakes you configured — the strategy stays yours.'], surface: 'inline' }) },
+  { id: 'what_if', title: 'What If', category: 'strategy', tier: 'secondary', priority: 5, minLevel: 3, requires: ['recommended_action'], directoryId: 'focus', askPrompt: 'What if I do this?', related: [],
+    relevant: c => (c.isHumanTurn && c.recommendedCostShare >= 0.3 ? `the recommended move costs ${Math.round(c.recommendedCostShare * 100)}% of your cash` : null),
+    lesson: c => ({ headline: 'Not sure?', lines: ['Use What If? to preview likely effects without changing the live match.'], asks: [c.recommendedLabel ? `What if I ${c.recommendedLabel.charAt(0).toLowerCase()}${c.recommendedLabel.slice(1)}?` : 'What if I end my turn now?'], surface: 'inline' }) },
+  { id: 'rivals', title: 'Your rival', category: 'rivals', tier: 'core', priority: 4, minLevel: 2, requires: [], directoryId: 'rivals', askPrompt: 'What is my rival doing?', related: ['world_reactions'],
+    relevant: c => (!c.isHumanTurn ? `${c.rivalName} is taking a turn` : null),
+    lesson: c => ({ headline: `It's ${c.rivalName}'s turn`, lines: ['Watch what changes in the world. You do not need to do anything until your turn returns.'], surface: 'inline' }) },
+  { id: 'loans', title: 'Loans', category: 'economy', tier: 'secondary', priority: 2, minLevel: 2, requires: [], directoryId: 'loans', askPrompt: 'Should I take a loan?', related: ['cash_vs_networth'],
+    relevant: c => (c.liquidityProblem && c.loansPossible ? `cash is low (${glMoney(c.cash)})` : c.loanCount > 0 ? 'you have an outstanding loan' : null),
+    lesson: c => ({ headline: 'Loans', lines: [c.loanCount > 0 ? `You owe ${c.loanCount} loan(s). Each charges 25% of its principal per day until repaid.` : `Cash is low (${glMoney(c.cash)}). A loan gives $500 now but charges 25% interest per day until you repay it.`, 'Useful to bridge a gap — expensive to keep.'], surface: 'card' }) },
+  { id: 'infrastructure', title: 'Infrastructure', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: ['cash_vs_networth'], directoryId: 'infrastructure', askPrompt: 'Is building infrastructure worth it?', related: ['regional_development'],
+    relevant: c => (c.infrastructureEnabled && c.infrastructureHint ? c.infrastructureHint : null),
+    lesson: c => ({ headline: 'New opportunity: infrastructure', lines: [c.infrastructureHint || '', 'Infrastructure uses capital now for longer-term regional benefits — it can take many turns to pay back.'], action: { label: 'View projects', nav: navAction('infrastructure', 'View projects') }, surface: 'card' }) },
+  { id: 'world_reactions', title: 'The world reacts', category: 'rivals', tier: 'interaction', priority: 4, minLevel: 3, requires: [], directoryId: 'rivals', askPrompt: 'Why did that happen?', related: ['rivals'],
+    relevant: c => (c.worldChain ? 'your action had a visible second-order effect' : null),
+    lesson: c => ({ headline: 'Your decision had a knock-on effect', lines: [c.worldChain || '', 'Your actions can change what rivals and regions do next.'], asks: ['Why did that happen?'], surface: 'after_action' }) },
+  { id: 'regional_development', title: 'Regions develop', category: 'regions', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: "What's happening in this region?", related: ['infrastructure'],
+    relevant: c => (c.regionShift ? 'a region changed meaningfully' : null),
+    lesson: c => ({ headline: 'Regions change over time', lines: [c.regionShift || '', 'Investment, infrastructure, contracts and events shape what a region is good at — and exposed to.'], surface: 'inline' }) },
+  { id: 'factions', title: 'Stakeholders', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'factions', askPrompt: 'Who matters in this region?', related: ['contracts'],
+    relevant: c => (c.stakeholder ? 'a regional group has asked for something' : null),
+    lesson: c => ({ headline: 'Regional stakeholders', lines: [c.stakeholder || '', 'Groups support or oppose moves based on what they want for their region — helping one can worry another.'], asks: ['Who matters in this region?'], surface: 'card' }) },
+  { id: 'diplomacy', title: 'Negotiation', category: 'rivals', tier: 'secondary', priority: 5, minLevel: 3, requires: ['rivals'], directoryId: 'rivals', askPrompt: 'What deal could I make with my rival?', related: ['rivals'],
+    relevant: c => (c.diplomacyOpportunity ? 'a deal is possible' : null),
+    lesson: c => ({ headline: `You can negotiate with ${c.rivalName}`, lines: [c.diplomacyOpportunity || '', `Deals can trade money, restraint or temporary safety. ${c.rivalName} judges a deal by what it actually gains and gives up.`], surface: 'card' }) },
+  { id: 'team_mode', title: 'Your team', category: 'basics', tier: 'core', priority: 3, minLevel: 2, requires: [], directoryId: 'team', askPrompt: 'What is my teammate doing?', related: [],
+    relevant: c => (c.teamMode && c.teamMission ? `team mission: ${c.teamMission}` : null),
+    lesson: c => ({ headline: 'Playing as a team', lines: [`Shared goal: ${c.teamMission}.${c.teamRole ? ` Your role: ${c.teamRole}.` : ''}`, 'Your teammate plays their own turns toward the same goal.'], surface: 'inline' }) },
+  { id: 'copilot', title: 'Co-Pilot control', category: 'advanced', tier: 'secondary', priority: 4, minLevel: 1, requires: [], directoryId: 'copilot', askPrompt: 'What is the Co-Pilot doing?', related: [],
+    relevant: c => (c.copilotControlling ? 'the Co-Pilot is playing your turn' : null),
+    lesson: () => ({ headline: 'The Co-Pilot is playing this turn', lines: ['It follows your plan and the same rules you do. Take Control at any time — nothing here changes who is in charge.'], asks: ['What is the Co-Pilot doing?'], surface: 'inline' }) },
+  { id: 'setback', title: 'Setbacks', category: 'strategy', tier: 'secondary', priority: 2, minLevel: 2, requires: [], directoryId: 'regions', askPrompt: 'How can I recover?', related: ['regional_control'],
+    relevant: c => (c.lostRegion ? `you lost ${c.lostRegion}` : null),
+    lesson: c => ({ headline: `${c.lostRegion} was lost`, lines: [`${c.rivalName}'s stake there overtook yours. You can reinvest, build elsewhere, or change strategy — retaking it is not always best.`], asks: ['How can I recover?'], surface: 'card' }) },
+  { id: 'endgame', title: 'Endgame', category: 'strategy', tier: 'core', priority: 3, minLevel: 2, requires: ['win_condition'], directoryId: 'win', askPrompt: 'Who is winning and why?', related: ['win_condition'],
+    relevant: c => (c.daysLeft <= 3 && c.daysLeft >= 0 ? `${c.daysLeft} day(s) left` : null),
+    lesson: c => ({ headline: `${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`, lines: [c.leading ? `You lead on ${c.winLabel}. Protect the lead — or push it further.` : `${c.rivalName} leads on ${c.winLabel}. Focus on moves that change the final count.`, 'Long-term investments rarely pay back this late.'], asks: ['Who is winning and why?'], surface: 'inline' }) }
+];
+
+export const LEARNING_CONCEPT_BY_ID: Record<string, LearningConceptDefinition> = Object.fromEntries(LEARNING_CONCEPTS.map(c => [c.id, c]));
+
+// ---- Events → concept progress (mastery through evidence, never quizzes) -----------------------------------
+
+export type LearningEventKind = 'shown' | 'dismiss' | 'dismiss_class' | 'used' | 'blocked' | 'ask' | 'match_start' | 'reset' | 'welcome' | 'basics_step' | 'force';
+
+export function applyLearningEvent(stateIn: PlayerLearningState, ev: { kind: LearningEventKind; conceptId?: string | null; turn: number; detail?: string; category?: LearningCategory; welcome?: PlayerLearningState['welcome']; step?: number | null }): PlayerLearningState {
+  const st: PlayerLearningState = { ...stateIn, concepts: { ...stateIn.concepts }, revision: stateIn.revision + 1 };
+  const cid = ev.conceptId && LEARNING_CONCEPT_BY_ID[ev.conceptId] ? ev.conceptId : null;
+  const cs = cid ? { ...(st.concepts[cid] || newConceptState()) } : null;
+  const log = (detail: string) => { st.events = [...st.events, { turn: ev.turn, kind: ev.kind, conceptId: cid, detail }].slice(-LEARNING_LIMITS.events); };
+  switch (ev.kind) {
+    case 'shown':
+      if (cs) { if (cs.status === 'unseen') cs.status = 'introduced'; cs.firstSeenTurn = cs.firstSeenTurn ?? ev.turn; cs.firstRelevantTurn = cs.firstRelevantTurn ?? ev.turn; cs.lastHintTurn = ev.turn; }
+      st.recentHints = [...st.recentHints, { id: cid || 'help', turn: ev.turn, surface: 'card' as LearningSurface }].slice(-LEARNING_LIMITS.recentHints);
+      st.lastHintTurn = ev.turn; st.sessionHintsShown += 1; st.totalHintsShown += 1; st.activeLessonId = cid;
+      log(ev.detail || 'shown'); break;
+    case 'dismiss':
+      if (cs) { cs.dismissed = true; if (cs.status === 'unseen') cs.status = 'introduced'; }
+      if (cid) st.completedLessons = Array.from(new Set([...st.completedLessons, cid])).slice(-LEARNING_LIMITS.completed);
+      if (st.activeLessonId === cid) st.activeLessonId = null; if (st.forcedLessonId === cid) st.forcedLessonId = null;
+      log('dismissed'); break;
+    case 'dismiss_class':
+      if (ev.category && !st.dismissedClasses.includes(ev.category)) st.dismissedClasses = [...st.dismissedClasses, ev.category];
+      if (cs) cs.dismissed = true; st.activeLessonId = null; st.forcedLessonId = null; log(`class ${ev.category}`); break;
+    case 'used':
+      if (cs) {
+        cs.firstUsedTurn = cs.firstUsedTurn ?? ev.turn; cs.successfulUses += 1;
+        cs.masteryEvidence = [...cs.masteryEvidence, `${ev.detail || 'used'} (turn ${ev.turn})`].slice(-LEARNING_LIMITS.evidence);
+        cs.status = cs.successfulUses >= 4 ? 'mastered' : cs.successfulUses >= 2 ? 'understood' : 'practiced';
+      }
+      log(ev.detail || 'used'); break;
+    case 'blocked':
+      if (cs) { cs.mistakeCount += 1; cs.helpLevel = Math.min(4, cs.helpLevel + 1); }
+      log(ev.detail || 'blocked'); break;
+    case 'ask': log(ev.detail || 'ask'); break;
+    case 'match_start': st.matchesStarted += 1; st.sessionHintsShown = 0; st.activeLessonId = null; st.forcedLessonId = null; log('match start'); break;
+    case 'reset': return { ...createEmptyLearningState(), welcome: 'started', matchesStarted: stateIn.matchesStarted, revision: stateIn.revision + 1, events: [{ turn: ev.turn, kind: 'reset', conceptId: null, detail: 'reset' }] };
+    case 'welcome': st.welcome = ev.welcome || 'started'; st.skipGuidance = ev.welcome === 'skipped'; st.basicsStep = ev.welcome === 'basics' ? 0 : null; log(`welcome ${st.welcome}`); break;
+    case 'basics_step': st.basicsStep = ev.step ?? null; if (ev.step === null) st.welcome = 'started'; log(`basics ${ev.step}`); break;
+    case 'force': if (cid) { st.forcedLessonId = cid; if (cs) { cs.dismissed = false; } } log('show again'); break;
+  }
+  if (cid && cs) st.concepts[cid] = cs;
+  return st;
+}
+
+// ---- Deriving learning events from real state changes (event-driven; tiny snapshot) ----------------------
+
+export interface LearningSnapshot { turn: number; humanTurn: boolean; region: string; apUsed: number; inventory: number; cash: number; myDeposits: number; regionsControlled: number; contractsActive: number; contractsDone: number; loans: number; strategy: boolean; copilot: boolean; lostRegions: string[] }
+
+export function deriveLearningUses(prev: LearningSnapshot | null, next: LearningSnapshot): Array<{ conceptId: string; detail: string }> {
+  if (!prev) return [];
+  const out: Array<{ conceptId: string; detail: string }> = [];
+  if (prev.humanTurn && next.humanTurn && next.turn === prev.turn) {
+    if (next.region !== prev.region) out.push({ conceptId: 'travel', detail: `travelled ${prev.region}→${next.region}` });
+    if (next.apUsed > prev.apUsed) out.push({ conceptId: 'action_points', detail: `used ${next.apUsed - prev.apUsed} action(s)` });
+    if (next.inventory < prev.inventory && next.cash > prev.cash) out.push({ conceptId: 'market', detail: `sold ${prev.inventory - next.inventory} item(s)` });
+    if (next.myDeposits > prev.myDeposits) out.push({ conceptId: 'regional_control', detail: `staked $${next.myDeposits - prev.myDeposits}` });
+    if (next.contractsActive > prev.contractsActive) out.push({ conceptId: 'contracts', detail: 'accepted a contract' });
+    if (next.contractsDone > prev.contractsDone) out.push({ conceptId: 'contracts', detail: 'completed a contract' });
+    if (next.loans !== prev.loans) out.push({ conceptId: 'loans', detail: next.loans > prev.loans ? 'took a loan' : 'repaid a loan' });
+  }
+  if (prev.humanTurn && !next.humanTurn) out.push({ conceptId: 'end_turn', detail: 'ended the turn' });
+  if (!prev.strategy && next.strategy) out.push({ conceptId: 'strategy', detail: 'set a strategy' });
+  return out;
+}
+
+// ---- The selector: 0 or 1 learning moment (Parts 22–25, 98–99) ------------------------------------------------
+
+export interface LearningMoment { conceptId: string; title: string; category: LearningCategory; lesson: LearningLesson; reason: string; directoryId: string; askPrompt: string; forced: boolean }
+export interface LearningSelection { moment: LearningMoment | null; level: number; mode: LearningMode; eligible: Array<{ id: string; reason: string }>; suppressed: Array<{ id: string; reason: string }>; budget: { thisTurn: number; window: number; max: number } }
+
+export function selectNextLearningMoment(ctx: LearningContext, learning: PlayerLearningState, settings: any, presentation: string): LearningSelection {
+  const mode = resolveLearningMode(settings, learning);
+  const level = resolveLearningLevel(mode, presentation);
+  const eligible: LearningSelection['eligible'] = []; const suppressed: LearningSelection['suppressed'] = [];
+  const thisTurn = learning.recentHints.filter(h => h.turn === ctx.turn).length;
+  const windowCount = learning.recentHints.filter(h => ctx.turn - h.turn < LEARNING_LIMITS.windowTurns).length;
+  const budget = { thisTurn, window: windowCount, max: LEARNING_LIMITS.perTurn };
+  const mk = (d: LearningConceptDefinition, reason: string, forced: boolean): LearningMoment => ({ conceptId: d.id, title: d.title, category: d.category, lesson: d.lesson(ctx), reason, directoryId: d.directoryId, askPrompt: d.askPrompt, forced });
+  // "Show this lesson again" is an explicit request — always honoured, any mode.
+  if (learning.forcedLessonId && LEARNING_CONCEPT_BY_ID[learning.forcedLessonId]) {
+    const d = LEARNING_CONCEPT_BY_ID[learning.forcedLessonId];
+    return { moment: mk(d, 'you asked to see this lesson again', true), level, mode, eligible: [{ id: d.id, reason: 'requested' }], suppressed, budget };
+  }
+  // The lesson already on screen stays until dismissed or no longer relevant (no stacking, no flicker).
+  const active = learning.activeLessonId ? LEARNING_CONCEPT_BY_ID[learning.activeLessonId] : null;
+  if (active && level >= active.minLevel && !learning.concepts[active.id]?.dismissed) {
+    const why = active.relevant(ctx);
+    if (why && (learning.concepts[active.id]?.status || 'unseen') === 'introduced') return { moment: mk(active, why, false), level, mode, eligible: [{ id: active.id, reason: why }], suppressed, budget };
+  }
+  if (level === 0) return { moment: null, level, mode, eligible, suppressed: [{ id: '*', reason: mode === 'off' ? 'guided learning is off / skipped' : 'expert presentation' }], budget };
+  if (learning.welcome === 'pending' || learning.basicsStep !== null) return { moment: null, level, mode, eligible, suppressed: [{ id: '*', reason: 'welcome / basics in progress' }], budget };
+  const candidates = [...LEARNING_CONCEPTS].sort((a, b) => a.priority - b.priority || LEARNING_CONCEPTS.indexOf(a) - LEARNING_CONCEPTS.indexOf(b));
+  for (const d of candidates) {
+    const cs = learning.concepts[d.id];
+    const status = cs?.status || 'unseen';
+    if (status !== 'unseen') { suppressed.push({ id: d.id, reason: `already ${status}` }); continue; }
+    if (cs?.dismissed) { suppressed.push({ id: d.id, reason: 'dismissed' }); continue; }
+    if (learning.dismissedClasses.includes(d.category) && d.priority > 2) { suppressed.push({ id: d.id, reason: `tips like this turned off (${d.category})` }); continue; }
+    if (d.minLevel > level) { suppressed.push({ id: d.id, reason: `needs guidance level ${d.minLevel} (current ${level})` }); continue; }
+    const missing = d.requires.filter(r => (learning.concepts[r]?.status || 'unseen') === 'unseen');
+    if (missing.length) { suppressed.push({ id: d.id, reason: `learn ${missing.join(', ')} first` }); continue; }
+    const why = d.relevant(ctx);
+    if (!why) { suppressed.push({ id: d.id, reason: 'not relevant right now' }); continue; }
+    const critical = d.priority <= 2;
+    if ((ctx.decisionActive || ctx.criticalActive) && !critical) { suppressed.push({ id: d.id, reason: 'a decision needs your attention first' }); continue; }
+    if (ctx.playerBusy && !critical) { suppressed.push({ id: d.id, reason: 'you are in the middle of something' }); continue; }
+    if (!critical && (thisTurn >= LEARNING_LIMITS.perTurn || windowCount >= LEARNING_LIMITS.perWindow)) { suppressed.push({ id: d.id, reason: `hint budget used (${thisTurn} this turn, ${windowCount} recently)` }); continue; }
+    eligible.push({ id: d.id, reason: why });
+  }
+  const first = eligible[0] ? LEARNING_CONCEPT_BY_ID[eligible[0].id] : null;
+  return { moment: first ? mk(first, eligible[0].reason, false) : null, level, mode, eligible, suppressed, budget };
+}
+
+// ---- Blocked-action help with escalation (Parts 26–28, 55–56) --------------------------------------------------
+
+export interface BlockedActionHelp { kind: string; why: string; need: string | null; how: string[]; asks: string[]; nav: IntentNavAction | null; level: number; conceptId: string | null }
+
+/** Turns a canonical blocker message into WHY / WHAT YOU NEED / HOW TO GET IT. Level escalates with repeats. */
+export function buildBlockedActionHelp(kind: string, blocker: string, ctx: { cash: number; currentRegion: string; currentRegionName: string; loansPossible: boolean; inventoryCount: number }, helpLevel: number): BlockedActionHelp {
+  const text = String(blocker || 'This action is not available right now.');
+  const nums = (text.match(/\$?[\d,]+/g) || []).map(x => Number(x.replace(/[$,]/g, ''))).filter(n => Number.isFinite(n));
+  let need: string | null = null; const how: string[] = []; const asks: string[] = []; let nav: IntentNavAction | null = null; let conceptId: string | null = null;
+  if (/standing/i.test(text)) {
+    conceptId = 'standing';
+    const [req, have] = nums; need = req !== undefined ? `${req} standing (you have ${have ?? 0})` : 'more regional standing';
+    how.push(`Complete ${ctx.currentRegionName} challenges`, 'Complete regional contracts');
+    if (helpLevel >= 2) how.push('Standing is your reputation in a region — it grows as you do work there.');
+    nav = navAction('challenges', `Show ${ctx.currentRegion} actions`); asks.push('How do I increase my standing?');
+  } else if (/\$|cash|afford|money/i.test(text)) {
+    conceptId = 'cash_vs_networth';
+    const req = nums[0]; const short = req !== undefined ? Math.max(0, req - ctx.cash) : null;
+    need = short !== null ? `$${short.toLocaleString()} more (you have $${Math.round(ctx.cash).toLocaleString()})` : 'more cash';
+    if (ctx.inventoryCount > 0) how.push('Sell resources');
+    how.push('Win a challenge', 'Complete a contract');
+    if (ctx.loansPossible) how.push('Take a loan (costs interest daily)');
+    nav = ctx.inventoryCount > 0 ? navAction('market', 'Open Market') : navAction('challenges', 'Show challenges'); asks.push('How do I make money?');
+  } else if (/equipment/i.test(text)) {
+    conceptId = 'contracts'; need = text.replace(/^.*equipment:\s*/i, '');
+    how.push('Buy the equipment in the Shop'); nav = navAction('shop', 'Open Shop'); asks.push('Where do I get this equipment?');
+  } else if (/action/i.test(text)) {
+    conceptId = 'action_points'; need = 'an Action'; how.push('End your turn — Actions refresh next turn'); if (helpLevel >= 2) how.push('An Action Override buys one extra action for cash.');
+    asks.push('How do Actions work?');
+  } else if (/objective/i.test(text)) {
+    conceptId = 'contracts'; need = 'every contract objective completed'; how.push('Use Deliver / Progress in the target region'); nav = navAction('contracts', 'Open Contracts'); asks.push('How do I complete this contract?');
+  } else {
+    how.push('Ask the game for the options available right now'); asks.push('Why is this blocked?');
+  }
+  if (helpLevel >= 3 && !asks.includes('Why is this blocked?')) asks.push('Why is this blocked?');
+  return { kind, why: text, need, how: how.slice(0, helpLevel >= 1 ? 4 : 2), asks, nav: helpLevel >= 1 ? nav : nav, level: Math.min(4, helpLevel), conceptId };
+}
+
+/** One-line result after the FIRST use of a concept (after-action learning, real values). */
+export function buildFirstUseConfirmation(conceptId: string, ctx: LearningContext, detail: string): LearningLesson | null {
+  switch (conceptId) {
+    case 'travel': return { headline: `You arrived in ${ctx.currentRegionName}`, lines: ['Being in a region unlocks its local challenges, resources and opportunities.'], surface: 'after_action' };
+    case 'regional_control': return { headline: `You staked in ${ctx.currentRegionName}`, lines: [`Cash is now ${glMoney(ctx.cash)}. ${ctx.controllerHere === 'you' ? `You control ${ctx.currentRegionName} while your stake is the largest.` : 'Your stake is not yet the largest here.'}`, 'The tradeoff: that cash is tied up and not available for other moves.'], surface: 'after_action' };
+    case 'market': return { headline: 'Sold', lines: [`${detail}. Cash is now ${glMoney(ctx.cash)}.`, 'Prices move daily — timing a sale is part of the game.'], surface: 'after_action' };
+    case 'contracts': return { headline: /completed/.test(detail) ? 'Contract complete' : 'Contract accepted', lines: [/completed/.test(detail) ? `Reward credited — cash is now ${glMoney(ctx.cash)}.` : 'The deadline now counts down. Deliver what it needs in the target region.'], surface: 'after_action' };
+    case 'loans': return { headline: /repaid/.test(detail) ? 'Loan repaid' : 'Loan taken', lines: [/repaid/.test(detail) ? 'Its daily interest stops.' : 'Interest is charged every day until you repay it.'], surface: 'after_action' };
+    default: return null;
+  }
+}
+
+// ---- Mechanics Directory: the canonical long-form reference (lessons deep-link here; no duplicate glossary) ----
+
+export interface MechanicsDirectoryEntry { id: string; icon: string; title: string; body: string; settingsTab?: SettingsHubTabId; settingsLabel?: string }
+
+export const MECHANICS_DIRECTORY_ENTRIES: MechanicsDirectoryEntry[] = [
+  { id: 'win', icon: '🏁', title: 'Win Conditions', body: `The match ends after the configured number of days. The winner has the most cash (net of loans), the highest net worth, or the most controlled regions — whichever the match uses. Cash is money available now; net worth also counts resources, investments and equipment.`, settingsTab: 'economy', settingsLabel: 'Configure Win Condition' },
+  { id: 'focus', icon: '🎯', title: 'Current Focus, Strategy & Recommendations', body: 'Your Strategy is the larger multi-turn plan; Current Focus is the part you are working on now. The Recommended Action is one useful move for that focus — advice, never a requirement. Other Useful Options serve different priorities, and Why? / What If? explain and preview them without changing the match.' },
+  { id: 'action_limits', icon: '⏱️', title: 'Turns, Actions & Overrides', body: 'Each turn you get a set number of Actions; most major moves use one, selling and loans use none. End Turn passes play on and your Actions refresh next turn. An Action Override buys one extra action for cash; each further override the same day costs 1.5× more.', settingsTab: 'gameplay', settingsLabel: 'Configure Action Limits' },
+  { id: 'regions', icon: '🗺️', title: 'Regions, Travel, Standing & Control', body: `Travel uses an Action and cash (neighbouring regions are cheaper) and collects a local resource. Standing is your reputation in a region — it unlocks contracts and better terms. Control is separate: the largest regional stake (at least $${REGION_MIN_CONTROL_STAKE}) controls a region, and a rival must out-stake you to take it. Staked cash is tied up; cashing out (if enabled) returns 50%.` },
+  { id: 'challenges', icon: '🎰', title: 'Challenges & Wagers', body: 'Each region has challenges. Win and you receive your wager times the challenge multiplier; lose and you lose the wager. You can retry until you succeed; each challenge pays out once per match. Double or Nothing is an even-odds gamble on your last reward.', settingsTab: 'gameplay', settingsLabel: 'Configure Challenges' },
+  { id: 'resources', icon: '📦', title: 'Resources & Market', body: 'Travel collects regional resources. Selling uses the day\'s market price, which drifts and swings with market trends; buying from the Resource Market costs the base price and an Action. Resources count toward net worth while you hold them.' },
+  { id: 'contracts', icon: '📜', title: 'Regional Contracts', body: 'A contract has requirements to accept (cash on hand, sometimes standing or equipment), objectives to deliver (resources in a region, capital, infrastructure or days of presence), a deadline that starts when you accept, and a reward. Deliver / Progress hands over what you have; the reward pays when every objective is complete.' },
+  { id: 'infrastructure', icon: '🏗️', title: 'Infrastructure & Investments', body: 'Infrastructure and regional investments use capital now for benefits over many turns. They can shape how a region develops; late in a match they rarely pay back.' },
+  { id: 'loans', icon: '🏦', title: 'Loans & Debt', body: 'An emergency loan gives $500 now and charges 25% of the principal per day until you repay it (repaying the same day still costs one day). Outstanding loans are subtracted from cash for a cash victory and from net worth.', settingsTab: 'economy', settingsLabel: 'Configure Loans' },
+  { id: 'rivals', icon: '🤖', title: 'Rivals, Reactions & Negotiation', body: 'Rivals play by the same rules. Your moves can change what they do next — and regions and stakeholders react too. When negotiation is available you can trade money, restraint or temporary safety; a rival judges a deal by what it actually gains and gives up.' },
+  { id: 'factions', icon: '🏛️', title: 'Regional Stakeholders', body: 'Influential groups in each region want different things. Supporting one can worry another; their requests are optional opportunities, not quests you must finish.' },
+  { id: 'team', icon: '🤝', title: 'Team Mode', body: 'Teammates share a goal and play their own turns. Shared resources and team rules (governance) may require approval for some spending.', settingsTab: 'aiTeams', settingsLabel: 'Configure Team Brain' },
+  { id: 'copilot', icon: '🧭', title: 'Co-Pilot, Guardian & Assistance', body: 'Guide mode explains and recommends; it never acts for you. The Co-Pilot only plays when you choose it, and you can Take Control at any time. Guardian stops only the serious mistakes you configured — many legal moves are still your call.', settingsTab: 'aiTeams', settingsLabel: 'Co-Pilot settings' },
+  { id: 'adaptive', icon: '⚖️', title: 'Fairness & Adaptive AI', body: 'Under Strictly Equal and Smarter Decisions Only, the AI plays with exactly your numbers — harder AI plans better, it does not get richer. Catch-up effects apply only if you opt into adaptive handicaps.', settingsTab: 'aiTeams', settingsLabel: 'Configure Adaptive AI' }
+];
+
+export const MechanicsDirectoryEntries: React.FC<{ theme: any; focusId: string | null; onConfigure: (tab: SettingsHubTabId) => void; onAsk?: (q: string) => void }> = ({ theme, focusId, onConfigure }) => {
+  useEffect(() => {
+    if (!focusId || typeof document === 'undefined') return;
+    const t = window.setTimeout(() => { const el = document.getElementById(`mech-${focusId}`); if (el) { el.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); (el as HTMLElement).focus?.(); } }, 80);
+    return () => window.clearTimeout(t);
+  }, [focusId]);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="mechanics-directory">
+      {MECHANICS_DIRECTORY_ENTRIES.map(e => (
+        <section key={e.id} id={`mech-${e.id}`} tabIndex={-1} aria-current={focusId === e.id ? 'true' : undefined} aria-labelledby={`mech-h-${e.id}`} className={`p-4 rounded-lg border ${theme.border} space-y-2 ${focusId === e.id ? 'ring-2 ring-amber-400' : ''}`} data-testid={`mech-${e.id}`}>
+          <h4 id={`mech-h-${e.id}`} className="font-bold text-sm">{e.icon} {e.title}</h4>
+          <p className="text-xs opacity-80 leading-relaxed">{e.body}</p>
+          {e.settingsTab && <button type="button" onClick={() => onConfigure(e.settingsTab!)} className={`text-xs ${theme.buttonSecondary} px-2 py-1 rounded`}>{e.settingsLabel || 'Configure'} →</button>}
+        </section>
+      ))}
+    </div>
+  );
+};
+
+// ---- PLAY surfaces ---------------------------------------------------------------------------------------------
+
+export const GuidedWelcomeCard: React.FC<{ theme: any; onStart: () => void; onBasics: () => void; onSkip: () => void }> = ({ theme, onStart, onBasics, onSkip }) => (
+  <section aria-labelledby="gl-welcome-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow}`} data-testid="gl-welcome">
+    <h2 id="gl-welcome-h" className="text-lg font-extrabold">Welcome to Australia Game</h2>
+    <p className="text-sm opacity-90">Build your position across Australia, outplay your rivals, and complete the match objective. I'll explain mechanics when they become relevant.</p>
+    <div className="flex flex-wrap gap-2 mt-3">
+      <button type="button" className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold`} onClick={onStart} data-testid="gl-start">Start Playing</button>
+      <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-sm`} onClick={onBasics} data-testid="gl-basics">Show Me the Basics</button>
+      <button type="button" className="px-3 py-1.5 rounded-lg text-sm underline opacity-80" onClick={onSkip} data-testid="gl-skip">Skip Guidance</button>
+    </div>
+  </section>
+);
+
+export const GUIDED_BASICS_STEPS: Array<{ target: LearningCoachTarget; headline: string; line: string }> = [
+  { target: 'focus', headline: '1 / 4 · Current Focus', line: 'What matters most right now. Your plan, in one line.' },
+  { target: 'recommended', headline: '2 / 4 · Recommended Action', line: 'One useful move — advice, not an order. Other options sit below it.' },
+  { target: 'map', headline: '3 / 4 · The map', line: 'Where you are and where you can travel. Each region has its own opportunities.' },
+  { target: 'end_turn', headline: '4 / 4 · End Turn', line: 'When you are out of Actions, end the turn. They refresh on your next turn.' }
+];
+
+export interface LearningCardHandlers { onDismiss: () => void; onDismissClass?: () => void; onNav?: (nav: IntentNavAction) => void; onAsk: (q: string) => void; onLearnMore: (directoryId: string) => void }
+
+/** A single lesson (inline hint, coach callout, card or after-action). Not modal; never traps focus. */
+export const LearningCard: React.FC<{ theme: any; lesson: LearningLesson; directoryId?: string | null; title?: string; h: LearningCardHandlers; testId?: string; compact?: boolean }> = ({ theme, lesson, directoryId, h, testId = 'gl-lesson', compact }) => (
+  <aside role="note" aria-label={`Guided learning: ${lesson.headline}`} className={`rounded-lg border-2 border-sky-500/60 ${theme.card} px-3 py-2 text-sm ${compact ? '' : 'mt-2'}`} data-testid={testId} data-surface={lesson.surface || 'card'}>
+    <div className="flex items-start gap-2">
+      <span aria-hidden="true">💡</span>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold">{lesson.headline}</div>
+        {lesson.lines.filter(Boolean).map((l, k) => <p key={k} className="text-xs opacity-90">{l}</p>)}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
+          {lesson.action?.nav && h.onNav && <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded`} onClick={() => h.onNav!(lesson.action!.nav!)}>{lesson.action.label}</button>}
+          {(lesson.asks || []).map(q => <button key={q} type="button" className="underline" onClick={() => h.onAsk(q)}>{q}</button>)}
+          {directoryId && <button type="button" className="underline" onClick={() => h.onLearnMore(directoryId)} data-testid="gl-learn-more">Learn More</button>}
+          <button type="button" className="underline opacity-80" onClick={h.onDismiss} data-testid="gl-dismiss">Got it</button>
+          {h.onDismissClass && <button type="button" className="underline opacity-60" onClick={h.onDismissClass}>Don't show tips like this</button>}
+        </div>
+      </div>
+    </div>
+  </aside>
+);
+
+/** WHY BLOCKED / WHAT YOU NEED / HOW TO GET IT (Part 27). */
+export const BlockedHelpCard: React.FC<{ theme: any; help: BlockedActionHelp; onNav: (nav: IntentNavAction) => void; onAsk: (q: string) => void; onDismiss: () => void; onLearnMore: (id: string) => void }> = ({ theme, help, onNav, onAsk, onDismiss, onLearnMore }) => (
+  <aside role="status" aria-live="polite" className={`rounded-lg border-2 border-amber-500/70 ${theme.card} px-3 py-2 text-sm`} data-testid="gl-blocked-help" data-level={help.level}>
+    <div className="font-bold">Not yet possible</div>
+    <p className="text-xs"><span className="font-semibold">Why: </span>{help.why}</p>
+    {help.need && <p className="text-xs"><span className="font-semibold">You need: </span>{help.need}</p>}
+    {help.how.length > 0 && <div className="text-xs"><span className="font-semibold">How to get it:</span><ul className="list-disc pl-5">{help.how.map(x => <li key={x}>{x}</li>)}</ul></div>}
+    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
+      {help.nav && <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded`} onClick={() => onNav(help.nav!)}>{help.nav.label}</button>}
+      {help.asks.map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}
+      {help.conceptId && LEARNING_CONCEPT_BY_ID[help.conceptId] && <button type="button" className="underline" onClick={() => onLearnMore(LEARNING_CONCEPT_BY_ID[help.conceptId!].directoryId)}>Learn More</button>}
+      <button type="button" className="underline opacity-80" onClick={onDismiss}>Dismiss</button>
+    </div>
+  </aside>
+);
+
+// ---- INTELLIGENCE: Learn centre ---------------------------------------------------------------------------------
+
+const LEARN_CATEGORY_LABEL: Record<LearningCategory, string> = { basics: 'Basics', economy: 'Economy', regions: 'Regions', strategy: 'Strategy', rivals: 'Rivals', contracts: 'Contracts', advanced: 'Advanced Systems' };
+
+export const GuidedLearnCenter: React.FC<{ theme: any; learning: PlayerLearningState; mode: LearningMode; onMode: (m: LearningMode) => void; onShowAgain: (id: string) => void; onLearnMore: (dir: string) => void; onAsk: (q: string) => void; onReset: () => void; available: (id: string) => boolean }> = ({ theme, learning, mode, onMode, onShowAgain, onLearnMore, onAsk, onReset, available }) => {
+  const [open, setOpen] = useState<LearningCategory | null>(null);
+  const cats = LEARNING_CATEGORIES.map(cat => {
+    const list = LEARNING_CONCEPTS.filter(c => c.category === cat && available(c.id));
+    return { cat, list, discovered: list.filter(c => (learning.concepts[c.id]?.status || 'unseen') !== 'unseen').length };
+  }).filter(x => x.list.length);
+  const modeIdx = LEARNING_MODE_OPTIONS.findIndex(o => o.id === mode);
+  return (
+    <section id="v9-intel-learn" aria-labelledby="gl-learn-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-3 text-sm`} data-testid="gl-learn-center">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="gl-learn-h" className="font-bold text-lg">🎓 Learn</h2>
+        <span className="text-xs opacity-75">Guided Learning explains mechanics as they become relevant. Ask anything at any time.</span>
+      </div>
+      <div role="radiogroup" aria-label="Guided Learning" className="flex flex-wrap gap-1.5 text-xs" data-testid="gl-mode">
+        {LEARNING_MODE_OPTIONS.map(o => <button key={o.id} type="button" role="radio" aria-checked={mode === o.id} title={o.detail} className={`px-2.5 py-1 rounded-full border ${mode === o.id ? theme.button : 'border-slate-500/50'}`} onClick={() => onMode(o.id)}>{o.label}</button>)}
+        <button type="button" className="underline ml-2" disabled={modeIdx >= LEARNING_MODE_OPTIONS.length - 1} onClick={() => onMode(LEARNING_MODE_OPTIONS[Math.min(LEARNING_MODE_OPTIONS.length - 1, modeIdx + 1)].id)}>More help</button>
+        <button type="button" className="underline" disabled={modeIdx <= 0} onClick={() => onMode(LEARNING_MODE_OPTIONS[Math.max(0, modeIdx - 1)].id)}>Less help</button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {cats.map(({ cat, list, discovered }) => (
+          <div key={cat} className={`rounded-lg border ${theme.border} p-2`}>
+            <button type="button" className="w-full flex justify-between text-left" aria-expanded={open === cat} onClick={() => setOpen(o => (o === cat ? null : cat))}>
+              <span className="font-semibold">{LEARN_CATEGORY_LABEL[cat]}</span><span className="text-xs opacity-75">{discovered} / {list.length} discovered</span>
+            </button>
+            {open === cat && (
+              <ul className="mt-1 space-y-1 text-xs">
+                {list.map(c => {
+                  const st = learning.concepts[c.id]?.status || 'unseen';
+                  return (
+                    <li key={c.id} className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1 min-w-[8rem]">{c.title} <span className="opacity-60">· {st === 'unseen' ? 'not yet seen' : st}</span></span>
+                      <button type="button" className="underline" onClick={() => onShowAgain(c.id)}>Show lesson</button>
+                      <button type="button" className="underline" onClick={() => onLearnMore(c.directoryId)}>Learn More</button>
+                      <button type="button" className="underline" onClick={() => onAsk(c.askPrompt)}>Ask</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+      <button type="button" className="text-xs underline opacity-80" onClick={onReset} data-testid="gl-reset">Reset Guided Learning</button>
+    </section>
+  );
+};
+
+// ---- LAB: Guided Learning Inspector -------------------------------------------------------------------------------
+
+export const GuidedLearningInspector: React.FC<{ theme: any; learning: PlayerLearningState; selection: LearningSelection; ctx: LearningContext }> = ({ theme, learning, selection, ctx }) => {
+  const [open, setOpen] = useState(false);
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70 mt-2';
+  return (
+    <section aria-labelledby="gli-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="gl-lab-inspector">
+      <div className="flex items-center gap-2">
+        <h2 id="gli-h" className="font-bold text-sm">🎓 Guided Learning Inspector</h2>
+        <span className="opacity-70">mode {selection.mode} · level {selection.level} · rev {learning.revision} · hints {learning.totalHintsShown}</span>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && (
+        <div className="space-y-1 mt-1">
+          <div><b>Active lesson:</b> {selection.moment ? `${selection.moment.conceptId} — because ${selection.moment.reason}` : 'none'}</div>
+          <div><b>Hint budget:</b> {selection.budget.thisTurn}/{LEARNING_LIMITS.perTurn} this turn · {selection.budget.window}/{LEARNING_LIMITS.perWindow} in the last {LEARNING_LIMITS.windowTurns} turns · welcome {learning.welcome}{learning.skipGuidance ? ' (skipped)' : ''}</div>
+          <div className={label}>Eligible</div>
+          <div>{selection.eligible.map(e => `${e.id}: ${e.reason}`).join(' | ') || 'none'}</div>
+          <div className={label}>Suppressed</div>
+          <ul>{selection.suppressed.slice(0, 40).map(s => <li key={s.id}>{s.id}: {s.reason}</li>)}</ul>
+          <div className={label}>Concept states</div>
+          <ul>{Object.entries(learning.concepts).map(([id, c]) => <li key={id}>{id}: {c.status} · uses {c.successfulUses} · mistakes {c.mistakeCount} · help L{c.helpLevel}{c.dismissed ? ' · dismissed' : ''}{c.masteryEvidence.length ? ` · evidence: ${c.masteryEvidence.join('; ')}` : ''}</li>)}</ul>
+          <div className={label}>Dismissed classes</div><div>{learning.dismissedClasses.join(', ') || 'none'}</div>
+          <div className={label}>Recent help events</div>
+          <ul>{learning.events.slice(-12).map((e, k) => <li key={k}>t{e.turn} {e.kind}{e.conceptId ? ` ${e.conceptId}` : ''} — {e.detail}</li>)}</ul>
+          <div className={label}>Context used</div>
+          <div className="opacity-80">turn {ctx.turn} · AP {ctx.apRemaining ?? '∞'}/{ctx.apTotal} · cash ${Math.round(ctx.cash)} · inv {ctx.inventoryCount} · region {ctx.currentRegion} · focus “{ctx.focusTitle}” · busy {String(ctx.playerBusy)} · decision {String(ctx.decisionActive)}</div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V9.2 Guided Learning self-tests --------------------------------------------------------------------------
+
+export function createLearningContextFixture(o: Partial<LearningContext> = {}): LearningContext {
+  return {
+    turn: 1, day: 1, totalDays: 30, isHumanTurn: true, apFinite: true, apRemaining: 3, apTotal: 3, cash: 1000, netWorth: 1000, inventoryCount: 0, inventoryValue: 0,
+    currentRegion: 'NSW', currentRegionName: 'New South Wales', standingHere: null, standingEnabled: false, myDepositHere: 0, controllerHere: 'none', regionsControlled: 0, rivalRegionsControlled: 0, minStake: REGION_MIN_CONTROL_STAKE,
+    focusTitle: 'Finish with the most money', focusSource: 'objective', recommendedLabel: 'Travel to QLD', recommendedIsTravel: true, usefulCount: 1, recommendedCostShare: 0.2,
+    strategyPhases: [], strategyPhaseIndex: 0, strategyActive: false, winLabel: 'Most Money', winMetric: 'money', leading: null, daysLeft: 29, rivalName: 'Riley', teamMode: false, teamMission: null, teamRole: null,
+    contractsEnabled: false, contractAvailableTitle: null, contractActiveTitle: null, infrastructureEnabled: false, infrastructureHint: null, investmentsEnabled: false,
+    loanCount: 0, loansPossible: true, liquidityProblem: false, decisionActive: false, criticalActive: false, copilotControlling: false, playerBusy: false,
+    worldChain: null, regionShift: null, stakeholder: null, diplomacyOpportunity: null, lostRegion: null, overrideOfAdvice: false, blocked: null, ...o
+  };
+}
+
+export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const fx = createLearningContextFixture;
+  const guided = { playerIntentOnboardingEnabled: true, smartSettingsProfile: { guidance: 'guided' } };
+  const started = (o: Partial<PlayerLearningState> = {}): PlayerLearningState => ({ ...createEmptyLearningState(), welcome: 'started', ...o });
+  const show = (st: PlayerLearningState, id: string, turn = 1) => applyLearningEvent(st, { kind: 'shown', conceptId: id, turn });
+  const sel = (ctx: LearningContext, st: PlayerLearningState, settings: any = guided, pres = 'guided') => selectNextLearningMoment(ctx, st, settings, pres);
+
+  check('gl_first_turn_single', 'First turn: exactly one fundamental lesson, not a stack', () => {
+    const s = sel(fx(), started());
+    return (s.moment?.conceptId === 'current_focus' && s.moment.lesson.target === 'focus' && !s.eligible.some(e => ['loans', 'factions', 'diplomacy', 'infrastructure', 'world_reactions'].includes(e.id))) || J({ m: s.moment?.conceptId, e: s.eligible });
+  });
+  check('gl_welcome_blocks', 'While the welcome card is pending no lessons stack on top of it', () => sel(fx(), createEmptyLearningState()).moment === null || 'lesson shown during welcome');
+  check('gl_skip', 'Skip Guidance: non-critical proactive teaching stops', () => {
+    const st = applyLearningEvent(createEmptyLearningState(), { kind: 'welcome', welcome: 'skipped', turn: 1 });
+    const s = sel(fx({ inventoryCount: 5, inventoryValue: 700 }), st);
+    return (st.skipGuidance && s.mode === 'off' && s.moment === null) || J({ skip: st.skipGuidance, mode: s.mode, m: s.moment?.conceptId });
+  });
+  check('gl_guided_no_mechanic_change', 'Guided mode teaches without changing canonical rules', () => {
+    const before = [calculateActionPointOverrideCost({ netWorth: 5000 }, DEFAULT_GAME_SETTINGS, 1), computeTravelCostCore({ from: 'NSW', to: 'WA' }), REGION_MIN_CONTROL_STAKE];
+    sel(fx(), started());
+    const after = [calculateActionPointOverrideCost({ netWorth: 5000 }, DEFAULT_GAME_SETTINGS, 1), computeTravelCostCore({ from: 'NSW', to: 'WA' }), REGION_MIN_CONTROL_STAKE];
+    return J(before) === J(after) || 'rules changed';
+  });
+  check('gl_expert', 'Expert presentation: minimal proactive teaching (only cannot-proceed), help still available', () => {
+    const s1 = sel(fx({ inventoryCount: 6, inventoryValue: 900 }), started({ concepts: { current_focus: { ...show(started(), 'current_focus').concepts.current_focus, status: 'understood' } } }), guided, 'expert');
+    const s2 = sel(fx({ apRemaining: 0 }), started(), guided, 'expert');
+    const forced = sel(fx(), started({ forcedLessonId: 'market' }), guided, 'expert');
+    return (s1.level === 1 && !s1.eligible.some(e => e.id === 'market') && s2.moment?.conceptId === 'end_turn' && forced.moment?.conceptId === 'market') || J({ l: s1.level, e1: s1.eligible, m2: s2.moment?.conceptId, f: forced.moment?.conceptId });
+  });
+  check('gl_ap_once', 'AP: lesson appears once; normal repeated use never repeats it', () => {
+    let st = started({ concepts: { current_focus: { status: 'understood' } as any, recommended_action: { status: 'understood' } as any } });
+    st = sanitizeLearningState(st);
+    const a = sel(fx({ apRemaining: 2 }), st);
+    st = show(st, 'action_points', 1); st = applyLearningEvent(st, { kind: 'dismiss', conceptId: 'action_points', turn: 1 });
+    st = applyLearningEvent(st, { kind: 'used', conceptId: 'action_points', turn: 2, detail: 'used 1 action' });
+    const b = sel(fx({ turn: 3, apRemaining: 1 }), st);
+    return (a.moment?.conceptId === 'action_points' && b.moment?.conceptId !== 'action_points') || J([a.moment?.conceptId, b.moment?.conceptId]);
+  });
+  check('gl_travel', 'Travel: taught on first relevance; after two travels no further hint', () => {
+    let st = sanitizeLearningState({ welcome: 'started', concepts: { current_focus: { status: 'understood' }, recommended_action: { status: 'understood' } } });
+    const a = sel(fx({ recommendedIsTravel: true }), st);
+    st = applyLearningEvent(st, { kind: 'used', conceptId: 'travel', turn: 1, detail: 'NSW→QLD' }); st = applyLearningEvent(st, { kind: 'used', conceptId: 'travel', turn: 2, detail: 'QLD→NT' });
+    const b = sel(fx({ turn: 5, recommendedIsTravel: true }), st);
+    return (a.moment?.conceptId === 'travel' && st.concepts.travel.status === 'understood' && b.moment?.conceptId !== 'travel') || J([a.moment?.conceptId, st.concepts.travel?.status, b.moment?.conceptId]);
+  });
+  check('gl_market_relevance', 'Market: not taught with an empty inventory; eligible once it matters', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: { current_focus: { status: 'understood' }, recommended_action: { status: 'understood' }, travel: { status: 'understood' }, challenges: { status: 'understood' } } });
+    const a = sel(fx({ inventoryCount: 0 }), st); const b = sel(fx({ inventoryCount: 4, inventoryValue: 520 }), st);
+    return (!a.eligible.some(e => e.id === 'market') && b.moment?.conceptId === 'market' && /4 items/.test(b.moment.lesson.lines[0])) || J([a.eligible, b.moment]);
+  });
+  check('gl_contract_block', 'Blocked contract: why, current value, required value, how to improve', () => {
+    const h = buildBlockedActionHelp('contract_accept', 'Contract requires 20 regional standing (have 12)', { cash: 5000, currentRegion: 'NSW', currentRegionName: 'New South Wales', loansPossible: true, inventoryCount: 0 }, 0);
+    return (/20 regional standing/.test(h.why) && h.need === '20 standing (you have 12)' && h.how.some(x => /New South Wales challenges/.test(x)) && h.conceptId === 'standing') || J(h);
+  });
+  check('gl_repeated_block', 'Repeated block: help escalates one step at a time and is bounded', () => {
+    let st = started();
+    for (let k = 0; k < 7; k++) st = applyLearningEvent(st, { kind: 'blocked', conceptId: 'standing', turn: 2, detail: 'contract' });
+    const ctx = { cash: 5000, currentRegion: 'NSW', currentRegionName: 'New South Wales', loansPossible: true, inventoryCount: 0 };
+    const h0 = buildBlockedActionHelp('c', 'Contract requires 20 regional standing (have 12)', ctx, 0);
+    const h2 = buildBlockedActionHelp('c', 'Contract requires 20 regional standing (have 12)', ctx, 2);
+    return (st.concepts.standing.helpLevel === 4 && st.concepts.standing.mistakeCount === 7 && h2.how.length > h0.how.length && st.events.length <= LEARNING_LIMITS.events) || J({ c: st.concepts.standing, h0: h0.how, h2: h2.how });
+  });
+  check('gl_cash_block', 'Short on cash: shows the exact shortfall and real options (no automatic rescue)', () => {
+    const h = buildBlockedActionHelp('deposit', 'Contract requires $15,000 (have $12,000)', { cash: 12000, currentRegion: 'NSW', currentRegionName: 'New South Wales', loansPossible: true, inventoryCount: 3 }, 1);
+    return (h.need === '$3,000 more (you have $12,000)' && h.how.includes('Sell resources') && h.how.some(x => /loan/i.test(x))) || J(h);
+  });
+  check('gl_strategy', 'Strategy vs Current Focus is taught without internal system names', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: { current_focus: { status: 'understood' }, recommended_action: { status: 'understood' } } });
+    const s = sel(fx({ strategyActive: true, strategyPhases: ['Protect NSW', 'Reach $15K', 'Expand VIC'] }), st);
+    const text = J(s.moment?.lesson);
+    return (s.moment?.conceptId === 'strategy' && /Protect NSW → Reach \$15K → Expand VIC/.test(text) && /larger plan/.test(text) && !/GI3|Intelligence 3/.test(text)) || text;
+  });
+  check('gl_recommendation_agency', 'Recommendation lesson explicitly preserves player choice', () => {
+    const txt = J(LEARNING_CONCEPT_BY_ID.recommended_action.lesson(fx()));
+    return (/not a requirement/.test(txt) && /Other Useful Options/.test(txt)) || txt;
+  });
+  check('gl_no_scolding', 'Lesson language never scolds', () => {
+    const all = LEARNING_CONCEPTS.map(c => J(c.lesson(fx({ lostRegion: 'NSW', worldChain: 'x', regionShift: 'y', stakeholder: 'z', diplomacyOpportunity: 'w' })))).join(' ');
+    return !/wrong move|bad decision|mistake!|you should have/i.test(all) || 'scolding language';
+  });
+  check('gl_guardian_copilot', 'Learning never changes Co-Pilot authority or Guardian (read-only layer)', () => {
+    const settings = { ...guided, coPilotSettings: { authorityMode: 'advisor' } };
+    const snap = J(settings);
+    sel(fx({ copilotControlling: true }), started(), settings);
+    const cp = LEARNING_CONCEPT_BY_ID.copilot.lesson(fx());
+    return (J(settings) === snap && /Take Control/.test(J(cp)) && !('execute' in (cp as any))) || 'authority touched';
+  });
+  check('gl_ask_context', 'Why/Ask links carry the subject (live region / concept prompt)', () => {
+    const h = buildBlockedActionHelp('c', 'Contract requires 20 regional standing (have 12)', { cash: 1, currentRegion: 'VIC', currentRegionName: 'Victoria', loansPossible: false, inventoryCount: 0 }, 1);
+    return (h.nav?.label === 'Show VIC actions' && h.asks.includes('How do I increase my standing?') && LEARNING_CONCEPT_BY_ID.contracts.askPrompt === 'Is this contract worth it?') || J(h);
+  });
+  check('gl_learn_more', 'Learn More deep-links to a real Mechanics Directory entry for every concept', () => {
+    const ids = new Set(MECHANICS_DIRECTORY_ENTRIES.map(e => e.id));
+    const bad = LEARNING_CONCEPTS.filter(c => !ids.has(c.directoryId)).map(c => c.id);
+    return bad.length === 0 || J(bad);
+  });
+  check('gl_world_reaction', 'World reaction lesson teaches through the visible event text only', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: Object.fromEntries(LEARNING_CONCEPTS.filter(c => c.id !== 'world_reactions').map(c => [c.id, { status: 'understood' }])) });
+    const s = sel(fx({ worldChain: 'You reinforced NSW → Riley shifted toward VIC.' }), st);
+    return (s.moment?.conceptId === 'world_reactions' && /Riley shifted toward VIC/.test(J(s.moment.lesson)) && !/Router|World Reaction/.test(J(s.moment.lesson))) || J(s.moment);
+  });
+  check('gl_living_regions_once', 'Region development lesson appears once, then stops', () => {
+    let st = sanitizeLearningState({ welcome: 'started', concepts: Object.fromEntries(LEARNING_CONCEPTS.filter(c => c.id !== 'regional_development').map(c => [c.id, { status: 'understood' }])) });
+    const a = sel(fx({ regionShift: 'Queensland is now Growing.' }), st);
+    st = show(st, 'regional_development', 1); st = applyLearningEvent(st, { kind: 'dismiss', conceptId: 'regional_development', turn: 1 });
+    const b = sel(fx({ turn: 8, regionShift: 'WA specialises in Mining.' }), st);
+    return (a.moment?.conceptId === 'regional_development' && b.moment === null) || J([a.moment?.conceptId, b.moment?.conceptId]);
+  });
+  check('gl_factions_diplomacy_team', 'Stakeholders / negotiation / team lessons only when relevant, one at a time', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: Object.fromEntries(LEARNING_CONCEPTS.filter(c => !['factions', 'diplomacy', 'team_mode'].includes(c.id)).map(c => [c.id, { status: 'understood' }])) });
+    const none = sel(fx(), st);
+    const f = sel(fx({ stakeholder: 'Pilbara Mining Consortium wants more mining investment.' }), st);
+    const t = sel(fx({ teamMode: true, teamMission: 'Control 5 regions', teamRole: 'Economy' }), st);
+    return (none.moment === null && f.moment?.conceptId === 'factions' && t.moment?.conceptId === 'team_mode' && !/Team OS|Team Intelligence/.test(J(t.moment.lesson))) || J([none.moment?.conceptId, f.moment?.conceptId, t.moment?.conceptId]);
+  });
+  check('gl_dismissed', 'Dismissed lesson does not immediately reappear; class dismissal is respected', () => {
+    let st = started(); st = show(st, 'current_focus', 1); st = applyLearningEvent(st, { kind: 'dismiss', conceptId: 'current_focus', turn: 1 });
+    const a = sel(fx({ turn: 1 }), st);
+    let st2 = sanitizeLearningState({ welcome: 'started', concepts: { current_focus: { status: 'understood' }, recommended_action: { status: 'understood' }, travel: { status: 'understood' }, challenges: { status: 'understood' } } });
+    st2 = applyLearningEvent(st2, { kind: 'dismiss_class', category: 'economy', turn: 1 });
+    const b = sel(fx({ inventoryCount: 5, inventoryValue: 600 }), st2);
+    return (a.moment?.conceptId !== 'current_focus' && b.moment?.conceptId !== 'market') || J([a.moment?.conceptId, b.moment?.conceptId]);
+  });
+  check('gl_budget', 'Hint budget: at most one proactive lesson per turn; critical help can override', () => {
+    let st = started(); st = show(st, 'current_focus', 3); st = applyLearningEvent(st, { kind: 'dismiss', conceptId: 'current_focus', turn: 3 });
+    const a = sel(fx({ turn: 3, inventoryCount: 5 }), st);
+    const b = sel(fx({ turn: 3, apRemaining: 0 }), st);
+    return (a.moment === null && a.suppressed.some(x => /budget/.test(x.reason)) && b.moment?.conceptId === 'end_turn') || J([a.moment?.conceptId, b.moment?.conceptId]);
+  });
+  check('gl_critical_decision', 'No unrelated tip while a decision needs attention', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: { current_focus: { status: 'understood' }, recommended_action: { status: 'understood' }, travel: { status: 'understood' }, challenges: { status: 'understood' } } });
+    const s = sel(fx({ decisionActive: true, inventoryCount: 5, inventoryValue: 500 }), st);
+    return (s.moment === null && s.suppressed.some(x => /decision/.test(x.reason))) || J(s.moment);
+  });
+  check('gl_mastered', 'Mastery through evidence suppresses the lesson', () => {
+    let st = started();
+    for (let k = 0; k < 4; k++) st = applyLearningEvent(st, { kind: 'used', conceptId: 'market', turn: k + 1, detail: 'sold' });
+    return (st.concepts.market.status === 'mastered' && sel(fx({ inventoryCount: 6 }), st).moment?.conceptId !== 'market' && st.concepts.market.masteryEvidence.length <= LEARNING_LIMITS.evidence) || J(st.concepts.market);
+  });
+  check('gl_reset', 'Reset Guided Learning makes lessons eligible again (keeps the welcome done)', () => {
+    let st = started(); st = applyLearningEvent(st, { kind: 'used', conceptId: 'travel', turn: 1 }); st = applyLearningEvent(st, { kind: 'reset', turn: 2 });
+    return (Object.keys(st.concepts).length === 0 && st.welcome === 'started' && sel(fx(), st).moment?.conceptId === 'current_focus') || J(st);
+  });
+  check('gl_save_load', 'Save/load: learning state round-trips, stays bounded, unknown data dropped, no restart spam', () => {
+    let st = started(); st = applyLearningEvent(st, { kind: 'used', conceptId: 'travel', turn: 1, detail: 'x' }); st = show(st, 'current_focus', 1);
+    const loaded = sanitizeLearningState({ ...JSON.parse(J(st)), concepts: { ...JSON.parse(J(st)).concepts, bogus: { status: 'mastered' } }, events: Array.from({ length: 90 }, () => ({ turn: 1, kind: 'x', conceptId: null, detail: '' })) });
+    const again = sel(fx({ recommendedIsTravel: true }), loaded);
+    return (loaded.concepts.travel.status === 'practiced' && !loaded.concepts.bogus && loaded.events.length === LEARNING_LIMITS.events && loaded.welcome === 'started' && again.moment?.conceptId !== 'travel' && sanitizeLearningState(null).welcome === 'pending') || J({ c: loaded.concepts, w: loaded.welcome, m: again.moment?.conceptId });
+  });
+  check('gl_force_survives_update', '"Show lesson again" survives the in-session sanitize between events; a new match clears it', () => {
+    const forced = sanitizeLearningState(JSON.parse(J(applyLearningEvent(show(started(), 'current_focus', 1), { kind: 'force', conceptId: 'action_points', turn: 1 }))));
+    const s1 = sel(fx({}), forced);
+    const cleared = applyLearningEvent(forced, { kind: 'match_start', turn: 1 });
+    return (s1.moment?.conceptId === 'action_points' && s1.moment.forced && cleared.forcedLessonId === null) || J({ m: s1.moment?.conceptId, f: forced.forcedLessonId });
+  });
+  check('gl_uses_from_state', 'Mastery evidence comes from real state changes (travel / action / sale / end turn)', () => {
+    const p: LearningSnapshot = { turn: 4, humanTurn: true, region: 'NSW', apUsed: 0, inventory: 3, cash: 1000, myDeposits: 0, regionsControlled: 0, contractsActive: 0, contractsDone: 0, loans: 0, strategy: false, copilot: false, lostRegions: [] };
+    const n1 = { ...p, region: 'QLD', apUsed: 1 }; const n2 = { ...n1, inventory: 2, cash: 1150 }; const n3 = { ...n2, humanTurn: false };
+    const ids = [...deriveLearningUses(p, n1), ...deriveLearningUses(n1, n2), ...deriveLearningUses(n2, n3)].map(u => u.conceptId);
+    return J(ids) === J(['travel', 'action_points', 'market', 'end_turn']) || J(ids);
+  });
+  check('gl_first_use_confirmation', 'After-action learning uses real values', () => {
+    const l = buildFirstUseConfirmation('regional_control', fx({ cash: 12000, controllerHere: 'you' }), 'staked $10000');
+    return (Boolean(l) && /\$12,000/.test(J(l)) && /tied up/.test(J(l))) || J(l);
+  });
+  check('gl_live_values', 'Lessons use live values, never canned tutorial numbers', () => {
+    const l = LEARNING_CONCEPT_BY_ID.standing.lesson(fx({ standingHere: 12, currentRegionName: 'Queensland' }));
+    const ap = LEARNING_CONCEPT_BY_ID.action_points.lesson(fx({ apRemaining: 2, apTotal: 5 }));
+    return (/Queensland is 12/.test(J(l)) && /2 \/ 5/.test(J(ap))) || J([l, ap]);
+  });
+  check('gl_fog', 'Lessons read only visible context (no hidden rival cash / plans)', () => {
+    const keys = Object.keys(fx());
+    return !keys.some(k => /rivalCash|hidden|secret|plan(?!s)/i.test(k)) || J(keys);
+  });
+  check('gl_modes_map_existing', 'Learning modes reuse the existing Guidance preference and onboarding toggle', () => {
+    const m = ['minimal', 'important_only', 'guided', 'teaching'].map(g => resolveLearningMode({ smartSettingsProfile: { guidance: g } }, null));
+    return (J(m) === J(['minimal', 'important_only', 'guided', 'teaching']) && resolveLearningMode({ playerIntentOnboardingEnabled: false, smartSettingsProfile: { guidance: 'teaching' } }, null) === 'off' && resolveLearningLevel('teaching', 'advanced') === 2 && resolveLearningLevel('guided', 'simple') === 3) || J(m);
+  });
+  check('gl_endgame_setback', 'Setback and endgame lessons appear when they matter and offer recovery / pressure', () => {
+    const st = sanitizeLearningState({ welcome: 'started', concepts: Object.fromEntries(LEARNING_CONCEPTS.filter(c => !['setback', 'endgame'].includes(c.id)).map(c => [c.id, { status: 'understood' }])) });
+    const lost = sel(fx({ lostRegion: 'NSW' }), st); const end = sel(fx({ daysLeft: 2, leading: false }), st);
+    return (lost.moment?.conceptId === 'setback' && /not always best/.test(J(lost.moment.lesson)) && end.moment?.conceptId === 'endgame' && /Riley leads/.test(J(end.moment.lesson))) || J([lost.moment?.conceptId, end.moment?.conceptId]);
+  });
+  check('gl_perf', 'Selector is cheap (bounded registry; 2,000 selections well under a frame budget each)', () => {
+    const st = started(); const c = fx(); const t0 = Date.now(); for (let k = 0; k < 2000; k++) sel(c, st); const ms = Date.now() - t0;
+    return (LEARNING_CONCEPTS.length <= 40 && ms < 1500) || `${ms}ms`;
   });
   return results;
 }
@@ -131989,6 +132779,8 @@ function dispatchGameSettingsChange(
         groupedInventoryCardsEnabled: typeof settingsData.groupedInventoryCardsEnabled === 'boolean' ? settingsData.groupedInventoryCardsEnabled : DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
         playerIntentOnboardingEnabled: typeof settingsData.playerIntentOnboardingEnabled === 'boolean' ? settingsData.playerIntentOnboardingEnabled : DEFAULT_GAME_SETTINGS.playerIntentOnboardingEnabled,
         playerIntentOnboardingDismissed: Array.isArray(settingsData.playerIntentOnboardingDismissed) ? settingsData.playerIntentOnboardingDismissed.filter((x: any) => typeof x === 'string') : DEFAULT_GAME_SETTINGS.playerIntentOnboardingDismissed,
+        // V9.2: learning progress survives save/load (sanitised, bounded); absent in old saves → fresh state.
+        guidedLearning: settingsData.guidedLearning && typeof settingsData.guidedLearning === 'object' ? { ...sanitizeLearningState(settingsData.guidedLearning), forcedLessonId: null, sessionHintsShown: 0 } : null,
         playerIntentExplainRoutineActions: settingsData.playerIntentExplainRoutineActions === true,
         playerIntentExplainMode: ['routine_off', 'high_impact', 'every'].includes(settingsData.playerIntentExplainMode)
           ? settingsData.playerIntentExplainMode
@@ -143484,6 +144276,7 @@ function dispatchGameSettingsChange(
       if (!options?.silent) {
         const prefix = actorState.kind === 'human' ? '' : '🤖 ';
         addNotification(`${prefix}${actorState.name} cannot afford a $${amount} region deposit.`, actorState.kind === 'human' ? 'error' : 'ai', false, 'deposit');
+        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `A $${amount} stake needs $${amount} cash (have $${Math.floor(actorState.money || 0)})`);
       }
       return false;
     }
@@ -143497,6 +144290,7 @@ function dispatchGameSettingsChange(
       if (!options?.silent) {
         const actorLabel = actorState.kind === 'human' ? 'You need' : `🤖 ${actorState.name} needs`;
         addNotification(`${actorLabel} at least $${requiredToTake} to take control of ${REGIONS[regionCode].name}.`, 'warning', false, 'deposit');
+        if (actorState.kind === 'human') reportBlockedActionRef.current?.('region_deposit', `Taking ${REGIONS[regionCode].name} needs a stake of at least $${requiredToTake} (you offered $${amount})`);
       }
       return false;
     }
@@ -158403,7 +159197,9 @@ function dispatchGameSettingsChange(
       }
     } else if (addNotification) {
       const c = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
-      addNotification(contractAcceptBlocker(c, player, gameState, gameSettings) || 'This contract cannot be accepted right now.', 'warning', true);
+      const blocker = contractAcceptBlocker(c, player, gameState, gameSettings) || 'This contract cannot be accepted right now.';
+      addNotification(blocker, 'warning', true);
+      reportBlockedActionRef.current?.('contract_accept', blocker);
     }
   }, [gameState, gameSettings, player, addNotification]);
 
@@ -158420,6 +159216,7 @@ function dispatchGameSettingsChange(
     } else {
       const probe = before ? deliverContractObjectives(JSON.parse(JSON.stringify(before)), JSON.parse(JSON.stringify(player)), gameState) : { notes: [] as string[] };
       addNotification(probe.notes[0] || 'Nothing to deliver yet.', 'warning', true);
+      reportBlockedActionRef.current?.('contract_deliver', probe.notes[0] || 'Nothing to deliver yet — contract objective not ready.');
     }
   }, [gameState, player, addNotification]);
 
@@ -158447,6 +159244,7 @@ function dispatchGameSettingsChange(
       }
     } else if (addNotification) {
       addNotification('Contract objectives are not complete yet.', 'warning', true);
+      reportBlockedActionRef.current?.('contract_fulfil', 'Contract objectives are not complete yet.');
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
@@ -161275,6 +162073,108 @@ function dispatchGameSettingsChange(
     const domains = Array.from(new Set(chain.flatMap(e => e.affectedDomains))).slice(0, 4).map(d => d.replace(/_/g, ' '));
     return { rootId: chain[0].id, did: say(chain[0]), changed: chain.slice(1).map(say), affected: domains };
   }, [swrEnabled, swrState, player?.id, player?.teamId, dnRound, v9AfterDismissed, swrInputs.ownerNames]);
+
+  // ---- V9.2 Guided Learning: learn by playing (reads visible state; never acts; never changes authority) ----
+  const glLearning = useMemo(() => sanitizeLearningState(gameSettings.guidedLearning), [gameSettings.guidedLearning]);
+  const glPresentation = getIntentPresentationLevel(gameSettings);
+  const glTurn = dnRound;
+  const glDispatch = useCallback((evs: Array<Parameters<typeof applyLearningEvent>[1]>) => {
+    if (!evs.length) return;
+    setGameSettings(prev => ({ ...prev, guidedLearning: evs.reduce((st, ev) => applyLearningEvent(st, ev), sanitizeLearningState(prev.guidedLearning)) }));
+  }, [setGameSettings]);
+  const glPlayerKey = isTeamMode ? TEAM_PLAYER_ID : 'player';
+  const glCtx = useMemo<LearningContext>(() => {
+    const pid = String(player?.id || 'player');
+    const region = String(player?.currentRegion || 'NSW');
+    const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    const snap = getRegionControlSnapshot(deposits[region] || {});
+    const rec = v9ActionSetView?.ranked?.find(c => c.id === v9Cohesion.recommended?.candidateId) || null;
+    const cash = Number(player?.money || 0);
+    const contracts = gameSettings.regionalContractsEnabled ? listRegionalContracts(gameState) : [];
+    const active = contracts.find((c: any) => c.status === 'active' && String(c.assignedActorId) === pid) || null;
+    const reachable = contracts.find((c: any) => c.status === 'available' && Number(c.requirements?.requiredMoney || 0) <= cash * 2) || null;
+    const regionCtx = lrViewRef.current ? buildV9RegionContext(region, lrViewRef.current, rfViewRef.current, null) : null;
+    const needLine = regionCtx?.lines.find(l => l.label === 'Current need');
+    const lost = (swrState?.events || []).filter(e => e.kind === 'region_lost' && e.tags.includes(`loser:${pid}`) && dnRound - e.turn <= 1).slice(-1)[0];
+    const dnOpp = dnObservations.find(o => o.kind === 'proposal' || o.kind === 'opportunity');
+    let leading: boolean | null = null;
+    try { const me = getCompetitiveMetricValue(gameSettings.winCondition, { side: 'player', teamMode: isTeamMode }); const them = gameState.selectedMode === 'single' ? null : getCompetitiveMetricValue(gameSettings.winCondition, { side: 'opponent', teamMode: isTeamMode }); leading = them === null ? null : me > them ? true : me < them ? false : null; } catch { leading = null; }
+    const shift = v9CohesionInputs.events.find(e => e.source === 'regions');
+    return {
+      turn: dnRound, day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 30), isHumanTurn: isPlayerTurnForCoPilot,
+      apFinite: v9ApFinite, apRemaining: v9ApFinite ? v9ApRemaining : null, apTotal: Number(gameSettings.playerActionsPerDay || 3) + Number(player?.overrideActionsGranted || 0),
+      cash, netWorth: computeNetWorth(player), inventoryCount: (player?.inventory || []).length, inventoryValue: Math.round(calculateInventoryMarketValue(player?.inventory || [], gameState.resourcePrices)),
+      currentRegion: region, currentRegionName: REGIONS[region]?.name || region,
+      standingHere: gameSettings.regionalStandingEnabled ? getActorRegionalStanding(gameState, pid, region) : null, standingEnabled: Boolean(gameSettings.regionalStandingEnabled),
+      myDepositHere: Math.floor((deposits[region] || {})[glPlayerKey] || 0), controllerHere: snap.controllerId === glPlayerKey ? 'you' : snap.controllerId ? 'rival' : 'none',
+      regionsControlled: playerControlledRegions, rivalRegionsControlled: aiControlledRegions, minStake: REGION_MIN_CONTROL_STAKE,
+      focusTitle: v9Cohesion.focus.title, focusSource: v9Cohesion.focus.source, recommendedLabel: v9Cohesion.recommended?.label || null,
+      recommendedIsTravel: Boolean(rec && /travel/i.test(rec.actionType)), usefulCount: v9Cohesion.useful.length, recommendedCostShare: rec?.costEstimate && cash > 0 ? rec.costEstimate / cash : 0,
+      strategyPhases: v9CohesionInputs.strategy?.phases || [], strategyPhaseIndex: v9CohesionInputs.strategy?.phaseIndex || 0, strategyActive: Boolean(v9CohesionInputs.strategy),
+      winLabel: v9CohesionInputs.win.label, winMetric: String(gameSettings.winCondition), leading, daysLeft: Math.max(0, Number(gameSettings.totalDays || 30) - Number(gameState.day || 1)),
+      rivalName: getActorDisplayName(isTeamMode ? 'ai' : 'ai') || 'your rival', teamMode: isTeamMode, teamMission: v9CohesionInputs.team?.mission || null, teamRole: v9CohesionInputs.team?.you || null,
+      contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), contractAvailableTitle: reachable?.title || null, contractActiveTitle: active?.title || null,
+      infrastructureEnabled: Boolean(regionCtx?.suggestion), infrastructureHint: regionCtx?.suggestion && needLine ? `${REGIONS[region]?.name || region} has a ${needLine.value.toLowerCase()} need. ${regionCtx.suggestion}.` : null, investmentsEnabled: Boolean(gameSettings.investmentsEnabled),
+      loanCount: (player?.loans || []).length, loansPossible: (player?.loans || []).length < MAX_ACTIVE_LOANS, liquidityProblem: cash < 300,
+      decisionActive: Boolean(v9Cohesion.decision), criticalActive: v9Cohesion.focus.source === 'critical', copilotControlling: playerControlState.copilotHoldsControl,
+      playerBusy: Boolean(uiState.showTravelModal || uiState.showMarket || uiState.showResourceMarket || uiState.showRegionalContractsModal || uiState.showSettings || uiState.showChallenges || uiState.showShop || uiState.showCoPilotProposalModal),
+      worldChain: v9AfterAction && v9AfterAction.changed.length ? `${v9AfterAction.did} → ${v9AfterAction.changed[0]}` : null,
+      regionShift: shift ? shift.text : null, stakeholder: v9CohesionInputs.factions.requests[0] ? `${v9CohesionInputs.factions.requests[0].faction} asks: ${v9CohesionInputs.factions.requests[0].title}.` : null,
+      diplomacyOpportunity: dnOpp ? dnOpp.text : null, lostRegion: lost ? (REGIONS[lost.subjectId]?.name || lost.subjectId) : null,
+      overrideOfAdvice: (bgLive?.overrides || []).length > 0, blocked: null
+    };
+  }, [player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue]);
+  const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
+  // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
+  const glWasLiveRef = useRef(false);
+  useEffect(() => {
+    if (isLiveIntentMatch && !glWasLiveRef.current) glDispatch([{ kind: 'match_start', turn: glTurn }]);
+    glWasLiveRef.current = isLiveIntentMatch;
+  }, [isLiveIntentMatch]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Record that a lesson was shown (event-driven; once per lesson).
+  useEffect(() => {
+    const m = glSelection.moment;
+    if (m && !m.forced && glLearning.activeLessonId !== m.conceptId) glDispatch([{ kind: 'shown', conceptId: m.conceptId, turn: glTurn, detail: m.reason }]);
+  }, [glSelection.moment?.conceptId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mastery evidence from real state changes (travel, actions, sales, stakes, contracts, loans, end turn).
+  const [glAfter, setGlAfter] = useState<{ conceptId: string; lesson: LearningLesson } | null>(null);
+  const glSnapshot = useMemo<LearningSnapshot>(() => ({
+    turn: dnRound, humanTurn: isPlayerTurnForCoPilot, region: String(player?.currentRegion || ''), apUsed: Number(player?.actionsUsedThisTurn || 0), inventory: (player?.inventory || []).length, cash: Number(player?.money || 0),
+    myDeposits: Object.values(sanitizeRegionDeposits(gameState.regionDeposits)).reduce((s: number, r: any) => s + Math.floor(r?.[glPlayerKey] || 0), 0), regionsControlled: playerControlledRegions,
+    contractsActive: listRegionalContracts(gameState).filter((c: any) => c.status === 'active' && String(c.assignedActorId) === String(player?.id || 'player')).length,
+    contractsDone: listRegionalContracts(gameState).filter((c: any) => c.status === 'completed' && String(c.assignedActorId) === String(player?.id || 'player')).length,
+    loans: (player?.loans || []).length, strategy: Boolean(v9CohesionInputs.strategy), copilot: playerControlState.copilotHoldsControl, lostRegions: []
+  }), [dnRound, isPlayerTurnForCoPilot, player, gameState, glPlayerKey, playerControlledRegions, v9CohesionInputs.strategy, playerControlState.copilotHoldsControl]);
+  const glPrevSnapRef = useRef<LearningSnapshot | null>(null);
+  useEffect(() => {
+    const prev = glPrevSnapRef.current; glPrevSnapRef.current = glSnapshot;
+    if (!isLiveIntentMatch) return;
+    const uses = deriveLearningUses(prev, glSnapshot);
+    if (!uses.length) return;
+    glDispatch(uses.map(u => ({ kind: 'used' as const, conceptId: u.conceptId, turn: glTurn, detail: u.detail })));
+    // After-action learning on the FIRST use only, when the player wants that depth (Learn as I Play / Teaching).
+    if (glSelection.level >= 3) {
+      const first = uses.find(u => !glLearning.concepts[u.conceptId] || glLearning.concepts[u.conceptId].successfulUses === 0);
+      const lesson = first ? buildFirstUseConfirmation(first.conceptId, glCtx, first.detail) : null;
+      if (first && lesson) setGlAfter({ conceptId: first.conceptId, lesson });
+    }
+  }, [glSnapshot]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Blocked-action help: WHY / WHAT YOU NEED / HOW (escalates on repeats; reactive, so it works in every mode).
+  const [glBlocked, setGlBlocked] = useState<BlockedActionHelp | null>(null);
+  const reportBlockedAction = useCallback((kind: string, blocker: string) => {
+    const probe = buildBlockedActionHelp(kind, blocker, { cash: Number(player?.money || 0), currentRegion: String(player?.currentRegion || ''), currentRegionName: REGIONS[player?.currentRegion]?.name || String(player?.currentRegion || ''), loansPossible: (player?.loans || []).length < MAX_ACTIVE_LOANS, inventoryCount: (player?.inventory || []).length }, 0);
+    const level = probe.conceptId ? (glLearning.concepts[probe.conceptId]?.helpLevel || 0) : 0;
+    const help = buildBlockedActionHelp(kind, blocker, { cash: Number(player?.money || 0), currentRegion: String(player?.currentRegion || ''), currentRegionName: REGIONS[player?.currentRegion]?.name || String(player?.currentRegion || ''), loansPossible: (player?.loans || []).length < MAX_ACTIVE_LOANS, inventoryCount: (player?.inventory || []).length }, level);
+    setGlBlocked(help);
+    glDispatch([{ kind: 'blocked', conceptId: help.conceptId, turn: glTurn, detail: `${kind}: ${blocker}`.slice(0, 120) }]);
+  }, [player, glLearning, glDispatch, glTurn]);
+  const reportBlockedActionRef = useRef(reportBlockedAction); reportBlockedActionRef.current = reportBlockedAction;
+  const [mechanicsFocusId, setMechanicsFocusId] = useState<string | null>(null);
+  // Guided Learning deep link: open the Mechanics Directory focused on the specific entry.
+  const openMechanicsEntry = useCallback((id: string) => {
+    setMechanicsFocusId(id);
+    navigateToSettings('mechanicsDir', 'mechanicsDirectory.directory');
+  }, [navigateToSettings]);
   const showWorldExplanation = useCallback((eventId: string) => {
     const v = swrViewRef.current;
     const ans = v ? buildWorldExplanationAnswer(eventId, v) : null;
@@ -172904,91 +173804,8 @@ function dispatchGameSettingsChange(
                 description="Comprehensive reference for all core rules, formulas, AI behavior models, and game systems."
               >
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-amber-400">🏁 Win Conditions & Regions</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        Players compete across {TOTAL_REGION_COUNT} Australian regions. Controlling a majority ({REGION_CONTROL_MAJORITY}+ regions) or having the highest cash / net worth at the end of total days decides victory. Region deposits require cash reserves, and cashing out yields a 50% refund.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('economy')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Win Condition →
-                      </button>
-                    </div>
-
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-cyan-400">⏱️ Action Limits & Overrides</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        Each day, human and AI players receive a set quota of actions. Exceeding daily limits requires paying an escalating override cost. Costs double per consecutive override within a day.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('gameplay')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Action Limits →
-                      </button>
-                    </div>
-
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-purple-400">🧠 Team Brain & AI Coordination</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        In Team Mode, AI agents synchronize strategy using the Team Brain protocol. They share action banks, execute multi-day team plans, request emergency funding, and protect shared cash reserves.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('aiTeams')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Team Brain →
-                      </button>
-                    </div>
-
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-emerald-400">🎰 Challenges & Dynamic Wagers</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        Mini-game challenges offer high risk/reward opportunities. Dynamic wagers scale maximum stakes based on challenge difficulty tier, with optional Double or Nothing multipliers on success.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('gameplay')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Challenges →
-                      </button>
-                    </div>
-
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-rose-400">🤖 Adaptive AI & Comeback Mode</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        When toggled ON, trailing AI players gain temporary catchup multipliers, dynamic market discounts, and bonus challenge rerolls to prevent early snowballing victories.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('aiTeams')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Adaptive AI →
-                      </button>
-                    </div>
-
-                    <div className={`p-4 rounded-lg border ${themeStyles.border} space-y-2`}>
-                      <div className="font-bold text-sm text-blue-400">🏦 Advanced Loans & Finance</div>
-                      <p className="text-xs opacity-80 leading-relaxed">
-                        Players can leverage short-term liquidity through fixed-rate loans with custom payback periods. Failure to maintain collateral or default on interest triggers credit rating penalties.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigateToSettings('economy')}
-                        className={`text-xs ${themeStyles.buttonSecondary} px-2 py-1 rounded`}
-                      >
-                        Configure Loans →
-                      </button>
-                    </div>
-                  </div>
+                  {/* V9.2: data-driven — every Guided Learning lesson deep-links to one of these entries (Learn More). */}
+                  <MechanicsDirectoryEntries theme={themeStyles} focusId={mechanicsFocusId} onConfigure={tab => navigateToSettings(tab)} />
                 </div>
               </SettingsSection>
             </div>
@@ -175858,15 +176675,20 @@ function dispatchGameSettingsChange(
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xl font-bold text-indigo-400">{scenario.title}</h3>
-                        <span className={`px-3 py-1 text-xs font-bold rounded-full border ${diffBadgeClass}`}>
-                          {scenario.difficulty}
+                        <span className="flex items-center gap-1.5">
+                          {String((scenario as any).category) === 'beginner' && scenario.difficulty === 'Easy' && (
+                            <span className="px-2 py-0.5 text-[11px] font-bold rounded-full border border-sky-500/50 bg-sky-500/15 text-sky-300" data-testid="gl-good-first-match">Good First Match</span>
+                          )}
+                          <span className={`px-3 py-1 text-xs font-bold rounded-full border ${diffBadgeClass}`}>
+                            {scenario.difficulty}
+                          </span>
                         </span>
                       </div>
 
                       <p className={`text-sm mb-4 ${themeStyles.textMuted}`}>{scenario.description}</p>
                       {getScenarioLearnTags(scenario).length > 0 && (
                         <div className="mb-3">
-                          <div className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-1">You will learn</div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider opacity-60 mb-1">You'll Practice</div>
                           <ul className="text-xs space-y-0.5">
                             {getScenarioLearnTags(scenario).map(tag => (
                               <li key={tag}>• {tag}</li>
@@ -177056,8 +177878,39 @@ function dispatchGameSettingsChange(
       return buildV9RegionContext(code, lrViewRef.current, rfViewRef.current, typeof st === 'number' ? st : null);
     };
 
+    const glCardHandlers = (m: { conceptId: string; category: LearningCategory } | null, onClose?: () => void): LearningCardHandlers => ({
+      onDismiss: () => { if (m) glDispatch([{ kind: 'dismiss', conceptId: m.conceptId, turn: glTurn }]); onClose?.(); },
+      onDismissClass: m ? () => { glDispatch([{ kind: 'dismiss_class', conceptId: m.conceptId, category: m.category, turn: glTurn }]); onClose?.(); } : undefined,
+      onNav: nav => openIntentNav(nav),
+      onAsk: q => { glDispatch([{ kind: 'ask', conceptId: m?.conceptId || null, turn: glTurn, detail: q.slice(0, 80) }]); void submitIntelligenceQuery(q); },
+      onLearnMore: id => openMechanicsEntry(id)
+    });
+
     const renderV9PlayHud = () => {
-      const introDismissed = (gameSettings.playerIntentOnboardingDismissed || []).includes('v9_cohesion_intro');
+      // ---- V9.2 Guided Learning placement: at most one proactive lesson; blocked help and welcome take its place ----
+      const glShowWelcome = isLiveIntentMatch && glLearning.welcome === 'pending' && glSelection.mode !== 'off';
+      const glBasics = glLearning.basicsStep !== null && glSelection.mode !== 'off' ? GUIDED_BASICS_STEPS[glLearning.basicsStep] || null : null;
+      const glMoment = !glShowWelcome && !glBasics && !glBlocked ? glSelection.moment : null;
+      const glBasicsNode = glBasics ? (
+        <aside role="note" aria-label={`Basics: ${glBasics.headline}`} className={`rounded-lg border-2 border-sky-500/60 ${themeStyles.card} px-3 py-2 text-sm mt-2`} data-testid="gl-basics-step" data-target={glBasics.target}>
+          <div className="font-bold">💡 {glBasics.headline}</div>
+          <p className="text-xs opacity-90">{glBasics.line}</p>
+          <div className="flex flex-wrap gap-3 text-xs mt-1">
+            {glLearning.basicsStep! < GUIDED_BASICS_STEPS.length - 1
+              ? <button type="button" className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`} data-testid="gl-basics-next" onClick={() => glDispatch([{ kind: 'basics_step', step: glLearning.basicsStep! + 1, turn: glTurn }])}>Next</button>
+              : <button type="button" className={`${themeStyles.buttonSecondary} px-2 py-0.5 rounded`} data-testid="gl-basics-done" onClick={() => glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }])}>Start playing</button>}
+            <button type="button" className="underline opacity-80" onClick={() => glDispatch([{ kind: 'basics_step', step: null, turn: glTurn }])}>Skip the tour</button>
+          </div>
+        </aside>
+      ) : null;
+      const glLessonNode = glMoment ? (
+        <LearningCard theme={themeStyles} lesson={glMoment.lesson} directoryId={glMoment.directoryId} h={glCardHandlers(glMoment)} />
+      ) : null;
+      const glCoachTarget: LearningCoachTarget | null = glBasics ? glBasics.target : glMoment ? (glMoment.lesson.target || null) : null;
+      const glCoachNode = glBasicsNode || glLessonNode;
+      const glInHeader = glCoachNode && (glCoachTarget === 'ap' || glCoachTarget === 'end_turn');
+      const glInPlay = glCoachNode && (glCoachTarget === 'focus' || glCoachTarget === 'recommended' || glCoachTarget === 'useful');
+      const glAtTop = glCoachNode && !glInHeader && !glInPlay;
       return (
         <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3" data-testid="v9-play-hud">
           <V9MatchHeader
@@ -177066,7 +177919,21 @@ function dispatchGameSettingsChange(
             onEndTurn={v9HumanCanAct ? v9EndTurn : null}
             endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
             onStanding={() => void submitIntelligenceQuery('Who is winning and why?')}
+            coachNode={glInHeader ? glCoachNode : null}
           />
+
+          {glShowWelcome && (
+            <GuidedWelcomeCard
+              theme={themeStyles}
+              onStart={() => glDispatch([{ kind: 'welcome', welcome: 'started', turn: glTurn }])}
+              onBasics={() => glDispatch([{ kind: 'welcome', welcome: 'basics', turn: glTurn }])}
+              onSkip={() => glDispatch([{ kind: 'welcome', welcome: 'skipped', turn: glTurn }])}
+            />
+          )}
+          {glBlocked && (
+            <BlockedHelpCard theme={themeStyles} help={glBlocked} onNav={nav => openIntentNav(nav)} onAsk={q => void submitIntelligenceQuery(q)} onDismiss={() => setGlBlocked(null)} onLearnMore={openMechanicsEntry} />
+          )}
+          {glAtTop && glCoachNode}
 
           {attention.state === 'needs_attention' && !v9Cohesion.focus.temporary && (
             <div role="alert" className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm border-amber-500/70 ${themeStyles.card}`}>
@@ -177089,41 +177956,8 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
-          {onboardingHint && (
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`}>
-              <span className="font-semibold">💡 {onboardingHint.title}</span>
-              <span className="opacity-80 flex-1 min-w-[12rem]">{onboardingHint.body}</span>
-              {onboardingHint.navigation && (
-                <button type="button" className="underline" onClick={() => openIntentNav(onboardingHint.navigation)}>{onboardingHint.navigation.label}</button>
-              )}
-              <button
-                type="button"
-                className="opacity-70 underline"
-                onClick={() => trackedSetGameSettings('direct_player_change', 'Intent onboarding', prev => ({
-                  ...prev,
-                  playerIntentOnboardingDismissed: [...(prev.playerIntentOnboardingDismissed || []), onboardingHint.id]
-                }))}
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {!introDismissed && (
-            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="v9-cohesion-intro">
-              <span className="font-semibold">💡 How to read PLAY</span>
-              <span className="opacity-85 flex-1 min-w-[12rem]">Your <b>Current Focus</b> is the strategic goal. The <b>Recommended Action</b> is the best next step toward it. <b>What Changed</b> is the one story that matters since your last turn. Ask <b>Why?</b> anywhere — INTELLIGENCE answers, LAB shows the machinery.</span>
-              <button
-                type="button"
-                className="opacity-70 underline"
-                onClick={() => trackedSetGameSettings('direct_player_change', 'Intent onboarding', prev => ({
-                  ...prev,
-                  playerIntentOnboardingDismissed: [...(prev.playerIntentOnboardingDismissed || []), 'v9_cohesion_intro']
-                }))}
-              >
-                Got it
-              </button>
-            </div>
+          {glAfter && !glBlocked && (
+            <LearningCard theme={themeStyles} lesson={glAfter.lesson} directoryId={LEARNING_CONCEPT_BY_ID[glAfter.conceptId]?.directoryId || null} h={{ ...glCardHandlers(null, () => setGlAfter(null)), onDismissClass: undefined }} testId="gl-after" compact />
           )}
 
           <V9CohesionPlay
@@ -177134,6 +177968,7 @@ function dispatchGameSettingsChange(
             humanCanAct={v9HumanCanAct}
             afterAction={v9AfterAction}
             onDismissAfter={() => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20))}
+            coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
           <div className="text-xs">
@@ -177235,6 +178070,30 @@ function dispatchGameSettingsChange(
                 </div>
               )}
             </section>
+
+            <GuidedLearnCenter
+              theme={themeStyles}
+              learning={glLearning}
+              mode={resolveLearningMode(gameSettings, glLearning)}
+              onMode={m => trackedSetGameSettings('direct_player_change', 'Guided Learning', prev => {
+                if (m === 'off') return { ...prev, playerIntentOnboardingEnabled: false };
+                const cur = sanitizeLearningState(prev.guidedLearning);
+                const learning = cur.skipGuidance || cur.welcome === 'pending' ? applyLearningEvent(cur, { kind: 'welcome', welcome: 'started', turn: glTurn }) : cur;
+                return { ...prev, playerIntentOnboardingEnabled: true, smartSettingsProfile: { ...(prev.smartSettingsProfile || {}), guidance: m } as any, guidedLearning: learning };
+              })}
+              onShowAgain={id => { glDispatch([{ kind: 'force', conceptId: id, turn: glTurn }]); setExperienceLayer('play'); }}
+              onLearnMore={openMechanicsEntry}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onReset={() => glDispatch([{ kind: 'reset', turn: glTurn }])}
+              available={id => (
+                id === 'contracts' ? Boolean(gameSettings.regionalContractsEnabled)
+                  : id === 'standing' ? gameSettings.regionalStandingEnabled !== false
+                    : id === 'world_reactions' || id === 'regional_development' || id === 'factions' ? swrEnabled
+                      : id === 'diplomacy' ? dnView.enabled
+                        : id === 'team_mode' ? isTeamMode
+                          : true
+              )}
+            />
 
             <div id="v9-intel-strategy" />
             <GI3StrategicCommandCenter
@@ -177362,7 +178221,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -177400,6 +178259,7 @@ function dispatchGameSettingsChange(
         <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
         <FactionInspector view={rfViewRef.current} theme={themeStyles} />
         <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
+        <GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} />
         <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
       </div>
     );
@@ -186928,6 +187788,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             </button>
           </div>
 
+          {/* Guided Learning: blocked-contract help right where the attempt failed. */}
+          {glBlocked && glBlocked.kind.startsWith('contract_') && (
+            <BlockedHelpCard theme={themeStyles} help={glBlocked} onNav={nav => { updateUiState({ showRegionalContractsModal: false }); openIntentNav(nav); }} onAsk={q => { updateUiState({ showRegionalContractsModal: false }); void submitIntelligenceQuery(q); }} onDismiss={() => setGlBlocked(null)} onLearnMore={id => { updateUiState({ showRegionalContractsModal: false }); openMechanicsEntry(id); }} />
+          )}
+
           {/* Active Contracts */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
@@ -187022,6 +187887,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                                   <button type="button" className="underline text-sky-300" onClick={() => openIntentNav(blocker.nextAction)}>{blocker.nextAction.label}</button>
                                 )}
                                 <button type="button" className="underline text-sky-300" onClick={() => trackIntentGoal({ id: c.id, sourceType: 'contract', sourceId: c.id, title: c.title })}>Track as Goal</button>
+                                <button type="button" className="underline text-sky-300" data-testid="gl-contract-learn-more" onClick={() => { updateUiState({ showRegionalContractsModal: false }); openMechanicsEntry('contracts'); }}>Learn More</button>
                               </div>
                             </div>
                           )}
