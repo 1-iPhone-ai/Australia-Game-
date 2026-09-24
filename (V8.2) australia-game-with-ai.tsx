@@ -1880,6 +1880,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'agricultural_logistics',
     issuingRegionId: 'NSW',
     issuingFaction: 'NSW Farmers Co-Op',
+    issuingFactionId: 'nsw_farmers_coop',
     requirements: { requiredMoney: 15000, minRegionalStanding: 20, requiredEquipment: ['Heavy Transport Truck'], maxDurationTurns: 10 },
     rewards: { money: 35000, regionalStandingBoost: 15, devPoints: 150 },
     objectives: [{ id: 'obj_grain_1', type: 'deliver_resource', description: 'Deliver 50 units of Grain to NSW distribution center', targetRegion: 'NSW', targetItem: 'Grain', targetValue: 50, currentProgress: 0, completed: false, isMandatory: true }],
@@ -1894,6 +1895,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'renewable_energy_grid',
     issuingRegionId: 'SA',
     issuingFaction: 'SA Clean Energy Council',
+    issuingFactionId: 'sa_clean_energy_council',
     requirements: { requiredMoney: 30000, minRegionalDevLevel: 1, requiredEquipment: ['Solar Array Kit'], maxDurationTurns: 12 },
     rewards: { money: 65000, regionalStandingBoost: 20, devPoints: 250, regionalEconomicMultiplierBonus: 0.08 },
     objectives: [{ id: 'obj_solar_1', type: 'build_infrastructure', description: 'Build Solar Substation infrastructure step in SA', targetRegion: 'SA', targetValue: 1, currentProgress: 0, completed: false, isMandatory: true }],
@@ -1908,6 +1910,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'mining_tech_initiative',
     issuingRegionId: 'WA',
     issuingFaction: 'Pilbara Mining Consortium',
+    issuingFactionId: 'pilbara_mining_consortium',
     requirements: { requiredMoney: 50000, minRegionalStanding: 40, minRegionalDevLevel: 2, maxDurationTurns: 15 },
     rewards: { money: 110000, regionalStandingBoost: 25, unlockedItemIds: ['Autonomous Mining Rig'] },
     objectives: [{ id: 'obj_mine_1', type: 'invest_capital', description: 'Invest $40,000 into automated haulage equipment', targetRegion: 'WA', targetValue: 40000, currentProgress: 0, completed: false, isMandatory: true }],
@@ -1922,6 +1925,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'maritime_export_hub',
     issuingRegionId: 'QLD',
     issuingFaction: 'Queensland Port Authority',
+    issuingFactionId: 'qld_port_authority',
     requirements: { requiredMoney: 40000, minRegionalStanding: 30, requiredEquipment: ['Cargo Vessel License'], maxDurationTurns: 10 },
     rewards: { money: 85000, regionalStandingBoost: 18, devPoints: 200 },
     objectives: [{ id: 'obj_port_1', type: 'deliver_resource', description: 'Transport 100 units of Coal & Agricultural exports through Brisbane Port', targetRegion: 'QLD', targetValue: 100, currentProgress: 0, completed: false, isMandatory: true }],
@@ -1936,6 +1940,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'eco_tourism_network',
     issuingRegionId: 'TAS',
     issuingFaction: 'Tasmanian Wilderness Trust',
+    issuingFactionId: 'tas_wilderness_trust',
     requirements: { requiredMoney: 10000, minRegionalStanding: 15, maxDurationTurns: 8 },
     rewards: { money: 28000, regionalStandingBoost: 22 },
     objectives: [{ id: 'obj_eco_1', type: 'maintain_presence', description: 'Maintain presence in TAS for 5 turns', targetRegion: 'TAS', targetValue: 5, currentProgress: 0, completed: false, isMandatory: true }],
@@ -1950,6 +1955,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     contractType: 'ai_research_center',
     issuingRegionId: 'ACT',
     issuingFaction: 'CSIRO AI Directorate',
+    issuingFactionId: 'csiro_ai_directorate',
     requirements: { requiredMoney: 60000, minRegionalStanding: 50, minRegionalDevLevel: 3, maxDurationTurns: 15 },
     rewards: { money: 140000, regionalStandingBoost: 30, devPoints: 350, victoryPoints: 50 },
     objectives: [{ id: 'obj_ai_1', type: 'invest_capital', description: 'Establish AI Computing Node in ACT', targetRegion: 'ACT', targetValue: 60000, currentProgress: 0, completed: false, isMandatory: true }],
@@ -6904,6 +6910,8 @@ export interface RegionalContract {
   contractType: ContractType;
   issuingRegionId: string;
   issuingFaction: string;
+  /** Canonical Regional Factions id (the issuer is a persistent faction, not just a label). */
+  issuingFactionId?: string;
   requirements: ContractRequirement;
   rewards: ContractReward;
   objectives: MissionObjective[];
@@ -6956,6 +6964,8 @@ export interface InfrastructureProject {
   providedBonuses: InfrastructureBonusEffect[];
   maintenanceCostPerTurn: number;
   completionTurn?: number;
+  /** Provenance only: cumulative funding by actor (lets factions attribute support; mechanics unchanged). */
+  contributions?: Record<string, number>;
 }
 
 export interface RegionalBonus {
@@ -10377,6 +10387,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
     livingRegions: sanitizeLivingRegionsState((save as any)?.livingRegions || (gameState as any)?.livingRegions),
+    regionalFactions: sanitizeRegionalFactionsState((save as any)?.regionalFactions || (gameState as any)?.regionalFactions),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10550,6 +10561,7 @@ export function canonicalStateFromLiveRuntime(
     diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
+    regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -11294,6 +11306,7 @@ export function reduceGameAction(
             if (project.status !== 'active') {
               actor.money -= investment;
               project.totalInvestedMoney += investment;
+              project.contributions = { ...(project.contributions || {}), [actorId]: ((project.contributions || {})[actorId] || 0) + investment };
               project.status = 'under_construction';
               if (project.totalInvestedMoney >= project.totalCost) {
                 project.status = 'active';
@@ -21635,6 +21648,7 @@ interface SaveGameData {
   diplomacyState?: DiplomacyState;
   worldReaction?: WorldReactionState;
   livingRegions?: LivingRegionsState | null;
+  regionalFactions?: RegionalFactionsState | null;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35631,7 +35645,9 @@ export const initialGameState = {
   diplomacyState: createEmptyDiplomacyState(),
   worldReaction: createEmptyWorldReactionState(),
   // Living Regions initialises from canonical state on the first live pass (history starts then).
-  livingRegions: null as LivingRegionsState | null
+  livingRegions: null as LivingRegionsState | null,
+  // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
+  regionalFactions: null as RegionalFactionsState | null
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -79542,6 +79558,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.worldReaction = sanitizeWorldReactionState(migrated.gameState.worldReaction || migrated.worldReaction);
   // Living Regions: old saves carry none — it initialises from current canonical systems on load (no fake history).
   if (migrated.gameState) migrated.gameState.livingRegions = sanitizeLivingRegionsState(migrated.gameState.livingRegions || migrated.livingRegions);
+  // Regional Factions: old saves initialise on load from canonical systems (no invented interactions).
+  if (migrated.gameState) migrated.gameState.regionalFactions = sanitizeRegionalFactionsState(migrated.gameState.regionalFactions || migrated.regionalFactions);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -101894,6 +101912,8 @@ export interface GIWorld {
   worldReaction?: WorldReactionWorldView | null;
   /** Living Regions 2.0 view (public regional condition; fog-aware presence). */
   livingRegions?: LivingRegionsWorldView | null;
+  /** Regional Factions 2.0 view (fog-aware stakeholder state). */
+  factions?: RegionalFactionsWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -104528,7 +104548,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy' | 'world_reaction' | 'living_regions';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy' | 'world_reaction' | 'living_regions' | 'factions';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104563,6 +104583,7 @@ export interface GIQueryUnderstanding {
   diplomacyQuery?: DNQuery;
   worldReactionQuery?: SWRQuery;
   livingRegionsQuery?: LRQuery;
+  factionQuery?: RFQuery;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104944,9 +104965,21 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     }
   }
 
+  // ---- Regional Factions: who cares, what they want, who they support (stakeholder questions/commands) ----
+  let factionQuery: RFQuery | undefined;
+  if (primary !== 'control' && !diplomacyQuery && world.factions) {
+    const fq = detectFactionQuery(frame.originalQuery || query, world);
+    if (fq) {
+      factionQuery = fq;
+      primary = 'factions';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false; needs.recommendation = false; needs.diagnosis = false;
+    }
+  }
+
   // ---- Living Regions: questions about a region's condition, needs, value and trajectory ----
   let livingRegionsQuery: LRQuery | undefined;
-  if (primary !== 'control' && !diplomacyQuery && world.livingRegions) {
+  if (primary !== 'control' && !diplomacyQuery && !factionQuery && world.livingRegions) {
     const lq = detectLivingRegionsQuery(frame.originalQuery || query, world);
     if (lq) {
       livingRegionsQuery = lq;
@@ -104958,7 +104991,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // ---- World Reaction: causal questions about what changed and why (only when causal records exist) ----
   let worldReactionQuery: SWRQuery | undefined;
-  if (primary !== 'control' && !diplomacyQuery && !livingRegionsQuery && world.worldReaction) {
+  if (primary !== 'control' && !diplomacyQuery && !livingRegionsQuery && !factionQuery && world.worldReaction) {
     const wq = detectWorldReactionQuery(frame.originalQuery || query, world);
     if (wq) {
       worldReactionQuery = wq;
@@ -104971,7 +105004,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Game Intelligence 3.0: persistent strategy (above Team OS; GI 2.1 frame is the only input) ----
   let strategyIntent: GI3IntentKind | undefined;
   let strategyControl: GI3Control | undefined;
-  if (primary !== 'control' && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
+  if (primary !== 'control' && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery && !factionQuery) {
     const det = detectGI3StrategyIntent(frame, world, ctx, world.gi3?.active || null);
     // A team-coordination instruction with no multi-turn goal stays with Team Intelligence.
     const teamOnly = det.kind === 'create' && Boolean(world.team?.enabled) && !det.signals.some(sg => sg === 'mission' || sg === 'ordered goals' || sg === 'cash target') && !/\b(my plan|strategy|over the next|few turns|win)\b/.test(normalized);
@@ -104986,7 +105019,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // ---- Background AI: questions addressed to it ("what are you watching?", "what would you do?") ----
   let backgroundTopic: BackgroundQueryTopic | undefined;
-  if (primary !== 'control' && !strategyIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
+  if (primary !== 'control' && !strategyIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery && !factionQuery) {
     // Read the player's own words too: typo correction can rewrite rare verbs ("watching" → "catching").
     const topic = detectBackgroundAIQuery(normalizeIntelligenceQuery(frame.originalQuery || '')) || detectBackgroundAIQuery(normalized);
     if (topic) {
@@ -105001,7 +105034,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // GI3 (what the player wants in the match) stays separate: only AI / teammate / game-configuration
   // language reaches here, and a GI3 strategy never becomes settings permission.
   let settingsIntent: SIIntent | undefined;
-  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
+  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery && !factionQuery) {
     const si = world.settingsIntel ? understandSettingsIntent(frame.originalQuery || normalized, world.actors.filter(a => a.relation === 'teammate').map(a => a.name)) : null;
     // A behaviour symptom ("why won't my teammate spend?") belongs to Settings Intelligence only when the
     // configuration actually contributes (or settings are named); otherwise the cross-system answer explains it.
@@ -105022,7 +105055,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery && !worldReactionQuery && !livingRegionsQuery && !factionQuery) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -105042,7 +105075,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions', 'factions'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -105055,7 +105088,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation', world_reaction: 'explanation', living_regions: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation', world_reaction: 'explanation', living_regions: 'explanation', factions: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -105098,7 +105131,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction', 'living_regions', 'factions'].includes(primary),
     teamCommand,
     strategyIntent,
     backgroundTopic,
@@ -105106,6 +105139,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     diplomacyQuery,
     worldReactionQuery,
     livingRegionsQuery,
+    factionQuery,
     strategyControl
   };
 }
@@ -105229,7 +105263,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state' | 'swr_state' | 'lr_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state' | 'swr_state' | 'lr_state' | 'rf_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105276,7 +105310,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   settings_intelligence: ['si_state'],
   diplomacy: ['dn_state'],
   world_reaction: ['swr_state'],
-  living_regions: ['lr_state']
+  living_regions: ['lr_state'],
+  factions: ['rf_state']
 };
 
 export interface GIQueryPlan {
@@ -105300,7 +105335,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai', swr_state: 'ai', lr_state: 'ai'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai', swr_state: 'ai', lr_state: 'ai', rf_state: 'ai'
 };
 
 function giHash(text: string): string {
@@ -105369,6 +105404,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
     if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
     if (want('world_reaction')) add('swr_state', {}, { purpose: 'World Reaction: causal chain of meaningful world changes, windows and conditions (viewer-filtered)' });
+    if (want('factions')) add('rf_state', {}, { purpose: 'Regional Factions: stakeholder influence, relationships, priorities, requests and coalitions (fog-aware)' });
     if (want('living_regions')) add('lr_state', {}, { purpose: 'Living Regions: persistent regional condition (development, momentum, specialization, needs, value; fog-aware)' });
     if (want('diplomacy')) add('dn_state', {}, { purpose: 'Diplomacy 2.0: agreements, proposals, relationships and leverage (read-only, fog-aware)' });
   }
@@ -105878,6 +105914,12 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         }
       }
       return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'rf_state': {
+      const view = world.factions;
+      const facts: GIFact[] = [];
+      if (view) { const f = fact('rf.state', 'Stakeholder record', view.state.revision, 'Regional Factions (stakeholder influence, relationships, requests)', 'ai'); facts.push(f); g.fact(f); }
+      return { ...base, ok: Boolean(view), data: view ? { factions: Object.keys(view.state.factions).length } : null, facts };
     }
     case 'lr_state': {
       const view = world.livingRegions;
@@ -107835,6 +107877,15 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'factions': {
+      kind = 'next_step';
+      const part = composeFactionAnswer(u.factionQuery!, world);
+      title = part.title || 'Stakeholders';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      break;
+    }
     case 'living_regions': {
       kind = 'next_step';
       const part = composeLivingRegionsAnswer(u.livingRegionsQuery!, world);
@@ -108391,6 +108442,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   // World reactions derive from canonical changes in these domains (not from ledger/notification churn).
   swr_state: ['actors', 'world', 'player', 'strategy', 'contracts'],
   lr_state: ['world', 'projects', 'contracts', 'market', 'strategy'],
+  rf_state: ['world', 'projects', 'contracts', 'strategy', 'actors'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -115020,7 +115072,9 @@ export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefine
   const worldInputsRaw = backgroundWorldReactionInputs(world);
   // Living Regions: regional trends (bottlenecks, critical needs, growth phases) are observed inputs too.
   const regionInputs = backgroundLivingRegionInputs(world);
-  const worldInputs = { attention: [...worldInputsRaw.attention, ...regionInputs.attention.filter(r => !worldInputsRaw.attention.some(w => w.subject === r.subject && w.id === r.id))].slice(0, 6), opportunities: [...worldInputsRaw.opportunities, ...regionInputs.opportunities].slice(0, 5) };
+  // Regional Factions: observable stakeholder competition, requests, coalitions and commitments due.
+  const factionInputs = backgroundFactionInputs(world);
+  const worldInputs = { attention: [...worldInputsRaw.attention, ...regionInputs.attention.filter(r => !worldInputsRaw.attention.some(w => w.subject === r.subject && w.id === r.id)), ...factionInputs.attention].slice(0, 7), opportunities: [...worldInputsRaw.opportunities, ...regionInputs.opportunities, ...factionInputs.opportunities].slice(0, 6) };
   const opportunitiesAll = worldInputs.opportunities.length ? [...opportunities.filter(o => !worldInputs.opportunities.some(w => w.id === o.id)), ...worldInputs.opportunities].slice(0, 8) : opportunities;
   const attentionBase = deriveBackgroundAttention(world, threats, opportunitiesAll, predictions, prev.attentionQueue);
   const attentionQueue = worldInputs.attention.length ? [...attentionBase.filter(a => !worldInputs.attention.some(w => w.id === a.id)), ...worldInputs.attention.filter(w => !attentionBase.some(a => a.subject === w.subject && a.reason === w.reason))].sort((a, b) => ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[b.importance] - ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[a.importance]).slice(0, Math.max(attentionBase.length, 6)) : attentionBase;
@@ -118555,7 +118609,7 @@ export interface DiplomacyWorld {
   /** Live clock: diplomacy counts ROUNDS (one per player turn); the HUD turn counter advances once per actor. */
   clock?: { hudTurn: number; actorsPerRound: number };
   /** Living Regions: regional value/core context (an INPUT to valuation; Diplomacy decides the response). */
-  regional?: Record<string, { valueMultiplier: number; coreFor: string | null; label: string; momentum?: string; development?: string }>;
+  regional?: Record<string, { valueMultiplier: number; coreFor: string | null; label: string; momentum?: string; development?: string; factionBacking?: Record<string, number> }>;
 }
 
 export const DN_DEFAULT_RELATIONSHIP: DNRelationship = { trust: 50, reliability: 50, grievance: 0, gratitude: 0, rivalry: 0, threat: 0, cooperation: 50 };
@@ -118858,7 +118912,9 @@ function dnRegionWorth(world: DiplomacyWorld, code: string): number {
   if (!r) return 0;
   const max = Math.max(0, ...Object.values(r.deposits || {}).map(v => Number(v) || 0));
   // A developed, growing or core region is worth more than its deposits alone (bounded multiplier).
-  return Math.round(Math.max(3000, max + 1500) * (world.regional?.[code]?.valueMultiplier ?? 1));
+  // Local stakeholder backing of the holder (Regional Factions) makes a concession costlier (bounded).
+  const backing = r.controllerId ? (world.regional?.[code]?.factionBacking?.[r.controllerId] ?? 0) : 0;
+  return Math.round(Math.max(3000, max + 1500) * (world.regional?.[code]?.valueMultiplier ?? 1) * (1 + 0.3 * Math.min(1, backing)));
 }
 
 function dnCostToTake(world: DiplomacyWorld, code: string, actorId: string): number {
@@ -118888,6 +118944,8 @@ export function diplomaticRegionStake(world: DiplomacyWorld, actorId: string, co
     if (adjacentToHolding || affordable) { stake = 0.45; reason = 'within reach'; }
     else { stake = 0.12; reason = 'currently out of reach'; }
   }
+  const backing = world.regional?.[code]?.factionBacking?.[actorId] ?? (a.teamId ? world.regional?.[code]?.factionBacking?.[a.teamId] : undefined) ?? 0;
+  if (backing >= 0.3) { stake = Math.max(stake, Math.min(1, 0.6 + backing * 0.4)); reason += ` (strong local stakeholder support)`; }
   const target = world.win?.regionsTarget || null;
   if (world.win?.metric === 'regions' && target && r.controllerId !== actorId && a.regionsControlled + 1 >= target) { stake *= 1.6; reason += ' (win-critical)'; }
   if (world.turnsLeft <= 4) stake *= 1.25;
@@ -121438,7 +121496,9 @@ export type SWRKind =
   | 'victory_pressure_changed'
   | 'rival_target_reassessed'
   // Living Regions 2.0 (derived, emitted back through World Reaction; Living Regions never consumes these).
-  | 'region_entered_boom' | 'regional_growth_accelerated' | 'regional_decline_started' | 'regional_need_became_critical' | 'specialization_established' | 'core_region_emerged';
+  | 'region_entered_boom' | 'regional_growth_accelerated' | 'regional_decline_started' | 'regional_need_became_critical' | 'specialization_established' | 'core_region_emerged'
+  // Regional Factions 2.0 (derived; factions never consume these).
+  | 'faction_influence_shift' | 'faction_relationship_changed_major' | 'faction_coalition_formed' | 'faction_request_issued' | 'faction_conflict_escalated';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -121541,7 +121601,7 @@ export function buildStrategicSnapshot(inputs: SWRInputs): SWRSnapshot {
 
 // ---- State ----------------------------------------------------------------------------------------
 
-export type SWRTargetSystem = 'rival_strategy' | 'team_os' | 'gi3' | 'background_ai' | 'diplomacy' | 'market' | 'contracts' | 'stability' | 'crisis' | 'national_events' | 'ai_memory' | 'objectives' | 'contextual_actions' | 'living_regions';
+export type SWRTargetSystem = 'rival_strategy' | 'team_os' | 'gi3' | 'background_ai' | 'diplomacy' | 'market' | 'contracts' | 'stability' | 'crisis' | 'national_events' | 'ai_memory' | 'objectives' | 'contextual_actions' | 'living_regions' | 'factions';
 export type SWRTiming = 'immediate' | 'actor_boundary' | 'turn_end' | 'day_end' | 'next_match';
 
 export interface WorldReactionIntent {
@@ -121940,6 +122000,7 @@ export interface SWRSubscription {
 
 const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 'region_became_contested', 'region_secured', 'region_lost', 'region_weakened'];
 /** Regional shifts Living Regions emits (consumed by other systems; never by Living Regions itself). */
+const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed', 'faction_request_issued', 'faction_conflict_escalated'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
@@ -121947,26 +122008,29 @@ export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
   { system: 'rival_strategy', label: 'Rival AI strategy', kinds: [...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
-  { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed'], minSignificance: 'meaningful', evaluation: e => (e.kind === 'crisis_resolved' && e.tags.includes('failed') ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
+  { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
   { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
   { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
   { system: 'living_regions', label: 'Living Regions', kinds: [...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
-    relevant: e => e.sourceSystem !== 'living_regions' }
+    relevant: e => e.sourceSystem !== 'living_regions' },
+  // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
+  { system: 'factions', label: 'Regional Factions', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+    relevant: e => e.sourceSystem !== 'factions' }
 ];
 
 export const SWR_SYSTEM_LABELS: Record<SWRTargetSystem, string> = Object.fromEntries(SWR_SUBSCRIPTIONS.map(s => [s.system, s.label])) as Record<SWRTargetSystem, string>;
@@ -122057,7 +122121,10 @@ export function processWorldReactions(stateIn: WorldReactionState, roots: Strate
     state.diagnostics.maxDepth = Math.max(state.diagnostics.maxDepth, e.reactionDepth);
     if (e.reactionDepth > budget.maxDepth) { suppress(null, e.id, `depth limit ${budget.maxDepth} reached`); state.diagnostics.budgetExhausted += 1; continue; }
     routeStrategicWorldEvent(e, s).forEach(intent => {
-      if (stats.reactions >= budget.maxReactions) { suppress(intent, e.id, `reaction budget ${budget.maxReactions} exhausted`); state.diagnostics.budgetExhausted += 1; return; }
+      // State interpreters (Living Regions, Regional Factions) read every relevant event; they do not spend the
+      // reaction budget (their OWN derived events still obey the new-event budget, depth, dedupe and cycles).
+      const interpreter = intent.targetSystem === 'living_regions' || intent.targetSystem === 'factions';
+      if (!interpreter && stats.reactions >= budget.maxReactions) { suppress(intent, e.id, `reaction budget ${budget.maxReactions} exhausted`); state.diagnostics.budgetExhausted += 1; return; }
       const cycleKey = `${e.rootEventId}|${intent.targetSystem}|${intent.subjectId}|${intent.requestedEvaluation}|${intent.targetActorId || intent.targetTeamId || '*'}`;
       if (cycleSeen.has(cycleKey)) { suppress(intent, e.id, `cycle: ${intent.targetSystem} already reacted to this chain`); state.diagnostics.cyclesBlocked += 1; return; }
       cycleSeen.add(cycleKey);
@@ -122065,7 +122132,7 @@ export function processWorldReactions(stateIn: WorldReactionState, roots: Strate
       const last = state.cooldowns[intent.dedupeKey];
       if (sub.cooldownTurns > 0 && last !== undefined && turn - last < sub.cooldownTurns && last !== turn) { suppress(intent, e.id, `cooldown: ${intent.targetSystem} re-evaluated recently`); return; }
       if (sub.cooldownTurns > 0 && last === turn && state.intents.some(x => x.dedupeKey === intent.dedupeKey && x.turn === turn && x.sourceEventId !== e.id && x.rootEventId === e.rootEventId)) { suppress(intent, e.id, 'already requested this turn'); return; }
-      stats.reactions += 1;
+      if (!interpreter) stats.reactions += 1;
       state.cooldowns[intent.dedupeKey] = turn;
       if (intent.targetSystem === 'ai_memory') {
         const pk = `${intent.targetActorId}:${e.actorId}:${e.subjectId}`;
@@ -122632,7 +122699,7 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
   region_reinforced: 'Reinforced', region_became_safe: 'Threat ↓', region_became_contested: 'Pressure ↑', region_lost: 'Lost', region_secured: 'Secured', rival_pressure_increased: 'Pressure ↑', rival_pressure_decreased: 'Pressure ↓',
-  rival_target_reassessed: 'Target reconsidered', regional_growth_accelerated: 'Region growing', region_entered_boom: 'Boom', regional_decline_started: 'Region weakening', regional_need_became_critical: 'Critical need', specialization_established: 'Specialization', core_region_emerged: 'Core region', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
+  rival_target_reassessed: 'Target reconsidered', regional_growth_accelerated: 'Region growing', region_entered_boom: 'Boom', regional_decline_started: 'Region weakening', regional_need_became_critical: 'Critical need', specialization_established: 'Specialization', core_region_emerged: 'Core region', faction_request_issued: 'Faction request', faction_coalition_formed: 'Coalition', faction_relationship_changed_major: 'Stakeholders', faction_influence_shift: 'Influence', faction_conflict_escalated: 'Conflict', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
 };
 
 export const WorldConsequenceChainStrip: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId: string | null; turn: number; names: Record<string, string>; onWhy: (eventId: string) => void }> = ({ state, viewerId, viewerTeamId, turn, names, onWhy }) => {
@@ -122833,7 +122900,9 @@ export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
     const tight = { ...SWR_BUDGETS, critical: { maxDepth: 3, maxReactions: 2, maxNewEvents: 1 }, major: { maxDepth: 3, maxReactions: 2, maxNewEvents: 1 } };
     const out = processWorldReactions(createEmptyWorldReactionState(), [root], base, { budgets: tight });
     const out2 = processWorldReactions(createEmptyWorldReactionState(), [deep], base);
-    return (out.delivered.length + out.deferred.length <= 2 && out.suppressed.some(s => /budget/.test(s.reason)) && out2.delivered.length === 0 && out2.suppressed.some(s => /depth/.test(s.reason))) || canon({ d: out.delivered.length, s: out.suppressed.map(s => s.reason), s2: out2.suppressed.map(s => s.reason) });
+    // State interpreters (Living Regions / Factions) are budget-exempt by design; reacting systems are capped.
+    const reacting = (i: WorldReactionIntent) => i.targetSystem !== 'living_regions' && i.targetSystem !== 'factions';
+    return (out.delivered.filter(reacting).length + out.deferred.filter(reacting).length <= 2 && out.suppressed.some(s => /budget/.test(s.reason)) && out2.delivered.length === 0 && out2.suppressed.some(s => /depth/.test(s.reason))) || canon({ d: out.delivered.length, s: out.suppressed.map(s => s.reason), s2: out2.suppressed.map(s => s.reason) });
   });
   check('swr_cycle', 'Cycles: an equivalent reaction in the same causal chain is suppressed', () => {
     const r = step(seed(base), base, mut(base, x => dep(x, 'NSW', 'player', 28000)));
@@ -122887,7 +122956,7 @@ export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
     const next = mut(base, x => { cash(x, 'player', 90000); dep(x, 'NSW', 'player', 40000); x.teams[0].freeCash = 90000; });
     const before = canon(next);
     const r = step(seed(base), base, next);
-    const allowed = new Set(['reconsider_region_target', 'reassess_task_priority', 'refresh_progress', 'evaluate_replan', 'update_attention', 'reassess_leverage', 'contract_relevance', 'refresh_objective', 'relevance_update', 'record_pattern', 'demand_pressure', 'supply_pressure', 'volatility_pressure', 'stability_positive', 'stability_negative', 'crisis_context', 'event_context', 'update_region', 'regional_context']);
+    const allowed = new Set(['reconsider_region_target', 'reassess_task_priority', 'refresh_progress', 'evaluate_replan', 'update_attention', 'reassess_leverage', 'contract_relevance', 'refresh_objective', 'relevance_update', 'record_pattern', 'demand_pressure', 'supply_pressure', 'volatility_pressure', 'stability_positive', 'stability_negative', 'crisis_context', 'event_context', 'update_region', 'regional_context', 'update_factions']);
     return (canon(next) === before && r.out.delivered.concat(r.out.deferred).every(i => allowed.has(i.requestedEvaluation)) && !r.out.events.some(e => /bonus|catch/.test(e.kind))) || canon(r.out.delivered.map(i => i.requestedEvaluation));
   });
   const chainRun = () => {
@@ -124777,6 +124846,1535 @@ export function runLivingRegions2SelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20K: REGIONAL FACTIONS & STAKEHOLDERS 2.0
+// ============================================================================
+// Persistent institutions / industries / communities with region-specific INFLUENCE, actor-specific
+// RELATIONSHIPS, dynamic priorities, concerns, goals, requests, commitments and coalitions.
+// Factions never move, take turns or execute actions. They read Living Regions (canonical regional
+// condition) and World Reaction events, and influence other systems only through requests, stances,
+// relevance and bounded inputs. Standing, contracts, infrastructure, control and stability stay canonical.
+
+export type RFFactionType = 'industry' | 'trade' | 'agriculture' | 'energy' | 'technology' | 'research' | 'infrastructure_authority' | 'labor' | 'environmental' | 'tourism' | 'community' | 'public_institution';
+export type RFStance = 'strongly_supports' | 'supports' | 'conditional' | 'neutral' | 'concerned' | 'opposes';
+export type RFInfluenceBand = 'minimal' | 'low' | 'moderate' | 'high' | 'dominant';
+export type RFRelationshipBand = 'hostile' | 'unfriendly' | 'wary' | 'neutral' | 'positive' | 'strong' | 'trusted';
+export type RFGoalType = 'build_infrastructure' | 'increase_specialization' | 'reduce_regional_risk' | 'support_contract' | 'oppose_project' | 'increase_stability' | 'expand_trade' | 'protect_resources' | 'increase_development' | 'limit_overdevelopment';
+export type RFRequestType = 'fund_project' | 'complete_contract' | 'avoid_project' | 'assist_crisis';
+export type RFConflictLevel = 'low' | 'moderate' | 'high' | 'critical';
+export type RFDerivedKind = 'faction_influence_shift' | 'faction_relationship_changed_major' | 'faction_coalition_formed' | 'faction_request_issued' | 'faction_conflict_escalated';
+
+export interface RFFactionDef {
+  id: string; name: string; type: RFFactionType; homeRegions: string[]; description: string;
+  supportedSectors: LRSector[]; opposedSectors: LRSector[];
+  preferredInfrastructure: string[]; opposedInfrastructure: string[]; conditionalInfrastructure: string[];
+  preferredContractTypes: string[]; resourceInterests: string[];
+  /** Policy tags: automation_skeptic, automation_friendly, relief, growth, conservation, stability. */
+  policyInterests: string[];
+  /** Predefined but dormant until the world makes it relevant (never generated freely). */
+  emergent?: { regionId: string; sectors: LRSector[]; threshold: number };
+  aliases: string[];
+  /** Existing contract `issuingFaction` strings this faction canonically represents. */
+  legacyNames: string[];
+}
+
+/** Automation-heavy existing project types (a labour-relevant attribute of canonical infrastructure). */
+export const RF_AUTOMATION_HEAVY = ['inland_rail_hub', 'subsea_cable_hub', 'tech_innovation_park', 'green_hydrogen_terminal'];
+
+export const RF_FACTION_DEFS: RFFactionDef[] = [
+  { id: 'nsw_farmers_coop', name: 'NSW Farmers Co-Op', type: 'agriculture', homeRegions: ['NSW'], description: 'Producer co-operative representing grain, dairy and wine growers.', supportedSectors: ['agriculture', 'logistics'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'hydro_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics'], resourceInterests: ['Wheat', 'Dairy', 'Wine', 'Wool'], policyInterests: ['relief'], aliases: ['farmers co-op', 'farmers coop', 'farmers', 'co-op'], legacyNames: ['NSW Farmers Co-Op'] },
+  { id: 'sa_clean_energy_council', name: 'SA Clean Energy Council', type: 'energy', homeRegions: ['SA'], description: 'Renewable developers and grid operators pushing the energy transition.', supportedSectors: ['renewables', 'energy'], opposedSectors: [], preferredInfrastructure: ['green_hydrogen_terminal', 'offshore_wind_farm', 'hydro_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['renewable_energy_grid'], resourceInterests: [], policyInterests: ['growth'], aliases: ['clean energy council', 'energy council', 'renewable council'], legacyNames: ['SA Clean Energy Council'] },
+  { id: 'pilbara_mining_consortium', name: 'Pilbara Mining Consortium', type: 'industry', homeRegions: ['WA'], description: 'Major miners and exporters of iron ore, gold and gas.', supportedSectors: ['mining', 'trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'green_hydrogen_terminal'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['mining_tech_initiative', 'maritime_export_hub'], resourceInterests: ['Iron Ore', 'Gold', 'Natural Gas', 'Uranium', 'Coal'], policyInterests: ['growth', 'automation_friendly'], aliases: ['mining consortium', 'pilbara', 'miners'], legacyNames: ['Pilbara Mining Consortium'] },
+  { id: 'qld_port_authority', name: 'Queensland Port Authority', type: 'infrastructure_authority', homeRegions: ['QLD'], description: 'Operates the ports and freight gateways that carry exports.', supportedSectors: ['trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'high_speed_rail', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['maritime_export_hub', 'agricultural_logistics'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['port authority', 'ports'], legacyNames: ['Queensland Port Authority'] },
+  { id: 'tas_wilderness_trust', name: 'Tasmanian Wilderness Trust', type: 'environmental', homeRegions: ['TAS'], description: 'Conservation trust protecting wilderness and controlling industrial footprint.', supportedSectors: ['tourism', 'renewables'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['offshore_wind_farm'], opposedInfrastructure: ['hydro_expansion', 'inland_rail_hub'], conditionalInfrastructure: ['green_hydrogen_terminal', 'desalination_plant'], preferredContractTypes: ['eco_tourism_network'], resourceInterests: ['Timber', 'Seafood'], policyInterests: ['conservation'], aliases: ['wilderness trust', 'environmental trust', 'environmentalists', 'greens'], legacyNames: ['Tasmanian Wilderness Trust'] },
+  { id: 'csiro_ai_directorate', name: 'CSIRO AI Directorate', type: 'research', homeRegions: ['ACT'], description: 'National research directorate for AI and advanced technology.', supportedSectors: ['technology', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center'], resourceInterests: ['Research Funds'], policyInterests: ['growth'], aliases: ['csiro', 'ai directorate', 'research directorate'], legacyNames: ['CSIRO AI Directorate'] },
+  { id: 'vic_technology_council', name: 'Victoria Technology Council', type: 'technology', homeRegions: ['VIC'], description: 'Technology firms and advanced manufacturers based in Melbourne.', supportedSectors: ['technology', 'manufacturing', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub', 'high_speed_rail'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center', 'mining_tech_initiative'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['technology council', 'tech council', 'victoria technology council'], legacyNames: [] },
+  { id: 'regional_labor_coalition', name: 'Regional Labor Coalition', type: 'labor', homeRegions: ['QLD', 'WA'], description: 'Unions and worker groups focused on regional employment.', supportedSectors: ['manufacturing', 'logistics', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics', 'defense_logistics_hub'], resourceInterests: [], policyInterests: ['automation_skeptic', 'stability'], aliases: ['labor coalition', 'labour coalition', 'union', 'unions', 'labor', 'labour', 'workers'], legacyNames: [] },
+  { id: 'national_tourism_council', name: 'National Tourism Council', type: 'tourism', homeRegions: ['QLD', 'TAS'], description: 'Tourism operators protecting reefs, parks and visitor economies.', supportedSectors: ['tourism'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['high_speed_rail', 'offshore_wind_farm'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['eco_tourism_network'], resourceInterests: ['Coral', 'Aboriginal Art'], policyInterests: ['conservation'], aliases: ['tourism council', 'tourism operators', 'tourism'], legacyNames: [] },
+  { id: 'nt_community_council', name: 'Top End Community Council', type: 'community', homeRegions: ['NT'], description: 'Remote communities and land councils of the Northern Territory.', supportedSectors: ['tourism', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['desalination_plant', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['disaster_relief_supply', 'eco_tourism_network'], resourceInterests: ['Aboriginal Art', 'Crocodile Leather'], policyInterests: ['relief', 'stability'], aliases: ['community council', 'top end council', 'land council', 'communities'], legacyNames: [] },
+  { id: 'federal_infrastructure_office', name: 'Federal Infrastructure Office', type: 'public_institution', homeRegions: ['ACT'], description: 'Federal agency coordinating national infrastructure and emergency response.', supportedSectors: ['infrastructure', 'logistics', 'defense'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'inland_rail_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['defense_logistics_hub', 'disaster_relief_supply'], resourceInterests: ['Government Grants'], policyInterests: ['relief', 'stability'], aliases: ['infrastructure office', 'federal office', 'federal infrastructure'], legacyNames: [] },
+  { id: 'tas_innovation_network', name: 'Tasmanian Innovation Network', type: 'research', homeRegions: ['TAS'], description: 'Start-ups and university labs — active once Tasmania develops a technology base.', supportedSectors: ['technology', 'research'], opposedSectors: [], preferredInfrastructure: ['subsea_cable_hub', 'tech_innovation_park'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center'], resourceInterests: [], policyInterests: ['growth'], emergent: { regionId: 'TAS', sectors: ['technology', 'research'], threshold: 22 }, aliases: ['innovation network', 'tasmanian innovation'], legacyNames: [] }
+];
+export const RF_DEF_BY_ID: Record<string, RFFactionDef> = Object.fromEntries(RF_FACTION_DEFS.map(d => [d.id, d]));
+
+/** Canonical resolver: an existing contract's issuer string → faction id (no parallel string system). */
+export function resolveFactionIdFromIssuer(issuer: string | null | undefined): string | null {
+  if (!issuer) return null;
+  const s = String(issuer).trim().toLowerCase();
+  const d = RF_FACTION_DEFS.find(f => f.legacyNames.some(n => n.toLowerCase() === s) || f.name.toLowerCase() === s || f.id === s);
+  return d ? d.id : null;
+}
+
+export interface RFRelationship { value: number; reliability: number; history: RFHistoryEntry[] }
+export interface RFHistoryEntry { turn: number; actorId: string; delta: number; text: string; sourceEventId: string | null; public: boolean }
+export interface RFPriority { id: string; label: string; goalType: RFGoalType; regionId: string; targetId: string | null; score: number; cause: string }
+export interface RFConcern { id: string; label: string; severity: LRSeverity; regionId: string; cause: string }
+export interface FactionGoal { id: string; type: RFGoalType; regionId: string; targetId: string | null; label: string; sinceTurn: number; status: 'active' | 'achieved' | 'abandoned' }
+export interface FactionRequest {
+  id: string; factionId: string; type: RFRequestType; regionId: string; targetId: string; title: string; why: string; reward: string;
+  issuedTurn: number; deadlineTurn: number; urgency: 'normal' | 'urgent'; status: 'open' | 'fulfilled' | 'expired' | 'withdrawn';
+  fulfilledBy: string | null; resolvedTurn: number | null; coalitionId: string | null; contributionsAtIssue: Record<string, number>;
+}
+/** Uses Diplomacy 2.0's compliance vocabulary; execution is always a canonical game action. */
+export interface FactionCommitment { id: string; requestId: string; factionId: string; actorId: string; promise: string; factionPromise: string; createdTurn: number; dueTurn: number; compliance: DNCompliance }
+export interface FactionCoalition { id: string; memberIds: string[]; regionId: string; kind: 'support' | 'opposition'; targetId: string; goal: string; formedTurn: number; status: 'active' | 'dissolved'; dissolvedTurn: number | null; reason: string | null; misalignedRounds: number }
+export interface RegionalFaction {
+  id: string; status: 'active' | 'dormant';
+  activeRegions: string[];
+  influenceByRegion: Record<string, number>;
+  relationshipsByActor: Record<string, RFRelationship>;
+  priorities: RFPriority[];
+  concerns: RFConcern[];
+  currentGoals: FactionGoal[];
+  coalitionIds: string[];
+  contractsCompletedByRegion: Record<string, number>;
+  lastRequestTurn: number | null;
+  recentHistory: Array<{ turn: number; text: string; sourceEventId: string | null }>;
+  revision: number;
+}
+export interface RFDerivedEvent { id: string; turn: number; kind: RFDerivedKind; regionId: string; factionId: string; actorId: string | null; text: string; significance: 'meaningful' | 'major'; causedByEventId: string | null; rootEventId: string | null; reactionDepth: number; public: boolean; evidence: string[] }
+export interface RFDiagnostics { eventsApplied: number; eventsIgnored: number; rounds: number; requestsIssued: number; requestsFulfilled: number; requestsExpired: number; coalitionsFormed: number; coalitionsDissolved: number; derivedEmitted: number; lastMs: number }
+export interface RegionalFactionsState {
+  version: 1; revision: number; initializedTurn: number | null; lastRound: number | null;
+  factions: Record<string, RegionalFaction>;
+  requests: FactionRequest[];
+  commitments: FactionCommitment[];
+  coalitions: FactionCoalition[];
+  conflictByRegion: Record<string, RFConflictLevel>;
+  /** Player preferences from natural-language commands (focus / avoid). Never auto-executed. */
+  preferences: { focus: string[]; avoid: string[] };
+  /** Consequential stakeholder decisions (dilemma choices) — for debrief/history only. */
+  decisions: Array<{ turn: number; actorId: string; regionId: string; label: string; winners: string[]; losers: string[] }>;
+  derived: RFDerivedEvent[];
+  diagnostics: RFDiagnostics;
+}
+
+/** Compact inputs: Living Regions (canonical regional condition) + provenance the factions need. */
+export interface RFInputs {
+  turn: number;
+  fogOfWar: boolean;
+  lr: LRInputs;
+  regions: LivingRegionsState;
+  actors: Array<{ id: string; name: string; teamId: string | null; isHuman: boolean }>;
+  /** Who funded each project (canonical provenance recorded by the investment action). */
+  contributions: Record<string, Record<string, number>>;
+  /** contract id → canonical faction id (from the contract's issuer). */
+  contractIssuers: Record<string, string | null>;
+}
+
+export const RF_LIMITS = { factionHistory: 8, relationshipHistory: 6, requestsPerRegion: 2, openRequests: 6, requestsKept: 16, commitments: 8, coalitions: 4, coalitionsKept: 8, decisions: 10, derived: 24, priorities: 3, concerns: 2, goals: 2, factionsPerRegionView: 5 };
+const RF_INF_LABEL: Record<RFInfluenceBand, string> = { minimal: 'Minimal', low: 'Low', moderate: 'Moderate', high: 'High', dominant: 'Dominant' };
+const RF_REL_LABEL: Record<RFRelationshipBand, string> = { hostile: 'Hostile', unfriendly: 'Unfriendly', wary: 'Wary', neutral: 'Neutral', positive: 'Positive', strong: 'Strong', trusted: 'Trusted' };
+export const RF_STANCE_LABEL: Record<RFStance, string> = { strongly_supports: 'Strongly supports', supports: 'Supports', conditional: 'Supports conditionally', neutral: 'Neutral', concerned: 'Concerned', opposes: 'Opposes' };
+const rfClamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const rfR = (v: number) => Math.round(v * 10) / 10;
+function rfHash(v: unknown): string { const raw = JSON.stringify(v); let h = 2166136261; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+
+export function rfInfluenceBand(v: number, prev?: RFInfluenceBand): RFInfluenceBand {
+  const cuts: Array<[RFInfluenceBand, number]> = [['minimal', 0], ['low', 15], ['moderate', 30], ['high', 50], ['dominant', 70]];
+  let raw: RFInfluenceBand = 'minimal'; cuts.forEach(([b, lo]) => { if (v >= lo) raw = b; });
+  if (!prev || prev === raw) return raw;
+  const idx = (b: RFInfluenceBand) => cuts.findIndex(x => x[0] === b);
+  return idx(raw) > idx(prev) ? (v >= cuts[idx(raw)][1] + 2 ? raw : prev) : (v < cuts[idx(prev)][1] - 3 ? raw : prev);
+}
+export function rfRelationshipBand(v: number): RFRelationshipBand { return v <= -60 ? 'hostile' : v <= -30 ? 'unfriendly' : v < -10 ? 'wary' : v < 15 ? 'neutral' : v < 40 ? 'positive' : v < 70 ? 'strong' : 'trusted'; }
+export const rfInfluenceLabel = (v: number) => RF_INF_LABEL[rfInfluenceBand(v)];
+export const rfRelationshipLabel = (v: number) => RF_REL_LABEL[rfRelationshipBand(v)];
+
+// ---- Stances on canonical infrastructure ------------------------------------------------------------
+
+/** A faction's stance on an EXISTING project type in a region (from its definition + regional condition). */
+export function rfProjectStance(def: RFFactionDef, projectType: string, regionId: string, regions?: LivingRegionsState | null): RFStance {
+  if (def.opposedInfrastructure.includes(projectType)) return 'opposes';
+  if (def.policyInterests.includes('automation_skeptic') && RF_AUTOMATION_HEAVY.includes(projectType)) return 'opposes';
+  if (def.preferredInfrastructure.includes(projectType)) {
+    const need = regions?.regions[regionId]?.needs.find(n => n.status === 'open' && (LR_PROJECT_PROFILE[projectType]?.capacity[LR_NEED_CAPACITY[n.category] as keyof LRCapacity] || 0) > 0);
+    return need && LR_SEV_RANK[need.severity] >= 3 ? 'strongly_supports' : 'supports';
+  }
+  if (def.conditionalInfrastructure.includes(projectType)) return 'conditional';
+  const prof = LR_PROJECT_PROFILE[projectType];
+  if (prof && def.opposedSectors.some(s => prof.sectors.includes(s))) return 'concerned';
+  if (prof && def.supportedSectors.some(s => prof.sectors.includes(s))) return 'supports';
+  return 'neutral';
+}
+const RF_STANCE_WEIGHT: Record<RFStance, number> = { strongly_supports: 14, supports: 9, conditional: 3, neutral: 0, concerned: -4, opposes: -10 };
+
+// ---- Construction / migration -----------------------------------------------------------------------
+
+function rfBlank(def: RFFactionDef): RegionalFaction {
+  return { id: def.id, status: def.emergent ? 'dormant' : 'active', activeRegions: def.emergent ? [] : [...def.homeRegions], influenceByRegion: {}, relationshipsByActor: {}, priorities: [], concerns: [], currentGoals: [], coalitionIds: [], contractsCompletedByRegion: {}, lastRequestTurn: null, recentHistory: [], revision: 0 };
+}
+export function createEmptyRegionalFactionsState(): RegionalFactionsState {
+  return { version: 1, revision: 0, initializedTurn: null, lastRound: null, factions: {}, requests: [], commitments: [], coalitions: [], conflictByRegion: {}, preferences: { focus: [], avoid: [] }, decisions: [], derived: [], diagnostics: { eventsApplied: 0, eventsIgnored: 0, rounds: 0, requestsIssued: 0, requestsFulfilled: 0, requestsExpired: 0, coalitionsFormed: 0, coalitionsDissolved: 0, derivedEmitted: 0, lastMs: 0 } };
+}
+
+/**
+ * Old saves / new matches: initialise from Living Regions, existing contracts, standing and infrastructure.
+ * Relationships seed ONLY from canonical standing in home regions (no invented interaction history).
+ */
+export function initializeRegionalFactions(s: RFInputs): RegionalFactionsState {
+  const st = createEmptyRegionalFactionsState();
+  st.initializedTurn = s.turn; st.lastRound = s.turn;
+  RF_FACTION_DEFS.forEach(def => {
+    const f = rfBlank(def);
+    s.lr.contracts.filter(c => /complet/.test(c.status) && s.contractIssuers[c.id] === def.id && c.regionId).forEach(c => { f.contractsCompletedByRegion[c.regionId!] = (f.contractsCompletedByRegion[c.regionId!] || 0) + 1; });
+    st.factions[def.id] = f;
+  });
+  Object.keys(st.factions).forEach(id => {
+    const def = RF_DEF_BY_ID[id];
+    let f = rfUpdateActivation(st.factions[id], def, s);
+    f.activeRegions.forEach(code => { f.influenceByRegion[code] = Math.round(rfInfluenceTarget(def, f, code, s, st)); });
+    s.actors.forEach(a => {
+      const standing = Math.max(0, ...def.homeRegions.map(h => s.lr.standing[a.id]?.[h] || 0));
+      if (standing) f.relationshipsByActor[a.id] = { value: Math.round(rfClamp(standing * 0.3, -30, 30)), reliability: 50, history: [] };
+    });
+    f = rfUpdateAgenda(f, def, s, st);
+    st.factions[id] = f;
+  });
+  st.conflictByRegion = rfConflictLevels(st, s);
+  return st;
+}
+
+/** Contextual activation: home regions always; other regions once a supported sector is established there. */
+function rfUpdateActivation(fIn: RegionalFaction, def: RFFactionDef, s: RFInputs): RegionalFaction {
+  const f = { ...fIn };
+  if (def.emergent) {
+    const reg = s.regions.regions[def.emergent.regionId];
+    const on = Boolean(reg && def.emergent.sectors.some(sc => (reg.sectors[sc] || 0) >= def.emergent!.threshold));
+    if (on && f.status === 'dormant') { f.status = 'active'; f.activeRegions = [def.emergent.regionId]; f.recentHistory = [...f.recentHistory, { turn: s.turn, text: `${def.name} became active as ${reg!.name}'s ${def.emergent.sectors[0]} base grew.`, sourceEventId: null }].slice(-RF_LIMITS.factionHistory); }
+    if (f.status === 'dormant') return f;
+  }
+  const extra = Object.values(s.regions.regions).filter(r => !def.homeRegions.includes(r.regionId) && (def.supportedSectors.some(sc => (r.sectors[sc] || 0) >= 35) || (def.policyInterests.includes('relief') && r.conditions.some(c => c.kind === 'crisis_active'))))
+    .sort((a, b) => Math.max(...def.supportedSectors.map(sc => b.sectors[sc] || 0)) - Math.max(...def.supportedSectors.map(sc => a.sectors[sc] || 0)) || a.regionId.localeCompare(b.regionId)).slice(0, 3).map(r => r.regionId);
+  const home = def.emergent ? f.activeRegions.filter(r => r === def.emergent!.regionId) : def.homeRegions;
+  f.activeRegions = Array.from(new Set([...home, ...extra, ...Object.keys(f.influenceByRegion).filter(r => (f.influenceByRegion[r] || 0) >= 10)]));
+  return f;
+}
+
+/** Influence target from REAL conditions (sector strength, contracts, infrastructure, crises, momentum, coalitions). */
+export function rfInfluenceTarget(def: RFFactionDef, f: RegionalFaction, code: string, s: RFInputs, st: RegionalFactionsState): number {
+  const reg = s.regions.regions[code];
+  if (!reg) return 0;
+  // Home institutions start with a real (moderate) presence; elsewhere they must earn relevance.
+  const home = (def.emergent ? def.emergent.regionId === code : def.homeRegions.includes(code)) ? 31 : 6;
+  const align = Math.max(0, ...def.supportedSectors.map(sc => reg.sectors[sc] || 0)) * 0.45;
+  const drag = Math.max(0, ...def.opposedSectors.map(sc => reg.sectors[sc] || 0)) * 0.1;
+  const infra = Math.min(15, s.lr.projects.filter(p => p.regionId === code && /^(active|upgraded|complet)/.test(p.status) && def.preferredInfrastructure.includes(p.projectType)).length * 6);
+  const contracts = Math.min(12, (f.contractsCompletedByRegion[code] || 0) * 4);
+  const crisis = def.policyInterests.includes('relief') && reg.conditions.some(c => c.kind === 'crisis_active' || c.kind === 'post_crisis_recovery') ? 12 : 0;
+  const stab = def.policyInterests.includes('stability') && reg.stability.value !== null && reg.stability.value < 45 ? 6 : 0;
+  const primaryAligned = reg.specializations.primary && def.supportedSectors.includes(reg.specializations.primary);
+  const momentum = primaryAligned ? (LR_MOM_RANK[reg.momentum.band] >= 3 ? 5 : LR_MOM_RANK[reg.momentum.band] <= 1 ? -5 : 0) : 0;
+  // Resource interests amplify/dampen with the market (no faction-side prices).
+  const res = def.resourceInterests.filter(x => s.lr.basePrices[x] && s.lr.regions.find(r => r.code === code)?.resources.includes(x));
+  const market = res.length ? rfClamp(res.reduce((a, x) => a + ((s.lr.prices[x] ?? s.lr.basePrices[x]) / s.lr.basePrices[x] - 1), 0) / res.length * 20, -5, 5) : 0;
+  // Coalition membership: bounded, not summed across members.
+  const coalition = st.coalitions.some(c => c.status === 'active' && c.regionId === code && c.memberIds.includes(def.id)) ? 5 : 0;
+  // Actor support (completed contracts / projects) raises relevance a little.
+  const support = Math.min(5, Object.values(f.relationshipsByActor).filter(r => r.value >= 40).length * 2.5);
+  return rfClamp(home + align - drag + infra + contracts + crisis + stab + momentum + market + coalition + support, 0, 100);
+}
+
+// ---- Priorities, concerns, goals (identity + Living Regions + World Reaction) -------------------------
+
+function rfUpdateAgenda(fIn: RegionalFaction, def: RFFactionDef, s: RFInputs, st: RegionalFactionsState): RegionalFaction {
+  const f = { ...fIn };
+  if (f.status === 'dormant') { f.priorities = []; f.concerns = []; f.currentGoals = f.currentGoals.map(g => ({ ...g, status: g.status === 'active' ? 'abandoned' as const : g.status })); return f; }
+  const pri: RFPriority[] = []; const conc: RFConcern[] = [];
+  f.activeRegions.forEach(code => {
+    const reg = s.regions.regions[code];
+    if (!reg) return;
+    const inf = (f.influenceByRegion[code] || 0) / 100;
+    const openNeeds = reg.needs.filter(n => n.status === 'open');
+    // Infrastructure the faction prefers that answers an actual regional need.
+    s.lr.projects.filter(p => p.regionId === code && (p.status === 'unlocked' || p.status === 'under_construction') && def.preferredInfrastructure.includes(p.projectType)).forEach(p => {
+      const need = openNeeds.find(n => (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[n.category] as keyof LRCapacity] || 0) > 0);
+      if (need) pri.push({ id: `pri_${def.id}_${p.id}`, label: `${need.category === 'transport' ? 'Increase freight capacity' : need.category === 'energy' ? 'Expand energy capacity' : need.category === 'water' ? 'Secure water supply' : need.category === 'technology' ? 'Build digital capacity' : 'Close the infrastructure gap'} in ${reg.name} (${p.title})`, goalType: 'build_infrastructure', regionId: code, targetId: p.id, score: 40 + LR_SEV_RANK[need.severity] * 12 + inf * 10, cause: need.reason });
+    });
+    // Preferred contract types that are open in the region.
+    s.lr.contracts.filter(c => c.regionId === code && c.status === 'available' && def.preferredContractTypes.includes(c.contractType)).forEach(c => pri.push({ id: `pri_${def.id}_${c.id}`, label: `See "${c.title}" delivered`, goalType: 'support_contract', regionId: code, targetId: c.id, score: 30 + (s.contractIssuers[c.id] === def.id ? 12 : 0) + inf * 8, cause: `${reg.name} has an open ${c.contractType.replace(/_/g, ' ')} contract` }));
+    // Crisis → relief first (World Reaction / crisis chains).
+    if (def.policyInterests.includes('relief') && reg.conditions.some(c => c.kind === 'crisis_active')) pri.push({ id: `pri_${def.id}_relief_${code}`, label: `Crisis relief in ${reg.name}`, goalType: 'increase_stability', regionId: code, targetId: s.lr.contracts.find(c => c.regionId === code && c.contractType === 'disaster_relief_supply' && c.status === 'available')?.id || null, score: 90, cause: reg.conditions.find(c => c.kind === 'crisis_active')!.label });
+    // Environmental / tourism: limit industrial footprint when opposed sectors grow.
+    const opp = def.opposedSectors.find(sc => (reg.sectors[sc] || 0) >= 35);
+    if (opp) { pri.push({ id: `pri_${def.id}_limit_${code}`, label: `Limit ${opp} expansion in ${reg.name}`, goalType: 'limit_overdevelopment', regionId: code, targetId: null, score: 35 + (LR_MOM_RANK[reg.momentum.band] >= 3 ? 15 : 0), cause: `${opp[0].toUpperCase()}${opp.slice(1)} activity is strong (${Math.round(reg.sectors[opp] || 0)})` }); conc.push({ id: `con_${def.id}_ind_${code}`, label: 'Industrial expansion', severity: LR_MOM_RANK[reg.momentum.band] >= 3 ? 'high' : 'moderate', regionId: code, cause: `${opp} is expanding in ${reg.name}` }); }
+    // Labour: automation-heavy projects underway/planned in its regions.
+    if (def.policyInterests.includes('automation_skeptic')) {
+      const auto = s.lr.projects.find(p => p.regionId === code && RF_AUTOMATION_HEAVY.includes(p.projectType) && (p.status === 'under_construction' || /^(active|upgraded|complet)/.test(p.status)));
+      if (auto) { pri.push({ id: `pri_${def.id}_jobs_${code}`, label: `Protect regional employment in ${reg.name}`, goalType: 'oppose_project', regionId: code, targetId: auto.id, score: 55, cause: `${auto.title} is automation-heavy` }); conc.push({ id: `con_${def.id}_auto_${code}`, label: 'Automation displacing workers', severity: auto.status === 'under_construction' ? 'high' : 'moderate', regionId: code, cause: `${auto.title} would reduce local jobs` }); }
+    }
+    // Market: resource interests under price pressure → profitability concern + diversification.
+    const down = def.resourceInterests.find(x => s.lr.basePrices[x] && (s.lr.prices[x] ?? s.lr.basePrices[x]) / s.lr.basePrices[x] <= 0.88 && s.lr.regions.find(r => r.code === code)?.resources.includes(x));
+    if (down) { conc.push({ id: `con_${def.id}_price_${code}`, label: 'Profitability', severity: 'high', regionId: code, cause: `${down} prices are well below normal` }); pri.push({ id: `pri_${def.id}_div_${code}`, label: `Cut costs and diversify in ${reg.name}`, goalType: 'reduce_regional_risk', regionId: code, targetId: null, score: 60, cause: `${down} price collapse` }); }
+    // Logistics authorities: congestion when trade grows faster than transport.
+    if ((def.supportedSectors.includes('trade') || def.supportedSectors.includes('logistics')) && openNeeds.some(n => n.category === 'transport' && LR_SEV_RANK[n.severity] >= 3)) conc.push({ id: `con_${def.id}_cong_${code}`, label: def.type === 'infrastructure_authority' ? 'Port congestion' : 'Freight bottleneck', severity: 'high', regionId: code, cause: 'Export growth exceeded logistics capacity' });
+    if (def.supportedSectors.includes('agriculture') && openNeeds.some(n => n.category === 'water')) conc.push({ id: `con_${def.id}_water_${code}`, label: 'Water security', severity: 'moderate', regionId: code, cause: openNeeds.find(n => n.category === 'water')!.reason });
+    if (def.policyInterests.includes('stability') && reg.stability.value !== null && reg.stability.value < 45) conc.push({ id: `con_${def.id}_stab_${code}`, label: 'Regional instability', severity: reg.stability.value < 35 ? 'high' : 'moderate', regionId: code, cause: `Stability is ${reg.stability.band}` });
+    if (LR_MOM_RANK[reg.momentum.band] >= 3 && reg.specializations.primary && def.supportedSectors.includes(reg.specializations.primary)) pri.push({ id: `pri_${def.id}_grow_${code}`, label: `Protect ${reg.specializations.primary} growth in ${reg.name}`, goalType: 'expand_trade', regionId: code, targetId: null, score: 32 + inf * 10, cause: `${reg.name} is ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()}` });
+    if (def.supportedSectors.some(sc => (reg.sectors[sc] || 0) >= 15 && (reg.sectors[sc] || 0) < 42)) { const sc = def.supportedSectors.find(x => (reg.sectors[x] || 0) >= 15 && (reg.sectors[x] || 0) < 42)!; pri.push({ id: `pri_${def.id}_spec_${code}`, label: `Grow ${sc} in ${reg.name}`, goalType: 'increase_specialization', regionId: code, targetId: sc, score: 20 + inf * 10, cause: `${sc} is emerging but not yet established` }); }
+  });
+  f.priorities = pri.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i).slice(0, RF_LIMITS.priorities).map(p => ({ ...p, score: Math.round(p.score) }));
+  f.concerns = conc.sort((a, b) => LR_SEV_RANK[b.severity] - LR_SEV_RANK[a.severity] || a.id.localeCompare(b.id)).slice(0, RF_LIMITS.concerns);
+  // Goals: the top two priorities with a concrete target; achieved when the target is delivered.
+  const prevGoals = new Map(f.currentGoals.map(g => [g.id, g]));
+  const goals: FactionGoal[] = f.priorities.slice(0, RF_LIMITS.goals).map(p => { const id = `goal_${p.id.slice(4)}`; return { id, type: p.goalType, regionId: p.regionId, targetId: p.targetId, label: p.label, sinceTurn: prevGoals.get(id)?.sinceTurn ?? s.turn, status: 'active' as const }; });
+  const finished = f.currentGoals.filter(g => g.status === 'active' && !goals.some(x => x.id === g.id)).map(g => {
+    const achieved = g.targetId ? Boolean(s.lr.projects.find(p => p.id === g.targetId && /^(active|upgraded|complet)/.test(p.status)) || s.lr.contracts.find(c => c.id === g.targetId && /complet/.test(c.status))) : false;
+    return { ...g, status: achieved ? 'achieved' as const : 'abandoned' as const };
+  });
+  f.currentGoals = [...goals, ...finished].slice(0, RF_LIMITS.goals + 2);
+  return f;
+}
+
+// ---- Relationships (actor-specific, evidence-based, bounded) -----------------------------------------
+
+function rfAdjust(f: RegionalFaction, actorId: string, delta: number, text: string, turn: number, sourceEventId: string | null, isPublic: boolean): { f: RegionalFaction; before: number; after: number } {
+  const cur = f.relationshipsByActor[actorId] || { value: 0, reliability: 50, history: [] };
+  const d = rfClamp(Math.round(delta), -20, 20);
+  const after = rfClamp(cur.value + d, -100, 100);
+  const rel: RFRelationship = { value: after, reliability: cur.reliability, history: [...cur.history, { turn, actorId, delta: d, text: text.slice(0, 160), sourceEventId, public: isPublic }].slice(-RF_LIMITS.relationshipHistory) };
+  return { f: { ...f, relationshipsByActor: { ...f.relationshipsByActor, [actorId]: rel } }, before: cur.value, after };
+}
+
+/** Share-based attribution from canonical project provenance (≥20% of the funding). */
+function rfFunders(s: RFInputs, projectId: string, since?: Record<string, number>): string[] {
+  const c = s.contributions[projectId] || {};
+  const delta: Record<string, number> = {};
+  Object.entries(c).forEach(([a, v]) => { delta[a] = Math.max(0, v - (since?.[a] || 0)); });
+  const total = Object.values(delta).reduce((a, b) => a + b, 0);
+  return total > 0 ? Object.entries(delta).filter(([, v]) => v / total >= 0.2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([a]) => a) : [];
+}
+
+// ---- Coalitions & conflict ----------------------------------------------------------------------------
+
+function rfConflictLevels(st: RegionalFactionsState, s: RFInputs): Record<string, RFConflictLevel> {
+  const out: Record<string, RFConflictLevel> = {};
+  Object.keys(s.regions.regions).sort().forEach(code => {
+    const active = Object.values(st.factions).filter(f => f.status === 'active' && f.activeRegions.includes(code) && (f.influenceByRegion[code] || 0) >= 15);
+    let score = 0;
+    s.lr.projects.filter(p => p.regionId === code && (p.status === 'under_construction' || (/^(active|upgraded|complet)/.test(p.status) && p.completionTurn !== null && s.turn - (p.completionTurn || 0) <= 3))).forEach(p => {
+      const stances = active.map(f => ({ w: (f.influenceByRegion[code] || 0) / 50, st: rfProjectStance(RF_DEF_BY_ID[f.id], p.projectType, code, s.regions) }));
+      const pro = stances.filter(x => RF_STANCE_WEIGHT[x.st] > 0).reduce((a, x) => a + x.w, 0);
+      const con = stances.filter(x => x.st === 'opposes').reduce((a, x) => a + x.w, 0);
+      if (pro > 0 && con > 0) score += Math.min(pro, con) * 2 + (p.status === 'under_construction' ? 0.5 : 1);
+    });
+    const opp = st.coalitions.filter(c => c.status === 'active' && c.regionId === code && c.kind === 'opposition').length;
+    score += opp;
+    out[code] = score >= 3 ? 'critical' : score >= 2 ? 'high' : score >= 1 ? 'moderate' : 'low';
+  });
+  return out;
+}
+
+function rfUpdateCoalitions(st: RegionalFactionsState, s: RFInputs): { coalitions: FactionCoalition[]; formed: FactionCoalition[]; dissolved: FactionCoalition[] } {
+  const turn = s.turn;
+  const formed: FactionCoalition[] = []; const dissolved: FactionCoalition[] = [];
+  // Dissolution: goal done, interests diverged (2 evaluations), member lost relevance, or crisis over.
+  let coalitions = st.coalitions.map(c => {
+    if (c.status !== 'active') return c;
+    const done = Boolean(s.lr.projects.find(p => p.id === c.targetId && /^(active|upgraded|complet)/.test(p.status)) && c.kind === 'support') || Boolean(s.lr.contracts.find(x => x.id === c.targetId && /complet/.test(x.status)));
+    const weak = c.memberIds.some(m => (st.factions[m]?.influenceByRegion[c.regionId] || 0) < 15 || st.factions[m]?.status === 'dormant');
+    const aligned = c.memberIds.every(m => (st.factions[m]?.priorities || []).some(p => p.targetId === c.targetId || (c.kind === 'opposition' && p.goalType === 'oppose_project' && p.targetId === c.targetId) || (c.targetId.startsWith('relief_') && p.goalType === 'increase_stability' && p.regionId === c.regionId)));
+    const mis = aligned ? 0 : c.misalignedRounds + 1;
+    const reason = done ? 'goal completed' : weak ? 'a member lost relevance' : mis >= 2 ? 'interests diverged' : null;
+    if (reason) { const d = { ...c, status: 'dissolved' as const, dissolvedTurn: turn, reason }; dissolved.push(d); return d; }
+    return { ...c, misalignedRounds: mis };
+  });
+  // Formation: two active factions with the same concrete target in a region and ≥ moderate influence.
+  const active = Object.values(st.factions).filter(f => f.status === 'active');
+  const byTarget = new Map<string, Array<{ f: RegionalFaction; p: RFPriority }>>();
+  active.forEach(f => f.priorities.forEach(p => {
+    if (!p.targetId || (f.influenceByRegion[p.regionId] || 0) < 30) return;
+    const key = `${p.regionId}|${p.goalType === 'oppose_project' ? 'opp' : p.goalType === 'increase_stability' ? 'relief' : 'sup'}|${p.goalType === 'increase_stability' ? `relief_${p.regionId}` : p.targetId}`;
+    byTarget.set(key, [...(byTarget.get(key) || []), { f, p }]);
+  }));
+  Array.from(byTarget.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([key, list]) => {
+    if (list.length < 2) return;
+    const [regionId, kindKey, targetId] = key.split('|');
+    const members = list.map(x => x.f.id).sort().slice(0, 3);
+    if (coalitions.some(c => c.status === 'active' && c.regionId === regionId && c.targetId === targetId)) return;
+    if (coalitions.filter(c => c.status === 'active').length >= RF_LIMITS.coalitions) return;
+    const title = s.lr.projects.find(p => p.id === targetId)?.title || s.lr.contracts.find(c => c.id === targetId)?.title || 'crisis relief';
+    const c: FactionCoalition = { id: `coal_${rfHash([key, members])}`, memberIds: members, regionId, kind: kindKey === 'opp' ? 'opposition' : 'support', targetId, goal: kindKey === 'opp' ? `Resist ${title}` : kindKey === 'relief' ? `Coordinate crisis relief in ${s.regions.regions[regionId]?.name || regionId}` : `Deliver ${title}`, formedTurn: turn, status: 'active', dissolvedTurn: null, reason: null, misalignedRounds: 0 };
+    coalitions = [...coalitions, c]; formed.push(c);
+  });
+  // Opposition coalitions also form from shared opposition to an active/planned project in a region.
+  s.lr.projects.filter(p => p.status === 'under_construction' && p.regionId).forEach(p => {
+    const opp = active.filter(f => f.activeRegions.includes(p.regionId!) && (f.influenceByRegion[p.regionId!] || 0) >= 30 && rfProjectStance(RF_DEF_BY_ID[f.id], p.projectType, p.regionId!, s.regions) === 'opposes').map(f => f.id).sort();
+    if (opp.length < 2 || coalitions.some(c => c.status === 'active' && c.targetId === p.id && c.kind === 'opposition')) return;
+    if (coalitions.filter(c => c.status === 'active').length >= RF_LIMITS.coalitions) return;
+    const c: FactionCoalition = { id: `coal_${rfHash(['opp', p.id, opp])}`, memberIds: opp.slice(0, 3), regionId: p.regionId!, kind: 'opposition', targetId: p.id, goal: `Resist ${p.title}`, formedTurn: turn, status: 'active', dissolvedTurn: null, reason: null, misalignedRounds: 0 };
+    coalitions = [...coalitions, c]; formed.push(c);
+  });
+  const keep = [...coalitions.filter(c => c.status === 'active'), ...coalitions.filter(c => c.status === 'dissolved').slice(-(RF_LIMITS.coalitionsKept - RF_LIMITS.coalitions))];
+  return { coalitions: keep, formed, dissolved };
+}
+
+// ---- Requests: generation, lifecycle, commitments ------------------------------------------------------
+
+function rfRequestFor(def: RFFactionDef, f: RegionalFaction, g: FactionGoal, s: RFInputs, st: RegionalFactionsState): FactionRequest | null {
+  const reg = s.regions.regions[g.regionId];
+  if (!reg || !g.targetId) return null;
+  const inf = f.influenceByRegion[g.regionId] || 0;
+  const coalition = st.coalitions.find(c => c.status === 'active' && c.targetId === g.targetId && c.memberIds.includes(def.id)) || null;
+  // Leverage: influential factions ask more and offer less; smaller ones are more generous.
+  const reward = inf >= 50 ? 'Relationship ↑ · future contract relevance ↑' : 'Relationship ↑↑ · standing opportunities ↑ · future contract relevance ↑';
+  const base = { factionId: def.id, regionId: g.regionId, issuedTurn: s.turn, status: 'open' as const, fulfilledBy: null, resolvedTurn: null, coalitionId: coalition?.id || null };
+  if (g.type === 'build_infrastructure') {
+    const p = s.lr.projects.find(x => x.id === g.targetId && (x.status === 'unlocked' || x.status === 'under_construction'));
+    const need = reg.needs.find(n => n.status === 'open' && (LR_PROJECT_PROFILE[p?.projectType || '']?.capacity[LR_NEED_CAPACITY[n.category] as keyof LRCapacity] || 0) > 0);
+    if (!p || !need || LR_SEV_RANK[need.severity] < 3) return null;
+    const urgent = need.severity === 'critical';
+    return { ...base, id: `req_${def.id}_${p.id}_${s.turn}`, type: 'fund_project', targetId: p.id, title: `Complete ${p.title}`, why: `${need.reason}.`, reward, deadlineTurn: s.turn + (urgent ? 3 : 4), urgency: urgent ? 'urgent' : 'normal', contributionsAtIssue: { ...(s.contributions[p.id] || {}) } };
+  }
+  if (g.type === 'support_contract') {
+    const c = s.lr.contracts.find(x => x.id === g.targetId && x.status === 'available');
+    // Urgency, not routine: the region must actually need this kind of work (or be growing on it).
+    const needed = reg.needs.some(n => n.status === 'open' && LR_SEV_RANK[n.severity] >= 2 && (LR_NEED_CONTRACTS[n.category] || []).includes(c?.contractType || '')) || (LR_MOM_RANK[reg.momentum.band] >= 3 && (LR_CONTRACT_SECTORS[c?.contractType || ''] || []).some(sc => reg.specializations.primary === sc || reg.specializations.secondary === sc));
+    if (!c || inf < 40 || !needed) return null;
+    return { ...base, id: `req_${def.id}_${c.id}_${s.turn}`, type: 'complete_contract', targetId: c.id, title: `Complete "${c.title}"`, why: `${def.name} wants this ${c.contractType.replace(/_/g, ' ')} work delivered in ${reg.name}.`, reward, deadlineTurn: s.turn + 5, urgency: 'normal', contributionsAtIssue: {} };
+  }
+  if (g.type === 'increase_stability' && g.targetId) {
+    const c = s.lr.contracts.find(x => x.id === g.targetId && x.status === 'available');
+    if (!c) return null;
+    return { ...base, id: `req_${def.id}_${c.id}_${s.turn}`, type: 'assist_crisis', targetId: c.id, title: `Deliver crisis relief: "${c.title}"`, why: `${reg.conditions.find(x => x.kind === 'crisis_active')?.label || 'A crisis'} is hitting ${reg.name}.`, reward: 'Relationship ↑↑ · regional goodwill ↑', deadlineTurn: s.turn + 3, urgency: 'urgent', contributionsAtIssue: {} };
+  }
+  if (g.type === 'oppose_project' && g.targetId) {
+    const p = s.lr.projects.find(x => x.id === g.targetId && x.status === 'under_construction');
+    if (!p || inf < 30) return null;
+    return { ...base, id: `req_${def.id}_avoid_${p.id}_${s.turn}`, type: 'avoid_project', targetId: p.id, title: `Don't fund ${p.title}`, why: `${def.name} opposes it: ${def.policyInterests.includes('automation_skeptic') ? 'it is automation-heavy and threatens local jobs' : 'it conflicts with its priorities'}.`, reward: 'Relationship ↑ with this group (others may disagree)', deadlineTurn: s.turn + 4, urgency: 'normal', contributionsAtIssue: { ...(s.contributions[p.id] || {}) } };
+  }
+  return null;
+}
+
+// ---- World Reaction input → faction change ---------------------------------------------------------------
+
+const RF_SKIP_KINDS = new Set<string>(['faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed', 'faction_request_issued', 'faction_conflict_escalated']);
+
+/** Only factions active in the event's region(s) with an interest in its domain evaluate it (attention budget). */
+function rfAttentive(def: RFFactionDef, f: RegionalFaction, e: StrategicWorldEvent, codes: string[], s: RFInputs): boolean {
+  if (f.status !== 'active' || !codes.some(c => f.activeRegions.includes(c))) return false;
+  if (e.kind === 'contract_completed' || e.kind === 'contract_failed') { const c = s.lr.contracts.find(x => x.id === e.subjectId); return Boolean(c && (s.contractIssuers[c.id] === def.id || def.preferredContractTypes.includes(c.contractType) || def.opposedSectors.some(sc => (LR_CONTRACT_SECTORS[c.contractType] || []).includes(sc)))); }
+  if (e.kind.startsWith('project_')) { const p = s.lr.projects.find(x => x.id === e.subjectId); return Boolean(p && rfProjectStance(def, p.projectType, p.regionId || '', s.regions) !== 'neutral'); }
+  if (e.kind === 'market_shift_major') return def.resourceInterests.includes(e.subjectId);
+  if (e.kind.startsWith('crisis_')) return def.policyInterests.includes('relief') || def.policyInterests.includes('stability') || def.supportedSectors.length > 0;
+  return true; // regional shifts in its own regions
+}
+
+function rfDerive(d: Omit<RFDerivedEvent, 'id' | 'turn' | 'causedByEventId' | 'rootEventId' | 'reactionDepth'>, turn: number, cause: StrategicWorldEvent | null): RFDerivedEvent {
+  return { ...d, id: `rfe_${turn}_${rfHash([d.kind, d.factionId, d.regionId, d.actorId, cause?.id || 'round'])}`, turn, causedByEventId: cause?.id || null, rootEventId: cause?.rootEventId || null, reactionDepth: cause ? cause.reactionDepth + 1 : 0 };
+}
+
+export function rfApplyWorldEvent(stateIn: RegionalFactionsState, e: StrategicWorldEvent, s: RFInputs): { state: RegionalFactionsState; derived: RFDerivedEvent[] } {
+  if (RF_SKIP_KINDS.has(e.kind)) return { state: stateIn, derived: [] };
+  const codes = lrEventRegions(e, s.lr);
+  const st: RegionalFactionsState = { ...stateIn, factions: { ...stateIn.factions }, requests: stateIn.requests.map(r => ({ ...r })), commitments: stateIn.commitments.map(c => ({ ...c })), diagnostics: { ...stateIn.diagnostics } };
+  const derived: RFDerivedEvent[] = [];
+  const turn = s.turn;
+  const attentive = RF_FACTION_DEFS.filter(def => st.factions[def.id] && rfAttentive(def, st.factions[def.id], e, codes, s));
+  if (!attentive.length && !['project_completed', 'contract_completed', 'contract_failed'].includes(e.kind)) { st.diagnostics.eventsIgnored += 1; return { state: st, derived }; }
+  const name = (a: string) => s.actors.find(x => x.id === a)?.name || a;
+  const relChange = (fid: string, actorId: string, delta: number, text: string, isPublic: boolean) => {
+    const r = rfAdjust(st.factions[fid], actorId, delta, text, turn, e.id, isPublic);
+    st.factions[fid] = { ...r.f, revision: r.f.revision + 1 };
+    const human = s.actors.find(a => a.id === actorId)?.isHuman;
+    const crossed = rfRelationshipBand(r.before) !== rfRelationshipBand(r.after);
+    if (Math.abs(r.after - r.before) >= 12 || (crossed && human)) derived.push(rfDerive({ kind: 'faction_relationship_changed_major', regionId: codes[0] || RF_DEF_BY_ID[fid].homeRegions[0], factionId: fid, actorId, text: `${RF_DEF_BY_ID[fid].name}'s view of ${name(actorId)} is now ${rfRelationshipLabel(r.after).toLowerCase()} (${text.replace(/\.$/, '')}).`, significance: Math.abs(r.after - r.before) >= 15 ? 'major' : 'meaningful', public: isPublic, evidence: [text] }, turn, e));
+  };
+  if (e.kind === 'contract_completed' || e.kind === 'contract_failed') {
+    const c = s.lr.contracts.find(x => x.id === e.subjectId);
+    const actor = e.actorId || c?.assignedActorId || null;
+    if (c && actor) {
+      const issuer = s.contractIssuers[c.id];
+      const big = c.rewardMoney >= 80000 ? 1.25 : c.rewardMoney >= 40000 ? 1 : 0.75; // proportional to significance
+      const ok = e.kind === 'contract_completed';
+      if (issuer && st.factions[issuer]) {
+        relChange(issuer, actor, ok ? 16 * big : -10 * big, ok ? `Completed "${c.title}"` : `Failed "${c.title}"`, true);
+        if (ok && c.regionId) st.factions[issuer] = { ...st.factions[issuer], contractsCompletedByRegion: { ...st.factions[issuer].contractsCompletedByRegion, [c.regionId]: (st.factions[issuer].contractsCompletedByRegion[c.regionId] || 0) + 1 } };
+      }
+      if (ok) attentive.filter(d => d.id !== issuer).forEach(def => {
+        const opposes = def.opposedSectors.some(sc => (LR_CONTRACT_SECTORS[c.contractType] || []).includes(sc));
+        if (def.preferredContractTypes.includes(c.contractType)) relChange(def.id, actor, 5, `Delivered ${c.contractType.replace(/_/g, ' ')} work it values`, true);
+        else if (opposes) relChange(def.id, actor, -4, `Backed ${c.contractType.replace(/_/g, ' ')} work it resists`, true);
+        if (c.contractType === 'disaster_relief_supply' && def.policyInterests.includes('relief')) relChange(def.id, actor, 8, 'Helped during a crisis', true);
+      });
+    }
+  }
+  if (e.kind === 'project_completed') {
+    const p = s.lr.projects.find(x => x.id === e.subjectId);
+    if (p && p.regionId) {
+      const funders = rfFunders(s, p.id);
+      const pub = !s.fogOfWar; // who funded what is public only without fog
+      RF_FACTION_DEFS.filter(def => st.factions[def.id]?.status === 'active' && st.factions[def.id].activeRegions.includes(p.regionId!)).forEach(def => {
+        const stance = rfProjectStance(def, p.projectType, p.regionId!, s.regions);
+        funders.forEach(a => {
+          let w = RF_STANCE_WEIGHT[stance];
+          // Hybrid compromise: an opposer is largely placated if the same actor delivered work it values here recently.
+          if (w < 0 && (st.factions[def.id].relationshipsByActor[a]?.history || []).some(h => h.delta > 0 && turn - h.turn <= 4)) w = Math.round(w * 0.3);
+          if (w) relChange(def.id, a, w, `${w > 0 ? 'Funded' : 'Pushed through'} ${p.title} (${RF_STANCE_LABEL[stance].toLowerCase()})`, pub);
+        });
+      });
+    }
+  }
+  // Priorities / concerns respond to the regional change (Living Regions is read, never written).
+  attentive.forEach(def => { st.factions[def.id] = rfUpdateAgenda(st.factions[def.id], def, s, st); });
+  // Request lifecycle on canonical completions.
+  st.requests = st.requests.map(r => {
+    if (r.status !== 'open') return r;
+    let by: string | null = null;
+    if ((r.type === 'fund_project') && e.kind === 'project_completed' && e.subjectId === r.targetId) by = rfFunders(s, r.targetId, r.contributionsAtIssue)[0] || rfFunders(s, r.targetId)[0] || null;
+    else if ((r.type === 'complete_contract' || r.type === 'assist_crisis') && e.kind === 'contract_completed' && e.subjectId === r.targetId) by = e.actorId || s.lr.contracts.find(c => c.id === r.targetId)?.assignedActorId || null;
+    else if (r.type === 'avoid_project' && e.kind === 'project_completed' && e.subjectId === r.targetId) {
+      // The project went ahead: committed actors who funded it broke their word.
+      const funders = rfFunders(s, r.targetId, r.contributionsAtIssue);
+      st.commitments.filter(c => c.requestId === r.id && c.compliance === 'pending' && funders.includes(c.actorId)).forEach(c => { c.compliance = 'violated'; relChange(r.factionId, c.actorId, -15, `Broke a promise: funded ${s.lr.projects.find(p => p.id === r.targetId)?.title || 'the project'}`, true); rfReliability(st, r.factionId, c.actorId, -20); });
+      return { ...r, status: 'withdrawn' as const, resolvedTurn: turn };
+    }
+    if (!by && !(e.kind === 'project_completed' && e.subjectId === r.targetId) && !(e.kind === 'contract_completed' && e.subjectId === r.targetId)) return r;
+    st.diagnostics.requestsFulfilled += 1;
+    if (by) {
+      relChange(r.factionId, by, 12, `Answered its request: ${r.title}`, !s.fogOfWar || r.type !== 'fund_project');
+      st.commitments.filter(c => c.requestId === r.id && c.compliance === 'pending').forEach(c => { c.compliance = c.actorId === by ? 'completed' : 'expired'; if (c.actorId === by) rfReliability(st, r.factionId, by, 10); });
+      if (r.coalitionId) st.coalitions.find(c => c.id === r.coalitionId)?.memberIds.filter(m => m !== r.factionId).forEach(m => relChange(m, by!, 5, `Delivered its coalition's goal: ${r.title}`, true));
+      st.factions[r.factionId] = { ...st.factions[r.factionId], recentHistory: [...st.factions[r.factionId].recentHistory, { turn, text: `${name(by)} fulfilled: ${r.title}`, sourceEventId: e.id }].slice(-RF_LIMITS.factionHistory) };
+    }
+    return { ...r, status: 'fulfilled' as const, fulfilledBy: by, resolvedTurn: turn };
+  });
+  if (e.kind === 'crisis_escalated' || e.kind === 'crisis_resolved' || e.kind === 'market_shift_major') attentive.forEach(def => { st.factions[def.id] = { ...st.factions[def.id], recentHistory: [...st.factions[def.id].recentHistory, { turn, text: e.kind === 'market_shift_major' ? `Reacted to ${e.subjectId} prices` : e.kind === 'crisis_escalated' ? 'Shifted priorities to crisis relief' : 'Crisis over; priorities returning to normal', sourceEventId: e.id }].slice(-RF_LIMITS.factionHistory) }; });
+  st.conflictByRegion = rfConflictLevels(st, s);
+  st.derived = [...st.derived, ...derived].slice(-RF_LIMITS.derived);
+  st.diagnostics.eventsApplied += 1; st.diagnostics.derivedEmitted += derived.length;
+  st.revision += 1;
+  return { state: st, derived };
+}
+
+function rfReliability(st: RegionalFactionsState, fid: string, actorId: string, delta: number): void {
+  const f = st.factions[fid];
+  const cur = f.relationshipsByActor[actorId] || { value: 0, reliability: 50, history: [] };
+  st.factions[fid] = { ...f, relationshipsByActor: { ...f.relationshipsByActor, [actorId]: { ...cur, reliability: rfClamp(cur.reliability + delta, 0, 100) } } };
+}
+
+/** Round boundary: influence drifts toward its target (bounded), deadlines expire, requests/coalitions update. */
+export function rfAdvanceRound(stateIn: RegionalFactionsState, s: RFInputs): { state: RegionalFactionsState; derived: RFDerivedEvent[] } {
+  if (stateIn.lastRound !== null && s.turn <= stateIn.lastRound) return { state: stateIn, derived: [] };
+  let st: RegionalFactionsState = { ...stateIn, factions: { ...stateIn.factions }, requests: stateIn.requests.map(r => ({ ...r })), commitments: stateIn.commitments.map(c => ({ ...c })), diagnostics: { ...stateIn.diagnostics } };
+  const derived: RFDerivedEvent[] = [];
+  const turn = s.turn;
+  const name = (a: string) => s.actors.find(x => x.id === a)?.name || a;
+  // 1) Activation + influence drift (no instant collapse: ≤ 6 per round).
+  RF_FACTION_DEFS.forEach(def => {
+    let f = st.factions[def.id] || rfBlank(def);
+    const wasDormant = f.status === 'dormant';
+    f = rfUpdateActivation(f, def, s);
+    const infl = { ...f.influenceByRegion };
+    f.activeRegions.forEach(code => {
+      const cur = infl[code] ?? 0;
+      const target = rfInfluenceTarget(def, f, code, s, st);
+      const next = rfR(cur + rfClamp((target - cur) * 0.35, -6, 6));
+      const bBefore = rfInfluenceBand(cur); const bAfter = rfInfluenceBand(next, bBefore);
+      if (bBefore !== bAfter && (bAfter === 'high' || bAfter === 'dominant' || bBefore === 'high' || bBefore === 'dominant')) derived.push(rfDerive({ kind: 'faction_influence_shift', regionId: code, factionId: def.id, actorId: null, text: `${def.name}'s influence in ${s.regions.regions[code]?.name || code} ${next > cur ? 'rose' : 'fell'} to ${RF_INF_LABEL[bAfter].toLowerCase()}.`, significance: 'meaningful', public: true, evidence: [rfInfluenceWhy(def, f, code, s)] }, turn, null));
+      infl[code] = next;
+    });
+    // Regions it is no longer active in fade slowly; dormancy when relevance is gone (history is kept).
+    Object.keys(infl).filter(code => !f.activeRegions.includes(code)).forEach(code => { infl[code] = rfR(Math.max(0, infl[code] - 4)); if (infl[code] <= 0) delete infl[code]; });
+    f = { ...f, influenceByRegion: infl };
+    if (!wasDormant && !def.emergent && f.activeRegions.every(code => (infl[code] || 0) < 8)) f = { ...f, status: 'dormant', recentHistory: [...f.recentHistory, { turn, text: `${def.name} went dormant (little remaining relevance).`, sourceEventId: null }].slice(-RF_LIMITS.factionHistory) };
+    if (f.status === 'dormant' && !def.emergent && f.activeRegions.some(code => (infl[code] || 0) >= 12)) f = { ...f, status: 'active' };
+    st.factions[def.id] = rfUpdateAgenda(f, def, s, st);
+  });
+  // 2) Coalitions (form / dissolve) — bounded.
+  const co = rfUpdateCoalitions(st, s);
+  st.coalitions = co.coalitions;
+  co.formed.forEach(c => { st.diagnostics.coalitionsFormed += 1; c.memberIds.forEach(m => { st.factions[m] = { ...st.factions[m], coalitionIds: Array.from(new Set([...st.factions[m].coalitionIds, c.id])) }; }); derived.push(rfDerive({ kind: 'faction_coalition_formed', regionId: c.regionId, factionId: c.memberIds[0], actorId: null, text: `${c.memberIds.map(m => RF_DEF_BY_ID[m].name).join(' and ')} formed a${c.kind === 'opposition' ? 'n opposition' : ''} coalition: ${c.goal}.`, significance: 'major', public: true, evidence: [c.goal] }, turn, null)); });
+  co.dissolved.forEach(c => { st.diagnostics.coalitionsDissolved += 1; c.memberIds.forEach(m => { if (st.factions[m]) st.factions[m] = { ...st.factions[m], coalitionIds: st.factions[m].coalitionIds.filter(x => x !== c.id), recentHistory: [...st.factions[m].recentHistory, { turn, text: `Coalition ended (${c.reason}): ${c.goal}`, sourceEventId: null }].slice(-RF_LIMITS.factionHistory) }; }); });
+  // 3) Deadlines: expired requests; broken commitments have bounded consequences.
+  st.requests = st.requests.map(r => {
+    if (r.status !== 'open' || turn <= r.deadlineTurn) return r;
+    st.diagnostics.requestsExpired += 1;
+    if (r.type === 'avoid_project') {
+      st.commitments.filter(c => c.requestId === r.id && c.compliance === 'pending').forEach(c => { c.compliance = 'completed'; const x = rfAdjust(st.factions[r.factionId], c.actorId, 8, `Kept its promise: ${r.title}`, turn, null, true); st.factions[r.factionId] = x.f; rfReliability(st, r.factionId, c.actorId, 10); });
+      return { ...r, status: 'fulfilled' as const, resolvedTurn: turn };
+    }
+    st.commitments.filter(c => c.requestId === r.id && c.compliance === 'pending').forEach(c => {
+      c.compliance = 'violated';
+      const x = rfAdjust(st.factions[r.factionId], c.actorId, -15, `Broke a commitment: ${r.title}`, turn, null, true);
+      st.factions[r.factionId] = x.f; rfReliability(st, r.factionId, c.actorId, -20);
+      derived.push(rfDerive({ kind: 'faction_relationship_changed_major', regionId: r.regionId, factionId: r.factionId, actorId: c.actorId, text: `${RF_DEF_BY_ID[r.factionId].name} is disappointed: ${name(c.actorId)} did not ${r.title.charAt(0).toLowerCase()}${r.title.slice(1)} as promised.`, significance: 'major', public: true, evidence: [r.title] }, turn, null));
+    });
+    // An ignored URGENT request costs a little with the region's controller only (expected to respond).
+    const ctrl = s.lr.regions.find(x => x.code === r.regionId)?.controller;
+    if (r.urgency === 'urgent' && ctrl && s.actors.some(a => a.id === ctrl) && !st.commitments.some(c => c.requestId === r.id && c.actorId === ctrl)) { const x = rfAdjust(st.factions[r.factionId], ctrl, -3, `Ignored an urgent request: ${r.title}`, turn, null, true); st.factions[r.factionId] = x.f; }
+    return { ...r, status: 'expired' as const, resolvedTurn: turn };
+  });
+  // 4) New requests (urgency + influence + cooldown + per-region/global caps — never spam).
+  const open = () => st.requests.filter(r => r.status === 'open');
+  let issuedThisRound = 0;
+  RF_FACTION_DEFS.slice().sort((a, b) => Math.max(0, ...Object.values(st.factions[b.id]?.influenceByRegion || {})) - Math.max(0, ...Object.values(st.factions[a.id]?.influenceByRegion || {})) || a.id.localeCompare(b.id)).forEach(def => {
+    const f = st.factions[def.id];
+    if (!f || f.status !== 'active' || issuedThisRound >= 2 || (f.lastRequestTurn !== null && turn - f.lastRequestTurn < 3) || open().length >= RF_LIMITS.openRequests) return;
+    for (const g of f.currentGoals.filter(x => x.status === 'active')) {
+      if (open().filter(r => r.regionId === g.regionId).length >= RF_LIMITS.requestsPerRegion) continue;
+      if (st.requests.some(r => r.targetId === g.targetId && (r.status === 'open' || (r.factionId === def.id && turn - r.issuedTurn < 6)))) continue;
+      const req = rfRequestFor(def, f, g, s, st);
+      if (!req) continue;
+      st.requests = [...st.requests, req];
+      st.factions[def.id] = { ...st.factions[def.id], lastRequestTurn: turn };
+      st.diagnostics.requestsIssued += 1; issuedThisRound += 1;
+      derived.push(rfDerive({ kind: 'faction_request_issued', regionId: req.regionId, factionId: def.id, actorId: null, text: `${def.name} asks: ${req.title} (by round ${req.deadlineTurn}).`, significance: req.urgency === 'urgent' ? 'major' : 'meaningful', public: true, evidence: [req.why] }, turn, null));
+      break;
+    }
+  });
+  st.requests = [...st.requests.filter(r => r.status === 'open'), ...st.requests.filter(r => r.status !== 'open').slice(-(RF_LIMITS.requestsKept - RF_LIMITS.openRequests))];
+  st.commitments = [...st.commitments.filter(c => c.compliance === 'pending'), ...st.commitments.filter(c => c.compliance !== 'pending').slice(-4)].slice(-RF_LIMITS.commitments);
+  // 5) Conflict level; escalation is a World Reaction event (Public Stability decides any effect).
+  const before = st.conflictByRegion;
+  st.conflictByRegion = rfConflictLevels(st, s);
+  const rank: Record<RFConflictLevel, number> = { low: 0, moderate: 1, high: 2, critical: 3 };
+  Object.entries(st.conflictByRegion).forEach(([code, lvl]) => { if (rank[lvl] >= 2 && rank[lvl] > rank[before[code] || 'low']) derived.push(rfDerive({ kind: 'faction_conflict_escalated', regionId: code, factionId: Object.values(st.factions).find(f => f.activeRegions.includes(code) && f.concerns.length)?.id || '', actorId: null, text: `Stakeholder conflict in ${s.regions.regions[code]?.name || code} is now ${lvl}.`, significance: 'major', public: true, evidence: Object.values(st.factions).filter(f => f.activeRegions.includes(code)).flatMap(f => f.concerns.filter(c => c.regionId === code).map(c => `${RF_DEF_BY_ID[f.id].name}: ${c.label}`)).slice(0, 3) }, turn, null)); });
+  st.lastRound = turn;
+  st.derived = [...st.derived, ...derived].slice(-RF_LIMITS.derived);
+  st.diagnostics.rounds += 1; st.diagnostics.derivedEmitted += derived.length;
+  st.revision += 1;
+  return { state: st, derived };
+}
+
+/** Plain explanation of a faction's influence in a region (why it is what it is). */
+export function rfInfluenceWhy(def: RFFactionDef, f: RegionalFaction, code: string, s: RFInputs): string {
+  const reg = s.regions.regions[code];
+  if (!reg) return '';
+  const parts: string[] = [];
+  const sc = def.supportedSectors.slice().sort((a, b) => (reg.sectors[b] || 0) - (reg.sectors[a] || 0))[0];
+  if (sc && (reg.sectors[sc] || 0) >= 15) parts.push(`${reg.name}'s ${sc} sector is ${(reg.sectors[sc] || 0) >= 42 ? 'established' : 'emerging'}`);
+  const opp = def.opposedSectors.find(x => (reg.sectors[x] || 0) >= 35); if (opp) parts.push(`${opp} growth works against it`);
+  const infra = s.lr.projects.filter(p => p.regionId === code && /^(active|upgraded|complet)/.test(p.status) && def.preferredInfrastructure.includes(p.projectType)); if (infra.length) parts.push(`it backs ${infra.map(p => p.title).join(', ')}`);
+  if (f.contractsCompletedByRegion[code]) parts.push(`${f.contractsCompletedByRegion[code]} of its contracts were completed here`);
+  if (def.policyInterests.includes('relief') && reg.conditions.some(c => c.kind === 'crisis_active')) parts.push('crisis relief gives it a central role');
+  if (reg.specializations.primary && def.supportedSectors.includes(reg.specializations.primary)) parts.push(`${reg.name} is ${LR_MOMENTUM_LABEL[reg.momentum.band].toLowerCase()}`);
+  if (!(def.emergent ? def.emergent.regionId === code : def.homeRegions.includes(code))) parts.push('it is active outside its home region');
+  return parts.length ? parts.join('; ') : 'a home-region presence';
+}
+
+/** A faction derived event as a World Reaction event. Relationship shifts involving hidden data stay with the actor. */
+export function rfToWorldEvent(d: RFDerivedEvent, s: RFInputs, day = 0): StrategicWorldEvent {
+  const observers = d.public ? s.actors.map(a => a.id) : d.actorId ? [d.actorId] : s.actors.map(a => a.id);
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'factions', sourceEventId: d.causedByEventId, actorId: d.actorId, teamId: d.actorId ? (s.actors.find(a => a.id === d.actorId)?.teamId ?? null) : null, kind: d.kind as SWRKind, subjectType: 'region', subjectId: d.regionId, magnitude: 0,
+    significance: d.significance, visibility: d.public ? 'public' : 'actor_only', observers, evidence: d.evidence.slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'diplomacy'], tags: ['factions', `faction:${d.factionId}`, `region:${d.regionId}`], layer: 'world',
+    confidence: 'high', claimKind: 'calculated', causedByEventId: d.causedByEventId, contributingCauses: [], rootEventId: d.rootEventId || d.id, reactionDepth: d.reactionDepth, expiresTurn: d.turn + 3, dedupeKey: `rf:${d.kind}:${d.factionId}:${d.regionId}:${d.actorId || ''}:${d.turn}`
+  };
+}
+
+// ---- Player commitments / decisions (the only faction-side mutations an actor makes) --------------------
+
+export function rfCommitToRequest(stateIn: RegionalFactionsState, requestId: string, actorId: string, turn: number): RegionalFactionsState {
+  const r = stateIn.requests.find(x => x.id === requestId && x.status === 'open');
+  if (!r || stateIn.commitments.some(c => c.requestId === requestId && c.actorId === actorId && c.compliance === 'pending')) return stateIn;
+  const def = RF_DEF_BY_ID[r.factionId];
+  const c: FactionCommitment = { id: `fc_${rfHash([requestId, actorId])}`, requestId, factionId: r.factionId, actorId, promise: r.title, factionPromise: r.reward, createdTurn: turn, dueTurn: r.deadlineTurn, compliance: 'pending' };
+  return { ...stateIn, commitments: [...stateIn.commitments, c].slice(-RF_LIMITS.commitments), factions: { ...stateIn.factions, [def.id]: { ...stateIn.factions[def.id], recentHistory: [...stateIn.factions[def.id].recentHistory, { turn, text: `Commitment received: ${r.title} by round ${r.deadlineTurn}`, sourceEventId: null }].slice(-RF_LIMITS.factionHistory) } }, revision: stateIn.revision + 1 };
+}
+
+export function rfSetPreference(stateIn: RegionalFactionsState, factionId: string, kind: 'focus' | 'avoid' | 'clear'): RegionalFactionsState {
+  const focus = stateIn.preferences.focus.filter(x => x !== factionId); const avoid = stateIn.preferences.avoid.filter(x => x !== factionId);
+  if (kind === 'focus') focus.push(factionId); if (kind === 'avoid') avoid.push(factionId);
+  // A preference is the player's own ranking input — not a faction change (no revision bump, answers stay fresh).
+  return { ...stateIn, preferences: { focus: focus.slice(-4), avoid: avoid.slice(-4) } };
+}
+
+// ---- Persistence ---------------------------------------------------------------------------------------
+
+export function sanitizeRegionalFactionsState(raw: unknown): RegionalFactionsState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw;
+  const out = createEmptyRegionalFactionsState();
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const str = (v: any, d = '') => (typeof v === 'string' ? v.slice(0, 200) : d);
+  out.revision = Math.max(0, num(r.revision)); out.initializedTurn = r.initializedTurn === null || r.initializedTurn === undefined ? null : num(r.initializedTurn); out.lastRound = r.lastRound === null || r.lastRound === undefined ? null : num(r.lastRound);
+  RF_FACTION_DEFS.forEach(def => {
+    const g: any = r.factions?.[def.id];
+    const f = rfBlank(def);
+    if (g && typeof g === 'object') {
+      f.status = g.status === 'dormant' ? 'dormant' : 'active';
+      f.activeRegions = (Array.isArray(g.activeRegions) ? g.activeRegions : []).map(String).slice(0, 8);
+      Object.entries(g.influenceByRegion || {}).slice(0, 8).forEach(([k, v]) => { if (typeof v === 'number') f.influenceByRegion[k.slice(0, 8)] = rfClamp(v, 0, 100); });
+      Object.entries(g.relationshipsByActor || {}).slice(0, 12).forEach(([k, v]: [string, any]) => { if (v && typeof v === 'object') f.relationshipsByActor[k.slice(0, 40)] = { value: rfClamp(num(v.value), -100, 100), reliability: rfClamp(num(v.reliability, 50), 0, 100), history: (Array.isArray(v.history) ? v.history : []).slice(-RF_LIMITS.relationshipHistory).map((h: any) => ({ turn: num(h.turn), actorId: str(h.actorId), delta: rfClamp(num(h.delta), -20, 20), text: str(h.text), sourceEventId: h.sourceEventId ? str(h.sourceEventId) : null, public: h.public !== false })) }; });
+      f.priorities = (Array.isArray(g.priorities) ? g.priorities : []).slice(0, RF_LIMITS.priorities).map((p: any) => ({ id: str(p.id), label: str(p.label), goalType: p.goalType, regionId: str(p.regionId), targetId: p.targetId ? str(p.targetId) : null, score: num(p.score), cause: str(p.cause) }));
+      f.concerns = (Array.isArray(g.concerns) ? g.concerns : []).slice(0, RF_LIMITS.concerns).map((c: any) => ({ id: str(c.id), label: str(c.label), severity: ['low', 'moderate', 'high', 'critical'].includes(c.severity) ? c.severity : 'moderate', regionId: str(c.regionId), cause: str(c.cause) }));
+      f.currentGoals = (Array.isArray(g.currentGoals) ? g.currentGoals : []).slice(0, RF_LIMITS.goals + 2).map((x: any) => ({ id: str(x.id), type: x.type, regionId: str(x.regionId), targetId: x.targetId ? str(x.targetId) : null, label: str(x.label), sinceTurn: num(x.sinceTurn), status: ['active', 'achieved', 'abandoned'].includes(x.status) ? x.status : 'active' }));
+      f.coalitionIds = (Array.isArray(g.coalitionIds) ? g.coalitionIds : []).map(String).slice(0, 4);
+      Object.entries(g.contractsCompletedByRegion || {}).slice(0, 8).forEach(([k, v]) => { if (typeof v === 'number') f.contractsCompletedByRegion[k.slice(0, 8)] = Math.max(0, v); });
+      f.lastRequestTurn = g.lastRequestTurn === null || g.lastRequestTurn === undefined ? null : num(g.lastRequestTurn);
+      f.recentHistory = (Array.isArray(g.recentHistory) ? g.recentHistory : []).slice(-RF_LIMITS.factionHistory).map((h: any) => ({ turn: num(h.turn), text: str(h.text), sourceEventId: h.sourceEventId ? str(h.sourceEventId) : null }));
+      f.revision = num(g.revision);
+    }
+    out.factions[def.id] = f;
+  });
+  out.requests = (Array.isArray(r.requests) ? r.requests : []).filter((x: any) => x && RF_DEF_BY_ID[x.factionId]).slice(-RF_LIMITS.requestsKept).map((x: any) => ({ id: str(x.id), factionId: str(x.factionId), type: x.type, regionId: str(x.regionId), targetId: str(x.targetId), title: str(x.title), why: str(x.why), reward: str(x.reward), issuedTurn: num(x.issuedTurn), deadlineTurn: num(x.deadlineTurn), urgency: x.urgency === 'urgent' ? 'urgent' : 'normal', status: ['open', 'fulfilled', 'expired', 'withdrawn'].includes(x.status) ? x.status : 'open', fulfilledBy: x.fulfilledBy ? str(x.fulfilledBy) : null, resolvedTurn: x.resolvedTurn === null || x.resolvedTurn === undefined ? null : num(x.resolvedTurn), coalitionId: x.coalitionId ? str(x.coalitionId) : null, contributionsAtIssue: Object.fromEntries(Object.entries(x.contributionsAtIssue || {}).filter(([, v]) => typeof v === 'number').slice(0, 8)) as Record<string, number> }));
+  out.commitments = (Array.isArray(r.commitments) ? r.commitments : []).filter((c: any) => c && RF_DEF_BY_ID[c.factionId]).slice(-RF_LIMITS.commitments).map((c: any) => ({ id: str(c.id), requestId: str(c.requestId), factionId: str(c.factionId), actorId: str(c.actorId), promise: str(c.promise), factionPromise: str(c.factionPromise), createdTurn: num(c.createdTurn), dueTurn: num(c.dueTurn), compliance: ['compliant', 'at_risk', 'violated', 'completed', 'expired', 'pending'].includes(c.compliance) ? c.compliance : 'pending' }));
+  out.coalitions = (Array.isArray(r.coalitions) ? r.coalitions : []).filter((c: any) => c && Array.isArray(c.memberIds)).slice(-RF_LIMITS.coalitionsKept).map((c: any) => ({ id: str(c.id), memberIds: c.memberIds.map(String).filter((m: string) => RF_DEF_BY_ID[m]).slice(0, 3), regionId: str(c.regionId), kind: c.kind === 'opposition' ? 'opposition' : 'support', targetId: str(c.targetId), goal: str(c.goal), formedTurn: num(c.formedTurn), status: c.status === 'dissolved' ? 'dissolved' : 'active', dissolvedTurn: c.dissolvedTurn === null || c.dissolvedTurn === undefined ? null : num(c.dissolvedTurn), reason: c.reason ? str(c.reason) : null, misalignedRounds: num(c.misalignedRounds) }));
+  Object.entries(r.conflictByRegion || {}).slice(0, 12).forEach(([k, v]) => { if (['low', 'moderate', 'high', 'critical'].includes(v as string)) out.conflictByRegion[k.slice(0, 8)] = v as RFConflictLevel; });
+  out.preferences = { focus: (r.preferences?.focus || []).map(String).filter((x: string) => RF_DEF_BY_ID[x]).slice(-4), avoid: (r.preferences?.avoid || []).map(String).filter((x: string) => RF_DEF_BY_ID[x]).slice(-4) };
+  out.decisions = (Array.isArray(r.decisions) ? r.decisions : []).slice(-RF_LIMITS.decisions).map((d: any) => ({ turn: num(d.turn), actorId: str(d.actorId), regionId: str(d.regionId), label: str(d.label), winners: (d.winners || []).map(String).slice(0, 4), losers: (d.losers || []).map(String).slice(0, 4) }));
+  out.derived = (Array.isArray(r.derived) ? r.derived : []).slice(-RF_LIMITS.derived).map((d: any) => ({ id: str(d.id), turn: num(d.turn), kind: d.kind, regionId: str(d.regionId), factionId: str(d.factionId), actorId: d.actorId ? str(d.actorId) : null, text: str(d.text), significance: d.significance === 'major' ? 'major' : 'meaningful', causedByEventId: d.causedByEventId ? str(d.causedByEventId) : null, rootEventId: d.rootEventId ? str(d.rootEventId) : null, reactionDepth: num(d.reactionDepth), public: d.public !== false, evidence: (d.evidence || []).map(String).slice(0, 3) }));
+  const dg: any = r.diagnostics || {};
+  out.diagnostics = { eventsApplied: num(dg.eventsApplied), eventsIgnored: num(dg.eventsIgnored), rounds: num(dg.rounds), requestsIssued: num(dg.requestsIssued), requestsFulfilled: num(dg.requestsFulfilled), requestsExpired: num(dg.requestsExpired), coalitionsFormed: num(dg.coalitionsFormed), coalitionsDissolved: num(dg.coalitionsDissolved), derivedEmitted: num(dg.derivedEmitted), lastMs: num(dg.lastMs) };
+  return out;
+}
+
+// ---- Factions → consumers (each system keeps its own decision) ---------------------------------------
+
+export interface RegionalFactionsWorldView { state: RegionalFactionsState; inputs: RFInputs | null; viewerId: string; viewerKeys: string[]; names: Record<string, string> }
+
+/** Active factions in a region, most influential first (bounded for views). */
+export function rfFactionsInRegion(st: RegionalFactionsState, code: string, limit = RF_LIMITS.factionsPerRegionView): Array<{ def: RFFactionDef; f: RegionalFaction; influence: number }> {
+  return Object.values(st.factions).filter(f => f.status === 'active' && f.activeRegions.includes(code)).map(f => ({ def: RF_DEF_BY_ID[f.id], f, influence: f.influenceByRegion[code] || 0 }))
+    .filter(x => x.def).sort((a, b) => b.influence - a.influence || a.def.id.localeCompare(b.def.id)).slice(0, limit);
+}
+export function rfInfluentialCount(st: RegionalFactionsState | null | undefined, code: string): number { return st ? rfFactionsInRegion(st, code, 12).filter(x => x.influence >= 30).length : 0; }
+
+/**
+ * What a VIEWER may know of a faction's relationship with an actor. Own relationships are exact bands;
+ * a rival's is shown only without fog, otherwise only as observed public evidence (never the hidden value).
+ */
+export function rfVisibleRelationship(st: RegionalFactionsState, factionId: string, actorId: string, viewerKeys: string[], fog: boolean): { band: RFRelationshipBand | null; observed: string | null } {
+  const rel = st.factions[factionId]?.relationshipsByActor[actorId];
+  if (viewerKeys.includes(actorId) || !fog) return { band: rfRelationshipBand(rel?.value || 0), observed: null };
+  const pub = (rel?.history || []).filter(h => h.public);
+  if (!pub.length) return { band: null, observed: null };
+  const sum = pub.reduce((a, h) => a + h.delta, 0);
+  return { band: null, observed: `${sum >= 10 ? 'leaning positive' : sum <= -10 ? 'leaning negative' : 'mixed'} (observed: ${pub[pub.length - 1].text.toLowerCase()})` };
+}
+
+/** Influence-weighted local stakeholder backing for an owner (0..1) — an INPUT for valuation (not control). */
+export function rfActorBacking(st: RegionalFactionsState | null | undefined, code: string, actorIds: string[]): number {
+  if (!st || !actorIds.length) return 0;
+  const list = rfFactionsInRegion(st, code, 12);
+  const total = list.reduce((a, x) => a + x.influence, 0);
+  if (!total) return 0;
+  const sum = list.reduce((a, x) => a + x.influence * Math.max(0, ...actorIds.map(id => x.f.relationshipsByActor[id]?.value || 0)) / 100, 0);
+  return Math.round(Math.min(1, sum / total) * 100) / 100;
+}
+
+/** Diplomacy: stakeholder backing per region per owner key (Diplomacy decides the response). */
+export function rfDiplomacyBacking(st: RegionalFactionsState | null | undefined, ownerActors: Record<string, string[]>): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!st) return out;
+  const codes = Array.from(new Set(Object.values(st.factions).flatMap(f => f.activeRegions)));
+  codes.forEach(code => { Object.entries(ownerActors).forEach(([owner, ids]) => { const b = rfActorBacking(st, code, ids); if (b > 0) (out[code] = out[code] || {})[owner] = b; }); });
+  return out;
+}
+
+/** Rival AI: open, public requests are legitimate opportunities (bounded bonus; no hidden info, no cheat). */
+export function rfAdjustAiDecisions<T extends { type?: string; score?: number; data?: any }>(decisions: T[], st: RegionalFactionsState | null | undefined, actorId: string): T[] {
+  if (!st || !decisions.length) return decisions;
+  const open = st.requests.filter(r => r.status === 'open' && r.type !== 'avoid_project');
+  if (!open.length) return decisions;
+  return decisions.map(d => {
+    const data = d.data || {};
+    const target = String(data.projectId || data.contractId || data.targetId || data.item || data.parameters?.projectId || data.parameters?.contractId || '');
+    const r = target ? open.find(x => x.targetId === target) : null;
+    if (!r) return d;
+    const inf = Math.max(0, ...Object.values(st.factions[r.factionId]?.influenceByRegion || {}));
+    const rel = st.factions[r.factionId]?.relationshipsByActor[actorId]?.value || 0;
+    const bonus = Math.round(Math.min(10, 3 + inf / 15 + (rel < 20 ? 2 : 0)) * 10) / 10;
+    return { ...d, score: (d.score || 0) + bonus, factionInfluence: bonus, factionReasons: [`${RF_DEF_BY_ID[r.factionId].name} asked for this`] } as T;
+  });
+}
+
+/** Team OS: open faction requests in a region are an extra opportunity weight (Team OS assigns tasks). */
+export function rfTeamOsHint(st: RegionalFactionsState | null | undefined, code: string): { requests: number; label: string | null } {
+  const reqs = (st?.requests || []).filter(r => r.status === 'open' && r.regionId === code && r.type !== 'avoid_project');
+  return { requests: reqs.length, label: reqs[0] ? `${RF_DEF_BY_ID[reqs[0].factionId].name} request: ${reqs[0].title}` : null };
+}
+
+/** GI3 (owner decides): faction blockers/opportunities in goal regions become notices; goals never change. */
+export function gi3ConsiderFactionLandscape(state: GI3StrategyState, st: RegionalFactionsState, viewerId: string, turn: number): GI3StrategyState {
+  const active = state.active;
+  if (!active || active.status !== 'active') return state;
+  let next = state;
+  active.goals.filter(g => g.regionId && g.status !== 'completed' && g.status !== 'removed').forEach(g => {
+    rfFactionsInRegion(st, g.regionId!, 4).filter(x => x.influence >= 50).forEach(x => {
+      const rel = x.f.relationshipsByActor[viewerId]?.value || 0;
+      const req = st.requests.find(r => r.status === 'open' && r.factionId === x.def.id && r.regionId === g.regionId);
+      let text: string | null = null; let id = '';
+      if (rel <= -10) { id = `rf_block_${x.def.id}_${g.regionId}`; text = `${x.def.name} is ${rfInfluenceLabel(x.influence).toLowerCase()}-influence in ${g.regionId} and ${rfRelationshipLabel(rel).toLowerCase()} toward you — a blocker for “${g.label}”.${req ? ` Its request (${req.title}) is a route to repair it.` : ''}`; }
+      else if (rel < 15 && req) { id = `rf_opp_${x.def.id}_${g.regionId}`; text = `${x.def.name} is highly influential in ${g.regionId} and currently neutral toward you. Its request (${req.title}) is a possible route to stronger regional standing for “${g.label}”.`; }
+      if (!text || next.notices.some(n => n.id === id)) return;
+      next = { ...next, notices: [...next.notices, { id, kind: 'recommend_change' as const, text: text.slice(0, 240), revision: active.revision, turn, dismissed: false }].slice(-GI3_LIMITS.notices) };
+    });
+  });
+  return next;
+}
+
+/** Background AI (owner ranks): observable faction competition, requests, deterioration, coalitions. */
+export function backgroundFactionInputs(world: GIWorld): { attention: BackgroundAttentionItem[]; opportunities: BackgroundOpportunity[] } {
+  const v = world.factions;
+  if (!v || !v.inputs) return { attention: [], opportunities: [] };
+  const st = v.state; const turn = world.turn; const me = v.viewerKeys;
+  const attention: BackgroundAttentionItem[] = []; const opportunities: BackgroundOpportunity[] = [];
+  // Rival gaining influence with influential stakeholders (PUBLIC evidence only).
+  v.inputs.actors.filter(a => !me.includes(a.id)).forEach(a => {
+    Object.values(st.factions).forEach(f => {
+      const pub = (f.relationshipsByActor[a.id]?.history || []).filter(h => h.public && turn - h.turn <= 2 && h.delta > 0);
+      const code = f.activeRegions.slice().sort((x, y) => (f.influenceByRegion[y] || 0) - (f.influenceByRegion[x] || 0))[0];
+      if (!pub.length || !code || (f.influenceByRegion[code] || 0) < 45) return;
+      const def = RF_DEF_BY_ID[f.id];
+      const reg = v.inputs!.regions.regions[code];
+      attention.push({ id: `rf_rival_${a.id}_${f.id}`, domain: 'world', subject: code, importance: 'high', urgency: 'soon', confidence: 'moderate', reversibility: 'reversible', deadline: null, trend: 'rising', reason: `${a.name} is building influence with ${reg?.name || code}'s ${def.type.replace(/_/g, ' ')} stakeholders (${def.name}: ${pub[pub.length - 1].text.toLowerCase()}). If that continues, ${reg?.name || code} may become more expensive to contest through contracts and regional standing.`, evidence: pub.slice(-2).map(h => h.text), lastUpdated: turn, status: 'active' });
+    });
+  });
+  // The viewer's own relationship deteriorating sharply.
+  Object.values(st.factions).forEach(f => { const h = (f.relationshipsByActor[v.viewerId]?.history || []).filter(x => turn - x.turn <= 1 && x.delta <= -10).slice(-1)[0]; if (h) attention.push({ id: `rf_drop_${f.id}`, domain: 'world', subject: f.activeRegions[0] || '', importance: 'high', urgency: 'soon', confidence: 'high', reversibility: 'reversible', deadline: null, trend: 'falling', reason: `${RF_DEF_BY_ID[f.id].name} turned against you: ${h.text}.`, evidence: [h.text], lastUpdated: turn, status: 'active' }); });
+  // New requests and coalitions (public).
+  st.requests.filter(r => r.status === 'open' && turn - r.issuedTurn <= 1).slice(0, 2).forEach(r => {
+    const committed = st.commitments.some(c => c.requestId === r.id && c.actorId === v.viewerId && c.compliance === 'pending');
+    opportunities.push({ id: `rf_${r.id}`.slice(0, 80), type: r.type === 'fund_project' ? 'infrastructure_affordable' : 'profitable_contract', subject: r.regionId, value: null, urgency: r.urgency === 'urgent' ? 'now' : 'soon', confidence: 'moderate', expiresTurn: r.deadlineTurn, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${RF_DEF_BY_ID[r.factionId].name} asks: ${r.title} by round ${r.deadlineTurn}. ${r.why}${committed ? ' (You committed.)' : ''}`, actionIds: [] });
+  });
+  st.coalitions.filter(c => c.status === 'active' && turn - c.formedTurn <= 1).slice(0, 1).forEach(c => attention.push({ id: `rf_coal_${c.id}`.slice(0, 80), domain: 'world', subject: c.regionId, importance: 'medium', urgency: 'soon', confidence: 'high', reversibility: 'reversible', deadline: null, trend: 'new', reason: `${c.memberIds.map(m => RF_DEF_BY_ID[m].name).join(' + ')} formed a coalition: ${c.goal}.`, evidence: [c.goal], lastUpdated: turn, status: 'active' }));
+  // Commitments due soon.
+  st.commitments.filter(c => c.actorId === v.viewerId && c.compliance === 'pending' && c.dueTurn - turn <= 1).forEach(c => attention.push({ id: `rf_due_${c.id}`, domain: 'strategy', subject: c.factionId, importance: 'high', urgency: 'now', confidence: 'high', reversibility: 'hard_to_reverse', deadline: c.dueTurn, trend: 'rising', reason: `Your commitment to ${RF_DEF_BY_ID[c.factionId].name} is due by round ${c.dueTurn}: ${c.promise}.`, evidence: [c.promise], lastUpdated: turn, status: 'active' }));
+  return { attention: attention.slice(0, 4), opportunities: opportunities.slice(0, 2) };
+}
+
+/** Contextual Actions: legal actions answering an open request (or a focus faction) rank higher; avoid lowers. */
+export function annotateContextualActionsWithFactions(set: ContextualActionSet, st: RegionalFactionsState | null | undefined, inputs: RFInputs | null): ContextualActionSet {
+  if (!st || !inputs) return set;
+  const open = st.requests.filter(r => r.status === 'open' && r.type !== 'avoid_project');
+  const titleOf = (id: string) => inputs.lr.projects.find(p => p.id === id)?.title || inputs.lr.contracts.find(c => c.id === id)?.title || id;
+  const touch = (c: ContextualActionCandidate): ContextualActionCandidate => {
+    if (!c.legal) return c;
+    const text = `${c.label} ${c.description}`.toLowerCase();
+    const r = open.find(x => text.includes(titleOf(x.targetId).toLowerCase()));
+    let rel = c.relevance; const reasons = [...c.reasons];
+    if (r) { rel += 5; reasons.push(`Faction: ${RF_DEF_BY_ID[r.factionId].name} requested this (due round ${r.deadlineTurn})`); }
+    st.preferences.focus.forEach(fid => { const def = RF_DEF_BY_ID[fid]; if (def && def.preferredContractTypes.some(t => text.includes(t.replace(/_/g, ' '))) ) { rel += 3; reasons.push(`Focus: builds support with ${def.name}`); } });
+    st.preferences.avoid.forEach(fid => { const def = RF_DEF_BY_ID[fid]; if (def && r && r.factionId === fid) { rel -= 4; reasons.push(`You chose not to support ${def.name}`); } });
+    return rel === c.relevance ? c : { ...c, relevance: rel, reasons: Array.from(new Set(reasons)).slice(0, 6) };
+  };
+  return { ...set, recommended: set.recommended ? touch(set.recommended) : null, useful: set.useful.map(touch), available: set.available.map(touch), ranked: set.ranked.map(touch) };
+}
+
+/** Contract relevance from the issuing faction's influence, priorities and your relationship (canonical contracts). */
+export function rfContractRelevance(st: RegionalFactionsState | null | undefined, contract: { id?: string; issuingFactionId?: string | null; issuingFaction?: string | null; issuingRegionId?: string | null; regionId?: string | null }, viewerId: string): { score: number; factionId: string | null; reasons: string[] } {
+  const fid = contract.issuingFactionId || resolveFactionIdFromIssuer(contract.issuingFaction) || null;
+  const f = fid ? st?.factions[fid] : null;
+  if (!f || !fid) return { score: 0, factionId: fid, reasons: [] };
+  const code = contract.issuingRegionId || contract.regionId || '';
+  const inf = f.influenceByRegion[code] || 0; const rel = f.relationshipsByActor[viewerId]?.value || 0;
+  const reasons: string[] = [`${RF_DEF_BY_ID[fid].name} (${rfInfluenceLabel(inf).toLowerCase()} influence; ${rfRelationshipLabel(rel).toLowerCase()} toward you)`];
+  let score = Math.round(inf / 5);
+  if (st!.requests.some(r => r.status === 'open' && r.targetId === contract.id)) { score += 15; reasons.push('an open faction request'); }
+  if (f.priorities.some(p => p.targetId === contract.id)) { score += 6; reasons.push('a current faction priority'); }
+  return { score: Math.min(40, score), factionId: fid, reasons };
+}
+
+// ---- Emergent dilemmas (built only from canonical options) ------------------------------------------------
+
+export interface RFDilemmaOption { id: string; kind: 'fund' | 'partnership' | 'alternative' | 'delay'; label: string; projectId: string | null; contractId: string | null; cost: number | null; stances: Array<{ factionId: string; stance: RFStance }>; effect: string[]; risk: string[] }
+export interface RFDilemma { id: string; regionId: string; title: string; need: string; options: RFDilemmaOption[] }
+
+export function rfBuildDilemmas(st: RegionalFactionsState, s: RFInputs, regionId?: string): RFDilemma[] {
+  const out: RFDilemma[] = [];
+  const codes = regionId ? [regionId] : Object.keys(s.regions.regions).sort();
+  codes.forEach(code => {
+    const reg = s.regions.regions[code];
+    const need = reg?.needs.find(n => n.status === 'open' && LR_SEV_RANK[n.severity] >= 3 && LR_NEED_CAPACITY[n.category]);
+    if (!reg || !need) return;
+    const facs = rfFactionsInRegion(st, code, 6).filter(x => x.influence >= 15);
+    const projects = s.lr.projects.filter(p => p.regionId === code && (p.status === 'unlocked' || p.status === 'under_construction') && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[need.category] as keyof LRCapacity] || 0) > 0);
+    if (!projects.length || facs.length < 2) return;
+    const stancesFor = (pt: string) => facs.map(x => ({ factionId: x.def.id, stance: rfProjectStance(x.def, pt, code, s.regions) }));
+    const main = projects[0];
+    const st0 = stancesFor(main.projectType);
+    if (!st0.some(x => RF_STANCE_WEIGHT[x.stance] > 0) || !st0.some(x => x.stance === 'opposes' || x.stance === 'concerned')) return; // no real conflict → no dilemma
+    const prev = lrPreviewProject(s.regions, s.lr, main.id);
+    const effect = prev ? [...prev.regional.slice(0, 2), ...prev.likely.slice(0, 1)] : [`${LR_NEED_LABEL[need.category]} need eases`];
+    const options: RFDilemmaOption[] = [{ id: 'fund', kind: 'fund', label: `Build ${main.title}`, projectId: main.id, contractId: null, cost: main.remainingCost, stances: st0, effect, risk: st0.filter(x => x.stance === 'opposes').map(x => `${RF_DEF_BY_ID[x.factionId].name} relationship ↓`) }];
+    // Partnership: pair the project with work an opposer values (the hybrid rule in rfApplyWorldEvent placates it).
+    const opposers = st0.filter(x => x.stance === 'opposes').map(x => RF_DEF_BY_ID[x.factionId]);
+    const partner = s.lr.contracts.find(c => c.regionId === code && c.status === 'available' && opposers.some(d => d.preferredContractTypes.includes(c.contractType))) || s.lr.contracts.find(c => c.status === 'available' && opposers.some(d => d.preferredContractTypes.includes(c.contractType)));
+    if (partner) options.push({ id: 'partnership', kind: 'partnership', label: `${main.title} + "${partner.title}" partnership`, projectId: main.id, contractId: partner.id, cost: main.remainingCost, stances: st0.map(x => ({ ...x, stance: x.stance === 'opposes' ? 'conditional' as RFStance : x.stance })), effect: [...effect.slice(0, 2), 'Regional stability support ↑'], risk: ['Higher total cost (the contract must also be delivered)', 'Slower to complete'] });
+    const alt = projects.find(p => p.id !== main.id);
+    if (alt) { const sa = stancesFor(alt.projectType); options.push({ id: 'alternative', kind: 'alternative', label: `Build ${alt.title} instead`, projectId: alt.id, contractId: null, cost: alt.remainingCost, stances: sa, effect: [`${LR_NEED_LABEL[need.category]} need eases (different stakeholders)`], risk: sa.filter(x => x.stance === 'opposes').map(x => `${RF_DEF_BY_ID[x.factionId].name} relationship ↓`) }); }
+    options.push({ id: 'delay', kind: 'delay', label: 'Delay', projectId: null, contractId: null, cost: null, stances: facs.map(x => ({ factionId: x.def.id, stance: 'neutral' as RFStance })), effect: ['No cost now'], risk: [`${reg.name} growth may slow (${LR_NEED_LABEL[need.category].toLowerCase()} bottleneck)`, 'Faction requests may expire'] });
+    out.push({ id: `dlm_${code}_${need.category}_${main.id}`, regionId: code, title: `${reg.name} ${LR_NEED_LABEL[need.category]} Strategy`, need: need.reason, options });
+  });
+  return out.slice(0, 3);
+}
+
+/** Record a dilemma choice: commits the actor to matching open requests (visible) — execution stays canonical. */
+export function rfChooseDilemmaOption(stateIn: RegionalFactionsState, d: RFDilemma, optionId: string, actorId: string, turn: number): RegionalFactionsState {
+  const o = d.options.find(x => x.id === optionId);
+  if (!o) return stateIn;
+  let st = stateIn;
+  stateIn.requests.filter(r => r.status === 'open' && ((o.projectId && r.targetId === o.projectId && r.type === 'fund_project') || (o.contractId && r.targetId === o.contractId))).forEach(r => { st = rfCommitToRequest(st, r.id, actorId, turn); });
+  if (o.kind !== 'delay' && o.projectId) stateIn.requests.filter(r => r.status === 'open' && r.type === 'avoid_project' && r.targetId !== o.projectId && d.options.some(x => x.projectId === r.targetId)).forEach(r => { st = rfCommitToRequest(st, r.id, actorId, turn); });
+  const winners = o.stances.filter(x => RF_STANCE_WEIGHT[x.stance] > 0).map(x => x.factionId);
+  const losers = o.stances.filter(x => x.stance === 'opposes').map(x => x.factionId);
+  return { ...st, decisions: [...st.decisions, { turn, actorId, regionId: d.regionId, label: `${d.title}: ${o.label}`, winners, losers }].slice(-RF_LIMITS.decisions), revision: st.revision + 1 };
+}
+
+// ---- Descriptive strategy history (not a moral score) & debrief ------------------------------------------
+
+export function rfPlayerStyle(st: RegionalFactionsState, actorId: string): string | null {
+  const byType: Record<string, number> = {};
+  Object.values(st.factions).forEach(f => (f.relationshipsByActor[actorId]?.history || []).filter(h => h.delta > 0).forEach(h => { const t = RF_DEF_BY_ID[f.id].type; byType[t] = (byType[t] || 0) + h.delta; }));
+  const top = Object.entries(byType).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  if (!top || top[1] < 15) return null;
+  const map: Record<string, string> = { industry: 'industry aligned', trade: 'industry aligned', energy: 'energy-transition focused', agriculture: 'agriculture aligned', technology: 'technology aligned', research: 'research aligned', infrastructure_authority: 'infrastructure focused', public_institution: 'infrastructure focused', labor: 'community oriented', community: 'community oriented', environmental: 'environmentally balanced', tourism: 'environmentally balanced' };
+  return map[top[0]] || null;
+}
+
+export function buildFactionDebrief(st: RegionalFactionsState | null | undefined, viewerId: string): string[] {
+  if (!st) return [];
+  const lines: string[] = [];
+  const rels = Object.values(st.factions).map(f => ({ f, v: f.relationshipsByActor[viewerId]?.value || 0 })).filter(x => x.f.relationshipsByActor[viewerId]);
+  const best = rels.slice().sort((a, b) => b.v - a.v)[0]; const worst = rels.slice().sort((a, b) => a.v - b.v)[0];
+  if (best && best.v >= 15) lines.push(`Strongest relationship: ${RF_DEF_BY_ID[best.f.id].name} (${rfRelationshipLabel(best.v)})`);
+  if (worst && worst.v <= -10) lines.push(`Largest rivalry: ${RF_DEF_BY_ID[worst.f.id].name} (${rfRelationshipLabel(worst.v)})`);
+  const top = Object.values(st.factions).flatMap(f => Object.entries(f.influenceByRegion).map(([code, v]) => ({ f, code, v }))).sort((a, b) => b.v - a.v)[0];
+  if (top) lines.push(`Most influential stakeholder: ${RF_DEF_BY_ID[top.f.id].name} in ${top.code} (${rfInfluenceLabel(top.v)})`);
+  const dec = st.decisions.filter(d => d.actorId === viewerId).sort((a, b) => (b.winners.length + b.losers.length) - (a.winners.length + a.losers.length))[0];
+  if (dec) lines.push(`Most consequential decision: ${dec.label}`);
+  const formed = st.diagnostics.coalitionsFormed; if (formed) lines.push(`Coalitions formed: ${formed}`);
+  const mine = st.requests.filter(r => r.fulfilledBy === viewerId).length; const failed = st.commitments.filter(c => c.actorId === viewerId && c.compliance === 'violated').length;
+  if (mine || failed) lines.push(`Requests completed: ${mine} · commitments broken: ${failed}`);
+  const style = rfPlayerStyle(st, viewerId); if (style) lines.push(`Your style: ${style}`);
+  return lines;
+}
+
+// ---- Factions: Game Intelligence ------------------------------------------------------------------------
+
+export type RFQueryTopic = 'who_matters' | 'supporters' | 'why_feel' | 'wants' | 'rival_allies' | 'project_stance' | 'what_if_support' | 'influence_why' | 'improve' | 'command';
+export interface RFQuery { topic: RFQueryTopic; regionId: string | null; factionId: string | null; actorId: string | null; projectId: string | null; command: 'focus' | 'avoid' | null }
+
+export function rfFactionInText(q: string): string | null {
+  const hits = RF_FACTION_DEFS.map(d => ({ d, len: Math.max(0, ...[d.name.toLowerCase(), ...d.aliases].filter(a => new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)).map(a => a.length)) })).filter(x => x.len > 0).sort((a, b) => b.len - a.len || a.d.id.localeCompare(b.d.id));
+  return hits[0]?.d.id || null;
+}
+
+export function detectFactionQuery(raw: string, gw: GIWorld): RFQuery | null {
+  const v = gw.factions;
+  if (!v || !v.inputs) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const regionId = Object.keys(v.inputs.regions.regions).find(c => new RegExp(`\\b(${c.toLowerCase()}|${(v.inputs!.regions.regions[c].name || '').toLowerCase()})\\b`).test(q)) || null;
+  const factionId = rfFactionInText(q);
+  const actor = gw.actors.find(a => a.relation !== 'self' && new RegExp(`\\b${a.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)) || null;
+  const mk = (topic: RFQueryTopic, x: Partial<RFQuery> = {}): RFQuery => ({ topic, regionId, factionId, actorId: actor ? actor.id : null, projectId: null, command: null, ...x });
+  const stakeholderWords = /\b(faction|factions|stakeholders?|groups?|interest groups?|institutions?|lobby|lobbies)\b/;
+  if (factionId && /\b(focus on|prioriti[sz]e) (winning over|building (relations|support) with|supporting)\b/.test(q)) return mk('command', { command: 'focus' });
+  if (factionId && /\b(don'?t|do not|stop|never) (support|back|help|work with)\b/.test(q)) return mk('command', { command: 'avoid' });
+  if (factionId && /\b(ways? to|how (can|do) i|how to) (improve|repair|build|win)\b.{0,30}\b(relations?|relationship|support|over)\b|\bimprove (my )?relations?\b/.test(q)) return mk('improve');
+  if (factionId && /\bwhat (happens|would happen) if i (support|back|side with|help)\b/.test(q)) return mk('what_if_support');
+  if (factionId && /\bwhy (does|do|is|are)\b.{0,40}\b(dislike|hate|like|oppose|support|trust|distrust|angry|upset|against|hostile|friendly)\b/.test(q)) return mk('why_feel');
+  if (factionId && /\bwhy did\b.{0,40}\b(lose|lost|gain|gained|drop|dropped|rise|rose)\b.{0,15}\binfluence\b|\bwhy (is|has)\b.{0,40}\binfluence\b/.test(q)) return mk('influence_why');
+  if (factionId && /\bwhat (does|do)\b.{0,40}\b(want|need|care about|ask for)\b|\bwhat are .{0,30}(priorities|goals|demands)\b/.test(q)) return mk('wants');
+  if (actor && /\bwho (is|are)\b.{0,20}\b(working with|allied with|close to|backing|backed by|aligned with)\b|\bwhich (factions?|groups?|stakeholders?) (support|back|like)\b/.test(q) && !/\bme\b/.test(q)) return mk('rival_allies');
+  if (/\bwho (supports?|likes?|backs?|trusts?) me\b|\bwhich (factions?|groups?|stakeholders?) (support|like|back|trust) me\b|\bmy (allies|supporters)\b/.test(q)) return mk('supporters');
+  if (/\bwhich (groups?|factions?|stakeholders?) (oppose|support|back|resist|object to)\b|\bwho (opposes|supports|objects to)\b.{0,40}\b(project|rail|hub|terminal|plant|park|farm|cable|expansion)\b/.test(q)) {
+    const words = q.split(/\s+/).filter(w => w.length > 3);
+    const proj = v.inputs.lr.projects.map(p => ({ p, hit: words.filter(w => p.title.toLowerCase().includes(w) || p.projectType.replace(/_/g, ' ').includes(w)).length + (regionId && p.regionId === regionId ? 1 : 0) })).filter(x => x.hit > 0).sort((a, b) => b.hit - a.hit || a.p.id.localeCompare(b.p.id))[0];
+    return mk('project_stance', { projectId: proj ? proj.p.id : null });
+  }
+  if (/\bwho (matters|has (the most )?(influence|power|clout))\b|\bmost influential\b|\bwho (runs|controls the politics of)\b/.test(q) || (regionId && stakeholderWords.test(q) && /\b(who|which|what|list|show)\b/.test(q))) return mk('who_matters');
+  return null;
+}
+
+const rfClaim = (text: string, kind: LRClaim, certainty?: GICertainty) => claim(text, kind === 'fact' || kind === 'calculated' ? 'fact' : kind === 'projection' ? 'projection' : 'inference', certainty || (kind === 'fact' ? 'confirmed' : kind === 'calculated' ? 'high' : kind === 'inference' ? 'moderate' : 'low'), ['rf.state'], { derived: giNumbersIn(text).map(n => n.value) });
+
+export function composeFactionAnswer(query: RFQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.factions!;
+  const s = v.inputs!;
+  const st = v.state;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const me = v.viewerId;
+  const def = query.factionId ? RF_DEF_BY_ID[query.factionId] : null;
+  const f = query.factionId ? st.factions[query.factionId] : null;
+  const regName = (c: string) => s.regions.regions[c]?.name || c;
+  const relText = (fid: string, actorId: string) => { const r = rfVisibleRelationship(st, fid, actorId, v.viewerKeys, s.fogOfWar); return r.band ? RF_REL_LABEL[r.band] : r.observed ? `unknown (${r.observed})` : 'unknown (hidden by fog of war)'; };
+  let title = 'Stakeholders'; let shape: GIAnswerShape = 'status';
+  switch (query.topic) {
+    case 'who_matters': {
+      const code = query.regionId || s.lr.regions.find(r => r.controller && v.viewerKeys.includes(r.controller))?.code || Object.keys(s.regions.regions)[0];
+      title = `Who matters in ${regName(code)}`; shape = 'comparison';
+      const list = rfFactionsInRegion(st, code);
+      say('list', null, list.length ? list.map((x, i) => rfClaim(`${i + 1}. ${x.def.name} — influence ${rfInfluenceLabel(x.influence)}; your relationship ${relText(x.def.id, me)}${x.f.priorities.find(p => p.regionId === code) ? `; wants: ${x.f.priorities.find(p => p.regionId === code)!.label}` : ''}.`, 'calculated')) : [rfClaim(`No organised stakeholder groups are active in ${regName(code)} yet.`, 'calculated')]);
+      const conflict = st.conflictByRegion[code];
+      if (conflict && conflict !== 'low') say('conflict', 'Stakeholder conflict', [rfClaim(`${conflict[0].toUpperCase()}${conflict.slice(1)}.`, 'calculated')]);
+      break;
+    }
+    case 'supporters': {
+      title = 'Who supports you'; shape = 'comparison';
+      const rows = Object.values(st.factions).map(x => ({ x, val: x.relationshipsByActor[me]?.value || 0 })).filter(r => (query.regionId ? r.x.activeRegions.includes(query.regionId) : true)).sort((a, b) => b.val - a.val);
+      const pos = rows.filter(r => r.val >= 15); const neg = rows.filter(r => r.val <= -10);
+      say('pos', 'Supporters', pos.length ? pos.slice(0, 4).map(r => rfClaim(`${RF_DEF_BY_ID[r.x.id].name} — ${rfRelationshipLabel(r.val)}${r.x.relationshipsByActor[me]?.history.slice(-1)[0] ? ` (last: ${r.x.relationshipsByActor[me].history.slice(-1)[0].text.toLowerCase()})` : ''}.`, 'calculated')) : [rfClaim(`No stakeholder group${query.regionId ? ` in ${regName(query.regionId)}` : ''} is clearly on your side yet.`, 'calculated')]);
+      if (neg.length) say('neg', 'Against you', neg.slice(0, 3).map(r => rfClaim(`${RF_DEF_BY_ID[r.x.id].name} — ${rfRelationshipLabel(r.val)}.`, 'calculated')));
+      const style = rfPlayerStyle(st, me); if (style) say('style', null, [rfClaim(`So far you read as ${style} (a description of your choices, not a score).`, 'inference', 'high')]);
+      break;
+    }
+    case 'why_feel': {
+      if (!def || !f) break;
+      const rel = f.relationshipsByActor[me];
+      title = `How ${def.name} sees you`; shape = 'explanation';
+      say('now', null, [rfClaim(`${def.name} is ${rfRelationshipLabel(rel?.value || 0).toLowerCase()} toward you.`, 'calculated')]);
+      if (rel?.history.length) say('evidence', 'Why (their record of you)', rel.history.slice().reverse().slice(0, 4).map(h => rfClaim(`Round ${h.turn}: ${h.delta > 0 ? '+' : '−'} ${h.text}.`, 'fact')));
+      else say('evidence', null, [rfClaim('You have no meaningful history with them yet — their view comes only from your standing in their home region.', 'inference', 'high')]);
+      const opp = f.priorities.filter(p => p.goalType === 'oppose_project' || p.goalType === 'limit_overdevelopment');
+      if (opp.length) say('tension', 'Current tension', opp.slice(0, 2).map(p => rfClaim(`${p.label} (${p.cause}).`, 'inference')));
+      break;
+    }
+    case 'wants': {
+      if (!def || !f) break;
+      title = `What ${def.name} wants`; shape = 'status';
+      say('pri', 'Priorities', f.priorities.length ? f.priorities.map((p, i) => rfClaim(`${i + 1}. ${p.label} — ${p.cause}.`, 'calculated')) : [rfClaim(`${def.name} has no pressing priority right now (${f.status}).`, 'calculated')]);
+      if (f.concerns.length) say('con', 'Concerns', f.concerns.map(c => rfClaim(`${c.label} (${c.severity}): ${c.cause}.`, 'calculated')));
+      const reqs = st.requests.filter(r => r.status === 'open' && r.factionId === def.id);
+      if (reqs.length) say('req', 'Open request', reqs.map(r => rfClaim(`${r.title} by round ${r.deadlineTurn}. Reward: ${r.reward}.`, 'fact')));
+      say('cares', 'What they care about', [rfClaim(`Supports ${def.supportedSectors.join(', ')}${def.opposedSectors.length ? `; resists ${def.opposedSectors.join(', ')}` : ''}. Backs ${def.preferredInfrastructure.map(t => t.replace(/_/g, ' ')).join(', ') || 'no specific infrastructure'}${def.opposedInfrastructure.length || def.policyInterests.includes('automation_skeptic') ? `; opposes ${[...def.opposedInfrastructure.map(t => t.replace(/_/g, ' ')), ...(def.policyInterests.includes('automation_skeptic') ? ['automation-heavy projects'] : [])].join(', ')}` : ''}.`, 'fact')]);
+      break;
+    }
+    case 'rival_allies': {
+      if (!query.actorId) break;
+      const nm = v.names[query.actorId] || query.actorId;
+      title = `Who ${nm} is working with`; shape = 'comparison';
+      const rows = Object.values(st.factions).map(x => ({ x, vis: rfVisibleRelationship(st, x.id, query.actorId!, v.viewerKeys, s.fogOfWar), val: x.relationshipsByActor[query.actorId!]?.value || 0 }))
+        .filter(r => (r.vis.band && RF_REL_LABEL[r.vis.band] && r.val >= 15) || (r.vis.observed && /positive/.test(r.vis.observed))).sort((a, b) => b.val - a.val);
+      say('rows', null, rows.length ? rows.slice(0, 4).map(r => rfClaim(`${RF_DEF_BY_ID[r.x.id].name} — ${r.vis.band ? RF_REL_LABEL[r.vis.band] : r.vis.observed}.`, r.vis.band ? 'calculated' : 'inference')) : [rfClaim(`You can't see ${nm} building any stakeholder relationships.`, 'fact')]);
+      if (s.fogOfWar) say('fog', null, [rfClaim(`Fog of war: only ${nm}'s observable actions (completed contracts, public requests) are used — hidden dealings are not shown.`, 'inference', 'high')]);
+      break;
+    }
+    case 'project_stance': {
+      const p = query.projectId ? s.lr.projects.find(x => x.id === query.projectId) : null;
+      if (!p || !p.regionId) { say('none', null, [rfClaim('Name the project (e.g. “Which groups oppose the Inland Rail Hub?”).', 'inference', 'low')]); break; }
+      title = `Stakeholders on ${p.title}`; shape = 'comparison';
+      const rows = rfFactionsInRegion(st, p.regionId, 8).map(x => ({ x, stance: rfProjectStance(x.def, p.projectType, p.regionId!, s.regions) })).filter(r => r.stance !== 'neutral');
+      say('rows', null, rows.length ? rows.map(r => rfClaim(`${r.x.def.name} (${rfInfluenceLabel(r.x.influence).toLowerCase()} influence): ${RF_STANCE_LABEL[r.stance]}${r.stance === 'opposes' && r.x.def.policyInterests.includes('automation_skeptic') ? ' — automation-heavy' : ''}.`, 'calculated')) : [rfClaim(`No active stakeholder has a strong view on ${p.title}.`, 'calculated')]);
+      break;
+    }
+    case 'what_if_support': {
+      if (!def || !f) break;
+      title = `If you back ${def.name}`; shape = 'simulation';
+      const req = st.requests.find(r => r.status === 'open' && r.factionId === def.id);
+      say('them', 'With them', [rfClaim(`Relationship would likely improve (${req ? `delivering “${req.title}” is the clearest route` : 'by delivering their preferred contracts or infrastructure'}).`, 'projection', 'moderate')]);
+      const target = req ? s.lr.projects.find(p => p.id === req.targetId) : null;
+      const others = target && target.regionId ? rfFactionsInRegion(st, target.regionId, 8).filter(x => x.def.id !== def.id).map(x => ({ x, stance: rfProjectStance(x.def, target.projectType, target.regionId!, s.regions) })).filter(r => r.stance !== 'neutral') : [];
+      const rivals = st.coalitions.filter(c => c.status === 'active' && !c.memberIds.includes(def.id) && f.priorities.some(p => p.targetId === c.targetId));
+      if (others.length) say('others', 'Others', others.map(r => rfClaim(`${r.x.def.name}: ${RF_STANCE_WEIGHT[r.stance] > 0 ? 'would also approve' : 'would likely object'} (${RF_STANCE_LABEL[r.stance].toLowerCase()}).`, 'projection', 'low')));
+      if (rivals.length) say('coal', 'Coalitions', rivals.map(c => rfClaim(`${c.memberIds.map(m => RF_DEF_BY_ID[m].name).join(' + ')} (${c.goal}) may push back.`, 'projection', 'low')));
+      say('note', null, [rfClaim('Projection only — support happens through normal game actions (contracts, projects, requests).', 'projection', 'moderate')]);
+      break;
+    }
+    case 'influence_why': {
+      if (!def || !f) break;
+      title = `${def.name}'s influence`; shape = 'explanation';
+      const regs = f.activeRegions.slice().sort((a, b) => (f.influenceByRegion[b] || 0) - (f.influenceByRegion[a] || 0));
+      say('now', null, regs.slice(0, 3).map(code => rfClaim(`${regName(code)}: ${rfInfluenceLabel(f.influenceByRegion[code] || 0)} — ${rfInfluenceWhy(def, f, code, s)}.`, 'calculated')));
+      const shifts = st.derived.filter(d => d.factionId === def.id && d.kind === 'faction_influence_shift').slice(-2);
+      if (shifts.length) say('shifts', 'Recent shifts', shifts.map(d => rfClaim(`Round ${d.turn}: ${d.text} (${d.evidence[0] || ''})`, 'fact')));
+      break;
+    }
+    case 'improve': {
+      if (!def || !f) break;
+      title = `Improving relations with ${def.name}`; shape = 'recommendation';
+      const ideas: GIClaim[] = [];
+      st.requests.filter(r => r.status === 'open' && r.factionId === def.id).forEach(r => ideas.push(rfClaim(`Answer their request: ${r.title} (by round ${r.deadlineTurn}).`, 'fact')));
+      s.lr.contracts.filter(c => c.status === 'available' && (s.contractIssuers[c.id] === def.id || def.preferredContractTypes.includes(c.contractType))).slice(0, 2).forEach(c => ideas.push(rfClaim(`Complete “${c.title}”${s.contractIssuers[c.id] === def.id ? ' (their own contract)' : ''}.`, 'fact')));
+      s.lr.projects.filter(p => (p.status === 'unlocked' || p.status === 'under_construction') && p.regionId && f.activeRegions.includes(p.regionId) && RF_STANCE_WEIGHT[rfProjectStance(def, p.projectType, p.regionId, s.regions)] > 0).slice(0, 2).forEach(p => ideas.push(rfClaim(`Fund ${p.title} (they ${rfProjectStance(def, p.projectType, p.regionId!, s.regions) === 'strongly_supports' ? 'strongly ' : ''}support it).`, 'fact')));
+      say('ideas', null, ideas.length ? ideas.slice(0, 4) : [rfClaim(`Nothing they want is open right now; their priorities are: ${f.priorities.map(p => p.label).join('; ') || 'none'}.`, 'calculated')]);
+      say('note', null, [rfClaim('These are ordinary game actions — no payment buys goodwill directly.', 'inference', 'high')]);
+      break;
+    }
+    case 'command': {
+      if (!def) break;
+      title = query.command === 'focus' ? `Focus: ${def.name}` : `Not supporting ${def.name}`; shape = 'plan';
+      say('ok', null, [rfClaim(query.command === 'focus' ? `Noted — actions that build support with ${def.name} will be highlighted. Nothing is executed automatically.` : `Noted — actions that answer ${def.name}'s requests will be ranked lower. Nothing is executed automatically.`, 'fact')]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [rfClaim('I could not find stakeholder information for that.', 'inference', 'low')]);
+  return { title, sections, buttons, shape };
+}
+
+// ---- Factions UI ---------------------------------------------------------------------------------------
+
+export const RegionStakeholdersPanel: React.FC<{
+  view: RegionalFactionsWorldView | null; regionId: string; turn: number;
+  onCommit: (requestId: string) => void; onChoose: (d: RFDilemma, optionId: string) => void; onFund?: (projectId: string) => void; onAsk?: (q: string) => void;
+}> = ({ view, regionId, turn, onCommit, onChoose, onFund, onAsk }) => {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!view || !view.inputs) return null;
+  const st = view.state; const s = view.inputs;
+  const list = rfFactionsInRegion(st, regionId);
+  if (!list.length) return null;
+  const me = view.viewerId;
+  const rivals = s.actors.filter(a => !view.viewerKeys.includes(a.id));
+  const dilemma = rfBuildDilemmas(st, s, regionId)[0] || null;
+  const decided = dilemma ? st.decisions.some(d => d.actorId === me && d.regionId === regionId && d.label.startsWith(dilemma.title) && turn - d.turn <= 4) : false;
+  const conflict = st.conflictByRegion[regionId] || 'low';
+  return (
+    <section aria-labelledby={`rf-sh-${regionId}`} data-testid="rf-stakeholders" className="rounded-xl border border-indigo-500/40 p-3 text-xs space-y-2">
+      <div className="flex items-baseline justify-between"><h4 id={`rf-sh-${regionId}`} className="font-bold text-sm">🏛 Stakeholders</h4>{conflict !== 'low' && <span className="text-amber-300">Conflict: {conflict}</span>}</div>
+      <ul className="space-y-1">
+        {list.map(x => {
+          const rel = rfVisibleRelationship(st, x.def.id, me, view.viewerKeys, s.fogOfWar);
+          const req = st.requests.find(r => r.status === 'open' && r.factionId === x.def.id && r.regionId === regionId);
+          const committed = req ? st.commitments.some(c => c.requestId === req.id && c.actorId === me && c.compliance === 'pending') : false;
+          const expanded = open === x.def.id;
+          return (
+            <li key={x.def.id} className="border-b border-slate-700/40 pb-1">
+              <button type="button" className="w-full text-left" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : x.def.id)}>
+                <span className="font-semibold">{x.def.name}</span> · Influence {rfInfluenceLabel(x.influence)} · You: {rel.band ? RF_REL_LABEL[rel.band] : '—'}
+                {(() => { const p = x.f.priorities.find(y => y.regionId === regionId); const c = x.f.concerns.find(y => y.regionId === regionId); return <>{p && <div className="opacity-80">Priority: {p.label}</div>}{c && <div className="opacity-80">Concern: {c.label} ({c.severity})</div>}</>; })()}
+              </button>
+              {req && (
+                <div className="mt-1 rounded border border-indigo-400/40 p-1" data-testid="rf-request">
+                  <div><span className="font-semibold">Request:</span> {req.title} — by round {req.deadlineTurn}{req.urgency === 'urgent' ? ' (urgent)' : ''}</div>
+                  <div className="opacity-80">Why: {req.why} Possible reward: {req.reward}</div>
+                  {committed ? <div className="text-emerald-300">You committed to this.</div> : <button type="button" className="underline" onClick={() => onCommit(req.id)}>Commit</button>}
+                  {req.type === 'fund_project' && onFund && <button type="button" className="underline ml-2" onClick={() => onFund(req.targetId)}>Fund now</button>}
+                </div>
+              )}
+              {expanded && (
+                <div className="mt-1 space-y-0.5 pl-2" data-testid="rf-faction-detail">
+                  <div className="opacity-90">{x.def.description}</div>
+                  <div><span className="opacity-70">Cares about: </span>{x.def.supportedSectors.join(', ')}{x.def.opposedSectors.length ? `; resists ${x.def.opposedSectors.join(', ')}` : ''}</div>
+                  <div><span className="opacity-70">Goals: </span>{x.f.currentGoals.filter(g => g.status === 'active').map(g => g.label).join('; ') || '—'}</div>
+                  <div><span className="opacity-70">Influence: </span>{x.f.activeRegions.map(c => `${c} ${rfInfluenceLabel(x.f.influenceByRegion[c] || 0)}`).join(' · ')}</div>
+                  <div><span className="opacity-70">Rivals: </span>{rivals.map(a => { const r = rfVisibleRelationship(st, x.def.id, a.id, view.viewerKeys, s.fogOfWar); return `${a.name}: ${r.band ? RF_REL_LABEL[r.band] : r.observed || 'hidden'}`; }).join(' · ') || '—'}</div>
+                  <div><span className="opacity-70">Supports: </span>{x.def.preferredInfrastructure.map(t => t.replace(/_/g, ' ')).join(', ') || '—'}{(x.def.opposedInfrastructure.length || x.def.policyInterests.includes('automation_skeptic')) && <> · <span className="opacity-70">Opposes: </span>{[...x.def.opposedInfrastructure.map(t => t.replace(/_/g, ' ')), ...(x.def.policyInterests.includes('automation_skeptic') ? ['automation-heavy projects'] : [])].join(', ')}</>}</div>
+                  <div><span className="opacity-70">With you: </span>{(x.f.relationshipsByActor[me]?.history || []).slice(-3).reverse().map(h => `${h.delta > 0 ? '+' : '−'} ${h.text}`).join(' · ') || 'no history yet'}</div>
+                  {onAsk && <button type="button" className="underline" onClick={() => onAsk(`Show me ways to improve relations with the ${x.def.name}`)}>How do I improve relations?</button>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {dilemma && !decided && (
+        <div className="rounded border border-amber-500/50 p-2 space-y-1" data-testid="rf-dilemma">
+          <div className="font-bold">⚖ {dilemma.title}</div>
+          <div className="opacity-80">{dilemma.need}.</div>
+          {dilemma.options.map(o => (
+            <div key={o.id} className="border-t border-slate-700/40 pt-1">
+              <div className="font-semibold">{o.label}{o.cost !== null ? ` — $${Math.round(o.cost).toLocaleString()}` : ''}</div>
+              <div>{o.stances.filter(x => x.stance !== 'neutral').map(x => `${RF_DEF_BY_ID[x.factionId].name}: ${RF_STANCE_LABEL[x.stance]}`).join(' · ') || 'No stakeholder reaction'}</div>
+              <div className="opacity-80">Expected: {o.effect.join('; ')}{o.risk.length ? ` · Risk: ${o.risk.join('; ')}` : ''}</div>
+              <button type="button" className="underline" onClick={() => onChoose(dilemma, o.id)}>Choose</button>
+            </div>
+          ))}
+          <div className="opacity-70">Choosing records your commitments; the work itself is done with normal game actions.</div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+/** PLAY: new/urgent requests and commitments due soon (never a flood). */
+export const FactionsPlayStrip: React.FC<{ view: RegionalFactionsWorldView | null; turn: number; onView: (regionId: string) => void; onCommit: (requestId: string) => void }> = ({ view, turn, onView, onCommit }) => {
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  if (!view) return null;
+  const st = view.state; const me = view.viewerId;
+  const due = st.commitments.filter(c => c.actorId === me && c.compliance === 'pending').sort((a, b) => a.dueTurn - b.dueTurn);
+  const fresh = st.requests.filter(r => r.status === 'open' && turn - r.issuedTurn <= 1 && !dismissed.includes(r.id) && !st.commitments.some(c => c.requestId === r.id && c.actorId === me)).sort((a, b) => (a.urgency === 'urgent' ? -1 : 1) - (b.urgency === 'urgent' ? -1 : 1) || a.id.localeCompare(b.id)).slice(0, 2);
+  if (!due.length && !fresh.length) return null;
+  return (
+    <div className="rounded-xl border border-indigo-500/50 bg-indigo-500/5 p-2 text-xs space-y-1" data-testid="rf-play-strip" aria-label="Faction requests and commitments">
+      {due.length > 0 && <div data-testid="rf-commitments"><span className="font-semibold">Faction commitments: </span>{due.slice(0, 3).map(c => `${RF_DEF_BY_ID[c.factionId].name} — ${c.promise} (${c.dueTurn - turn <= 0 ? 'due now' : `due in ${c.dueTurn - turn} round${c.dueTurn - turn === 1 ? '' : 's'}`})`).join(' · ')}</div>}
+      {fresh.map(r => (
+        <div key={r.id} className="flex items-start gap-2">
+          <div className="flex-1"><span className="font-semibold">🏛 {RF_DEF_BY_ID[r.factionId].name}:</span> {r.title} by round {r.deadlineTurn}{r.urgency === 'urgent' ? ' (urgent)' : ''}<div className="opacity-80">{r.why}</div></div>
+          <button type="button" className="underline" onClick={() => onCommit(r.id)}>Commit</button>
+          <button type="button" className="underline" onClick={() => onView(r.regionId)}>View</button>
+          <button type="button" className="opacity-60 hover:opacity-100" aria-label="Dismiss faction request" onClick={() => setDismissed(x => [...x, r.id])}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/** LAB: raw faction state (developer surface; includes hidden values — never shown in PLAY). */
+export const FactionInspector: React.FC<{ view: RegionalFactionsWorldView | null; theme: any }> = ({ view, theme }) => {
+  const [sel, setSel] = useState<string>('');
+  if (!view) return null;
+  const st = view.state;
+  const ids = Object.keys(st.factions).sort();
+  const id = st.factions[sel] ? sel : ids[0];
+  const f = st.factions[id]; const def = RF_DEF_BY_ID[id];
+  if (!f || !def) return null;
+  const d = st.diagnostics;
+  const line = (k: string, v: React.ReactNode) => <div><span className="opacity-70">{k}: </span>{v}</div>;
+  return (
+    <section aria-labelledby="rf-lab-heading" data-testid="rf-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs space-y-2`}>
+      <h3 id="rf-lab-heading" className="font-bold text-sm">🏛 Faction & Stakeholder Inspector</h3>
+      <label className="flex items-center gap-2">Faction <select aria-label="Inspect faction" value={id} onChange={e => setSel(e.target.value)} className="bg-transparent border rounded px-1">{ids.map(x => <option key={x} value={x}>{RF_DEF_BY_ID[x].name}</option>)}</select></label>
+      <div data-testid="rf-lab-diag">Applied {d.eventsApplied} · ignored {d.eventsIgnored} · rounds {d.rounds} · requests issued {d.requestsIssued} / fulfilled {d.requestsFulfilled} / expired {d.requestsExpired} · coalitions {d.coalitionsFormed}/{d.coalitionsDissolved} · derived {d.derivedEmitted} · last {d.lastMs} ms · state rev {st.revision} · faction rev {f.revision}</div>
+      {line('State', `${f.status} · type ${def.type} · home ${def.homeRegions.join(',')} · active ${f.activeRegions.join(',') || '—'}`)}
+      {line('Regional influence', Object.entries(f.influenceByRegion).map(([k, v]) => `${k} ${v} (${rfInfluenceLabel(v)})`).join(' · ') || '—')}
+      {line('Actor relationships (raw)', Object.entries(f.relationshipsByActor).map(([k, r]) => `${k} ${r.value} rel ${r.reliability}`).join(' · ') || '—')}
+      {line('Priorities', f.priorities.map(p => `${p.label} [${p.goalType} ${p.score}]`).join(' | ') || '—')}
+      {line('Concerns', f.concerns.map(c => `${c.label} ${c.severity} — ${c.cause}`).join(' | ') || '—')}
+      {line('Goals', f.currentGoals.map(g => `${g.type} ${g.targetId || ''} ${g.status}`).join(' | ') || '—')}
+      {line('Requests', st.requests.filter(r => r.factionId === id).map(r => `${r.title} ${r.status} R${r.issuedTurn}→R${r.deadlineTurn}${r.fulfilledBy ? ` by ${r.fulfilledBy}` : ''}`).join(' | ') || '—')}
+      {line('Commitments', st.commitments.filter(c => c.factionId === id).map(c => `${c.actorId}: ${c.promise} ${c.compliance}`).join(' | ') || '—')}
+      {line('Supported / opposed projects', `${def.preferredInfrastructure.join(', ') || '—'} / ${[...def.opposedInfrastructure, ...(def.policyInterests.includes('automation_skeptic') ? RF_AUTOMATION_HEAVY.map(x => `${x}*`) : [])].join(', ') || '—'}`)}
+      {line('Coalitions', st.coalitions.map(c => `${c.status} ${c.kind} ${c.regionId} [${c.memberIds.join('+')}] ${c.goal}${c.reason ? ` (${c.reason})` : ''}`).join(' | ') || '—')}
+      {line('Conflict by region', Object.entries(st.conflictByRegion).filter(([, v]) => v !== 'low').map(([k, v]) => `${k} ${v}`).join(' · ') || 'all low')}
+      {line('World Reaction inputs / history', f.recentHistory.map(h => `R${h.turn} ${h.text}${h.sourceEventId ? ` [${h.sourceEventId}]` : ''}`).join(' | ') || '—')}
+      {line('Relationship evidence (visibility)', Object.values(f.relationshipsByActor).flatMap(r => r.history).slice(-6).map(h => `R${h.turn} ${h.actorId} ${h.delta > 0 ? '+' : ''}${h.delta} ${h.text} [${h.public ? 'public' : 'private'}]`).join(' | ') || '—')}
+      {line('Derived events', st.derived.filter(x => x.factionId === id).map(x => `R${x.turn} ${x.kind} depth ${x.reactionDepth}`).join(' | ') || '—')}
+      {line('Preferences', `focus [${st.preferences.focus.join(', ')}] avoid [${st.preferences.avoid.join(', ')}]`)}
+    </section>
+  );
+};
+
+// ---- Regional Factions & Stakeholders 2.0 self-tests (deterministic fixtures) --------------------------
+
+export function createRFFixtureInputs(o: { lr?: Partial<LRInputs>; regions?: (st: LivingRegionsState, lr: LRInputs) => LivingRegionsState; contributions?: Record<string, Record<string, number>>; fog?: boolean; turn?: number } = {}): RFInputs {
+  const lr = createLRFixtureInputs({ ...(o.lr || {}), turn: o.turn ?? o.lr?.turn ?? 5 });
+  let regions = initializeLivingRegions(lr);
+  if (o.regions) regions = o.regions(regions, lr);
+  const issuers: Record<string, string | null> = {};
+  lr.contracts.forEach(c => { const p = PRESET_REGIONAL_CONTRACTS.find(x => x.id === c.id); issuers[c.id] = p ? (p.issuingFactionId || resolveFactionIdFromIssuer(p.issuingFaction)) : null; });
+  return { turn: lr.turn, fogOfWar: Boolean(o.fog), lr, regions, actors: [{ id: 'player', name: 'You', teamId: null, isHuman: true }, { id: 'ai', name: 'Riley', teamId: null, isHuman: false }], contributions: o.contributions || {}, contractIssuers: issuers };
+}
+
+export function runRegionalFactions2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+  let seq = 0;
+  const ev = (kind: SWRKind, subjectType: StrategicWorldEvent['subjectType'], subjectId: string, x: Partial<StrategicWorldEvent> = {}): StrategicWorldEvent => {
+    const id = x.id || `rft_${++seq}`;
+    return { id, turn: 5, day: 1, sourceSystem: 'state_delta', sourceEventId: null, actorId: null, teamId: null, kind, subjectType, subjectId, magnitude: 1, significance: 'major', visibility: 'public', observers: ['player', 'ai'], evidence: [], before: {}, after: {}, delta: {}, strategicMeaning: `${kind} ${subjectId}`, affectedDomains: [], tags: [], layer: 'world', confidence: 'high', claimKind: 'fact', causedByEventId: null, contributingCauses: [], rootEventId: id, reactionDepth: 0, expiresTurn: null, dedupeKey: `t:${id}`, ...x };
+  };
+  /** Set Living Regions sector evidence / momentum for a region and recompute its derived views (canonical LR path). */
+  const setReg = (st: LivingRegionsState, lr: LRInputs, code: string, sectors: Partial<Record<LRSector, number>>, momentum?: number) => {
+    const r = st.regions[code];
+    const next = lrRecompute({ ...r, sectors: { ...r.sectors, ...sectors }, momentum: momentum === undefined ? r.momentum : { ...r.momentum, value: momentum, band: lrMomentumBand(momentum) } }, lr, {}).region;
+    return { ...st, regions: { ...st.regions, [code]: next } };
+  };
+  const withTurn = (s: RFInputs, turn: number): RFInputs => ({ ...s, turn, lr: { ...s.lr, turn } });
+  const rounds = (st: RegionalFactionsState, s: RFInputs, from: number, n: number) => { let x = st; for (let t = from; t < from + n; t++) x = rfAdvanceRound(x, withTurn(s, t)).state; return x; };
+  const setProject = (s: RFInputs, id: string, status: string, contributions?: Record<string, number>): RFInputs => ({ ...s, lr: { ...s.lr, projects: s.lr.projects.map(p => (p.id === id ? { ...p, status } : p)) }, contributions: contributions ? { ...s.contributions, [id]: contributions } : s.contributions });
+  const setContract = (s: RFInputs, id: string, status: string, assigned: string | null): RFInputs => ({ ...s, lr: { ...s.lr, contracts: s.lr.contracts.map(c => (c.id === id ? { ...c, status, assignedActorId: assigned } : c)) } });
+  const rel = (st: RegionalFactionsState, fid: string, a: string) => st.factions[fid].relationshipsByActor[a]?.value || 0;
+
+  // QLD: trade/logistics growth outpacing transport — the classic freight dilemma.
+  const qld = (extra: Partial<Record<LRSector, number>> = {}) => createRFFixtureInputs({ regions: (st, lr) => setReg(st, lr, 'QLD', { trade: 55, logistics: 60, mining: 30, ...extra }, 0.45) });
+
+  check('rf_contract_link', 'Existing contract issuers resolve to canonical factions (no parallel string system)', () => {
+    const ok = PRESET_REGIONAL_CONTRACTS.every(c => c.issuingFactionId && RF_DEF_BY_ID[c.issuingFactionId] && resolveFactionIdFromIssuer(c.issuingFaction) === c.issuingFactionId);
+    return (ok && resolveFactionIdFromIssuer('NSW Farmers Co-Op') === 'nsw_farmers_coop' && resolveFactionIdFromIssuer('Unknown Guild') === null) || canon(PRESET_REGIONAL_CONTRACTS.map(c => [c.issuingFaction, c.issuingFactionId]));
+  });
+
+  check('rf_influence', 'WA mining strengthens → Pilbara Mining Consortium influence rises, bounded per round', () => {
+    const base = createRFFixtureInputs();
+    const strong = createRFFixtureInputs({ regions: (st, lr) => setReg(st, lr, 'WA', { mining: 75, trade: 40 }, 0.4) });
+    const a = rounds(initializeRegionalFactions(base), base, 6, 5).factions.pilbara_mining_consortium.influenceByRegion.WA;
+    let st = initializeRegionalFactions(base);
+    const steps: number[] = [];
+    for (let t = 6; t < 11; t++) { const before = st.factions.pilbara_mining_consortium.influenceByRegion.WA; st = rfAdvanceRound(st, withTurn(strong, t)).state; steps.push(st.factions.pilbara_mining_consortium.influenceByRegion.WA - before); }
+    const b = st.factions.pilbara_mining_consortium.influenceByRegion.WA;
+    return (b > a + 8 && b <= 100 && steps.every(x => x <= 6.01)) || canon({ a, b, steps });
+  });
+
+  check('rf_influence_stability', 'A small unrelated event causes no major influence change', () => {
+    const s = createRFFixtureInputs();
+    const st0 = rounds(initializeRegionalFactions(s), s, 6, 4);
+    const st1 = rfApplyWorldEvent(st0, ev('market_shift_major', 'market', 'Coral', { significance: 'meaningful' }), withTurn(s, 9)).state;
+    const st2 = rfAdvanceRound(st1, withTurn(s, 10)).state;
+    const d = Math.max(...Object.keys(st0.factions).flatMap(id => Object.keys(st2.factions[id].influenceByRegion).map(c => Math.abs((st2.factions[id].influenceByRegion[c] || 0) - (st0.factions[id].influenceByRegion[c] || 0)))));
+    return d < 3 || `max change ${d}`;
+  });
+
+  check('rf_relationship', 'Completing a major faction contract improves that relationship', () => {
+    const s0 = createRFFixtureInputs();
+    const st0 = initializeRegionalFactions(s0);
+    const s1 = setContract(s0, 'mining_tech_wa', 'completed', 'player');
+    const st1 = rfApplyWorldEvent(st0, ev('contract_completed', 'contract', 'mining_tech_wa', { actorId: 'player' }), s1).state;
+    return (rel(st1, 'pilbara_mining_consortium', 'player') >= 15 && st1.factions.pilbara_mining_consortium.relationshipsByActor.player.history.length === 1) || canon(st1.factions.pilbara_mining_consortium.relationshipsByActor);
+  });
+
+  check('rf_rival_relationship', 'Riley funds a project a faction prefers → Riley relationship changes; the player\'s does not', () => {
+    const s0 = createRFFixtureInputs();
+    const st0 = initializeRegionalFactions(s0);
+    const s1 = setProject(s0, 'infra_hydrogen_wa', 'active', { ai: 60000 });
+    const st1 = rfApplyWorldEvent(st0, ev('project_completed', 'project', 'infra_hydrogen_wa'), s1).state;
+    return (rel(st1, 'pilbara_mining_consortium', 'ai') > 0 && rel(st1, 'pilbara_mining_consortium', 'player') === rel(st0, 'pilbara_mining_consortium', 'player')) || canon(st1.factions.pilbara_mining_consortium.relationshipsByActor);
+  });
+
+  check('rf_request', 'QLD transport bottleneck → the logistics faction requests the rail hub; an unrelated faction does not', () => {
+    const s = qld();
+    const st = rfAdvanceRound(initializeRegionalFactions(s), withTurn(s, 6)).state;
+    const port = st.requests.find(r => r.factionId === 'qld_port_authority');
+    return (Boolean(port) && port!.type === 'fund_project' && port!.targetId === 'infra_inland_rail_qld' && port!.deadlineTurn > 6 && !st.requests.some(r => r.factionId === 'tas_wilderness_trust')) || canon(st.requests.map(r => [r.factionId, r.type, r.targetId]));
+  });
+
+  const committed = () => {
+    const s = qld();
+    let st = rfAdvanceRound(initializeRegionalFactions(s), withTurn(s, 6)).state;
+    const req = st.requests.find(r => r.factionId === 'qld_port_authority')!;
+    st = rfCommitToRequest(st, req.id, 'player', 6);
+    return { s, st, req };
+  };
+
+  check('rf_request_completion', 'Player completes the requested rail project → fulfilled, relationship ↑, history, World Reaction event', () => {
+    const { s, st, req } = committed();
+    const before = rel(st, 'qld_port_authority', 'player');
+    const s1 = setProject(withTurn(s, 7), 'infra_inland_rail_qld', 'active', { player: 80000 });
+    const out = rfApplyWorldEvent(st, ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 7 }), s1);
+    const r = out.state.requests.find(x => x.id === req.id)!;
+    const c = out.state.commitments.find(x => x.requestId === req.id)!;
+    return (r.status === 'fulfilled' && r.fulfilledBy === 'player' && c.compliance === 'completed' && rel(out.state, 'qld_port_authority', 'player') > before + 15 && out.state.factions.qld_port_authority.recentHistory.some(h => /fulfilled/.test(h.text)) && out.derived.some(d => d.kind === 'faction_relationship_changed_major' && d.factionId === 'qld_port_authority')) || canon({ r, c, rel: rel(out.state, 'qld_port_authority', 'player'), d: out.derived.map(x => x.kind) });
+  });
+
+  check('rf_request_failure', 'Deadline passes on a commitment → bounded negative consequence', () => {
+    const { s, st, req } = committed();
+    const before = rel(st, 'qld_port_authority', 'player');
+    const after = rounds(st, s, 7, req.deadlineTurn - 6 + 1);
+    const c = after.commitments.find(x => x.requestId === req.id)!;
+    const now = rel(after, 'qld_port_authority', 'player');
+    return (c.compliance === 'violated' && now < before && before - now <= 20 && after.factions.qld_port_authority.relationshipsByActor.player.reliability < 50) || canon({ c, before, now });
+  });
+
+  check('rf_conflict', 'Automation-heavy project: Port Authority supports, Labor opposes → opposite relationship effects', () => {
+    const s = qld();
+    const st0 = rounds(initializeRegionalFactions(s), s, 6, 3);
+    const s1 = setProject(withTurn(s, 9), 'infra_inland_rail_qld', 'active', { player: 80000 });
+    const st1 = rfApplyWorldEvent(st0, ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 9 }), s1).state;
+    return (rel(st1, 'qld_port_authority', 'player') > rel(st0, 'qld_port_authority', 'player') && rel(st1, 'regional_labor_coalition', 'player') < rel(st0, 'regional_labor_coalition', 'player')) || canon({ port: rel(st1, 'qld_port_authority', 'player'), labor: rel(st1, 'regional_labor_coalition', 'player') });
+  });
+
+  check('rf_hybrid', 'Hybrid compromise: delivering labour-valued work first largely placates the opposer', () => {
+    const q = qld();
+    // A labour-valued contract in the SAME region (compromise is regional).
+    const s: RFInputs = { ...q, lr: { ...q.lr, contracts: [...q.lr.contracts, { id: 'qld_defense', title: 'QLD Defence Logistics', regionId: 'QLD', contractType: 'defense_logistics_hub', status: 'available', assignedActorId: null, completedAtTurn: null, rewardMoney: 30000 }] } };
+    let st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    const plain = rfApplyWorldEvent(st, ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 9 }), setProject(withTurn(s, 9), 'infra_inland_rail_qld', 'active', { player: 80000 })).state;
+    st = rfApplyWorldEvent(st, ev('contract_completed', 'contract', 'qld_defense', { actorId: 'player', turn: 8 }), setContract(withTurn(s, 8), 'qld_defense', 'completed', 'player')).state;
+    const laborAfterContract = rel(st, 'regional_labor_coalition', 'player');
+    const hybrid = rfApplyWorldEvent(st, ev('project_completed', 'project', 'infra_inland_rail_qld', { turn: 9 }), setProject(setContract(withTurn(s, 9), 'qld_defense', 'completed', 'player'), 'infra_inland_rail_qld', 'active', { player: 80000 })).state;
+    const plainHit = rel(plain, 'regional_labor_coalition', 'player') - rel(st, 'regional_labor_coalition', 'player') + (laborAfterContract - rel(st, 'regional_labor_coalition', 'player'));
+    const hybridHit = rel(hybrid, 'regional_labor_coalition', 'player') - laborAfterContract;
+    return (hybridHit > -5 && hybridHit > plainHit) || canon({ plainHit, hybridHit, laborAfterContract });
+  });
+
+  const coalitionRun = () => {
+    const s = qld({ logistics: 70, infrastructure: 50 });
+    let st = rounds(initializeRegionalFactions(s), s, 6, 7);
+    return { s, st };
+  };
+
+  check('rf_coalition', 'Two factions sharing a major infrastructure objective form a temporary coalition', () => {
+    const { st } = coalitionRun();
+    const c = st.coalitions.find(x => x.status === 'active' && x.targetId === 'infra_inland_rail_qld');
+    return (Boolean(c) && c!.memberIds.length >= 2 && c!.memberIds.includes('qld_port_authority') && st.coalitions.filter(x => x.status === 'active').length <= RF_LIMITS.coalitions) || canon(st.coalitions.map(x => [x.memberIds, x.targetId, x.status]));
+  });
+
+  check('rf_coalition_dissolution', 'Objective resolved → the coalition dissolves', () => {
+    const { s, st } = coalitionRun();
+    const done = setProject(s, 'infra_inland_rail_qld', 'active', { player: 80000 });
+    const after = rfAdvanceRound(st, withTurn(done, 13)).state;
+    const c = after.coalitions.find(x => x.targetId === 'infra_inland_rail_qld');
+    return (Boolean(c) && c!.status === 'dissolved' && c!.reason === 'goal completed') || canon(after.coalitions);
+  });
+
+  check('rf_ai_competition', 'Riley supports an influential faction → relationship ↑; no region control is awarded', () => {
+    const s0 = createRFFixtureInputs();
+    const st0 = initializeRegionalFactions(s0);
+    const before = canon(s0.lr.regions.map(r => [r.code, r.controller]));
+    const s1 = setContract(s0, 'maritime_hub_qld', 'completed', 'ai');
+    const st1 = rfApplyWorldEvent(st0, ev('contract_completed', 'contract', 'maritime_hub_qld', { actorId: 'ai' }), s1).state;
+    return (rel(st1, 'qld_port_authority', 'ai') > 10 && canon(s1.lr.regions.map(r => [r.code, r.controller])) === before && !JSON.stringify(st1).includes('"controller"')) || canon(st1.factions.qld_port_authority.relationshipsByActor);
+  });
+
+  check('rf_diplomacy', 'Riley holds strong VIC stakeholder support → Diplomacy values VIC higher (it still decides)', () => {
+    const s = createRFFixtureInputs();
+    let st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    st = { ...st, factions: { ...st.factions, vic_technology_council: { ...st.factions.vic_technology_council, relationshipsByActor: { ai: { value: 70, reliability: 60, history: [] } } } } };
+    const backing = rfDiplomacyBacking(st, { ai: ['ai'], player: ['player'] });
+    const f = createDiplomacyFixture();
+    const vic = f.world.regions.VIC;
+    const w0: DiplomacyWorld = { ...f.world, regions: { ...f.world.regions, VIC: { ...vic, controllerId: 'ai' } } };
+    const w1: DiplomacyWorld = { ...w0, regional: { VIC: { valueMultiplier: 1, coreFor: null, label: 'x', factionBacking: backing.VIC || {} } } };
+    const stake0 = diplomaticRegionStake(w0, 'ai', 'VIC'); const stake1 = diplomaticRegionStake(w1, 'ai', 'VIC');
+    return ((backing.VIC?.ai || 0) >= 0.3 && dnRegionWorth(w1, 'VIC') > dnRegionWorth(w0, 'VIC') && stake1.stake >= stake0.stake && /stakeholder/.test(stake1.reason)) || canon({ backing: backing.VIC, w: [dnRegionWorth(w0, 'VIC'), dnRegionWorth(w1, 'VIC')], stake0, stake1 });
+  });
+
+  check('rf_gi3', 'GI3: a hostile, influential faction in a goal region surfaces as a blocker notice (goals untouched)', () => {
+    const s = createRFFixtureInputs();
+    let st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    st = { ...st, factions: { ...st.factions, vic_technology_council: { ...st.factions.vic_technology_council, influenceByRegion: { VIC: 60 }, relationshipsByActor: { player: { value: -40, reliability: 50, history: [] } } } } };
+    const fx = createGIFixtureWorld(); const ctx = createGIConversationContext();
+    const contract = compileGI3StrategyIntent(parseGILanguage('Protect NSW, then reach $15K, then expand into VIC', fx.world, ctx), fx.world, ctx, null).contract;
+    const gi3: GI3StrategyState = { ...createEmptyGI3StrategyState(), active: { ...contract, status: 'active' } };
+    const next = gi3ConsiderFactionLandscape(gi3, st, 'player', 9);
+    return (next.notices.some(n => /Victoria Technology Council/.test(n.text) && /blocker/.test(n.text)) && canon(next.active!.goals) === canon(gi3.active!.goals)) || canon(next.notices);
+  });
+
+  check('rf_background_ai', 'Background AI can surface Riley rapidly gaining faction influence (public evidence only)', () => {
+    const s = createRFFixtureInputs();
+    let st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    st = { ...st, factions: { ...st.factions, vic_technology_council: { ...st.factions.vic_technology_council, influenceByRegion: { VIC: 60 }, relationshipsByActor: { ai: { value: 40, reliability: 60, history: [{ turn: 8, actorId: 'ai', delta: 16, text: 'Completed "AI Research Center"', sourceEventId: null, public: true }] } } } } };
+    const fx = createGIFixtureWorld();
+    const gw: GIWorld = { ...fx.world, turn: 9, factions: { state: st, inputs: withTurn(s, 9), viewerId: 'player', viewerKeys: ['player'], names: { player: 'You', ai: 'Riley' } } };
+    const bg = backgroundFactionInputs(gw);
+    return bg.attention.some(a => /Riley is building influence/.test(a.reason) && /Victoria/.test(a.reason)) || canon(bg);
+  });
+
+  check('rf_stability', 'Faction conflict escalation reaches Public Stability as a routed input (factions never set stability)', () => {
+    const s = qld();
+    let st = rounds(initializeRegionalFactions(s), s, 6, 4);
+    const building = setProject(withTurn(s, 10), 'infra_inland_rail_qld', 'under_construction', { player: 20000 });
+    const s2 = { ...building, lr: { ...building.lr, projects: [...building.lr.projects, { id: 'qld_cable', title: 'QLD Subsea Cable', regionId: 'QLD', projectType: 'subsea_cable_hub', status: 'under_construction', progress: 0.5, remainingCost: 20000, completionTurn: null }] } };
+    const out = rfAdvanceRound(st, s2);
+    const esc = out.derived.find(d => d.kind === 'faction_conflict_escalated');
+    if (!esc) return canon(out.state.conflictByRegion);
+    const r = processWorldReactions(createEmptyWorldReactionState(), [rfToWorldEvent(esc, s2)], createSWRFixtureInputs());
+    return (r.deferred.some(i => i.targetSystem === 'stability' && i.requestedEvaluation === 'stability_negative') && !JSON.stringify(out.state).includes('nationalStability')) || canon(r.deferred.map(i => [i.targetSystem, i.requestedEvaluation]));
+  });
+
+  check('rf_fog', 'Fog of war: Riley\'s hidden faction dealings (private evidence) are not visible to the player', () => {
+    const s0 = createRFFixtureInputs({ fog: true });
+    const st0 = initializeRegionalFactions(s0);
+    const s1 = setProject(s0, 'infra_hydrogen_wa', 'active', { ai: 60000 });
+    const st1 = rfApplyWorldEvent(st0, ev('project_completed', 'project', 'infra_hydrogen_wa'), s1).state;
+    const vis = rfVisibleRelationship(st1, 'pilbara_mining_consortium', 'ai', ['player'], true);
+    const own = rfVisibleRelationship(st1, 'pilbara_mining_consortium', 'ai', ['ai'], true);
+    return (vis.band === null && vis.observed === null && own.band !== null && rel(st1, 'pilbara_mining_consortium', 'ai') > 0) || canon({ vis, own });
+  });
+
+  check('rf_world_reaction', 'Coalition formed → one World Reaction event, processed once, no reaction loop', () => {
+    const { s, st } = coalitionRun();
+    const formed = st.derived.filter(d => d.kind === 'faction_coalition_formed');
+    let calls = 0;
+    const derive = { factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { calls += 1; return rfApplyWorldEvent(st, e, s).derived.map(d => rfToWorldEvent(d, s)); } };
+    const roots = formed.map(d => rfToWorldEvent(d, s));
+    const out = processWorldReactions(createEmptyWorldReactionState(), roots, createSWRFixtureInputs(), { derive });
+    return (formed.length >= 1 && out.events.filter(e => e.kind === 'faction_coalition_formed').length === formed.length && calls === 0) || canon({ n: formed.length, calls, ev: out.events.map(e => e.kind) });
+  });
+
+  check('rf_save_load', 'Save/load keeps relationships, influence, requests and coalitions', () => {
+    const { st } = coalitionRun();
+    const withCommit = rfCommitToRequest(st, st.requests[0]?.id || 'none', 'player', 12);
+    const back = sanitizeRegionalFactionsState(clone(withCommit))!;
+    const k = (x: RegionalFactionsState) => canon([Object.values(x.factions).map(f => [f.id, f.influenceByRegion, f.relationshipsByActor, f.status]), x.requests, x.coalitions, x.commitments]);
+    return k(back) === k(withCommit) || 'mismatch';
+  });
+
+  check('rf_replay', 'Replay: the same sequence reproduces the same faction evolution', () => {
+    const run = () => { const { s, st } = coalitionRun(); const s1 = setProject(withTurn(s, 13), 'infra_inland_rail_qld', 'active', { player: 80000 }); const a = rfApplyWorldEvent(st, ev('project_completed', 'project', 'infra_inland_rail_qld', { id: 'fixed_ev', turn: 13 }), s1).state; return rfAdvanceRound(a, withTurn(s1, 14)).state; };
+    return canon(run()) === canon(run()) || 'diverged';
+  });
+
+  check('rf_old_save', 'Old save: safe initialisation from Living Regions / contracts / standing — no invented history', () => {
+    const none = sanitizeRegionalFactionsState(undefined);
+    const s = createRFFixtureInputs({ lr: { standing: { player: { NSW: 50 } } } });
+    const st = initializeRegionalFactions(s);
+    const hist = Object.values(st.factions).flatMap(f => Object.values(f.relationshipsByActor).flatMap(r => r.history));
+    return (none === null && hist.length === 0 && rel(st, 'nsw_farmers_coop', 'player') === 15 && st.factions.tas_innovation_network.status === 'dormant') || canon({ rel: rel(st, 'nsw_farmers_coop', 'player'), hist: hist.length });
+  });
+
+  check('rf_emergent', 'A predefined dormant faction activates when Tasmania develops a technology base', () => {
+    const s = createRFFixtureInputs({ regions: (st, lr) => setReg(st, lr, 'TAS', { technology: 30 }) });
+    const st = rfAdvanceRound(initializeRegionalFactions(createRFFixtureInputs()), withTurn(s, 6)).state;
+    return (st.factions.tas_innovation_network.status === 'active' && st.factions.tas_innovation_network.activeRegions.includes('TAS')) || canon(st.factions.tas_innovation_network);
+  });
+
+  check('rf_decline', 'A declining sector lowers faction influence gradually (no instant collapse)', () => {
+    const strong = createRFFixtureInputs({ regions: (st, lr) => setReg(st, lr, 'WA', { mining: 75 }) });
+    let st = rounds(initializeRegionalFactions(strong), strong, 6, 8);
+    const high = st.factions.pilbara_mining_consortium.influenceByRegion.WA;
+    const weak = createRFFixtureInputs({ regions: (x, lr) => setReg(x, lr, 'WA', { mining: 5, renewables: 60 }) });
+    st = rfAdvanceRound(st, withTurn(weak, 14)).state;
+    const one = st.factions.pilbara_mining_consortium.influenceByRegion.WA;
+    return (high - one > 0 && high - one <= 6.01) || canon({ high, one });
+  });
+
+  check('rf_market', 'Iron Ore collapse → Mining Consortium profitability concern + diversification priority', () => {
+    const s = createRFFixtureInputs({ lr: { prices: { ...createLRFixtureInputs().prices, 'Iron Ore': 60, Gold: 70 } } });
+    const st = rfAdvanceRound(initializeRegionalFactions(s), withTurn(s, 6)).state;
+    const f = st.factions.pilbara_mining_consortium;
+    return (f.concerns.some(c => c.label === 'Profitability') && f.priorities.some(p => p.goalType === 'reduce_regional_risk')) || canon({ c: f.concerns, p: f.priorities });
+  });
+
+  check('rf_crisis', 'A regional crisis shifts relief-minded factions to crisis relief', () => {
+    const crisis = { id: 'flood', name: 'Murray Flood', status: 'active', stageIndex: 1, category: 'environmental', affectedRegions: ['NSW'] };
+    const s = createRFFixtureInputs({ lr: { crises: [crisis] } });
+    const regions = lrApplyWorldEvent(s.regions, ev('crisis_escalated', 'crisis', 'flood'), s.lr).state;
+    const s2 = { ...s, regions };
+    const st = rfAdvanceRound(initializeRegionalFactions(s2), withTurn(s2, 6)).state;
+    return (st.factions.nsw_farmers_coop.priorities[0]?.goalType === 'increase_stability') || canon(st.factions.nsw_farmers_coop.priorities);
+  });
+
+  check('rf_request_limits', 'Requests are bounded per region, globally and by per-faction cooldown', () => {
+    const s = qld({ technology: 50 });
+    let st = initializeRegionalFactions(s);
+    for (let t = 6; t < 20; t++) st = rfAdvanceRound(st, withTurn(s, t)).state;
+    const open = st.requests.filter(r => r.status === 'open');
+    const perRegion = Math.max(0, ...Object.values(open.reduce((a, r) => { a[r.regionId] = (a[r.regionId] || 0) + 1; return a; }, {} as Record<string, number>)));
+    const byFaction = st.requests.reduce((a, r) => { (a[r.factionId] = a[r.factionId] || []).push(r.issuedTurn); return a; }, {} as Record<string, number[]>);
+    const cooldownOk = Object.values(byFaction).every(ts => ts.slice().sort((x, y) => x - y).every((t, i, arr) => i === 0 || t - arr[i - 1] >= 3));
+    return (open.length <= RF_LIMITS.openRequests && perRegion <= RF_LIMITS.requestsPerRegion && cooldownOk && st.requests.length <= RF_LIMITS.requestsKept) || canon({ open: open.length, perRegion, byFaction });
+  });
+
+  check('rf_dilemma', 'Emergent dilemma: canonical options, no universally good option; choosing records visible commitments', () => {
+    const { s, st } = committed();
+    const d = rfBuildDilemmas(st, s, 'QLD')[0];
+    if (!d) return 'no dilemma';
+    const fund = d.options.find(o => o.kind === 'fund')!;
+    const everyHasCost = d.options.every(o => o.risk.length > 0 || o.stances.some(x => x.stance === 'opposes'));
+    const next = rfChooseDilemmaOption(st, d, fund.id, 'player', 6);
+    return (fund.projectId === 'infra_inland_rail_qld' && fund.stances.some(x => x.stance === 'opposes') && fund.stances.some(x => RF_STANCE_WEIGHT[x.stance] > 0) && d.options.some(o => o.kind === 'delay') && everyHasCost && next.decisions.length === 1 && next.commitments.some(c => c.actorId === 'player')) || canon(d.options.map(o => [o.kind, o.stances, o.risk]));
+  });
+
+  check('rf_router_reach', 'Factions (and Living Regions) receive events even when many systems react (budget-exempt interpreters)', () => {
+    const swr = createSWRFixtureInputs();
+    let lrCalls = 0; let rfCalls = 0;
+    const root = ev('project_completed', 'project', 'infra_inland_rail_qld', { significance: 'major' });
+    const tight = { ...SWR_BUDGETS, major: { maxDepth: 3, maxReactions: 1, maxNewEvents: 1 } };
+    processWorldReactions(createEmptyWorldReactionState(), [root], swr, { budgets: tight, derive: { living_regions: () => { lrCalls += 1; return []; }, factions: () => { rfCalls += 1; return []; } } });
+    return (lrCalls === 1 && rfCalls === 1) || canon({ lrCalls, rfCalls });
+  });
+
+  check('rf_no_spam', 'A calm, fresh world issues no faction requests (requests need real urgency)', () => {
+    const s = createRFFixtureInputs();
+    const st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    return st.requests.length === 0 || canon(st.requests.map(r => [r.factionId, r.type, r.targetId]));
+  });
+
+  check('rf_bounded', 'Faction state stays bounded under heavy load', () => {
+    const s = qld({ technology: 50 });
+    let st = initializeRegionalFactions(s);
+    for (let t = 6; t < 40; t++) { st = rfAdvanceRound(st, withTurn(s, t)).state; st = rfApplyWorldEvent(st, ev('contract_completed', 'contract', 'maritime_hub_qld', { actorId: t % 2 ? 'ai' : 'player', turn: t }), setContract(withTurn(s, t), 'maritime_hub_qld', 'completed', t % 2 ? 'ai' : 'player')).state; }
+    const f = st.factions.qld_port_authority;
+    return (f.recentHistory.length <= RF_LIMITS.factionHistory && Object.values(f.relationshipsByActor).every(r => r.history.length <= RF_LIMITS.relationshipHistory && Math.abs(r.value) <= 100) && st.requests.length <= RF_LIMITS.requestsKept && st.coalitions.length <= RF_LIMITS.coalitionsKept && st.derived.length <= RF_LIMITS.derived && f.priorities.length <= RF_LIMITS.priorities) || canon({ h: f.recentHistory.length, r: st.requests.length });
+  });
+
+  check('rf_gi', 'GI: faction questions route and answer; fog hides rival values; existing phrasings are not hijacked', () => {
+    const s = createRFFixtureInputs({ fog: true });
+    let st = rounds(initializeRegionalFactions(s), s, 6, 3);
+    st = { ...st, factions: { ...st.factions, vic_technology_council: { ...st.factions.vic_technology_council, relationshipsByActor: { ai: { value: 83, reliability: 60, history: [{ turn: 8, actorId: 'ai', delta: 16, text: 'secret deal', sourceEventId: null, public: false }] } } } } };
+    const fx = createGIFixtureWorld();
+    const actors = [...fx.world.actors.filter(a => a.id !== 'ai'), { ...(fx.world.actors.find(a => a.id === 'ai') as any), id: 'ai', name: 'Riley', relation: 'rival' }] as GIWorld['actors'];
+    const gw: GIWorld = { ...fx.world, actors, turn: 9, factions: { state: st, inputs: withTurn(s, 9), viewerId: 'player', viewerKeys: ['player'], names: { player: 'You', ai: 'Riley' } } };
+    const t = (q: string) => detectFactionQuery(q, gw)?.topic || null;
+    const topics = { who: t('Who matters in NSW?'), sup: t('Who supports me in WA?'), why: t('Why does the Mining Consortium dislike me?'), wants: t('What does the Clean Energy Council want?'), rival: t('Who is Riley working with?'), stance: t('Which groups oppose the Inland Rail Hub?'), whatif: t('What happens if I support the Union?'), infl: t('Why did the Mining Consortium lose influence?'), improve: t('Show me ways to improve relations with the Port Authority'), focus: t('Focus on winning over the Clean Energy Council'), avoid: t("Don't support the Mining Consortium"), cheap: t('Which region is cheapest to take next?'), happening: t("What's happening in Queensland?") };
+    const exp = { who: 'who_matters', sup: 'supporters', why: 'why_feel', wants: 'wants', rival: 'rival_allies', stance: 'project_stance', whatif: 'what_if_support', infl: 'influence_why', improve: 'improve', focus: 'command', avoid: 'command', cheap: null, happening: null };
+    const ans = composeFactionAnswer(detectFactionQuery('Who is Riley working with?', gw)!, gw);
+    const text = ans.sections.flatMap(x => x.claims.map(c => c.text)).join(' ');
+    return (canon(topics) === canon(exp) && !/83|secret deal/.test(text)) || canon({ topics, text: text.slice(0, 300) });
+  });
+
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -125787,6 +127385,9 @@ function AustraliaGame() {
   lrStateRef.current = ((gameState as any).livingRegions as LivingRegionsState | null | undefined) || null;
   /** Rival AI: bounded regional-value adjustment of scored candidates (set once the live inputs exist). */
   const lrDecisionAdjustRef = useRef<((actorId: string, decisions: any[]) => any[]) | null>(null);
+  // Regional Factions 2.0 (wired further below): stakeholder state read by Team OS, Diplomacy and AI scoring.
+  const rfStateRef = useRef<RegionalFactionsState | null>(null);
+  rfStateRef.current = ((gameState as any).regionalFactions as RegionalFactionsState | null | undefined) || null;
   const dnStateRef = useRef<DiplomacyState | null>(null);
   dnStateRef.current = ((gameState as any).diplomacyState as DiplomacyState | undefined) || null;
   /** Region controllers (as diplomatic leads) from the last render — i.e. BEFORE the action being checked. */
@@ -126014,6 +127615,7 @@ function AustraliaGame() {
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
   const swrViewRef = useRef<WorldReactionWorldView | null>(null);
   const lrViewRef = useRef<LivingRegionsWorldView | null>(null);
+  const rfViewRef = useRef<RegionalFactionsWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -127910,6 +129512,7 @@ function dispatchGameSettingsChange(
         diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
         worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
+        regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -156026,7 +157629,7 @@ function dispatchGameSettingsChange(
         (Array.isArray(player?.advancedLoans) ? player.advancedLoans : []).map((l: any) => [l?.amount, l?.daysRemaining]),
         player?.debt ?? 0
       ],
-      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}, Number((gameState as any).livingRegions?.revision || 0)],
+      world: [gameState.regionDeposits || {}, gameState.regionalDevLevels || {}, Number((gameState as any).livingRegions?.revision || 0), Number((gameState as any).regionalFactions?.revision || 0)],
       market: gameState.resourcePrices || {},
       projects: projectSlice,
       contracts: contractSlice,
@@ -156241,6 +157844,7 @@ function dispatchGameSettingsChange(
       diplomacy: dnViewRef.current,
       worldReaction: swrViewRef.current,
       livingRegions: lrViewRef.current,
+      factions: rfViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -156347,7 +157951,7 @@ function dispatchGameSettingsChange(
         if (!a.location) { travelCostFor[a.id] = null; return; }
         try { travelCostFor[a.id] = a.location === code ? 0 : Number(calculateTravelCost(a.location, code)); } catch { travelCostFor[a.id] = null; }
       });
-      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? rivalCost : null, teamCostToTake: mine ? 0 : ownCost, travelCostFor, regional: lrTeamOsRegional(lrStateRef.current, code) };
+      return { code, name: REGIONS[code]?.name || code, controlledByTeam: mine, controlledByOpponent: theirs, opponentCostToTake: mine ? rivalCost : null, teamCostToTake: mine ? 0 : ownCost, travelCostFor, regional: (() => { const r = lrTeamOsRegional(lrStateRef.current, code); const h = rfTeamOsHint(rfStateRef.current, code); return r ? { ...r, opportunity: r.opportunity + h.requests, label: h.label ? `${r.label}; ${h.label}` : r.label } : undefined; })() };
     });
     const metric = gameSettings.winCondition;
     const plan: any = isFriendly && !aiTeam ? sanitizeTeamStrategicPlansByTeam(gameState.teamStrategicPlansByTeam)[teamId] || null : null;
@@ -156801,7 +158405,7 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), (gameState as any).livingRegions), [v9ActionSet, bgLive, (gameState as any).livingRegions, (gameState as any).worldReaction, player?.id]);
+  const v9ActionSetView = useMemo(() => annotateContextualActionsWithFactions(annotateContextualActionsWithRegions(annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), (gameState as any).livingRegions), rfStateRef.current, rfViewRef.current?.inputs || null), [v9ActionSet, bgLive, (gameState as any).livingRegions, (gameState as any).regionalFactions, (gameState as any).worldReaction, player?.id]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -157054,9 +158658,16 @@ function dispatchGameSettingsChange(
       strategy, relationship, hostileHistory: (owner, other) => countRememberedHostility(aiMemoriesRef.current, resolveAiMemoryActorId(owner), resolveAiMemoryActorId(other)),
       fogOfWar: fog, teamMode: isTeamMode, treasuryAvailable, authority, resources: Object.keys(prices).length ? Object.keys(prices) : ['Gold', 'Iron Ore', 'Opals', 'Wool'], prices,
       // Living Regions: public regional value / core status as a valuation INPUT.
-      regional: lrDiplomacyContext(lrStateRef.current)
+      regional: (() => {
+        const ctx = lrDiplomacyContext(lrStateRef.current);
+        const owners: Record<string, string[]> = {};
+        dnAllActors.forEach(a => { const id = String(a.id); owners[id] = [id]; if (a.teamId) owners[String(a.teamId)] = [...(owners[String(a.teamId)] || []), id]; });
+        const backing = rfDiplomacyBacking(rfStateRef.current, owners);
+        Object.keys(backing).forEach(code => { ctx[code] = { ...(ctx[code] || { valueMultiplier: 1, coreFor: null, label: code, momentum: 'stable', development: 'emerging' }), factionBacking: backing[code] } as any; });
+        return ctx;
+      })()
     };
-  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, (gameState as any).livingRegions, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
+  }, [dnRound, gameState.turnCounter, gameState.day, gameState.regionDeposits, gameState.resourcePrices, (gameState as any).livingRegions, (gameState as any).regionalFactions, gameSettings, dnAllActors, dnNames, dnControllers, dnLeadOfTeam, dnLeadOfActor, isTeamMode, teamOsEnemyView, gi3Live.active, teamsById, getTreasuryAvailableAmount]);
 
   const dnPlayerWorld = useMemo(() => buildDnWorld(String(player?.id || 'player')), [buildDnWorld, player?.id]);
   const dnReserveFloor = Number(gameSettings.coPilotSettings?.spendingCaps?.minimumCashReserve || 0) || null;
@@ -157502,7 +159113,8 @@ function dispatchGameSettingsChange(
   lrDecisionAdjustRef.current = swrEnabled && lrState ? (actorId: string, decisions: any[]) => {
     const a = dnAllActors.find(x => String(x.id) === actorId);
     const ownerKey = isTeamMode && a?.teamId ? String(a.teamId) : actorId;
-    return lrAdjustAiDecisions(decisions, lrStateRef.current, lrInputsRef.current, actorId, ownerKey);
+    // Regional Factions: open PUBLIC requests are ordinary opportunities for any actor (no AI-only advantage).
+    return rfAdjustAiDecisions(lrAdjustAiDecisions(decisions, lrStateRef.current, lrInputsRef.current, actorId, ownerKey), rfStateRef.current, actorId);
   } : null;
   const persistLivingRegions = useCallback((next: LivingRegionsState) => {
     const clean = sanitizeLivingRegionsState(next);
@@ -157517,6 +159129,55 @@ function dispatchGameSettingsChange(
   const lrObservers = useMemo(() => swrInputs.actors.map(a => a.id), [swrInputs.actors]);
   const [lrMapMode, setLrMapMode] = useState<LRMapMode>('control');
   const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
+
+  // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
+  // Factions read Living Regions + World Reaction events (via the router's derive hook), advance once per round,
+  // and act on other systems only through requests, stances, relevance and bounded inputs.
+  const rfStoredRaw = (gameState as any).regionalFactions as RegionalFactionsState | null | undefined;
+  const rfState = useMemo(() => sanitizeRegionalFactionsState(rfStoredRaw), [rfStoredRaw]);
+  const rfInputs = useMemo<RFInputs>(() => {
+    const raw = gameState.infrastructureProjects || {};
+    const contributions: Record<string, Record<string, number>> = {};
+    (Array.isArray(raw) ? raw : Object.values(raw)).forEach((p: any) => { if (p && p.contributions && typeof p.contributions === 'object') contributions[String(p.id)] = { ...p.contributions }; });
+    const issuers: Record<string, string | null> = {};
+    try { listRegionalContracts(gameState).forEach((c: any) => { issuers[String(c.id)] = c.issuingFactionId || resolveFactionIdFromIssuer(c.issuingFaction); }); } catch { /* no contracts */ }
+    return { turn: dnRound, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), lr: lrInputs, regions: lrState || initializeLivingRegions(lrInputs), actors: swrInputs.actors.map(a => ({ id: a.id, name: a.name, teamId: a.teamId, isHuman: a.isHuman })), contributions, contractIssuers: issuers };
+  }, [lrInputs, lrState, gameState.infrastructureProjects, (gameState as any).regionalContracts, swrInputs.actors, dnRound, gameSettings.fogOfWarEnabled]);
+  const rfInputsRef = useRef(rfInputs); rfInputsRef.current = rfInputs;
+  rfViewRef.current = swrEnabled && rfState ? { state: rfState, inputs: rfInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
+  const persistRegionalFactions = useCallback((next: RegionalFactionsState) => {
+    const clean = sanitizeRegionalFactionsState(next);
+    rfStateRef.current = clean;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { regionalFactions: clean } as any });
+  }, []);
+  /** Ledger: meaningful stakeholder events only (requests, coalitions, major relationship shifts, conflict). */
+  const logFactionEvents = useCallback((events: StrategicWorldEvent[]) => {
+    events.filter(e => e.sourceSystem === 'factions' && (e.significance === 'major' || e.kind === 'faction_request_issued' || e.kind === 'faction_coalition_formed')).slice(0, 3)
+      .forEach(e => appendGameActivityLedgerEvent('decision', { actorId: e.actorId || 'system', eventType: `factions_${e.kind}`, summary: e.strategicMeaning.slice(0, 240) } as any));
+  }, [appendGameActivityLedgerEvent]);
+  const rfPlayerId = String(player?.id || 'player');
+  const rfCommit = useCallback((requestId: string) => {
+    const st = rfStateRef.current; if (!st) return;
+    const next = rfCommitToRequest(sanitizeRegionalFactionsState(st)!, requestId, rfPlayerId, dnRound);
+    if (next === st) return;
+    const r = next.requests.find(x => x.id === requestId);
+    persistRegionalFactions(next);
+    if (r) appendGameActivityLedgerEvent('decision', { actorId: rfPlayerId, eventType: 'factions_commitment', summary: `Committed to ${RF_DEF_BY_ID[r.factionId]?.name}: ${r.title} by round ${r.deadlineTurn}.` } as any);
+  }, [rfPlayerId, dnRound, persistRegionalFactions, appendGameActivityLedgerEvent]);
+  const rfChoose = useCallback((d: RFDilemma, optionId: string) => {
+    const st = rfStateRef.current; if (!st) return;
+    const next = rfChooseDilemmaOption(sanitizeRegionalFactionsState(st)!, d, optionId, rfPlayerId, dnRound);
+    persistRegionalFactions(next);
+    appendGameActivityLedgerEvent('decision', { actorId: rfPlayerId, eventType: 'factions_dilemma_choice', summary: `${d.title}: ${d.options.find(o => o.id === optionId)?.label || optionId}` } as any);
+  }, [rfPlayerId, dnRound, persistRegionalFactions, appendGameActivityLedgerEvent]);
+  /** "Fund now": the canonical infrastructure investment action (validated by the game), never a faction shortcut. */
+  const rfFund = useCallback((projectId: string) => {
+    const p: any = (gameState.infrastructureProjects as any)?.[projectId];
+    if (!p) return;
+    const amount = Math.max(0, Math.min(Number(player?.money || 0), Number(p.totalCost || 0) - Number(p.totalInvestedMoney || 0)));
+    if (amount > 0) handleFundInfrastructure(projectId, amount);
+  }, [gameState.infrastructureProjects, player?.money, handleFundInfrastructure]);
+
 
   const persistWorldReaction = useCallback((next: WorldReactionState) => {
     const clean = sanitizeWorldReactionState(next);
@@ -157537,7 +159198,9 @@ function dispatchGameSettingsChange(
     gi3: (i, e) => {
       if (i.requestedEvaluation !== 'evaluate_replan' && i.requestedEvaluation !== 'regional_context') return;
       const base = sanitizeGI3StrategyState(gi3StateRef.current);
-      const next = i.requestedEvaluation === 'regional_context' ? gi3ConsiderRegionalChange(base, e) : gi3ConsiderWorldReaction(base, i, e);
+      const next = i.requestedEvaluation === 'regional_context'
+        ? (e.sourceSystem === 'factions' ? (rfStateRef.current ? gi3ConsiderFactionLandscape(base, rfStateRef.current, String(player?.id || 'player'), e.turn) : base) : gi3ConsiderRegionalChange(base, e))
+        : gi3ConsiderWorldReaction(base, i, e);
       if (next !== base) persistGI3State(next, 'live evaluation');
     },
     // Diplomacy: leverage changed — cached deal valuations are stale (no deal is ever created here).
@@ -157558,7 +159221,8 @@ function dispatchGameSettingsChange(
     released.forEach(i => {
       if (i.targetSystem === 'stability' && gameSettings.publicStabilityEnabled) {
         const positive = i.requestedEvaluation === 'stability_positive';
-        const mod: StabilityModifier = { id: `swr_${i.sourceEventId}`.slice(0, 60), source: 'world_reaction', description: positive ? 'World reaction: public confidence after a positive development' : 'World reaction: public concern after a setback', deltaPerTurn: positive ? 1 : -1, remainingTurns: 2, isGlobal: true };
+        const regional = Boolean(REGIONS[i.subjectId]);
+        const mod: StabilityModifier = { id: `swr_${i.sourceEventId}`.slice(0, 60), source: 'world_reaction', description: positive ? 'World reaction: public confidence after a positive development' : regional ? 'World reaction: regional social pressure from stakeholder conflict' : 'World reaction: public concern after a setback', deltaPerTurn: positive ? 1 : -1, remainingTurns: 2, isGlobal: !regional, ...(regional ? { targetRegionId: i.subjectId } : {}) };
         dispatchGameState({ type: 'SET_PUBLIC_STABILITY_STATE', payload: (prev: PublicStabilityState) => (prev?.modifiers?.some(m => m.id === mod.id) ? prev : { ...(prev || createDefaultPublicStabilityState()), modifiers: [...((prev?.modifiers) || []), mod].slice(-20) }) });
       }
     });
@@ -157579,6 +159243,8 @@ function dispatchGameSettingsChange(
       persistWorldReaction(rehydrateWorldReactionState({ ...st, bands: det.bands }, swrInputs));
       // Living Regions: old saves / new matches initialise from current canonical systems (history starts now).
       if (!lrStateRef.current) persistLivingRegions(initializeLivingRegions(lrInputsRef.current));
+      // Regional Factions: old saves / new matches initialise from Living Regions, contracts, standing, infrastructure.
+      if (!rfStateRef.current) persistRegionalFactions(initializeRegionalFactions({ ...rfInputsRef.current, regions: lrStateRef.current || initializeLivingRegions(lrInputsRef.current) }));
       return;
     }
     const det = detectStrategicConsequences(prev, swrSnapshot, st, { action: swrActionRef.current, ownerToActor: swrOwnerToActor });
@@ -157589,7 +159255,13 @@ function dispatchGameSettingsChange(
     const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : initializeLivingRegions(lrInputsRef.current);
     let lrWork: LivingRegionsState = lrBefore!;
     const lrT0 = typeof performance !== 'undefined' ? performance.now() : 0;
-    const derive = { living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(d => lrToWorldEvent(d, lrInputsRef.current, lrObservers, Number(gameState.day || 1))); } };
+    // Factions react after Living Regions in the same pass (they read the updated regional condition).
+    const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+    let rfWork: RegionalFactionsState | null = rfBefore;
+    const derive = {
+      living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(d => lrToWorldEvent(d, lrInputsRef.current, lrObservers, Number(gameState.day || 1))); },
+      factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(d => rfToWorldEvent(d, inp, Number(gameState.day || 1))); }
+    };
     const out = processWorldReactions(st, det.events, swrInputs, { handlers: swrHandlers, derive });
     st = updateWorldSignals(updateStrategicWindows(out.state, swrInputs, out.events), swrInputs, out.events);
     const ms = typeof performance !== 'undefined' ? Math.round((performance.now() - t0) * 10) / 10 : 0;
@@ -157603,6 +159275,11 @@ function dispatchGameSettingsChange(
       lrWork = { ...lrWork, diagnostics: { ...lrWork.diagnostics, lastMs: typeof performance !== 'undefined' ? Math.round((performance.now() - lrT0) * 10) / 10 : 0 } };
       logRegionalShifts(out.events, lrBefore, lrWork);
       persistLivingRegions(lrWork);
+    }
+    if (rfWork && rfWork !== rfBefore) {
+      rfWork = { ...rfWork, diagnostics: { ...rfWork.diagnostics, lastMs: typeof performance !== 'undefined' ? Math.round((performance.now() - lrT0) * 10) / 10 : 0 } };
+      logFactionEvents(out.events);
+      persistRegionalFactions(rfWork);
     }
     const prevOpen = new Set((swrStateRef.current?.windows || []).filter(w => w.status === 'open').map(w => w.id));
     st.windows.filter(w => w.status === 'open' && !prevOpen.has(w.id) && w.observers.includes(String(player?.id || 'player'))).slice(0, 2).forEach(w => appendGameActivityLedgerEvent('decision', { actorId: String(player?.id || 'player'), eventType: 'world_reaction_window_opened', summary: `Strategic window: ${w.reason}`.slice(0, 240) } as any));
@@ -157631,6 +159308,24 @@ function dispatchGameSettingsChange(
           logRegionalShifts(out.events, before, adv.state);
         } else logRegionalShifts([], before, adv.state);
         persistLivingRegions(adv.state);
+      }
+    }
+    // Regional Factions: once per round — influence drifts, deadlines resolve, requests / coalitions update.
+    if (dnRound !== b.round && rfStateRef.current) {
+      const before = sanitizeRegionalFactionsState(rfStateRef.current)!;
+      const inp = { ...rfInputsRef.current, turn: dnRound, regions: lrStateRef.current || rfInputsRef.current.regions };
+      const adv = rfAdvanceRound(before, inp);
+      if (adv.state !== before) {
+        if (adv.derived.length) {
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), adv.derived.map(d => rfToWorldEvent(d, inp, day)), swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+          logFactionEvents(out.events);
+        }
+        persistRegionalFactions(adv.state);
+        // GI3 (owner decides): stakeholder blockers / opportunities in goal regions become notices.
+        const g3 = sanitizeGI3StrategyState(gi3StateRef.current);
+        const g3n = gi3ConsiderFactionLandscape(g3, adv.state, String(player?.id || 'player'), dnRound);
+        if (g3n !== g3) persistGI3State(g3n, 'live evaluation');
       }
     }
     if (!boundary || !swrStateRef.current?.deferred.length) return;
@@ -157686,6 +159381,8 @@ function dispatchGameSettingsChange(
       giContextRef.current = result.context;
       pushIntelAnswer(result.answer);
       if (result.understanding?.primary === 'background_ai' && bgStateRef.current) persistBackgroundAI(noteBackgroundExplanationRequest(sanitizeBackgroundAIState(bgStateRef.current)), null, 'player');
+      const fq = result.understanding?.factionQuery;
+      if (fq && fq.topic === 'command' && fq.factionId && fq.command && rfStateRef.current) persistRegionalFactions(rfSetPreference(sanitizeRegionalFactionsState(rfStateRef.current)!, fq.factionId, fq.command));
       setGiDiagnostics(prev => [...prev, result.diagnostics].slice(-8));
       if (result.answer.immediate?.kind === 'take_control') handleTakeControl();
       else if (result.answer.immediate?.kind === 'set_mode') setPlayerControlMode(result.answer.immediate.mode);
@@ -157695,7 +159392,7 @@ function dispatchGameSettingsChange(
     } finally {
       setV9IntelBusy(false);
     }
-  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI]);
+  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI, persistRegionalFactions]);
 
   // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
@@ -173504,6 +175201,10 @@ function dispatchGameSettingsChange(
             <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />
           )}
 
+          {swrEnabled && (
+            <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />
+          )}
+
           <GI3PlayStrip
             state={gi3Live}
             theme={themeStyles}
@@ -173740,6 +175441,7 @@ function dispatchGameSettingsChange(
         <DiplomacyInspector binding={dnBinding} theme={themeStyles} />
         <WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} />
         <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
+        <FactionInspector view={rfViewRef.current} theme={themeStyles} />
       </div>
     );
 
@@ -175162,6 +176864,7 @@ function dispatchGameSettingsChange(
                           <div className={`${themeStyles.card} border ${themeStyles.border} rounded-lg p-2 text-xs shadow-lg min-w-32`}>
                             <div className="font-bold mb-1">{region.name}</div>
                             {lrState?.regions[code] && <div className="opacity-90 mb-1">{lrState.regions[code].identity.label} · {LR_MOMENTUM_LABEL[lrState.regions[code].momentum.band]}</div>}
+                            {rfInfluentialCount(rfState, code) > 0 && <div className="opacity-80 mb-1">{rfInfluentialCount(rfState, code)} influential stakeholder group{rfInfluentialCount(rfState, code) === 1 ? '' : 's'}</div>}
                             <div className={canAfford ? 'text-green-400' : 'text-red-400'}>
                               Travel: ${travelCost}
                             </div>
@@ -175206,6 +176909,7 @@ function dispatchGameSettingsChange(
                       </select>
                     </label>
                     <LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} />
+                    <RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} />
                   </div>
                 );
               })()}
@@ -175244,7 +176948,7 @@ function dispatchGameSettingsChange(
                           <div>{selectedPreviewActiveEvent ? `Event: ${selectedPreviewActiveEvent.name}` : 'No active event'}</div>
                         </div>
                       </div>
-                      <div className="mt-3"><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /></div>
+                      <div className="mt-3 space-y-2"><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
@@ -183235,7 +184939,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     const contracts = listRegionalContracts(gameState);
     const activeContracts = contracts.filter((c: any) => c.status === 'active');
     // Living Regions ranks relevance only (the contract system still decides what exists and what it pays).
-    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c) })).sort((a: any, b: any) => b.rel.score - a.rel.score || a.i - b.i).map((x: any) => x.c);
+    // Faction priorities (issuer influence, open requests) add to the regional relevance — ranking only.
+    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c).score + rfContractRelevance(rfState, c, rfPlayerId).score })).sort((a: any, b: any) => b.rel - a.rel || a.i - b.i).map((x: any) => x.c);
     const completedContracts = contracts.filter((c: any) => c.status === 'completed' || c.status === 'failed');
 
     return (
@@ -183309,6 +185014,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
                     {(() => { const rel = lrContractRelevance(lrState, c); const reg = lrState?.regions[c.issuingRegionId || c.regionId]; return rel.reasons.length && reg ? <div className="text-[11px] text-teal-300" data-testid="lr-contract-why">Why here: {reg.name} has {rel.reasons.join(', ')}.</div> : null; })()}
+                    {(() => { const fr = rfContractRelevance(rfState, c, rfPlayerId); return fr.factionId ? <div className="text-[11px] text-indigo-300" data-testid="rf-contract-issuer">Issuer: {fr.reasons.join(' · ')}</div> : null; })()}
                     <div className="text-xs text-emerald-400 font-semibold">
                       Reward: +${(c.rewardCash || 0).toLocaleString()} | +{c.rewardPrestige || 0} Prestige
                     </div>
@@ -183914,6 +185620,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="swr-debrief">
 	              <span className="font-bold text-amber-300">Turning points: </span>
 	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).join(' · ')}
+	            </div>
+	          )}
+	          {buildFactionDebrief(rfStateRef.current, rfPlayerId).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="rf-debrief">
+	              <span className="font-bold text-indigo-300">Stakeholders: </span>
+	              {buildFactionDebrief(rfStateRef.current, rfPlayerId).join(' · ')}
 	            </div>
 	          )}
 	          {buildLivingRegionsDebrief(lrStateRef.current).length > 0 && (
