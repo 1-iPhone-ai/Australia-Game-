@@ -2039,7 +2039,7 @@ export const PRESET_INFRASTRUCTURE_PROJECTS: InfrastructureProject[] = [
     totalInvestedMoney: 0,
     status: 'unlocked',
     assignedWorkers: [],
-    providedBonuses: [{ type: 'income_boost', magnitude: 12000, targetScope: 'region' }],
+    providedBonuses: [{ type: 'income_boost', magnitude: 0.12, targetScope: 'region' }], // V9.3 audit: was 12000 — every consumer adds income_boost as a multiplier
     maintenanceCostPerTurn: 2500
   },
   {
@@ -4636,6 +4636,126 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
     ],
     modifiers: [],
     youWillLearn: ['Investments', 'Governance', 'Clean-energy strategy']
+  },
+  // ---- V9.3 scenario expansion: each changes starting state, incentives, conditions and system emphasis ----
+  {
+    id: 'v93_commodity_boom',
+    title: 'Commodity Boom',
+    description: 'WA and QLD resource economies are running hot. Markets are volatile and mining stakeholders are powerful — ride the boom, but the bust may follow.',
+    category: 'challenge', difficulty: 'Medium', complexity: 'Intermediate',
+    forcedSeed: 31337, startingMoney: 1500, startingRegions: ['WA'],
+    startingItems: [{ itemId: 'Iron Ore', quantity: 3 }],
+    badgeId: 'badge_v93_commodity_boom', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 31337, worldRngMode: 'deterministic', worldRngSeed: 31337, regionalContractsEnabled: true, dynamicCrisisChainsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'commodity_boom', v93ContentThemes: ['mining', 'trade', 'logistics'], v93CrisisIntensity: 'normal', v93ContractAbundance: 'normal', v93StartingPackage: 'resource_heavy' },
+    objectives: [
+      { id: 'cb_obj_1', label: 'Boom Fortune', description: 'Reach $25,000 net worth', targetType: 'netWorth', targetValue: 25000, isPrimary: true },
+      { id: 'cb_obj_2', label: 'Resource Heartland', description: 'Control Western Australia', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'WA', isPrimary: false }
+    ],
+    modifiers: [],
+    youWillLearn: ['Markets', 'Commodity exposure', 'Contracts', 'Diversification']
+  },
+  {
+    id: 'v93_great_drought',
+    title: 'Great Drought',
+    description: 'Water is scarce across South Australia and inland NSW. Agriculture is under pressure, stability and infrastructure decide who comes out ahead.',
+    category: 'challenge', difficulty: 'Hard', complexity: 'Advanced',
+    forcedSeed: 40404, startingMoney: 1200, startingRegions: ['SA'],
+    badgeId: 'badge_v93_great_drought', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 40404, worldRngMode: 'deterministic', worldRngSeed: 40404, regionalContractsEnabled: true, dynamicCrisisChainsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'great_drought', v93ContentThemes: ['water', 'agriculture', 'renewables'], v93CrisisIntensity: 'high', v93ContractAbundance: 'normal', v93StartingPackage: 'development_base' },
+    objectives: [
+      { id: 'gd_obj_1', label: 'Weather the Drought', description: 'Reach $15,000 net worth', targetType: 'netWorth', targetValue: 15000, isPrimary: true },
+      { id: 'gd_obj_2', label: 'Hold the South', description: 'Control South Australia', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'SA', isPrimary: false }
+    ],
+    modifiers: [],
+    youWillLearn: ['Crisis chains', 'Infrastructure', 'Regional stability', 'Stakeholder tradeoffs']
+  },
+  {
+    id: 'v93_technology_race',
+    title: 'Technology Race',
+    description: 'Victoria has technology momentum, the ACT has research opportunity and NSW has the capital. Your rival will race for Melbourne — find another path or fight for it.',
+    category: 'challenge', difficulty: 'Medium', complexity: 'Intermediate',
+    forcedSeed: 1024, startingMoney: 1400, startingRegions: ['NSW'],
+    badgeId: 'badge_v93_technology_race', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 1024, worldRngMode: 'deterministic', worldRngSeed: 1024, regionalContractsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'technology_race', v93ContentThemes: ['technology', 'research', 'finance'], v93CrisisIntensity: 'low', v93ContractAbundance: 'normal', v93StartingPackage: 'liquidity_rich' },
+    objectives: [
+      { id: 'tr_obj_1', label: 'Research Leader', description: 'Reach $20,000 net worth', targetType: 'netWorth', targetValue: 20000, isPrimary: true },
+      { id: 'tr_obj_2', label: 'Institutional Trust', description: 'Control the ACT', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'ACT', isPrimary: false }
+    ],
+    modifiers: [],
+    youWillLearn: ['Faction contracts', 'Standing', 'Rival strongholds', 'Alternative strategies']
+  },
+  {
+    id: 'v93_cash_crisis',
+    title: 'Cash Crisis',
+    description: 'You start with capital but carry real debt. Interest is ticking; contracts and careful asset allocation matter more than raw expansion.',
+    category: 'expert', difficulty: 'Hard', complexity: 'Advanced',
+    forcedSeed: 5150, startingMoney: 900, startingRegions: ['VIC'],
+    startingLoans: [{ id: 'v93_cash_crisis_loan_1', amount: 500, interestRate: 0.25, termDays: 10 }, { id: 'v93_cash_crisis_loan_2', amount: 500, interestRate: 0.25, termDays: 12 }],
+    badgeId: 'badge_v93_cash_crisis', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 5150, worldRngMode: 'deterministic', worldRngSeed: 5150, regionalContractsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'balanced', v93ContentThemes: ['finance'], v93CrisisIntensity: 'normal', v93ContractAbundance: 'abundant', v93StartingPackage: 'standard' },
+    objectives: [
+      { id: 'cc_obj_1', label: 'Debt Free', description: 'Clear all debt', targetType: 'debt_cleared', targetValue: 1, isPrimary: true },
+      { id: 'cc_obj_2', label: 'Solvent Growth', description: 'Reach $12,000 net worth', targetType: 'netWorth', targetValue: 12000, isPrimary: true }
+    ],
+    modifiers: [],
+    youWillLearn: ['Loans', 'Liquidity', 'Rapid contracts', 'Cash vs net worth']
+  },
+  {
+    id: 'v93_regional_cold_war',
+    title: 'Regional Cold War',
+    description: 'Rival competition is intense and direct aggression is expensive. Diplomacy, stakeholders and timing decide the map.',
+    category: 'challenge', difficulty: 'Hard', complexity: 'Advanced',
+    forcedSeed: 1947, startingMoney: 1500, startingRegions: ['QLD'],
+    badgeId: 'badge_v93_regional_cold_war', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 1947, worldRngMode: 'deterministic', worldRngSeed: 1947, regionalContractsEnabled: true, sabotageEnabled: false, scenarioEngineV73Enabled: true, v93RegionalOpening: 'balanced', v93ContentThemes: ['governance', 'finance'], v93CrisisIntensity: 'low', v93ContractAbundance: 'scarce', v93StartingPackage: 'regional_power' },
+    objectives: [
+      { id: 'rcw_obj_1', label: 'Map Control', description: 'Control 4 regions', targetType: 'regions', targetValue: 4, isPrimary: true }
+    ],
+    modifiers: [],
+    youWillLearn: ['Diplomacy', 'Regional control', 'Stakeholders', 'Rival pressure']
+  },
+  {
+    id: 'v93_infrastructure_australia',
+    title: 'Infrastructure Australia',
+    description: 'A long match with high capital. Regional development is central: competing projects, faction stances and development paths shape every region.',
+    category: 'experimental', difficulty: 'Medium', complexity: 'Expert',
+    forcedSeed: 2032, startingMoney: 3000, startingRegions: ['ACT'],
+    badgeId: 'badge_v93_infrastructure_australia', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 2032, worldRngMode: 'deterministic', worldRngSeed: 2032, totalDays: 45, regionalContractsEnabled: true, dynamicCrisisChainsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'east_coast_growth', v93ContentThemes: ['governance', 'logistics', 'energy'], v93CrisisIntensity: 'normal', v93ContractAbundance: 'normal', v93RareEventFrequency: 'high', v93StartingPackage: 'development_base' },
+    objectives: [
+      { id: 'ia_obj_1', label: 'Nation Builder', description: 'Reach $40,000 net worth', targetType: 'netWorth', targetValue: 40000, isPrimary: true }
+    ],
+    modifiers: [],
+    youWillLearn: ['Infrastructure paths', 'Competing projects', 'Long-term investment', 'Factions']
+  },
+  {
+    id: 'v93_export_economy',
+    title: 'Export Economy',
+    description: 'Ports, trade, resources and logistics. Export windows open and close — freight capacity is the bottleneck everyone fights over.',
+    category: 'beginner', difficulty: 'Easy', complexity: 'Beginner',
+    forcedSeed: 777, startingMoney: 2000, startingRegions: ['QLD'],
+    badgeId: 'badge_v93_export_economy', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 777, worldRngMode: 'deterministic', worldRngSeed: 777, regionalContractsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'resource_cycle', v93ContentThemes: ['trade', 'logistics'], v93CrisisIntensity: 'low', v93ContractAbundance: 'abundant', v93StartingPackage: 'standard' },
+    objectives: [
+      { id: 'ee_obj_1', label: 'Trading House', description: 'Accumulate $10,000 cash', targetType: 'money', targetValue: 10000, isPrimary: true }
+    ],
+    modifiers: [],
+    youWillLearn: ['Contracts', 'Markets', 'Travel', 'Trade windows']
+  },
+  {
+    id: 'v93_recovery',
+    title: 'Recovery',
+    description: 'Several regions start weakened. Infrastructure repair and stabilization matter; cheap stakes reward the patient.',
+    category: 'challenge', difficulty: 'Medium', complexity: 'Intermediate',
+    forcedSeed: 2011, startingMoney: 1800, startingRegions: ['NSW'],
+    badgeId: 'badge_v93_recovery', unlockedByDefault: true, author: 'System',
+    forcedSettings: { deterministicRngActive: true, aiDeterministic: true, aiDeterministicSeed: 2011, worldRngMode: 'deterministic', worldRngSeed: 2011, regionalContractsEnabled: true, dynamicCrisisChainsEnabled: true, scenarioEngineV73Enabled: true, v93RegionalOpening: 'recovery', v93ContentThemes: ['governance', 'logistics'], v93CrisisIntensity: 'normal', v93ContractAbundance: 'normal', v93StartingPackage: 'standard' },
+    objectives: [
+      { id: 'rec_obj_1', label: 'Rebuilder', description: 'Reach $18,000 net worth', targetType: 'netWorth', targetValue: 18000, isPrimary: true },
+      { id: 'rec_obj_2', label: 'Stabilise the North', description: 'Control Queensland', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'QLD', isPrimary: false }
+    ],
+    modifiers: [],
+    youWillLearn: ['Recovery', 'Crisis response', 'Opportunities', 'Stability']
   }
 ];
 
@@ -4718,6 +4838,30 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
           }
         ],
         resolved: false
+      },
+      {
+        id: 'dec_ch2_local_miners',
+        chapterId: 'ch_2_resource_wars',
+        title: 'The Co-ops Call In Their Favour',
+        prompt: 'The local mining co-ops you backed in the outback want you to champion them in the Resource Wars.',
+        trigger: { variableKey: 'pioneer_choice', variableValue: 'local' },
+        choices: [
+          { id: 'c_champion', label: 'Champion the co-ops', description: 'Costs capital now; standing across the west (+Standing WA/NT, −$1,000)', consequences: { moneyDelta: -1000, standingDelta: { WA: 10, NT: 10 }, setVariables: { miner_alliance: 'strong' } } },
+          { id: 'c_distance', label: 'Keep your distance', description: 'Keep the cash; the co-ops cool on you (+$1,500, −Standing WA)', consequences: { moneyDelta: 1500, standingDelta: { WA: -5 }, setVariables: { miner_alliance: 'weak' } } }
+        ],
+        resolved: false
+      },
+      {
+        id: 'dec_ch2_investor_terms',
+        chapterId: 'ch_2_resource_wars',
+        title: 'Your Investors Want Returns',
+        prompt: 'The Wall Street backers from the outback expect a dividend before you expand further.',
+        trigger: { variableKey: 'pioneer_choice', variableValue: 'wall_street' },
+        choices: [
+          { id: 'c_dividend', label: 'Pay the dividend', description: 'Keeps investors loyal; drains cash (−$3,000, +Stability)', consequences: { moneyDelta: -3000, stabilityDelta: 5, setVariables: { investor_trust: 'high' } } },
+          { id: 'c_reinvest', label: 'Reinvest everything', description: 'Keep capital working; investors grow restless (−Stability)', consequences: { stabilityDelta: -5, setVariables: { investor_trust: 'low' } } }
+        ],
+        resolved: false
       }
     ],
     unlockRequirements: { previousChapterId: 'ch_1_outback_awakening' },
@@ -4758,6 +4902,30 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
             description: 'Enforce federal tariffs by decree (+$8,000, -Stability)',
             consequences: { moneyDelta: 8000, stabilityDelta: -15, setVariables: { lobby_choice: 'override' } }
           }
+        ],
+        resolved: false
+      },
+      {
+        id: 'dec_ch3_automation_protest',
+        chapterId: 'ch_3_diplomatic_standoff',
+        title: 'The Automation Protests',
+        prompt: 'The port automation you funded has cost jobs. Protesters are outside Parliament.',
+        trigger: { variableKey: 'port_choice', variableValue: 'automation' },
+        choices: [
+          { id: 'c_retrain', label: 'Fund retraining', description: 'Rebuilds trust; costs capital (−$2,000, +Stability)', consequences: { moneyDelta: -2000, stabilityDelta: 8, setVariables: { labour_trust: 'rebuilt', energy_path: 'industrial' } } },
+          { id: 'c_hold_line', label: 'Hold the line', description: 'Protect margins; unrest grows (+$2,000, −Stability)', consequences: { moneyDelta: 2000, stabilityDelta: -10, setVariables: { labour_trust: 'broken', energy_path: 'industrial' } } }
+        ],
+        resolved: false
+      },
+      {
+        id: 'dec_ch3_green_compact',
+        chapterId: 'ch_3_diplomatic_standoff',
+        title: 'A Green Jobs Compact',
+        prompt: 'The unions you backed offer a compact: renewable jobs in exchange for your support.',
+        trigger: { variableKey: 'port_choice', variableValue: 'union' },
+        choices: [
+          { id: 'c_green', label: 'Sign the green compact', description: 'Commits you to the energy transition (−$2,000, +Standing SA/TAS)', consequences: { moneyDelta: -2000, standingDelta: { SA: 15, TAS: 10 }, setVariables: { energy_path: 'green' } } },
+          { id: 'c_industrial', label: 'Prioritise heavy industry', description: 'Faster returns; the transition waits (+$1,500)', consequences: { moneyDelta: 1500, setVariables: { energy_path: 'industrial' } } }
         ],
         resolved: false
       }
@@ -4802,6 +4970,30 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
           }
         ],
         resolved: false
+      },
+      {
+        id: 'dec_ch4_green_dividend',
+        chapterId: 'ch_4_great_crisis',
+        title: 'The Renewable Grid Holds',
+        prompt: 'Your green compact is paying off: the renewable grid is holding during the crisis. Expand it or bank the savings?',
+        trigger: { variableKey: 'energy_path', variableValue: 'green' },
+        choices: [
+          { id: 'c_expand_grid', label: 'Expand the grid', description: 'Resilience for the south (−$4,000, +Stability, +Standing SA)', consequences: { moneyDelta: -4000, stabilityDelta: 10, standingDelta: { SA: 10 }, setVariables: { grid_legacy: 'expanded' } } },
+          { id: 'c_bank_savings', label: 'Bank the savings', description: 'Cash for the crisis (+$3,000)', consequences: { moneyDelta: 3000, setVariables: { grid_legacy: 'banked' } } }
+        ],
+        resolved: false
+      },
+      {
+        id: 'dec_ch4_industrial_backlash',
+        chapterId: 'ch_4_great_crisis',
+        title: 'Industrial Backlash',
+        prompt: 'Heavy industry is straining power and water during the crisis. Offset the impact or push through?',
+        trigger: { variableKey: 'energy_path', variableValue: 'industrial' },
+        choices: [
+          { id: 'c_offset', label: 'Fund offsets', description: 'Calms communities (−$3,000, +Stability)', consequences: { moneyDelta: -3000, stabilityDelta: 10, setVariables: { grid_legacy: 'offset' } } },
+          { id: 'c_push', label: 'Push through', description: 'Keep production running (+$2,000, −Stability)', consequences: { moneyDelta: 2000, stabilityDelta: -10, setVariables: { grid_legacy: 'pushed' } } }
+        ],
+        resolved: false
       }
     ],
     unlockRequirements: { previousChapterId: 'ch_3_diplomatic_standoff' },
@@ -4842,6 +5034,18 @@ export const PRESET_CAMPAIGN_CHAPTERS: CampaignChapter[] = [
             description: 'Grant maximum regional autonomy (+25 Regional Stability)',
             consequences: { stabilityDelta: 25, setVariables: { treaty_choice: 'decentralized' } }
           }
+        ],
+        resolved: false
+      },
+      {
+        id: 'dec_ch5_grid_legacy',
+        chapterId: 'ch_5_dawn_of_new_federation',
+        title: 'The Grid Repairs Pay Off',
+        prompt: 'The national grid you repaired during the Great Crisis is now the backbone of the new federation.',
+        trigger: { variableKey: 'relief_choice', variableValue: 'grid' },
+        choices: [
+          { id: 'c_national_grid', label: 'Make it a national asset', description: 'Stability and standing everywhere (−$5,000, +Stability)', consequences: { moneyDelta: -5000, stabilityDelta: 15, setVariables: { federation_grid: 'national' } } },
+          { id: 'c_privatise', label: 'Privatise it', description: 'A large one-off windfall (+$8,000, −Stability)', consequences: { moneyDelta: 8000, stabilityDelta: -10, setVariables: { federation_grid: 'private' } } }
         ],
         resolved: false
       }
@@ -6877,7 +7081,14 @@ export type ContractType =
   | 'eco_tourism_network'
   | 'ai_research_center'
   | 'disaster_relief_supply'
-  | 'defense_logistics_hub';
+  | 'defense_logistics_hub'
+  // V9.3 content: new strategic contract families (mapped into Living Regions / Factions below)
+  | 'freight_capacity'
+  | 'water_security'
+  | 'financial_services'
+  | 'manufacturing_modernization'
+  | 'crisis_recovery'
+  | 'tourism_development';
 
 export type ContractStatus = 'available' | 'active' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
@@ -6944,6 +7155,8 @@ export interface RegionalContract {
     standingLoss?: number;
   };
   autoRenew?: boolean;
+  /** V9.3: provenance of a content-template offer (stable ids; the contract itself is fully canonical). */
+  v93?: { templateId: string; offeredDay: number; commitment: number };
 }
 
 export type InfrastructureProjectType =
@@ -6954,7 +7167,18 @@ export type InfrastructureProjectType =
   | 'subsea_cable_hub'
   | 'offshore_wind_farm'
   | 'hydro_expansion'
-  | 'tech_innovation_park';
+  | 'tech_innovation_park'
+  // V9.3 infrastructure paths (canonical bonuses only; profiles in LR_PROJECT_PROFILE)
+  | 'advanced_manufacturing'
+  | 'data_center'
+  | 'automated_port'
+  | 'port_expansion'
+  | 'renewable_grid'
+  | 'remote_logistics_base'
+  | 'freight_rail_upgrade'
+  | 'water_pipeline'
+  | 'tourism_precinct'
+  | 'research_campus';
 
 export type InfrastructureStatus = 'locked' | 'unlocked' | 'under_construction' | 'active' | 'upgraded' | 'damaged';
 
@@ -6983,6 +7207,8 @@ export interface InfrastructureProject {
   completionTurn?: number;
   /** Provenance only: cumulative funding by actor (lets factions attribute support; mechanics unchanged). */
   contributions?: Record<string, number>;
+  /** V9.3: why a competing project is closed (its site was committed to a rival project). */
+  lockedReason?: string;
 }
 
 export interface RegionalBonus {
@@ -9396,6 +9622,8 @@ export interface ScenarioDefinition {
   badgeId?: string;
   unlockedByDefault?: boolean;
   youWillLearn?: string[];
+  /** V9.3: scenario complexity (not AI difficulty). */
+  complexity?: ContentComplexity;
 }
 
 export interface PresetScenario extends ScenarioDefinition {
@@ -10406,6 +10634,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
     livingRegions: sanitizeLivingRegionsState((save as any)?.livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((save as any)?.regionalFactions || (gameState as any)?.regionalFactions),
+    contentState: sanitizeMatchContentState((save as any)?.contentState || (gameState as any)?.contentState),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10580,6 +10809,7 @@ export function canonicalStateFromLiveRuntime(
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
+    contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10830,6 +11060,11 @@ export function completeRegionalContractPayout(nextState: any, contract: any, ac
   contract.status = 'completed';
   contract.completedAtTurn = nextState.turn;
   const reg = contract.issuingRegionId;
+  // V9.3 audit: the advertised standing reward is now paid through the canonical standing map.
+  const standingBoost = Number(contract.rewards?.regionalStandingBoost || 0);
+  if (reg && standingBoost > 0 && actor?.id !== undefined && nextState.standingPerActor && typeof nextState.standingPerActor === 'object') {
+    nextState.standingPerActor = modifyActorRegionalStanding(nextState.standingPerActor, String(actor.id), reg, standingBoost);
+  }
   if (reg) {
     if (!nextState.regionalDevLevels) nextState.regionalDevLevels = {};
     const currentDev = nextState.regionalDevLevels[reg] || { regionId: reg, tier: 0, tierName: 'Untapped', currentExp: 0, expToNextTier: 500, totalInvestedCapital: 0, localEconomicMultiplier: 1.0, standingBonusModifier: 1.0, travelCostReductionPercent: 0, unlockedInfrastructureIds: [], activeRegionalBonuses: [] };
@@ -11524,6 +11759,8 @@ export function reduceGameAction(
           const investment = action.investmentAmount || action.price || action.parameters?.amount || 1000;
           if (projectId && nextState.infrastructureProjects?.[projectId] && actor && actor.money >= investment) {
             const project = nextState.infrastructureProjects[projectId];
+            // V9.3: a locked project (site committed to a competing project, or not yet opened) cannot be funded.
+            if (project.status === 'locked') break; // actionExecuted stays false → the canonical failure path reports it
             if (project.status !== 'active') {
               actor.money -= investment;
               project.totalInvestedMoney += investment;
@@ -13809,6 +14046,15 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   playerIntentOnboardingDismissed: [] as string[],
   /** V9.2 Guided Learning progression (UI/player preference state — never AI memory). null = fresh. */
   guidedLearning: null as any,
+  // V9.3 content & replayability (all optional/defaulted — old saves and custom scenarios need none of these)
+  v93ContentEnabled: true,
+  v93StartingPackage: 'standard',
+  v93RegionalOpening: 'auto',
+  v93ContentThemes: [] as string[],
+  v93ContractAbundance: 'normal',
+  v93CrisisIntensity: 'normal',
+  v93RareEventFrequency: 'normal',
+  v93RecentRare: [] as string[],
   playerIntentExplainRoutineActions: false,
   playerIntentExplainMode: 'high_impact' as CoPilotExplainMode,
   teamModeAiSystemsEnabled: false,
@@ -26138,6 +26384,14 @@ export type GameSettingsState = {
   playerIntentOnboardingEnabled: boolean;
   playerIntentOnboardingDismissed: string[];
   guidedLearning?: any;
+  v93ContentEnabled?: boolean;
+  v93StartingPackage?: string;
+  v93RegionalOpening?: string;
+  v93ContentThemes?: string[];
+  v93ContractAbundance?: string;
+  v93CrisisIntensity?: string;
+  v93RareEventFrequency?: string;
+  v93RecentRare?: string[];
   playerIntentExplainRoutineActions: boolean;
   playerIntentExplainMode: CoPilotExplainMode;
   teamModeAiSystemsEnabled: boolean;
@@ -26927,6 +27181,8 @@ export function gameStateReducer(state: any, action: any) {
       return { ...state, campaignState: typeof action.payload === 'function' ? action.payload(state.campaignState) : { ...state.campaignState, ...action.payload } };
     case 'SET_NARRATIVE_POPUP':
       return { ...state, narrativePopup: typeof action.payload === 'function' ? action.payload(state.narrativePopup) : { ...state.narrativePopup, ...action.payload } };
+    case 'APPLY_CONTENT_STEP':
+      return typeof action.payload === 'function' ? { ...state, ...action.payload(state) } : state;
     case 'SET_CRISIS_CHAIN_STATE':
       return { ...state, crisisChainState: typeof action.payload === 'function' ? action.payload(state.crisisChainState) : { ...state.crisisChainState, ...action.payload } };
     case 'SET_PUBLIC_STABILITY_STATE':
@@ -35863,6 +36119,8 @@ export const initialGameState = {
   worldReaction: createEmptyWorldReactionState(),
   // Living Regions initialises from canonical state on the first live pass (history starts then).
   livingRegions: null as LivingRegionsState | null,
+  /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
+  contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
   regionalFactions: null as RegionalFactionsState | null
 };
@@ -64004,6 +64262,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'advancedSystems.diag2Overlay', tab: 'replayDiag', title: 'DIAG-2 Overlay', tags: ['Advanced', 'UX'], chips: ['Off by default'], fieldKeys: ['diag2OverlayEnabled'], keywords: 'diag2 diagnostic overlay telemetry console debug' },
   { id: 'advancedSystems.coPilotStartPhase', tab: 'replayDiag', title: 'Co-Pilot Start Box', tags: ['Advanced', 'UX', 'Co-Pilot'], chips: ['Off by default'], fieldKeys: ['coPilotStartPhaseOverlayEnabled'], keywords: 'copilot start box phase overlay debug hang settings_close' },
   { id: 'advancedSystems.postMatchDebrief', tab: 'replayDiag', title: '📊 Post-Match Debrief Analytics', tags: ['Advanced', 'UX'], chips: ['On by default'], fieldKeys: ['postMatchDebriefEnabled'] },
+  { id: 'gameplay.matchVariety', tab: 'gameplay', title: '🎲 Match Variety', tags: ['Scenario', 'Gameplay'], fieldKeys: ['v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'v93ContentThemes', 'v93RecentRare'], keywords: 'match variety replayability content starting conditions package regional opening contracts abundance crisis intensity rare events dilemmas opportunities liquidity rich regional power resource heavy debt pressure development base' },
   { id: 'gameplay.scenarioMode', tab: 'gameplay', title: '📜 Scenario Mode & Presets', tags: ['Scenario', 'Gameplay'], fieldKeys: ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'], keywords: 'scenario mode presets forced seed objectives outback siege mining tycoon diplomatic blitz hyper inflation coastal supremacy career progression achievements fog of war rivalry' },
   // SH2: Added 4 uncovered keys to advancedSystems.replaySafety
   { id: 'advancedSystems.replaySafety', tab: 'replayDiag', title: 'Replay Safety & Compatibility', tags: ['Replay', 'Advanced'], fieldKeys: ['randomnessMode', 'aiDeterministic', 'worldRngMode', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiDeterministicSeed', 'worldRngSeed', 'replayComparisonEnabled', 'replayComparisonToleranceThreshold', 'replayComparisonIgnoreMinorTiming', 'deterministicRngActive', 'whatIfTimelinesEnabled'] },
@@ -78763,8 +79022,15 @@ export function evaluateNarrativeDecisions(gameState: GameStateSnapshot): GameSt
 
   const history = campaignState?.storyDecisionHistory || {};
 
+  const vars = campaignState?.campaignVariables || {};
+  const day = Number(gameState.day || 1);
+  // V9.3: a decision's trigger (variable / day / stability) gates it — follow-ups exist only when earlier choices made them relevant.
+  const triggerMet = (t?: StoryDecisionTrigger) => !t
+    || ((t.variableKey === undefined || vars[t.variableKey] === t.variableValue)
+      && (t.day === undefined || day >= t.day)
+      && (t.minStability === undefined || (gameState.publicStabilityState?.nationalStability ?? 100) >= t.minStability));
   const pendingDecision = currentChapter.storyDecisions.find(
-    d => d && !history[d.id] && !d.resolved
+    d => d && !history[d.id] && !d.resolved && triggerMet(d.trigger)
   );
 
   if (!pendingDecision) return gameState;
@@ -78947,7 +79213,12 @@ export function resolveCrisisChoice(
   }
 
   let updatedChain = { ...chain };
-  if (outcomeCons.resolvedStage || (outcomeCons.resolvedStage === undefined && isSuccess)) {
+  const successNextIdx = isSuccess && stage.nextStageOnSuccess ? chain.stages.findIndex((s: CrisisStage) => s.id === stage.nextStageOnSuccess) : -1;
+  if (successNextIdx >= 0) {
+    // V9.3: authored chains can continue after a successful response (IMPACT → RECOVERY). Existing chains define no nextStageOnSuccess.
+    updatedChain.currentStageIndex = successNextIdx;
+    updatedChain.activeStageId = chain.stages[successNextIdx].id;
+  } else if (outcomeCons.resolvedStage || (outcomeCons.resolvedStage === undefined && isSuccess)) {
     updatedChain.status = 'resolved';
     updatedChain.activeStageId = null;
   } else if (outcomeCons.escalateCrisis && stage.nextStageOnFailure) {
@@ -79791,6 +80062,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.livingRegions = sanitizeLivingRegionsState(migrated.gameState.livingRegions || migrated.livingRegions);
   // Regional Factions: old saves initialise on load from canonical systems (no invented interactions).
   if (migrated.gameState) migrated.gameState.regionalFactions = sanitizeRegionalFactionsState(migrated.gameState.regionalFactions || migrated.regionalFactions);
+  // V9.3 content: old saves carry none — the match gets a fresh profile on load; active contracts/scenario/campaign are untouched.
+  if (migrated.gameState) migrated.gameState.contentState = sanitizeMatchContentState(migrated.gameState.contentState || migrated.contentState);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -123434,17 +123707,29 @@ export const LR_PROJECT_PROFILE: Record<string, { capacity: Partial<LRCapacity>;
   subsea_cable_hub: { capacity: { technology: 40, trade: 20 }, sectors: ['technology', 'trade'], label: 'cable' },
   offshore_wind_farm: { capacity: { energy: 40 }, sectors: ['renewables', 'energy'], label: 'wind' },
   hydro_expansion: { capacity: { energy: 40, water: 10 }, sectors: ['renewables', 'energy'], label: 'hydro' },
-  tech_innovation_park: { capacity: { technology: 45 }, sectors: ['technology', 'research'], label: 'tech park' }
+  tech_innovation_park: { capacity: { technology: 45 }, sectors: ['technology', 'research'], label: 'tech park' },
+  // V9.3 infrastructure paths
+  advanced_manufacturing: { capacity: { technology: 15, trade: 10 }, sectors: ['manufacturing', 'technology'], label: 'manufacturing precinct' },
+  data_center: { capacity: { technology: 45 }, sectors: ['technology', 'research'], label: 'data centre' },
+  automated_port: { capacity: { trade: 45, transport: 15 }, sectors: ['trade', 'logistics'], label: 'port' },
+  port_expansion: { capacity: { trade: 35, transport: 15 }, sectors: ['trade', 'logistics'], label: 'port' },
+  renewable_grid: { capacity: { energy: 45 }, sectors: ['renewables', 'energy'], label: 'grid' },
+  remote_logistics_base: { capacity: { transport: 40 }, sectors: ['logistics'], label: 'logistics base' },
+  freight_rail_upgrade: { capacity: { transport: 40, trade: 15 }, sectors: ['logistics', 'mining', 'trade'], label: 'rail' },
+  water_pipeline: { capacity: { water: 45 }, sectors: ['infrastructure', 'agriculture'], label: 'pipeline' },
+  tourism_precinct: { capacity: { trade: 10 }, sectors: ['tourism'], label: 'tourism precinct' },
+  research_campus: { capacity: { technology: 35 }, sectors: ['research', 'technology'], label: 'research campus' }
 };
 /** Existing contract types → the sectors they evidence. */
 export const LR_CONTRACT_SECTORS: Record<string, LRSector[]> = {
   agricultural_logistics: ['agriculture', 'logistics'], renewable_energy_grid: ['renewables', 'energy'], mining_tech_initiative: ['mining', 'technology'], maritime_export_hub: ['trade', 'logistics'],
-  eco_tourism_network: ['tourism'], ai_research_center: ['technology', 'research'], disaster_relief_supply: ['logistics'], defense_logistics_hub: ['defense', 'logistics']
+  eco_tourism_network: ['tourism'], ai_research_center: ['technology', 'research'], disaster_relief_supply: ['logistics'], defense_logistics_hub: ['defense', 'logistics'],
+  freight_capacity: ['logistics', 'trade'], water_security: ['infrastructure', 'agriculture'], financial_services: ['finance'], manufacturing_modernization: ['manufacturing', 'technology'], crisis_recovery: ['infrastructure', 'logistics'], tourism_development: ['tourism']
 };
 /** Which existing contract types answer which regional need (relevance only — contracts stay canonical). */
 export const LR_NEED_CONTRACTS: Partial<Record<LRNeedCategory, string[]>> = {
-  transport: ['agricultural_logistics', 'maritime_export_hub', 'defense_logistics_hub'], energy: ['renewable_energy_grid'], emergency_relief: ['disaster_relief_supply'], technology: ['ai_research_center', 'mining_tech_initiative'],
-  trade: ['maritime_export_hub'], security: ['defense_logistics_hub'], water: ['disaster_relief_supply'], development: ['agricultural_logistics', 'eco_tourism_network']
+  transport: ['agricultural_logistics', 'maritime_export_hub', 'defense_logistics_hub', 'freight_capacity'], energy: ['renewable_energy_grid'], emergency_relief: ['disaster_relief_supply', 'crisis_recovery'], technology: ['ai_research_center', 'mining_tech_initiative', 'manufacturing_modernization'],
+  trade: ['maritime_export_hub', 'freight_capacity'], security: ['defense_logistics_hub'], water: ['disaster_relief_supply', 'water_security'], development: ['agricultural_logistics', 'eco_tourism_network', 'tourism_development'], capital: ['financial_services']
 };
 const LR_NEED_CAPACITY: Partial<Record<LRNeedCategory, keyof LRCapacity>> = { transport: 'transport', energy: 'energy', water: 'water', technology: 'technology', trade: 'trade' };
 
@@ -125118,20 +125403,20 @@ export interface RFFactionDef {
 }
 
 /** Automation-heavy existing project types (a labour-relevant attribute of canonical infrastructure). */
-export const RF_AUTOMATION_HEAVY = ['inland_rail_hub', 'subsea_cable_hub', 'tech_innovation_park', 'green_hydrogen_terminal'];
+export const RF_AUTOMATION_HEAVY = ['inland_rail_hub', 'subsea_cable_hub', 'tech_innovation_park', 'green_hydrogen_terminal', 'automated_port', 'data_center'];
 
 export const RF_FACTION_DEFS: RFFactionDef[] = [
-  { id: 'nsw_farmers_coop', name: 'NSW Farmers Co-Op', type: 'agriculture', homeRegions: ['NSW'], description: 'Producer co-operative representing grain, dairy and wine growers.', supportedSectors: ['agriculture', 'logistics'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'hydro_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics'], resourceInterests: ['Wheat', 'Dairy', 'Wine', 'Wool'], policyInterests: ['relief'], aliases: ['farmers co-op', 'farmers coop', 'farmers', 'co-op'], legacyNames: ['NSW Farmers Co-Op'] },
-  { id: 'sa_clean_energy_council', name: 'SA Clean Energy Council', type: 'energy', homeRegions: ['SA'], description: 'Renewable developers and grid operators pushing the energy transition.', supportedSectors: ['renewables', 'energy'], opposedSectors: [], preferredInfrastructure: ['green_hydrogen_terminal', 'offshore_wind_farm', 'hydro_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['renewable_energy_grid'], resourceInterests: [], policyInterests: ['growth'], aliases: ['clean energy council', 'energy council', 'renewable council'], legacyNames: ['SA Clean Energy Council'] },
-  { id: 'pilbara_mining_consortium', name: 'Pilbara Mining Consortium', type: 'industry', homeRegions: ['WA'], description: 'Major miners and exporters of iron ore, gold and gas.', supportedSectors: ['mining', 'trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'green_hydrogen_terminal'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['mining_tech_initiative', 'maritime_export_hub'], resourceInterests: ['Iron Ore', 'Gold', 'Natural Gas', 'Uranium', 'Coal'], policyInterests: ['growth', 'automation_friendly'], aliases: ['mining consortium', 'pilbara', 'miners'], legacyNames: ['Pilbara Mining Consortium'] },
-  { id: 'qld_port_authority', name: 'Queensland Port Authority', type: 'infrastructure_authority', homeRegions: ['QLD'], description: 'Operates the ports and freight gateways that carry exports.', supportedSectors: ['trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'high_speed_rail', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['maritime_export_hub', 'agricultural_logistics'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['port authority', 'ports'], legacyNames: ['Queensland Port Authority'] },
-  { id: 'tas_wilderness_trust', name: 'Tasmanian Wilderness Trust', type: 'environmental', homeRegions: ['TAS'], description: 'Conservation trust protecting wilderness and controlling industrial footprint.', supportedSectors: ['tourism', 'renewables'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['offshore_wind_farm'], opposedInfrastructure: ['hydro_expansion', 'inland_rail_hub'], conditionalInfrastructure: ['green_hydrogen_terminal', 'desalination_plant'], preferredContractTypes: ['eco_tourism_network'], resourceInterests: ['Timber', 'Seafood'], policyInterests: ['conservation'], aliases: ['wilderness trust', 'environmental trust', 'environmentalists', 'greens'], legacyNames: ['Tasmanian Wilderness Trust'] },
-  { id: 'csiro_ai_directorate', name: 'CSIRO AI Directorate', type: 'research', homeRegions: ['ACT'], description: 'National research directorate for AI and advanced technology.', supportedSectors: ['technology', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center'], resourceInterests: ['Research Funds'], policyInterests: ['growth'], aliases: ['csiro', 'ai directorate', 'research directorate'], legacyNames: ['CSIRO AI Directorate'] },
-  { id: 'vic_technology_council', name: 'Victoria Technology Council', type: 'technology', homeRegions: ['VIC'], description: 'Technology firms and advanced manufacturers based in Melbourne.', supportedSectors: ['technology', 'manufacturing', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub', 'high_speed_rail'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center', 'mining_tech_initiative'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['technology council', 'tech council', 'victoria technology council'], legacyNames: [] },
-  { id: 'regional_labor_coalition', name: 'Regional Labor Coalition', type: 'labor', homeRegions: ['QLD', 'WA'], description: 'Unions and worker groups focused on regional employment.', supportedSectors: ['manufacturing', 'logistics', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics', 'defense_logistics_hub'], resourceInterests: [], policyInterests: ['automation_skeptic', 'stability'], aliases: ['labor coalition', 'labour coalition', 'union', 'unions', 'labor', 'labour', 'workers'], legacyNames: [] },
-  { id: 'national_tourism_council', name: 'National Tourism Council', type: 'tourism', homeRegions: ['QLD', 'TAS'], description: 'Tourism operators protecting reefs, parks and visitor economies.', supportedSectors: ['tourism'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['high_speed_rail', 'offshore_wind_farm'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['eco_tourism_network'], resourceInterests: ['Coral', 'Aboriginal Art'], policyInterests: ['conservation'], aliases: ['tourism council', 'tourism operators', 'tourism'], legacyNames: [] },
-  { id: 'nt_community_council', name: 'Top End Community Council', type: 'community', homeRegions: ['NT'], description: 'Remote communities and land councils of the Northern Territory.', supportedSectors: ['tourism', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['desalination_plant', 'subsea_cable_hub'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['disaster_relief_supply', 'eco_tourism_network'], resourceInterests: ['Aboriginal Art', 'Crocodile Leather'], policyInterests: ['relief', 'stability'], aliases: ['community council', 'top end council', 'land council', 'communities'], legacyNames: [] },
-  { id: 'federal_infrastructure_office', name: 'Federal Infrastructure Office', type: 'public_institution', homeRegions: ['ACT'], description: 'Federal agency coordinating national infrastructure and emergency response.', supportedSectors: ['infrastructure', 'logistics', 'defense'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'inland_rail_hub'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['defense_logistics_hub', 'disaster_relief_supply'], resourceInterests: ['Government Grants'], policyInterests: ['relief', 'stability'], aliases: ['infrastructure office', 'federal office', 'federal infrastructure'], legacyNames: [] },
+  { id: 'nsw_farmers_coop', name: 'NSW Farmers Co-Op', type: 'agriculture', homeRegions: ['NSW'], description: 'Producer co-operative representing grain, dairy and wine growers.', supportedSectors: ['agriculture', 'logistics'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'hydro_expansion', 'water_pipeline'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics', 'water_security'], resourceInterests: ['Wheat', 'Dairy', 'Wine', 'Wool'], policyInterests: ['relief'], aliases: ['farmers co-op', 'farmers coop', 'farmers', 'co-op'], legacyNames: ['NSW Farmers Co-Op'] },
+  { id: 'sa_clean_energy_council', name: 'SA Clean Energy Council', type: 'energy', homeRegions: ['SA'], description: 'Renewable developers and grid operators pushing the energy transition.', supportedSectors: ['renewables', 'energy'], opposedSectors: [], preferredInfrastructure: ['green_hydrogen_terminal', 'offshore_wind_farm', 'hydro_expansion', 'renewable_grid'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['renewable_energy_grid'], resourceInterests: [], policyInterests: ['growth'], aliases: ['clean energy council', 'energy council', 'renewable council'], legacyNames: ['SA Clean Energy Council'] },
+  { id: 'pilbara_mining_consortium', name: 'Pilbara Mining Consortium', type: 'industry', homeRegions: ['WA'], description: 'Major miners and exporters of iron ore, gold and gas.', supportedSectors: ['mining', 'trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'green_hydrogen_terminal', 'freight_rail_upgrade', 'remote_logistics_base'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['mining_tech_initiative', 'maritime_export_hub'], resourceInterests: ['Iron Ore', 'Gold', 'Natural Gas', 'Uranium', 'Coal'], policyInterests: ['growth', 'automation_friendly'], aliases: ['mining consortium', 'pilbara', 'miners'], legacyNames: ['Pilbara Mining Consortium'] },
+  { id: 'qld_port_authority', name: 'Queensland Port Authority', type: 'infrastructure_authority', homeRegions: ['QLD'], description: 'Operates the ports and freight gateways that carry exports.', supportedSectors: ['trade', 'logistics'], opposedSectors: [], preferredInfrastructure: ['inland_rail_hub', 'high_speed_rail', 'subsea_cable_hub', 'automated_port', 'port_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['maritime_export_hub', 'agricultural_logistics', 'freight_capacity', 'crisis_recovery'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['port authority', 'ports'], legacyNames: ['Queensland Port Authority'] },
+  { id: 'tas_wilderness_trust', name: 'Tasmanian Wilderness Trust', type: 'environmental', homeRegions: ['TAS'], description: 'Conservation trust protecting wilderness and controlling industrial footprint.', supportedSectors: ['tourism', 'renewables'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['offshore_wind_farm', 'tourism_precinct'], opposedInfrastructure: ['hydro_expansion', 'inland_rail_hub', 'data_center'], conditionalInfrastructure: ['green_hydrogen_terminal', 'desalination_plant'], preferredContractTypes: ['eco_tourism_network'], resourceInterests: ['Timber', 'Seafood'], policyInterests: ['conservation'], aliases: ['wilderness trust', 'environmental trust', 'environmentalists', 'greens'], legacyNames: ['Tasmanian Wilderness Trust'] },
+  { id: 'csiro_ai_directorate', name: 'CSIRO AI Directorate', type: 'research', homeRegions: ['ACT'], description: 'National research directorate for AI and advanced technology.', supportedSectors: ['technology', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub', 'research_campus', 'data_center'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center'], resourceInterests: ['Research Funds'], policyInterests: ['growth'], aliases: ['csiro', 'ai directorate', 'research directorate'], legacyNames: ['CSIRO AI Directorate'] },
+  { id: 'vic_technology_council', name: 'Victoria Technology Council', type: 'technology', homeRegions: ['VIC'], description: 'Technology firms and advanced manufacturers based in Melbourne.', supportedSectors: ['technology', 'manufacturing', 'research'], opposedSectors: [], preferredInfrastructure: ['tech_innovation_park', 'subsea_cable_hub', 'high_speed_rail', 'data_center', 'advanced_manufacturing'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center', 'mining_tech_initiative', 'manufacturing_modernization'], resourceInterests: [], policyInterests: ['growth', 'automation_friendly'], aliases: ['technology council', 'tech council', 'victoria technology council'], legacyNames: [] },
+  { id: 'regional_labor_coalition', name: 'Regional Labor Coalition', type: 'labor', homeRegions: ['QLD', 'WA'], description: 'Unions and worker groups focused on regional employment.', supportedSectors: ['manufacturing', 'logistics', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'port_expansion', 'advanced_manufacturing'], opposedInfrastructure: ['automated_port'], conditionalInfrastructure: [], preferredContractTypes: ['agricultural_logistics', 'defense_logistics_hub', 'freight_capacity'], resourceInterests: [], policyInterests: ['automation_skeptic', 'stability'], aliases: ['labor coalition', 'labour coalition', 'union', 'unions', 'labor', 'labour', 'workers'], legacyNames: [] },
+  { id: 'national_tourism_council', name: 'National Tourism Council', type: 'tourism', homeRegions: ['QLD', 'TAS'], description: 'Tourism operators protecting reefs, parks and visitor economies.', supportedSectors: ['tourism'], opposedSectors: ['mining', 'manufacturing'], preferredInfrastructure: ['high_speed_rail', 'offshore_wind_farm', 'tourism_precinct'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['eco_tourism_network', 'tourism_development'], resourceInterests: ['Coral', 'Aboriginal Art'], policyInterests: ['conservation'], aliases: ['tourism council', 'tourism operators', 'tourism'], legacyNames: [] },
+  { id: 'nt_community_council', name: 'Top End Community Council', type: 'community', homeRegions: ['NT'], description: 'Remote communities and land councils of the Northern Territory.', supportedSectors: ['tourism', 'agriculture'], opposedSectors: [], preferredInfrastructure: ['desalination_plant', 'subsea_cable_hub', 'remote_logistics_base', 'water_pipeline'], opposedInfrastructure: [], conditionalInfrastructure: ['inland_rail_hub'], preferredContractTypes: ['disaster_relief_supply', 'eco_tourism_network'], resourceInterests: ['Aboriginal Art', 'Crocodile Leather'], policyInterests: ['relief', 'stability'], aliases: ['community council', 'top end council', 'land council', 'communities'], legacyNames: [] },
+  { id: 'federal_infrastructure_office', name: 'Federal Infrastructure Office', type: 'public_institution', homeRegions: ['ACT'], description: 'Federal agency coordinating national infrastructure and emergency response.', supportedSectors: ['infrastructure', 'logistics', 'defense'], opposedSectors: [], preferredInfrastructure: ['high_speed_rail', 'desalination_plant', 'inland_rail_hub', 'renewable_grid', 'research_campus', 'port_expansion'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['defense_logistics_hub', 'disaster_relief_supply', 'water_security', 'crisis_recovery'], resourceInterests: ['Government Grants'], policyInterests: ['relief', 'stability'], aliases: ['infrastructure office', 'federal office', 'federal infrastructure'], legacyNames: [] },
   { id: 'tas_innovation_network', name: 'Tasmanian Innovation Network', type: 'research', homeRegions: ['TAS'], description: 'Start-ups and university labs — active once Tasmania develops a technology base.', supportedSectors: ['technology', 'research'], opposedSectors: [], preferredInfrastructure: ['subsea_cable_hub', 'tech_innovation_park'], opposedInfrastructure: [], conditionalInfrastructure: [], preferredContractTypes: ['ai_research_center'], resourceInterests: [], policyInterests: ['growth'], emergent: { regionId: 'TAS', sectors: ['technology', 'research'], threshold: 22 }, aliases: ['innovation network', 'tasmanian innovation'], legacyNames: [] }
 ];
 export const RF_DEF_BY_ID: Record<string, RFFactionDef> = Object.fromEntries(RF_FACTION_DEFS.map(d => [d.id, d]));
@@ -127149,7 +127434,7 @@ export const V9StrategicBrief: React.FC<{ c: V9Cohesion; theme: any; strategyLin
   </section>
 );
 
-export const V9_INTEL_SECTIONS: Array<[string, string]> = [['ask', 'Ask'], ['learn', 'Learn'], ['strategy', 'Strategy'], ['situation', 'Situation'], ['world', 'World'], ['team', 'Team'], ['rivals', 'Rivals'], ['diplomacy', 'Diplomacy'], ['whatif', 'What-If']];
+export const V9_INTEL_SECTIONS: Array<[string, string]> = [['ask', 'Ask'], ['learn', 'Learn'], ['situations', 'Situations'], ['strategy', 'Strategy'], ['situation', 'Situation'], ['world', 'World'], ['team', 'Team'], ['rivals', 'Rivals'], ['diplomacy', 'Diplomacy'], ['whatif', 'What-If']];
 export const V9IntelNav: React.FC<{ onGo: (id: string) => void; onAsk: (q: string) => void; region: string | null }> = ({ onGo, onAsk, region }) => (
   <nav aria-label="Intelligence sections" className="flex flex-wrap gap-1.5 text-xs" data-testid="v9-intel-nav">
     {V9_INTEL_SECTIONS.map(([id, l]) => <button key={id} type="button" className="px-2.5 py-1 rounded-full border border-slate-500/50" onClick={() => (id === 'whatif' ? onAsk('What if I end my turn now?') : onGo(id))}>{l}</button>)}
@@ -128393,6 +128678,8 @@ export interface LearningContext {
   decisionActive: boolean; criticalActive: boolean; copilotControlling: boolean; playerBusy: boolean;
   worldChain: string | null; regionShift: string | null; stakeholder: string | null; diplomacyOpportunity: string | null;
   lostRegion: string | null; overrideOfAdvice: boolean; blocked: { kind: string; text: string } | null;
+  /** V9.3 content (visible only): a waiting strategic decision, a live opportunity, a national/rare event. */
+  contentDilemma?: string | null; contentOpportunity?: string | null; contentEvent?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128492,7 +128779,17 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
     lesson: c => ({ headline: `${c.lostRegion} was lost`, lines: [`${c.rivalName}'s stake there overtook yours. You can reinvest, build elsewhere, or change strategy — retaking it is not always best.`], asks: ['How can I recover?'], surface: 'card' }) },
   { id: 'endgame', title: 'Endgame', category: 'strategy', tier: 'core', priority: 3, minLevel: 2, requires: ['win_condition'], directoryId: 'win', askPrompt: 'Who is winning and why?', related: ['win_condition'],
     relevant: c => (c.daysLeft <= 3 && c.daysLeft >= 0 ? `${c.daysLeft} day(s) left` : null),
-    lesson: c => ({ headline: `${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`, lines: [c.leading ? `You lead on ${c.winLabel}. Protect the lead — or push it further.` : `${c.rivalName} leads on ${c.winLabel}. Focus on moves that change the final count.`, 'Long-term investments rarely pay back this late.'], asks: ['Who is winning and why?'], surface: 'inline' }) }
+    lesson: c => ({ headline: `${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`, lines: [c.leading ? `You lead on ${c.winLabel}. Protect the lead — or push it further.` : `${c.rivalName} leads on ${c.winLabel}. Focus on moves that change the final count.`, 'Long-term investments rarely pay back this late.'], asks: ['Who is winning and why?'], surface: 'inline' }) },
+  // ---- V9.3 content types: explained on first encounter only ----
+  { id: 'dilemmas', title: 'Strategic decisions', category: 'strategy', tier: 'secondary', priority: 3, minLevel: 2, requires: [], directoryId: 'situations', askPrompt: 'Which option should I pick?', related: ['tradeoffs', 'factions'],
+    relevant: c => (c.contentDilemma ? `a strategic decision is waiting: ${c.contentDilemma}` : null),
+    lesson: c => ({ headline: 'A decision with no single right answer', lines: [`${c.contentDilemma || 'This situation'} has several valid responses.`, 'Different choices favour different priorities — cash now, control, stability or long-term growth. Pick the one that fits your plan.'], asks: ['Which option should I pick?'], surface: 'card' }) },
+  { id: 'strategic_opportunity', title: 'Opportunities', category: 'strategy', tier: 'secondary', priority: 4, minLevel: 3, requires: [], directoryId: 'situations', askPrompt: 'Is this opportunity worth it?', related: ['strategy'],
+    relevant: c => (c.contentOpportunity ? `a time-limited opportunity opened: ${c.contentOpportunity}` : null),
+    lesson: c => ({ headline: 'Opportunities are windows, not orders', lines: [`${c.contentOpportunity || 'An opportunity'} points at actions you already have.`, 'Most windows close in a few turns. Track This makes it your focus; ignoring it is a valid choice.'], asks: ['Is this opportunity worth it?'], surface: 'card' }) },
+  { id: 'world_events', title: 'National events', category: 'economy', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'situations', askPrompt: 'How does this event change my plan?', related: ['market'],
+    relevant: c => (c.contentEvent ? `a national event is changing conditions: ${c.contentEvent}` : null),
+    lesson: c => ({ headline: 'The country changes under you', lines: [`${c.contentEvent || 'A national event'} temporarily changes prices, travel or challenges.`, 'Events do not pick winners — they shift which moves are worth making for a few days.'], asks: ['How does this event change my plan?'], surface: 'inline' }) }
 ];
 
 export const LEARNING_CONCEPT_BY_ID: Record<string, LearningConceptDefinition> = Object.fromEntries(LEARNING_CONCEPTS.map(c => [c.id, c]));
@@ -128678,6 +128975,7 @@ export const MECHANICS_DIRECTORY_ENTRIES: MechanicsDirectoryEntry[] = [
   { id: 'factions', icon: '🏛️', title: 'Regional Stakeholders', body: 'Influential groups in each region want different things. Supporting one can worry another; their requests are optional opportunities, not quests you must finish.' },
   { id: 'team', icon: '🤝', title: 'Team Mode', body: 'Teammates share a goal and play their own turns. Shared resources and team rules (governance) may require approval for some spending.', settingsTab: 'aiTeams', settingsLabel: 'Configure Team Brain' },
   { id: 'copilot', icon: '🧭', title: 'Co-Pilot, Guardian & Assistance', body: 'Guide mode explains and recommends; it never acts for you. The Co-Pilot only plays when you choose it, and you can Take Control at any time. Guardian stops only the serious mistakes you configured — many legal moves are still your call.', settingsTab: 'aiTeams', settingsLabel: 'Co-Pilot settings' },
+  { id: 'situations', icon: '🗺', title: 'Situations: Decisions, Events & Opportunities', body: 'Each match draws a small, different set of situations from the world\'s actual condition: contract offers that expire, strategic decisions with several valid answers, national and rare events that shift prices or travel for a few days, multi-stage crises that reward preparation, and opportunities that point at actions you already have. Budgets and cooldowns keep them rare enough to matter.' },
   { id: 'adaptive', icon: '⚖️', title: 'Fairness & Adaptive AI', body: 'Under Strictly Equal and Smarter Decisions Only, the AI plays with exactly your numbers — harder AI plans better, it does not get richer. Catch-up effects apply only if you opt into adaptive handicaps.', settingsTab: 'aiTeams', settingsLabel: 'Configure Adaptive AI' }
 ];
 
@@ -129052,6 +129350,2374 @@ export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+// ============================================================================
+// SECTION 20O: V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS
+// ============================================================================
+// A thin, deterministic CONTENT layer. It owns no mechanics: every item it selects becomes a normal
+// canonical object that the existing engines already execute —
+//   contract templates  → RegionalContract (V9.1 deliverables, canonical payout)
+//   crisis templates    → CrisisChain (canonical crisis engine; stage effects run through activeEvents)
+//   world/rare events   → activeEvents entries (the canonical price / travel / challenge / yield modifiers)
+//   infrastructure      → InfrastructureProject (canonical funding / bonuses)
+//   dilemmas            → choices whose consequences route through canonical dispatchers (cash, standing,
+//                          stability modifiers, contract offers, project availability) + faction decisions
+//   opportunities       → views over World Reaction windows / Living Regions / live content (never actions)
+// Eligibility reads Living Regions, Regional Factions, World Reaction, Diplomacy, markets and crises; it
+// never writes them. Selection is seeded (no Math.random, no gameplay RNG stream draws) and bounded by a
+// MatchContentProfile (budgets scale with match length) with cooldowns and bounded per-match history.
+
+export type ContentKind = 'contract' | 'dilemma' | 'crisis' | 'event' | 'rare' | 'opportunity' | 'infrastructure' | 'scenario' | 'campaign';
+export type ContentRarity = 'common' | 'uncommon' | 'rare' | 'exceptional';
+export type ContentTheme = 'mining' | 'agriculture' | 'energy' | 'renewables' | 'technology' | 'research' | 'trade' | 'logistics' | 'finance' | 'tourism' | 'water' | 'manufacturing' | 'governance' | 'environment' | 'exploration';
+export type ContentRole = 'economic_growth' | 'liquidity' | 'regional_control' | 'defense' | 'development' | 'infrastructure' | 'trade' | 'resource' | 'diplomacy' | 'faction' | 'stability' | 'crisis' | 'recovery' | 'exploration' | 'competition' | 'long_term_investment' | 'short_term_opportunity';
+export type ContractArchetype = 'rapid' | 'capital' | 'resource' | 'infrastructure' | 'presence' | 'crisis' | 'faction' | 'development';
+export type RivalContentProfile = 'aggressive' | 'economic' | 'infrastructure' | 'diplomatic' | 'balanced';
+export type ContentComplexity = 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert';
+
+export const CONTENT_THEMES: ContentTheme[] = ['mining', 'agriculture', 'energy', 'renewables', 'technology', 'research', 'trade', 'logistics', 'finance', 'tourism', 'water', 'manufacturing', 'governance', 'environment', 'exploration'];
+export const CONTENT_ROLES: ContentRole[] = ['economic_growth', 'liquidity', 'regional_control', 'defense', 'development', 'infrastructure', 'trade', 'resource', 'diplomacy', 'faction', 'stability', 'crisis', 'recovery', 'exploration', 'competition', 'long_term_investment', 'short_term_opportunity'];
+export const CONTENT_CORE_REGIONS = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+export const CONTENT_RARITY_WEIGHT: Record<ContentRarity, number> = { common: 1, uncommon: 0.6, rare: 0.3, exceptional: 0.15 };
+
+/** Regional identity (Parts 4–12): each region pulls toward its own themes, not reskinned copies. */
+export const REGION_CONTENT_IDENTITY: Record<string, { themes: ContentTheme[]; identity: string }> = {
+  NSW: { themes: ['finance', 'agriculture', 'trade', 'logistics', 'technology'], identity: 'Finance, farms and the east-coast freight spine' },
+  VIC: { themes: ['technology', 'manufacturing', 'research', 'trade'], identity: 'Technology, advanced manufacturing and research' },
+  QLD: { themes: ['mining', 'trade', 'agriculture', 'tourism', 'energy', 'logistics'], identity: 'Exports, ports, mining and tourism' },
+  WA: { themes: ['mining', 'energy', 'trade', 'logistics'], identity: 'Resources and remote logistics — high commodity exposure' },
+  SA: { themes: ['renewables', 'energy', 'water', 'agriculture', 'manufacturing'], identity: 'Renewables and hydrogen, constrained by water and grid' },
+  TAS: { themes: ['tourism', 'environment', 'renewables', 'agriculture'], identity: 'Small economy, high potential, strong stakeholders' },
+  NT: { themes: ['exploration', 'logistics', 'mining', 'tourism'], identity: 'Frontier: costly logistics, high frontier upside' },
+  ACT: { themes: ['research', 'technology', 'governance'], identity: 'Institutions, research and national programs' }
+};
+
+// ---- Deterministic hashing (seed + day + id → the same selection every replay) --------------------------
+
+export function contentHash(...parts: Array<string | number>): number {
+  const raw = parts.join('|');
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  return h >>> 0;
+}
+export const contentRoll = (...parts: Array<string | number>) => contentHash(...parts) / 4294967296;
+
+// ---- Visible context (compact; built from canonical state or a fixture) ---------------------------------
+
+export interface ContentRegionCtx {
+  code: string; name: string;
+  momentum: LRMomentumBand | null; economy: LREconomyBand | null; devTier: LRDevTier | null;
+  primary: LRSector | null; sectors: Partial<Record<LRSector, number>>;
+  needs: Array<{ category: LRNeedCategory; severity: LRSeverity }>;
+  conditions: LRConditionKind[]; opportunities: LROpportunityKind[]; risks: LRRiskKind[];
+  controller: string | null; playerDeposit: number; rivalDeposit: number; rivalDepositDelta: number;
+  stability: number | null; playerStanding: number;
+}
+export interface ContentContext {
+  day: number; totalDays: number; seed: number; season: string;
+  regions: Record<string, ContentRegionCtx>;
+  /** Current price ÷ base price per resource (market pressure, canonical prices). */
+  priceRatio: Record<string, number>;
+  crises: Array<{ id: string; category: string; status: string; stageIndex: number; affectedRegions: string[]; v93: boolean }>;
+  crisisEnabled: boolean;
+  activeEventIds: string[];
+  /** Canonical faction id → strongest regional influence (0..100). */
+  factionInfluence: Record<string, number>;
+  factionConflicts: Array<{ a: string; b: string; regionId: string }>;
+  diplomacy: { enabled: boolean; pactExpiring: boolean; tension: number };
+  rival: { name: string; profile: RivalContentProfile; focusRegion: string | null };
+  player: { money: number; debt: number; region: string };
+  strategyRegion: string | null;
+  campaignVars: Record<string, string | number | boolean>;
+  contractsEnabled: boolean;
+  infraEnabled: boolean;
+  projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
+  windows: Array<{ id: string; type: string; subject: string; expiresTurn: number | null; reason: string }>;
+}
+
+// ---- Requirements (structured, explainable) -----------------------------------------------------------
+
+export type ContentReq =
+  | { k: 'momentum_min'; band: LRMomentumBand } | { k: 'momentum_max'; band: LRMomentumBand }
+  | { k: 'economy_min'; band: LREconomyBand } | { k: 'economy_max'; band: LREconomyBand }
+  | { k: 'dev_min'; tier: LRDevTier } | { k: 'dev_max'; tier: LRDevTier }
+  | { k: 'need'; category: LRNeedCategory; min: LRSeverity }
+  | { k: 'sector'; sector: LRSector; min: number }
+  | { k: 'condition'; kind: LRConditionKind }
+  | { k: 'opportunity'; kind: LROpportunityKind }
+  | { k: 'risk'; kind: LRRiskKind }
+  | { k: 'price_min'; resource: string; ratio: number } | { k: 'price_max'; resource: string; ratio: number }
+  | { k: 'season'; seasons: string[] }
+  | { k: 'crisis'; category?: string; here?: boolean; chainPrefix?: string; stageMin?: number }
+  | { k: 'no_crisis_here' }
+  | { k: 'day_min'; day: number } | { k: 'match_min_days'; days: number }
+  | { k: 'rival_invested'; min: number } | { k: 'rival_withdrew' } | { k: 'rival_holds' } | { k: 'rival_profile'; profiles: RivalContentProfile[] }
+  | { k: 'faction'; factionId: string; min: number }
+  | { k: 'faction_conflict'; a: string; b: string }
+  | { k: 'diplomacy'; state: 'pact_expiring' | 'high_tension' }
+  | { k: 'liquidity_min'; amount: number } | { k: 'in_debt' }
+  | { k: 'flag'; key: string; value: string | number | boolean } | { k: 'no_flag'; key: string }
+  | { k: 'campaign_var'; key: string; value: string | number | boolean }
+  | { k: 'stability_max'; value: number }
+  | { k: 'project'; projectId: string; status: string[] }
+  | { k: 'window'; type: string }
+  | { k: 'contracts_on' } | { k: 'infra_on' }
+  | { k: 'any'; of: ContentReq[] };
+
+const CT_MOM: Record<LRMomentumBand, number> = { declining: 0, weakening: 1, stable: 2, growing: 3, rapid_growth: 4, booming: 5 };
+const CT_ECON: Record<LREconomyBand, number> = { depressed: 0, weak: 1, moderate: 2, strong: 3, booming: 4 };
+const CT_DEV: Record<LRDevTier, number> = { underdeveloped: 0, emerging: 1, developing: 2, advanced: 3, highly_developed: 4 };
+const CT_SEV: Record<LRSeverity, number> = { low: 1, moderate: 2, high: 3, critical: 4 };
+const ctLabel = (s: string) => s.replace(/_/g, ' ');
+
+/** Evaluate one requirement for a region. Returns evidence text (satisfied) or a failure reason. */
+export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionId: string | null, state: MatchContentState | null): { ok: boolean; text: string } {
+  const r = regionId ? ctx.regions[regionId] : null;
+  const name = r?.name || regionId || 'the nation';
+  const res = (ok: boolean, yes: string, no: string) => ({ ok, text: ok ? yes : no });
+  switch (req.k) {
+    case 'momentum_min': return res(Boolean(r?.momentum) && CT_MOM[r!.momentum!] >= CT_MOM[req.band], `${name} momentum is ${ctLabel(r?.momentum || '')}`, `${name} momentum below ${ctLabel(req.band)}`);
+    case 'momentum_max': return res(Boolean(r?.momentum) && CT_MOM[r!.momentum!] <= CT_MOM[req.band], `${name} momentum is ${ctLabel(r?.momentum || '')}`, `${name} momentum above ${ctLabel(req.band)}`);
+    case 'economy_min': return res(Boolean(r?.economy) && CT_ECON[r!.economy!] >= CT_ECON[req.band], `${name} economy is ${r?.economy}`, `${name} economy weaker than ${req.band}`);
+    case 'economy_max': return res(Boolean(r?.economy) && CT_ECON[r!.economy!] <= CT_ECON[req.band], `${name} economy is ${r?.economy}`, `${name} economy stronger than ${req.band}`);
+    case 'dev_min': return res(Boolean(r?.devTier) && CT_DEV[r!.devTier!] >= CT_DEV[req.tier], `${name} is ${ctLabel(r?.devTier || '')}`, `${name} less developed than ${ctLabel(req.tier)}`);
+    case 'dev_max': return res(Boolean(r?.devTier) && CT_DEV[r!.devTier!] <= CT_DEV[req.tier], `${name} is ${ctLabel(r?.devTier || '')}`, `${name} more developed than ${ctLabel(req.tier)}`);
+    case 'need': { const n = r?.needs.find(x => x.category === req.category); return res(Boolean(n) && CT_SEV[n!.severity] >= CT_SEV[req.min], `${name} ${ctLabel(req.category)} need is ${n?.severity}`, `${name} has no ${req.min}+ ${ctLabel(req.category)} need`); }
+    case 'sector': { const v = Math.round(r?.sectors[req.sector] || 0); return res(v >= req.min, `${name} ${req.sector} activity ${v}`, `${name} ${req.sector} activity ${v} < ${req.min}`); }
+    case 'condition': return res(Boolean(r?.conditions.includes(req.kind)), `${name}: ${ctLabel(req.kind)}`, `${name} has no ${ctLabel(req.kind)}`);
+    case 'opportunity': return res(Boolean(r?.opportunities.includes(req.kind)), `${name} opportunity: ${ctLabel(req.kind)}`, `${name} has no ${ctLabel(req.kind)} opportunity`);
+    case 'risk': return res(Boolean(r?.risks.includes(req.kind)), `${name} risk: ${ctLabel(req.kind)}`, `${name} has no ${ctLabel(req.kind)} risk`);
+    case 'price_min': { const v = ctx.priceRatio[req.resource] || 1; return res(v >= req.ratio, `${req.resource} trades at ${Math.round(v * 100)}% of base`, `${req.resource} price ${Math.round(v * 100)}% < ${Math.round(req.ratio * 100)}%`); }
+    case 'price_max': { const v = ctx.priceRatio[req.resource] || 1; return res(v <= req.ratio, `${req.resource} trades at ${Math.round(v * 100)}% of base`, `${req.resource} price ${Math.round(v * 100)}% > ${Math.round(req.ratio * 100)}%`); }
+    case 'season': return res(req.seasons.includes(ctx.season), `${ctx.season} season`, `not ${req.seasons.join('/')} season`);
+    case 'crisis': {
+      const hit = ctx.crises.find(c => c.status === 'active' && (!req.category || c.category === req.category) && (!req.here || (regionId ? c.affectedRegions.includes(regionId) : true)) && (!req.chainPrefix || c.id.startsWith(req.chainPrefix)) && (req.stageMin === undefined || c.stageIndex >= req.stageMin));
+      return res(Boolean(hit), `active crisis: ${hit ? ctLabel(hit.id.replace(/^crisis_|^v93c_/, '')) : ''}`, `no matching active crisis${req.here ? ` in ${name}` : ''}`);
+    }
+    case 'no_crisis_here': { const hit = ctx.crises.some(c => c.status === 'active' && regionId && c.affectedRegions.includes(regionId)); return res(!hit, `${name} has no active crisis`, `${name} already has an active crisis`); }
+    case 'day_min': return res(ctx.day >= req.day, `day ${ctx.day}`, `too early (day ${ctx.day} < ${req.day})`);
+    case 'match_min_days': return res(ctx.totalDays >= req.days, `${ctx.totalDays}-day match`, `match too short (${ctx.totalDays} < ${req.days} days)`);
+    case 'rival_invested': return res(Boolean(r) && r!.rivalDepositDelta >= req.min, `${ctx.rival.name} added $${r?.rivalDepositDelta || 0} in ${name}`, `${ctx.rival.name} has not invested heavily in ${name}`);
+    case 'rival_withdrew': return res(Boolean(r) && r!.rivalDepositDelta < 0, `${ctx.rival.name} pulled capital out of ${name}`, `${ctx.rival.name} has not withdrawn from ${name}`);
+    case 'rival_holds': return res(Boolean(r) && r!.rivalDeposit > 0 && r!.rivalDeposit > r!.playerDeposit, `${ctx.rival.name} holds the larger stake in ${name}`, `${ctx.rival.name} does not lead ${name}`);
+    case 'rival_profile': return res(req.profiles.includes(ctx.rival.profile), `${ctx.rival.name} plays ${ctx.rival.profile}`, `${ctx.rival.name} is not ${req.profiles.join('/')}`);
+    case 'faction': { const v = Math.round(ctx.factionInfluence[req.factionId] || 0); const n = (typeof RF_DEF_BY_ID !== 'undefined' && RF_DEF_BY_ID[req.factionId]?.name) || req.factionId; return res(v >= req.min, `${n} influence ${v}`, `${n} influence ${v} < ${req.min}`); }
+    case 'faction_conflict': { const hit = ctx.factionConflicts.find(c => ((c.a === req.a && c.b === req.b) || (c.a === req.b && c.b === req.a)) && (!regionId || c.regionId === regionId)); return res(Boolean(hit), `${RF_DEF_BY_ID[req.a]?.name || req.a} and ${RF_DEF_BY_ID[req.b]?.name || req.b} disagree over ${name}`, `no ${req.a} / ${req.b} conflict in ${name}`); }
+    case 'diplomacy': return res(ctx.diplomacy.enabled && (req.state === 'pact_expiring' ? ctx.diplomacy.pactExpiring : ctx.diplomacy.tension >= 60), req.state === 'pact_expiring' ? 'a pact is about to expire' : `diplomatic tension ${ctx.diplomacy.tension}`, req.state === 'pact_expiring' ? 'no pact expiring' : 'diplomatic tension is low');
+    case 'liquidity_min': return res(ctx.player.money >= req.amount, `you hold $${Math.round(ctx.player.money).toLocaleString()}`, `cash below $${req.amount.toLocaleString()}`);
+    case 'in_debt': return res(ctx.player.debt > 0, `you carry $${Math.round(ctx.player.debt).toLocaleString()} of debt`, 'no debt');
+    case 'flag': { const v = state?.flags[req.key]; return res(v === req.value, `earlier decision: ${ctLabel(req.key)} = ${String(v)}`, `requires earlier decision ${ctLabel(req.key)}`); }
+    case 'no_flag': return res(state?.flags[req.key] === undefined, `no earlier ${ctLabel(req.key)} decision`, `already decided ${ctLabel(req.key)}`);
+    case 'campaign_var': { const v = ctx.campaignVars[req.key]; return res(v === req.value, `campaign: ${ctLabel(req.key)} = ${String(v)}`, `campaign variable ${req.key} not ${String(req.value)}`); }
+    case 'stability_max': return res(r?.stability !== null && r?.stability !== undefined && r.stability <= req.value, `${name} stability ${r?.stability}`, `${name} stability above ${req.value}`);
+    case 'project': { const p = ctx.projects.find(x => x.id === req.projectId); return res(Boolean(p) && req.status.includes(p!.status), `${p?.id || req.projectId} is ${p?.status}`, `${req.projectId} is ${p?.status || 'missing'}`); }
+    case 'window': { const w = ctx.windows.find(x => x.type === req.type && (!regionId || x.subject === regionId)); return res(Boolean(w), w?.reason || 'window open', `no ${ctLabel(req.type)} window`); }
+    case 'contracts_on': return res(ctx.contractsEnabled, 'contracts enabled', 'regional contracts are off');
+    case 'infra_on': return res(ctx.infraEnabled, 'infrastructure enabled', 'infrastructure is off');
+    case 'any': { const outs = req.of.map(x => evaluateContentReq(x, ctx, regionId, state)); const hit = outs.find(o => o.ok); return hit ? hit : { ok: false, text: outs.map(o => o.text).join(' / ') }; }
+  }
+  return { ok: false, text: 'unknown requirement' };
+}
+
+// ---- Template shapes ---------------------------------------------------------------------------------
+
+export interface ContentTemplateBase {
+  id: string; kind: ContentKind; title: string; summary: string;
+  regions: string[]; themes: ContentTheme[]; roles: ContentRole[];
+  rarity: ContentRarity; cooldownDays: number;
+  requires: ContentReq[]; excludes?: ContentReq[];
+  factionIds?: string[];
+}
+export interface ContractTemplate extends ContentTemplateBase {
+  kind: 'contract'; archetype: ContractArchetype; contractType: ContractType; issuingFactionId: string | null;
+  /** Hand-authored per-region text; '*' is the fallback. */
+  text: Record<string, { title: string; description: string }>;
+  objective: { type: 'deliver_resource' | 'invest_capital' | 'build_infrastructure' | 'maintain_presence'; item?: string; base: number };
+  requirement: { cashOnHand: number; standing?: number; devLevel?: number; equipment?: string[] };
+  duration: number; offerDays: number;
+}
+export type DilemmaEffect =
+  | { k: 'cash'; amount: number }
+  | { k: 'standing'; delta: number }
+  | { k: 'stability'; delta: number; turns: number }
+  | { k: 'flag'; key: string; value: string | number | boolean }
+  | { k: 'offer_contract'; templateId: string }
+  | { k: 'event'; eventId: string }
+  | { k: 'lock_project'; projectId: string } | { k: 'unlock_project'; projectId: string };
+export interface DilemmaChoiceDef {
+  id: string; label: string; pros: string[]; cons: string[];
+  /** Authored priority profile (−2..2) used by the V9.1 decision-quality check: no choice may dominate. */
+  scores: { economy: number; control: number; stability: number; longTerm: number };
+  effects: DilemmaEffect[];
+  nav?: IntentNavTarget | null;
+  factions?: { winners: string[]; losers: string[] };
+}
+export interface DilemmaTemplate extends ContentTemplateBase {
+  kind: 'dilemma'; conflictType: 'growth_vs_capacity' | 'automation_vs_labor' | 'specialize_vs_diversify' | 'invest_vs_liquidity' | 'faction_conflict' | 'compete_vs_cooperate' | 'short_vs_long' | 'conservation_vs_growth';
+  prompt: string; choices: DilemmaChoiceDef[];
+}
+export interface CrisisContentTemplate extends ContentTemplateBase { kind: 'crisis'; category: CrisisCategory; chain: CrisisChain }
+export interface WorldEventTemplate extends ContentTemplateBase {
+  kind: 'event' | 'rare';
+  category: 'economic' | 'trade' | 'technology' | 'infrastructure' | 'environment' | 'resource' | 'national_opportunity' | 'market';
+  duration: number; description: string;
+  /** Same effect shape the canonical activeEvents consumers read (resourcePrice / travelCost / challengeBonus / investmentYieldMultiplier). */
+  effect: { resourcePrice?: Record<string, number>; travelCost?: number; challengeBonus?: Record<string, number>; investmentYieldMultiplier?: number };
+  /** Optional lasting consequence recorded in content memory (drives later eligibility). */
+  setsFlag?: { key: string; value: string | number | boolean };
+}
+export interface InfrastructureContentMeta { projectId: string; path: string; competesWith: string[]; roles: ContentRole[]; themes: ContentTheme[] }
+
+// ---- State ------------------------------------------------------------------------------------------
+
+export interface MatchContentProfile {
+  scenarioId: string | null;
+  themes: ContentTheme[];
+  themeWeights: Partial<Record<ContentTheme, number>>;
+  regionWeights: Record<string, number>;
+  budgets: { crises: number; dilemmas: number; rare: number; exceptional: number; nationalEvents: number; concurrentOffers: number; totalOffers: number };
+  contractRotation: 'scarce' | 'normal' | 'abundant';
+  crisisIntensity: 'low' | 'normal' | 'high';
+  rareFrequency: 'off' | 'normal' | 'high';
+  startingPackage: string;
+  regionalOpening: string | null;
+  rivalProfile: RivalContentProfile;
+  totalDays: number;
+  /** Rare templates seen in recent matches (settings-level, not AI memory) — de-prioritised, never banned. */
+  recentRare: string[];
+}
+export interface ContentHistoryEntry { key: string; templateId: string; kind: ContentKind; regionId: string | null; day: number; outcome: 'offered' | 'started' | 'opened' | 'completed' | 'failed' | 'expired' | 'resolved' | 'chosen'; detail?: string }
+export interface ContentOffer { contractId: string; templateId: string; regionId: string; offeredDay: number; expiresDay: number }
+export interface ActiveDilemma { id: string; templateId: string; regionId: string; openedDay: number; expiresDay: number; title: string; prompt: string; evidence: string[]; choices: DilemmaChoiceDef[] }
+export interface ContentOpportunity { id: string; type: 'regional_entry' | 'cheap_investment' | 'market_window' | 'diplomatic_window' | 'contract_window' | 'faction_window' | 'recovery_window' | 'rival_vulnerability'; regionId: string | null; title: string; reason: string; openedDay: number; expiresDay: number; source: 'world_reaction' | 'living_regions' | 'content' | 'rival'; nav: IntentNavTarget; track: PlayerTrackedObjective | null; strategyAligned: boolean }
+export interface ContentEvaluation { day: number; eligible: Array<{ key: string; kind: ContentKind; score: number; reasons: string[] }>; suppressed: Array<{ key: string; kind: ContentKind; reason: string }>; evaluated: number; cached: number; ms: number }
+export interface MatchContentState {
+  version: 1; seed: number; profile: MatchContentProfile; initializedDay: number;
+  history: ContentHistoryEntry[];
+  /** template key → day it becomes eligible again. Keys: template id, `${id}@${region}`, `cat:${category}`. */
+  cooldowns: Record<string, number>;
+  used: { crises: number; dilemmas: number; rare: number; exceptional: number; nationalEvents: number; offers: number };
+  offers: ContentOffer[];
+  activeDilemma: ActiveDilemma | null;
+  resolved: Array<{ id: string; templateId: string; choiceId: string; day: number; regionId: string }>;
+  opportunities: ContentOpportunity[];
+  flags: Record<string, string | number | boolean>;
+  regionLastDilemma: Record<string, number>;
+  lastCrisisCategory: string | null;
+  lastEval: ContentEvaluation | null;
+  lastPlannedDay: number | null;
+  startApplied: boolean;
+  seenKinds: string[];
+  revision: number;
+}
+export const CONTENT_LIMITS = { history: 80, resolved: 20, opportunities: 3, notices: 1, evalList: 40 };
+
+export function buildMatchContentProfile(i: {
+  seed: number; totalDays: number; scenarioId?: string | null; themes?: ContentTheme[]; startingPackage?: string | null;
+  regionalOpening?: string | null; contractAbundance?: string | null; crisisIntensity?: string | null; rareFrequency?: string | null;
+  rivalProfile?: RivalContentProfile; recentRare?: string[];
+}): MatchContentProfile {
+  const days = Math.max(5, Math.floor(i.totalDays || 30));
+  const crisisIntensity = (['low', 'normal', 'high'].includes(String(i.crisisIntensity)) ? i.crisisIntensity : 'normal') as MatchContentProfile['crisisIntensity'];
+  const rareFrequency = (['off', 'normal', 'high'].includes(String(i.rareFrequency)) ? i.rareFrequency : 'normal') as MatchContentProfile['rareFrequency'];
+  const contractRotation = (['scarce', 'normal', 'abundant'].includes(String(i.contractAbundance)) ? i.contractAbundance : 'normal') as MatchContentProfile['contractRotation'];
+  const themes = (i.themes || []).filter(t => CONTENT_THEMES.includes(t));
+  const themeWeights: Partial<Record<ContentTheme, number>> = {};
+  CONTENT_THEMES.forEach(t => { themeWeights[t] = themes.includes(t) ? 1.8 : 1; });
+  // Seed spotlight: two regions get extra weight so seeds differ even with identical scenarios.
+  const regionWeights: Record<string, number> = {};
+  const ranked = [...CONTENT_CORE_REGIONS].sort((a, b) => contentHash(i.seed, 'spot', a) - contentHash(i.seed, 'spot', b));
+  CONTENT_CORE_REGIONS.forEach(code => { regionWeights[code] = ranked.indexOf(code) < 2 ? 1.45 : ranked.indexOf(code) < 4 ? 1.15 : 1; });
+  const crises = Math.min(5, crisisIntensity === 'low' ? Math.max(1, Math.floor(days / 30)) : crisisIntensity === 'high' ? 2 + Math.floor(days / 15) : 1 + Math.floor(days / 25));
+  return {
+    scenarioId: i.scenarioId || null, themes, themeWeights, regionWeights,
+    budgets: {
+      crises,
+      dilemmas: Math.min(6, 1 + Math.floor(days / 10)),
+      rare: rareFrequency === 'off' ? 0 : Math.min(2, (days >= 20 ? 1 : 0) + (rareFrequency === 'high' ? 1 : 0)),
+      exceptional: rareFrequency !== 'off' && days >= 30 ? 1 : 0,
+      nationalEvents: Math.min(5, 1 + Math.floor(days / 12)),
+      concurrentOffers: contractRotation === 'scarce' ? 2 : contractRotation === 'abundant' ? 5 : 3,
+      totalOffers: Math.min(40, (contractRotation === 'scarce' ? 2 : contractRotation === 'abundant' ? 5 : 3) + Math.floor(days / (contractRotation === 'abundant' ? 2 : contractRotation === 'scarce' ? 5 : 3)))
+    },
+    contractRotation, crisisIntensity, rareFrequency,
+    startingPackage: i.startingPackage || 'standard',
+    regionalOpening: i.regionalOpening || null,
+    rivalProfile: i.rivalProfile || 'balanced',
+    totalDays: days,
+    recentRare: (i.recentRare || []).filter(x => typeof x === 'string').slice(-6)
+  };
+}
+
+export function createMatchContentState(profile: MatchContentProfile, seed: number, day: number): MatchContentState {
+  return { version: 1, seed, profile, initializedDay: day, history: [], cooldowns: {}, used: { crises: 0, dilemmas: 0, rare: 0, exceptional: 0, nationalEvents: 0, offers: 0 }, offers: [], activeDilemma: null, resolved: [], opportunities: [], flags: {}, regionLastDilemma: {}, lastCrisisCategory: null, lastEval: null, lastPlannedDay: null, startApplied: false, seenKinds: [], revision: 0 };
+}
+
+/** Persist only ids / bounded history (no template copies). Unknown or malformed data is dropped. */
+export function sanitizeMatchContentState(raw: unknown): MatchContentState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw;
+  if (!r.profile || typeof r.profile !== 'object') return null;
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const p = buildMatchContentProfile({ seed: num(r.seed), totalDays: num(r.profile.totalDays, 30), scenarioId: r.profile.scenarioId || null, themes: Array.isArray(r.profile.themes) ? r.profile.themes : [], startingPackage: r.profile.startingPackage, regionalOpening: r.profile.regionalOpening, contractAbundance: r.profile.contractRotation, crisisIntensity: r.profile.crisisIntensity, rareFrequency: r.profile.rareFrequency, rivalProfile: r.profile.rivalProfile, recentRare: r.profile.recentRare });
+  const st = createMatchContentState(p, num(r.seed), num(r.initializedDay, 1));
+  st.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.templateId === 'string' && typeof h.day === 'number').slice(-CONTENT_LIMITS.history);
+  Object.entries(r.cooldowns || {}).forEach(([k, v]) => { if (typeof v === 'number') st.cooldowns[k] = v; });
+  Object.keys(st.used).forEach(k => { (st.used as any)[k] = Math.max(0, num(r.used?.[k])); });
+  st.offers = (Array.isArray(r.offers) ? r.offers : []).filter((o: any) => o && typeof o.contractId === 'string' && CONTENT_TEMPLATE_BY_ID[o.templateId]).slice(-12);
+  st.activeDilemma = r.activeDilemma && DILEMMA_TEMPLATE_BY_ID[r.activeDilemma.templateId] ? rebuildActiveDilemma(r.activeDilemma) : null;
+  st.resolved = (Array.isArray(r.resolved) ? r.resolved : []).filter((x: any) => x && typeof x.templateId === 'string').slice(-CONTENT_LIMITS.resolved);
+  st.opportunities = (Array.isArray(r.opportunities) ? r.opportunities : []).filter((o: any) => o && typeof o.id === 'string').slice(-CONTENT_LIMITS.opportunities);
+  Object.entries(r.flags || {}).forEach(([k, v]) => { if (['string', 'number', 'boolean'].includes(typeof v)) st.flags[k] = v as any; });
+  Object.entries(r.regionLastDilemma || {}).forEach(([k, v]) => { if (typeof v === 'number') st.regionLastDilemma[k] = v; });
+  st.lastCrisisCategory = typeof r.lastCrisisCategory === 'string' ? r.lastCrisisCategory : null;
+  st.lastPlannedDay = typeof r.lastPlannedDay === 'number' ? r.lastPlannedDay : null;
+  if (r.lastEval && typeof r.lastEval === 'object' && Array.isArray(r.lastEval.eligible) && Array.isArray(r.lastEval.suppressed)) st.lastEval = { day: Number(r.lastEval.day) || 0, eligible: r.lastEval.eligible.slice(0, CONTENT_LIMITS.evalList), suppressed: r.lastEval.suppressed.slice(0, CONTENT_LIMITS.evalList), evaluated: Number(r.lastEval.evaluated) || 0, cached: Number(r.lastEval.cached) || 0, ms: Number(r.lastEval.ms) || 0 };
+  st.startApplied = r.startApplied === true;
+  st.seenKinds = (Array.isArray(r.seenKinds) ? r.seenKinds : []).filter((x: any) => typeof x === 'string').slice(-20);
+  st.revision = num(r.revision);
+  return st;
+}
+function rebuildActiveDilemma(d: any): ActiveDilemma {
+  const t = DILEMMA_TEMPLATE_BY_ID[d.templateId];
+  return { id: String(d.id), templateId: t.id, regionId: String(d.regionId || t.regions[0]), openedDay: Number(d.openedDay) || 1, expiresDay: Number(d.expiresDay) || 1, title: String(d.title || t.title), prompt: String(d.prompt || t.prompt), evidence: Array.isArray(d.evidence) ? d.evidence.filter((x: any) => typeof x === 'string').slice(0, 4) : [], choices: scaleDilemmaChoices(t, Number(d.openedDay) || 1) };
+}
+
+// ---- Scaling & rewards (V9.1 balance: value follows commitment, no power creep) ----------------------
+
+/** Content scales with match progress so a day-20 offer matters as much as a day-2 one (not more). */
+export const contentScale = (day: number) => 1 + Math.min(1.5, Math.max(0, day - 1) / 16);
+const round250 = (v: number) => Math.max(250, Math.round(v / 250) * 250);
+/** Return per unit of commitment by archetype. Bounded well below the legacy presets' ratios. */
+export const CONTRACT_ARCHETYPE_ROI: Record<ContractArchetype, number> = { rapid: 1.3, capital: 1.45, resource: 1.4, infrastructure: 1.3, presence: 1.25, crisis: 1.45, faction: 1.35, development: 1.2 };
+/** Opportunity cost of being pinned in a region for a day (cannot travel/act elsewhere freely). */
+export const CONTENT_PRESENCE_DAY_VALUE = 350;
+
+export function contentItemPrice(item: string): number {
+  const cat = RESOURCE_CATEGORIES[item];
+  return cat ? (RESOURCE_MARKET_PRICES_BY_CATEGORY[cat] || 100) : 100;
+}
+
+/** Instantiate a canonical RegionalContract (stable deterministic id — never a timestamp). */
+export function instantiateContractTemplate(t: ContractTemplate, regionId: string, day: number): RegionalContract & { v93: { templateId: string; offeredDay: number; commitment: number } } {
+  const s = contentScale(day);
+  const text = t.text[regionId] || t.text['*'];
+  const item = t.objective.item === 'region_resource' ? (REGIONAL_RESOURCES[regionId]?.[0] || 'Wheat') : t.objective.item;
+  let target = t.objective.base; let commitment = 0;
+  if (t.objective.type === 'invest_capital') { target = round250(t.objective.base * s); commitment = target; }
+  else if (t.objective.type === 'deliver_resource') { target = Math.max(1, Math.round(t.objective.base + (s - 1) * 3)); commitment = target * contentItemPrice(item || 'Wheat'); }
+  else if (t.objective.type === 'maintain_presence') { target = Math.max(1, t.objective.base); commitment = target * CONTENT_PRESENCE_DAY_VALUE; }
+  else { target = 1; commitment = round250(4000 * s); }
+  const rawReward = commitment * CONTRACT_ARCHETYPE_ROI[t.archetype];
+  const reward = rawReward < 3000 ? Math.max(100, Math.round(rawReward / 50) * 50) : round250(rawReward);
+  const title = text.title.replace(/\{region\}/g, REGIONS[regionId]?.name || regionId);
+  const description = text.description.replace(/\{region\}/g, REGIONS[regionId]?.name || regionId).replace(/\{item\}/g, item || 'resources').replace(/\{n\}/g, String(target));
+  const faction = t.issuingFactionId && RF_DEF_BY_ID[t.issuingFactionId] ? RF_DEF_BY_ID[t.issuingFactionId] : null;
+  const objDesc = t.objective.type === 'invest_capital' ? `Invest $${target.toLocaleString()} in ${REGIONS[regionId]?.name || regionId}`
+    : t.objective.type === 'deliver_resource' ? `Deliver ${target} ${item || 'units'} in ${REGIONS[regionId]?.name || regionId}`
+      : t.objective.type === 'maintain_presence' ? `Stay in ${REGIONS[regionId]?.name || regionId} for ${target} days`
+        : `Have an operating infrastructure project in ${REGIONS[regionId]?.name || regionId}`;
+  return {
+    id: `v93_${t.id}_${regionId}_d${day}`, title, description,
+    contractType: t.contractType, issuingRegionId: regionId,
+    issuingFaction: faction?.name || `${REGIONS[regionId]?.name || regionId} Development Board`,
+    ...(faction ? { issuingFactionId: faction.id } : {}),
+    requirements: { requiredMoney: round250(t.requirement.cashOnHand * s), ...(t.requirement.standing ? { minRegionalStanding: t.requirement.standing } : {}), ...(t.requirement.devLevel ? { minRegionalDevLevel: t.requirement.devLevel } : {}), ...(t.requirement.equipment ? { requiredEquipment: t.requirement.equipment } : {}), maxDurationTurns: t.duration },
+    rewards: { money: reward, regionalStandingBoost: t.archetype === 'presence' || t.archetype === 'faction' ? 10 : 5, devPoints: t.archetype === 'development' || t.archetype === 'infrastructure' ? 250 : 100 },
+    objectives: [{ id: `obj_${t.id}`, type: t.objective.type, description: objDesc, targetRegion: regionId, ...(item && t.objective.type === 'deliver_resource' ? { targetItem: item } : {}), targetValue: target, currentProgress: 0, completed: false, isMandatory: true }],
+    status: 'available', durationTurns: t.duration, turnsRemaining: t.duration,
+    penaltyOnFailure: t.archetype === 'crisis' || t.archetype === 'capital' ? { standingLoss: 8 } : undefined,
+    v93: { templateId: t.id, offeredDay: day, commitment }
+  } as any;
+}
+
+export function scaleDilemmaChoices(t: DilemmaTemplate, day: number): DilemmaChoiceDef[] {
+  const s = contentScale(day);
+  // Authored cash is negative for a cost and positive for a gain; only the magnitude scales.
+  return t.choices.map(c => ({ ...c, effects: c.effects.map(e => (e.k === 'cash' ? { ...e, amount: Math.sign(e.amount) * round250(Math.abs(e.amount) * s) } : e)) }));
+}
+
+// ---- Eligibility + selection ------------------------------------------------------------------------
+
+export interface ContentCandidate { key: string; template: ContentTemplateBase; regionId: string | null; score: number; reasons: string[] }
+
+function templateRegions(t: ContentTemplateBase): Array<string | null> {
+  return t.regions.length ? t.regions.filter(r => CONTENT_CORE_REGIONS.includes(r)) : [null];
+}
+
+const CONTENT_ELIGIBILITY_CACHE = new Map<string, { sig: string; ok: boolean; reasons: string[]; fail: string | null }>();
+/** Signature of only the inputs a template reads (Part 111: unchanged domains are not re-evaluated). */
+function contentReqSig(reqs: ContentReq[], ctx: ContentContext, regionId: string | null, state: MatchContentState | null): string {
+  const r = regionId ? ctx.regions[regionId] : null;
+  const parts: string[] = [];
+  const walk = (q: ContentReq) => {
+    switch (q.k) {
+      case 'momentum_min': case 'momentum_max': parts.push(`m${r?.momentum}`); break;
+      case 'economy_min': case 'economy_max': parts.push(`e${r?.economy}`); break;
+      case 'dev_min': case 'dev_max': parts.push(`d${r?.devTier}`); break;
+      case 'need': parts.push(`n${JSON.stringify(r?.needs || [])}`); break;
+      case 'sector': parts.push(`s${Math.round(r?.sectors[q.sector] || 0)}`); break;
+      case 'condition': case 'opportunity': case 'risk': parts.push(`c${(r?.conditions || []).join()}${(r?.opportunities || []).join()}${(r?.risks || []).join()}`); break;
+      case 'price_min': case 'price_max': parts.push(`p${q.resource}${Math.round((ctx.priceRatio[q.resource] || 1) * 100)}`); break;
+      case 'season': parts.push(ctx.season); break;
+      case 'crisis': case 'no_crisis_here': parts.push(`x${ctx.crises.map(c => `${c.id}${c.status}${c.stageIndex}`).join()}`); break;
+      case 'day_min': parts.push(`D${ctx.day >= q.day}`); break;
+      case 'rival_invested': case 'rival_withdrew': case 'rival_holds': parts.push(`r${r?.rivalDepositDelta}${r?.rivalDeposit}${r?.playerDeposit}`); break;
+      case 'faction': parts.push(`f${Math.round(ctx.factionInfluence[q.factionId] || 0)}`); break;
+      case 'faction_conflict': parts.push(`F${ctx.factionConflicts.length}`); break;
+      case 'diplomacy': parts.push(`dip${ctx.diplomacy.pactExpiring}${ctx.diplomacy.tension}`); break;
+      case 'liquidity_min': case 'in_debt': parts.push(`$${Math.round(ctx.player.money / 250)}${ctx.player.debt > 0}`); break;
+      case 'flag': case 'no_flag': parts.push(`g${String(state?.flags[q.key])}`); break;
+      case 'campaign_var': parts.push(`cv${String(ctx.campaignVars[q.key])}`); break;
+      case 'stability_max': parts.push(`st${r?.stability}`); break;
+      case 'project': parts.push(`pj${ctx.projects.find(x => x.id === q.projectId)?.status}`); break;
+      case 'window': parts.push(`w${ctx.windows.map(w => w.id).join()}`); break;
+      case 'any': q.of.forEach(walk); break;
+      default: parts.push(`${q.k}${JSON.stringify(q)}${ctx.contractsEnabled}${ctx.infraEnabled}${ctx.totalDays}${ctx.rival.profile}`);
+    }
+  };
+  reqs.forEach(walk);
+  return parts.join('|');
+}
+
+export function evaluateTemplateEligibility(t: ContentTemplateBase, regionId: string | null, ctx: ContentContext, state: MatchContentState | null, useCache = true): { ok: boolean; reasons: string[]; fail: string | null; cached: boolean } {
+  const reqs = [...t.requires, ...(t.excludes || [])];
+  const cacheKey = `${ctx.seed}|${t.id}@${regionId || '*'}`;
+  const sig = useCache ? contentReqSig(reqs, ctx, regionId, state) : '';
+  if (useCache) { const hit = CONTENT_ELIGIBILITY_CACHE.get(cacheKey); if (hit && hit.sig === sig) return { ok: hit.ok, reasons: hit.reasons, fail: hit.fail, cached: true }; }
+  const reasons: string[] = []; let fail: string | null = null;
+  for (const q of t.requires) { const o = evaluateContentReq(q, ctx, regionId, state); if (!o.ok) { fail = o.text; break; } reasons.push(o.text); }
+  if (!fail) for (const q of t.excludes || []) { const o = evaluateContentReq(q, ctx, regionId, state); if (o.ok) { fail = `excluded: ${o.text}`; break; } }
+  const out = { ok: !fail, reasons: reasons.slice(0, 4), fail };
+  if (useCache) { if (CONTENT_ELIGIBILITY_CACHE.size > 2000) CONTENT_ELIGIBILITY_CACHE.clear(); CONTENT_ELIGIBILITY_CACHE.set(cacheKey, { sig, ...out }); }
+  return { ...out, cached: false };
+}
+
+const RIVAL_ROLE_WEIGHT: Record<RivalContentProfile, Partial<Record<ContentRole, number>>> = {
+  aggressive: { defense: 1.4, competition: 1.3, regional_control: 1.2, diplomacy: 1.1 },
+  economic: { trade: 1.3, liquidity: 1.2, economic_growth: 1.2, competition: 1.1 },
+  infrastructure: { infrastructure: 1.35, development: 1.25, long_term_investment: 1.15 },
+  diplomatic: { diplomacy: 1.4, faction: 1.2, stability: 1.1 },
+  balanced: {}
+};
+
+export function scoreContentCandidate(t: ContentTemplateBase, regionId: string | null, ctx: ContentContext, profile: MatchContentProfile): number {
+  const theme = t.themes.length ? Math.max(...t.themes.map(x => profile.themeWeights[x] || 1)) : 1;
+  const region = regionId ? (profile.regionWeights[regionId] || 1) : 1;
+  const identity = regionId && REGION_CONTENT_IDENTITY[regionId]?.themes.some(x => t.themes.includes(x)) ? 1.15 : 1;
+  const rival = Math.max(1, ...t.roles.map(ro => RIVAL_ROLE_WEIGHT[profile.rivalProfile][ro] || 1));
+  const strategy = regionId && ctx.strategyRegion === regionId ? 1.35 : 1; // GI3 raises relevance only
+  const recent = t.kind === 'rare' && (profile.recentRare || []).includes(t.id) ? 0.35 : 1; // cross-match variety
+  return Math.round(theme * region * identity * rival * strategy * recent * CONTENT_RARITY_WEIGHT[t.rarity] * 1000) / 1000;
+}
+
+function onCooldown(state: MatchContentState, key: string, day: number): number | null {
+  const until = state.cooldowns[key];
+  return typeof until === 'number' && until > day ? until : null;
+}
+
+export interface ContentDayPlan {
+  state: MatchContentState;
+  newContracts: Array<RegionalContract & { v93: any }>;
+  expiredOfferIds: string[];
+  startCrisis: CrisisChain | null;
+  newEvents: Array<{ id: string; name: string; region: string; duration: number; remainingDays: number; effect: any; description: string; v93: { templateId: string; kind: ContentKind; rarity: ContentRarity } }>;
+  openedDilemma: ActiveDilemma | null;
+  notices: Array<{ kind: ContentKind; text: string; priority: number }>;
+  evaluation: ContentEvaluation;
+}
+
+const CONTENT_CRISIS_CHANCE: Record<MatchContentProfile['crisisIntensity'], number> = { low: 0.1, normal: 0.18, high: 0.3 };
+
+/**
+ * The day-boundary content step (pure). Reads canonical context + content state, returns what to add.
+ * Deterministic: identical (seed, day, context, state) → identical plan (replay-safe).
+ */
+export function planContentDay(ctx: ContentContext, stateIn: MatchContentState, liveContracts: Record<string, any>, activeEvents: any[], nowMs: () => number = () => 0): ContentDayPlan {
+  const t0 = nowMs();
+  const st: MatchContentState = { ...stateIn, history: [...stateIn.history], cooldowns: { ...stateIn.cooldowns }, used: { ...stateIn.used }, offers: [...stateIn.offers], opportunities: [...stateIn.opportunities], flags: { ...stateIn.flags }, regionLastDilemma: { ...stateIn.regionLastDilemma }, seenKinds: [...stateIn.seenKinds], revision: stateIn.revision + 1, lastPlannedDay: ctx.day };
+  const day = ctx.day; const P = st.profile;
+  const plan: ContentDayPlan = { state: st, newContracts: [], expiredOfferIds: [], startCrisis: null, newEvents: [], openedDilemma: null, notices: [], evaluation: { day, eligible: [], suppressed: [], evaluated: 0, cached: 0, ms: 0 } };
+  const log = (e: ContentHistoryEntry) => { st.history = [...st.history, e].slice(-CONTENT_LIMITS.history); };
+  const suppress = (key: string, kind: ContentKind, reason: string) => { if (plan.evaluation.suppressed.length < CONTENT_LIMITS.evalList) plan.evaluation.suppressed.push({ key, kind, reason }); };
+
+  // 1) Offer lifecycle — outcomes feed cooldowns (completed: normal cooldown; failed: longer; ignored: short).
+  st.offers = st.offers.filter(o => {
+    const c = liveContracts?.[o.contractId];
+    const t = CONTENT_TEMPLATE_BY_ID[o.templateId];
+    const cd = t?.cooldownDays || 8;
+    if (!c) return false;
+    if (c.status === 'completed' || c.status === 'failed' || c.status === 'expired' || c.status === 'cancelled') {
+      log({ key: `${o.templateId}@${o.regionId}`, templateId: o.templateId, kind: 'contract', regionId: o.regionId, day, outcome: c.status === 'completed' ? 'completed' : c.status === 'failed' ? 'failed' : 'expired' });
+      st.cooldowns[`${o.templateId}@${o.regionId}`] = day + (c.status === 'failed' ? cd * 2 : cd);
+      return false;
+    }
+    if (c.status === 'available' && o.expiresDay < day) {
+      plan.expiredOfferIds.push(o.contractId);
+      log({ key: `${o.templateId}@${o.regionId}`, templateId: o.templateId, kind: 'contract', regionId: o.regionId, day, outcome: 'expired', detail: 'offer lapsed' });
+      st.cooldowns[`${o.templateId}@${o.regionId}`] = day + Math.ceil(cd / 2);
+      return false;
+    }
+    return true;
+  });
+  // 2) Dilemma expiry (no choice = the "delay" outcome, recorded honestly).
+  if (st.activeDilemma && st.activeDilemma.expiresDay < day) {
+    const d = st.activeDilemma;
+    log({ key: `${d.templateId}@${d.regionId}`, templateId: d.templateId, kind: 'dilemma', regionId: d.regionId, day, outcome: 'expired', detail: 'no decision taken' });
+    st.cooldowns[`${d.templateId}@${d.regionId}`] = day + (DILEMMA_TEMPLATE_BY_ID[d.templateId]?.cooldownDays || 10);
+    st.activeDilemma = null;
+  }
+  st.opportunities = st.opportunities.filter(o => o.expiresDay >= day);
+
+  // 3) Evaluate candidates by kind (indexed; cached by input signature).
+  const byKind = (kind: ContentKind): ContentCandidate[] => {
+    const out: ContentCandidate[] = [];
+    (CONTENT_TEMPLATES_BY_KIND[kind] || []).forEach(t => {
+      templateRegions(t).forEach(regionId => {
+        const key = `${t.id}@${regionId || '*'}`;
+        const cd = onCooldown(st, key, day) ?? onCooldown(st, t.id, day);
+        if (cd !== null) { suppress(key, kind, `cooldown until day ${cd}`); return; }
+        const e = evaluateTemplateEligibility(t, regionId, ctx, st);
+        plan.evaluation.evaluated += 1; if (e.cached) plan.evaluation.cached += 1;
+        if (!e.ok) { suppress(key, kind, e.fail || 'not eligible'); return; }
+        const score = scoreContentCandidate(t, regionId, ctx, P);
+        out.push({ key, template: t, regionId, score, reasons: e.reasons });
+        if (plan.evaluation.eligible.length < CONTENT_LIMITS.evalList) plan.evaluation.eligible.push({ key, kind, score, reasons: e.reasons });
+      });
+    });
+    return out;
+  };
+  const pick = (cands: ContentCandidate[], salt: string): ContentCandidate | null => {
+    if (!cands.length) return null;
+    // Weighted deterministic choice: higher score is likelier, the seed decides between near-equals.
+    const ranked = cands.map(c => ({ c, v: c.score * (0.55 + 0.9 * contentRoll(ctx.seed, day, salt, c.key)) })).sort((a, b) => b.v - a.v || (a.c.key < b.c.key ? -1 : 1));
+    return ranked[0].c;
+  };
+
+  // 4) Contracts: bounded rotation (scarcity creates decisions).
+  if (ctx.contractsEnabled) {
+    const cands = byKind('contract');
+    const liveOffers = st.offers.length;
+    const slots = Math.min(P.budgets.concurrentOffers - liveOffers, P.budgets.totalOffers - st.used.offers, day <= 1 ? 2 : 1);
+    const takenRegions = new Set(st.offers.map(o => o.regionId));
+    for (let i = 0; i < slots; i++) {
+      const pool = cands.filter(c => c.regionId && !takenRegions.has(c.regionId) && !plan.newContracts.some(n => n.v93.templateId === c.template.id));
+      const c = pick(pool, `contract${i}`);
+      if (!c) break;
+      const t = c.template as ContractTemplate;
+      const contract = instantiateContractTemplate(t, c.regionId!, day);
+      if (liveContracts?.[contract.id]) break; // dedupe (replayed day)
+      plan.newContracts.push(contract);
+      takenRegions.add(c.regionId!);
+      st.offers.push({ contractId: contract.id, templateId: t.id, regionId: c.regionId!, offeredDay: day, expiresDay: day + t.offerDays });
+      st.used.offers += 1;
+      log({ key: c.key, templateId: t.id, kind: 'contract', regionId: c.regionId, day, outcome: 'offered', detail: c.reasons[0] });
+    }
+    if (slots <= 0) suppress('contract:*', 'contract', `offer budget full (${liveOffers}/${P.budgets.concurrentOffers} live, ${st.used.offers}/${P.budgets.totalOffers} this match)`);
+  } else suppress('contract:*', 'contract', 'regional contracts are off');
+
+  // 5) Crisis chains (canonical engine) — budget, one content crisis at a time, category variety.
+  const liveCrises = ctx.crises.filter(c => c.status === 'active');
+  if (!ctx.crisisEnabled) suppress('crisis:*', 'crisis', 'dynamic crisis chains are off');
+  else if (st.used.crises >= P.budgets.crises) suppress('crisis:*', 'crisis', `crisis budget used (${st.used.crises}/${P.budgets.crises})`);
+  else if (liveCrises.length >= 2 || liveCrises.some(c => c.v93)) suppress('crisis:*', 'crisis', 'a crisis is already unfolding');
+  else if (day < 3) suppress('crisis:*', 'crisis', 'too early in the match');
+  else {
+    const cands = byKind('crisis').filter(c => {
+      const cat = (c.template as CrisisContentTemplate).category;
+      const until = onCooldown(st, `cat:${cat}`, day);
+      if (until !== null) { suppress(c.key, 'crisis', `${cat} crises cooling down until day ${until}`); return false; }
+      return true;
+    });
+    const c = pick(cands, 'crisis');
+    if (c && contentRoll(ctx.seed, day, 'crisis-roll', c.key) < CONTENT_CRISIS_CHANCE[P.crisisIntensity] * (0.6 + CONTENT_RARITY_WEIGHT[c.template.rarity] * 0.4)) {
+      const t = c.template as CrisisContentTemplate;
+      const chain = JSON.parse(JSON.stringify(t.chain)) as CrisisChain;
+      chain.id = `v93c_${t.id}_d${day}`;
+      chain.status = 'active'; chain.currentStageIndex = 0; chain.activeStageId = chain.stages[0]?.id || null; chain.lastTriggeredTurn = day;
+      plan.startCrisis = chain;
+      st.used.crises += 1; st.lastCrisisCategory = t.category;
+      st.cooldowns[`cat:${t.category}`] = day + 12; st.cooldowns[t.id] = day + t.cooldownDays;
+      log({ key: c.key, templateId: t.id, kind: 'crisis', regionId: c.regionId, day, outcome: 'started', detail: c.reasons[0] });
+      plan.notices.push({ kind: 'crisis', text: `⚠️ ${chain.stages[0]?.title || t.title}: ${t.summary}`, priority: 1 });
+    } else if (c) suppress(c.key, 'crisis', 'eligible — not triggered today (seeded chance)');
+  }
+
+  // 6) National events + rare events (canonical activeEvents; rarity never bypasses eligibility).
+  const contentEventsLive = (activeEvents || []).filter(e => e?.v93 && e.v93.kind !== 'crisis').length;
+  if (contentEventsLive > 0) suppress('event:*', 'event', 'a content event is already running');
+  else if (day < 3) suppress('event:*', 'event', 'the match is just starting');
+  else {
+    const rareCands = byKind('rare');
+    const rareBudgetLeft = P.budgets.rare - st.used.rare;
+    let placed = false;
+    if (day < 4) { if (rareCands.length) suppress('rare:*', 'rare', 'rare events wait until the match has settled (day 4+)'); }
+    else if (rareBudgetLeft > 0 || P.budgets.exceptional - st.used.exceptional > 0) {
+      const pool = rareCands.filter(c => (c.template.rarity === 'exceptional' ? st.used.exceptional < P.budgets.exceptional : rareBudgetLeft > 0));
+      const c = pick(pool, 'rare');
+      const chance = c ? (c.template.rarity === 'exceptional' ? 0.05 : 0.09) * (P.rareFrequency === 'high' ? 1.6 : 1) : 0;
+      if (c && contentRoll(ctx.seed, day, 'rare-roll', c.key) < chance) {
+        plan.newEvents.push(eventFromTemplate(c.template as WorldEventTemplate, c.regionId, day));
+        if (c.template.rarity === 'exceptional') st.used.exceptional += 1; else st.used.rare += 1;
+        st.cooldowns[c.template.id] = day + 999; // once per match
+        const fl = (c.template as WorldEventTemplate).setsFlag; if (fl) st.flags[fl.key] = fl.value;
+        log({ key: c.key, templateId: c.template.id, kind: 'rare', regionId: c.regionId, day, outcome: 'started', detail: c.reasons[0] });
+        plan.notices.push({ kind: 'rare', text: `✨ ${c.template.title}: ${c.template.summary}`, priority: 2 });
+        placed = true;
+      } else if (c) suppress(c.key, 'rare', 'eligible — rare roll not met (rare by design)');
+    } else if (rareCands.length) suppress('rare:*', 'rare', 'rare-event budget used');
+    if (!placed) {
+      if (st.used.nationalEvents >= P.budgets.nationalEvents) suppress('event:*', 'event', `national-event budget used (${st.used.nationalEvents}/${P.budgets.nationalEvents})`);
+      else {
+        const c = pick(byKind('event'), 'event');
+        if (c && contentRoll(ctx.seed, day, 'event-roll', c.key) < 0.22) {
+          plan.newEvents.push(eventFromTemplate(c.template as WorldEventTemplate, c.regionId, day));
+          st.used.nationalEvents += 1; st.cooldowns[c.template.id] = day + c.template.cooldownDays;
+          const fl = (c.template as WorldEventTemplate).setsFlag; if (fl) st.flags[fl.key] = fl.value;
+          log({ key: c.key, templateId: c.template.id, kind: 'event', regionId: c.regionId, day, outcome: 'started', detail: c.reasons[0] });
+          plan.notices.push({ kind: 'event', text: `📰 ${c.template.title}: ${c.template.summary}`, priority: 3 });
+        } else if (c) suppress(c.key, 'event', 'eligible — not triggered today (seeded chance)');
+      }
+    }
+  }
+
+  // 7) Dilemmas — one at a time; regional spacing; arise only from real conditions.
+  if (st.activeDilemma) suppress('dilemma:*', 'dilemma', 'a decision is already waiting');
+  else if (st.used.dilemmas >= P.budgets.dilemmas) suppress('dilemma:*', 'dilemma', `dilemma budget used (${st.used.dilemmas}/${P.budgets.dilemmas})`);
+  else if (day < 2) suppress('dilemma:*', 'dilemma', 'too early in the match');
+  else {
+    const lastAny = Math.max(0, ...Object.values(st.regionLastDilemma));
+    if (lastAny && day - lastAny < 3) suppress('dilemma:*', 'dilemma', `spacing: last decision on day ${lastAny}`);
+    else {
+      const cands = byKind('dilemma').filter(c => !(c.regionId && st.regionLastDilemma[c.regionId] && day - st.regionLastDilemma[c.regionId] < 8));
+      const c = pick(cands, 'dilemma');
+      if (c && contentRoll(ctx.seed, day, 'dilemma-roll', c.key) < 0.55) {
+        const t = c.template as DilemmaTemplate;
+        const d: ActiveDilemma = { id: `v93d_${t.id}_${c.regionId}_d${day}`, templateId: t.id, regionId: c.regionId || '', openedDay: day, expiresDay: day + 3, title: t.title.replace(/\{region\}/g, REGIONS[c.regionId || '']?.name || c.regionId || ''), prompt: t.prompt.replace(/\{region\}/g, REGIONS[c.regionId || '']?.name || c.regionId || ''), evidence: c.reasons.slice(0, 3), choices: scaleDilemmaChoices(t, day) };
+        st.activeDilemma = d; plan.openedDilemma = d;
+        st.used.dilemmas += 1; if (c.regionId) st.regionLastDilemma[c.regionId] = day;
+        log({ key: c.key, templateId: t.id, kind: 'dilemma', regionId: c.regionId, day, outcome: 'opened', detail: c.reasons[0] });
+        plan.notices.push({ kind: 'dilemma', text: `⚖️ Decision: ${d.title}`, priority: 2 });
+      } else if (c) suppress(c.key, 'dilemma', 'eligible — held for later (seeded pacing)');
+    }
+  }
+
+  // 8) Strategic opportunities: views over World Reaction windows / Living Regions / rival moves.
+  st.opportunities = deriveContentOpportunities(ctx, st, day);
+
+  plan.notices.sort((a, b) => a.priority - b.priority);
+  plan.notices = plan.notices.slice(0, CONTENT_LIMITS.notices);
+  plan.evaluation.ms = Math.round((nowMs() - t0) * 10) / 10;
+  st.lastEval = plan.evaluation;
+  return plan;
+}
+
+export function eventFromTemplate(t: WorldEventTemplate, regionId: string | null, day: number) {
+  const region = regionId || t.regions[0] || 'ACT';
+  const effect: any = JSON.parse(JSON.stringify(t.effect));
+  // '@region' prices the chosen region's own resources (one authored event, regional identity preserved).
+  if (effect.resourcePrice && effect.resourcePrice['@region'] !== undefined) {
+    const m = effect.resourcePrice['@region']; delete effect.resourcePrice['@region'];
+    (REGIONAL_RESOURCES[region] || []).forEach(res => { effect.resourcePrice[res] = m; });
+  }
+  return { id: `v93e_${t.id}`, name: t.title, region, duration: t.duration, remainingDays: t.duration, effect, description: t.description.replace(/\{region\}/g, REGIONS[region]?.name || region), v93: { templateId: t.id, kind: t.kind, rarity: t.rarity, day } };
+}
+
+/** Executor for content crisis stage effects: the active stage becomes canonical activeEvents modifiers. */
+export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any; regional: any } {
+  const priced: any = {}; const regional: any = {};
+  (stage?.stageEffects || []).forEach(e => {
+    const [k, sub] = String(e.modifierKey).split(':');
+    if (k === 'resourcePrice' && sub) { priced.resourcePrice = { ...(priced.resourcePrice || {}), [sub]: e.value }; }
+    else if (k === 'investmentYield') priced.investmentYieldMultiplier = e.value;
+    else if (k === 'travelCost') regional.travelCost = e.value;
+    else if (k === 'challengeBonus' && sub) regional.challengeBonus = { ...(regional.challengeBonus || {}), [sub]: e.value };
+  });
+  return { priced, regional };
+}
+/** Keep one modifier event per affected region for each active content crisis stage (prices counted once). */
+export function syncContentCrisisEvents(activeEvents: any[], chains: CrisisChain[]): any[] {
+  const want: any[] = [];
+  (chains || []).filter(c => c && c.status === 'active' && String(c.id).startsWith('v93c_')).forEach(c => {
+    const stage = c.stages[c.currentStageIndex];
+    if (!stage) return;
+    const { priced, regional } = crisisStageEffect(stage);
+    (c.affectedRegions || []).forEach((region, i) => {
+      const effect = { ...regional, ...(i === 0 ? priced : {}) };
+      if (!Object.keys(effect).length) return;
+      want.push({ id: `v93x_${c.id}_${region}`, name: stage.title, region, duration: stage.durationTurns, remainingDays: Math.max(1, stage.remainingTurns), effect, description: stage.description, v93: { templateId: c.id, kind: 'crisis', rarity: 'common', stageId: stage.id } });
+    });
+  });
+  const keep = (activeEvents || []).filter(e => !(e?.v93?.kind === 'crisis'));
+  const prev = new Map((activeEvents || []).filter(e => e?.v93?.kind === 'crisis').map(e => [e.id, e]));
+  const merged = want.map(w => { const p = prev.get(w.id); return p && p.v93?.stageId === w.v93.stageId ? { ...w, remainingDays: w.remainingDays } : w; });
+  const same = merged.length === prev.size && merged.every(m => { const p: any = prev.get(m.id); return p && p.v93?.stageId === m.v93.stageId && p.remainingDays === m.remainingDays; });
+  return same ? activeEvents : [...keep, ...merged];
+}
+
+const OPP_FROM_WINDOW: Record<string, { type: ContentOpportunity['type']; nav: IntentNavTarget; title: (s: string) => string }> = {
+  expansion_opportunity: { type: 'regional_entry', nav: 'map', title: s => `Enter ${s}` },
+  rival_vulnerability: { type: 'rival_vulnerability', nav: 'map', title: s => `Pressure point: ${s}` },
+  commodity_sell: { type: 'market_window', nav: 'market', title: s => `Sell window: ${s}` },
+  diplomatic_safety: { type: 'diplomatic_window', nav: 'diplomacy', title: () => 'Diplomatic window' },
+  liquidity_window: { type: 'cheap_investment', nav: 'investments', title: () => 'Liquidity window' },
+  contract_completion: { type: 'contract_window', nav: 'contracts', title: () => 'Contract window' }
+};
+
+/** Opportunities highlight EXISTING actions; they never create one. Temporary by construction. */
+export function deriveContentOpportunities(ctx: ContentContext, st: MatchContentState, day: number): ContentOpportunity[] {
+  const out: ContentOpportunity[] = [];
+  const keep = st.opportunities.filter(o => o.expiresDay >= day);
+  keep.forEach(o => out.push(o));
+  const add = (o: ContentOpportunity) => { if (!out.some(x => x.id === o.id)) out.push(o); };
+  ctx.windows.forEach(w => {
+    const m = OPP_FROM_WINDOW[w.type]; if (!m) return;
+    const regionId = ctx.regions[w.subject] ? w.subject : null;
+    // Window subjects can be actor ids (e.g. a rival's vulnerability) — never show a raw id.
+    const subjectName = regionId ? ctx.regions[regionId].name : (/^(ai|team_opponent|ai_|rival)/i.test(w.subject) ? ctx.rival.name : String(w.subject).replace(/_/g, ' '));
+    add({ id: `opp_w_${w.id}`, type: m.type, regionId, title: m.title(subjectName), reason: w.reason, openedDay: day, expiresDay: w.expiresTurn ?? day + 2, source: 'world_reaction', nav: m.nav, track: regionId ? { id: `opp_${regionId}`, sourceType: 'region_control', sourceId: regionId, title: `Take ${ctx.regions[regionId].name}` } : null, strategyAligned: Boolean(regionId && regionId === ctx.strategyRegion) });
+  });
+  Object.values(ctx.regions).forEach(r => {
+    const growing = r.momentum && CT_MOM[r.momentum] >= CT_MOM.growing;
+    if (r.rivalDepositDelta < 0 && growing && r.controller !== 'player') {
+      add({ id: `opp_rival_${r.code}_d${day}`, type: 'regional_entry', regionId: r.code, title: `Enter ${r.name}`, reason: `${ctx.rival.name} pulled capital out while ${r.name} is ${ctLabel(r.momentum || '')}. Rival pressure is temporarily low.`, openedDay: day, expiresDay: day + 3, source: 'rival', nav: 'map', track: { id: `opp_${r.code}`, sourceType: 'region_control', sourceId: r.code, title: `Take ${r.name}` }, strategyAligned: r.code === ctx.strategyRegion });
+    }
+    if (r.opportunities.includes('recovery_investment') && r.conditions.includes('post_crisis_recovery')) {
+      add({ id: `opp_recovery_${r.code}`, type: 'recovery_window', regionId: r.code, title: `Rebuild ${r.name}`, reason: `${r.name} is recovering from a crisis — stakes and projects are cheap relative to future value.`, openedDay: day, expiresDay: day + 3, source: 'living_regions', nav: 'infrastructure', track: { id: `opp_${r.code}`, sourceType: 'region_control', sourceId: r.code, title: `Rebuild ${r.name}` }, strategyAligned: r.code === ctx.strategyRegion });
+    }
+  });
+  // GI3 alignment raises prominence (never creates content).
+  return out.sort((a, b) => Number(b.strategyAligned) - Number(a.strategyAligned) || a.expiresDay - b.expiresDay).slice(0, CONTENT_LIMITS.opportunities);
+}
+
+/** Resolve a dilemma choice (pure). The caller executes the returned effects through canonical dispatchers. */
+export function resolveContentDilemma(stateIn: MatchContentState, choiceId: string, day: number, money: number): { state: MatchContentState; effects: DilemmaEffect[]; error: string | null; choice: DilemmaChoiceDef | null } {
+  const d = stateIn.activeDilemma;
+  if (!d) return { state: stateIn, effects: [], error: 'No decision is waiting.', choice: null };
+  const c = d.choices.find(x => x.id === choiceId);
+  if (!c) return { state: stateIn, effects: [], error: 'Unknown choice.', choice: null };
+  const cost = c.effects.filter(e => e.k === 'cash').reduce((s, e: any) => s + Math.max(0, -e.amount), 0);
+  if (cost > money) return { state: stateIn, effects: [], error: `Needs $${cost.toLocaleString()} (you have $${Math.round(money).toLocaleString()}).`, choice: c };
+  const st: MatchContentState = { ...stateIn, flags: { ...stateIn.flags }, cooldowns: { ...stateIn.cooldowns }, activeDilemma: null, revision: stateIn.revision + 1 };
+  c.effects.forEach(e => { if (e.k === 'flag') st.flags[e.key] = e.value; });
+  st.flags[`dilemma_${d.templateId}`] = c.id;
+  st.resolved = [...stateIn.resolved, { id: d.id, templateId: d.templateId, choiceId: c.id, day, regionId: d.regionId }].slice(-CONTENT_LIMITS.resolved);
+  st.history = [...stateIn.history, { key: `${d.templateId}@${d.regionId}`, templateId: d.templateId, kind: 'dilemma' as ContentKind, regionId: d.regionId, day, outcome: 'chosen' as const, detail: c.label }].slice(-CONTENT_LIMITS.history);
+  st.cooldowns[`${d.templateId}@${d.regionId}`] = day + (DILEMMA_TEMPLATE_BY_ID[d.templateId]?.cooldownDays || 10);
+  return { state: st, effects: c.effects, error: null, choice: c };
+}
+
+
+// ============================================================================
+// V9.3 REGIONAL CONTRACT CONTENT — hand-authored strategic concepts (not noun soup)
+// ============================================================================
+// Each template is one strategic idea with its own tradeoff (archetype), real eligibility, and region text.
+// Rewards are derived from the commitment (CONTRACT_ARCHETYPE_ROI) — never picked to look impressive.
+
+const ctpl = (o: Omit<ContractTemplate, 'kind' | 'summary' | 'rarity' | 'cooldownDays' | 'offerDays'> & Partial<Pick<ContractTemplate, 'summary' | 'rarity' | 'cooldownDays' | 'offerDays'>>): ContractTemplate => ({
+  kind: 'contract', rarity: 'common', cooldownDays: 8, offerDays: 5, summary: o.summary || (o.text['*'] || Object.values(o.text)[0]).description, ...o
+});
+
+export const CONTRACT_TEMPLATE_REGISTRY: ContractTemplate[] = [
+  // ---- NSW: finance, farms, ports, freight spine -----------------------------------------------------
+  ctpl({ id: 'nsw_ag_freight', title: 'Agricultural Freight Network', archetype: 'resource', contractType: 'agricultural_logistics', issuingFactionId: 'nsw_farmers_coop', regions: ['NSW'], themes: ['agriculture', 'logistics'], roles: ['trade', 'resource'],
+    text: { NSW: { title: 'Agricultural Freight Network', description: 'Move {n} {item} through the Newcastle–Riverina freight lanes before the harvest backlog spoils.' } },
+    objective: { type: 'deliver_resource', item: 'Coal', base: 4 }, requirement: { cashOnHand: 1500 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'need', category: 'transport', min: 'moderate' }, { k: 'sector', sector: 'agriculture', min: 12 }, { k: 'sector', sector: 'logistics', min: 12 }] }] }),
+  ctpl({ id: 'nsw_financial_services', title: 'Financial Services Initiative', archetype: 'capital', contractType: 'financial_services', issuingFactionId: null, regions: ['NSW'], themes: ['finance'], roles: ['economic_growth', 'long_term_investment'],
+    text: { NSW: { title: 'Sydney Financial Services Initiative', description: 'Anchor a new clearing and settlement desk in Sydney. Capital is locked until the desk goes live.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1000 }, duration: 8,
+    requires: [{ k: 'contracts_on' }, { k: 'economy_min', band: 'moderate' }] }),
+  ctpl({ id: 'nsw_port_modernization', title: 'Port Modernization', archetype: 'infrastructure', contractType: 'freight_capacity', issuingFactionId: 'federal_infrastructure_office', regions: ['NSW'], themes: ['trade', 'logistics'], roles: ['infrastructure', 'trade', 'long_term_investment'],
+    text: { NSW: { title: 'Port Botany Modernization', description: 'Get an infrastructure project operating in {region} — the port authority pays once real capacity exists.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 2000 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'any', of: [{ k: 'need', category: 'trade', min: 'moderate' }, { k: 'need', category: 'transport', min: 'moderate' }, { k: 'condition', kind: 'infrastructure_bottleneck' }] }] }),
+  ctpl({ id: 'nsw_drought_supply', title: 'Drought Supply Response', archetype: 'crisis', contractType: 'disaster_relief_supply', issuingFactionId: 'nsw_farmers_coop', regions: ['NSW', 'SA', 'VIC'], themes: ['agriculture', 'water'], roles: ['crisis', 'stability'],
+    text: { '*': { title: 'Drought Supply Response', description: 'Fund emergency water carting and fodder for {region} farms while the drought bites.' } },
+    objective: { type: 'invest_capital', base: 2000 }, requirement: { cashOnHand: 500 }, duration: 5,
+    requires: [{ k: 'contracts_on' }, { k: 'crisis', category: 'environmental', here: true }] }),
+  ctpl({ id: 'nsw_tech_corridor', title: 'Sydney Technology Corridor', archetype: 'development', contractType: 'ai_research_center', issuingFactionId: null, regions: ['NSW'], themes: ['technology', 'finance'], roles: ['development', 'long_term_investment'],
+    text: { NSW: { title: 'Sydney Technology Corridor', description: 'Seed start-up space along the Parramatta–CBD corridor. Pays modestly but develops {region}.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1000 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'sector', sector: 'technology', min: 8 }, { k: 'momentum_min', band: 'growing' }] }] }),
+  // ---- VIC: technology, manufacturing, research ---------------------------------------------------------
+  ctpl({ id: 'vic_manufacturing_upgrade', title: 'Manufacturing Modernization', archetype: 'capital', contractType: 'manufacturing_modernization', issuingFactionId: 'vic_technology_council', regions: ['VIC'], themes: ['manufacturing', 'technology'], roles: ['economic_growth', 'long_term_investment'],
+    text: { VIC: { title: 'Dandenong Manufacturing Modernization', description: 'Retool the south-east manufacturing belt. Large capital, locked for the whole program.' } },
+    objective: { type: 'invest_capital', base: 3500 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'sector', sector: 'manufacturing', min: 8 }, { k: 'economy_min', band: 'moderate' }] }] }),
+  ctpl({ id: 'vic_research_consortium', title: 'Research Consortium Residency', archetype: 'faction', contractType: 'ai_research_center', issuingFactionId: 'vic_technology_council', regions: ['VIC'], themes: ['research', 'technology'], roles: ['faction', 'development'],
+    text: { VIC: { title: 'Melbourne Research Consortium Residency', description: 'Spend {n} days in {region} working with the consortium. Pinning yourself here is the real cost.' } },
+    objective: { type: 'maintain_presence', base: 3 }, requirement: { cashOnHand: 500, standing: 5 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'faction', factionId: 'vic_technology_council', min: 20 }] }),
+  ctpl({ id: 'vic_dairy_rapid', title: 'Rapid Dairy Supply', archetype: 'rapid', contractType: 'agricultural_logistics', issuingFactionId: null, regions: ['VIC'], themes: ['agriculture'], roles: ['short_term_opportunity', 'trade'],
+    text: { VIC: { title: 'Gippsland Rapid Dairy Supply', description: 'Deliver {n} {item} to Melbourne processors within days — short deadline, quick payout.' } },
+    objective: { type: 'deliver_resource', item: 'Dairy', base: 3 }, requirement: { cashOnHand: 500 }, duration: 4, offerDays: 3,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'price_min', resource: 'Dairy', ratio: 1.02 }, { k: 'sector', sector: 'agriculture', min: 10 }] }] }),
+  ctpl({ id: 'vic_grid_upgrade', title: 'Grid Capacity for Tech Growth', archetype: 'infrastructure', contractType: 'renewable_energy_grid', issuingFactionId: 'vic_technology_council', regions: ['VIC'], themes: ['energy', 'technology'], roles: ['infrastructure', 'development'],
+    text: { VIC: { title: 'Latrobe Grid Capacity Program', description: 'Tech growth is outrunning power supply. Get a project operating in {region} to secure the grid.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 2000 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'any', of: [{ k: 'need', category: 'energy', min: 'moderate' }, { k: 'sector', sector: 'technology', min: 20 }] }] }),
+  // ---- QLD: exports, ports, mining, tourism --------------------------------------------------------------
+  ctpl({ id: 'qld_freight_capacity', title: 'Freight Capacity Expansion', archetype: 'capital', contractType: 'freight_capacity', issuingFactionId: 'qld_port_authority', regions: ['QLD'], themes: ['trade', 'logistics', 'mining'], roles: ['trade', 'infrastructure', 'economic_growth'],
+    text: { QLD: { title: 'Gladstone Freight Capacity Expansion', description: 'Exports are outgrowing the rail-to-port chain. Commit capital to new freight capacity in {region}.' } },
+    objective: { type: 'invest_capital', base: 4000 }, requirement: { cashOnHand: 1500, standing: 5 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'need', category: 'transport', min: 'moderate' }, { k: 'condition', kind: 'infrastructure_bottleneck' }, { k: 'opportunity', kind: 'export_expansion' }] }] }),
+  ctpl({ id: 'qld_mining_export', title: 'Mining Export Contract', archetype: 'resource', contractType: 'maritime_export_hub', issuingFactionId: 'qld_port_authority', regions: ['QLD'], themes: ['mining', 'trade'], roles: ['trade', 'resource'],
+    text: { QLD: { title: 'Bowen Basin Export Consignment', description: 'Ship {n} {item} out through {region} while export demand holds. Inventory you commit cannot be sold elsewhere.' } },
+    objective: { type: 'deliver_resource', item: 'Coal', base: 5 }, requirement: { cashOnHand: 1000 }, duration: 7,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'price_min', resource: 'Coal', ratio: 1.05 }, { k: 'sector', sector: 'mining', min: 10 }, { k: 'flag', key: 'export_surge', value: true }] }] }),
+  ctpl({ id: 'qld_cyclone_restoration', title: 'Port Restoration', archetype: 'crisis', contractType: 'crisis_recovery', issuingFactionId: 'qld_port_authority', regions: ['QLD', 'WA'], themes: ['trade', 'logistics'], roles: ['crisis', 'recovery', 'stability'],
+    text: { QLD: { title: 'Cyclone Port Restoration', description: 'Storm damage has closed berths in {region}. Fund the restoration crews — urgent, and stability depends on it.' }, WA: { title: 'Pilbara Port Restoration', description: 'Cyclone damage has idled the Port Hedland berths. Fund the restoration in {region}.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 500 }, duration: 5,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'crisis', category: 'environmental', here: true }, { k: 'crisis', category: 'infrastructure', here: true }] }] }),
+  ctpl({ id: 'qld_tourism_development', title: 'Tourism Development', archetype: 'development', contractType: 'tourism_development', issuingFactionId: 'national_tourism_council', regions: ['QLD'], themes: ['tourism'], roles: ['development', 'economic_growth'],
+    text: { QLD: { title: 'Whitsundays Tourism Development', description: 'Fund new visitor infrastructure in {region}. Slow money, strong development.' } },
+    objective: { type: 'invest_capital', base: 2000 }, requirement: { cashOnHand: 1000 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'sector', sector: 'tourism', min: 8 }, { k: 'faction', factionId: 'national_tourism_council', min: 20 }] }], excludes: [{ k: 'crisis', category: 'environmental', here: true }] }),
+  // ---- WA: resources, remote logistics, commodity dependence ---------------------------------------------
+  ctpl({ id: 'wa_automated_logistics', title: 'Automated Mining Logistics', archetype: 'capital', contractType: 'mining_tech_initiative', issuingFactionId: 'pilbara_mining_consortium', regions: ['WA'], themes: ['mining', 'technology', 'logistics'], roles: ['economic_growth', 'long_term_investment'],
+    text: { WA: { title: 'WA Automated Mining Logistics', description: 'Autonomous haulage for the Pilbara. High capital, large payout — and full commodity exposure.' } },
+    objective: { type: 'invest_capital', base: 5000 }, requirement: { cashOnHand: 2000, standing: 5 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'condition', kind: 'commodity_boom' }, { k: 'price_min', resource: 'Iron Ore', ratio: 1.12 }, { k: 'sector', sector: 'mining', min: 22 }] }], excludes: [{ k: 'flag', key: 'commodity_crash', value: true }] }),
+  ctpl({ id: 'wa_remote_supply', title: 'Remote Supply Posting', archetype: 'presence', contractType: 'freight_capacity', issuingFactionId: 'regional_labor_coalition', regions: ['WA', 'NT'], themes: ['logistics', 'exploration'], roles: ['regional_control', 'development'],
+    text: { WA: { title: 'Kimberley Remote Supply Posting', description: 'Stay {n} days in {region} keeping remote camps supplied. Time on the ground builds standing.' }, NT: { title: 'Top End Remote Supply Posting', description: 'Stay {n} days in {region} running remote supply lines.' } },
+    objective: { type: 'maintain_presence', base: 4 }, requirement: { cashOnHand: 500 }, duration: 7,
+    requires: [{ k: 'contracts_on' }, { k: 'dev_max', tier: 'developing' }] }),
+  ctpl({ id: 'wa_gas_export', title: 'LNG Export Window', archetype: 'resource', contractType: 'maritime_export_hub', issuingFactionId: 'pilbara_mining_consortium', regions: ['WA'], themes: ['energy', 'trade'], roles: ['trade', 'short_term_opportunity'],
+    text: { WA: { title: 'North West Shelf LNG Cargo', description: 'Deliver {n} {item} for a spot LNG cargo out of {region}.' } },
+    objective: { type: 'deliver_resource', item: 'Natural Gas', base: 4 }, requirement: { cashOnHand: 1000 }, duration: 6, offerDays: 4,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'price_min', resource: 'Natural Gas', ratio: 1.03 }, { k: 'sector', sector: 'energy', min: 12 }] }] }),
+  ctpl({ id: 'wa_diversification', title: 'Economic Diversification Fund', archetype: 'development', contractType: 'renewable_energy_grid', issuingFactionId: null, regions: ['WA'], themes: ['renewables', 'energy'], roles: ['development', 'recovery', 'long_term_investment'],
+    text: { WA: { title: 'WA Diversification Fund', description: 'Back renewables and downstream processing so {region} is less exposed to one commodity.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1000 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'risk', kind: 'overdependence' }, { k: 'risk', kind: 'market_exposure' }, { k: 'flag', key: 'commodity_crash', value: true }, { k: 'flag', key: 'wa_path', value: 'diversified' }] }] }),
+  // ---- SA: renewables, hydrogen, water, grid ---------------------------------------------------------------
+  ctpl({ id: 'sa_hydrogen_pilot', title: 'Hydrogen Pilot Plant', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: 'sa_clean_energy_council', regions: ['SA'], themes: ['renewables', 'energy'], roles: ['long_term_investment', 'development'],
+    text: { SA: { title: 'Whyalla Hydrogen Pilot', description: 'Co-fund a green hydrogen pilot in {region}. Capital is tied up for the program.' } },
+    objective: { type: 'invest_capital', base: 3500 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'sector', sector: 'renewables', min: 12 }, { k: 'faction', factionId: 'sa_clean_energy_council', min: 25 }] }] }),
+  ctpl({ id: 'sa_water_security', title: 'Water Security Works', archetype: 'infrastructure', contractType: 'water_security', issuingFactionId: 'federal_infrastructure_office', regions: ['SA', 'NSW'], themes: ['water', 'agriculture'], roles: ['infrastructure', 'stability'],
+    text: { SA: { title: 'Murray Water Security Works', description: 'Water is the constraint on {region} growth. Get an infrastructure project operating to qualify.' }, NSW: { title: 'Western NSW Water Security', description: 'Get an infrastructure project operating in {region} to secure inland water.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 1500 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'need', category: 'water', min: 'moderate' }] }),
+  ctpl({ id: 'sa_emergency_water', title: 'Emergency Water Logistics', archetype: 'crisis', contractType: 'water_security', issuingFactionId: null, regions: ['SA', 'NSW'], themes: ['water'], roles: ['crisis', 'stability'],
+    text: { '*': { title: 'Emergency Water Logistics', description: 'Fund water carting into {region} towns during the restrictions. Urgent and short.' } },
+    objective: { type: 'invest_capital', base: 1500 }, requirement: { cashOnHand: 500 }, duration: 4, offerDays: 3,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'crisis', chainPrefix: 'v93c_sa_water', here: true }, { k: 'crisis', category: 'environmental', here: true, stageMin: 1 }] }] }),
+  ctpl({ id: 'sa_grid_standby', title: 'Grid Standby Roster', archetype: 'rapid', contractType: 'renewable_energy_grid', issuingFactionId: 'sa_clean_energy_council', regions: ['SA'], themes: ['energy'], roles: ['short_term_opportunity', 'stability'],
+    text: { SA: { title: 'Grid Standby Roster', description: 'Be on call in {region} for {n} days while the grid is fragile.' } },
+    objective: { type: 'maintain_presence', base: 2 }, requirement: { cashOnHand: 500 }, duration: 3, offerDays: 3,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'need', category: 'energy', min: 'moderate' }, { k: 'risk', kind: 'instability' }] }] }),
+  // ---- TAS: tourism, environment, hydropower -----------------------------------------------------------------
+  ctpl({ id: 'tas_eco_expansion', title: 'Wilderness Visitor Program', archetype: 'faction', contractType: 'eco_tourism_network', issuingFactionId: 'tas_wilderness_trust', regions: ['TAS'], themes: ['tourism', 'environment'], roles: ['faction', 'development'],
+    text: { TAS: { title: 'Wilderness Visitor Program', description: 'Spend {n} days guiding the Trust\'s visitor program in {region}. Builds a relationship the miners will notice.' } },
+    objective: { type: 'maintain_presence', base: 3 }, requirement: { cashOnHand: 500 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'faction', factionId: 'tas_wilderness_trust', min: 18 }, { k: 'sector', sector: 'tourism', min: 8 }] }] }),
+  ctpl({ id: 'tas_hydro_partnership', title: 'Hydro Partnership', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: null, regions: ['TAS'], themes: ['renewables', 'energy'], roles: ['long_term_investment', 'development'],
+    text: { TAS: { title: 'Tasmanian Hydro Partnership', description: 'Co-invest in pumped hydro for {region}. Big development upside, environmental stakeholders watching.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1000 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'sector', sector: 'renewables', min: 8 }, { k: 'need', category: 'energy', min: 'moderate' }, { k: 'dev_max', tier: 'emerging' }] }] }),
+  ctpl({ id: 'tas_specialty_produce', title: 'Specialty Produce Export', archetype: 'resource', contractType: 'agricultural_logistics', issuingFactionId: null, regions: ['TAS'], themes: ['agriculture', 'trade'], roles: ['trade', 'resource'],
+    text: { TAS: { title: 'Specialty Produce Export', description: 'Deliver {n} {item} for a premium Asian export order out of {region}.' } },
+    objective: { type: 'deliver_resource', item: 'Seafood', base: 3 }, requirement: { cashOnHand: 500 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'price_min', resource: 'Seafood', ratio: 1.0 }, { k: 'sector', sector: 'agriculture', min: 8 }] }] }),
+  // ---- NT: frontier, remote logistics, exploration ---------------------------------------------------------------
+  ctpl({ id: 'nt_frontier_survey', title: 'Frontier Survey', archetype: 'presence', contractType: 'mining_tech_initiative', issuingFactionId: 'nt_community_council', regions: ['NT'], themes: ['exploration', 'mining'], roles: ['exploration', 'regional_control'],
+    text: { NT: { title: 'Arnhem Frontier Survey', description: 'Spend {n} days surveying {region} with the land councils. Frontier logistics are the cost; first-mover standing is the prize.' } },
+    objective: { type: 'maintain_presence', base: 3 }, requirement: { cashOnHand: 500 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'dev_max', tier: 'developing' }] }),
+  ctpl({ id: 'nt_remote_relief', title: 'Remote Community Relief', archetype: 'crisis', contractType: 'disaster_relief_supply', issuingFactionId: 'nt_community_council', regions: ['NT', 'WA'], themes: ['logistics'], roles: ['crisis', 'stability', 'faction'],
+    text: { '*': { title: 'Remote Community Relief', description: 'Fund relief supply runs into cut-off {region} communities.' } },
+    objective: { type: 'invest_capital', base: 1500 }, requirement: { cashOnHand: 500 }, duration: 4, offerDays: 3,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'crisis', here: true }, { k: 'stability_max', value: 50 }] }] }),
+  ctpl({ id: 'nt_gateway_logistics', title: 'Darwin Gateway Logistics', archetype: 'capital', contractType: 'freight_capacity', issuingFactionId: 'federal_infrastructure_office', regions: ['NT'], themes: ['logistics', 'trade'], roles: ['trade', 'long_term_investment'],
+    text: { NT: { title: 'Darwin Gateway Logistics', description: 'Back the northern trade gateway in {region}. Costly frontier logistics, long-term trade upside.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1000 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'opportunity', kind: 'development_potential' }, { k: 'need', category: 'transport', min: 'moderate' }, { k: 'dev_max', tier: 'emerging' }] }] }),
+  // ---- ACT: research, AI, governance, national programs ---------------------------------------------------------------
+  ctpl({ id: 'act_ai_partnership', title: 'AI Research Partnership', archetype: 'faction', contractType: 'ai_research_center', issuingFactionId: 'csiro_ai_directorate', regions: ['ACT'], themes: ['research', 'technology'], roles: ['faction', 'development'],
+    text: { ACT: { title: 'CSIRO AI Research Partnership', description: 'Embed with the directorate in {region} for {n} days. Requires standing — institutions pick partners they trust.' } },
+    objective: { type: 'maintain_presence', base: 3 }, requirement: { cashOnHand: 500, standing: 10 }, duration: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'faction', factionId: 'csiro_ai_directorate', min: 18 }] }),
+  ctpl({ id: 'act_national_program', title: 'National Infrastructure Program', archetype: 'capital', contractType: 'defense_logistics_hub', issuingFactionId: 'federal_infrastructure_office', regions: ['ACT'], themes: ['governance'], roles: ['long_term_investment', 'economic_growth'],
+    text: { ACT: { title: 'National Infrastructure Program Tranche', description: 'Underwrite a tranche of the federal program. High-value institutional contract, capital locked.' } },
+    objective: { type: 'invest_capital', base: 4500 }, requirement: { cashOnHand: 2000, standing: 5 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'day_min', day: 6 }] }),
+  ctpl({ id: 'act_policy_briefing', title: 'Policy Research Brief', archetype: 'rapid', contractType: 'ai_research_center', issuingFactionId: 'csiro_ai_directorate', regions: ['ACT'], themes: ['research', 'governance'], roles: ['short_term_opportunity'],
+    text: { ACT: { title: 'Rapid Policy Research Brief', description: 'Deliver {n} {item} to a parliamentary committee within days.' } },
+    objective: { type: 'deliver_resource', item: 'Research Funds', base: 2 }, requirement: { cashOnHand: 500 }, duration: 3, offerDays: 3,
+    requires: [{ k: 'contracts_on' }] }),
+  // ---- Cross-region: crisis, rival and event-driven -----------------------------------------------------------------------
+  ctpl({ id: 'national_emergency_logistics', title: 'National Emergency Logistics', archetype: 'crisis', contractType: 'disaster_relief_supply', issuingFactionId: 'federal_infrastructure_office', regions: ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'], themes: ['logistics', 'governance'], roles: ['crisis', 'stability'], rarity: 'uncommon', cooldownDays: 12,
+    text: { '*': { title: 'National Emergency Logistics', description: 'The federal office is paying for emergency logistics into {region}. Escalated crisis — urgent.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 500 }, duration: 5,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'crisis', here: true, stageMin: 1 }, { k: 'flag', key: 'national_emergency', value: true }] }] }),
+  ctpl({ id: 'rival_counter_investment', title: 'Alternative Investor Program', archetype: 'capital', contractType: 'financial_services', issuingFactionId: null, regions: ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'], themes: ['finance'], roles: ['competition', 'regional_control'], rarity: 'uncommon', cooldownDays: 10,
+    text: { '*': { title: '{region} Alternative Investor Program', description: 'Local boards want a counterweight to the dominant investor in {region}. Invest to become the alternative partner.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1000 }, duration: 8,
+    requires: [{ k: 'contracts_on' }, { k: 'rival_invested', min: 400 }] }),
+  ctpl({ id: 'export_surge_consignment', title: 'Export Surge Consignment', archetype: 'rapid', contractType: 'maritime_export_hub', issuingFactionId: null, regions: ['QLD', 'WA', 'NSW'], themes: ['trade'], roles: ['short_term_opportunity', 'trade'], rarity: 'uncommon',
+    text: { '*': { title: 'Export Surge Consignment', description: 'Deliver {n} {item} while the export surge lasts — the window closes fast.' } },
+    objective: { type: 'deliver_resource', item: 'region_resource', base: 3 }, requirement: { cashOnHand: 500 }, duration: 4, offerDays: 3,
+    requires: [{ k: 'contracts_on' }, { k: 'flag', key: 'export_surge', value: true }] })
+];
+
+// ============================================================================
+// V9.3 INFRASTRUCTURE CONTENT — multiple development directions per region
+// ============================================================================
+// Canonical InfrastructureProject objects (funded / built / bonused by the existing engine). Added to a
+// match at start. Competing projects share a site: funding one locks its rival (opportunity cost).
+
+const v93Project = (id: string, projectType: InfrastructureProjectType, title: string, description: string, regionId: InfrastructureProject['stateCode'], totalCost: number, laborTurnsRequired: number, bonuses: InfrastructureBonusEffect[], maintenance: number, requiredDevTier = 1, status: InfrastructureStatus = 'unlocked'): InfrastructureProject => ({
+  id, projectType, title, description, regionId, stateCode: regionId, requiredDevTier, totalCost, laborTurnsRequired, currentLaborTurnsCompleted: 0, totalInvestedMoney: 0, status, assignedWorkers: [], providedBonuses: bonuses, maintenanceCostPerTurn: maintenance
+});
+
+export const V93_INFRASTRUCTURE_PROJECTS: InfrastructureProject[] = [
+  v93Project('infra_v93_vic_manufacturing', 'advanced_manufacturing', 'Advanced Manufacturing Precinct', 'Retools Victorian industry: +8% investment income. Competes with the data centre for grid capacity.', 'VIC', 90000, 3, [{ type: 'income_boost', magnitude: 0.08, targetScope: 'region' }], 900),
+  v93Project('infra_v93_vic_data_center', 'data_center', 'Melbourne Hyperscale Data Centre', 'Technology anchor: +12% standing gains in VIC and +3% investment income. Heavy power draw — competes with manufacturing.', 'VIC', 95000, 3, [{ type: 'standing_multiplier', magnitude: 0.12, targetScope: 'region' }, { type: 'income_boost', magnitude: 0.03, targetScope: 'region' }], 1100),
+  v93Project('infra_v93_qld_port_automated', 'automated_port', 'Automated Port Expansion (QLD)', 'High-productivity automated berths: 20% trade discount in QLD. Labour groups oppose. Same site as the partnership expansion.', 'QLD', 110000, 3, [{ type: 'trade_discount', magnitude: 0.2, targetScope: 'region' }], 900),
+  v93Project('infra_v93_qld_port_partnership', 'port_expansion', 'Labour Partnership Port Expansion (QLD)', 'Slower, costlier expansion with the unions: 12% trade discount and +8% standing gains in QLD. Same site as the automated option.', 'QLD', 120000, 4, [{ type: 'trade_discount', magnitude: 0.12, targetScope: 'region' }, { type: 'standing_multiplier', magnitude: 0.08, targetScope: 'region' }], 800),
+  v93Project('infra_v93_qld_renewable_grid', 'renewable_grid', 'North Queensland Renewable Grid', 'Diversifies QLD away from coal exports: +6% investment income.', 'QLD', 80000, 3, [{ type: 'income_boost', magnitude: 0.06, targetScope: 'region' }], 700),
+  v93Project('infra_v93_wa_remote_logistics', 'remote_logistics_base', 'Pilbara Remote Logistics Base', 'Cuts remote travel costs by 20%. Competes with the hydrogen terminal for capital and crews.', 'WA', 75000, 2, [{ type: 'travel_cost_reduction', magnitude: 0.2, targetScope: 'region' }], 600),
+  v93Project('infra_v93_wa_freight_rail', 'freight_rail_upgrade', 'Pilbara Freight Rail Upgrade', 'Heavy-haul rail capacity: 15% trade discount in WA.', 'WA', 105000, 3, [{ type: 'trade_discount', magnitude: 0.15, targetScope: 'region' }], 900),
+  v93Project('infra_v93_sa_water_pipeline', 'water_pipeline', 'Murray Water Pipeline', 'Pipes river water inland: +6% investment income. Alternative to the desalination plant (one water solution per site).', 'SA', 85000, 3, [{ type: 'income_boost', magnitude: 0.06, targetScope: 'region' }], 700),
+  v93Project('infra_v93_sa_renewable_grid', 'renewable_grid', 'SA Renewable Grid Firming', 'Batteries and interconnectors: +7% investment income.', 'SA', 100000, 3, [{ type: 'income_boost', magnitude: 0.07, targetScope: 'region' }], 800),
+  v93Project('infra_v93_nsw_port', 'port_expansion', 'Port Botany Expansion', 'East-coast trade gateway: 15% trade discount in NSW.', 'NSW', 95000, 3, [{ type: 'trade_discount', magnitude: 0.15, targetScope: 'region' }], 800),
+  v93Project('infra_v93_tas_tourism_precinct', 'tourism_precinct', 'Tasmanian Tourism Precinct', 'Visitor economy: +12% standing gains in TAS. Environmental stakeholders prefer it to industrial projects.', 'TAS', 55000, 2, [{ type: 'standing_multiplier', magnitude: 0.12, targetScope: 'region' }], 500),
+  v93Project('infra_v93_nt_gateway', 'remote_logistics_base', 'Darwin Northern Gateway', 'Frontier logistics hub: travel costs −25% in NT.', 'NT', 70000, 2, [{ type: 'travel_cost_reduction', magnitude: 0.25, targetScope: 'region' }], 600),
+  v93Project('infra_v93_act_research_campus', 'research_campus', 'National Research Campus', 'Institutional research: +10% standing gains nationally. Competes with the tech park for the same research budget.', 'ACT', 150000, 4, [{ type: 'standing_multiplier', magnitude: 0.1, targetScope: 'national' }], 1200),
+  v93Project('infra_v93_national_grid', 'renewable_grid', 'National Grid Interconnector', 'A historic national project: +10% investment income nationally. Only opens when a historic infrastructure opportunity arises.', 'ACT', 240000, 5, [{ type: 'income_boost', magnitude: 0.1, targetScope: 'national' }], 1500, 2, 'locked')
+];
+
+export const V93_INFRA_META: InfrastructureContentMeta[] = [
+  { projectId: 'infra_v93_vic_manufacturing', path: 'Industrial', competesWith: ['infra_v93_vic_data_center'], roles: ['economic_growth', 'infrastructure'], themes: ['manufacturing'] },
+  { projectId: 'infra_v93_vic_data_center', path: 'Technology', competesWith: ['infra_v93_vic_manufacturing'], roles: ['development', 'infrastructure'], themes: ['technology'] },
+  { projectId: 'infra_v93_qld_port_automated', path: 'Trade (automated)', competesWith: ['infra_v93_qld_port_partnership'], roles: ['trade', 'infrastructure'], themes: ['trade', 'logistics'] },
+  { projectId: 'infra_v93_qld_port_partnership', path: 'Trade (partnership)', competesWith: ['infra_v93_qld_port_automated'], roles: ['trade', 'stability'], themes: ['trade', 'logistics'] },
+  { projectId: 'infra_v93_qld_renewable_grid', path: 'Energy', competesWith: [], roles: ['development', 'long_term_investment'], themes: ['renewables'] },
+  { projectId: 'infra_v93_wa_remote_logistics', path: 'Logistics', competesWith: ['infra_hydrogen_wa'], roles: ['infrastructure'], themes: ['logistics'] },
+  { projectId: 'infra_v93_wa_freight_rail', path: 'Mining / Export', competesWith: [], roles: ['trade', 'infrastructure'], themes: ['mining', 'trade'] },
+  { projectId: 'infra_v93_sa_water_pipeline', path: 'Water', competesWith: ['infra_desal_sa'], roles: ['stability', 'infrastructure'], themes: ['water'] },
+  { projectId: 'infra_v93_sa_renewable_grid', path: 'Energy', competesWith: [], roles: ['development', 'long_term_investment'], themes: ['renewables', 'energy'] },
+  { projectId: 'infra_v93_nsw_port', path: 'Trade', competesWith: [], roles: ['trade', 'infrastructure'], themes: ['trade'] },
+  { projectId: 'infra_v93_tas_tourism_precinct', path: 'Tourism', competesWith: [], roles: ['development', 'faction'], themes: ['tourism', 'environment'] },
+  { projectId: 'infra_v93_nt_gateway', path: 'Frontier logistics', competesWith: [], roles: ['exploration', 'infrastructure'], themes: ['logistics', 'exploration'] },
+  { projectId: 'infra_v93_act_research_campus', path: 'Research', competesWith: ['infra_tech_park_act'], roles: ['development', 'long_term_investment'], themes: ['research'] },
+  { projectId: 'infra_v93_national_grid', path: 'National', competesWith: [], roles: ['long_term_investment', 'infrastructure'], themes: ['energy', 'governance'] }
+];
+export const V93_INFRA_META_BY_ID: Record<string, InfrastructureContentMeta> = Object.fromEntries(V93_INFRA_META.map(m => [m.projectId, m]));
+/** Legacy projects that now have a competitor get the reverse link (competition is symmetric). */
+export function contentCompetitorsOf(projectId: string): string[] {
+  const own = V93_INFRA_META_BY_ID[projectId]?.competesWith || [];
+  const reverse = V93_INFRA_META.filter(m => m.competesWith.includes(projectId)).map(m => m.projectId);
+  return Array.from(new Set([...own, ...reverse]));
+}
+
+/** Competing projects: once one is funded, its rivals on the same site close (Part 24). Pure. */
+export function applyInfrastructureCompetition(projects: Record<string, any>): { projects: Record<string, any>; locked: Array<{ id: string; by: string }> } {
+  const locked: Array<{ id: string; by: string }> = [];
+  let next = projects;
+  Object.values(projects || {}).forEach((p: any) => {
+    if (!p || !(Number(p.totalInvestedMoney || 0) > 0 || ['under_construction', 'active', 'upgraded'].includes(String(p.status)))) return;
+    contentCompetitorsOf(p.id).forEach(cid => {
+      const c = next[cid];
+      if (c && c.status === 'unlocked' && Number(c.totalInvestedMoney || 0) === 0) {
+        if (next === projects) next = { ...projects };
+        next[cid] = { ...c, status: 'locked', lockedReason: `Site committed to ${p.title}` };
+        locked.push({ id: cid, by: p.id });
+      }
+    });
+  });
+  return { projects: next, locked };
+}
+
+// ============================================================================
+// V9.3 DILEMMA CONTENT — two or more defensible choices, born from real conditions
+// ============================================================================
+
+const dtpl = (o: Omit<DilemmaTemplate, 'kind' | 'rarity' | 'cooldownDays'> & Partial<Pick<DilemmaTemplate, 'rarity' | 'cooldownDays'>>): DilemmaTemplate => ({ kind: 'dilemma', rarity: 'common', cooldownDays: 14, ...o });
+const ALL8 = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+
+export const DILEMMA_TEMPLATE_REGISTRY: DilemmaTemplate[] = [
+  dtpl({ id: 'qld_export_capacity_crunch', title: 'Export Capacity Crunch', summary: 'Exports are growing faster than port capacity.', regions: ['QLD'], themes: ['trade', 'logistics'], roles: ['trade', 'infrastructure'], conflictType: 'automation_vs_labor', factionIds: ['qld_port_authority', 'regional_labor_coalition'],
+    prompt: '{region} exports are growing faster than port capacity. How should the expansion be built?',
+    requires: [{ k: 'momentum_min', band: 'growing' }, { k: 'any', of: [{ k: 'need', category: 'transport', min: 'moderate' }, { k: 'need', category: 'trade', min: 'moderate' }, { k: 'condition', kind: 'infrastructure_bottleneck' }] }],
+    choices: [
+      { id: 'automated', label: 'Automated Port Expansion', pros: ['High productivity', 'Export capacity'], cons: ['Labour relationship suffers', 'Capital outlay'], scores: { economy: 2, control: 0, stability: -1, longTerm: 1 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: -4 }, { k: 'flag', key: 'qld_port_path', value: 'automated' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_partnership' }, { k: 'offer_contract', templateId: 'qld_freight_capacity' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority'], losers: ['regional_labor_coalition'] } },
+      { id: 'partnership', label: 'Labour Partnership Expansion', pros: ['Regional stability', 'Labour relationship', 'Moderate capacity'], cons: ['Higher cost', 'Slower'], scores: { economy: 1, control: 1, stability: 2, longTerm: 0 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'standing', delta: 8 }, { k: 'stability', delta: 2, turns: 3 }, { k: 'flag', key: 'qld_port_path', value: 'partnership' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_automated' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority', 'regional_labor_coalition'], losers: [] } },
+      { id: 'delay', label: 'Delay', pros: ['Preserve capital'], cons: ['Regional momentum at risk', 'A rival may build first'], scores: { economy: 0, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'qld_port_path', value: 'delayed' }] }
+    ] }),
+  dtpl({ id: 'wa_diversify', title: 'Diversify {region}?', summary: 'The WA economy is heavily exposed to one commodity.', regions: ['WA'], themes: ['mining', 'renewables'], roles: ['long_term_investment', 'recovery'], conflictType: 'specialize_vs_diversify', factionIds: ['pilbara_mining_consortium', 'sa_clean_energy_council'],
+    prompt: '{region} depends on mining. Double down, or buy resilience?',
+    requires: [{ k: 'any', of: [{ k: 'risk', kind: 'overdependence' }, { k: 'risk', kind: 'market_exposure' }, { k: 'flag', key: 'commodity_crash', value: true }, { k: 'sector', sector: 'mining', min: 28 }] }],
+    choices: [
+      { id: 'protect_mining', label: 'Protect Mining', pros: ['Low immediate disruption', 'Consortium goodwill'], cons: ['Commodity exposure remains'], scores: { economy: 1, control: 1, stability: 0, longTerm: -1 }, effects: [{ k: 'standing', delta: 5 }, { k: 'flag', key: 'wa_path', value: 'mining' }], nav: 'contracts', factions: { winners: ['pilbara_mining_consortium'], losers: [] } },
+      { id: 'diversify', label: 'Renewable Diversification', pros: ['Long-term resilience', 'Opens diversification contracts'], cons: ['High investment now'], scores: { economy: -1, control: 0, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -2000 }, { k: 'flag', key: 'wa_path', value: 'diversified' }, { k: 'offer_contract', templateId: 'wa_diversification' }], nav: 'contracts', factions: { winners: ['sa_clean_energy_council'], losers: ['pilbara_mining_consortium'] } },
+      { id: 'hedge', label: 'Hedge: Logistics First', pros: ['Cheaper travel and freight', 'Keeps options open'], cons: ['Neither sector fully backed'], scores: { economy: 0, control: 1, stability: 0, longTerm: 1 }, effects: [{ k: 'cash', amount: -1000 }, { k: 'flag', key: 'wa_path', value: 'logistics' }], nav: 'infrastructure' }
+    ] }),
+  dtpl({ id: 'vic_automation_employment', title: 'Automation vs Employment', summary: 'Victorian manufacturers want to automate.', regions: ['VIC'], themes: ['manufacturing', 'technology'], roles: ['economic_growth', 'stability'], conflictType: 'automation_vs_labor', factionIds: ['vic_technology_council', 'regional_labor_coalition'],
+    prompt: '{region} manufacturers can automate the lines. Productivity or jobs?',
+    requires: [{ k: 'sector', sector: 'manufacturing', min: 12 }, { k: 'any', of: [{ k: 'sector', sector: 'technology', min: 20 }, { k: 'momentum_min', band: 'growing' }] }],
+    choices: [
+      { id: 'automate', label: 'Automate the lines', pros: ['Productivity', 'Tech council backing'], cons: ['Local standing drops'], scores: { economy: 2, control: -1, stability: -1, longTerm: 1 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: -5 }, { k: 'offer_contract', templateId: 'vic_manufacturing_upgrade' }, { k: 'flag', key: 'vic_path', value: 'automation' }], factions: { winners: ['vic_technology_council'], losers: ['regional_labor_coalition'] } },
+      { id: 'retrain', label: 'Retrain the workforce', pros: ['Standing and stability', 'Slower but broad support'], cons: ['Costs more'], scores: { economy: 0, control: 1, stability: 2, longTerm: 1 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'standing', delta: 8 }, { k: 'stability', delta: 2, turns: 3 }, { k: 'flag', key: 'vic_path', value: 'retrain' }], factions: { winners: ['regional_labor_coalition'], losers: [] } },
+      { id: 'status_quo', label: 'Keep the current lines', pros: ['No cost'], cons: ['Falls behind rivals who automate'], scores: { economy: 0, control: 0, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'vic_path', value: 'status_quo' }] }
+    ] }),
+  dtpl({ id: 'vic_tech_power', title: 'Technology Growth vs Power Demand', summary: 'Data-centre growth is straining the Victorian grid.', regions: ['VIC'], themes: ['technology', 'energy'], roles: ['infrastructure', 'development'], conflictType: 'growth_vs_capacity',
+    prompt: 'Tech growth in {region} is outrunning power supply. What gets the grid?',
+    requires: [{ k: 'any', of: [{ k: 'need', category: 'energy', min: 'moderate' }, { k: 'sector', sector: 'technology', min: 25 }] }],
+    choices: [
+      { id: 'data_center', label: 'Prioritise the data centre', pros: ['Technology specialization', 'Standing gains in VIC'], cons: ['Manufacturing precinct closes'], scores: { economy: 1, control: 1, stability: -1, longTerm: 1 }, effects: [{ k: 'lock_project', projectId: 'infra_v93_vic_manufacturing' }, { k: 'flag', key: 'vic_grid', value: 'tech' }], nav: 'infrastructure' },
+      { id: 'industry', label: 'Prioritise industry', pros: ['Broad income growth'], cons: ['Data centre closes', 'Tech council unhappy'], scores: { economy: 2, control: 0, stability: 0, longTerm: -1 }, effects: [{ k: 'lock_project', projectId: 'infra_v93_vic_data_center' }, { k: 'flag', key: 'vic_grid', value: 'industry' }], nav: 'infrastructure', factions: { winners: ['regional_labor_coalition'], losers: ['vic_technology_council'] } },
+      { id: 'grid_first', label: 'Build grid capacity first', pros: ['Keeps both options open'], cons: ['Upfront cost, slower growth'], scores: { economy: -1, control: 0, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -2000 }, { k: 'offer_contract', templateId: 'vic_grid_upgrade' }, { k: 'flag', key: 'vic_grid', value: 'grid' }] }
+    ] }),
+  dtpl({ id: 'sa_energy_vs_water', title: 'Energy or Water First?', summary: 'SA stakeholders disagree on what to build first.', regions: ['SA'], themes: ['renewables', 'water'], roles: ['faction', 'infrastructure'], conflictType: 'faction_conflict', factionIds: ['sa_clean_energy_council', 'nsw_farmers_coop'],
+    prompt: 'The Clean Energy Council wants renewables; farmers want water. {region} can only fund one quickly.',
+    requires: [{ k: 'any', of: [{ k: 'need', category: 'water', min: 'moderate' }, { k: 'need', category: 'energy', min: 'moderate' }] }, { k: 'faction', factionId: 'sa_clean_energy_council', min: 12 }],
+    choices: [
+      { id: 'renewables', label: 'Renewables first', pros: ['Energy specialization', 'Clean Energy Council backing'], cons: ['Water pressure persists', 'Farmers unhappy'], scores: { economy: 1, control: 0, stability: -1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'offer_contract', templateId: 'sa_hydrogen_pilot' }, { k: 'flag', key: 'sa_priority', value: 'energy' }], nav: 'infrastructure', factions: { winners: ['sa_clean_energy_council'], losers: ['nsw_farmers_coop'] } },
+      { id: 'water', label: 'Water first', pros: ['Agriculture and stability', 'Farmers\' backing'], cons: ['Energy growth waits', 'The desal/pipeline choice becomes final'], scores: { economy: 0, control: 1, stability: 2, longTerm: 0 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'stability', delta: 2, turns: 3 }, { k: 'offer_contract', templateId: 'sa_water_security' }, { k: 'flag', key: 'sa_priority', value: 'water' }], nav: 'infrastructure', factions: { winners: ['nsw_farmers_coop'], losers: ['sa_clean_energy_council'] } },
+      { id: 'split', label: 'Split the budget', pros: ['Nobody alienated'], cons: ['Both programs slower'], scores: { economy: 0, control: 0, stability: 1, longTerm: 1 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'flag', key: 'sa_priority', value: 'split' }] }
+    ] }),
+  dtpl({ id: 'tas_conservation_growth', title: 'Conservation or Growth', summary: 'Tasmania\'s growth is testing its wilderness compact.', regions: ['TAS'], themes: ['tourism', 'environment'], roles: ['faction', 'development'], conflictType: 'conservation_vs_growth', factionIds: ['tas_wilderness_trust', 'tas_innovation_network'],
+    prompt: '{region} is growing. The Wilderness Trust wants limits; developers want room.',
+    requires: [{ k: 'faction', factionId: 'tas_wilderness_trust', min: 12 }, { k: 'any', of: [{ k: 'momentum_min', band: 'growing' }, { k: 'sector', sector: 'tourism', min: 10 }, { k: 'dev_max', tier: 'emerging' }] }],
+    choices: [
+      { id: 'protect', label: 'Protect the wilderness', pros: ['Trust relationship', 'Tourism standing'], cons: ['Slower development'], scores: { economy: -1, control: 1, stability: 1, longTerm: 1 }, effects: [{ k: 'standing', delta: 6 }, { k: 'flag', key: 'tas_path', value: 'conservation' }, { k: 'offer_contract', templateId: 'tas_eco_expansion' }], factions: { winners: ['tas_wilderness_trust'], losers: [] } },
+      { id: 'develop', label: 'Open for development', pros: ['Faster growth', 'Hydro partnership'], cons: ['Trust opposition', 'Standing risk'], scores: { economy: 2, control: -1, stability: -1, longTerm: 1 }, effects: [{ k: 'standing', delta: -4 }, { k: 'flag', key: 'tas_path', value: 'development' }, { k: 'offer_contract', templateId: 'tas_hydro_partnership' }], factions: { winners: ['tas_innovation_network'], losers: ['tas_wilderness_trust'] } },
+      { id: 'eco_tourism', label: 'Eco-tourism compromise', pros: ['Moderate growth with support'], cons: ['Costs capital up front'], scores: { economy: 1, control: 0, stability: 1, longTerm: 0 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'flag', key: 'tas_path', value: 'eco_tourism' }], nav: 'infrastructure' }
+    ] }),
+  dtpl({ id: 'nt_frontier_investment', title: 'Frontier Investment', summary: 'The Top End is cheap to enter and costly to serve.', regions: ['NT'], themes: ['exploration', 'logistics'], roles: ['exploration', 'long_term_investment'], conflictType: 'short_vs_long', factionIds: ['nt_community_council'],
+    prompt: '{region} is underdeveloped: low competition, high logistics cost. Commit early?',
+    requires: [{ k: 'dev_max', tier: 'developing' }, { k: 'day_min', day: 3 }],
+    choices: [
+      { id: 'commit', label: 'Commit to the frontier', pros: ['First-mover standing', 'Community goodwill'], cons: ['Capital locked far from the action'], scores: { economy: -1, control: 2, stability: 0, longTerm: 1 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: 10 }, { k: 'flag', key: 'nt_path', value: 'frontier' }], nav: 'map', factions: { winners: ['nt_community_council'], losers: [] } },
+      { id: 'logistics', label: 'Fund logistics only', pros: ['Cheaper access later'], cons: ['No standing now'], scores: { economy: 0, control: 0, stability: 0, longTerm: 2 }, effects: [{ k: 'cash', amount: -1000 }, { k: 'offer_contract', templateId: 'nt_gateway_logistics' }, { k: 'flag', key: 'nt_path', value: 'logistics' }] },
+      { id: 'skip', label: 'Stay on the east coast', pros: ['Keep capital liquid'], cons: ['Rival may claim the frontier'], scores: { economy: 1, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'nt_path', value: 'skip' }] }
+    ] }),
+  dtpl({ id: 'act_research_priorities', title: 'Research Priorities', summary: 'The directorate can fund one national research priority.', regions: ['ACT'], themes: ['research', 'technology'], roles: ['development', 'faction'], conflictType: 'specialize_vs_diversify', factionIds: ['csiro_ai_directorate', 'federal_infrastructure_office'],
+    prompt: 'The directorate can back one priority. AI, energy, or infrastructure research?',
+    requires: [{ k: 'faction', factionId: 'csiro_ai_directorate', min: 12 }, { k: 'day_min', day: 4 }],
+    choices: [
+      { id: 'ai', label: 'AI research', pros: ['Technology demand', 'Directorate partnership'], cons: ['Little for other regions'], scores: { economy: 1, control: 1, stability: 0, longTerm: 1 }, effects: [{ k: 'standing', delta: 6 }, { k: 'offer_contract', templateId: 'act_ai_partnership' }, { k: 'flag', key: 'act_priority', value: 'ai' }], factions: { winners: ['csiro_ai_directorate'], losers: [] } },
+      { id: 'energy', label: 'Energy transition research', pros: ['Helps SA/TAS/WA renewables'], cons: ['Directorate less engaged'], scores: { economy: 0, control: 0, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1000 }, { k: 'flag', key: 'act_priority', value: 'energy' }, { k: 'flag', key: 'energy_research', value: true }] },
+      { id: 'infrastructure', label: 'National infrastructure program', pros: ['Opens the federal program contract'], cons: ['Large capital later'], scores: { economy: 1, control: 0, stability: 1, longTerm: 0 }, effects: [{ k: 'offer_contract', templateId: 'act_national_program' }, { k: 'flag', key: 'act_priority', value: 'infrastructure' }], factions: { winners: ['federal_infrastructure_office'], losers: [] } }
+    ] }),
+  dtpl({ id: 'drought_allocation', title: 'Drought Water Allocation', summary: 'Water must be rationed between towns, farms and industry.', regions: ['NSW', 'SA', 'VIC'], themes: ['water', 'agriculture'], roles: ['crisis', 'stability'], conflictType: 'growth_vs_capacity', factionIds: ['nsw_farmers_coop'],
+    prompt: 'The drought has hit {region}. Who gets the water?',
+    requires: [{ k: 'crisis', category: 'environmental', here: true }],
+    choices: [
+      { id: 'farms', label: 'Farms first', pros: ['Protects agriculture', 'Farmers\' backing'], cons: ['Urban stability falls'], scores: { economy: 1, control: 1, stability: -1, longTerm: 0 }, effects: [{ k: 'standing', delta: 6 }, { k: 'stability', delta: -2, turns: 2 }, { k: 'flag', key: 'drought_policy', value: 'farms' }], factions: { winners: ['nsw_farmers_coop'], losers: [] } },
+      { id: 'towns', label: 'Towns first', pros: ['Stability holds'], cons: ['Agricultural output drops'], scores: { economy: -1, control: 0, stability: 2, longTerm: 0 }, effects: [{ k: 'stability', delta: 3, turns: 3 }, { k: 'flag', key: 'drought_policy', value: 'towns' }], factions: { winners: [], losers: ['nsw_farmers_coop'] } },
+      { id: 'infrastructure', label: 'Pay for new supply', pros: ['Solves it for both', 'Opens water contracts'], cons: ['Expensive now'], scores: { economy: -1, control: 1, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'offer_contract', templateId: 'sa_emergency_water' }, { k: 'flag', key: 'drought_policy', value: 'supply' }] }
+    ] }),
+  dtpl({ id: 'rival_bidding_war', title: 'Bidding War in {region}', summary: 'The rival is pouring capital into a region.', regions: ALL8, themes: ['finance'], roles: ['competition', 'regional_control', 'diplomacy'], conflictType: 'compete_vs_cooperate', rarity: 'uncommon',
+    prompt: 'Your rival has just put heavy capital into {region}. Contest it, negotiate, or go elsewhere?',
+    requires: [{ k: 'rival_invested', min: 500 }],
+    choices: [
+      { id: 'contest', label: 'Contest the region', pros: ['Deny the rival a stronghold'], cons: ['Expensive stake race'], scores: { economy: -1, control: 2, stability: 0, longTerm: 0 }, effects: [{ k: 'flag', key: 'rival_response', value: 'contest' }], nav: 'map' },
+      { id: 'negotiate', label: 'Negotiate a split', pros: ['Saves capital', 'Can secure other regions'], cons: ['Concedes influence here'], scores: { economy: 1, control: -1, stability: 1, longTerm: 0 }, effects: [{ k: 'flag', key: 'rival_response', value: 'negotiate' }], nav: 'diplomacy' },
+      { id: 'redirect', label: 'Invest elsewhere', pros: ['Rival overpays for one region', 'Alternative investor contracts appear'], cons: ['Rival stronghold forms'], scores: { economy: 1, control: 0, stability: 0, longTerm: 1 }, effects: [{ k: 'flag', key: 'rival_response', value: 'redirect' }, { k: 'offer_contract', templateId: 'rival_counter_investment' }], nav: 'contracts' }
+    ] }),
+  dtpl({ id: 'diplomatic_ceasefire', title: 'Temporary Ceasefire?', summary: 'Tension with the rival is high.', regions: [], themes: ['governance'], roles: ['diplomacy', 'competition'], conflictType: 'compete_vs_cooperate', rarity: 'uncommon',
+    prompt: 'Tension with your rival is high. A temporary ceasefire would free both of you to build — or you can press the advantage.',
+    requires: [{ k: 'diplomacy', state: 'high_tension' }],
+    choices: [
+      { id: 'propose', label: 'Propose a ceasefire', pros: ['Time to build', 'Stability'], cons: ['Rival also recovers'], scores: { economy: 1, control: -1, stability: 2, longTerm: 0 }, effects: [{ k: 'flag', key: 'ceasefire', value: 'proposed' }], nav: 'diplomacy' },
+      { id: 'press', label: 'Press the advantage', pros: ['Rival stays on the back foot'], cons: ['Escalation risk'], scores: { economy: 0, control: 2, stability: -1, longTerm: 0 }, effects: [{ k: 'flag', key: 'ceasefire', value: 'refused' }], nav: 'map' },
+      { id: 'wait', label: 'Wait and watch', pros: ['No commitment'], cons: ['Initiative drifts'], scores: { economy: 0, control: 0, stability: 0, longTerm: 0 }, effects: [{ k: 'flag', key: 'ceasefire', value: 'waited' }] }
+    ] }),
+  dtpl({ id: 'post_crisis_rebuild', title: 'Rebuilding {region}', summary: 'A region is recovering from a crisis.', regions: ALL8, themes: ['governance'], roles: ['recovery', 'stability'], conflictType: 'short_vs_long',
+    prompt: '{region} is coming out of a crisis. How hard do you push the rebuild?',
+    requires: [{ k: 'any', of: [{ k: 'condition', kind: 'post_crisis_recovery' }, { k: 'opportunity', kind: 'recovery_investment' }] }],
+    choices: [
+      { id: 'fast', label: 'Fast rebuild', pros: ['Stability recovers quickly', 'Standing'], cons: ['Expensive'], scores: { economy: -1, control: 1, stability: 2, longTerm: 1 }, effects: [{ k: 'cash', amount: -2000 }, { k: 'standing', delta: 6 }, { k: 'stability', delta: 3, turns: 3 }] },
+      { id: 'targeted', label: 'Targeted contracts', pros: ['Paid work instead of spending'], cons: ['Slower recovery'], scores: { economy: 1, control: 0, stability: 1, longTerm: 0 }, effects: [{ k: 'offer_contract', templateId: 'national_emergency_logistics' }], nav: 'contracts' },
+      { id: 'market', label: 'Let the market recover', pros: ['No cost', 'Cheap stakes later'], cons: ['Instability lingers'], scores: { economy: 1, control: 0, stability: -1, longTerm: 1 }, effects: [{ k: 'flag', key: 'rebuild_policy', value: 'market' }], nav: 'map' }
+    ] }),
+  dtpl({ id: 'liquidity_squeeze', title: 'Liquidity Squeeze', summary: 'Debt is crowding out your options.', regions: [], themes: ['finance'], roles: ['liquidity', 'recovery'], conflictType: 'invest_vs_liquidity',
+    prompt: 'Debt service is eating your flexibility. How do you create room?',
+    requires: [{ k: 'in_debt' }, { k: 'day_min', day: 4 }],
+    choices: [
+      { id: 'sell', label: 'Sell inventory', pros: ['Immediate cash'], cons: ['May sell into a weak market'], scores: { economy: 1, control: 0, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'liquidity_plan', value: 'sell' }], nav: 'market' },
+      { id: 'contracts', label: 'Take short contracts', pros: ['Earn without selling assets'], cons: ['Pins you in place'], scores: { economy: 1, control: -1, stability: 0, longTerm: 1 }, effects: [{ k: 'flag', key: 'liquidity_plan', value: 'contracts' }], nav: 'contracts' },
+      { id: 'hold', label: 'Hold and repay slowly', pros: ['Keeps positions'], cons: ['Interest keeps accruing'], scores: { economy: -1, control: 2, stability: 0, longTerm: 0 }, effects: [{ k: 'flag', key: 'liquidity_plan', value: 'hold' }], nav: 'loans' }
+    ] }),
+  dtpl({ id: 'mining_vs_environment', title: 'Mining vs Environment', summary: 'Miners and conservationists are in open conflict.', regions: ['WA', 'QLD', 'TAS'], themes: ['mining', 'environment'], roles: ['faction', 'competition'], conflictType: 'faction_conflict', factionIds: ['pilbara_mining_consortium', 'tas_wilderness_trust', 'national_tourism_council'],
+    prompt: 'Mining interests and conservation groups are fighting over {region}. Whose side are you on?',
+    requires: [{ k: 'any', of: [{ k: 'faction_conflict', a: 'pilbara_mining_consortium', b: 'tas_wilderness_trust' }, { k: 'faction_conflict', a: 'pilbara_mining_consortium', b: 'national_tourism_council' }] }],
+    choices: [
+      { id: 'mining', label: 'Back the miners', pros: ['Mining contracts', 'Consortium relationship'], cons: ['Conservation groups oppose you'], scores: { economy: 2, control: 0, stability: -1, longTerm: 0 }, effects: [{ k: 'flag', key: 'resource_stance', value: 'mining' }], factions: { winners: ['pilbara_mining_consortium'], losers: ['tas_wilderness_trust', 'national_tourism_council'] } },
+      { id: 'environment', label: 'Back conservation', pros: ['Tourism and stability'], cons: ['Miners turn against you'], scores: { economy: -1, control: 0, stability: 2, longTerm: 1 }, effects: [{ k: 'standing', delta: 4 }, { k: 'flag', key: 'resource_stance', value: 'conservation' }], factions: { winners: ['tas_wilderness_trust', 'national_tourism_council'], losers: ['pilbara_mining_consortium'] } },
+      { id: 'mediate', label: 'Broker a compact', pros: ['Nobody fully alienated'], cons: ['Costs capital and time'], scores: { economy: 0, control: 1, stability: 1, longTerm: 0 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'flag', key: 'resource_stance', value: 'compact' }] }
+    ] }),
+  dtpl({ id: 'boom_overheat', title: '{region} Overheating', summary: 'A booming region is running into capacity limits.', regions: ALL8, themes: ['finance'], roles: ['economic_growth', 'stability'], conflictType: 'growth_vs_capacity',
+    prompt: '{region} is booming beyond its infrastructure. Ride it, cool it, or build capacity?',
+    requires: [{ k: 'momentum_min', band: 'rapid_growth' }, { k: 'any', of: [{ k: 'risk', kind: 'infrastructure_bottleneck' }, { k: 'condition', kind: 'infrastructure_bottleneck' }, { k: 'risk', kind: 'high_rivalry' }] }],
+    choices: [
+      { id: 'ride', label: 'Ride the boom', pros: ['Maximum short-term returns'], cons: ['Exposed if it turns'], scores: { economy: 2, control: 0, stability: -1, longTerm: -1 }, effects: [{ k: 'flag', key: 'boom_policy', value: 'ride' }], nav: 'market' },
+      { id: 'capacity', label: 'Build capacity', pros: ['Sustains the growth'], cons: ['Capital tied up'], scores: { economy: 0, control: 1, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'flag', key: 'boom_policy', value: 'capacity' }], nav: 'infrastructure' },
+      { id: 'lock_in', label: 'Lock in control now', pros: ['Hold the region before it peaks'], cons: ['Expensive stake at peak prices'], scores: { economy: -1, control: 2, stability: 0, longTerm: 0 }, effects: [{ k: 'flag', key: 'boom_policy', value: 'lock_in' }], nav: 'map' }
+    ] }),
+  dtpl({ id: 'green_transition_follow_up', title: 'Green Transition Commitments', summary: 'Your earlier green commitment is being tested.', regions: ['SA', 'VIC', 'TAS'], themes: ['renewables'], roles: ['long_term_investment', 'faction'], conflictType: 'short_vs_long', rarity: 'uncommon', factionIds: ['sa_clean_energy_council'],
+    prompt: 'Your earlier commitment to the energy transition is being tested in {region}. Follow through?',
+    requires: [{ k: 'any', of: [{ k: 'campaign_var', key: 'energy_path', value: 'green' }, { k: 'flag', key: 'energy_research', value: true }, { k: 'flag', key: 'sa_priority', value: 'energy' }] }],
+    choices: [
+      { id: 'follow', label: 'Follow through', pros: ['Credibility with energy stakeholders', 'Hydrogen contracts'], cons: ['Capital committed'], scores: { economy: 0, control: 1, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: 6 }, { k: 'offer_contract', templateId: 'sa_hydrogen_pilot' }], factions: { winners: ['sa_clean_energy_council'], losers: [] } },
+      { id: 'pivot', label: 'Pivot to profit', pros: ['Capital freed for higher returns'], cons: ['Stakeholders remember'], scores: { economy: 2, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'standing', delta: -5 }, { k: 'flag', key: 'energy_path_broken', value: true }], factions: { winners: [], losers: ['sa_clean_energy_council'] } }
+    ] })
+];
+
+// ============================================================================
+// V9.3 CRISIS CONTENT — authored multi-stage chains for the canonical crisis engine
+// ============================================================================
+// WARNING → IMPACT → (SECONDARY) → RECOVERY. Preparing at WARNING resolves it early (lower damage);
+// ignoring lets the timer escalate. A successful IMPACT response moves to RECOVERY (nextStageOnSuccess).
+// Stage effects use executable keys (resourcePrice:<res>, travelCost, challengeBonus:<type>, investmentYield).
+
+type V93StageSpec = { title: string; description: string; turns: number; effects: Array<[string, number]>; choices: Array<{ id: string; label: string; description: string; cost: number; actions: number; stability: number; p: number; escalate?: boolean }>; onSuccess?: string; onFailure?: string };
+function v93Chain(id: string, title: string, description: string, category: CrisisCategory, regions: string[], stages: Record<string, V93StageSpec>, order: string[]): CrisisChain {
+  return {
+    id: `v93c_${id}`, title, description, category, status: 'inactive', currentStageIndex: 0, activeStageId: null, cooldownTurns: 12, affectedRegions: regions, triggerConditions: [],
+    stages: order.map((key, i) => {
+      const s = stages[key];
+      return {
+        id: `${id}_${key}`, stageNumber: i + 1, title: s.title, description: s.description, durationTurns: s.turns, remainingTurns: s.turns,
+        stageEffects: s.effects.map(([k, v], j) => ({ id: `${id}_${key}_fx${j}`, description: `${k.replace(':', ' ')} ×${v}`, targetDomain: k.startsWith('resourcePrice') ? 'economy' : k === 'travelCost' ? 'travel' : k === 'investmentYield' ? 'economy' : 'governance', modifierKey: k, value: v, affectedRegions: regions })),
+        choices: s.choices.map(c => ({ id: c.id, label: c.label, description: c.description, costMoney: c.cost, costActions: c.actions, stabilityDelta: c.stability, successProbability: c.p, successConsequences: { stabilityGain: Math.max(0, c.stability), resolvedStage: s.onSuccess ? false : true }, failureConsequences: { stabilityLoss: 6, escalateCrisis: c.escalate !== false } })),
+        nextStageOnSuccess: s.onSuccess ? `${id}_${s.onSuccess}` : undefined,
+        nextStageOnFailure: s.onFailure ? `${id}_${s.onFailure}` : undefined
+      } as CrisisStage;
+    })
+  };
+}
+const crtpl = (o: Omit<CrisisContentTemplate, 'kind'>): CrisisContentTemplate => ({ kind: 'crisis', ...o });
+
+export const CRISIS_CONTENT_REGISTRY: CrisisContentTemplate[] = [
+  crtpl({ id: 'qld_cyclone', title: 'Queensland Cyclone', summary: 'A tropical cyclone is tracking toward the Queensland coast.', category: 'environmental', regions: ['QLD'], themes: ['trade', 'tourism'], roles: ['crisis', 'stability'], rarity: 'common', cooldownDays: 20,
+    requires: [{ k: 'season', seasons: ['Summer', 'Autumn'] }, { k: 'no_crisis_here' }],
+    chain: v93Chain('qld_cyclone', 'Queensland Cyclone', 'Ports, mining and tourism brace for landfall.', 'environmental', ['QLD'], {
+      warn: { title: 'Cyclone Watch', description: 'A cyclone is forecast to cross the coast. Preparation now limits the damage.', turns: 2, effects: [], choices: [{ id: 'prepare', label: 'Fund port and town preparation', description: '$1,500 — likely averts serious damage', cost: 1500, actions: 1, stability: 6, p: 0.8 }, { id: 'accept', label: 'Accept the risk', description: 'Free — the storm may cause serious damage', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Cyclone Landfall', description: 'Berths closed, tourism halted, travel disrupted.', turns: 3, effects: [['travelCost', 1.5], ['resourcePrice:Sugar Cane', 1.3], ['resourcePrice:Coral', 0.75], ['challengeBonus:physical', -0.1]], choices: [{ id: 'respond', label: 'Emergency response', description: '$2,500 — begins recovery', cost: 2500, actions: 1, stability: 8, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Port Restoration', description: 'Restoration crews are at work; restoration contracts are in demand.', turns: 3, effects: [['travelCost', 1.2]], choices: [{ id: 'rebuild', label: 'Fund the rebuild', description: '$1,500 — finishes the recovery', cost: 1500, actions: 1, stability: 5, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'wa_cyclone', title: 'Pilbara Cyclone', summary: 'A severe cyclone threatens Pilbara mining and remote logistics.', category: 'environmental', regions: ['WA'], themes: ['mining', 'logistics'], roles: ['crisis'], rarity: 'uncommon', cooldownDays: 20,
+    requires: [{ k: 'season', seasons: ['Summer', 'Autumn'] }, { k: 'no_crisis_here' }, { k: 'any', of: [{ k: 'sector', sector: 'mining', min: 10 }, { k: 'sector', sector: 'logistics', min: 8 }] }],
+    chain: v93Chain('wa_cyclone', 'Pilbara Cyclone', 'Mine sites evacuate; remote supply lines cut.', 'environmental', ['WA'], {
+      warn: { title: 'Pilbara Cyclone Warning', description: 'Mines are preparing to evacuate.', turns: 2, effects: [], choices: [{ id: 'prepare', label: 'Secure sites and supply', description: '$1,500', cost: 1500, actions: 1, stability: 5, p: 0.8 }, { id: 'accept', label: 'Keep mining until the last moment', description: 'Free — risk heavier disruption', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Mines Shut, Ore Supply Shock', description: 'Ore shipments halt — prices jump while remote logistics stall.', turns: 3, effects: [['resourcePrice:Iron Ore', 1.25], ['travelCost', 1.4]], choices: [{ id: 'respond', label: 'Restore remote supply', description: '$2,000', cost: 2000, actions: 1, stability: 6, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Restart', description: 'Mines restart; supply chains rebuild.', turns: 2, effects: [['travelCost', 1.15]], choices: [{ id: 'rebuild', label: 'Fund the restart', description: '$1,000', cost: 1000, actions: 1, stability: 4, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'nsw_bushfire', title: 'Bushfire Season', summary: 'Extreme fire danger across NSW and Victoria.', category: 'environmental', regions: ['NSW', 'VIC'], themes: ['agriculture', 'tourism'], roles: ['crisis', 'stability'], rarity: 'common', cooldownDays: 20,
+    requires: [{ k: 'season', seasons: ['Summer', 'Spring'] }, { k: 'no_crisis_here' }],
+    chain: v93Chain('nsw_bushfire', 'Bushfire Season', 'Fire fronts threaten towns, vineyards and roads.', 'environmental', ['NSW', 'VIC'], {
+      warn: { title: 'Catastrophic Fire Danger', description: 'Fire services call for preparation funding.', turns: 2, effects: [], choices: [{ id: 'prepare', label: 'Fund fire preparation', description: '$1,500', cost: 1500, actions: 1, stability: 6, p: 0.75 }, { id: 'accept', label: 'Rely on existing services', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Fire Fronts', description: 'Roads closed; vineyards and tourism hit.', turns: 3, effects: [['travelCost', 1.3], ['resourcePrice:Wine', 1.25], ['challengeBonus:physical', -0.1]], choices: [{ id: 'respond', label: 'Emergency relief', description: '$2,500', cost: 2500, actions: 1, stability: 8, p: 0.85 }], onSuccess: 'recovery', onFailure: 'smoke' },
+      smoke: { title: 'Smoke and Evacuations', description: 'Secondary impact: evacuations spread, stability falls.', turns: 2, effects: [['travelCost', 1.4], ['investmentYield', 0.95]], choices: [{ id: 'respond2', label: 'Federal assistance', description: '$3,000', cost: 3000, actions: 1, stability: 10, p: 0.9 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Recovery and Replanting', description: 'Communities rebuild.', turns: 3, effects: [], choices: [{ id: 'rebuild', label: 'Fund recovery', description: '$1,500', cost: 1500, actions: 1, stability: 5, p: 0.9 }] }
+    }, ['warn', 'impact', 'smoke', 'recovery']) }),
+  crtpl({ id: 'nsw_flood', title: 'Inland Flooding', summary: 'Record rain is flooding the inland river system.', category: 'environmental', regions: ['NSW', 'QLD'], themes: ['agriculture', 'logistics'], roles: ['crisis', 'recovery'], rarity: 'common', cooldownDays: 20,
+    requires: [{ k: 'season', seasons: ['Autumn', 'Winter'] }, { k: 'no_crisis_here' }],
+    chain: v93Chain('nsw_flood', 'Inland Flooding', 'Farms and freight lines under water.', 'environmental', ['NSW', 'QLD'], {
+      warn: { title: 'Flood Warning', description: 'Rivers rising across the basin.', turns: 2, effects: [], choices: [{ id: 'prepare', label: 'Sandbag and reroute freight', description: '$1,200', cost: 1200, actions: 1, stability: 5, p: 0.75 }, { id: 'accept', label: 'Wait for the peak', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Agricultural Disruption', description: 'Crops lost; freight rerouted.', turns: 3, effects: [['resourcePrice:Wheat', 1.3], ['resourcePrice:Dairy', 1.2], ['travelCost', 1.25]], choices: [{ id: 'respond', label: 'Agricultural recovery package', description: '$2,000', cost: 2000, actions: 1, stability: 7, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Agricultural Recovery', description: 'Farms replant; recovery contracts open.', turns: 3, effects: [['resourcePrice:Wheat', 1.1]], choices: [{ id: 'rebuild', label: 'Fund replanting', description: '$1,000', cost: 1000, actions: 1, stability: 4, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'sa_heatwave_grid', title: 'Heatwave Grid Failure', summary: 'A heatwave is pushing the SA grid past its limits.', category: 'infrastructure', regions: ['SA'], themes: ['energy'], roles: ['crisis', 'infrastructure'], rarity: 'common', cooldownDays: 18,
+    requires: [{ k: 'season', seasons: ['Summer'] }, { k: 'no_crisis_here' }, { k: 'any', of: [{ k: 'need', category: 'energy', min: 'low' }, { k: 'sector', sector: 'renewables', min: 8 }, { k: 'sector', sector: 'energy', min: 8 }] }],
+    chain: v93Chain('sa_heatwave_grid', 'Heatwave Grid Failure', 'Demand spikes; the grid may fail.', 'infrastructure', ['SA'], {
+      warn: { title: 'Heatwave Alert', description: 'Grid operators warn of load shedding.', turns: 2, effects: [['resourcePrice:Natural Gas', 1.15]], choices: [{ id: 'prepare', label: 'Fund battery standby', description: '$1,500', cost: 1500, actions: 1, stability: 5, p: 0.8 }, { id: 'accept', label: 'Ride it out', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Power Grid Failure', description: 'Blackouts across the state; energy prices spike.', turns: 3, effects: [['resourcePrice:Natural Gas', 1.35], ['resourcePrice:Uranium', 1.2], ['investmentYield', 0.95]], choices: [{ id: 'respond', label: 'Emergency generation', description: '$2,500', cost: 2500, actions: 1, stability: 7, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Grid Firming', description: 'The grid is being firmed; energy projects are in demand.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Fund grid firming', description: '$1,500', cost: 1500, actions: 1, stability: 4, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'sa_water_shortage', title: 'Water Shortage', summary: 'River allocations are collapsing in the south.', category: 'environmental', regions: ['SA', 'NSW'], themes: ['water', 'agriculture'], roles: ['crisis', 'stability'], rarity: 'common', cooldownDays: 20,
+    requires: [{ k: 'no_crisis_here' }, { k: 'any', of: [{ k: 'need', category: 'water', min: 'low' }, { k: 'season', seasons: ['Summer'] }] }],
+    chain: v93Chain('sa_water_shortage', 'Water Shortage', 'Warning → restrictions → agricultural disruption → stability pressure → recovery.', 'environmental', ['SA', 'NSW'], {
+      warn: { title: 'Allocation Cuts Warning', description: 'Irrigators face cuts.', turns: 2, effects: [], choices: [{ id: 'prepare', label: 'Buy water entitlements early', description: '$1,200', cost: 1200, actions: 1, stability: 4, p: 0.75 }, { id: 'accept', label: 'Hope for rain', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'restrict' },
+      restrict: { title: 'Water Restrictions', description: 'Restrictions bite across towns and farms.', turns: 2, effects: [['resourcePrice:Wine', 1.2], ['resourcePrice:Wheat', 1.15]], choices: [{ id: 'respond', label: 'Emergency water carting', description: '$1,800', cost: 1800, actions: 1, stability: 6, p: 0.8 }], onSuccess: 'recovery', onFailure: 'disrupt' },
+      disrupt: { title: 'Agricultural Disruption', description: 'Crops fail; regional stability under pressure.', turns: 3, effects: [['resourcePrice:Wine', 1.3], ['resourcePrice:Wheat', 1.3], ['investmentYield', 0.95]], choices: [{ id: 'respond2', label: 'Regional support package', description: '$2,500', cost: 2500, actions: 1, stability: 9, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Water Recovery', description: 'Allocations recover; water-security projects are in demand.', turns: 3, effects: [], choices: [{ id: 'rebuild', label: 'Invest in water security', description: '$1,500', cost: 1500, actions: 1, stability: 5, p: 0.9 }] }
+    }, ['warn', 'restrict', 'disrupt', 'recovery']) }),
+  crtpl({ id: 'wa_commodity_crash', title: 'Commodity Crash', summary: 'Iron ore prices are collapsing after the boom.', category: 'economic', regions: ['WA'], themes: ['mining'], roles: ['crisis', 'recovery'], rarity: 'uncommon', cooldownDays: 30,
+    requires: [{ k: 'any', of: [{ k: 'condition', kind: 'commodity_boom' }, { k: 'price_min', resource: 'Iron Ore', ratio: 1.15 }, { k: 'sector', sector: 'mining', min: 30 }] }, { k: 'day_min', day: 6 }],
+    chain: v93Chain('wa_commodity_crash', 'Commodity Crash', 'The boom turns: prices slide, exposure becomes danger.', 'economic', ['WA'], {
+      warn: { title: 'Demand Slowdown', description: 'Steel mills cut orders; prices soften.', turns: 2, effects: [['resourcePrice:Iron Ore', 0.9]], choices: [{ id: 'hedge', label: 'Hedge exposure', description: '$1,500', cost: 1500, actions: 1, stability: 3, p: 0.75 }, { id: 'accept', label: 'Stay exposed', description: 'Free — upside if it rebounds', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Iron Ore Price Collapse', description: 'Prices crash; WA investment income falls.', turns: 3, effects: [['resourcePrice:Iron Ore', 0.65], ['resourcePrice:Gold', 0.9], ['investmentYield', 0.9]], choices: [{ id: 'respond', label: 'Diversification program', description: '$2,500', cost: 2500, actions: 1, stability: 6, p: 0.8 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Restructuring', description: 'Survivors restructure; cheap stakes for the patient.', turns: 3, effects: [['resourcePrice:Iron Ore', 0.85]], choices: [{ id: 'rebuild', label: 'Back the restructure', description: '$1,500', cost: 1500, actions: 1, stability: 4, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'national_credit_shock', title: 'Credit Shock', summary: 'Tightening credit markets threaten investment returns.', category: 'economic', regions: ['NSW'], themes: ['finance'], roles: ['crisis', 'liquidity'], rarity: 'uncommon', cooldownDays: 30,
+    requires: [{ k: 'day_min', day: 8 }, { k: 'economy_min', band: 'moderate' }],
+    chain: v93Chain('national_credit_shock', 'Credit Shock', 'Banks pull back; leveraged players are squeezed.', 'economic', ['NSW', 'VIC'], {
+      warn: { title: 'Credit Tightening', description: 'Lenders raise rates and cut exposure.', turns: 2, effects: [['investmentYield', 0.95]], choices: [{ id: 'deleverage', label: 'Build a cash buffer', description: '$1,000 set aside', cost: 1000, actions: 1, stability: 3, p: 0.8 }, { id: 'accept', label: 'Stay leveraged', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Credit Crunch', description: 'Investment returns fall across the east coast.', turns: 3, effects: [['investmentYield', 0.85], ['resourcePrice:Government Grants', 1.2]], choices: [{ id: 'respond', label: 'Refinance and stabilise', description: '$2,000', cost: 2000, actions: 1, stability: 6, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Credit Recovery', description: 'Lending resumes.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Back recovery lending', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'qld_port_closure', title: 'Port Closure', summary: 'Industrial action and damage threaten the main export port.', category: 'infrastructure', regions: ['QLD'], themes: ['trade', 'logistics'], roles: ['crisis', 'trade'], rarity: 'uncommon', cooldownDays: 24,
+    requires: [{ k: 'no_crisis_here' }, { k: 'any', of: [{ k: 'need', category: 'trade', min: 'low' }, { k: 'sector', sector: 'trade', min: 12 }, { k: 'flag', key: 'qld_port_path', value: 'automated' }] }],
+    chain: v93Chain('qld_port_closure', 'Port Closure', 'Exports back up; prices dislocate.', 'infrastructure', ['QLD'], {
+      warn: { title: 'Port Dispute', description: 'Workers threaten a shutdown.', turns: 2, effects: [], choices: [{ id: 'mediate', label: 'Mediate with the unions', description: '$1,200', cost: 1200, actions: 1, stability: 5, p: 0.75 }, { id: 'accept', label: 'Refuse to intervene', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Port Closed', description: 'Exports stranded; coal and sugar prices dislocate.', turns: 3, effects: [['resourcePrice:Coal', 1.2], ['resourcePrice:Sugar Cane', 0.8], ['travelCost', 1.3]], choices: [{ id: 'respond', label: 'Emergency reopening', description: '$2,000', cost: 2000, actions: 1, stability: 6, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Backlog Clearing', description: 'Ships queue to clear the backlog.', turns: 2, effects: [['resourcePrice:Coal', 1.1]], choices: [{ id: 'rebuild', label: 'Fund extra shifts', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'act_cyberattack', title: 'Cyberattack', summary: 'A coordinated cyberattack targets national systems.', category: 'technological', regions: ['ACT', 'VIC'], themes: ['technology', 'governance'], roles: ['crisis', 'defense'], rarity: 'uncommon', cooldownDays: 24,
+    requires: [{ k: 'no_crisis_here' }, { k: 'any', of: [{ k: 'sector', sector: 'technology', min: 12 }, { k: 'sector', sector: 'research', min: 12 }] }],
+    chain: v93Chain('act_cyberattack', 'Cyberattack', 'Digital infrastructure disruption spreads.', 'technological', ['ACT', 'VIC'], {
+      warn: { title: 'Intrusion Detected', description: 'Security teams detect a breach in progress.', turns: 2, effects: [], choices: [{ id: 'harden', label: 'Fund incident response', description: '$1,500', cost: 1500, actions: 1, stability: 5, p: 0.8 }, { id: 'accept', label: 'Monitor only', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Systems Down', description: 'Research and grant systems offline.', turns: 3, effects: [['resourcePrice:Research Funds', 0.8], ['resourcePrice:Government Grants', 0.9], ['challengeBonus:educational', -0.1]], choices: [{ id: 'respond', label: 'Restore from backups', description: '$2,000', cost: 2000, actions: 1, stability: 6, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Hardening', description: 'Systems restored; security investment rises.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Fund security upgrades', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'vic_compute_outage', title: 'AI Compute Outage', summary: 'A cascading failure takes down Victoria\'s compute clusters.', category: 'technological', regions: ['VIC'], themes: ['technology'], roles: ['crisis', 'infrastructure'], rarity: 'rare', cooldownDays: 30,
+    requires: [{ k: 'no_crisis_here' }, { k: 'sector', sector: 'technology', min: 20 }],
+    chain: v93Chain('vic_compute_outage', 'AI Compute Outage', 'Automation failures ripple through industry.', 'technological', ['VIC'], {
+      warn: { title: 'Cluster Instability', description: 'Operators report cascading faults.', turns: 2, effects: [], choices: [{ id: 'failover', label: 'Fund failover capacity', description: '$1,500', cost: 1500, actions: 1, stability: 4, p: 0.8 }, { id: 'accept', label: 'Push through', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Automation Failure', description: 'Factories and services halt.', turns: 2, effects: [['investmentYield', 0.9], ['resourcePrice:Education', 0.85]], choices: [{ id: 'respond', label: 'Manual fallback operations', description: '$2,000', cost: 2000, actions: 1, stability: 5, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Compute Restored', description: 'Capacity returns with redundancy.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Build redundancy', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'tas_hydro_drought', title: 'Hydro Drought', summary: 'Dry catchments are draining Tasmania\'s hydro storages.', category: 'environmental', regions: ['TAS'], themes: ['renewables', 'environment'], roles: ['crisis', 'stability'], rarity: 'common', cooldownDays: 24,
+    requires: [{ k: 'no_crisis_here' }, { k: 'season', seasons: ['Summer', 'Autumn'] }, { k: 'any', of: [{ k: 'sector', sector: 'renewables', min: 6 }, { k: 'need', category: 'energy', min: 'low' }, { k: 'need', category: 'water', min: 'low' }] }],
+    chain: v93Chain('tas_hydro_drought', 'Hydro Drought', 'Warning → storage crisis → import dependence → recovery.', 'environmental', ['TAS'], {
+      warn: { title: 'Low Storage Warning', description: 'Hydro storages fall below seasonal targets.', turns: 2, effects: [['resourcePrice:Hydropower', 1.15]], choices: [{ id: 'conserve', label: 'Fund a conservation drive', description: '$1,000', cost: 1000, actions: 1, stability: 4, p: 0.75 }, { id: 'accept', label: 'Keep generating', description: 'Free — storages may run critically low', cost: 0, actions: 0, stability: 0, p: 0.3 }], onFailure: 'impact' },
+      impact: { title: 'Storage Crisis', description: 'Hydro output is rationed; the island imports power at a premium.', turns: 3, effects: [['resourcePrice:Hydropower', 1.4], ['resourcePrice:Natural Gas', 1.15], ['challengeBonus:wildlife', -0.05]], choices: [{ id: 'respond', label: 'Emergency generation', description: '$1,800', cost: 1800, actions: 1, stability: 6, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Catchments Recover', description: 'Rains return; storage and diversification projects are in demand.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Fund storage upgrades', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) }),
+  crtpl({ id: 'nt_supply_disruption', title: 'Remote Supply Disruption', summary: 'The wet season has cut the Top End supply roads.', category: 'infrastructure', regions: ['NT'], themes: ['logistics', 'exploration'], roles: ['crisis', 'stability'], rarity: 'common', cooldownDays: 20,
+    requires: [{ k: 'no_crisis_here' }, { k: 'season', seasons: ['Summer', 'Autumn'] }],
+    chain: v93Chain('nt_supply_disruption', 'Remote Supply Disruption', 'Communities cut off; travel costs soar.', 'infrastructure', ['NT'], {
+      warn: { title: 'Wet Season Roads', description: 'Supply roads are going under.', turns: 2, effects: [['travelCost', 1.2]], choices: [{ id: 'stockpile', label: 'Stockpile supplies', description: '$1,000', cost: 1000, actions: 1, stability: 4, p: 0.8 }, { id: 'accept', label: 'Wait it out', description: 'Free', cost: 0, actions: 0, stability: 0, p: 0.35 }], onFailure: 'impact' },
+      impact: { title: 'Communities Cut Off', description: 'Air-lift only; frontier travel very costly.', turns: 3, effects: [['travelCost', 1.6], ['resourcePrice:Aboriginal Art', 1.2]], choices: [{ id: 'respond', label: 'Fund an air bridge', description: '$1,800', cost: 1800, actions: 1, stability: 7, p: 0.85 }], onSuccess: 'recovery', onFailure: 'recovery' },
+      recovery: { title: 'Roads Reopen', description: 'Supply resumes.', turns: 2, effects: [], choices: [{ id: 'rebuild', label: 'Upgrade the roads', description: '$1,000', cost: 1000, actions: 1, stability: 3, p: 0.9 }] }
+    }, ['warn', 'impact', 'recovery']) })
+];
+
+// ============================================================================
+// V9.3 NATIONAL EVENT + RARE CONTENT — strategy-altering, executed by activeEvents
+// ============================================================================
+
+const evtpl = (o: Omit<WorldEventTemplate, 'kind' | 'rarity' | 'cooldownDays'> & Partial<Pick<WorldEventTemplate, 'kind' | 'rarity' | 'cooldownDays'>>): WorldEventTemplate => ({ kind: 'event', rarity: 'common', cooldownDays: 14, ...o });
+
+export const WORLD_EVENT_REGISTRY: WorldEventTemplate[] = [
+  evtpl({ id: 'export_surge', title: 'Export Surge', summary: 'Export contracts pay more for several days; port-heavy regions gain importance.', category: 'trade', regions: ['QLD', 'WA'], themes: ['trade', 'mining'], roles: ['trade', 'short_term_opportunity'], duration: 4, description: 'Asian demand surges — bulk exports through {region} command premiums.',
+    effect: { resourcePrice: { 'Iron Ore': 1.2, Coal: 1.2, 'Natural Gas': 1.15 } }, setsFlag: { key: 'export_surge', value: true },
+    requires: [{ k: 'any', of: [{ k: 'sector', sector: 'trade', min: 8 }, { k: 'sector', sector: 'mining', min: 10 }] }] }),
+  evtpl({ id: 'technology_demand', title: 'Technology Demand Spike', summary: 'Research and education assets are in demand; educational challenges easier in tech regions.', category: 'technology', regions: ['ACT', 'VIC'], themes: ['technology', 'research'], roles: ['economic_growth', 'short_term_opportunity'], duration: 4, description: 'A global AI build-out drives demand for {region} research capacity.',
+    effect: { resourcePrice: { 'Research Funds': 1.3, Education: 1.2 }, challengeBonus: { educational: 0.1 } },
+    requires: [{ k: 'any', of: [{ k: 'sector', sector: 'technology', min: 8 }, { k: 'sector', sector: 'research', min: 8 }] }] }),
+  evtpl({ id: 'agricultural_disruption', title: 'Agricultural Disruption', summary: 'Food commodity prices rise; farm regions matter more.', category: 'resource', regions: ['NSW', 'VIC', 'SA'], themes: ['agriculture'], roles: ['resource', 'trade'], duration: 4, description: 'Pests and poor yields tighten food supply in {region}.',
+    effect: { resourcePrice: { Wheat: 1.35, Dairy: 1.25, Wine: 1.15 } },
+    requires: [{ k: 'sector', sector: 'agriculture', min: 6 }] }),
+  evtpl({ id: 'tourism_boom', title: 'Tourism Boom', summary: 'Visitor numbers surge: social and physical challenges pay off in tourist regions.', category: 'economic', regions: ['QLD', 'TAS', 'NT'], themes: ['tourism'], roles: ['economic_growth', 'short_term_opportunity'], duration: 4, description: 'International arrivals flood into {region}.',
+    effect: { resourcePrice: { Coral: 1.2, 'Aboriginal Art': 1.2 }, challengeBonus: { social: 0.1, physical: 0.1 } },
+    requires: [{ k: 'sector', sector: 'tourism', min: 5 }], excludes: [{ k: 'crisis', here: true }] }),
+  evtpl({ id: 'infrastructure_stimulus', title: 'Infrastructure Stimulus', summary: 'Investment income rises nationally for a few days — a window to build.', category: 'infrastructure', regions: ['ACT'], themes: ['governance'], roles: ['long_term_investment', 'economic_growth'], duration: 4, description: 'Canberra announces an infrastructure stimulus package.',
+    effect: { investmentYieldMultiplier: 1.1 }, setsFlag: { key: 'stimulus', value: true },
+    requires: [{ k: 'day_min', day: 5 }, { k: 'infra_on' }] }),
+  evtpl({ id: 'energy_price_spike', title: 'Energy Price Spike', summary: 'Energy commodities jump; energy regions gain leverage.', category: 'market', regions: ['SA', 'WA', 'TAS'], themes: ['energy'], roles: ['trade', 'resource'], duration: 3, description: 'Global energy markets tighten; {region} supply is suddenly valuable.',
+    effect: { resourcePrice: { 'Natural Gas': 1.35, Uranium: 1.25, Hydropower: 1.2 } },
+    requires: [{ k: 'any', of: [{ k: 'sector', sector: 'energy', min: 6 }, { k: 'sector', sector: 'renewables', min: 6 }] }] }),
+  evtpl({ id: 'commodity_softening', title: 'Commodity Softening', summary: 'Bulk commodity prices ease after a strong run — sell early or hold.', category: 'market', regions: ['WA', 'NSW'], themes: ['mining'], roles: ['trade'], duration: 3, description: 'Buyers push back on {region} bulk commodity prices.',
+    effect: { resourcePrice: { 'Iron Ore': 0.85, Coal: 0.88, Gold: 0.92 } },
+    requires: [{ k: 'any', of: [{ k: 'price_min', resource: 'Iron Ore', ratio: 1.08 }, { k: 'price_min', resource: 'Coal', ratio: 1.08 }] }] }),
+  evtpl({ id: 'interest_rate_rise', title: 'Interest Rate Rise', summary: 'Investment returns dip; cash and debt matter more.', category: 'economic', regions: ['NSW'], themes: ['finance'], roles: ['liquidity'], duration: 4, description: 'The Reserve Bank lifts rates.',
+    effect: { investmentYieldMultiplier: 0.92 },
+    requires: [{ k: 'day_min', day: 6 }] }),
+  evtpl({ id: 'freight_bottleneck', title: 'Freight Bottleneck', summary: 'Travel into a congested region costs more until capacity catches up.', category: 'infrastructure', regions: ['QLD', 'NSW', 'WA'], themes: ['logistics'], roles: ['infrastructure'], duration: 3, description: 'Rail and road freight into {region} is backed up.',
+    effect: { travelCost: 1.25 },
+    requires: [{ k: 'any', of: [{ k: 'need', category: 'transport', min: 'moderate' }, { k: 'condition', kind: 'infrastructure_bottleneck' }] }] }),
+  evtpl({ id: 'research_grant_round', title: 'Research Grant Round', summary: 'Grants and research funds are flowing; educational challenges easier in ACT.', category: 'national_opportunity', regions: ['ACT'], themes: ['research', 'governance'], roles: ['short_term_opportunity', 'development'], duration: 3, description: 'The national grant round opens in {region}.',
+    effect: { resourcePrice: { 'Government Grants': 1.3, 'Research Funds': 1.2 }, challengeBonus: { educational: 0.15 } },
+    requires: [{ k: 'day_min', day: 3 }] }),
+  evtpl({ id: 'wine_wool_trade_deal', title: 'Wine & Wool Trade Deal', summary: 'A new trade deal lifts wine and wool prices.', category: 'trade', regions: ['VIC', 'SA'], themes: ['agriculture', 'trade'], roles: ['trade'], duration: 4, description: 'A free-trade agreement opens new markets for {region} producers.',
+    effect: { resourcePrice: { Wine: 1.3, Wool: 1.25 } },
+    requires: [{ k: 'sector', sector: 'agriculture', min: 5 }] }),
+  evtpl({ id: 'mining_labor_shortage', title: 'Mining Labour Shortage', summary: 'Mines cannot find crews: ore prices up, physical challenges harder.', category: 'resource', regions: ['WA', 'QLD'], themes: ['mining'], roles: ['resource'], duration: 3, description: 'Fly-in fly-out crews are scarce across {region}.',
+    effect: { resourcePrice: { 'Iron Ore': 1.15, Coal: 1.1 }, challengeBonus: { physical: -0.05 } },
+    requires: [{ k: 'sector', sector: 'mining', min: 10 }] }),
+  evtpl({ id: 'water_restrictions', title: 'Water Restrictions', summary: 'Irrigated produce becomes expensive.', category: 'environment', regions: ['SA', 'NSW'], themes: ['water', 'agriculture'], roles: ['resource', 'stability'], duration: 3, description: '{region} imposes water restrictions.',
+    effect: { resourcePrice: { Wheat: 1.2, Wine: 1.15 } },
+    requires: [{ k: 'any', of: [{ k: 'need', category: 'water', min: 'moderate' }, { k: 'crisis', category: 'environmental', here: true }] }] }),
+  evtpl({ id: 'renewables_auction', title: 'Renewables Auction', summary: 'A capacity auction favours energy investment for a few days.', category: 'national_opportunity', regions: ['SA', 'TAS', 'QLD'], themes: ['renewables'], roles: ['long_term_investment'], duration: 3, description: 'The market operator runs a renewables auction centred on {region}.',
+    effect: { investmentYieldMultiplier: 1.06, resourcePrice: { Hydropower: 1.2 } },
+    requires: [{ k: 'sector', sector: 'renewables', min: 6 }] }),
+  // ---- Rare / exceptional (rarity never bypasses eligibility; once per match) -----------------------------------
+  evtpl({ id: 'major_mineral_discovery', kind: 'rare', rarity: 'exceptional', title: 'Major Mineral Discovery', summary: 'A world-class deposit changes the value of a frontier region.', category: 'resource', regions: ['NT', 'WA', 'SA'], themes: ['mining', 'exploration'], roles: ['exploration', 'economic_growth'], duration: 5, description: 'Geologists confirm a world-class deposit in {region}. New roads cut travel costs; investment floods in.',
+    effect: { travelCost: 0.8, investmentYieldMultiplier: 1.08, resourcePrice: { Uranium: 0.9, Gold: 0.92 } }, setsFlag: { key: 'mineral_discovery', value: true },
+    requires: [{ k: 'dev_max', tier: 'developing' }, { k: 'any', of: [{ k: 'sector', sector: 'mining', min: 8 }, { k: 'opportunity', kind: 'development_potential' }] }, { k: 'day_min', day: 5 }] }),
+  evtpl({ id: 'technology_breakthrough', kind: 'rare', rarity: 'rare', title: 'Technology Breakthrough', summary: 'A breakthrough lab result sends research value soaring.', category: 'technology', regions: ['VIC', 'ACT'], themes: ['technology', 'research'], roles: ['development', 'economic_growth'], duration: 4, description: 'A {region} lab announces a breakthrough in AI chips.',
+    effect: { resourcePrice: { 'Research Funds': 1.5, Education: 1.25 }, investmentYieldMultiplier: 1.05 }, setsFlag: { key: 'tech_breakthrough', value: true },
+    requires: [{ k: 'any', of: [{ k: 'sector', sector: 'technology', min: 18 }, { k: 'sector', sector: 'research', min: 18 }] }] }),
+  evtpl({ id: 'national_emergency_declared', kind: 'rare', rarity: 'rare', title: 'National Emergency Contract', summary: 'Canberra declares a national emergency and opens emergency contracts.', category: 'national_opportunity', regions: ['ACT'], themes: ['governance'], roles: ['crisis', 'stability'], duration: 4, description: 'The federal government declares a national emergency. Emergency logistics contracts open across affected regions.',
+    effect: { challengeBonus: { social: 0.05 } }, setsFlag: { key: 'national_emergency', value: true },
+    requires: [{ k: 'crisis', stageMin: 1 }] }),
+  evtpl({ id: 'unexpected_regional_boom', kind: 'rare', rarity: 'rare', title: 'Unexpected Regional Boom', summary: 'An overlooked region suddenly takes off.', category: 'economic', regions: ['TAS', 'SA', 'NT', 'QLD'], themes: ['finance'], roles: ['economic_growth', 'regional_control'], duration: 5, description: '{region} — long overlooked — is suddenly the fastest-growing economy in the country.',
+    effect: { investmentYieldMultiplier: 1.08, resourcePrice: { '@region': 1.25 } }, setsFlag: { key: 'surprise_boom', value: true },
+    requires: [{ k: 'momentum_min', band: 'growing' }, { k: 'economy_max', band: 'moderate' }] }),
+  evtpl({ id: 'stakeholder_coalition', kind: 'rare', rarity: 'rare', title: 'Major Stakeholder Coalition', summary: 'Rival stakeholder groups unite behind one agenda.', category: 'national_opportunity', regions: ['QLD', 'WA', 'SA', 'TAS'], themes: ['governance'], roles: ['faction', 'diplomacy'], duration: 4, description: 'Industry, labour and community groups in {region} announce a joint agenda.',
+    effect: { challengeBonus: { social: 0.12 } }, setsFlag: { key: 'coalition', value: true },
+    requires: [{ k: 'any', of: [{ k: 'faction', factionId: 'regional_labor_coalition', min: 35 }, { k: 'faction', factionId: 'qld_port_authority', min: 45 }, { k: 'faction', factionId: 'sa_clean_energy_council', min: 45 }] }] }),
+  evtpl({ id: 'historic_infrastructure_opportunity', kind: 'rare', rarity: 'exceptional', title: 'Historic Infrastructure Opportunity', summary: 'A once-in-a-generation national grid project opens for investment.', category: 'infrastructure', regions: ['ACT'], themes: ['energy', 'governance'], roles: ['long_term_investment', 'infrastructure'], duration: 5, description: 'Parliament approves the National Grid Interconnector. The project is now open to investors.',
+    effect: { investmentYieldMultiplier: 1.03 }, setsFlag: { key: 'historic_infra', value: true },
+    requires: [{ k: 'infra_on' }, { k: 'day_min', day: 8 }, { k: 'match_min_days', days: 25 }] }),
+  evtpl({ id: 'iron_ore_collapse', kind: 'rare', rarity: 'rare', title: 'Iron Ore Price Collapse', summary: 'A sudden collapse turns commodity exposure into danger.', category: 'market', regions: ['WA'], themes: ['mining'], roles: ['crisis', 'recovery'], duration: 5, description: 'Chinese steel demand stalls overnight. {region} miners are exposed.',
+    effect: { resourcePrice: { 'Iron Ore': 0.55, Gold: 0.9 }, investmentYieldMultiplier: 0.95 }, setsFlag: { key: 'commodity_crash', value: true },
+    requires: [{ k: 'any', of: [{ k: 'condition', kind: 'commodity_boom' }, { k: 'price_min', resource: 'Iron Ore', ratio: 1.18 }, { k: 'flag', key: 'export_surge', value: true }] }] }),
+  evtpl({ id: 'green_hydrogen_breakthrough', kind: 'rare', rarity: 'rare', title: 'Green Hydrogen Breakthrough', summary: 'Cheap electrolysis upends energy markets.', category: 'technology', regions: ['SA', 'WA'], themes: ['renewables', 'energy'], roles: ['long_term_investment', 'development'], duration: 4, description: '{region} electrolysers hit a cost milestone.',
+    effect: { resourcePrice: { 'Natural Gas': 0.85 }, investmentYieldMultiplier: 1.06 }, setsFlag: { key: 'hydrogen_breakthrough', value: true },
+    requires: [{ k: 'sector', sector: 'renewables', min: 14 }] })
+];
+
+// ============================================================================
+// V9.3 REGISTRIES + INDEXES
+// ============================================================================
+
+export const CONTENT_TEMPLATE_REGISTRY: ContentTemplateBase[] = [...CONTRACT_TEMPLATE_REGISTRY, ...DILEMMA_TEMPLATE_REGISTRY, ...CRISIS_CONTENT_REGISTRY, ...WORLD_EVENT_REGISTRY];
+export const CONTENT_TEMPLATE_BY_ID: Record<string, ContentTemplateBase> = Object.fromEntries(CONTENT_TEMPLATE_REGISTRY.map(t => [t.id, t]));
+export const CONTRACT_TEMPLATE_BY_ID: Record<string, ContractTemplate> = Object.fromEntries(CONTRACT_TEMPLATE_REGISTRY.map(t => [t.id, t]));
+export const DILEMMA_TEMPLATE_BY_ID: Record<string, DilemmaTemplate> = Object.fromEntries(DILEMMA_TEMPLATE_REGISTRY.map(t => [t.id, t]));
+export const CRISIS_TEMPLATE_BY_ID: Record<string, CrisisContentTemplate> = Object.fromEntries(CRISIS_CONTENT_REGISTRY.map(t => [t.id, t]));
+export const WORLD_EVENT_BY_ID: Record<string, WorldEventTemplate> = Object.fromEntries(WORLD_EVENT_REGISTRY.map(t => [t.id, t]));
+/** Index by kind (Part 110): the day step only walks the families it needs. */
+export const CONTENT_TEMPLATES_BY_KIND: Partial<Record<ContentKind, ContentTemplateBase[]>> = CONTENT_TEMPLATE_REGISTRY.reduce((acc, t) => { (acc[t.kind] = acc[t.kind] || []).push(t); return acc; }, {} as Partial<Record<ContentKind, ContentTemplateBase[]>>);
+/** Index by region / theme / faction (LAB + reachability; cheap lookups). */
+export const CONTENT_INDEX_BY_REGION: Record<string, string[]> = CONTENT_CORE_REGIONS.reduce((acc, r) => { acc[r] = CONTENT_TEMPLATE_REGISTRY.filter(t => !t.regions.length || t.regions.includes(r)).map(t => t.id); return acc; }, {} as Record<string, string[]>);
+export const CONTENT_INDEX_BY_THEME: Partial<Record<ContentTheme, string[]>> = CONTENT_TEMPLATE_REGISTRY.reduce((acc, t) => { t.themes.forEach(th => { (acc[th] = acc[th] || []).push(t.id); }); return acc; }, {} as Partial<Record<ContentTheme, string[]>>);
+export const CONTENT_INDEX_BY_FACTION: Record<string, string[]> = CONTENT_TEMPLATE_REGISTRY.reduce((acc, t) => { const ids = [...(t.factionIds || []), ...((t as ContractTemplate).issuingFactionId ? [(t as ContractTemplate).issuingFactionId as string] : [])]; ids.forEach(f => { (acc[f] = acc[f] || []).push(t.id); }); return acc; }, {} as Record<string, string[]>);
+
+// ============================================================================
+// V9.3 STARTING CONDITIONS + REGIONAL OPENINGS
+// ============================================================================
+
+/** cashDelta is the direct cash change; a home stake is paid from cash by the canonical deposit (so it costs its amount). */
+export interface StartingConditionPackage { id: string; label: string; summary: string; tradeoff: string; cashDelta: number; homeItems: number; loans: number; stakeAtHome: number; devTierAtHome: number; standingAtHome: number }
+export const STARTING_CONDITION_PACKAGES: StartingConditionPackage[] = [
+  { id: 'standard', label: 'Standard', summary: 'The classic start.', tradeoff: 'No special strengths or weaknesses.', cashDelta: 0, homeItems: 0, loans: 0, stakeAtHome: 0, devTierAtHome: 0, standingAtHome: 0 },
+  { id: 'liquidity_rich', label: 'Liquidity Rich', summary: 'High cash, low standing, few assets.', tradeoff: 'Flexible early moves — but locals do not know you yet.', cashDelta: 400, homeItems: 0, loans: 0, stakeAtHome: 0, devTierAtHome: 0, standingAtHome: -25 },
+  { id: 'regional_power', label: 'Regional Power', summary: 'A strong starting stake in your home region, low liquidity.', tradeoff: 'You start controlling ground — with little cash to expand.', cashDelta: 0, homeItems: 0, loans: 0, stakeAtHome: 300, devTierAtHome: 0, standingAtHome: 5 },
+  { id: 'resource_heavy', label: 'Resource Heavy', summary: 'A strong inventory of home resources, market dependence.', tradeoff: 'Your wealth is in goods — its value moves with the market.', cashDelta: -450, homeItems: 5, loans: 0, stakeAtHome: 0, devTierAtHome: 0, standingAtHome: 0 },
+  { id: 'debt_pressure', label: 'Debt Pressure', summary: 'Much higher starting capital, with an active debt burden.', tradeoff: 'Big early moves are possible — interest starts ticking immediately.', cashDelta: 1100, homeItems: 0, loans: 2, stakeAtHome: 0, devTierAtHome: 0, standingAtHome: 0 },
+  { id: 'development_base', label: 'Development Base', summary: 'Existing development and standing at home, lower free cash.', tradeoff: 'Your home region is ahead — your wallet is behind.', cashDelta: -500, homeItems: 0, loans: 0, stakeAtHome: 0, devTierAtHome: 1, standingAtHome: 10 }
+];
+export const STARTING_PACKAGE_BY_ID: Record<string, StartingConditionPackage> = Object.fromEntries(STARTING_CONDITION_PACKAGES.map(p => [p.id, p]));
+/** V9.1-style value accounting: every package must land within a narrow band of the standard start. */
+export const CONTENT_VALUE_WEIGHTS = { itemLiquidation: 0.8, stake: 0.9, devTier: 300, standingPoint: 15, debtCost: 1.1 };
+export function startingPackageValue(p: StartingConditionPackage, homeRegion: string): number {
+  const item = REGIONAL_RESOURCES[homeRegion]?.[0] || 'Wheat';
+  return Math.round(p.cashDelta - p.stakeAtHome + p.homeItems * contentItemPrice(item) * CONTENT_VALUE_WEIGHTS.itemLiquidation + p.stakeAtHome * CONTENT_VALUE_WEIGHTS.stake + p.devTierAtHome * CONTENT_VALUE_WEIGHTS.devTier + p.standingAtHome * CONTENT_VALUE_WEIGHTS.standingPoint - p.loans * LOAN_AMOUNT * CONTENT_VALUE_WEIGHTS.debtCost);
+}
+
+export interface RegionalOpening { id: string; label: string; description: string; themes: ContentTheme[]; devTier: Record<string, number>; priceMultipliers: Record<string, number>; stability: Record<string, number>; openingEvent: string | null }
+/** Coherent, causally plausible openings (Part 59): a few linked nudges through canonical inputs. */
+export const REGIONAL_OPENINGS: RegionalOpening[] = [
+  { id: 'balanced', label: 'Balanced Australia', description: 'No region starts ahead.', themes: [], devTier: {}, priceMultipliers: {}, stability: {}, openingEvent: null },
+  { id: 'resource_cycle', label: 'Resource Cycle', description: 'Strong commodity demand: WA and QLD are growing, bulk prices are high.', themes: ['mining', 'trade'], devTier: { WA: 1, QLD: 1 }, priceMultipliers: { 'Iron Ore': 1.25, Coal: 1.15, Gold: 1.1 }, stability: {}, openingEvent: 'export_surge' },
+  { id: 'east_coast_growth', label: 'East Coast Growth', description: 'NSW and VIC are expanding; finance and technology lead.', themes: ['finance', 'technology'], devTier: { NSW: 1, VIC: 1 }, priceMultipliers: { 'Research Funds': 1.15, Education: 1.1 }, stability: {}, openingEvent: null },
+  { id: 'southern_transition', label: 'Southern Energy Transition', description: 'SA and TAS energy sectors are emerging; energy prices firm.', themes: ['renewables', 'energy'], devTier: { SA: 1, TAS: 1 }, priceMultipliers: { 'Natural Gas': 1.15, Hydropower: 1.15 }, stability: {}, openingEvent: null },
+  { id: 'frontier_push', label: 'Frontier Push', description: 'NT and WA frontier development is under way; remote logistics matter.', themes: ['exploration', 'logistics'], devTier: { NT: 1 }, priceMultipliers: { Uranium: 1.15, 'Aboriginal Art': 1.1 }, stability: {}, openingEvent: null },
+  { id: 'dry_south', label: 'Dry South', description: 'A dry year: SA and NSW farms under pressure, food prices up.', themes: ['water', 'agriculture'], devTier: {}, priceMultipliers: { Wheat: 1.2, Wine: 1.15 }, stability: { SA: -8, NSW: -5 }, openingEvent: 'water_restrictions' },
+  { id: 'commodity_boom', label: 'Commodity Boom', description: 'WA mining is booming; QLD export potential is high; markets volatile.', themes: ['mining', 'trade'], devTier: { WA: 1 }, priceMultipliers: { 'Iron Ore': 1.35, Gold: 1.2, Coal: 1.2 }, stability: {}, openingEvent: 'export_surge' },
+  { id: 'great_drought', label: 'Great Drought', description: 'SA water need is high; NSW agriculture under pressure.', themes: ['water', 'agriculture'], devTier: {}, priceMultipliers: { Wheat: 1.3, Wine: 1.25, Dairy: 1.15 }, stability: { SA: -12, NSW: -8 }, openingEvent: 'water_restrictions' },
+  { id: 'technology_race', label: 'Technology Race', description: 'VIC technology momentum and ACT research opportunity; NSW finance strong.', themes: ['technology', 'research', 'finance'], devTier: { VIC: 1, ACT: 1 }, priceMultipliers: { 'Research Funds': 1.3, Education: 1.2 }, stability: {}, openingEvent: 'technology_demand' },
+  { id: 'recovery', label: 'Recovery', description: 'Several regions start weakened; repair and stabilization matter.', themes: ['governance', 'logistics'], devTier: {}, priceMultipliers: {}, stability: { QLD: -15, NSW: -10, SA: -10 }, openingEvent: null }
+];
+export const REGIONAL_OPENING_BY_ID: Record<string, RegionalOpening> = Object.fromEntries(REGIONAL_OPENINGS.map(o => [o.id, o]));
+/** 'auto' picks a seeded opening among the general ones (never the scenario-specific ones). */
+export function resolveRegionalOpening(setting: string | null | undefined, seed: number): RegionalOpening {
+  if (setting && setting !== 'auto' && REGIONAL_OPENING_BY_ID[setting]) return REGIONAL_OPENING_BY_ID[setting];
+  if (setting === 'none') return REGIONAL_OPENING_BY_ID.balanced;
+  const pool = ['balanced', 'resource_cycle', 'east_coast_growth', 'southern_transition', 'frontier_push', 'dry_south'];
+  return REGIONAL_OPENING_BY_ID[pool[contentHash(seed, 'opening') % pool.length]];
+}
+
+export function resolveRivalContentProfile(ai: any): RivalContentProfile {
+  const mode = String(ai?.aiRoleMode || ai?.posture || '').toLowerCase();
+  if (/aggress|expan|exploit|attack/.test(mode)) return 'aggressive';
+  const ch = String(ai?.character?.name || '').toLowerCase();
+  if (ch === 'businessman') return 'economic';
+  if (ch === 'scientist') return 'infrastructure';
+  if (ch === 'explorer') return 'aggressive';
+  if (ch === 'tourist') return 'diplomatic';
+  return 'balanced';
+}
+
+
+// ============================================================================
+// V9.3 CONTENT VALIDATION, COVERAGE, REACHABILITY, VARIETY (LAB / tests only)
+// ============================================================================
+
+/** Only these are executed by canonical systems — anything else is "reward/effect without executor". */
+export const CONTENT_EXECUTABLE = {
+  objectiveTypes: ['deliver_resource', 'invest_capital', 'build_infrastructure', 'maintain_presence'],
+  rewardKeys: ['money', 'regionalStandingBoost', 'devPoints'],
+  eventEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYieldMultiplier'],
+  crisisEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYield'],
+  infraBonusTypes: ['income_boost', 'standing_multiplier', 'trade_discount', 'travel_cost_reduction'],
+  challengeTypes: ['physical', 'social', 'wildlife', 'educational']
+};
+export interface ContentValidationIssue { id: string; kind: string; severity: 'error' | 'warning' | 'info'; problem: 'invalid_reference' | 'unreachable' | 'impossible_requirement' | 'reward_without_executor' | 'effect_without_executor' | 'dead_objective' | 'missing_faction' | 'invalid_value'; detail: string }
+
+const V93_KNOWN_RESOURCES = new Set<string>([...BASE_MARKET_RESOURCES, ...Object.keys(RESOURCE_CATEGORIES)]);
+const knownProjectIds = () => new Set<string>([...PRESET_INFRASTRUCTURE_PROJECTS.map(p => p.id), ...V93_INFRASTRUCTURE_PROJECTS.map(p => p.id)]);
+const knownContractTypes = () => new Set<string>(Object.keys(LR_CONTRACT_SECTORS));
+/** Flags any content can set (choices, events). A flag requirement nobody can set is dead. */
+export function contentFlagProducers(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const add = (k: string, by: string) => { (out[k] = out[k] || []).push(by); };
+  DILEMMA_TEMPLATE_REGISTRY.forEach(d => { add(`dilemma_${d.id}`, d.id); d.choices.forEach(c => c.effects.forEach(e => { if (e.k === 'flag') add(e.key, `${d.id}.${c.id}`); })); });
+  WORLD_EVENT_REGISTRY.forEach(e => { if (e.setsFlag) add(e.setsFlag.key, e.id); });
+  return out;
+}
+export function campaignVariableProducers(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  PRESET_CAMPAIGN_CHAPTERS.forEach(ch => ch.storyDecisions.forEach(d => d.choices.forEach(c => Object.keys(c.consequences?.setVariables || {}).forEach(k => { (out[k] = out[k] || []).push(`${d.id}.${c.id}`); }))));
+  return out;
+}
+
+function validateReqRefs(id: string, kind: string, reqs: ContentReq[], issues: ContentValidationIssue[]) {
+  const flags = contentFlagProducers(); const cvars = campaignVariableProducers(); const projects = knownProjectIds();
+  const walk = (q: ContentReq) => {
+    if ((q.k === 'price_min' || q.k === 'price_max') && !V93_KNOWN_RESOURCES.has(q.resource)) issues.push({ id, kind, severity: 'error', problem: 'invalid_reference', detail: `unknown resource "${q.resource}"` });
+    if (q.k === 'faction' && !RF_DEF_BY_ID[q.factionId]) issues.push({ id, kind, severity: 'error', problem: 'missing_faction', detail: `unknown faction "${q.factionId}"` });
+    if (q.k === 'faction_conflict') [q.a, q.b].forEach(f => { if (!RF_DEF_BY_ID[f]) issues.push({ id, kind, severity: 'error', problem: 'missing_faction', detail: `unknown faction "${f}"` }); });
+    if (q.k === 'flag' && !flags[q.key]) issues.push({ id, kind, severity: 'error', problem: 'unreachable', detail: `flag "${q.key}" is never set by any content` });
+    if (q.k === 'campaign_var' && !cvars[q.key]) issues.push({ id, kind, severity: 'error', problem: 'unreachable', detail: `campaign variable "${q.key}" is never set by a story decision` });
+    if (q.k === 'project' && !projects.has(q.projectId)) issues.push({ id, kind, severity: 'error', problem: 'invalid_reference', detail: `unknown project "${q.projectId}"` });
+    if (q.k === 'season' && q.seasons.some(s => !['Summer', 'Autumn', 'Winter', 'Spring'].includes(s))) issues.push({ id, kind, severity: 'error', problem: 'invalid_value', detail: `invalid season ${q.seasons.join()}` });
+    if (q.k === 'any') q.of.forEach(walk);
+  };
+  reqs.forEach(walk);
+}
+
+/** Part 93: validate one content definition against canonical registries. */
+export function validateStrategicContentDefinition(t: ContentTemplateBase): ContentValidationIssue[] {
+  const issues: ContentValidationIssue[] = [];
+  const err = (problem: ContentValidationIssue['problem'], detail: string, severity: ContentValidationIssue['severity'] = 'error') => issues.push({ id: t.id, kind: t.kind, severity, problem, detail });
+  if (!t.id || !/^[a-z0-9_]+$/.test(t.id)) err('invalid_value', 'id must be a stable snake_case identifier');
+  t.regions.forEach(r => { if (!REGIONS[r]) err('invalid_reference', `unknown region "${r}"`); });
+  t.roles.forEach(r => { if (!CONTENT_ROLES.includes(r)) err('invalid_value', `unknown role "${r}"`); });
+  t.themes.forEach(r => { if (!CONTENT_THEMES.includes(r)) err('invalid_value', `unknown theme "${r}"`); });
+  (t.factionIds || []).forEach(f => { if (!RF_DEF_BY_ID[f]) err('missing_faction', `unknown faction "${f}"`); });
+  validateReqRefs(t.id, t.kind, [...t.requires, ...(t.excludes || [])], issues);
+  if (t.kind === 'contract') {
+    const c = t as ContractTemplate;
+    if (!knownContractTypes().has(c.contractType)) err('invalid_reference', `contract type "${c.contractType}" has no Living Regions mapping`);
+    if (c.issuingFactionId && !RF_DEF_BY_ID[c.issuingFactionId]) err('missing_faction', `issuer "${c.issuingFactionId}" is not a canonical faction`);
+    if (!CONTENT_EXECUTABLE.objectiveTypes.includes(c.objective.type)) err('dead_objective', `objective "${c.objective.type}" has no executor`);
+    if (c.objective.item && c.objective.item !== 'region_resource' && !V93_KNOWN_RESOURCES.has(c.objective.item)) err('invalid_reference', `unknown resource "${c.objective.item}"`);
+    if (!c.text['*'] && c.regions.some(r => !c.text[r])) err('invalid_value', 'missing region text variant');
+    if (c.duration < 2 || c.offerDays < 1) err('invalid_value', 'duration/offer window too short');
+  }
+  if (t.kind === 'dilemma') {
+    const d = t as DilemmaTemplate;
+    if (d.choices.length < 2) err('invalid_value', 'a dilemma needs at least two choices');
+    d.choices.forEach(ch => {
+      if (!ch.pros.length || !ch.cons.length) err('invalid_value', `choice "${ch.id}" must state both a benefit and a cost`);
+      ch.effects.forEach(e => {
+        if (e.k === 'offer_contract' && !CONTRACT_TEMPLATE_BY_ID[e.templateId]) err('invalid_reference', `choice "${ch.id}" offers unknown contract template "${e.templateId}"`);
+        if (e.k === 'event' && !WORLD_EVENT_BY_ID[e.eventId]) err('invalid_reference', `choice "${ch.id}" starts unknown event "${e.eventId}"`);
+        if ((e.k === 'lock_project' || e.k === 'unlock_project') && !knownProjectIds().has(e.projectId)) err('invalid_reference', `choice "${ch.id}" references unknown project "${e.projectId}"`);
+      });
+      [...(ch.factions?.winners || []), ...(ch.factions?.losers || [])].forEach(f => { if (!RF_DEF_BY_ID[f]) err('missing_faction', `choice "${ch.id}" names unknown faction "${f}"`); });
+    });
+  }
+  if (t.kind === 'crisis') {
+    const c = (t as CrisisContentTemplate).chain;
+    const ids = new Set(c.stages.map(s => s.id));
+    c.stages.forEach(s => {
+      if (s.nextStageOnFailure && !ids.has(s.nextStageOnFailure)) err('invalid_reference', `stage ${s.id} escalates to missing stage ${s.nextStageOnFailure}`);
+      if (s.nextStageOnSuccess && !ids.has(s.nextStageOnSuccess)) err('invalid_reference', `stage ${s.id} advances to missing stage ${s.nextStageOnSuccess}`);
+      s.stageEffects.forEach(e => {
+        const [k, sub] = String(e.modifierKey).split(':');
+        if (!CONTENT_EXECUTABLE.crisisEffectKeys.includes(k)) err('effect_without_executor', `stage effect "${e.modifierKey}" has no executor`);
+        if (k === 'resourcePrice' && !V93_KNOWN_RESOURCES.has(sub)) err('invalid_reference', `stage effect prices unknown resource "${sub}"`);
+        if (k === 'challengeBonus' && !CONTENT_EXECUTABLE.challengeTypes.includes(sub)) err('invalid_reference', `stage effect uses unknown challenge type "${sub}"`);
+      });
+      if (!s.choices.length) err('invalid_value', `stage ${s.id} offers no response`);
+    });
+  }
+  if (t.kind === 'event' || t.kind === 'rare') {
+    const e = t as WorldEventTemplate;
+    Object.keys(e.effect).forEach(k => { if (!CONTENT_EXECUTABLE.eventEffectKeys.includes(k)) err('effect_without_executor', `event effect "${k}" has no executor`); });
+    Object.keys(e.effect.resourcePrice || {}).forEach(r => { if (r !== '@region' && !V93_KNOWN_RESOURCES.has(r)) err('invalid_reference', `event prices unknown resource "${r}"`); });
+    Object.keys(e.effect.challengeBonus || {}).forEach(r => { if (!CONTENT_EXECUTABLE.challengeTypes.includes(r)) err('invalid_reference', `event uses unknown challenge type "${r}"`); });
+    if (t.kind === 'rare' && !(t.rarity === 'rare' || t.rarity === 'exceptional')) err('invalid_value', 'rare content must be rare or exceptional');
+  }
+  return issues;
+}
+
+/** Part 1/94: audit EXISTING canonical content too — report honestly, never silently accept. */
+export function auditLegacyContent(): ContentValidationIssue[] {
+  const issues: ContentValidationIssue[] = [];
+  PRESET_INFRASTRUCTURE_PROJECTS.forEach(p => p.providedBonuses.forEach(b => {
+    if (!CONTENT_EXECUTABLE.infraBonusTypes.includes(b.type)) issues.push({ id: p.id, kind: 'infrastructure', severity: 'warning', problem: 'effect_without_executor', detail: `bonus "${b.type}" is only used by AI scoring — no live mechanic reads it` });
+    if (b.type === 'income_boost' && b.magnitude > 1) issues.push({ id: p.id, kind: 'infrastructure', severity: 'error', problem: 'invalid_value', detail: `income_boost ${b.magnitude} is applied as a multiplier` });
+  }));
+  PRESET_REGIONAL_CONTRACTS.forEach(c => {
+    Object.keys(c.rewards || {}).forEach(k => { if (!CONTENT_EXECUTABLE.rewardKeys.includes(k)) issues.push({ id: c.id, kind: 'contract', severity: 'info', problem: 'reward_without_executor', detail: `reward "${k}" is shown but not paid by the canonical payout` }); });
+    (c.objectives || []).forEach(o => { if (!CONTENT_EXECUTABLE.objectiveTypes.includes(o.type)) issues.push({ id: c.id, kind: 'contract', severity: 'error', problem: 'dead_objective', detail: `objective "${o.type}" cannot progress` }); });
+    if (!knownContractTypes().has(c.contractType)) issues.push({ id: c.id, kind: 'contract', severity: 'warning', problem: 'invalid_reference', detail: `contract type ${c.contractType} unmapped` });
+  });
+  PRESET_CRISIS_CHAINS.forEach(c => c.stages.forEach(s => s.stageEffects.forEach(e => {
+    if (!CONTENT_EXECUTABLE.crisisEffectKeys.includes(String(e.modifierKey).split(':')[0])) issues.push({ id: c.id, kind: 'crisis', severity: 'info', problem: 'effect_without_executor', detail: `legacy stage effect "${e.modifierKey}" is descriptive only (choices still apply stability/cash)` });
+  })));
+  PRESET_GAME_SCENARIOS.forEach(sc => sc.objectives.forEach(o => { if (o.targetRegionId && !REGIONS[o.targetRegionId]) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'dead_objective', detail: `objective region ${o.targetRegionId} unknown` }); }));
+  return issues;
+}
+
+export function validateAllContent(): { issues: ContentValidationIssue[]; checked: number } {
+  const issues: ContentValidationIssue[] = [];
+  CONTENT_TEMPLATE_REGISTRY.forEach(t => issues.push(...validateStrategicContentDefinition(t)));
+  const ids = new Set<string>(); CONTENT_TEMPLATE_REGISTRY.forEach(t => { if (ids.has(t.id)) issues.push({ id: t.id, kind: t.kind, severity: 'error', problem: 'invalid_value', detail: 'duplicate id' }); ids.add(t.id); });
+  V93_INFRASTRUCTURE_PROJECTS.forEach(p => {
+    if (!REGIONS[p.regionId]) issues.push({ id: p.id, kind: 'infrastructure', severity: 'error', problem: 'invalid_reference', detail: `unknown region ${p.regionId}` });
+    if (!LR_PROJECT_PROFILE[p.projectType]) issues.push({ id: p.id, kind: 'infrastructure', severity: 'error', problem: 'invalid_reference', detail: `project type ${p.projectType} has no Living Regions profile` });
+    p.providedBonuses.forEach(b => { if (!CONTENT_EXECUTABLE.infraBonusTypes.includes(b.type)) issues.push({ id: p.id, kind: 'infrastructure', severity: 'error', problem: 'effect_without_executor', detail: `bonus ${b.type} has no executor` }); });
+  });
+  V93_INFRA_META.forEach(m => [m.projectId, ...m.competesWith].forEach(id => { if (!knownProjectIds().has(id)) issues.push({ id: m.projectId, kind: 'infrastructure', severity: 'error', problem: 'invalid_reference', detail: `unknown project ${id}` }); }));
+  STARTING_CONDITION_PACKAGES.forEach(p => { if (!Number.isFinite(p.cashDelta)) issues.push({ id: p.id, kind: 'scenario', severity: 'error', problem: 'invalid_value', detail: 'bad cash delta' }); });
+  REGIONAL_OPENINGS.forEach(o => {
+    Object.keys(o.devTier).concat(Object.keys(o.stability)).forEach(r => { if (!REGIONS[r]) issues.push({ id: o.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown region ${r}` }); });
+    Object.keys(o.priceMultipliers).forEach(r => { if (!V93_KNOWN_RESOURCES.has(r)) issues.push({ id: o.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown resource ${r}` }); });
+    if (o.openingEvent && !WORLD_EVENT_BY_ID[o.openingEvent]) issues.push({ id: o.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown opening event ${o.openingEvent}` });
+  });
+  PRESET_GAME_SCENARIOS.forEach(sc => {
+    const fs: any = sc.forcedSettings || {};
+    ['v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes', 'v93CrisisIntensity', 'v93ContractAbundance', 'v93RareEventFrequency'].forEach(k => { if (fs[k] !== undefined && !(k in DEFAULT_GAME_SETTINGS)) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `settings key ${k} unknown` }); });
+    if (fs.v93StartingPackage && !STARTING_PACKAGE_BY_ID[fs.v93StartingPackage]) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown starting package ${fs.v93StartingPackage}` });
+    if (fs.v93RegionalOpening && fs.v93RegionalOpening !== 'auto' && fs.v93RegionalOpening !== 'none' && !REGIONAL_OPENING_BY_ID[fs.v93RegionalOpening]) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown opening ${fs.v93RegionalOpening}` });
+    (sc.startingItems || []).forEach(it => { if (!V93_KNOWN_RESOURCES.has(it.itemId)) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown starting item ${it.itemId}` }); });
+    sc.startingRegions.forEach(r => { if (!REGIONS[r]) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'invalid_reference', detail: `unknown region ${r}` }); });
+  });
+  return { issues, checked: CONTENT_TEMPLATE_REGISTRY.length + V93_INFRASTRUCTURE_PROJECTS.length + STARTING_CONDITION_PACKAGES.length + REGIONAL_OPENINGS.length + PRESET_GAME_SCENARIOS.length };
+}
+
+// ---- Reachability (Part 95): constructively satisfy each requirement set; contradictions are impossible ----
+
+export function contentNeutralRegion(code: string): ContentRegionCtx {
+  return { code, name: REGIONS[code]?.name || code, momentum: 'stable', economy: 'moderate', devTier: 'developing', primary: null, sectors: {}, needs: [], conditions: [], opportunities: [], risks: [], controller: null, playerDeposit: 0, rivalDeposit: 0, rivalDepositDelta: 0, stability: 60, playerStanding: 0 };
+}
+export function contentNeutralContext(seed = 1, day = 10): ContentContext {
+  const regions: Record<string, ContentRegionCtx> = {}; CONTENT_CORE_REGIONS.forEach(c => { regions[c] = contentNeutralRegion(c); });
+  return { day, totalDays: 30, seed, season: 'Summer', regions, priceRatio: {}, crises: [], crisisEnabled: true, activeEventIds: [], factionInfluence: {}, factionConflicts: [], diplomacy: { enabled: true, pactExpiring: false, tension: 20 }, rival: { name: 'Rival', profile: 'balanced', focusRegion: null }, player: { money: 5000, debt: 0, region: 'NSW' }, strategyRegion: null, campaignVars: {}, contractsEnabled: true, infraEnabled: true, projects: [], windows: [] };
+}
+function satisfyReq(q: ContentReq, ctx: ContentContext, st: MatchContentState, region: string | null): void {
+  const r = region ? ctx.regions[region] : null;
+  switch (q.k) {
+    case 'momentum_min': case 'momentum_max': if (r) r.momentum = q.band; break;
+    case 'economy_min': case 'economy_max': if (r) r.economy = q.band; break;
+    case 'dev_min': case 'dev_max': if (r) r.devTier = q.tier; break;
+    case 'need': if (r) r.needs = [...r.needs.filter(n => n.category !== q.category), { category: q.category, severity: q.min }]; break;
+    case 'sector': if (r) r.sectors = { ...r.sectors, [q.sector]: q.min }; break;
+    case 'condition': if (r) r.conditions = [...r.conditions, q.kind]; break;
+    case 'opportunity': if (r) r.opportunities = [...r.opportunities, q.kind]; break;
+    case 'risk': if (r) r.risks = [...r.risks, q.kind]; break;
+    case 'price_min': ctx.priceRatio[q.resource] = Math.max(ctx.priceRatio[q.resource] || 0, q.ratio); break;
+    case 'price_max': ctx.priceRatio[q.resource] = Math.min(ctx.priceRatio[q.resource] ?? 99, q.ratio); break;
+    case 'season': ctx.season = q.seasons[0]; break;
+    case 'crisis': ctx.crises = [...ctx.crises, { id: `${q.chainPrefix || 'crisis_x'}_probe`, category: q.category || 'environmental', status: 'active', stageIndex: q.stageMin || 0, affectedRegions: region ? [region] : ['NSW'], v93: Boolean(q.chainPrefix) }]; break;
+    case 'no_crisis_here': break;
+    case 'day_min': ctx.day = Math.max(ctx.day, q.day); break;
+    case 'match_min_days': ctx.totalDays = Math.max(ctx.totalDays, q.days); break;
+    case 'rival_invested': if (r) { r.rivalDepositDelta = q.min; r.rivalDeposit += q.min; } break;
+    case 'rival_withdrew': if (r) r.rivalDepositDelta = -100; break;
+    case 'rival_holds': if (r) { r.rivalDeposit = 500; r.playerDeposit = 0; } break;
+    case 'rival_profile': ctx.rival.profile = q.profiles[0]; break;
+    case 'faction': ctx.factionInfluence[q.factionId] = Math.max(ctx.factionInfluence[q.factionId] || 0, q.min); break;
+    case 'faction_conflict': ctx.factionConflicts = [...ctx.factionConflicts, { a: q.a, b: q.b, regionId: region || 'NSW' }]; break;
+    case 'diplomacy': if (q.state === 'pact_expiring') ctx.diplomacy.pactExpiring = true; else ctx.diplomacy.tension = 80; break;
+    case 'liquidity_min': ctx.player.money = Math.max(ctx.player.money, q.amount); break;
+    case 'in_debt': ctx.player.debt = 1000; break;
+    case 'flag': st.flags[q.key] = q.value; break;
+    case 'no_flag': break;
+    case 'campaign_var': ctx.campaignVars[q.key] = q.value; break;
+    case 'stability_max': if (r) r.stability = q.value; break;
+    case 'project': ctx.projects = [...ctx.projects, { id: q.projectId, regionId: region || 'NSW', projectType: 'x', status: q.status[0] }]; break;
+    case 'window': ctx.windows = [...ctx.windows, { id: 'probe', type: q.type, subject: region || 'NSW', expiresTurn: ctx.day + 2, reason: 'probe' }]; break;
+    case 'contracts_on': ctx.contractsEnabled = true; break;
+    case 'infra_on': ctx.infraEnabled = true; break;
+    case 'any': satisfyReq(q.of[0], ctx, st, region); break;
+  }
+}
+export interface ContentReachability { id: string; kind: ContentKind; reachable: boolean; region: string | null; detail: string }
+export function analyzeContentReachability(): ContentReachability[] {
+  const profile = buildMatchContentProfile({ seed: 7, totalDays: 30 });
+  return CONTENT_TEMPLATE_REGISTRY.map(t => {
+    const regions = t.regions.length ? t.regions.filter(r => CONTENT_CORE_REGIONS.includes(r)) : [null];
+    for (const region of regions) {
+      const ctx = contentNeutralContext(7, 12); const st = createMatchContentState(profile, 7, 1);
+      t.requires.forEach(q => satisfyReq(q, ctx, st, region));
+      const e = evaluateTemplateEligibility(t, region, ctx, st, false);
+      if (e.ok) return { id: t.id, kind: t.kind, reachable: true, region, detail: e.reasons.join('; ') };
+      if (region === regions[regions.length - 1]) return { id: t.id, kind: t.kind, reachable: false, region, detail: `requirements contradict: ${e.fail}` };
+    }
+    return { id: t.id, kind: t.kind, reachable: false, region: null, detail: 'no region' };
+  });
+}
+
+// ---- Coverage matrix (Parts 1–3) ----------------------------------------------------------------------
+
+export interface ContentCoverageMatrix {
+  byRegion: Record<string, Record<string, number>>;
+  byRole: Record<string, number>;
+  byKind: Record<string, number>;
+  byRarity: Record<string, number>;
+  byArchetype: Record<string, number>;
+  thin: Array<{ region: string; family: string; count: number }>;
+  legacy: Record<string, number>;
+}
+export function buildContentCoverageMatrix(): ContentCoverageMatrix {
+  const fam = ['contracts', 'infrastructure', 'dilemmas', 'crises', 'events', 'factions', 'challenges'];
+  const byRegion: Record<string, Record<string, number>> = {};
+  CONTENT_CORE_REGIONS.forEach(r => {
+    const inR = (t: ContentTemplateBase) => !t.regions.length || t.regions.includes(r);
+    byRegion[r] = {
+      contracts: PRESET_REGIONAL_CONTRACTS.filter(c => c.issuingRegionId === r).length + CONTRACT_TEMPLATE_REGISTRY.filter(inR).length,
+      infrastructure: PRESET_INFRASTRUCTURE_PROJECTS.filter(p => p.regionId === r).length + V93_INFRASTRUCTURE_PROJECTS.filter(p => p.regionId === r).length,
+      dilemmas: DILEMMA_TEMPLATE_REGISTRY.filter(inR).length,
+      crises: PRESET_CRISIS_CHAINS.filter(c => c.affectedRegions.includes(r)).length + CRISIS_CONTENT_REGISTRY.filter(inR).length,
+      events: REGIONAL_EVENTS.filter(e => e.region === r).length + WORLD_EVENT_REGISTRY.filter(inR).length,
+      factions: RF_FACTION_DEFS.filter(f => f.homeRegions.includes(r)).length,
+      challenges: (REGIONS[r]?.challenges || []).length
+    };
+  });
+  const count = <T,>(xs: T[], key: (x: T) => string[]) => xs.reduce((acc, x) => { key(x).forEach(k => { acc[k] = (acc[k] || 0) + 1; }); return acc; }, {} as Record<string, number>);
+  const thin: ContentCoverageMatrix['thin'] = [];
+  CONTENT_CORE_REGIONS.forEach(r => fam.forEach(f => { if ((byRegion[r][f] || 0) < 2 && f !== 'factions') thin.push({ region: r, family: f, count: byRegion[r][f] || 0 }); }));
+  return {
+    byRegion, thin,
+    byRole: count(CONTENT_TEMPLATE_REGISTRY, t => t.roles),
+    byKind: count(CONTENT_TEMPLATE_REGISTRY, t => [t.kind]),
+    byRarity: count(CONTENT_TEMPLATE_REGISTRY, t => [t.rarity]),
+    byArchetype: count(CONTRACT_TEMPLATE_REGISTRY, t => [t.archetype]),
+    legacy: { contracts: PRESET_REGIONAL_CONTRACTS.length, infrastructure: PRESET_INFRASTRUCTURE_PROJECTS.length, crises: PRESET_CRISIS_CHAINS.length, events: REGIONAL_EVENTS.length, scenarios: PRESET_GAME_SCENARIOS.length, campaignChapters: PRESET_CAMPAIGN_CHAPTERS.length, storyDecisions: PRESET_CAMPAIGN_CHAPTERS.reduce((s, c) => s + c.storyDecisions.length, 0), expeditionTargets: PRESET_EXPEDITION_TARGETS.length, relics: PRESET_RELIC_ITEMS.length, challenges: CONTENT_CORE_REGIONS.reduce((s, r) => s + (REGIONS[r]?.challenges || []).length, 0) }
+  };
+}
+
+// ---- Balance checks (Parts 89–92) -------------------------------------------------------------------
+
+/** Legacy preset return per unit of commitment — the ceiling no new contract may exceed. */
+export function legacyContractRoi(): number {
+  return Math.max(...PRESET_REGIONAL_CONTRACTS.map(c => {
+    const o = c.objectives[0]; if (!o) return 0;
+    const commitment = o.type === 'invest_capital' ? o.targetValue : o.type === 'deliver_resource' ? o.targetValue * contentItemPrice(o.targetItem || 'Coal') : o.type === 'maintain_presence' ? o.targetValue * CONTENT_PRESENCE_DAY_VALUE : 4000;
+    return (c.rewards.money || 0) / Math.max(1, commitment);
+  }));
+}
+export interface ContentBalanceReport { contracts: Array<{ id: string; roi: number; archetype: string; ok: boolean }>; dominantChoices: Array<{ id: string; dominated: string; by: string }>; packages: Array<{ id: string; value: number; ok: boolean }>; infra: Array<{ id: string; valuePerK: number; ok: boolean }>; rareRewardOk: boolean; ceiling: number }
+export function buildContentBalanceReport(): ContentBalanceReport {
+  const ceiling = Math.min(1.6, legacyContractRoi());
+  const contracts = CONTRACT_TEMPLATE_REGISTRY.flatMap(t => [1, 10, 25].map(day => {
+    const c = instantiateContractTemplate(t, t.regions[0], day);
+    const roi = (c.rewards.money || 0) / Math.max(1, c.v93.commitment);
+    return { id: `${t.id}@d${day}`, roi: Math.round(roi * 100) / 100, archetype: t.archetype, ok: roi <= ceiling + 0.05 && roi >= 1.05 };
+  }));
+  const dominantChoices: ContentBalanceReport['dominantChoices'] = [];
+  DILEMMA_TEMPLATE_REGISTRY.forEach(d => {
+    const vec = (c: DilemmaChoiceDef) => [c.scores.economy, c.scores.control, c.scores.stability, c.scores.longTerm, -c.effects.filter(e => e.k === 'cash').reduce((s, e: any) => s + Math.max(0, -e.amount), 0) / 1000];
+    d.choices.forEach(a => d.choices.forEach(b => {
+      if (a === b) return; const va = vec(a), vb = vec(b);
+      if (va.every((x, i) => x >= vb[i]) && va.some((x, i) => x > vb[i])) dominantChoices.push({ id: d.id, dominated: b.id, by: a.id });
+    }));
+  });
+  const packages = STARTING_CONDITION_PACKAGES.map(p => { const vals = CONTENT_CORE_REGIONS.map(r => startingPackageValue(p, r)); const worst = vals.reduce((m, v) => (Math.abs(v) > Math.abs(m) ? v : m), 0); return { id: p.id, value: worst, ok: Math.abs(worst) <= 150 }; });
+  const refPerK = (p: InfrastructureProject) => p.providedBonuses.reduce((s, b) => s + b.magnitude * (b.type === 'income_boost' ? 1 : b.type === 'standing_multiplier' ? 0.7 : b.type === 'trade_discount' ? 0.55 : 0.4) * (b.targetScope === 'national' ? 1.5 : 1), 0) / (p.totalCost / 1000);
+  const legacyMax = Math.max(...PRESET_INFRASTRUCTURE_PROJECTS.filter(p => p.providedBonuses.every(b => b.magnitude <= 1)).map(refPerK));
+  const infra = V93_INFRASTRUCTURE_PROJECTS.map(p => ({ id: p.id, valuePerK: Math.round(refPerK(p) * 10000) / 10000, ok: refPerK(p) <= legacyMax * 1.05 }));
+  const rareRewardOk = WORLD_EVENT_REGISTRY.filter(e => e.kind === 'rare').every(e => (e.effect.investmentYieldMultiplier || 1) <= 1.1 && Object.values(e.effect.resourcePrice || {}).every(v => v <= 1.5 && v >= 0.5));
+  return { contracts, dominantChoices, packages, infra, rareRewardOk, ceiling: Math.round(ceiling * 100) / 100 };
+}
+
+// ---- Variety simulation (Parts 96–99): deterministic synthetic matches across seeds/scenarios -----------
+
+export interface ContentVarietyReport {
+  runs: number; exposure: Record<string, number>; overexposed: string[]; neverSeen: Array<{ id: string; rareByDesign: boolean }>;
+  openingSimilarity: number; identicalOpenings: number; avgUniquePerRun: number; perRun: Array<{ seed: number; scenario: string; items: string[]; opening: string[] }>;
+}
+function contentSyntheticWorld(seed: number, opening: RegionalOpening, day: number, prev: ContentContext | null, started: ContentDayPlan | null): ContentContext {
+  const ctx = prev ? JSON.parse(JSON.stringify(prev)) as ContentContext : contentNeutralContext(seed, 1);
+  ctx.day = day; ctx.seed = seed; ctx.season = ['Summer', 'Autumn', 'Winter', 'Spring'][Math.floor((day - 1) / 7) % 4];
+  const bands: LRMomentumBand[] = ['declining', 'weakening', 'stable', 'growing', 'rapid_growth', 'booming'];
+  const needs: LRNeedCategory[] = ['transport', 'energy', 'water', 'trade', 'technology'];
+  CONTENT_CORE_REGIONS.forEach((code, i) => {
+    const r = ctx.regions[code];
+    if (!prev) {
+      const theme = REGION_CONTENT_IDENTITY[code].themes;
+      const secMap: Record<string, LRSector> = { mining: 'mining', agriculture: 'agriculture', energy: 'energy', renewables: 'renewables', technology: 'technology', research: 'research', trade: 'trade', logistics: 'logistics', finance: 'finance', tourism: 'tourism', manufacturing: 'manufacturing' };
+      theme.forEach((t, j) => { const s = secMap[t]; if (s) r.sectors[s] = 8 + (contentHash(seed, code, t) % 18) - j * 2; });
+      if (opening.devTier[code]) { r.devTier = 'advanced'; r.momentum = 'growing'; }
+      if (opening.stability[code]) r.stability = 60 + opening.stability[code];
+      if (code === 'NT' || code === 'TAS') r.devTier = 'emerging';
+    }
+    const step = contentHash(seed, 'mom', code, day) % 7;
+    const idx = Math.max(0, Math.min(5, bands.indexOf(r.momentum || 'stable') + (step === 0 ? -1 : step === 6 ? 1 : 0)));
+    r.momentum = bands[idx];
+    const idNeeds: Record<string, LRNeedCategory[]> = { NSW: ['transport', 'trade', 'water'], VIC: ['energy', 'technology'], QLD: ['transport', 'trade'], WA: ['transport', 'energy'], SA: ['water', 'energy'], TAS: ['energy', 'transport'], NT: ['transport', 'water'], ACT: ['technology'] };
+    if (contentHash(seed, 'need', code, day) % 4 === 0) { const pool = [...(idNeeds[code] || []), ...needs]; const c = pool[contentHash(seed, 'needpick', code, day) % pool.length]; r.needs = [{ category: c, severity: (['low', 'moderate', 'high', 'critical'] as LRSeverity[])[contentHash(seed, code, c, day) % 4] }]; }
+    if (r.stability !== null && contentHash(seed, 'stab', code, day) % 11 === 0) r.stability = Math.max(30, Math.min(85, (r.stability || 60) + (contentHash(seed, 'stabd', code, day) % 21) - 12));
+    Object.keys(r.sectors).forEach(s => { (r.sectors as any)[s] = Math.max(0, Math.min(60, ((r.sectors as any)[s] || 0) + (contentHash(seed, s, code, day) % 5) - 1)); });
+    const rival = contentHash(seed, 'rival', code, day) % 23;
+    r.rivalDepositDelta = rival === 0 ? 600 : rival === 1 ? -200 : 0; r.rivalDeposit = Math.max(0, r.rivalDeposit + r.rivalDepositDelta);
+    if (r.momentum === 'booming' && contentHash(seed, 'boom', code, day) % 3 === 0 && !r.conditions.includes('commodity_boom') && (r.sectors.mining || 0) > 12) r.conditions.push('commodity_boom');
+    if ((r.momentum === 'rapid_growth' || r.momentum === 'booming') && !r.risks.includes('infrastructure_bottleneck')) r.risks.push('infrastructure_bottleneck');
+    if ((r.sectors.mining || 0) > 26 && !r.risks.includes('overdependence')) r.risks.push('overdependence');
+  });
+  BASE_MARKET_RESOURCES.forEach(res => { const base = prev ? (prev.priceRatio[res] || 1) : (opening.priceMultipliers[res] || 1); ctx.priceRatio[res] = Math.max(0.6, Math.min(1.6, base + ((contentHash(seed, res, day) % 11) - 5) / 100)); });
+  RF_FACTION_DEFS.forEach(f => { ctx.factionInfluence[f.id] = 15 + (contentHash(seed, f.id) % 40); });
+  ctx.factionConflicts = contentHash(seed, 'conflict', day) % 6 === 0 ? [{ a: 'pilbara_mining_consortium', b: 'tas_wilderness_trust', regionId: ['WA', 'TAS'][day % 2] }] : [];
+  ctx.diplomacy.tension = 20 + (contentHash(seed, 'tension', day) % 70);
+  const ended = ctx.crises.filter(c => c.stageIndex >= 2);
+  ended.forEach(c => c.affectedRegions.forEach(code => { const r = ctx.regions[code]; if (r && !r.conditions.includes('post_crisis_recovery')) { r.conditions.push('post_crisis_recovery'); r.opportunities.push('recovery_investment'); } }));
+  ctx.crises = ctx.crises.map(c => ({ ...c, stageIndex: c.stageIndex + (contentHash(seed, c.id, day) % 3 === 0 ? 1 : 0), status: c.stageIndex >= 2 ? 'resolved' : c.status })).filter(c => c.status === 'active');
+  if (started?.startCrisis) ctx.crises.push({ id: started.startCrisis.id, category: started.startCrisis.category, status: 'active', stageIndex: 0, affectedRegions: started.startCrisis.affectedRegions, v93: true });
+  ctx.player.money = 1000 + day * 350; ctx.player.debt = contentHash(seed, 'debt', day) % 5 === 0 ? 500 : 0;
+  return ctx;
+}
+/** Content that only exists after a specific event/decision/rival move — absence in a short simulation is expected. */
+export function contentIsConditionalByDesign(t: ContentTemplateBase): boolean {
+  const conditional = (q: ContentReq): boolean => q.k === 'any' ? q.of.every(conditional)
+    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window'].includes(q.k)
+      || (q.k === 'condition' && (q.kind === 'post_crisis_recovery' || q.kind === 'commodity_boom')) || (q.k === 'opportunity' && q.kind === 'recovery_investment');
+  return t.rarity === 'rare' || t.rarity === 'exceptional' || t.kind === 'crisis' || t.requires.some(conditional);
+}
+export function runContentVarietySimulation(seeds: number[] = [11, 23, 37, 41, 59, 73], openings: string[] = ['balanced', 'commodity_boom', 'great_drought', 'technology_race'], days = 30): ContentVarietyReport {
+  const exposure: Record<string, number> = {}; const perRun: ContentVarietyReport['perRun'] = [];
+  seeds.forEach(seed => openings.forEach(op => {
+    const opening = REGIONAL_OPENING_BY_ID[op] || REGIONAL_OPENING_BY_ID.balanced;
+    const profile = buildMatchContentProfile({ seed, totalDays: days, themes: opening.themes, regionalOpening: op });
+    let st = createMatchContentState(profile, seed, 1); let ctx: ContentContext | null = null; let plan: ContentDayPlan | null = null;
+    const contracts: Record<string, any> = {}; let events: any[] = []; const items: string[] = [];
+    for (let day = 1; day <= days; day++) {
+      ctx = contentSyntheticWorld(seed, opening, day, ctx, plan);
+      events = events.map(e => ({ ...e, remainingDays: e.remainingDays - 1 })).filter(e => e.remainingDays > 0);
+      Object.values(contracts).forEach((c: any) => { if (c.status === 'available' && contentHash(seed, c.id, day) % 4 === 0) c.status = 'active'; else if (c.status === 'active' && contentHash(seed, c.id, 'done', day) % 3 === 0) c.status = 'completed'; });
+      plan = planContentDay(ctx, st, contracts, events);
+      st = plan.state;
+      plan.newContracts.forEach(c => { contracts[c.id] = { ...c }; items.push(`contract:${c.v93.templateId}`); });
+      plan.expiredOfferIds.forEach(id => { if (contracts[id]) contracts[id].status = 'expired'; });
+      plan.newEvents.forEach(e => { events.push(e); items.push(`${e.v93.kind}:${e.v93.templateId}`); });
+      if (plan.startCrisis) items.push(`crisis:${plan.startCrisis.id.replace(/^v93c_|_d\d+$/g, '')}`);
+      if (plan.openedDilemma) { items.push(`dilemma:${plan.openedDilemma.templateId}`); const ch = plan.openedDilemma.choices[contentHash(seed, day) % plan.openedDilemma.choices.length]; st = resolveContentDilemma(st, ch.id, day, 1e9).state; }
+    }
+    const uniq = Array.from(new Set(items)); uniq.forEach(i => { exposure[i] = (exposure[i] || 0) + 1; });
+    perRun.push({ seed, scenario: op, items: uniq, opening: items.slice(0, 4) });
+  }));
+  const runs = perRun.length;
+  const jac = (a: string[], b: string[]) => { const A = new Set(a), B = new Set(b); const inter = Array.from(A).filter(x => B.has(x)).length; const uni = new Set([...a, ...b]).size; return uni ? inter / uni : 1; };
+  let sim = 0, pairs = 0, identical = 0;
+  for (let i = 0; i < perRun.length; i++) for (let j = i + 1; j < perRun.length; j++) { const s = jac(perRun[i].opening, perRun[j].opening); sim += s; pairs += 1; if (perRun[i].opening.length && perRun[i].opening.join() === perRun[j].opening.join()) identical += 1; }
+  const seenIds = new Set(Object.keys(exposure).map(k => k.split(':')[1]));
+  return {
+    runs, exposure,
+    overexposed: Object.entries(exposure).filter(([k, v]) => v / runs > 0.8 && !k.startsWith('contract:act_policy_briefing')).map(([k]) => k),
+    neverSeen: CONTENT_TEMPLATE_REGISTRY.filter(t => !seenIds.has(t.id)).map(t => ({ id: t.id, rareByDesign: contentIsConditionalByDesign(t) })),
+    openingSimilarity: pairs ? Math.round((sim / pairs) * 100) / 100 : 0, identicalOpenings: identical,
+    avgUniquePerRun: Math.round((perRun.reduce((s, r) => s + r.items.length, 0) / Math.max(1, runs)) * 10) / 10,
+    perRun
+  };
+}
+
+export interface RegionalContentDiversityProfile { region: string; uniqueTemplates: number; contractCategories: number; dilemmaCategories: number; crisisExposure: number; infrastructurePaths: number; factionInteractions: number }
+export function buildRegionalDiversityProfile(st: MatchContentState | null): RegionalContentDiversityProfile[] {
+  return CONTENT_CORE_REGIONS.map(r => {
+    const hist = (st?.history || []).filter(h => h.regionId === r);
+    const t = hist.map(h => CONTENT_TEMPLATE_BY_ID[h.templateId]).filter(Boolean) as ContentTemplateBase[];
+    return {
+      region: r, uniqueTemplates: new Set(t.map(x => x.id)).size,
+      contractCategories: new Set(t.filter(x => x.kind === 'contract').map(x => (x as ContractTemplate).archetype)).size,
+      dilemmaCategories: new Set(t.filter(x => x.kind === 'dilemma').map(x => (x as DilemmaTemplate).conflictType)).size,
+      crisisExposure: t.filter(x => x.kind === 'crisis').length,
+      infrastructurePaths: new Set(V93_INFRA_META.filter(m => V93_INFRASTRUCTURE_PROJECTS.find(p => p.id === m.projectId)?.regionId === r).map(m => m.path)).size + PRESET_INFRASTRUCTURE_PROJECTS.filter(p => p.regionId === r).length,
+      factionInteractions: t.reduce((s, x) => s + (x.factionIds?.length || ((x as ContractTemplate).issuingFactionId ? 1 : 0)), 0)
+    };
+  });
+}
+
+
+// ---- V9.3 live adapters (pure): canonical state → ContentContext, and match-start application plans ----
+
+export interface ContentLiveInputs {
+  day: number; totalDays: number; seed: number; season: string;
+  lr: LivingRegionsState | null; rf: RegionalFactionsState | null;
+  windows: Array<{ id: string; type: string; subject: string; status: string; expiresTurn: number | null; reason: string; observers?: string[] }>;
+  prices: Record<string, number>; basePrices: Record<string, number>;
+  crisisChains: CrisisChain[]; crisisEnabled: boolean; activeEvents: any[];
+  deposits: Record<string, Record<string, number>>; prevDeposits: Record<string, Record<string, number>> | null;
+  playerKey: string; rivalKeys: string[]; rivalName: string; rivalProfile: RivalContentProfile;
+  player: { id: string; money: number; loans: any[]; currentRegion: string };
+  standing: Record<string, Record<string, number>>;
+  diplomacy: { enabled: boolean; pactExpiring: boolean; tension: number };
+  strategyRegion: string | null; campaignVars: Record<string, string | number | boolean>;
+  contractsEnabled: boolean; infraEnabled: boolean;
+  projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
+  regionalStability: Record<string, number>;
+}
+
+export function buildContentContext(i: ContentLiveInputs): ContentContext {
+  const regions: Record<string, ContentRegionCtx> = {};
+  CONTENT_CORE_REGIONS.forEach(code => {
+    const reg = i.lr?.regions?.[code];
+    const dep = i.deposits?.[code] || {}; const prev = i.prevDeposits?.[code] || {};
+    const rivalNow = i.rivalKeys.reduce((s, k) => s + Math.floor(dep[k] || 0), 0);
+    const rivalPrev = i.rivalKeys.reduce((s, k) => s + Math.floor(prev[k] || 0), 0);
+    const ctrl = Object.entries(dep).filter(([, v]) => (v || 0) > 0).sort((a, b) => b[1] - a[1])[0];
+    regions[code] = {
+      code, name: REGIONS[code]?.name || code,
+      momentum: reg?.momentum.band || null, economy: reg?.economy.band || null, devTier: reg?.development.tier || null,
+      primary: reg?.specializations.primary || null, sectors: { ...(reg?.sectors || {}) },
+      needs: (reg?.needs || []).filter(n => n.status === 'open').map(n => ({ category: n.category, severity: n.severity })),
+      conditions: (reg?.conditions || []).map(c => c.kind), opportunities: (reg?.opportunities || []).map(o => o.kind), risks: (reg?.risks || []).map(r => r.kind),
+      controller: ctrl ? (ctrl[0] === i.playerKey ? 'player' : i.rivalKeys.includes(ctrl[0]) ? 'rival' : ctrl[0]) : null,
+      playerDeposit: Math.floor(dep[i.playerKey] || 0), rivalDeposit: rivalNow, rivalDepositDelta: i.prevDeposits ? rivalNow - rivalPrev : 0,
+      stability: typeof i.regionalStability?.[code] === 'number' ? i.regionalStability[code] : (reg?.stability.value ?? null),
+      playerStanding: Math.round(i.standing?.[i.player.id]?.[code] ?? i.standing?.player?.[code] ?? 0)
+    };
+  });
+  const priceRatio: Record<string, number> = {};
+  Object.keys(i.prices || {}).forEach(res => { const b = i.basePrices?.[res] || contentItemPrice(res); if (b > 0) priceRatio[res] = Math.round((i.prices[res] / b) * 100) / 100; });
+  const factionInfluence: Record<string, number> = {};
+  const factionConflicts: ContentContext['factionConflicts'] = [];
+  if (i.rf) {
+    Object.values(i.rf.factions || {}).forEach(f => { if (f.status === 'active') factionInfluence[f.id] = Math.max(0, ...Object.values(f.influenceByRegion || {}).map(v => Number(v) || 0)); });
+    Object.entries(i.rf.conflictByRegion || {}).forEach(([code, level]) => {
+      if (level !== 'high' && level !== 'critical' && level !== 'moderate') return;
+      const act = Object.values(i.rf!.factions).filter(f => f.status === 'active' && (f.influenceByRegion?.[code] || 0) >= 12);
+      act.forEach(a => act.forEach(b => {
+        const da = RF_DEF_BY_ID[a.id]; const db = RF_DEF_BY_ID[b.id];
+        if (a.id < b.id && da && db && (da.supportedSectors.some(s => db.opposedSectors.includes(s)) || db.supportedSectors.some(s => da.opposedSectors.includes(s)))) factionConflicts.push({ a: a.id, b: b.id, regionId: code });
+      }));
+    });
+  }
+  return {
+    day: i.day, totalDays: i.totalDays, seed: i.seed, season: i.season, regions, priceRatio,
+    crises: (i.crisisChains || []).map(c => ({ id: c.id, category: c.category, status: c.status, stageIndex: c.currentStageIndex, affectedRegions: c.affectedRegions || [], v93: String(c.id).startsWith('v93c_') })),
+    crisisEnabled: i.crisisEnabled, activeEventIds: (i.activeEvents || []).map(e => String(e?.id || '')),
+    factionInfluence, factionConflicts, diplomacy: i.diplomacy,
+    rival: { name: i.rivalName, profile: i.rivalProfile, focusRegion: CONTENT_CORE_REGIONS.slice().sort((a, b) => regions[b].rivalDeposit - regions[a].rivalDeposit)[0] || null },
+    player: { money: i.player.money, debt: (i.player.loans || []).reduce((s, l: any) => s + Number(l?.amount || 0) + Number(l?.accrued || 0), 0), region: i.player.currentRegion },
+    strategyRegion: i.strategyRegion, campaignVars: i.campaignVars || {}, contractsEnabled: i.contractsEnabled, infraEnabled: i.infraEnabled,
+    projects: i.projects || [],
+    windows: (i.windows || []).filter(w => w.status === 'open' && (!w.observers || w.observers.includes(i.player.id) || w.observers.includes(i.playerKey))).map(w => ({ id: w.id, type: w.type, subject: w.subject, expiresTurn: w.expiresTurn, reason: w.reason }))
+  };
+}
+
+/** Merge a day plan into the committed game state (reducer-safe, idempotent per id). */
+export function applyContentPlanToState(state: any, plan: ContentDayPlan): any {
+  const out: any = { contentState: plan.state };
+  if (plan.newContracts.length || plan.expiredOfferIds.length) {
+    const rc = { ...(state.regionalContracts || {}) };
+    plan.newContracts.forEach(c => { if (!rc[c.id]) rc[c.id] = c; });
+    plan.expiredOfferIds.forEach(id => { if (rc[id] && rc[id].status === 'available') rc[id] = { ...rc[id], status: 'expired' }; });
+    out.regionalContracts = rc;
+  }
+  let chains: CrisisChain[] = state.crisisChainState?.activeCrisisChains || [];
+  if (plan.startCrisis && !chains.some(c => c.id === plan.startCrisis!.id)) {
+    chains = [...chains, plan.startCrisis];
+    out.crisisChainState = { ...(state.crisisChainState || createDefaultCrisisChainState()), activeCrisisChains: chains };
+  }
+  let events: any[] = [...(state.activeEvents || [])];
+  plan.newEvents.forEach(e => { if (!events.some(x => x.id === e.id)) events.push(e); });
+  events = syncContentCrisisEvents(events, chains);
+  out.activeEvents = events;
+  const grid = state.infrastructureProjects?.infra_v93_national_grid;
+  if (plan.state.flags.historic_infra && grid && grid.status === 'locked' && !grid.lockedReason) out.infrastructureProjects = { ...state.infrastructureProjects, infra_v93_national_grid: { ...grid, status: 'unlocked' } };
+  return out;
+}
+
+/** Match-start plan (pure): which canonical values change. The component applies it through canonical dispatchers. */
+export interface ContentStartPlan {
+  cashDelta: number; items: string[]; loans: Array<{ id: string; amount: number; accrued: number }>; stake: { region: string; amount: number } | null;
+  devTier: Record<string, number>; standing: Record<string, number>; priceMultipliers: Record<string, number>; stability: Record<string, number>;
+  openingEvent: ReturnType<typeof eventFromTemplate> | null; projects: InfrastructureProject[]; notes: string[];
+}
+export function planContentMatchStart(profile: MatchContentProfile, seed: number, homeRegion: string, existingProjects: Record<string, any>, day = 1, scenario?: { startingItems?: Array<{ itemId: string; quantity: number }>; startingLoans?: Array<{ id: string; amount: number }>; startingStanding?: Record<string, number> } | null): ContentStartPlan {
+  const pkg = STARTING_PACKAGE_BY_ID[profile.startingPackage] || STARTING_PACKAGE_BY_ID.standard;
+  const opening = resolveRegionalOpening(profile.regionalOpening, seed);
+  const home = CONTENT_CORE_REGIONS.includes(homeRegion) ? homeRegion : 'NSW';
+  const homeItem = REGIONAL_RESOURCES[home]?.[0] || 'Wheat';
+  const items: string[] = [];
+  for (let k = 0; k < pkg.homeItems; k++) items.push(homeItem);
+  (scenario?.startingItems || []).forEach(it => { for (let k = 0; k < Math.min(10, it.quantity || 0); k++) items.push(it.itemId); });
+  const loans = [
+    ...Array.from({ length: pkg.loans }, (_, k) => ({ id: `v93_start_${seed}_${k}`, amount: LOAN_AMOUNT, accrued: 0 })),
+    ...(scenario?.startingLoans || []).map(l => ({ id: String(l.id), amount: Math.max(0, Number(l.amount) || 0), accrued: 0 }))
+  ].slice(0, MAX_ACTIVE_LOANS);
+  const standing: Record<string, number> = { ...(scenario?.startingStanding || {}) };
+  if (pkg.standingAtHome) standing[home] = (standing[home] || 0) + pkg.standingAtHome;
+  const devTier: Record<string, number> = { ...opening.devTier };
+  if (pkg.devTierAtHome) devTier[home] = (devTier[home] || 0) + pkg.devTierAtHome;
+  const projects = V93_INFRASTRUCTURE_PROJECTS.filter(p => !existingProjects?.[p.id]).map(p => JSON.parse(JSON.stringify(p)) as InfrastructureProject);
+  const notes = [pkg.id !== 'standard' ? `${pkg.label}: ${pkg.tradeoff}` : '', opening.id !== 'balanced' ? `${opening.label}: ${opening.description}` : ''].filter(Boolean);
+  return {
+    cashDelta: pkg.cashDelta, items, loans, stake: pkg.stakeAtHome > 0 ? { region: home, amount: pkg.stakeAtHome } : null,
+    devTier, standing, priceMultipliers: { ...opening.priceMultipliers }, stability: { ...opening.stability },
+    openingEvent: opening.openingEvent && WORLD_EVENT_BY_ID[opening.openingEvent] ? eventFromTemplate(WORLD_EVENT_BY_ID[opening.openingEvent], WORLD_EVENT_BY_ID[opening.openingEvent].regions[0], day) : null,
+    projects, notes
+  };
+}
+
+
+// ============================================================================
+// V9.3 CONTENT UI — PLAY shows ONE situation; INTELLIGENCE lists them; LAB inspects the machinery
+// ============================================================================
+
+export interface ContentMomentHandlers { onChoose: (choiceId: string) => void; onNav: (target: IntentNavTarget, label: string) => void; onAsk: (q: string) => void; onTrack: (t: PlayerTrackedObjective) => void; onDismissOpportunity: (id: string) => void }
+export type ContentMoment =
+  | { kind: 'dilemma'; dilemma: ActiveDilemma }
+  | { kind: 'opportunity'; opportunity: ContentOpportunity }
+  | { kind: 'event'; event: { id: string; name: string; region: string; description: string; remainingDays: number; rarity: string; kind: string } }
+  | { kind: 'offer'; offer: ContentOffer; title: string; reward: number };
+
+/** Part 87 priority: required decision → time-sensitive (strategy-aligned first) → major change → optional. */
+export function selectContentMoment(st: MatchContentState | null, activeEvents: any[], contracts: Record<string, any>, day: number, decisionActive: boolean): ContentMoment | null {
+  if (!st) return null;
+  if (st.activeDilemma && !decisionActive) return { kind: 'dilemma', dilemma: st.activeDilemma };
+  const rareEvent = (activeEvents || []).find(e => e?.v93 && (e.v93.kind === 'rare') && e.remainingDays > 0);
+  const opp = st.opportunities.find(o => o.strategyAligned) || st.opportunities[0];
+  if (rareEvent) return { kind: 'event', event: { id: rareEvent.id, name: rareEvent.name, region: rareEvent.region, description: rareEvent.description, remainingDays: rareEvent.remainingDays, rarity: rareEvent.v93.rarity, kind: rareEvent.v93.kind } };
+  if (opp) return { kind: 'opportunity', opportunity: opp };
+  const ev = (activeEvents || []).find(e => e?.v93 && e.v93.kind === 'event' && e.remainingDays > 0 && e.v93.day === day);
+  if (ev) return { kind: 'event', event: { id: ev.id, name: ev.name, region: ev.region, description: ev.description, remainingDays: ev.remainingDays, rarity: ev.v93.rarity, kind: ev.v93.kind } };
+  const offer = st.offers.find(o => o.offeredDay === day && contracts?.[o.contractId]?.status === 'available');
+  if (offer) { const c = contracts[offer.contractId]; return { kind: 'offer', offer, title: c.title, reward: c.rewards?.money || 0 }; }
+  return null;
+}
+
+const CONTENT_OPP_ICON: Record<ContentOpportunity['type'], string> = { regional_entry: '🧭', cheap_investment: '💹', market_window: '📈', diplomatic_window: '🤝', contract_window: '📜', faction_window: '🏛', recovery_window: '🏗', rival_vulnerability: '🎯' };
+
+export const ContentMomentCard: React.FC<{ theme: any; moment: ContentMoment; money: number; h: ContentMomentHandlers; canAct: boolean }> = ({ theme, moment, money, h, canAct }) => {
+  const card = `${theme.card} ${theme.border} border rounded-xl p-3 text-sm`;
+  if (moment.kind === 'dilemma') {
+    const d = moment.dilemma;
+    return (
+      <section className={`${card} border-2 border-violet-500/60`} aria-labelledby="v93-dilemma-h" data-testid="v93-dilemma">
+        <div className="flex items-center justify-between gap-2"><div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Strategic decision · {REGIONS[d.regionId]?.name || 'National'}</div><span className="text-[11px] opacity-70">Decide by day {d.expiresDay}</span></div>
+        <h3 id="v93-dilemma-h" className="font-extrabold">⚖️ {d.title}</h3>
+        <p className="text-xs opacity-90">{d.prompt}</p>
+        {d.evidence.length > 0 && <p className="text-[11px] opacity-75" data-testid="v93-dilemma-why"><span className="font-semibold">Why now: </span>{d.evidence.join(' · ')}</p>}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+          {d.choices.map(c => {
+            const cost = c.effects.filter(e => e.k === 'cash').reduce((s, e: any) => s + Math.max(0, -e.amount), 0);
+            const blocked = !canAct || cost > money;
+            return (
+              <div key={c.id} className={`rounded-lg border ${theme.border} p-2 flex flex-col`} data-testid={`v93-choice-${c.id}`}>
+                <div className="font-bold">{c.label}</div>
+                <ul className="text-[11px] mt-0.5 flex-1">{c.pros.map(p => <li key={p} className="text-emerald-300">+ {p}</li>)}{c.cons.map(p => <li key={p} className="text-rose-300">− {p}</li>)}</ul>
+                <div className="text-[11px] opacity-80 mt-1">{cost > 0 ? `Cost: $${cost.toLocaleString()}` : 'No cash cost'}</div>
+                <button type="button" disabled={blocked} title={!canAct ? 'Wait for your turn' : cost > money ? `Needs $${cost.toLocaleString()}` : undefined} className={`${theme.buttonSecondary} mt-1 px-2 py-1 rounded text-xs font-bold disabled:opacity-50`} onClick={() => h.onChoose(c.id)}>Choose</button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="text-[11px] opacity-70 mt-1">Every option is defensible — they favour different priorities. <button type="button" className="underline" onClick={() => h.onAsk(`Which option should I pick for ${d.title}?`)}>Ask</button></div>
+      </section>
+    );
+  }
+  if (moment.kind === 'opportunity') {
+    const o = moment.opportunity;
+    return (
+      <section className={`${card} border-emerald-500/50`} aria-label="Strategic opportunity" data-testid="v93-opportunity">
+        <div className="flex items-center justify-between gap-2"><div className="text-[11px] font-bold uppercase tracking-wider opacity-70">Opportunity{o.strategyAligned ? ' · fits your strategy' : ''}</div><span className="text-[11px] opacity-70">Window: until day {o.expiresDay}</span></div>
+        <div className="font-bold">{CONTENT_OPP_ICON[o.type]} {o.title}</div>
+        <p className="text-xs opacity-90">{o.reason}</p>
+        <div className="flex flex-wrap gap-3 text-xs mt-1">
+          <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded`} onClick={() => h.onNav(o.nav, 'Go')}>Go</button>
+          {o.track && <button type="button" className="underline" data-testid="v93-track" onClick={() => h.onTrack(o.track!)}>Track This</button>}
+          <button type="button" className="underline" onClick={() => h.onAsk(`Is ${o.title} worth it?`)}>Why?</button>
+          <button type="button" className="underline opacity-70" onClick={() => h.onDismissOpportunity(o.id)}>Not now</button>
+        </div>
+      </section>
+    );
+  }
+  if (moment.kind === 'event') {
+    const e = moment.event;
+    return (
+      <section className={card} aria-label="World event" data-testid="v93-event">
+        <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">{e.kind === 'rare' ? `${e.rarity === 'exceptional' ? 'Exceptional' : 'Rare'} world change` : 'National event'} · {e.remainingDays} day(s) left</div>
+        <div className="font-bold">{e.kind === 'rare' ? '✨' : '📰'} {e.name}</div>
+        <p className="text-xs opacity-90">{e.description}</p>
+        <button type="button" className="text-xs underline mt-1" onClick={() => h.onAsk(`How does ${e.name} change my plan?`)}>How does this change my plan?</button>
+      </section>
+    );
+  }
+  const o = moment;
+  return (
+    <section className={card} aria-label="New contract offer" data-testid="v93-offer">
+      <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">New offer · open until day {o.offer.expiresDay}</div>
+      <div className="font-bold">📜 {o.title}</div>
+      <div className="text-xs opacity-85">Pays ${o.reward.toLocaleString()} on completion.</div>
+      <button type="button" className="text-xs underline mt-1" onClick={() => h.onNav('contracts', 'Contracts')}>Review in Contracts</button>
+    </section>
+  );
+};
+
+/** INTELLIGENCE → Situations: everything live in this match, compact. */
+export const ContentSituationsPanel: React.FC<{ theme: any; st: MatchContentState | null; activeEvents: any[]; contracts: Record<string, any>; crises: CrisisChain[]; h: ContentMomentHandlers; money: number; canAct: boolean }> = ({ theme, st, activeEvents, contracts, crises, h, money, canAct }) => {
+  if (!st) return null;
+  const events = (activeEvents || []).filter(e => e?.v93 && e.v93.kind !== 'crisis');
+  const crisisLive = (crises || []).filter(c => c.status === 'active' && String(c.id).startsWith('v93c_'));
+  const offers = st.offers.filter(o => contracts?.[o.contractId]?.status === 'available');
+  const opening = st.profile.regionalOpening ? REGIONAL_OPENING_BY_ID[st.profile.regionalOpening] : null;
+  const pkg = STARTING_PACKAGE_BY_ID[st.profile.startingPackage];
+  return (
+    <section id="v9-intel-situations" aria-labelledby="v93-sit-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-2 text-sm`} data-testid="v93-situations">
+      <h2 id="v93-sit-h" className="font-bold text-lg">🗺 Situations this match</h2>
+      <p className="text-xs opacity-75">{opening ? `${opening.label}: ${opening.description}` : 'Standard Australia.'}{pkg && pkg.id !== 'standard' ? ` Start: ${pkg.label} — ${pkg.tradeoff}` : ''}</p>
+      {st.activeDilemma && <ContentMomentCard theme={theme} moment={{ kind: 'dilemma', dilemma: st.activeDilemma }} money={money} h={h} canAct={canAct} />}
+      {st.opportunities.map(o => <ContentMomentCard key={o.id} theme={theme} moment={{ kind: 'opportunity', opportunity: o }} money={money} h={h} canAct={canAct} />)}
+      {crisisLive.map(c => <div key={c.id} className="text-xs">⚠️ <span className="font-semibold">{c.title}</span> — {c.stages[c.currentStageIndex]?.title}: {c.stages[c.currentStageIndex]?.description}</div>)}
+      {events.map(e => <div key={e.id} className="text-xs">{e.v93.kind === 'rare' ? '✨' : '📰'} <span className="font-semibold">{e.name}</span> ({e.remainingDays}d) — {e.description}</div>)}
+      {offers.length > 0 && <div className="text-xs"><span className="font-semibold">Offers: </span>{offers.map(o => `${contracts[o.contractId].title} (until day ${o.expiresDay})`).join(' · ')} <button type="button" className="underline" onClick={() => h.onNav('contracts', 'Contracts')}>Open</button></div>}
+      {!st.activeDilemma && !st.opportunities.length && !events.length && !crisisLive.length && !offers.length && <p className="text-xs opacity-70">Nothing pressing. New situations arise from how the regions, rivals and markets move.</p>}
+      {st.resolved.length > 0 && <div className="text-[11px] opacity-70">Your earlier decisions: {st.resolved.slice(-3).map(r => `${DILEMMA_TEMPLATE_BY_ID[r.templateId]?.title.replace('{region}', REGIONS[r.regionId]?.name || '') || r.templateId} → ${DILEMMA_TEMPLATE_BY_ID[r.templateId]?.choices.find(c => c.id === r.choiceId)?.label || r.choiceId}`).join(' · ')}</div>}
+    </section>
+  );
+};
+
+/** LAB: Content & Replayability Inspector (Part 100). Heavy analyses run only on demand. */
+export const ContentReplayabilityInspector: React.FC<{ theme: any; st: MatchContentState | null; ctx: ContentContext | null }> = ({ theme, st, ctx }) => {
+  const [open, setOpen] = useState(false);
+  const [deep, setDeep] = useState<{ validation: ReturnType<typeof validateAllContent>; legacy: ContentValidationIssue[]; reach: ContentReachability[]; coverage: ContentCoverageMatrix; balance: ContentBalanceReport; variety: ContentVarietyReport } | null>(null);
+  const [preview, setPreview] = useState<string>('');
+  const H = ({ children }: { children: React.ReactNode }) => <div className="font-bold uppercase tracking-wider opacity-70 mt-2">{children}</div>;
+  const run = () => setDeep({ validation: validateAllContent(), legacy: auditLegacyContent(), reach: analyzeContentReachability(), coverage: buildContentCoverageMatrix(), balance: buildContentBalanceReport(), variety: runContentVarietySimulation() });
+  const previewTpl = CONTENT_TEMPLATE_BY_ID[preview];
+  return (
+    <section aria-labelledby="v93-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v93-content-inspector">
+      <div className="flex items-center justify-between"><h3 id="v93-lab-h" className="font-bold text-sm">🧩 Content & Replayability Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{CONTENT_TEMPLATE_REGISTRY.length} templates · {V93_INFRASTRUCTURE_PROJECTS.length} new projects · {STARTING_CONDITION_PACKAGES.length} starts · {REGIONAL_OPENINGS.length} openings{st ? ` · profile ${st.profile.regionalOpening || 'none'} / ${st.profile.startingPackage}` : ''}</div>
+      {open && (
+        <div className="space-y-1" data-testid="v93-inspector-body">
+          {st ? (
+            <>
+              <H>Match content profile</H>
+              <div>themes: {st.profile.themes.join(', ') || 'none'} · rival: {st.profile.rivalProfile} · rotation {st.profile.contractRotation} · crisis {st.profile.crisisIntensity} · rare {st.profile.rareFrequency} · spotlight {Object.entries(st.profile.regionWeights).filter(([, w]) => w > 1.2).map(([r]) => r).join(', ')}</div>
+              <H>Budgets (used / max)</H>
+              <div>crises {st.used.crises}/{st.profile.budgets.crises} · dilemmas {st.used.dilemmas}/{st.profile.budgets.dilemmas} · rare {st.used.rare}/{st.profile.budgets.rare} · exceptional {st.used.exceptional}/{st.profile.budgets.exceptional} · national events {st.used.nationalEvents}/{st.profile.budgets.nationalEvents} · offers {st.used.offers}/{st.profile.budgets.totalOffers} (live {st.offers.length}/{st.profile.budgets.concurrentOffers})</div>
+              <H>Eligible now (day {st.lastEval?.day ?? '—'} · {st.lastEval?.evaluated ?? 0} evaluated, {st.lastEval?.cached ?? 0} cached, {st.lastEval?.ms ?? 0}ms)</H>
+              {(st.lastEval?.eligible || []).slice(0, 12).map(e => <div key={e.key}>✓ {e.key} ({e.kind}, score {e.score}) — {e.reasons.join('; ')}</div>)}
+              <H>Suppressed</H>
+              {(st.lastEval?.suppressed || []).slice(0, 14).map(s => <div key={s.key + s.reason}>✗ {s.key} — {s.reason}</div>)}
+              <H>Cooldowns</H>
+              <div>{Object.entries(st.cooldowns).filter(([, d]) => d > (ctx?.day || 0)).map(([k, d]) => `${k} → day ${d}`).join(' · ') || 'none'}</div>
+              <H>Content history</H>
+              {st.history.slice(-10).reverse().map((h2, i) => <div key={i}>d{h2.day} {h2.kind} {h2.templateId}{h2.regionId ? `@${h2.regionId}` : ''} — {h2.outcome}{h2.detail ? ` (${h2.detail})` : ''}</div>)}
+              <H>Decisions & flags</H>
+              <div>{Object.entries(st.flags).map(([k, v]) => `${k}=${String(v)}`).join(' · ') || 'none'}</div>
+              <H>Regional diversity</H>
+              {buildRegionalDiversityProfile(st).map(r => <div key={r.region}>{r.region}: {r.uniqueTemplates} templates · {r.contractCategories} contract kinds · {r.dilemmaCategories} dilemma kinds · {r.crisisExposure} crises · {r.infrastructurePaths} infra paths</div>)}
+            </>
+          ) : <div className="opacity-70">No live match content state.</div>}
+          <H>Why eligible / suppressed?</H>
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="v93-preview" className="sr-only">Template</label>
+            <select id="v93-preview" className={`${theme.input || ''} rounded px-1 py-0.5 text-xs bg-transparent border`} value={preview} onChange={e => setPreview(e.target.value)}>
+              <option value="">Choose a template…</option>
+              {CONTENT_TEMPLATE_REGISTRY.map(t => <option key={t.id} value={t.id}>{t.kind}: {t.id}</option>)}
+            </select>
+          </div>
+          {previewTpl && ctx && (previewTpl.regions.length ? previewTpl.regions.filter(r => CONTENT_CORE_REGIONS.includes(r)) : [null]).map(r => {
+            const e = evaluateTemplateEligibility(previewTpl, r, ctx, st, false);
+            return <div key={String(r)} data-testid="v93-preview-row">{r || 'national'}: {e.ok ? `eligible — ${e.reasons.join('; ')}` : `suppressed — ${e.fail}`}</div>;
+          })}
+          <button type="button" className={`${theme.buttonSecondary} px-2 py-1 rounded mt-2`} data-testid="v93-run-analysis" onClick={run}>Run validation, coverage, balance & variety</button>
+          {deep && (
+            <div data-testid="v93-analysis">
+              <H>Invalid definitions ({deep.validation.issues.length} / {deep.validation.checked} checked)</H>
+              {deep.validation.issues.slice(0, 12).map((i, k) => <div key={k}>✗ {i.kind} {i.id}: {i.problem} — {i.detail}</div>)}
+              <H>Legacy content audit</H>
+              {deep.legacy.slice(0, 12).map((i, k) => <div key={k}>{i.severity === 'error' ? '✗' : '•'} {i.kind} {i.id}: {i.problem} — {i.detail}</div>)}
+              <H>Unreachable definitions</H>
+              <div>{deep.reach.filter(r => !r.reachable).map(r => `${r.id} (${r.detail})`).join(' · ') || 'none — every template can become eligible'}</div>
+              <H>Regional coverage</H>
+              {Object.entries(deep.coverage.byRegion).map(([r, c]) => <div key={r}>{r}: {Object.entries(c).map(([f, n]) => `${f} ${n}`).join(' · ')}</div>)}
+              <div>thin: {deep.coverage.thin.map(t => `${t.region}/${t.family}=${t.count}`).join(', ') || 'none'} · roles: {Object.entries(deep.coverage.byRole).map(([r, n]) => `${r} ${n}`).join(', ')}</div>
+              <H>Balance</H>
+              <div>contract ROI ceiling {deep.balance.ceiling} · out of band: {deep.balance.contracts.filter(c => !c.ok).map(c => `${c.id}=${c.roi}`).join(', ') || 'none'} · dominated choices: {deep.balance.dominantChoices.map(d => `${d.id}:${d.dominated}<${d.by}`).join(', ') || 'none'} · starts: {deep.balance.packages.map(p => `${p.id} ${p.value >= 0 ? '+' : ''}${p.value}`).join(', ')} · infra ok: {deep.balance.infra.every(i => i.ok) ? 'yes' : deep.balance.infra.filter(i => !i.ok).map(i => i.id).join(',')} · rare rewards ok: {deep.balance.rareRewardOk ? 'yes' : 'no'}</div>
+              <H>Diversity diagnostics ({deep.variety.runs} synthetic matches)</H>
+              <div>avg unique situations/match {deep.variety.avgUniquePerRun} · opening similarity {deep.variety.openingSimilarity} · identical openings {deep.variety.identicalOpenings}</div>
+              <div>overexposed: {deep.variety.overexposed.join(', ') || 'none'}</div>
+              <div>never seen: {deep.variety.neverSeen.map(n => `${n.id}${n.rareByDesign ? ' (rare/conditional by design)' : ' (eligibility too strict?)'}`).join(', ') || 'none'}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
+
+
+// ---- V9.3 self-tests ----------------------------------------------------------------------------------
+
+export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const ctx0 = (o: (c: ContentContext) => void = () => {}, seed = 5, day = 10) => { const c = contentNeutralContext(seed, day); o(c); return c; };
+  const prof = (o: Partial<Parameters<typeof buildMatchContentProfile>[0]> = {}) => buildMatchContentProfile({ seed: 5, totalDays: 30, ...o });
+  const st0 = (p = prof()) => createMatchContentState(p, 5, 1);
+  const eligible = (id: string, region: string | null, c: ContentContext, st: MatchContentState | null = st0()) => evaluateTemplateEligibility(CONTENT_TEMPLATE_BY_ID[id], region, c, st, false);
+
+  check('v93_validation', 'Every preset/template references valid canonical ids (regions, factions, resources, projects, contract types, effects)', () => {
+    const v = validateAllContent();
+    return v.issues.length === 0 || J(v.issues.slice(0, 6));
+  });
+  check('v93_legacy_audit', 'Legacy content audit catches broken references (and the fixed WA income bonus stays fixed)', () => {
+    const issues = auditLegacyContent();
+    const waFixed = !issues.some(i => i.id === 'infra_hydrogen_wa' && i.problem === 'invalid_value');
+    const flagsYield = issues.some(i => i.id === 'infra_inland_rail_qld' && i.problem === 'effect_without_executor');
+    const broken = validateStrategicContentDefinition({ ...CONTRACT_TEMPLATE_REGISTRY[0], id: 'broken_probe', regions: ['ZZZ'], issuingFactionId: 'ghost_faction', objective: { type: 'explore_site' as any, base: 1 } } as any);
+    return (waFixed && flagsYield && broken.some(i => i.problem === 'invalid_reference') && broken.some(i => i.problem === 'missing_faction') && broken.some(i => i.problem === 'dead_objective')) || J({ waFixed, flagsYield, broken });
+  });
+  check('v93_reachability', 'Every template can become eligible; impossible combinations are detected', () => {
+    const r = analyzeContentReachability();
+    const bad = r.filter(x => !x.reachable);
+    const probe: ContentTemplateBase = { id: 'impossible_probe', kind: 'dilemma', title: 'x', summary: 'x', regions: ['NSW'], themes: [], roles: [], rarity: 'common', cooldownDays: 1, requires: [{ k: 'momentum_min', band: 'booming' }, { k: 'momentum_max', band: 'declining' }] };
+    const ctx = contentNeutralContext(); const st = st0();
+    probe.requires.forEach(q => satisfyReq(q, ctx, st, 'NSW'));
+    const e = evaluateTemplateEligibility(probe, 'NSW', ctx, st, false);
+    return (bad.length === 0 && !e.ok) || J({ bad: bad.slice(0, 5), probe: e });
+  });
+  check('v93_coverage', 'Coverage matrix: every region has multiple contracts, infrastructure paths, dilemmas and crises', () => {
+    const m = buildContentCoverageMatrix();
+    const weak = CONTENT_CORE_REGIONS.filter(r => m.byRegion[r].contracts < 3 || m.byRegion[r].infrastructure < 2 || m.byRegion[r].dilemmas < 2 || m.byRegion[r].crises < 1);
+    const roles = Object.keys(m.byRole).length;
+    return (weak.length === 0 && roles >= 14 && Object.keys(m.byArchetype).length === 8) || J({ weak, roles, arch: m.byArchetype });
+  });
+  check('v93_contract_variety', 'Different regional states produce different eligible contracts', () => {
+    const boomWA = ctx0(c => { c.regions.WA.conditions = ['commodity_boom']; c.regions.WA.sectors = { mining: 30 }; });
+    const flatWA = ctx0();
+    const bottleneckQLD = ctx0(c => { c.regions.QLD.needs = [{ category: 'transport', severity: 'high' }]; });
+    const pool = (c: ContentContext) => CONTRACT_TEMPLATE_REGISTRY.filter(t => t.regions.some(r => evaluateTemplateEligibility(t, r, c, st0(), false).ok)).map(t => t.id);
+    const a = pool(boomWA), b = pool(flatWA), q = pool(bottleneckQLD);
+    return (a.includes('wa_automated_logistics') && !b.includes('wa_automated_logistics') && q.includes('qld_freight_capacity') && !b.includes('qld_freight_capacity') && J(a) !== J(q)) || J({ a, b, q });
+  });
+  check('v93_contract_tradeoffs', 'Archetypes create different commitments (capital locked vs inventory vs presence vs infrastructure)', () => {
+    const inst = (id: string) => instantiateContractTemplate(CONTRACT_TEMPLATE_BY_ID[id], CONTRACT_TEMPLATE_BY_ID[id].regions[0], 5);
+    const types = new Set(['nsw_financial_services', 'qld_mining_export', 'vic_research_consortium', 'nsw_port_modernization'].map(id => inst(id).objectives[0].type));
+    const rapid = inst('vic_dairy_rapid'); const capital = inst('wa_automated_logistics');
+    return (types.size === 4 && rapid.durationTurns < capital.durationTurns && (capital.rewards.money || 0) > (rapid.rewards.money || 0)) || J({ types: Array.from(types), rapid: rapid.durationTurns, capital: capital.durationTurns });
+  });
+  check('v93_contract_dedupe', 'Contract rotation is bounded and the same template cannot spam', () => {
+    let st = st0(prof({ contractAbundance: 'normal' })); const contracts: Record<string, any> = {};
+    const c = ctx0(x => { Object.values(x.regions).forEach(r => { r.needs = [{ category: 'transport', severity: 'high' }]; r.sectors = { mining: 30, technology: 30, tourism: 20, agriculture: 20, renewables: 20, manufacturing: 20 }; }); });
+    const offered: string[] = [];
+    for (let day = 1; day <= 12; day++) { const p = planContentDay({ ...c, day }, st, contracts, []); st = p.state; p.newContracts.forEach(x => { contracts[x.id] = x; offered.push(`${x.v93.templateId}@${x.issuingRegionId}`); }); }
+    const live = st.offers.length;
+    const dupes = offered.filter((x, i) => offered.indexOf(x) !== i);
+    return (live <= st.profile.budgets.concurrentOffers && dupes.length === 0 && offered.length >= 3) || J({ live, dupes, offered });
+  });
+  check('v93_crisis_eligibility', 'Contextually impossible crisis is suppressed (no cyclone in winter; no commodity crash without a boom)', () => {
+    const winter = ctx0(c => { c.season = 'Winter'; });
+    const summer = ctx0(c => { c.season = 'Summer'; });
+    const noBoom = ctx0(c => { c.regions.WA.sectors = { mining: 5 }; });
+    const boom = ctx0(c => { c.regions.WA.conditions = ['commodity_boom']; });
+    return (!eligible('qld_cyclone', 'QLD', winter).ok && eligible('qld_cyclone', 'QLD', summer).ok && !eligible('wa_commodity_crash', 'WA', noBoom).ok && eligible('wa_commodity_crash', 'WA', boom).ok) || 'crisis eligibility mismatch';
+  });
+  check('v93_crisis_chain', 'Multi-stage crisis progresses deterministically through the canonical engine (warning → impact → recovery)', () => {
+    const chain = JSON.parse(J(CRISIS_TEMPLATE_BY_ID.qld_cyclone.chain)) as CrisisChain;
+    chain.id = 'v93c_qld_cyclone_d5'; chain.status = 'active'; chain.activeStageId = chain.stages[0].id;
+    const gs: any = { day: 5, crisisChainState: { activeCrisisChains: [chain], activeNationalEvents: [], history: [] }, publicStabilityState: createDefaultPublicStabilityState() };
+    const settings: any = { dynamicCrisisChainsEnabled: true };
+    let s1 = evaluateTurnCrisisChains(gs, settings); s1 = evaluateTurnCrisisChains({ ...s1, day: 6 }, settings);
+    const afterWarn = s1.crisisChainState.activeCrisisChains[0];
+    const ev = syncContentCrisisEvents([], s1.crisisChainState.activeCrisisChains);
+    // A successful impact response moves to RECOVERY (nextStageOnSuccess), not straight to resolved.
+    const impactStage = afterWarn.stages[afterWarn.currentStageIndex];
+    const forced = { ...impactStage, choices: impactStage.choices.map((c: CrisisChoice) => ({ ...c, successProbability: 1 })) };
+    const withForced = { ...s1, crisisChainState: { ...s1.crisisChainState, activeCrisisChains: [{ ...afterWarn, stages: afterWarn.stages.map((s: CrisisStage, i: number) => (i === afterWarn.currentStageIndex ? forced : s)) }] } };
+    const s2 = resolveCrisisChoice(withForced as any, afterWarn.id, forced.choices[0].id, { money: 10000 });
+    const after = s2.crisisChainState!.activeCrisisChains[0];
+    return (afterWarn.activeStageId === 'qld_cyclone_impact' && ev.some(e => e.effect.travelCost === 1.5) && after.status === 'active' && after.activeStageId === 'qld_cyclone_recovery') || J({ w: afterWarn.activeStageId, ev: ev.map(e => e.effect), after: after.activeStageId, st: after.status });
+  });
+  check('v93_crisis_branching', 'Preparing at the warning stage resolves the chain before impact (response changes later stages)', () => {
+    const chain = JSON.parse(J(CRISIS_TEMPLATE_BY_ID.nsw_bushfire.chain)) as CrisisChain;
+    chain.id = 'v93c_nsw_bushfire_d5'; chain.status = 'active'; chain.activeStageId = chain.stages[0].id;
+    chain.stages[0].choices[0].successProbability = 1;
+    const gs: any = { day: 5, crisisChainState: { activeCrisisChains: [chain], activeNationalEvents: [], history: [] }, publicStabilityState: createDefaultPublicStabilityState() };
+    const out = resolveCrisisChoice(gs, chain.id, chain.stages[0].choices[0].id, { money: 5000 });
+    return out.crisisChainState!.activeCrisisChains[0].status === 'resolved' || J(out.crisisChainState!.activeCrisisChains[0].status);
+  });
+  check('v93_regional_dilemma', 'Transport bottleneck + growth makes the freight dilemma eligible; without them it is suppressed', () => {
+    const yes = ctx0(c => { c.regions.QLD.momentum = 'growing'; c.regions.QLD.needs = [{ category: 'transport', severity: 'high' }]; });
+    const no = ctx0(c => { c.regions.QLD.momentum = 'stable'; });
+    const e1 = eligible('qld_export_capacity_crunch', 'QLD', yes); const e2 = eligible('qld_export_capacity_crunch', 'QLD', no);
+    return (e1.ok && !e2.ok && e1.reasons.length >= 2) || J({ e1, e2 });
+  });
+  check('v93_faction_dilemma', 'Conflicting faction priorities make the faction dilemma eligible, using canonical faction ids', () => {
+    const yes = ctx0(c => { c.factionConflicts = [{ a: 'pilbara_mining_consortium', b: 'tas_wilderness_trust', regionId: 'TAS' }]; });
+    const e1 = eligible('mining_vs_environment', 'TAS', yes); const e2 = eligible('mining_vs_environment', 'TAS', ctx0());
+    const t = DILEMMA_TEMPLATE_BY_ID.mining_vs_environment;
+    const ids = t.choices.flatMap(c => [...(c.factions?.winners || []), ...(c.factions?.losers || [])]);
+    return (e1.ok && !e2.ok && ids.every(id => Boolean(RF_DEF_BY_ID[id]))) || J({ e1, e2, ids });
+  });
+  check('v93_dilemma_quality', 'Every dilemma has ≥2 defensible choices; no choice dominates another (V9.1 decision quality)', () => {
+    const b = buildContentBalanceReport();
+    const few = DILEMMA_TEMPLATE_REGISTRY.filter(d => d.choices.length < 2 || d.choices.some(c => !c.pros.length || !c.cons.length)).map(d => d.id);
+    return (b.dominantChoices.length === 0 && few.length === 0) || J({ dom: b.dominantChoices, few });
+  });
+  check('v93_rare_needs_eligibility', 'Rare event still requires eligibility — rarity alone cannot trigger it', () => {
+    let st = st0(prof({ rareFrequency: 'high' }));
+    let fired = false;
+    for (let day = 1; day <= 40; day++) { const p = planContentDay(ctx0(c => { c.regions.WA.sectors = { mining: 2 }; Object.values(c.regions).forEach(r => { r.devTier = 'highly_developed'; r.momentum = 'declining'; }); }, 9, day), st, {}, []); st = p.state; if (p.newEvents.some(e => e.v93.templateId === 'major_mineral_discovery' || e.v93.templateId === 'iron_ore_collapse' || e.v93.templateId === 'technology_breakthrough')) fired = true; }
+    return !fired || 'rare event fired without eligibility';
+  });
+  check('v93_rare_budget', 'Exceptional/rare events cannot spam one match (budget + once-per-match)', () => {
+    const p0 = prof({ rareFrequency: 'high', totalDays: 60 });
+    let st = st0(p0); let rare = 0; let events: any[] = [];
+    const rich = (day: number) => ctx0(c => { Object.values(c.regions).forEach(r => { r.sectors = { mining: 30, technology: 30, renewables: 30 }; r.devTier = 'emerging'; r.momentum = 'growing'; r.economy = 'weak'; r.conditions = ['commodity_boom']; r.opportunities = ['development_potential']; }); c.crises = [{ id: 'crisis_x', category: 'economic', status: 'active', stageIndex: 1, affectedRegions: ['NSW'], v93: false }]; c.factionInfluence = { regional_labor_coalition: 60 }; }, 13, day);
+    for (let day = 1; day <= 60; day++) { events = events.map(e => ({ ...e, remainingDays: e.remainingDays - 1 })).filter(e => e.remainingDays > 0); const p = planContentDay(rich(day), st, {}, events); st = p.state; p.newEvents.forEach(e => { events.push(e); if (e.v93.kind === 'rare') rare += 1; }); }
+    return (rare <= p0.budgets.rare + p0.budgets.exceptional && st.used.exceptional <= 1) || J({ rare, budget: p0.budgets });
+  });
+  check('v93_cooldown', 'A resolved template respects its cooldown', () => {
+    const c = ctx0(x => { x.regions.QLD.momentum = 'growing'; x.regions.QLD.needs = [{ category: 'transport', severity: 'high' }]; });
+    const t = DILEMMA_TEMPLATE_BY_ID.qld_export_capacity_crunch;
+    let st = st0(); st.activeDilemma = { id: 'd1', templateId: t.id, regionId: 'QLD', openedDay: 4, expiresDay: 7, title: t.title, prompt: t.prompt, evidence: [], choices: scaleDilemmaChoices(t, 4) };
+    st = resolveContentDilemma(st, 'delay', 5, 99999).state;
+    let reopened = false;
+    for (let day = 6; day < 5 + t.cooldownDays; day++) { const p = planContentDay({ ...c, day }, st, {}, []); st = p.state; if (p.openedDilemma?.templateId === t.id && p.openedDilemma.regionId === 'QLD') reopened = true; if (st.activeDilemma) st = { ...st, activeDilemma: null }; }
+    return (!reopened && st.cooldowns[`${t.id}@QLD`] === 5 + t.cooldownDays) || J({ reopened, cd: st.cooldowns });
+  });
+  check('v93_scenario_difference', 'Commodity Boom and Great Drought produce meaningfully different starting strategic states', () => {
+    const find = (id: string) => PRESET_GAME_SCENARIOS.find(s => s.id === id)!;
+    const a = find('v93_commodity_boom'), b = find('v93_great_drought');
+    const pa = buildMatchContentProfile({ seed: a.forcedSeed!, totalDays: 30, themes: (a.forcedSettings as any).v93ContentThemes, regionalOpening: (a.forcedSettings as any).v93RegionalOpening, startingPackage: (a.forcedSettings as any).v93StartingPackage, crisisIntensity: (a.forcedSettings as any).v93CrisisIntensity });
+    const pb = buildMatchContentProfile({ seed: b.forcedSeed!, totalDays: 30, themes: (b.forcedSettings as any).v93ContentThemes, regionalOpening: (b.forcedSettings as any).v93RegionalOpening, startingPackage: (b.forcedSettings as any).v93StartingPackage, crisisIntensity: (b.forcedSettings as any).v93CrisisIntensity });
+    const sa = planContentMatchStart(pa, a.forcedSeed!, a.startingRegions[0], {}, 1, a); const sb = planContentMatchStart(pb, b.forcedSeed!, b.startingRegions[0], {}, 1, b);
+    const diff = (sa.priceMultipliers['Iron Ore'] || 1) > 1.2 && !sb.priceMultipliers['Iron Ore'] && (sb.priceMultipliers.Wheat || 1) > 1.2 && (sb.stability.SA || 0) < 0 && !Object.keys(sa.stability).length && pa.budgets.crises < pb.budgets.crises && sa.items.length > 0 && sb.devTier.SA === 1 && a.startingRegions[0] !== b.startingRegions[0];
+    return diff || J({ sa: { p: sa.priceMultipliers, st: sa.stability, items: sa.items, dev: sa.devTier }, sb: { p: sb.priceMultipliers, st: sb.stability, dev: sb.devTier }, c: [pa.budgets.crises, pb.budgets.crises] });
+  });
+  check('v93_scenario_count', 'Scenario variety increases, with complexity tags and learn tags on every new scenario', () => {
+    const v = PRESET_GAME_SCENARIOS.filter(s => s.id.startsWith('v93_'));
+    return (v.length >= 8 && v.every(s => (s as any).complexity && (s.youWillLearn || []).length >= 3) && new Set(v.map(s => (s as any).complexity)).size >= 3) || J(v.map(s => [s.id, (s as any).complexity]));
+  });
+  check('v93_starting_package', 'Starting-condition package applies canonical values correctly', () => {
+    const base = prof();
+    const dp = planContentMatchStart({ ...base, startingPackage: 'debt_pressure', regionalOpening: 'balanced' }, 5, 'QLD', {});
+    const rp = planContentMatchStart({ ...base, startingPackage: 'regional_power', regionalOpening: 'balanced' }, 5, 'QLD', {});
+    const rh = planContentMatchStart({ ...base, startingPackage: 'resource_heavy', regionalOpening: 'balanced' }, 5, 'QLD', {});
+    const db = planContentMatchStart({ ...base, startingPackage: 'development_base', regionalOpening: 'balanced' }, 5, 'QLD', {});
+    return (dp.cashDelta === 1100 && dp.loans.length === 2 && dp.loans.every(l => l.amount === LOAN_AMOUNT) && rp.stake?.region === 'QLD' && rp.stake.amount === 300 && rp.cashDelta === 0 && rh.items.length === 5 && rh.items.every(i => i === REGIONAL_RESOURCES.QLD[0]) && db.devTier.QLD === 1 && db.standing.QLD === 10) || J({ dp, rp: rp.stake, rh: rh.items, db: db.devTier });
+  });
+  check('v93_balance_starts', 'Starting packages are balanced (no objectively best start) — value within ±150 of standard', () => {
+    const b = buildContentBalanceReport();
+    return b.packages.every(p => p.ok) || J(b.packages);
+  });
+  check('v93_balance_rewards', 'New contracts, infrastructure and rare rewards pass balance (no power creep vs legacy content)', () => {
+    const b = buildContentBalanceReport();
+    const badC = b.contracts.filter(c => !c.ok); const badI = b.infra.filter(i => !i.ok);
+    return (badC.length === 0 && badI.length === 0 && b.rareRewardOk) || J({ badC: badC.slice(0, 4), badI, rare: b.rareRewardOk, ceiling: b.ceiling });
+  });
+  check('v93_cohesion', 'Multiple eligible items never flood PLAY: one notice per day, one content moment', () => {
+    const c = ctx0(x => { Object.values(x.regions).forEach(r => { r.needs = [{ category: 'transport', severity: 'high' }, { category: 'water', severity: 'high' }]; r.momentum = 'rapid_growth'; r.risks = ['infrastructure_bottleneck', 'overdependence']; r.sectors = { mining: 40, technology: 40, tourism: 30, renewables: 30, agriculture: 30, manufacturing: 30, trade: 30 }; }); x.season = 'Summer'; x.diplomacy.tension = 90; });
+    let st = st0(); let maxNotices = 0; let events: any[] = []; const contracts: Record<string, any> = {};
+    for (let day = 1; day <= 20; day++) { const p = planContentDay({ ...c, day }, st, contracts, events); st = p.state; maxNotices = Math.max(maxNotices, p.notices.length); p.newEvents.forEach(e => events.push(e)); p.newContracts.forEach(x => { contracts[x.id] = x; }); }
+    const moment = selectContentMoment(st, events, contracts, 20, false);
+    const momentWithDecision = selectContentMoment({ ...st, activeDilemma: st.activeDilemma || { id: 'x', templateId: 'wa_diversify', regionId: 'WA', openedDay: 20, expiresDay: 23, title: 'x', prompt: 'x', evidence: [], choices: [] } }, events, contracts, 20, true);
+    return (maxNotices <= 1 && Boolean(moment) && momentWithDecision?.kind !== 'dilemma' && st.opportunities.length <= CONTENT_LIMITS.opportunities) || J({ maxNotices, moment: moment?.kind, withDecision: momentWithDecision?.kind });
+  });
+  check('v93_guidance', 'First encounter with a new content type can receive a contextual explanation (Guided Learning)', () => {
+    const fx = createLearningContextFixture({ contentDilemma: 'Export Capacity Crunch' } as any);
+    const st = { ...createEmptyLearningState(), welcome: 'started' as const, concepts: Object.fromEntries(LEARNING_CONCEPTS.filter(c => c.id !== 'dilemmas').map(c => [c.id, { ...newConceptState(), status: 'understood' as LearningConceptStatus }])) };
+    const sel = selectNextLearningMoment(fx, st as any, { playerIntentOnboardingEnabled: true, smartSettingsProfile: { guidance: 'guided' } }, 'guided');
+    const again = selectNextLearningMoment(fx, { ...st, concepts: { ...st.concepts, dilemmas: { ...newConceptState(), status: 'introduced' as LearningConceptStatus } } } as any, { playerIntentOnboardingEnabled: true, smartSettingsProfile: { guidance: 'guided' } }, 'guided');
+    return (sel.moment?.conceptId === 'dilemmas' && /several valid responses|different priorities/i.test(J(sel.moment.lesson)) && again.moment?.conceptId !== 'dilemmas') || J({ m: sel.moment?.conceptId, again: again.moment?.conceptId });
+  });
+  check('v93_world_reaction', 'World Reaction windows surface as opportunities pointing to existing actions (no new actions, no loop)', () => {
+    const c = ctx0(x => { x.windows = [{ id: 'w1', type: 'expansion_opportunity', subject: 'WA', expiresTurn: 14, reason: 'WA rival pressure dropped' }]; x.strategyRegion = 'WA'; });
+    const st = st0(); const a = deriveContentOpportunities(c, st, 10); const b = deriveContentOpportunities(c, { ...st, opportunities: a }, 10);
+    const o = a[0];
+    return (o?.source === 'world_reaction' && o.nav === 'map' && o.track?.sourceType === 'region_control' && o.strategyAligned && b.length === a.length) || J(a);
+  });
+  check('v93_living_regions', 'Regional state influences eligibility; content never writes regional state', () => {
+    const c = ctx0(x => { x.regions.SA.needs = [{ category: 'water', severity: 'high' }]; });
+    const before = J(c.regions);
+    const p = planContentDay(c, st0(), {}, []);
+    return (eligible('sa_water_security', 'SA', c).ok && !eligible('sa_water_security', 'SA', ctx0()).ok && J(c.regions) === before && !('regions' in (p as any))) || 'living regions boundary';
+  });
+  check('v93_factions', 'Contract issuers reference canonical factions (no duplicate identity)', () => {
+    const bad = CONTRACT_TEMPLATE_REGISTRY.filter(t => t.issuingFactionId && !RF_DEF_BY_ID[t.issuingFactionId]).map(t => t.id);
+    const inst = instantiateContractTemplate(CONTRACT_TEMPLATE_BY_ID.qld_freight_capacity, 'QLD', 3);
+    return (bad.length === 0 && inst.issuingFactionId === 'qld_port_authority' && inst.issuingFaction === RF_DEF_BY_ID.qld_port_authority.name && resolveFactionIdFromIssuer(inst.issuingFaction) === 'qld_port_authority') || J({ bad, inst: inst.issuingFactionId });
+  });
+  check('v93_diplomacy', 'Diplomatic situations route through canonical Diplomacy (navigation only, never a direct pact)', () => {
+    const t = DILEMMA_TEMPLATE_BY_ID.diplomatic_ceasefire;
+    const e1 = evaluateTemplateEligibility(t, null, ctx0(x => { x.diplomacy.tension = 85; }), st0(), false);
+    const e2 = evaluateTemplateEligibility(t, null, ctx0(x => { x.diplomacy.enabled = false; x.diplomacy.tension = 85; }), st0(), false);
+    const propose = t.choices.find(c => c.id === 'propose')!;
+    return (e1.ok && !e2.ok && propose.nav === 'diplomacy' && propose.effects.every(e => e.k === 'flag')) || J({ e1, e2 });
+  });
+  check('v93_replay', 'Same seed + state + actions reproduce the same selected content', () => {
+    const run = (seed: number) => { let st = createMatchContentState(buildMatchContentProfile({ seed, totalDays: 30 }), seed, 1); const out: string[] = []; const contracts: Record<string, any> = {}; let events: any[] = []; let c: ContentContext | null = null; let p: ContentDayPlan | null = null;
+      for (let day = 1; day <= 20; day++) { c = contentSyntheticWorld(seed, REGIONAL_OPENING_BY_ID.commodity_boom, day, c, p); p = planContentDay(c, st, contracts, events); st = p.state; p.newContracts.forEach(x => { contracts[x.id] = x; out.push(x.id); }); p.newEvents.forEach(e => { events.push(e); out.push(e.id); }); if (p.startCrisis) out.push(p.startCrisis.id); if (p.openedDilemma) out.push(p.openedDilemma.id); }
+      return out; };
+    const a = run(42), b = run(42), c2 = run(43);
+    return (J(a) === J(b) && J(a) !== J(c2) && a.length > 3) || J({ a: a.length, same: J(a) === J(b) });
+  });
+  check('v93_save_load', 'Active dilemma / offers / cooldowns / history survive save-load; unknown data dropped', () => {
+    const c = ctx0(x => { x.regions.QLD.momentum = 'growing'; x.regions.QLD.needs = [{ category: 'transport', severity: 'high' }]; });
+    let st = st0(); for (let day = 2; day <= 12 && !st.activeDilemma; day++) st = planContentDay({ ...c, day }, st, {}, []).state;
+    const raw = JSON.parse(J({ ...st, junk: 1, offers: [...st.offers, { contractId: 'x', templateId: 'no_such_template' }], history: [...st.history, { bogus: true }] }));
+    const back = sanitizeMatchContentState(raw)!;
+    return (Boolean(st.activeDilemma) && back.activeDilemma?.id === st.activeDilemma!.id && back.activeDilemma.choices.length === st.activeDilemma!.choices.length && J(back.cooldowns) === J(st.cooldowns) && back.history.length === st.history.length && !back.offers.some(o => o.templateId === 'no_such_template') && !('junk' in back)) || J({ had: Boolean(st.activeDilemma), back: back.activeDilemma?.id });
+  });
+  check('v93_old_save', 'Pre-V9.3 save loads without content reset (no state → fresh profile; existing contracts untouched)', () => {
+    const none = sanitizeMatchContentState(undefined); const garbage = sanitizeMatchContentState({ foo: 1 });
+    const contracts = getBuiltinRegionalContracts();
+    const p = planContentDay(ctx0(), st0(), contracts, []);
+    const untouched = Object.keys(contracts).every(id => !p.expiredOfferIds.includes(id));
+    return (none === null && garbage === null && untouched) || 'old save handling';
+  });
+  check('v93_campaign_followups', 'Campaign decisions matter later: follow-up decisions trigger only from earlier choices', () => {
+    const ch2 = PRESET_CAMPAIGN_CHAPTERS[1];
+    const gs = (vars: Record<string, any>, hist: Record<string, string> = {}) => ({ day: 3, campaignState: { chapterIndex: 1, storyDecisionHistory: hist, campaignVariables: vars }, narrativePopup: { isOpen: false, dialogueQueue: [] } } as any);
+    const firstDone = { [ch2.storyDecisions[0].id]: 'c_automation' };
+    const local = evaluateNarrativeDecisions(gs({ pioneer_choice: 'local' }, firstDone)).narrativePopup?.currentDecision?.id;
+    const wall = evaluateNarrativeDecisions(gs({ pioneer_choice: 'wall_street' }, firstDone)).narrativePopup?.currentDecision?.id;
+    const none = evaluateNarrativeDecisions(gs({}, firstDone)).narrativePopup?.currentDecision?.id;
+    const produced = campaignVariableProducers();
+    return (local === 'dec_ch2_local_miners' && wall === 'dec_ch2_investor_terms' && !none && Boolean(produced.energy_path)) || J({ local, wall, none });
+  });
+  check('v93_infra_competition', 'Competing infrastructure: funding one locks its rival (opportunity cost); regions have multiple paths', () => {
+    const projects: Record<string, any> = {}; V93_INFRASTRUCTURE_PROJECTS.forEach(p => { projects[p.id] = JSON.parse(J(p)); });
+    projects.infra_v93_qld_port_automated.totalInvestedMoney = 5000;
+    const out = applyInfrastructureCompetition(projects);
+    const paths = CONTENT_CORE_REGIONS.map(r => [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].filter(p => p.regionId === r && p.status !== 'locked').length);
+    return (out.projects.infra_v93_qld_port_partnership.status === 'locked' && out.projects.infra_v93_qld_port_automated.status === 'unlocked' && paths.every(n => n >= 2)) || J({ locked: out.locked, paths });
+  });
+  check('v93_rival_content', 'Rival behaviour makes content eligible (heavy rival investment → bidding war / counter-investment)', () => {
+    const c = ctx0(x => { x.regions.VIC.rivalDepositDelta = 800; x.regions.VIC.rivalDeposit = 800; });
+    return (eligible('rival_bidding_war', 'VIC', c).ok && eligible('rival_counter_investment', 'VIC', c).ok && !eligible('rival_bidding_war', 'VIC', ctx0()).ok) || 'rival content';
+  });
+  check('v93_market_events', 'Market content uses canonical activeEvents modifiers (resourcePrice/travelCost/challengeBonus/yield only)', () => {
+    const e = eventFromTemplate(WORLD_EVENT_BY_ID.unexpected_regional_boom, 'TAS', 4);
+    return (Object.keys(e.effect).every(k => CONTENT_EXECUTABLE.eventEffectKeys.includes(k)) && REGIONAL_RESOURCES.TAS.every(r => e.effect.resourcePrice[r] === 1.25) && !('@region' in e.effect.resourcePrice)) || J(e.effect);
+  });
+  check('v93_variety', 'Deterministic matches across seeds/scenarios diverge (no identical openings, no dominant template)', () => {
+    const v = runContentVarietySimulation([11, 23, 37, 41], ['balanced', 'commodity_boom', 'great_drought', 'technology_race'], 24);
+    const strictNever = v.neverSeen.filter(n => !n.rareByDesign);
+    return (v.identicalOpenings <= 1 && v.overexposed.length <= 2 && v.openingSimilarity < 0.5 && v.avgUniquePerRun >= 5 && strictNever.length <= 8) || J({ ident: v.identicalOpenings, over: v.overexposed, sim: v.openingSimilarity, avg: v.avgUniquePerRun, never: strictNever.map(n => n.id) });
+  });
+  check('v93_budgets_scale', 'Content budgets scale with match length (15-day < 60-day)', () => {
+    const a = buildMatchContentProfile({ seed: 1, totalDays: 15 }), b = buildMatchContentProfile({ seed: 1, totalDays: 60 });
+    return (a.budgets.crises <= b.budgets.crises && a.budgets.dilemmas < b.budgets.dilemmas && a.budgets.totalOffers < b.budgets.totalOffers && a.budgets.rare <= b.budgets.rare && a.budgets.exceptional === 0) || J({ a: a.budgets, b: b.budgets });
+  });
+  check('v93_perf', 'Large content library stays cheap: cached eligibility on unchanged domains; a day plan runs in < 25ms', () => {
+    const c = ctx0(); const st = st0();
+    planContentDay(c, st, {}, []);
+    const t0 = Date.now(); let cached = 0, evaluated = 0;
+    for (let k = 0; k < 20; k++) { const p = planContentDay(c, st, {}, []); cached += p.evaluation.cached; evaluated += p.evaluation.evaluated; }
+    const ms = (Date.now() - t0) / 20;
+    return (ms < 25 && cached / Math.max(1, evaluated) > 0.8) || J({ ms, cached, evaluated });
+  });
+  check('v93_no_random', 'Selection is seeded — no Math.random in the content layer', () => {
+    const src = [planContentDay, deriveContentOpportunities, instantiateContractTemplate, buildMatchContentProfile, runContentVarietySimulation, planContentMatchStart].map(f => String(f)).join('\n');
+    return !/Math\.random|drawGameplayRandom/.test(src) || 'uncontrolled randomness found';
+  });
+  return results;
+}
+
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -132192,6 +134858,7 @@ function dispatchGameSettingsChange(
         worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
+        contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -159249,6 +161916,12 @@ function dispatchGameSettingsChange(
   }, [gameState, player.id, player.teamId, addNotification]);
 
   const handleFundInfrastructure = useCallback((projectId: string, amount: number) => {
+    const target: any = (gameState.infrastructureProjects as any)?.[projectId];
+    if (target?.status === 'locked') {
+      // V9.3: competing projects share a site — the canonical action refuses a locked project; say why.
+      addNotification?.(`${target.title || projectId} is closed: ${target.lockedReason || 'not yet open for investment'}.`, 'warning', true);
+      return;
+    }
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const execCtx: ActionExecutionContext = {
@@ -162074,6 +164747,184 @@ function dispatchGameSettingsChange(
     return { rootId: chain[0].id, did: say(chain[0]), changed: chain.slice(1).map(say), affected: domains };
   }, [swrEnabled, swrState, player?.id, player?.teamId, dnRound, v9AfterDismissed, swrInputs.ownerNames]);
 
+  // ---- V9.3 Content & Replayability: seeded, budgeted situations over canonical systems ----
+  // Event-driven only: match start, the day boundary, crisis stage changes and infrastructure changes.
+  // Never evaluated per render; everything it produces is a canonical object the existing engines execute.
+  const contentEnabled = gameSettings.v93ContentEnabled !== false;
+  const contentStateRaw = (gameState as any).contentState;
+  const contentState: MatchContentState | null = useMemo(() => sanitizeMatchContentState(contentStateRaw), [contentStateRaw]);
+  const contentPlayerKey = isTeamMode ? TEAM_PLAYER_ID : 'player';
+  const contentSeed = Number(gameSettings.worldRngSeed ?? gameSettings.aiDeterministicSeed ?? 12345) || 12345;
+  const contentPrevDepositsRef = useRef<Record<string, Record<string, number>> | null>(null);
+  const buildLiveContentContext = useCallback((gs: any, day: number): ContentContext => {
+    const pl: any = playerRef.current || player; const ai: any = aiPlayerRef.current || aiPlayer;
+    const deals = ((dnState?.deals || []) as any[]);
+    const tension = Math.max(0, ...(((swrState as any)?.signals || []) as any[]).filter(sg => sg?.kind === 'diplomatic_tension').map(sg => Number(sg.value) || 0));
+    const goals: any[] = gi3Live?.active && gi3Live.active.status === 'active' ? gi3Live.active.goals || [] : [];
+    const rivalKeys = isTeamMode ? [TEAM_OPPONENT_ID, ...Object.values(gs.actorsById || {}).filter((a: any) => a?.teamId === TEAM_OPPONENT_ID).map((a: any) => String(a.id))] : ['ai', String(ai?.id || 'ai')];
+    return buildContentContext({
+      day, totalDays: Number(gameSettings.totalDays || 30), seed: contentSeed, season: String(gs.season || 'Summer'),
+      lr: lrStateRef.current, rf: rfStateRef.current, windows: (((swrState as any)?.windows || []) as any[]),
+      prices: gs.resourcePrices || {}, basePrices: {},
+      crisisChains: gs.crisisChainState?.activeCrisisChains || [], crisisEnabled: Boolean(gameSettings.dynamicCrisisChainsEnabled), activeEvents: gs.activeEvents || [],
+      deposits: sanitizeRegionDeposits(gs.regionDeposits), prevDeposits: contentPrevDepositsRef.current,
+      playerKey: contentPlayerKey, rivalKeys: Array.from(new Set(rivalKeys)), rivalName: String(ai?.name || 'Rival'), rivalProfile: resolveRivalContentProfile(ai),
+      player: { id: String(pl?.id || 'player'), money: Number(pl?.money || 0), loans: pl?.loans || [], currentRegion: String(pl?.currentRegion || 'NSW') },
+      standing: gs.standingPerActor || {},
+      diplomacy: { enabled: Boolean(dnView?.enabled), pactExpiring: deals.some(d => d?.status === 'active' && typeof d.expirationTurn === 'number' && d.expirationTurn - dnRound <= 2), tension },
+      strategyRegion: goals.find(g => g?.regionId && g.status !== 'completed')?.regionId || null,
+      campaignVars: gs.campaignState?.campaignVariables || {},
+      contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
+      projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
+      regionalStability: gs.publicStabilityState?.regionalStability || {}
+    });
+  }, [player, aiPlayer, dnState, swrState, gi3Live, isTeamMode, gameSettings.totalDays, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalContractsEnabled, (gameSettings as any).infrastructureEnabled, contentSeed, contentPlayerKey, dnView?.enabled, dnRound]);
+
+  // Match start: build the profile once; a FRESH match also gets its starting package + regional opening.
+  // Old saves (no content state, already under way) get a profile only — nothing is restarted or re-applied.
+  const contentInitKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isLiveIntentMatch || !contentEnabled || contentStateRaw) return;
+    const gs: any = gameStateLiveRef.current || gameState;
+    const key = `${contentSeed}|${gs.day}|${gs.selectedMode}`;
+    if (contentInitKeyRef.current === key) return;
+    contentInitKeyRef.current = key;
+    const scenario: any = gameSettings.scenarioModeEnabled ? findActiveScenario(gameSettings.selectedScenarioId, gs.customScenarioBuilder?.savedScenarios) : null;
+    const profile = buildMatchContentProfile({
+      seed: contentSeed, totalDays: Number(gameSettings.totalDays || 30), scenarioId: scenario?.id || null, themes: (gameSettings.v93ContentThemes || []) as ContentTheme[],
+      startingPackage: gameSettings.v93StartingPackage, regionalOpening: gameSettings.v93RegionalOpening, contractAbundance: gameSettings.v93ContractAbundance,
+      crisisIntensity: gameSettings.v93CrisisIntensity, rareFrequency: gameSettings.v93RareEventFrequency, rivalProfile: resolveRivalContentProfile(aiPlayerRef.current), recentRare: gameSettings.v93RecentRare
+    });
+    const opening = resolveRegionalOpening(profile.regionalOpening, contentSeed);
+    profile.regionalOpening = opening.id;
+    if (!profile.themes.length && opening.themes.length) { profile.themes = [...opening.themes]; opening.themes.forEach(t => { profile.themeWeights[t] = 1.5; }); }
+    const st = createMatchContentState(profile, contentSeed, Number(gs.day || 1));
+    st.startApplied = true;
+    const fresh = Number(gs.day || 1) <= 1 && Number(gs.turnCounter || 0) <= 1;
+    contentPrevDepositsRef.current = sanitizeRegionDeposits(gs.regionDeposits);
+    if (!fresh) { dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: () => ({ contentState: st }) }); return; }
+    const pl: any = playerRef.current || player;
+    const home = String(pl?.currentRegion || 'NSW');
+    const plan = planContentMatchStart(profile, contentSeed, home, gs.infrastructureProjects || {}, Number(gs.day || 1), scenario);
+    if (plan.openingEvent?.v93?.templateId && WORLD_EVENT_BY_ID[plan.openingEvent.v93.templateId]?.setsFlag) { const fl = WORLD_EVENT_BY_ID[plan.openingEvent.v93.templateId].setsFlag!; st.flags[fl.key] = fl.value; }
+    // Canonical player changes (cash, inventory, loans) and a canonical stake.
+    if (plan.cashDelta) dispatchPlayer({ type: 'UPDATE_MONEY', payload: plan.cashDelta });
+    if (plan.items.length) dispatchPlayer({ type: 'SET_INVENTORY', payload: [...(Array.isArray(pl?.inventory) ? pl.inventory : []), ...plan.items] });
+    if (plan.loans.length) dispatchPlayer({ type: 'SET_LOANS', payload: [...(Array.isArray(pl?.loans) ? pl.loans : []), ...plan.loans] });
+    dispatchGameState({
+      type: 'APPLY_CONTENT_STEP', payload: (state: any) => {
+        const out: any = { contentState: st };
+        if (plan.projects.length) { const ip = { ...(state.infrastructureProjects || {}) }; plan.projects.forEach(p => { if (!ip[p.id]) ip[p.id] = p; }); out.infrastructureProjects = ip; }
+        if (Object.keys(plan.devTier).length) {
+          const dev = { ...(state.regionalDevLevels || createInitialRegionalDevLevels()) };
+          Object.entries(plan.devTier).forEach(([r, n]) => { const d = dev[r] || { regionId: r, tier: 0, tierName: 'Untapped', currentExp: 0, expToNextTier: 500, totalInvestedCapital: 0, localEconomicMultiplier: 1.0, standingBonusModifier: 1.0, travelCostReductionPercent: 0, unlockedInfrastructureIds: [], activeRegionalBonuses: [] }; dev[r] = { ...d, tier: Math.min(5, Number(d.tier || 0) + n) }; });
+          out.regionalDevLevels = dev;
+        }
+        if (Object.keys(plan.priceMultipliers).length) { const pr = { ...(state.resourcePrices || {}) }; Object.entries(plan.priceMultipliers).forEach(([res, m]) => { if (typeof pr[res] === 'number') pr[res] = Math.round(pr[res] * m); }); out.resourcePrices = pr; }
+        if (Object.keys(plan.standing).length) { let sp = state.standingPerActor || {}; Object.entries(plan.standing).forEach(([r, d]) => { sp = modifyActorRegionalStanding(sp, String(pl?.id || 'player'), r, d); }); out.standingPerActor = sp; }
+        if (Object.keys(plan.stability).length) { const ps = { ...(state.publicStabilityState || createDefaultPublicStabilityState()) }; const rs = { ...(ps.regionalStability || {}) }; Object.entries(plan.stability).forEach(([r, d]) => { rs[r] = Math.max(0, Math.min(100, Number(rs[r] ?? 70) + d)); }); out.publicStabilityState = { ...ps, regionalStability: rs }; }
+        if (plan.openingEvent && !(state.activeEvents || []).some((e: any) => e.id === plan.openingEvent!.id)) out.activeEvents = [...(state.activeEvents || []), plan.openingEvent];
+        return out;
+      }
+    });
+    if (plan.stake) setTimeout(() => { depositInRegionRef.current?.(plan.stake!.region, 'player', plan.stake!.amount, { consumeAction: false, silent: true, reason: 'Starting stake (Regional Power)' }); }, 0);
+    if (plan.notes.length) addNotification(`🗺 ${plan.notes.join(' · ')}`, 'info', true, 'system');
+  }, [isLiveIntentMatch, contentEnabled, contentStateRaw]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Day boundary: one seeded plan per day from the COMMITTED state (after crises/market/contracts advanced).
+  const contentPlannedDayRef = useRef<number | null>(null);
+  const contentNotifiedDayRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLiveIntentMatch || !contentEnabled || !contentState) return;
+    const gs: any = gameStateLiveRef.current || gameState;
+    const day = Number(gs.day || 1);
+    if ((contentState.lastPlannedDay !== null && contentState.lastPlannedDay >= day) || contentPlannedDayRef.current === day) return;
+    contentPlannedDayRef.current = day;
+    const ctx = buildLiveContentContext(gs, day);
+    const plan = planContentDay(ctx, contentState, gs.regionalContracts || {}, gs.activeEvents || [], () => (typeof performance !== 'undefined' ? performance.now() : 0));
+    contentPrevDepositsRef.current = sanitizeRegionDeposits(gs.regionDeposits);
+    dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => applyContentPlanToState(state, plan) });
+    const rare = plan.newEvents.filter(e => e.v93.kind === 'rare').map(e => e.v93.templateId);
+    if (rare.length) setGameSettings(prev => ({ ...prev, v93RecentRare: [...(prev.v93RecentRare || []), ...rare].slice(-6) }));
+    if (plan.notices.length && contentNotifiedDayRef.current !== day) { contentNotifiedDayRef.current = day; addNotification(plan.notices[0].text, plan.notices[0].kind === 'crisis' ? 'warning' : 'event', true, 'system'); }
+    plan.newContracts.forEach(c => appendGameActivityLedgerEvent('decision', { eventType: 'content_offer', summary: `Contract offered: ${c.title} (${c.issuingRegionId})` } as any));
+    if (plan.startCrisis) appendGameActivityLedgerEvent('decision', { eventType: 'content_crisis', summary: `Crisis begins: ${plan.startCrisis.title}` } as any);
+  }, [gameState.day, isLiveIntentMatch, contentEnabled, contentState?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Crisis stage changes (timer or a player response) keep the stage's canonical modifiers in step.
+  useEffect(() => {
+    const chains = ((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[];
+    const next = syncContentCrisisEvents(gameState.activeEvents || [], chains);
+    if (next !== gameState.activeEvents) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []) }) });
+  }, [(gameState as any).crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Competing infrastructure: funding one project closes its rival on the same site.
+  useEffect(() => {
+    const out = applyInfrastructureCompetition((gameState.infrastructureProjects || {}) as any);
+    if (!out.locked.length) return;
+    dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ infrastructureProjects: applyInfrastructureCompetition(state.infrastructureProjects || {}).projects }) });
+    const first = out.locked[0]; const p: any = (gameState.infrastructureProjects as any)?.[first.by]; const c: any = (gameState.infrastructureProjects as any)?.[first.id];
+    if (p && c) addNotification(`🏗 ${p.title} committed the site — ${c.title} is no longer available.`, 'info', true, 'system');
+  }, [gameState.infrastructureProjects]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Resolve a strategic decision: every consequence goes through a canonical dispatcher. */
+  const chooseContentDilemma = useCallback((choiceId: string): string | null => {
+    const gs: any = gameStateLiveRef.current || gameState;
+    const st = sanitizeMatchContentState(gs.contentState);
+    const d = st?.activeDilemma;
+    if (!st || !d) return 'No decision is waiting.';
+    const pl: any = playerRef.current || player;
+    const day = Number(gs.day || 1);
+    const res = resolveContentDilemma(st, choiceId, day, Number(pl?.money || 0));
+    if (res.error || !res.choice) { addNotification(res.error || 'That choice is not available.', 'warning', true); return res.error; }
+    const region = d.regionId || String(pl?.currentRegion || 'NSW');
+    let cashDelta = 0; let standingDelta = 0; const stab: DilemmaEffect[] = []; const offers: any[] = []; const events: any[] = []; const locks: string[] = []; const unlocks: string[] = [];
+    res.effects.forEach(e => {
+      if (e.k === 'cash') cashDelta += e.amount;
+      else if (e.k === 'standing') standingDelta += e.delta;
+      else if (e.k === 'stability') stab.push(e);
+      else if (e.k === 'offer_contract' && CONTRACT_TEMPLATE_BY_ID[e.templateId] && gameSettings.regionalContractsEnabled) { const t = CONTRACT_TEMPLATE_BY_ID[e.templateId]; const r = t.regions.includes(region) ? region : t.regions[0]; offers.push(instantiateContractTemplate(t, r, day)); }
+      else if (e.k === 'event' && WORLD_EVENT_BY_ID[e.eventId]) events.push(eventFromTemplate(WORLD_EVENT_BY_ID[e.eventId], region, day));
+      else if (e.k === 'lock_project') locks.push(e.projectId);
+      else if (e.k === 'unlock_project') unlocks.push(e.projectId);
+    });
+    if (cashDelta) dispatchPlayer({ type: 'UPDATE_MONEY', payload: cashDelta });
+    const nextSt: MatchContentState = { ...res.state, offers: [...res.state.offers, ...offers.map(c => ({ contractId: c.id, templateId: c.v93.templateId, regionId: c.issuingRegionId, offeredDay: day, expiresDay: day + (CONTRACT_TEMPLATE_BY_ID[c.v93.templateId]?.offerDays || 5) }))] };
+    dispatchGameState({
+      type: 'APPLY_CONTENT_STEP', payload: (state: any) => {
+        const out: any = { contentState: nextSt };
+        if (standingDelta) out.standingPerActor = modifyActorRegionalStanding(state.standingPerActor || {}, String(pl?.id || 'player'), region, standingDelta);
+        if (offers.length) { const rc = { ...(state.regionalContracts || {}) }; offers.forEach(c => { if (!rc[c.id]) rc[c.id] = c; }); out.regionalContracts = rc; }
+        if (events.length) out.activeEvents = [...(state.activeEvents || []), ...events.filter(e => !(state.activeEvents || []).some((x: any) => x.id === e.id))];
+        if (locks.length || unlocks.length) {
+          const ip = { ...(state.infrastructureProjects || {}) };
+          locks.forEach(id => { const p = ip[id]; if (p && p.status === 'unlocked' && !Number(p.totalInvestedMoney || 0)) ip[id] = { ...p, status: 'locked', lockedReason: `Ruled out by your decision: ${d.title}` }; });
+          unlocks.forEach(id => { const p = ip[id]; if (p && p.status === 'locked') ip[id] = { ...p, status: 'unlocked', lockedReason: undefined }; });
+          out.infrastructureProjects = ip;
+        }
+        if (stab.length) {
+          const ps = { ...(state.publicStabilityState || createDefaultPublicStabilityState()) };
+          ps.modifiers = [...(ps.modifiers || []), ...stab.map((e: any, i) => ({ id: `v93s_${d.id}_${i}`, source: 'v93_decision', description: `${d.title}: ${res.choice!.label}`, deltaPerTurn: e.delta, remainingTurns: e.turns, isGlobal: false, targetRegionId: region }))].slice(-20);
+          out.publicStabilityState = ps;
+        }
+        return out;
+      }
+    });
+    // Stakeholders remember: recorded through the canonical faction decision log (winners / losers).
+    if (res.choice.factions && rfStateRef.current) {
+      const f = res.choice.factions;
+      const rfD: RFDilemma = { id: d.id, regionId: region, title: d.title, need: d.prompt, options: [{ id: res.choice.id, kind: 'fund', label: res.choice.label, projectId: null, contractId: null, cost: null, stances: [...f.winners.map(id => ({ factionId: id, stance: 'supports' as RFStance })), ...f.losers.map(id => ({ factionId: id, stance: 'opposes' as RFStance }))], effect: res.choice.pros, risk: res.choice.cons }] };
+      persistRegionalFactions(rfChooseDilemmaOption(sanitizeRegionalFactionsState(rfStateRef.current)!, rfD, res.choice.id, String(pl?.id || 'player'), dnRound));
+    }
+    appendGameActivityLedgerEvent('decision', { actorId: String(pl?.id || 'player'), eventType: 'content_dilemma_choice', summary: `${d.title}: ${res.choice.label}` } as any);
+    addNotification(`⚖️ ${d.title}: ${res.choice.label}`, 'success', true);
+    return null;
+  }, [gameState, player, dispatchPlayer, dispatchGameState, addNotification, persistRegionalFactions, appendGameActivityLedgerEvent, dnRound, gameSettings.regionalContractsEnabled]);
+  const dismissContentOpportunity = useCallback((id: string) => {
+    dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => { const st = sanitizeMatchContentState(state.contentState); return st ? { contentState: { ...st, opportunities: st.opportunities.filter(o => o.id !== id), revision: st.revision + 1 } } : {}; } });
+  }, [dispatchGameState]);
+  const contentLiveCtx = useMemo(() => (contentState && isLiveIntentMatch ? buildLiveContentContext(gameStateLiveRef.current || gameState, Number(gameState.day || 1)) : null), [contentState?.revision, isLiveIntentMatch, gameState.day]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- V9.2 Guided Learning: learn by playing (reads visible state; never acts; never changes authority) ----
   const glLearning = useMemo(() => sanitizeLearningState(gameSettings.guidedLearning), [gameSettings.guidedLearning]);
   const glPresentation = getIntentPresentationLevel(gameSettings);
@@ -162121,9 +164972,12 @@ function dispatchGameSettingsChange(
       worldChain: v9AfterAction && v9AfterAction.changed.length ? `${v9AfterAction.did} → ${v9AfterAction.changed[0]}` : null,
       regionShift: shift ? shift.text : null, stakeholder: v9CohesionInputs.factions.requests[0] ? `${v9CohesionInputs.factions.requests[0].faction} asks: ${v9CohesionInputs.factions.requests[0].title}.` : null,
       diplomacyOpportunity: dnOpp ? dnOpp.text : null, lostRegion: lost ? (REGIONS[lost.subjectId]?.name || lost.subjectId) : null,
-      overrideOfAdvice: (bgLive?.overrides || []).length > 0, blocked: null
+      overrideOfAdvice: (bgLive?.overrides || []).length > 0, blocked: null,
+      contentDilemma: contentState?.activeDilemma?.title || null,
+      contentOpportunity: contentState?.opportunities[0]?.title || null,
+      contentEvent: ((gameState.activeEvents || []) as any[]).find(e => e?.v93 && (e.v93.kind === 'event' || e.v93.kind === 'rare'))?.name || null
     };
-  }, [player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue]);
+  }, [player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -166488,6 +169342,30 @@ function dispatchGameSettingsChange(
               </SettingsSection>
 
               {/* Restored Scenario Mode & Presets Section */}
+              <SettingsSection id="gameplay.matchVariety" tab="gameplay" title="🎲 Match Variety" chips={['Gameplay']} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.matchVariety')!.fieldKeys}>
+                <div className="space-y-3 text-sm" data-testid="v93-settings">
+                  <div className="text-xs opacity-75">Applies from the next match start. Scenarios can set their own values. Every start is balanced — they change your opening decisions, not your odds.</div>
+                  <label className="flex items-center justify-between gap-2">
+                    <span className="font-semibold">Dynamic situations (contracts, decisions, events, crises)</span>
+                    <input type="checkbox" checked={gameSettings.v93ContentEnabled !== false} onChange={e => trackedSetGameSettings('direct_player_change', '🎲 Match Variety', prev => ({ ...prev, v93ContentEnabled: e.target.checked }))} />
+                  </label>
+                  {([
+                    ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
+                    ['v93RegionalOpening', 'Regional opening', [['auto', 'Varied (seeded)'], ['none', 'Balanced Australia'], ...REGIONAL_OPENINGS.filter(o => o.id !== 'balanced').map(o => [o.id, `${o.label} — ${o.description}`])]],
+                    ['v93ContractAbundance', 'Contract offers', [['scarce', 'Scarce'], ['normal', 'Normal'], ['abundant', 'Abundant']]],
+                    ['v93CrisisIntensity', 'Crisis intensity', [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']]],
+                    ['v93RareEventFrequency', 'Rare events', [['off', 'Off'], ['normal', 'Normal'], ['high', 'More frequent']]]
+                  ] as Array<[keyof GameSettingsState, string, string[][]]>).map(([key, label, opts]) => (
+                    <label key={String(key)} className="block">
+                      <span className="block font-semibold mb-1">{label}</span>
+                      <select value={String((gameSettings as any)[key] ?? '')} onChange={e => trackedSetGameSettings('direct_player_change', '🎲 Match Variety', prev => ({ ...prev, [key]: e.target.value }))} className={`${themeStyles.select} rounded px-3 py-2 w-full text-sm`} data-testid={`v93-setting-${String(key)}`}>
+                        {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </SettingsSection>
+
               <SettingsSection id="gameplay.scenarioMode" tab="gameplay" title="📜 Scenario Mode & Presets" chips={['Scenario', 'Gameplay']} onReset={settingsResetHandlers.gameplay.fn} resetLabel={settingsResetHandlers.gameplay.label} fieldKeys={SETTINGS_HUB_SECTION_INDEX.find(s => s.id === 'gameplay.scenarioMode')!.fieldKeys}>
                 <div className="space-y-4">
                   {/* Master Scenario Mode Toggle */}
@@ -176676,6 +179554,7 @@ function dispatchGameSettingsChange(
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xl font-bold text-indigo-400">{scenario.title}</h3>
                         <span className="flex items-center gap-1.5">
+                          {(scenario as any).complexity && <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full border border-slate-500/50 opacity-90" data-testid="v93-complexity">{(scenario as any).complexity}</span>}
                           {String((scenario as any).category) === 'beginner' && scenario.difficulty === 'Easy' && (
                             <span className="px-2 py-0.5 text-[11px] font-bold rounded-full border border-sky-500/50 bg-sky-500/15 text-sky-300" data-testid="gl-good-first-match">Good First Match</span>
                           )}
@@ -177886,6 +180765,16 @@ function dispatchGameSettingsChange(
       onLearnMore: id => openMechanicsEntry(id)
     });
 
+    // V9.3: one content situation at a time in PLAY (Part 87 priority; a V9 decision takes precedence).
+    const contentHandlers: ContentMomentHandlers = {
+      onChoose: id => { const c = contentState?.activeDilemma?.choices.find(x => x.id === id); const err = chooseContentDilemma(id); if (!err && c?.nav) openIntentNav(navAction(c.nav, c.label)); },
+      onNav: (t, label) => openIntentNav(navAction(t, label)),
+      onAsk: q => void submitIntelligenceQuery(q),
+      onTrack: t => { trackIntentGoal(t); addNotification(`🎯 Tracking: ${t.title || t.sourceId}`, 'info', true); },
+      onDismissOpportunity: dismissContentOpportunity
+    };
+    const contentMoment = contentEnabled && isLiveIntentMatch ? selectContentMoment(contentState, gameState.activeEvents || [], (gameState.regionalContracts || {}) as any, Number(gameState.day || 1), Boolean(v9Cohesion.decision)) : null;
+
     const renderV9PlayHud = () => {
       // ---- V9.2 Guided Learning placement: at most one proactive lesson; blocked help and welcome take its place ----
       const glShowWelcome = isLiveIntentMatch && glLearning.welcome === 'pending' && glSelection.mode !== 'off';
@@ -177970,6 +180859,8 @@ function dispatchGameSettingsChange(
             onDismissAfter={() => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20))}
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
+
+          {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} />}
 
           <div className="text-xs">
             <button type="button" className="underline opacity-80" aria-expanded={v9PlayDetailsOpen} data-testid="v9-play-details-toggle" onClick={() => setV9PlayDetailsOpen(o => !o)}>
@@ -178086,6 +180977,7 @@ function dispatchGameSettingsChange(
               onAsk={q => void submitIntelligenceQuery(q)}
               onReset={() => glDispatch([{ kind: 'reset', turn: glTurn }])}
               available={id => (
+                id === 'dilemmas' || id === 'strategic_opportunity' || id === 'world_events' ? contentEnabled :
                 id === 'contracts' ? Boolean(gameSettings.regionalContractsEnabled)
                   : id === 'standing' ? gameSettings.regionalStandingEnabled !== false
                     : id === 'world_reactions' || id === 'regional_development' || id === 'factions' ? swrEnabled
@@ -178094,6 +180986,8 @@ function dispatchGameSettingsChange(
                           : true
               )}
             />
+
+            {contentEnabled && <ContentSituationsPanel theme={themeStyles} st={contentState} activeEvents={gameState.activeEvents || []} contracts={(gameState.regionalContracts || {}) as any} crises={((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[]} h={contentHandlers} money={Number(player.money || 0)} canAct={v9HumanCanAct} />}
 
             <div id="v9-intel-strategy" />
             <GI3StrategicCommandCenter
@@ -178221,7 +181115,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -178260,6 +181154,7 @@ function dispatchGameSettingsChange(
         <FactionInspector view={rfViewRef.current} theme={themeStyles} />
         <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
         <GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} />
+        <ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} />
         <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
       </div>
     );
@@ -187812,7 +190707,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
                     <div className="text-xs text-emerald-400 font-semibold">
-                      Reward: +${(c.rewardCash || 0).toLocaleString()} | +{c.rewardPrestige || 0} Prestige
+                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString()} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
                     </div>
                     {c.turnsRemaining != null && (
                       <div className="text-[11px] text-amber-400">Turns Remaining: {c.turnsRemaining}</div>
@@ -187863,13 +190758,15 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                   <div key={c.id} className="p-4 bg-gray-800/60 border border-gray-700 rounded-lg space-y-2 hover:border-blue-500/50 transition-colors">
                     <div className="flex justify-between items-start">
                       <h4 className="font-bold text-sm text-gray-200">{c.title || c.id}</h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 font-mono uppercase">{c.targetRegion || 'Global'}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 font-mono uppercase">{c.targetRegion || c.issuingRegionId || 'Global'}</span>
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
+                    {(c.objectives || []).length > 0 && <div className="text-[11px] text-gray-300" data-testid="contract-objective">🎯 {(c.objectives || []).map((o: any) => o.description).join(' · ')} · {c.durationTurns || c.turnsRemaining} days once accepted</div>}
+                    {c.v93 && (() => { const off = contentState?.offers.find(o => o.contractId === c.id); const t = CONTRACT_TEMPLATE_BY_ID[c.v93.templateId]; return <div className="text-[11px] text-violet-300" data-testid="v93-offer-meta">{t ? `${t.archetype.charAt(0).toUpperCase()}${t.archetype.slice(1)} contract` : 'Contract'}{off ? ` · offer open until day ${off.expiresDay}` : ''}</div>; })()}
                     {(() => { const rel = lrContractRelevance(lrState, c); const reg = lrState?.regions[c.issuingRegionId || c.regionId]; return rel.reasons.length && reg ? <div className="text-[11px] text-teal-300" data-testid="lr-contract-why">Why here: {reg.name} has {rel.reasons.join(', ')}.</div> : null; })()}
                     {(() => { const fr = rfContractRelevance(rfState, c, rfPlayerId); return fr.factionId ? <div className="text-[11px] text-indigo-300" data-testid="rf-contract-issuer">Issuer: {fr.reasons.join(' · ')}</div> : null; })()}
                     <div className="text-xs text-emerald-400 font-semibold">
-                      Reward: +${(c.rewardCash || 0).toLocaleString()} | +{c.rewardPrestige || 0} Prestige
+                      Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString()} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
                     </div>
                     {(() => {
                       const blocker = explainUnavailableAction('contract', { actor: player, state: gameState, settings: gameSettings, contract: c });
@@ -187961,13 +190858,19 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {projects.map((proj: any) => {
-                const fundedPct = Math.min(100, Math.round(((proj.currentFunding || 0) / (proj.costRequirement || 1)) * 100));
-                const isCompleted = proj.status === 'completed' || fundedPct >= 100;
+                // Canonical InfrastructureProject fields (title / totalInvestedMoney / totalCost), legacy names as fallback.
+                const projName = proj.name || proj.title || proj.id;
+                const projFunding = Number(proj.currentFunding ?? proj.totalInvestedMoney ?? 0);
+                const projCost = Number(proj.costRequirement ?? proj.totalCost ?? 0);
+                const fundedPct = Math.min(100, Math.round((projFunding / (projCost || 1)) * 100));
+                const isCompleted = proj.status === 'completed' || proj.status === 'active' || fundedPct >= 100;
+                const isLocked = proj.status === 'locked';
+                const rivals = contentCompetitorsOf(proj.id).map(id => (projects as any[]).find((p: any) => p.id === id)).filter(Boolean);
                 return (
                   <div key={proj.id} className={`p-4 rounded-xl border space-y-3 ${isCompleted ? 'bg-amber-950/20 border-amber-500/40' : 'bg-gray-800/70 border-gray-700'}`}>
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="font-bold text-sm text-amber-200">{proj.name || proj.id}</h3>
+                        <h3 className="font-bold text-sm text-amber-200">{projName}</h3>
                         <span className="text-[10px] text-gray-400">Region: {proj.regionId || 'National Grid'}</span>
                       </div>
                       <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${isCompleted ? 'bg-amber-900/60 text-amber-300' : 'bg-blue-900/40 text-blue-300'}`}>
@@ -187980,20 +190883,27 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                     {/* Progress bar */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-[11px] text-gray-400">
-                        <span>Funding: ${(proj.currentFunding || 0).toLocaleString()}</span>
-                        <span>Target: ${(proj.costRequirement || 0).toLocaleString()}</span>
+                        <span>Funding: ${projFunding.toLocaleString()}</span>
+                        <span>Target: ${projCost.toLocaleString()}</span>
                       </div>
                       <div className="w-full bg-gray-950 rounded-full h-2 overflow-hidden border border-gray-800">
                         <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${fundedPct}%` }}></div>
                       </div>
                     </div>
 
-                    {!isCompleted && (
+                    {(isLocked || rivals.length > 0) && (
+                      <div className="text-[11px] rounded border border-violet-600/40 bg-violet-950/30 p-2" data-testid="v93-infra-competition">
+                        {isLocked ? <div className="text-violet-200 font-semibold">🔒 {proj.lockedReason || 'Not yet open for investment'}</div> : <div className="text-violet-200">⚖️ Competes with {rivals.map((p: any) => p.name || p.title || p.id).join(', ')} — funding this closes the other.</div>}
+                        {V93_INFRA_META_BY_ID[proj.id] && <div className="opacity-80">Development path: {V93_INFRA_META_BY_ID[proj.id].path}</div>}
+                      </div>
+                    )}
+
+                    {!isCompleted && !isLocked && (
                       <div className="space-y-2 pt-1">
                         {(() => {
                           const card = buildIntentDecisionCard({
-                            title: `Build ${proj.name || proj.id}`,
-                            candidate: { title: proj.name, description: proj.description, costEstimate: 50000, apCost: 1, expectedStateDelta: { cashDelta: -50000 } },
+                            title: `Build ${projName}`,
+                            candidate: { title: projName, description: proj.description, costEstimate: 50000, apCost: 1, expectedStateDelta: { cashDelta: -50000 } },
                             blocker: player.money < 50000 ? explainUnavailableAction('infrastructure', { actor: player, state: gameState, settings: gameSettings, choice: { cost: 50000 }, actionId: 'investments' }) : null,
                             guardianNote: purchaseWouldBreakTrackedGoal(currentObjective, player, 50000) ? 'This would make your tracked objective unaffordable.' : 'Long-term position up, cash reserve down.',
                             costOverride: '$50,000'
