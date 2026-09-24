@@ -10365,6 +10365,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(save?.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
     teamOperatingSystem: sanitizeTeamOperatingSystemState(save?.teamOperatingSystem || gameState?.teamOperatingSystem),
     gi3Strategy: sanitizeGI3StrategyState(save?.gi3Strategy || gameState?.gi3Strategy),
+    backgroundAI: sanitizeBackgroundAIState(save?.backgroundAI || gameState?.backgroundAI),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10533,6 +10534,7 @@ export function canonicalStateFromLiveRuntime(
     teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(liveState.teamStrategicPlansByTeam || gameState?.teamStrategicPlansByTeam),
     teamOperatingSystem: sanitizeTeamOperatingSystemState(liveState.teamOperatingSystem || gameState?.teamOperatingSystem),
     gi3Strategy: sanitizeGI3StrategyState(liveState.gi3Strategy || gameState?.gi3Strategy),
+    backgroundAI: sanitizeBackgroundAIState(liveState.backgroundAI || gameState?.backgroundAI),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -21610,6 +21612,7 @@ interface SaveGameData {
   gameSettings: GameSettingsState;
   teamOperatingSystem?: TeamOperatingSystemState;
   gi3Strategy?: GI3StrategyState;
+  backgroundAI?: BackgroundAIState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35600,7 +35603,8 @@ export const initialGameState = {
   aiCommunication: createEmptyCommunicationState(),
   teamStrategicPlansByTeam: {} as Record<string, TeamStrategicPlan>,
   teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState,
-  gi3Strategy: createEmptyGI3StrategyState()
+  gi3Strategy: createEmptyGI3StrategyState(),
+  backgroundAI: createEmptyBackgroundAIState()
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -71106,6 +71110,12 @@ export function generateCoPilotPlayerActionCandidates(
   const validCandidates = candidates.filter(c => c.isValid);
   const activeValid = validCandidates.filter(c => typeof c.categoryIndex === 'number' && c.categoryIndex >= 1 && c.categoryIndex <= 10);
   const candidatePool = activeValid.length > 0 ? activeValid : validCandidates;
+  // Background AI handoff: while the player has delegated control to Co-Pilot, the prepared strategic context
+  // nudges the ranking of Co-Pilot's OWN valid candidates. Validity, authority and execution are unchanged.
+  const handoffSession = context?.takeoverSession;
+  if (handoffSession && !['terminated', 'disabled', 'interrupted', 'paused'].includes(String(handoffSession.status))) {
+    applyBackgroundHandoffToCoPilotCandidates(candidatePool, (gs as any)?.backgroundAI?.coPilotHandoffPackage);
+  }
 
   const utilitySorted = [...candidatePool].sort((a, b) => b.utilityScore - a.utilityScore);
   const topRecommendation = utilitySorted.length > 0 ? utilitySorted[0] : null;
@@ -79493,6 +79503,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.teamOperatingSystem = sanitizeTeamOperatingSystemState(migrated.gameState.teamOperatingSystem || migrated.teamOperatingSystem);
   // GI3 strategy: older saves have none — they load with an empty (no active strategy) state.
   if (migrated.gameState) migrated.gameState.gi3Strategy = sanitizeGI3StrategyState(migrated.gameState.gi3Strategy || migrated.gi3Strategy);
+  // Background AI: older saves load with a fresh (advisor) state; prepared simulations are never restored.
+  if (migrated.gameState) migrated.gameState.backgroundAI = sanitizeBackgroundAIState(migrated.gameState.backgroundAI || migrated.backgroundAI);
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
 
@@ -99881,6 +99893,11 @@ export interface ContextualActionCandidate {
   scoreBreakdown: ContextualActionScoreFactor[];
   /** GI3: alignment with the active strategy (metadata only — legality is decided before this). */
   strategyAlignment?: GI3ActionAlignment | null;
+  /** Background AI: its own ranking of this canonical action and why (metadata only — never legality). */
+  backgroundRank?: number | null;
+  backgroundReason?: string | null;
+  backgroundStrategicAlignment?: number | null;
+  backgroundRisk?: number | null;
 }
 
 export interface ContextualSurfaceInput {
@@ -100238,6 +100255,9 @@ export type GameIntelligenceButtonKind =
   | 'gi3_control'
   | 'gi3_dismiss'
   | 'gi3_continue_action'
+  | 'bg_continue_action'
+  | 'bg_dismiss'
+  | 'bg_mode'
   | 'team_cancel'
   | 'team_proposal_accept'
   | 'team_proposal_reject'
@@ -101017,6 +101037,7 @@ export const ContextualActionPanel: React.FC<ContextualActionPanelProps> = ({ ac
                 <div className="font-bold">{rec.label}</div>
                 <div className="text-xs opacity-85">{rec.reasons[0] || rec.description}</div>
                 <div className="text-[11px] opacity-70 mt-0.5">{describeContextualCost(rec)}{rec.risk ? ` • ${rec.risk}` : ''}</div>
+                {rec.backgroundReason && <div className="text-[11px] opacity-80 mt-0.5" data-testid="bg-action-note">🧠 Background AI #{rec.backgroundRank}: {rec.backgroundReason}</div>}
               </div>
             </div>
             {renderButtons(rec, false)}
@@ -101034,6 +101055,7 @@ export const ContextualActionPanel: React.FC<ContextualActionPanelProps> = ({ ac
                 <div className="text-sm font-semibold">{c.icon} {c.label}</div>
                 <div className="text-[11px] opacity-80">{c.reasons[0] || c.description}</div>
                 <div className="text-[10px] opacity-60">{describeContextualCost(c)}</div>
+                {c.backgroundReason && <div className="text-[10px] opacity-75">🧠 #{c.backgroundRank}: {c.backgroundReason}</div>}
                 {renderButtons(c, true)}
               </div>
             ))}
@@ -101793,6 +101815,8 @@ export interface GIWorld {
   team?: TeamOSView | null;
   /** Game Intelligence 3.0: the player's persistent strategy (null when none). */
   gi3?: GI3StrategyState | null;
+  /** Background AI (Parallel Intelligence System): its prepared, read-only analysis (null when off). */
+  backgroundAI?: BackgroundAIState | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -104419,7 +104443,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104447,6 +104471,8 @@ export interface GIQueryUnderstanding {
   frame?: GISemanticFrame;
   /** GI3: which persistent-strategy intent was detected (create/update/status/control/whatif). */
   strategyIntent?: GI3IntentKind;
+  /** Background AI: the question is addressed to Background AI itself. */
+  backgroundTopic?: BackgroundQueryTopic;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104832,10 +104858,23 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     }
   }
 
+  // ---- Background AI: questions addressed to it ("what are you watching?", "what would you do?") ----
+  let backgroundTopic: BackgroundQueryTopic | undefined;
+  if (primary !== 'control' && !strategyIntent) {
+    // Read the player's own words too: typo correction can rewrite rare verbs ("watching" → "catching").
+    const topic = detectBackgroundAIQuery(normalizeIntelligenceQuery(frame.originalQuery || '')) || detectBackgroundAIQuery(normalized);
+    if (topic) {
+      backgroundTopic = topic;
+      primary = 'background_ai';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false;
+    }
+  }
+
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -104855,7 +104894,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -104868,7 +104907,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -104911,9 +104950,10 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai'].includes(primary),
     teamCommand,
     strategyIntent,
+    backgroundTopic,
     strategyControl
   };
 }
@@ -105037,7 +105077,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105079,7 +105119,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   strategy_preview: ['gi3_state'],
   strategy_status: ['gi3_state'],
   strategy_control: ['gi3_state'],
-  strategy_whatif: ['gi3_state']
+  strategy_whatif: ['gi3_state'],
+  background_ai: ['bg_state']
 };
 
 export interface GIQueryPlan {
@@ -105103,7 +105144,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives'
 };
 
 function giHash(text: string): string {
@@ -105169,6 +105210,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('system_explain')) add('system_state', {}, { purpose: 'Read-only summaries of team, treasury, governor, Guardian, Auto Mode and Co-Pilot' });
     if (want('team_command') || want('team_explain') || want('team_whatif')) add('team_state', {}, { purpose: 'Team Operating System: mission, objectives, tasks, roles, resources, conflicts' });
     if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
+    if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -105674,6 +105716,16 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
           push(fact('gi3.cash', 'Strategy cash measure', st.progress.resourceStatus.cash, 'Game Intelligence 3.0 (canonical balances)', 'player', { unit: '$', certainty: 'calculated' }));
           st.progress.milestones.slice(0, 8).forEach(m => push(fact(`gi3.ms.${m.id}`, m.label, m.target, 'Game Intelligence 3.0 milestones', 'objectives', { unit: m.unit === '$' ? '$' : undefined, certainty: 'calculated' })));
         }
+      }
+      return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'bg_state': {
+      const st = world.backgroundAI;
+      const facts: GIFact[] = [];
+      const push = (f: GIFact) => { facts.push(f); g.fact(f); };
+      if (st?.strategicAssessment) {
+        push(fact('bg.state', 'Background AI assessment', st.strategicAssessment.overallPosition, 'Background AI (prepared from canonical state)', 'objectives'));
+        push(fact('bg.cash', 'Cash (Background AI observation)', world.player.money, 'Background AI (canonical balances)', 'player', { unit: '$' }));
       }
       return { ...base, ok: true, data: st || null, facts };
     }
@@ -107594,6 +107646,15 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'background_ai': {
+      kind = 'next_step';
+      const part = composeBackgroundAIAnswer(u.backgroundTopic || 'status', world, u.normalizedQuery);
+      title = part.title || 'Background AI';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      break;
+    }
     case 'team_command':
     case 'team_whatif':
     case 'team_explain': {
@@ -108067,9 +108128,9 @@ export const GI_STATE_BOUND_BUTTON_KINDS: GameIntelligenceButtonKind[] = ['do', 
 // ---- Dependency-aware fingerprints -------------------------------------------
 
 export type GIFingerprintDomain = 'turn' | 'player' | 'world' | 'market' | 'projects' | 'contracts' | 'objectives' | 'assistance' | 'actors' | 'history'
-  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios' | 'strategy';
+  | 'team_strategy' | 'team_resources' | 'team_governance' | 'approvals' | 'memory' | 'scenarios' | 'strategy' | 'background';
 export type GIFingerprintMap = Partial<Record<GIFingerprintDomain, string>>;
-export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios', 'strategy'];
+export const GI_FINGERPRINT_DOMAINS: GIFingerprintDomain[] = ['turn', 'player', 'world', 'market', 'projects', 'contracts', 'objectives', 'assistance', 'actors', 'history', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'memory', 'scenarios', 'strategy', 'background'];
 
 /** Which state domains each grounded tool reads. 'turn' (actor/turn/day) is always included. */
 const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
@@ -108094,6 +108155,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   system_state: ['assistance', 'actors', 'team_strategy', 'team_resources', 'team_governance', 'approvals', 'scenarios'],
   team_state: ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors', 'world', 'player'],
   gi3_state: ['strategy', 'player', 'world', 'projects', 'contracts', 'team_strategy', 'team_resources'],
+  bg_state: ['background', 'strategy', 'player', 'world', 'actors', 'contracts', 'team_strategy'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -113551,6 +113613,2143 @@ export const GI3LabInspector: React.FC<GI3LabInspectorProps> = ({ state, theme, 
   );
 };
 
+
+// ============================================================================
+// SECTION 20F: BACKGROUND AI — PARALLEL INTELLIGENCE SYSTEM
+// ----------------------------------------------------------------------------
+// Co-Pilot acts for you. Background AI thinks alongside you.
+//
+// A continuous, event-driven reasoning runtime over the systems that already exist (GI 2.1 world
+// snapshot — fog-of-war filtered —, GI3 strategy, Current Objective, Contextual Actions, Team OS,
+// What-If simulation on clones, Activity Ledger). It OBSERVES → UNDERSTANDS → ANALYZES → DIAGNOSES →
+// PREDICTS → PLANS → SIMULATES → PREPARES → WATCHES → EXPLAINS, and returns DATA only
+// (assessments, plans, recommendations, warnings, simulations, explanations).
+//
+// Reasoning authority, never execution authority: nothing in this section receives a dispatcher, an
+// executor or a settings setter, and every recommendation references an existing canonical action id.
+// ============================================================================
+
+/** Architectural invariant: Background AI can never execute, spend, move, end turns or raise automation. */
+export const BACKGROUND_AI_CAN_EXECUTE = false as const;
+
+export type BackgroundAIMode = 'observe' | 'alert' | 'advisor' | 'strategist' | 'coach';
+export type BGSignificance = 'trivial' | 'minor' | 'meaningful' | 'major' | 'critical';
+export type BGBand = 'low' | 'moderate' | 'high';
+export type BGSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type BGUrgency = 'now' | 'soon' | 'later';
+export type BGStatus = 'quiet' | 'watching' | 'plan_updated' | 'concern' | 'opportunity' | 'needs_attention';
+export type BGInterruptLevel = 'silent' | 'indicator' | 'notice' | 'warning' | 'critical';
+export type BGDomain = 'economy' | 'regions' | 'team' | 'strategy' | 'actions' | 'history' | 'world';
+
+export const BACKGROUND_AI_MODE_META: Record<BackgroundAIMode, { label: string; description: string }> = {
+  observe: { label: 'Observe', description: 'Quietly analyzes and answers when asked. Never interrupts.' },
+  alert: { label: 'Alert', description: 'Surfaces meaningful risks, opportunities, deadlines and strategic changes.' },
+  advisor: { label: 'Advisor', description: 'Keeps an assessment, a recommended move, alternatives, risks and opportunities ready.' },
+  strategist: { label: 'Strategist', description: 'Advisor plus a multi-turn Shadow Plan, alternatives, prepared simulations and divergence analysis.' },
+  coach: { label: 'Coach', description: 'Strategist plus teaching: why-action explanations, after-action feedback and mistake patterns.' }
+};
+
+/** Bounded work per mode (browser-safe; never unbounded search). */
+export const BACKGROUND_AI_BUDGETS: Record<BackgroundAIMode, { candidates: number; simulations: number; alternatives: number; planDepth: number; predictions: number; hypotheses: number }> = {
+  observe: { candidates: 4, simulations: 0, alternatives: 1, planDepth: 1, predictions: 3, hypotheses: 2 },
+  alert: { candidates: 5, simulations: 0, alternatives: 2, planDepth: 1, predictions: 4, hypotheses: 2 },
+  advisor: { candidates: 8, simulations: 2, alternatives: 3, planDepth: 2, predictions: 5, hypotheses: 3 },
+  strategist: { candidates: 10, simulations: 4, alternatives: 5, planDepth: 3, predictions: 6, hypotheses: 4 },
+  coach: { candidates: 10, simulations: 4, alternatives: 5, planDepth: 3, predictions: 6, hypotheses: 4 }
+};
+
+export const BACKGROUND_AI_LIMITS = { attention: 8, criticalAttention: 2, threats: 8, opportunities: 6, history: 30, cooldowns: 24, cashHistory: 8, overrides: 6, resolvedPredictions: 12, impactLines: 6 };
+/** Turns before an unchanged surfaced issue may be shown again. */
+export const BACKGROUND_AI_COOLDOWN_TURNS = 3;
+
+/**
+ * Which state domains each component reads (dependency graph). A component is recomputed only when one of
+ * its domains changed since the last evaluation.
+ */
+export const BACKGROUND_AI_DEPENDENCIES: Record<string, BGDomain[]> = {
+  assessment: ['economy', 'regions', 'team', 'strategy', 'actions', 'world'],
+  threats: ['economy', 'regions', 'team', 'strategy', 'world'],
+  opportunities: ['economy', 'regions', 'actions', 'strategy', 'team'],
+  predictions: ['regions', 'history', 'economy', 'world'],
+  hypotheses: ['economy', 'regions', 'history'],
+  diagnoses: ['economy', 'regions', 'team', 'strategy'],
+  shadowPlan: ['strategy', 'regions', 'economy', 'actions', 'team'],
+  moves: ['actions', 'economy', 'regions', 'strategy'],
+  simulations: ['actions', 'economy', 'regions'],
+  teamInsights: ['team']
+};
+
+export interface BGEvidenceItem { label: string; value: string }
+
+export interface BackgroundStrategicAssessment {
+  overallPosition: string;
+  economy: string;
+  liquidity: string;
+  regions: string;
+  objectives: string;
+  resources: string;
+  projects: string;
+  contracts: string;
+  team: string;
+  rivals: string;
+  ap: string;
+  nextDeadline: string | null;
+  risk: string;
+  opportunity: string;
+  momentum: 'improving' | 'flat' | 'declining' | 'unknown';
+  primaryProblem: string | null;
+  primaryOpportunity: string | null;
+  planHealth: string;
+  confidence: BGBand;
+  evidence: BGEvidenceItem[];
+}
+
+export interface BackgroundAttentionItem {
+  id: string;
+  domain: BGDomain;
+  subject: string;
+  importance: BGSeverity | 'watching';
+  urgency: BGUrgency;
+  confidence: BGBand;
+  reversibility: 'reversible' | 'hard_to_reverse' | 'irreversible';
+  deadline: number | null;
+  trend: 'rising' | 'stable' | 'falling' | 'new';
+  reason: string;
+  evidence: string[];
+  lastUpdated: number;
+  status: 'active' | 'decaying';
+}
+
+export interface BackgroundThreat {
+  id: string;
+  type: 'region_vulnerable' | 'region_thin_margin' | 'reserve_violation' | 'liquidity_collapse' | 'ap_bottleneck' | 'loan_pressure' | 'contract_expiry' | 'teammate_recovery' | 'objective_at_risk' | 'team_blockage' | 'rival_pressure';
+  subject: string;
+  severity: BGSeverity;
+  urgency: BGUrgency;
+  confidence: BGBand;
+  evidence: string[];
+  possibleImpact: string;
+  timeHorizon: string;
+  mitigationOptions: Array<{ actionId: string; label: string }>;
+  status: 'active' | 'resolved';
+  /** Cash the player would need to stay safe from this threat (e.g. the rival's challenge cost). */
+  exposure?: number;
+  regionId?: string;
+}
+
+export interface BackgroundOpportunity {
+  id: string;
+  type: 'favorable_price' | 'sale_value' | 'profitable_contract' | 'cheap_expansion' | 'infrastructure_affordable' | 'objective_completion' | 'treasury_surplus' | 'strategic_window';
+  subject: string;
+  value: number | null;
+  urgency: BGUrgency;
+  confidence: BGBand;
+  expiresTurn: number | null;
+  strategicAlignment: 'aligned' | 'neutral' | 'conflicts';
+  resourceRequirement: number;
+  reason: string;
+  actionIds: string[];
+}
+
+export interface BackgroundPrediction {
+  id: string;
+  event: string;
+  subject: string;
+  likelihoodBand: 'high' | 'moderate' | 'low' | 'uncertain';
+  confidence: BGBand;
+  evidence: string[];
+  timeHorizon: string;
+  impact: string;
+  watchCondition: 'region_contested' | 'rival_can_challenge' | 'rival_targets_region' | 'contract_expires' | 'cash_reaches_target' | 'match_ends';
+  createdTurn: number;
+  resolveByTurn: number;
+  resolution: 'unresolved' | 'supported' | 'contradicted';
+  regionId?: string;
+  amount?: number;
+}
+
+export interface BackgroundHypothesis {
+  id: string;
+  question: string;
+  explanation: string;
+  factors: string[];
+  confidence: BGBand;
+  supportingEvidence: string[];
+  contradictingEvidence: string[];
+  status: 'active' | 'weakened' | 'replaced' | 'resolved';
+  lastUpdated: number;
+}
+
+export interface BackgroundDiagnosis {
+  domain: 'economy' | 'regions' | 'objectives' | 'team' | 'resources' | 'strategy';
+  status: string;
+  primaryCause: string | null;
+  secondaryCause: string | null;
+  risk: string | null;
+  bestResponse: string | null;
+  evidence: string[];
+}
+
+export interface BackgroundMoveRef { actionId: string; label: string; actionType: string; reason: string; targetId?: string | null }
+
+export interface BackgroundShadowPlan {
+  /** 'player_strategy' when it carries an active GI3 strategy forward; 'background' when it is Background AI's own provisional plan. */
+  source: 'player_strategy' | 'background';
+  label: string;
+  strategySummary: string;
+  primaryGoal: string;
+  secondaryGoals: string[];
+  currentPhase: string;
+  nextMove: BackgroundMoveRef | null;
+  followingMoves: string[];
+  conditions: Array<{ when: string; then: string }>;
+  fallbacks: string[];
+  resourceAssumptions: string[];
+  timeHorizon: string;
+  confidence: BGBand;
+  reason: string;
+  lastReplannedTurn: number;
+  revision: number;
+  /** Set after the player chose a different direction: how the plan adapted (never a demand to revert). */
+  adaptation: string | null;
+  /** Region Background AI would stabilise first (drives divergence and the handoff). */
+  focusRegion: string | null;
+}
+
+export interface BackgroundMoveEvaluation {
+  actionId: string;
+  label: string;
+  actionType: string;
+  targetId: string | null;
+  legal: boolean;
+  dimensions: { strategicAlignment: number; immediateValue: number; futureValue: number; risk: number; resourceCost: number; apCost: number; reversibility: number; urgency: number; objectiveProgress: number; constraintCompliance: number; teamImpact: number };
+  total: number;
+  reason: string;
+}
+
+export type BackgroundMoveClass = 'best_immediate' | 'best_economic' | 'best_regional' | 'safest' | 'highest_upside' | 'strategy_aligned' | 'best_recovery' | 'best_waiting';
+
+export interface BackgroundPreparedSimulation {
+  actionId: string;
+  label: string;
+  stateHash: string;
+  horizon: string;
+  outcomeSummary: string;
+  benefits: string[];
+  risks: string[];
+  goalImpact: string;
+  confidence: BGBand;
+  createdTurn: number;
+  cashAfter: number | null;
+}
+
+export interface BackgroundPlanDivergence {
+  id: string;
+  severity: 'minor' | 'meaningful' | 'major';
+  playerIntent: string;
+  backgroundPlan: string;
+  reason: string;
+  expectedImpact: string;
+  confidence: BGBand;
+  reversible: boolean;
+  requiresInterrupt: boolean;
+  kind: 'strategy' | 'action';
+  turn: number;
+  acknowledged: boolean;
+}
+
+export interface BackgroundInterventionRecommendation {
+  score: number;
+  level: BGInterruptLevel;
+  reason: string;
+  message: string;
+  cooldownKey: string;
+  actionContext: { actionId: string | null; query: string | null };
+  confidence: BGBand;
+  subjectKind: 'threat' | 'opportunity' | 'divergence' | 'deadline' | 'team';
+  surfacedTurn: number;
+}
+
+export interface BackgroundImpactAssessment {
+  turn: number;
+  actionSummary: string;
+  lines: Array<{ label: string; before: string; after: string; direction: 'better' | 'worse' | 'same' | 'changed' }>;
+  planStatus: string;
+  coachNote: string | null;
+}
+
+export interface BackgroundCoPilotHandoffPackage {
+  status: 'ready' | 'delivered' | 'returned';
+  strategySummary: string;
+  currentPhase: string;
+  activeGoals: string[];
+  constraints: string[];
+  reserve: number | null;
+  avoidDebt: boolean;
+  currentObjective: string | null;
+  recommendedSequence: BackgroundMoveRef[];
+  focusRegion: string | null;
+  threats: string[];
+  opportunities: string[];
+  resourceStatus: string;
+  teamResponsibilities: string[];
+  preparedSimulations: string[];
+  fallbacks: string[];
+  recentPlayerDecisions: string[];
+  confidence: BGBand;
+  sourceStateHash: string;
+  preparedTurn: number;
+  deliveredTurn: number | null;
+  sessionId: string | null;
+}
+
+export interface BackgroundObservation {
+  turn: number;
+  day: number;
+  cash: number;
+  debt: number;
+  apRemaining: number | null;
+  held: string[];
+  threatened: string[];
+  depositsTotal: number;
+  projectInvested: number;
+  contracts: Record<string, string>;
+  rivalDeposits: Record<string, number>;
+  market: Record<string, number>;
+  gi3Revision: string | null;
+  teamRevision: string | null;
+  sessionStatus: string | null;
+  lastLedgerId: string | null;
+}
+
+export interface BackgroundAIHistoryEntry { turn: number; kind: string; summary: string }
+
+export interface BackgroundAIState {
+  version: 1;
+  enabled: boolean;
+  mode: BackgroundAIMode;
+  lastEvaluationTurn: number;
+  lastEvaluationEvent: string | null;
+  lastMeaningfulHash: string;
+  domainHashes: Partial<Record<BGDomain, string>>;
+  observation: BackgroundObservation | null;
+  cashHistory: Array<{ turn: number; cash: number }>;
+  strategicAssessment: BackgroundStrategicAssessment | null;
+  activeGoals: string[];
+  currentPhase: string | null;
+  attentionQueue: BackgroundAttentionItem[];
+  shadowPlan: BackgroundShadowPlan | null;
+  recommendedNextMove: BackgroundMoveRef | null;
+  alternativeMoves: Array<BackgroundMoveRef & { moveClass: BackgroundMoveClass }>;
+  moveEvaluations: BackgroundMoveEvaluation[];
+  threats: BackgroundThreat[];
+  opportunities: BackgroundOpportunity[];
+  predictions: BackgroundPrediction[];
+  resolvedPredictions: BackgroundPrediction[];
+  calibration: { supported: number; contradicted: number; unresolved: number };
+  hypotheses: BackgroundHypothesis[];
+  diagnoses: BackgroundDiagnosis[];
+  preparedSimulations: BackgroundPreparedSimulation[];
+  explicitPlayerConstraints: string[];
+  planDivergence: BackgroundPlanDivergence | null;
+  interventionRecommendation: BackgroundInterventionRecommendation | null;
+  cooldowns: Array<{ key: string; lastSurfacedTurn: number; signature: string; level: BGInterruptLevel; acknowledged: boolean }>;
+  recentImpactAssessment: BackgroundImpactAssessment | null;
+  coPilotHandoffPackage: BackgroundCoPilotHandoffPackage | null;
+  coPilotReturn: { turn: number; actions: string[]; summary: string } | null;
+  overrides: Array<{ turn: number; recommended: string; chosen: string; chosenRegion: string | null }>;
+  teamInsights: Array<{ id: string; text: string; suggestion: string }>;
+  playerModel: { dismissals: Record<string, number>; explanationRequests: number; followed: number; ignored: number; avoidsDebt: boolean; protectsRegions: boolean };
+  status: BGStatus;
+  confidence: BGBand;
+  history: BackgroundAIHistoryEntry[];
+  diagnostics: { significance: BGSignificance; events: string[]; recomputed: string[]; skipped: boolean };
+}
+
+export function createEmptyBackgroundAIState(mode: BackgroundAIMode = 'advisor'): BackgroundAIState {
+  return {
+    version: 1, enabled: true, mode, lastEvaluationTurn: -1, lastEvaluationEvent: null, lastMeaningfulHash: '', domainHashes: {}, observation: null, cashHistory: [],
+    strategicAssessment: null, activeGoals: [], currentPhase: null, attentionQueue: [], shadowPlan: null, recommendedNextMove: null, alternativeMoves: [], moveEvaluations: [],
+    threats: [], opportunities: [], predictions: [], resolvedPredictions: [], calibration: { supported: 0, contradicted: 0, unresolved: 0 }, hypotheses: [], diagnoses: [],
+    preparedSimulations: [], explicitPlayerConstraints: [], planDivergence: null, interventionRecommendation: null, cooldowns: [], recentImpactAssessment: null,
+    coPilotHandoffPackage: null, coPilotReturn: null, overrides: [], teamInsights: [],
+    playerModel: { dismissals: {}, explanationRequests: 0, followed: 0, ignored: 0, avoidsDebt: false, protectsRegions: false },
+    status: 'quiet', confidence: 'moderate', history: [], diagnostics: { significance: 'trivial', events: [], recomputed: [], skipped: false }
+  };
+}
+
+// ---- Small deterministic helpers (no randomness anywhere in this section) ----------------------------
+
+const bgHash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36); };
+const bgMoney = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const bgSevRank: Record<BGSeverity, number> = { low: 1, medium: 2, high: 3, critical: 4 };
+const bgSigRank: Record<BGSignificance, number> = { trivial: 0, minor: 1, meaningful: 2, major: 3, critical: 4 };
+const bgLevelRank: Record<BGInterruptLevel, number> = { silent: 0, indicator: 1, notice: 2, warning: 3, critical: 4 };
+const bgRegionName = (world: GIWorld, code: string | null | undefined) => (code ? world.regions[code]?.name || code : 'a region');
+const bgRival = (world: GIWorld) => world.actors.find(a => a.id === world.primaryRivalId) || world.actors.find(a => a.relation === 'rival') || null;
+const bgModeAtLeast = (mode: BackgroundAIMode, min: BackgroundAIMode) => (['observe', 'alert', 'advisor', 'strategist', 'coach'] as BackgroundAIMode[]).indexOf(mode) >= (['observe', 'alert', 'advisor', 'strategist', 'coach'] as BackgroundAIMode[]).indexOf(min);
+
+/** The explicit, player-authored reserve (GI3 strategy first, then the Co-Pilot/settings reserve). */
+function bgExplicitReserve(world: GIWorld): { amount: number | null; source: string | null } {
+  const g3 = world.gi3?.active;
+  if (g3 && g3.status === 'active' && g3.constraints.minimumCashReserve) return { amount: g3.constraints.minimumCashReserve, source: 'your active strategy' };
+  if (world.team?.state.contract?.constraints.reserveFloor) return { amount: world.team.state.contract.constraints.reserveFloor, source: 'the team strategy' };
+  if (world.reserveFloor) return { amount: world.reserveFloor, source: world.reserveSource || 'your reserve setting' };
+  return { amount: null, source: null };
+}
+function bgAvoidsDebt(world: GIWorld): boolean {
+  const g3 = world.gi3?.active;
+  return Boolean(g3 && g3.status === 'active' && g3.constraints.loanPolicy !== 'allowed');
+}
+/** Player-held regions and whether a VISIBLE rival can afford to take them (fog of war → unknown, never guessed). */
+function bgRegionThreats(world: GIWorld): Array<{ code: string; cost: number; rivalMoney: number | null; canAfford: boolean | null }> {
+  const rival = bgRival(world);
+  const rivalMoney = rival && rival.visible && typeof rival.money === 'number' ? rival.money : null;
+  return Object.values(world.regions).filter(r => r.controlledByPlayer && typeof r.rivalCostToControl === 'number').map(r => ({
+    code: r.code, cost: r.rivalCostToControl as number, rivalMoney, canAfford: rivalMoney === null ? null : rivalMoney >= (r.rivalCostToControl as number)
+  }));
+}
+
+// ---- OBSERVE: compact domain hashes + observation snapshot ---------------------------------------------
+
+export function computeBackgroundDomainHashes(world: GIWorld): Record<BGDomain, string> {
+  const regions = Object.values(world.regions).map(r => `${r.code}:${r.controlledByPlayer ? 1 : 0}${r.controlledByRival ? 1 : 0}:${r.playerDeposit}:${r.rivalDeposit}:${r.rivalCostToControl ?? ''}`).join('|');
+  const actors = world.actors.map(a => `${a.id}:${a.visible ? a.money ?? '' : '?'}:${a.visible ? a.location ?? '' : '?'}`).join('|');
+  const inv = Object.entries(world.player.inventory).sort().map(([k, v]) => `${k}${v}`).join(',');
+  const g3 = world.gi3?.active;
+  const team = world.team;
+  return {
+    economy: bgHash([world.player.money, world.player.debtTotal, inv, Object.entries(world.market).sort().map(([k, v]) => `${k}${Math.round(v)}`).join(','), world.contracts.map(c => `${c.id}:${c.status}:${c.turnsRemaining ?? ''}`).join(','), world.projects.map(p => `${p.id}:${p.invested}`).join(','), world.systems?.team?.treasuryBalance ?? ''].join('#')),
+    regions: bgHash(`${regions}#${actors}#${world.player.location}`),
+    team: bgHash(team ? [team.state.contract?.id, team.state.contract?.revision, team.evaluation.health.health, (team.state.contract?.taskGraph || []).map(t => `${t.id}:${t.status}`).join(','), team.inputs.actors.map(a => `${a.id}:${a.money}:${a.inRecovery ? 1 : 0}`).join(',')].join('#') : 'none'),
+    strategy: bgHash([g3 ? `${g3.id}:${g3.revision}:${g3.status}:${g3.phaseIndex}` : 'none', world.objective ? `${world.objective.id}:${world.objective.progress.completed}/${world.objective.progress.total}` : 'none', world.win ? `${world.win.playerValue}:${world.win.opponentValue}` : ''].join('#')),
+    actions: bgHash([(world.actionSet?.ranked || []).slice(0, 12).map(c => `${c.id}:${c.legal ? 1 : 0}`).join(','), world.player.apRemaining ?? 'inf', world.isHumanTurn ? 1 : 0].join('#')),
+    history: bgHash([(world.ledgerEvents || []).length, (world.ledgerEvents || []).slice(-1)[0]?.id || '', world.observed.length].join('#')),
+    world: bgHash([world.turn, world.day, world.settings.fogOfWar ? 1 : 0, world.session?.status || 'none'].join('#'))
+  };
+}
+
+export function observeBackgroundWorld(world: GIWorld): BackgroundObservation {
+  const threatened = bgRegionThreats(world).filter(t => t.canAfford === true).map(t => t.code).sort();
+  const rival = bgRival(world);
+  void rival;
+  return {
+    turn: world.turn, day: world.day, cash: world.player.money, debt: world.player.debtTotal, apRemaining: world.player.apRemaining,
+    held: Object.values(world.regions).filter(r => r.controlledByPlayer).map(r => r.code).sort(), threatened,
+    depositsTotal: Object.values(world.regions).reduce((s, r) => s + (r.playerDeposit || 0), 0),
+    projectInvested: world.projects.reduce((s, p) => s + (p.invested || 0), 0),
+    contracts: Object.fromEntries(world.contracts.map(c => [c.id, c.status])),
+    rivalDeposits: Object.fromEntries(Object.values(world.regions).filter(r => r.rivalDeposit > 0).map(r => [r.code, r.rivalDeposit])),
+    market: { ...world.market },
+    gi3Revision: world.gi3?.active ? `${world.gi3.active.id}:${world.gi3.active.revision}:${world.gi3.active.status}` : null,
+    teamRevision: world.team?.state.contract ? `${world.team.state.contract.id}:${world.team.state.contract.revision}` : null,
+    sessionStatus: world.session?.status ? String(world.session.status) : null,
+    lastLedgerId: (world.ledgerEvents || []).length ? String((world.ledgerEvents || [])[(world.ledgerEvents || []).length - 1]?.id || '') : null
+  };
+}
+
+/** Event significance: which changes matter strategically, and how much reasoning they deserve. */
+export function classifyBackgroundEvents(prev: BackgroundObservation | null, next: BackgroundObservation): { significance: BGSignificance; events: Array<{ kind: string; significance: BGSignificance; summary: string }> } {
+  const events: Array<{ kind: string; significance: BGSignificance; summary: string }> = [];
+  if (!prev) return { significance: 'meaningful', events: [{ kind: 'initial', significance: 'meaningful', summary: 'First observation of this match' }] };
+  const add = (kind: string, significance: BGSignificance, summary: string) => events.push({ kind, significance, summary });
+  const dc = next.cash - prev.cash;
+  if (dc !== 0) {
+    const rel = Math.abs(dc) / Math.max(1000, prev.cash);
+    add('cash_changed', Math.abs(dc) >= 5000 || rel >= 0.5 ? 'major' : Math.abs(dc) >= 1000 || rel >= 0.15 ? 'meaningful' : Math.abs(dc) >= 250 ? 'minor' : 'trivial', `Cash ${dc > 0 ? '+' : '−'}${bgMoney(Math.abs(dc))}`);
+  }
+  prev.held.filter(c => !next.held.includes(c)).forEach(c => add('region_lost', 'critical', `${c} changed owner (you lost it)`));
+  next.held.filter(c => !prev.held.includes(c)).forEach(c => add('region_gained', 'major', `You now control ${c}`));
+  next.threatened.filter(c => !prev.threatened.includes(c)).forEach(c => add('region_threat_rose', 'critical', `${c} became contestable by a visible rival`));
+  prev.threatened.filter(c => !next.threatened.includes(c) && next.held.includes(c)).forEach(c => add('region_threat_fell', 'meaningful', `${c} is no longer contestable`));
+  Object.entries(next.rivalDeposits).forEach(([c, v]) => { const b = prev.rivalDeposits[c] || 0; if (v - b >= 500) add('rival_deposit', next.held.includes(c) ? 'major' : 'meaningful', `Rival deposited ${bgMoney(v - b)} in ${c}`); });
+  Object.entries(next.contracts).forEach(([id, st]) => { if (prev.contracts[id] && prev.contracts[id] !== st) add('contract_changed', /complete|fail/.test(st) ? 'major' : 'meaningful', `Contract ${id}: ${prev.contracts[id]} → ${st}`); });
+  if (next.debt !== prev.debt) add(next.debt > prev.debt ? 'loan_created' : 'loan_paid', 'meaningful', `Debt ${bgMoney(prev.debt)} → ${bgMoney(next.debt)}`);
+  if (next.turn !== prev.turn) add('turn_changed', 'minor', `Turn ${prev.turn} → ${next.turn}`);
+  if (next.gi3Revision !== prev.gi3Revision) add('strategy_changed', 'major', 'Your GI3 strategy changed');
+  if (next.teamRevision !== prev.teamRevision) add('team_strategy_changed', 'meaningful', 'The Team Strategy changed');
+  if (next.sessionStatus !== prev.sessionStatus) add('copilot_session', 'meaningful', `Co-Pilot session ${prev.sessionStatus || 'none'} → ${next.sessionStatus || 'none'}`);
+  if (prev.apRemaining !== 0 && next.apRemaining === 0) add('ap_constrained', 'minor', 'No action points left this turn');
+  Object.entries(next.market).forEach(([k, v]) => { const b = prev.market[k]; if (b && Math.abs(v - b) / b >= 0.2) add('market_moved', 'meaningful', `${k} price ${bgMoney(b)} → ${bgMoney(v)}`); });
+  if (next.depositsTotal - prev.depositsTotal >= 1000) add('player_deposit', 'meaningful', `You deposited ${bgMoney(next.depositsTotal - prev.depositsTotal)}`);
+  if (next.projectInvested - prev.projectInvested >= 1000) add('project_funding', 'meaningful', `Project funding +${bgMoney(next.projectInvested - prev.projectInvested)}`);
+  if (next.lastLedgerId !== prev.lastLedgerId && !events.length) add('activity', 'trivial', 'New activity');
+  const significance = events.reduce<BGSignificance>((m, e) => (bgSigRank[e.significance] > bgSigRank[m] ? e.significance : m), 'trivial');
+  return { significance, events };
+}
+
+// ---- ANALYZE: assessment, threats, opportunities ---------------------------------------------------------
+
+export function deriveBackgroundThreats(world: GIWorld, prevThreats: BackgroundThreat[]): BackgroundThreat[] {
+  const out: BackgroundThreat[] = [];
+  const cash = world.player.money;
+  const reserve = bgExplicitReserve(world);
+  const g3 = world.gi3?.active && world.gi3.active.status === 'active' ? world.gi3.active : null;
+  const rival = bgRival(world);
+  const rivalName = rival?.name || 'The rival';
+  const actionsFor = (pred: (c: ContextualActionCandidate) => boolean) => (world.actionSet?.ranked || []).filter(c => c.legal && pred(c)).slice(0, 2).map(c => ({ actionId: c.id, label: c.label }));
+  bgRegionThreats(world).forEach(t => {
+    const protectedByStrategy = Boolean(g3?.goals.some(g => g.regionId === t.code && g.status !== 'removed' && (g.type === 'protect_region' || g.retake)))
+      || Boolean(world.team?.state.contract?.taskGraph.some(x => x.regionId === t.code && x.type === 'defend_region' && !['completed', 'cancelled', 'superseded'].includes(x.status)));
+    const mitigation = actionsFor(c => /deposit|defend|reinforce|secure/.test(`${c.actionType} ${c.label}`.toLowerCase()) && `${c.label} ${c.actionType}`.toUpperCase().includes(t.code));
+    if (t.canAfford === true) {
+      out.push({ id: `bgt_region_${t.code}`, type: 'region_vulnerable', subject: t.code, severity: protectedByStrategy ? 'critical' : 'high', urgency: 'now', confidence: 'high',
+        evidence: [`${rivalName} has ${bgMoney(t.rivalMoney || 0)} visible`, `taking ${t.code} costs about ${bgMoney(t.cost)}`], possibleImpact: `${bgRegionName(world, t.code)} could change hands on ${rivalName}'s next turn`,
+        timeHorizon: 'next rival turn', mitigationOptions: mitigation, status: 'active', exposure: t.cost, regionId: t.code });
+    } else if (t.canAfford === null && t.cost <= 1500) {
+      out.push({ id: `bgt_margin_${t.code}`, type: 'region_thin_margin', subject: t.code, severity: protectedByStrategy ? 'high' : 'medium', urgency: 'soon', confidence: 'low',
+        evidence: [`taking ${t.code} costs only about ${bgMoney(t.cost)}`, 'rival cash is hidden by fog of war'], possibleImpact: `a thin margin in ${bgRegionName(world, t.code)} — the rival's cash is unknown`,
+        timeHorizon: 'next few turns', mitigationOptions: mitigation, status: 'active', exposure: t.cost, regionId: t.code });
+    }
+  });
+  if (reserve.amount && cash < reserve.amount) out.push({ id: 'bgt_reserve', type: 'reserve_violation', subject: 'cash reserve', severity: 'high', urgency: 'now', confidence: 'high', evidence: [`cash ${bgMoney(cash)}`, `reserve ${bgMoney(reserve.amount)} (${reserve.source})`], possibleImpact: 'you are below the reserve you set', timeHorizon: 'now', mitigationOptions: actionsFor(c => /sell|work|contract/.test(c.actionType)), status: 'active', exposure: reserve.amount });
+  if (cash < 300) out.push({ id: 'bgt_liquidity', type: 'liquidity_collapse', subject: 'liquidity', severity: 'high', urgency: 'now', confidence: 'high', evidence: [`cash ${bgMoney(cash)}`], possibleImpact: 'most actions become unaffordable', timeHorizon: 'now', mitigationOptions: actionsFor(c => /sell|work/.test(c.actionType)), status: 'active' });
+  world.player.loans.filter(l => l.daysRemaining !== null && l.daysRemaining <= 2 && l.amount > cash).forEach((l, i) => out.push({ id: `bgt_loan_${i}`, type: 'loan_pressure', subject: 'loan repayment', severity: 'high', urgency: 'soon', confidence: 'high', evidence: [`${bgMoney(l.amount)} due in ${l.daysRemaining} day(s)`, `cash ${bgMoney(cash)}`], possibleImpact: 'a repayment you cannot cover yet', timeHorizon: `${l.daysRemaining} day(s)`, mitigationOptions: actionsFor(c => /sell|work/.test(c.actionType)), status: 'active' }));
+  world.contracts.filter(c => c.assignedToPlayer && typeof c.turnsRemaining === 'number' && c.turnsRemaining <= 2 && !/complete|fail/.test(c.status)).forEach(c => out.push({ id: `bgt_contract_${c.id}`, type: 'contract_expiry', subject: c.title, severity: 'medium', urgency: 'soon', confidence: 'high', evidence: [`${c.turnsRemaining} turn(s) left`], possibleImpact: `${c.title} may expire`, timeHorizon: `${c.turnsRemaining} turn(s)`, mitigationOptions: actionsFor(x => /contract/.test(`${x.actionType} ${x.label}`.toLowerCase())), status: 'active' }));
+  if (world.player.apRemaining === 0 && world.isHumanTurn && out.some(t => t.urgency === 'now' && t.type === 'region_vulnerable')) out.push({ id: 'bgt_ap', type: 'ap_bottleneck', subject: 'action points', severity: 'medium', urgency: 'now', confidence: 'high', evidence: ['0 AP left this turn'], possibleImpact: 'you cannot respond to the region threat until next turn', timeHorizon: 'this turn', mitigationOptions: [], status: 'active' });
+  (world.systems?.teammates || []).filter(m => m.inRecovery).forEach(m => out.push({ id: `bgt_mate_${m.id}`, type: 'teammate_recovery', subject: m.name, severity: 'medium', urgency: 'soon', confidence: 'high', evidence: [`${m.name} is in economic recovery`], possibleImpact: 'team plans relying on them may stall', timeHorizon: 'this round', mitigationOptions: [], status: 'active' }));
+  if (world.team?.enabled) (world.team.state.contract?.taskGraph || []).filter(t => t.status === 'blocked').slice(0, 1).forEach(t => out.push({ id: `bgt_team_${t.id}`, type: 'team_blockage', subject: t.label, severity: 'medium', urgency: 'soon', confidence: 'high', evidence: [t.blockers[0] || 'blocked'], possibleImpact: 'the team plan cannot progress on this task', timeHorizon: 'this round', mitigationOptions: [], status: 'active' }));
+  const g3p = world.gi3?.progress;
+  if (g3 && g3p && (g3p.onTrack === 'blocked' || g3p.onTrack === 'failed')) out.push({ id: 'bgt_objective', type: 'objective_at_risk', subject: g3.summary.slice(0, 60), severity: g3p.onTrack === 'failed' ? 'high' : 'medium', urgency: 'soon', confidence: 'high', evidence: [g3p.blockers[0]?.label || `strategy ${g3p.onTrack}`], possibleImpact: 'the active strategy cannot progress as planned', timeHorizon: 'current phase', mitigationOptions: [], status: 'active' });
+  const recentRival = world.observed.filter(o => o.actorId && o.actorId === rival?.id && /deposit|claim|control/i.test(o.summary)).slice(-2);
+  recentRival.forEach(o => { const code = Object.keys(world.regions).find(c => o.summary.toUpperCase().includes(c) && world.regions[c].controlledByPlayer); if (code && !out.some(t => t.regionId === code)) out.push({ id: `bgt_pressure_${code}`, type: 'rival_pressure', subject: code, severity: 'medium', urgency: 'soon', confidence: 'moderate', evidence: [o.summary.slice(0, 100)], possibleImpact: `${rivalName} is investing in a region you hold`, timeHorizon: 'next few turns', mitigationOptions: [], status: 'active', regionId: code }); });
+  out.sort((a, b) => bgSevRank[b.severity] - bgSevRank[a.severity] || a.id.localeCompare(b.id));
+  // Resolved threats stay visible for one evaluation (so the UI can say "resolved"), then disappear.
+  const resolved = prevThreats.filter(p => p.status === 'active' && !out.some(t => t.id === p.id)).map(p => ({ ...p, status: 'resolved' as const }));
+  return [...out.slice(0, BACKGROUND_AI_LIMITS.threats), ...resolved.slice(0, 2)];
+}
+
+export function deriveBackgroundOpportunities(world: GIWorld, prev: BackgroundObservation | null, threats: BackgroundThreat[]): BackgroundOpportunity[] {
+  const out: BackgroundOpportunity[] = [];
+  const cash = world.player.money;
+  const reserve = bgExplicitReserve(world).amount || 0;
+  const free = Math.max(0, cash - reserve);
+  const g3 = world.gi3?.active && world.gi3.active.status === 'active' ? world.gi3.active : null;
+  const targetRegions = new Set((g3?.goals || []).filter(g => g.status !== 'removed' && g.type === 'control_region' && g.regionId).map(g => g.regionId!));
+  const avoided = new Set(g3?.constraints.deprioritizedRegions || []);
+  const actionIds = (pred: (c: ContextualActionCandidate) => boolean) => (world.actionSet?.ranked || []).filter(c => c.legal && pred(c)).slice(0, 2).map(c => c.id);
+  Object.entries(world.player.inventory).forEach(([item, qty]) => {
+    const price = world.market[item];
+    const before = prev?.market[item];
+    if (qty > 0 && price && before && price >= before * 1.15) out.push({ id: `bgo_price_${item}`, type: 'favorable_price', subject: item, value: Math.round((price - before) * qty), urgency: 'soon', confidence: 'moderate', expiresTurn: world.turn + 1, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${item} rose from ${bgMoney(before)} to ${bgMoney(price)} and you hold ${qty}`, actionIds: actionIds(c => c.actionType === 'sell') });
+  });
+  const invValue = Object.entries(world.player.inventory).reduce((s, [k, q]) => s + (world.market[k] || 0) * q, 0);
+  if (invValue >= Math.max(500, cash * 0.2) && !out.some(o => o.type === 'favorable_price')) out.push({ id: 'bgo_sale', type: 'sale_value', subject: 'inventory', value: Math.round(invValue), urgency: 'later', confidence: 'moderate', expiresTurn: null, strategicAlignment: g3?.goals.some(g => g.type === 'reach_cash' && g.status !== 'completed') ? 'aligned' : 'neutral', resourceRequirement: 0, reason: `your inventory is worth about ${bgMoney(invValue)} at current prices`, actionIds: actionIds(c => c.actionType === 'sell') });
+  world.contracts.filter(c => !c.assignedToPlayer && /available|open/.test(c.status) && c.requiredMoney !== null && c.rewardMoney !== null && c.rewardMoney > c.requiredMoney && c.requiredMoney <= free).slice(0, 2).forEach(c => out.push({ id: `bgo_contract_${c.id}`, type: 'profitable_contract', subject: c.title, value: (c.rewardMoney || 0) - (c.requiredMoney || 0), urgency: c.turnsRemaining !== null && c.turnsRemaining <= 2 ? 'now' : 'soon', confidence: 'high', expiresTurn: c.turnsRemaining !== null ? world.turn + c.turnsRemaining : null, strategicAlignment: 'neutral', resourceRequirement: c.requiredMoney || 0, reason: `pays ${bgMoney(c.rewardMoney || 0)} for ${bgMoney(c.requiredMoney || 0)} committed`, actionIds: actionIds(x => /contract/.test(`${x.actionType} ${x.label}`.toLowerCase())) }));
+  Object.values(world.regions).filter(r => !r.controlledByPlayer && typeof r.playerCostToControl === 'number' && r.playerCostToControl > 0 && r.playerCostToControl <= Math.min(free, 1500) && !avoided.has(r.code))
+    .sort((a, b) => (a.playerCostToControl as number) - (b.playerCostToControl as number)).slice(0, 2)
+    .forEach(r => out.push({ id: `bgo_region_${r.code}`, type: 'cheap_expansion', subject: r.code, value: null, urgency: 'soon', confidence: 'high', expiresTurn: null, strategicAlignment: targetRegions.has(r.code) ? 'aligned' : threats.some(t => t.severity === 'critical') ? 'conflicts' : 'neutral', resourceRequirement: r.playerCostToControl as number, reason: `${r.name} can be taken for about ${bgMoney(r.playerCostToControl as number)}${r.travelCost ? ` plus ${bgMoney(r.travelCost)} travel` : ''}`, actionIds: actionIds(c => `${c.label} ${c.actionType}`.toUpperCase().includes(r.code)) }));
+  world.projects.filter(p => p.remaining > 0 && p.fundingIncrement <= free && (p.requiredDevTier === null || (p.regionDevTier ?? 0) >= p.requiredDevTier) && !/complete/.test(p.status)).slice(0, 1).forEach(p => out.push({ id: `bgo_project_${p.id}`, type: 'infrastructure_affordable', subject: p.title, value: null, urgency: 'later', confidence: 'moderate', expiresTurn: null, strategicAlignment: g3?.goals.some(g => g.type === 'complete_project' && g.projectId === p.id) ? 'aligned' : 'neutral', resourceRequirement: p.fundingIncrement, reason: `a ${bgMoney(p.fundingIncrement)} funding step fits your free cash`, actionIds: actionIds(c => /invest|project|infrastructure/.test(`${c.actionType} ${c.label}`.toLowerCase())) }));
+  const obj = world.objective;
+  if (obj && obj.progress.total > 1 && obj.progress.completed === obj.progress.total - 1 && obj.recommendedNextStep) out.push({ id: `bgo_objective_${obj.id}`, type: 'objective_completion', subject: obj.title, value: null, urgency: 'soon', confidence: 'high', expiresTurn: null, strategicAlignment: 'aligned', resourceRequirement: 0, reason: `one requirement left: ${obj.recommendedNextStep.label}`, actionIds: [] });
+  const t = world.systems?.team;
+  if (t && t.treasuryBalance !== null && t.treasuryReserve !== null && t.treasuryBalance - t.treasuryReserve >= 2000) out.push({ id: 'bgo_treasury', type: 'treasury_surplus', subject: 'Team Treasury', value: t.treasuryBalance - t.treasuryReserve, urgency: 'later', confidence: 'high', expiresTurn: null, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `the Treasury holds ${bgMoney(t.treasuryBalance - t.treasuryReserve)} above its reserve`, actionIds: [] });
+  const daysLeft = world.totalDays - world.day;
+  if (daysLeft >= 0 && daysLeft <= 2 && world.win && world.win.playerValue < world.win.opponentValue) out.push({ id: 'bgo_window', type: 'strategic_window', subject: 'final turns', value: null, urgency: 'now', confidence: 'high', expiresTurn: world.turn + daysLeft, strategicAlignment: 'aligned', resourceRequirement: 0, reason: `${daysLeft} day(s) left and you trail ${world.win.playerValue} to ${world.win.opponentValue} on ${world.win.metricLabel}`, actionIds: [] });
+  const rank = (o: BackgroundOpportunity) => (o.urgency === 'now' ? 3 : o.urgency === 'soon' ? 2 : 1) + (o.strategicAlignment === 'aligned' ? 2 : o.strategicAlignment === 'conflicts' ? -2 : 0) + (o.confidence === 'high' ? 1 : 0);
+  return out.sort((a, b) => rank(b) - rank(a) || a.id.localeCompare(b.id)).slice(0, BACKGROUND_AI_LIMITS.opportunities);
+}
+
+export function deriveBackgroundAssessment(world: GIWorld, threats: BackgroundThreat[], opps: BackgroundOpportunity[], cashHistory: Array<{ turn: number; cash: number }>): BackgroundStrategicAssessment {
+  const cash = world.player.money;
+  const reserve = bgExplicitReserve(world);
+  const free = cash - (reserve.amount || 0);
+  const active = threats.filter(t => t.status === 'active');
+  const top = active[0] || null;
+  const topOpp = opps[0] || null;
+  const exposure = Math.max(0, ...active.map(t => t.exposure || 0));
+  const hist = cashHistory.slice(-4);
+  const momentum: BackgroundStrategicAssessment['momentum'] = hist.length < 2 ? 'unknown' : hist[hist.length - 1].cash > hist[0].cash * 1.05 ? 'improving' : hist[hist.length - 1].cash < hist[0].cash * 0.95 ? 'declining' : 'flat';
+  const economy = cash < 300 ? 'Critical' : reserve.amount && cash < reserve.amount ? 'Below reserve' : momentum === 'declining' ? 'Weakening' : momentum === 'improving' ? (cash < 3000 ? 'Recovering' : 'Growing') : world.player.debtTotal > cash ? 'Leveraged' : 'Stable';
+  const liquidity = free < 0 ? 'Critical' : exposure && free < exposure ? 'Tight' : free < 1000 ? 'Tight' : free < 5000 ? 'Adequate' : 'Comfortable';
+  const held = Object.values(world.regions).filter(r => r.controlledByPlayer);
+  const regions = !held.length ? 'No regions held' : active.some(t => t.type === 'region_vulnerable') ? 'At risk' : active.some(t => t.type === 'region_thin_margin' || t.type === 'rival_pressure') ? 'Contested' : 'Secure';
+  const obj = world.objective;
+  const objectives = obj ? `${obj.title} (${obj.progress.completed}/${obj.progress.total})${obj.completionState === 'blocked' ? ' — blocked' : ''}` : 'No tracked objective';
+  const invValue = Object.entries(world.player.inventory).reduce((s, [k, q]) => s + (world.market[k] || 0) * q, 0);
+  const projectsActive = world.projects.filter(p => p.invested > 0 && p.remaining > 0);
+  const myContracts = world.contracts.filter(c => c.assignedToPlayer && !/complete|fail/.test(c.status));
+  const nextContract = myContracts.filter(c => typeof c.turnsRemaining === 'number').sort((a, b) => (a.turnsRemaining as number) - (b.turnsRemaining as number))[0];
+  const daysLeft = world.totalDays - world.day;
+  const nextDeadline = nextContract ? `${nextContract.title} expires in ${nextContract.turnsRemaining} turn(s)` : daysLeft <= 5 ? `Match ends in ${daysLeft} day(s)` : null;
+  const rival = bgRival(world);
+  const rivals = world.win ? (world.win.playerValue > world.win.opponentValue ? 'You lead' : world.win.playerValue < world.win.opponentValue ? 'Rival leads' : 'Level') + ` on ${world.win.metricLabel} (${world.win.playerValue} vs ${world.win.opponentValue})` : rival && !rival.visible ? 'Rival details hidden (fog of war)' : 'Unknown';
+  const g3p = world.gi3?.active?.status === 'active' ? world.gi3?.progress : null;
+  const planHealth = g3p ? ({ on_track: 'On track', ahead: 'Ahead', at_risk: 'At risk', blocked: 'Blocked', recovering: 'Recovering', needs_decision: 'Needs a decision', completed: 'Complete', failed: 'Failed' } as Record<string, string>)[g3p.onTrack] : active.some(t => t.severity === 'critical') ? 'Under pressure' : 'Provisional plan viable';
+  const team = world.team?.enabled ? ({ on_track: 'On track', at_risk: 'At risk', blocked: 'Blocked', recovering: 'Recovering', needs_decision: 'Needs a decision', obsolete: 'Needs a new plan', completed: 'Complete' } as Record<string, string>)[world.team.evaluation.health.health] || world.team.evaluation.health.health : 'Solo';
+  const ap = world.player.apRemaining === null ? 'Unlimited' : world.player.apRemaining === 0 ? 'Exhausted this turn' : world.player.apRemaining <= 1 ? 'Constrained' : `${world.player.apRemaining} available`;
+  const worst = top ? top.severity : null;
+  const overallPosition = worst === 'critical' ? (free > (top?.exposure || 0) ? 'Under pressure but able to respond' : 'Under serious pressure')
+    : worst === 'high' ? 'Stable but vulnerable' : economy === 'Weakening' || liquidity === 'Tight' ? 'Stable but stretched' : world.win && world.win.playerValue > world.win.opponentValue ? 'Strong' : 'Stable';
+  return {
+    overallPosition, economy, liquidity, regions, objectives,
+    resources: invValue > 0 ? `Inventory worth about ${bgMoney(invValue)}` : 'No inventory',
+    projects: projectsActive.length ? `${projectsActive.length} project(s) in progress` : 'None in progress',
+    contracts: myContracts.length ? `${myContracts.length} active` : 'None active',
+    team, rivals, ap, nextDeadline,
+    risk: top ? `${top.type === 'region_vulnerable' ? `${top.subject} control` : top.subject} (${top.severity})` : 'No active threat',
+    opportunity: topOpp ? `${topOpp.subject} (${topOpp.type.replace(/_/g, ' ')})` : 'None flagged',
+    momentum, primaryProblem: top ? top.possibleImpact : null, primaryOpportunity: topOpp ? topOpp.reason : null, planHealth,
+    confidence: world.settings.fogOfWar ? 'moderate' : 'high',
+    evidence: [
+      { label: 'Cash', value: bgMoney(cash) }, ...(reserve.amount ? [{ label: 'Reserve', value: `${bgMoney(reserve.amount)} (${reserve.source})` }] : []),
+      { label: 'Regions held', value: String(held.length) }, ...(exposure ? [{ label: 'Largest exposure', value: bgMoney(exposure) }] : []),
+      { label: 'Debt', value: bgMoney(world.player.debtTotal) }
+    ]
+  };
+}
+
+// ---- PREDICT: observable-evidence predictions + calibration ----------------------------------------------
+
+export function deriveBackgroundPredictions(world: GIWorld, threats: BackgroundThreat[], budget: number): BackgroundPrediction[] {
+  const out: BackgroundPrediction[] = [];
+  const rival = bgRival(world);
+  const rivalName = rival?.name || 'The rival';
+  const turn = world.turn;
+  const add = (p: Omit<BackgroundPrediction, 'id' | 'createdTurn' | 'resolution'>) => out.push({ ...p, id: `bgp_${p.watchCondition}_${p.subject}`, createdTurn: turn, resolution: 'unresolved' });
+  threats.filter(t => t.status === 'active' && t.type === 'region_vulnerable').forEach(t => {
+    add({ event: `${t.subject} remains contested`, subject: t.subject, likelihoodBand: 'high', confidence: 'high', evidence: t.evidence, timeHorizon: 'next turn', impact: t.possibleImpact, watchCondition: 'region_contested', resolveByTurn: turn + 1, regionId: t.regionId, amount: t.exposure });
+    add({ event: `${rivalName} can afford to challenge ${t.subject}`, subject: `${t.subject}_afford`, likelihoodBand: 'moderate', confidence: 'moderate', evidence: t.evidence, timeHorizon: 'next rival turn', impact: 'a challenge would force a defense deposit or a loss', watchCondition: 'rival_can_challenge', resolveByTurn: turn + 1, regionId: t.regionId, amount: t.exposure });
+  });
+  // Rival targeting from OBSERVED actions only (never hidden plans or memory).
+  const targets = new Map<string, number>();
+  world.observed.filter(o => o.actorId && rival && o.actorId === rival.id && /deposit|claim|control|travel/i.test(o.summary)).forEach(o => { const code = Object.keys(world.regions).find(c => new RegExp(`\\b${c}\\b`).test(o.summary.toUpperCase())); if (code) targets.set(code, (targets.get(code) || 0) + 1); });
+  Array.from(targets.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 1).forEach(([code, n]) => add({ event: `${rivalName} may keep pressing ${code}`, subject: code, likelihoodBand: n >= 2 ? 'moderate' : 'low', confidence: 'low', evidence: [`${n} observed ${rivalName} action(s) involving ${code}`], timeHorizon: 'next few turns', impact: world.regions[code]?.controlledByPlayer ? 'pressure on a region you hold' : 'competition for a region you may want', watchCondition: 'rival_targets_region', resolveByTurn: turn + 2, regionId: code }));
+  if (rival && !rival.visible && !out.length) add({ event: `${rivalName}'s next move`, subject: 'rival_hidden', likelihoodBand: 'uncertain', confidence: 'low', evidence: ['fog of war hides rival cash and location'], timeHorizon: 'next turn', impact: 'cannot be assessed from visible evidence', watchCondition: 'rival_targets_region', resolveByTurn: turn + 1 });
+  world.contracts.filter(c => c.assignedToPlayer && typeof c.turnsRemaining === 'number' && c.turnsRemaining <= 3 && !/complete|fail/.test(c.status)).slice(0, 1).forEach(c => add({ event: `${c.title} expires`, subject: c.id, likelihoodBand: 'high', confidence: 'high', evidence: [`${c.turnsRemaining} turn(s) remaining`], timeHorizon: `${c.turnsRemaining} turn(s)`, impact: c.rewardMoney ? `${bgMoney(c.rewardMoney)} reward at stake` : 'contract reward at stake', watchCondition: 'contract_expires', resolveByTurn: turn + (c.turnsRemaining as number) }));
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3.active : null;
+  const cashGoal = g3?.goals.find(g => g.type === 'reach_cash' && g.status !== 'completed' && g.status !== 'removed' && g.amount);
+  if (cashGoal) {
+    const gap = (cashGoal.amount || 0) - world.player.money;
+    add({ event: `Reach ${bgMoney(cashGoal.amount || 0)}`, subject: 'cash_goal', likelihoodBand: gap <= 1000 ? 'high' : gap <= 5000 ? 'moderate' : 'low', confidence: 'moderate', evidence: [`gap ${bgMoney(Math.max(0, gap))}`], timeHorizon: 'next 3 turns', impact: 'unlocks the next phase of your strategy', watchCondition: 'cash_reaches_target', resolveByTurn: turn + 3, amount: cashGoal.amount });
+  }
+  const daysLeft = world.totalDays - world.day;
+  if (daysLeft <= 3 && daysLeft >= 0) add({ event: 'The match ends', subject: 'match', likelihoodBand: 'high', confidence: 'high', evidence: [`day ${world.day} of ${world.totalDays}`], timeHorizon: `${daysLeft} day(s)`, impact: 'the final standings are decided', watchCondition: 'match_ends', resolveByTurn: turn + daysLeft + 1 });
+  return out.slice(0, budget);
+}
+
+/** Resolve predictions whose horizon passed, against the CURRENT observable state (calibration). */
+export function resolveBackgroundPredictions(prev: BackgroundPrediction[], world: GIWorld): { stillOpen: BackgroundPrediction[]; resolved: BackgroundPrediction[] } {
+  const stillOpen: BackgroundPrediction[] = [];
+  const resolved: BackgroundPrediction[] = [];
+  prev.forEach(p => {
+    if (p.resolution !== 'unresolved') return;
+    if (world.turn <= p.resolveByTurn) { stillOpen.push(p); return; }
+    let outcome: 'supported' | 'contradicted' | 'unresolved' = 'unresolved';
+    const r = p.regionId ? world.regions[p.regionId] : null;
+    const rivalMoney = bgRival(world)?.visible ? bgRival(world)?.money ?? null : null;
+    switch (p.watchCondition) {
+      case 'region_contested': outcome = r ? (!r.controlledByPlayer || (rivalMoney !== null && r.rivalCostToControl !== null && rivalMoney >= r.rivalCostToControl) ? 'supported' : 'contradicted') : 'unresolved'; break;
+      case 'rival_can_challenge': outcome = r && rivalMoney !== null && r.rivalCostToControl !== null ? (rivalMoney >= r.rivalCostToControl || !r.controlledByPlayer ? 'supported' : 'contradicted') : 'unresolved'; break;
+      case 'contract_expires': { const c = world.contracts.find(x => x.id === p.subject); outcome = !c || /fail|expire/.test(c.status) ? 'supported' : /complete/.test(c.status) ? 'contradicted' : 'unresolved'; break; }
+      case 'cash_reaches_target': outcome = world.player.money >= (p.amount || Infinity) ? 'supported' : 'contradicted'; break;
+      case 'match_ends': outcome = 'supported'; break;
+      default: outcome = 'unresolved';
+    }
+    resolved.push({ ...p, resolution: outcome });
+  });
+  return { stillOpen, resolved };
+}
+
+// ---- DIAGNOSE: hypotheses (evidence for and against) + domain diagnoses ------------------------------------
+
+export function deriveBackgroundHypotheses(world: GIWorld, prevObs: BackgroundObservation | null, prevHyps: BackgroundHypothesis[], cashHistory: Array<{ turn: number; cash: number }>, budget: number): BackgroundHypothesis[] {
+  const out: BackgroundHypothesis[] = [];
+  const turn = world.turn;
+  const band = (sup: number, con: number): BGBand => (sup >= 2 && con === 0 ? 'high' : sup > con ? 'moderate' : 'low');
+  const merge = (h: Omit<BackgroundHypothesis, 'status' | 'lastUpdated' | 'confidence'>) => {
+    const before = prevHyps.find(x => x.id === h.id);
+    // Evidence accumulates (bounded) so a hypothesis strengthens or weakens with new observations.
+    const sup = Array.from(new Set([...h.supportingEvidence, ...(before?.supportingEvidence || [])])).slice(0, 4);
+    const con = Array.from(new Set([...h.contradictingEvidence, ...(before?.contradictingEvidence || [])])).slice(0, 4);
+    const confidence = band(h.supportingEvidence.length ? sup.length : 0, con.length);
+    const status: BackgroundHypothesis['status'] = !h.supportingEvidence.length ? 'weakened' : before && bgSevRank[({ low: 'low', moderate: 'medium', high: 'high' } as const)[confidence]] < bgSevRank[({ low: 'low', moderate: 'medium', high: 'high' } as const)[before.confidence]] ? 'weakened' : 'active';
+    out.push({ ...h, supportingEvidence: sup, contradictingEvidence: con, confidence, status, lastUpdated: turn });
+  };
+  const hist = cashHistory.slice(-4);
+  const declining = hist.length >= 2 && hist[hist.length - 1].cash < hist[0].cash;
+  if (prevObs) {
+    const depositsUp = Object.values(world.regions).reduce((s, r) => s + (r.playerDeposit || 0), 0) - prevObs.depositsTotal;
+    const projUp = world.projects.reduce((s, p) => s + (p.invested || 0), 0) - prevObs.projectInvested;
+    const debtUp = world.player.debtTotal - prevObs.debt;
+    const cashDelta = world.player.money - prevObs.cash;
+    if (declining || cashDelta < 0) {
+      const factors: Array<[string, number]> = ([['regional deposits', depositsUp], ['infrastructure spending', projUp], ['debt repayments or interest', Math.max(0, -debtUp)]] as Array<[string, number]>).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+      const contractIncome = world.contracts.some(c => c.assignedToPlayer && /complete/.test(c.status));
+      merge({
+        id: 'bgh_economy', question: 'Why is my cash falling?',
+        explanation: factors.length ? `Your cash is falling mainly because of ${factors.map(([k]) => k).join(', then ')}.` : 'Your cash is falling, but no single spending category explains it from visible evidence.',
+        factors: factors.map(([k, v]) => `${k}: ${bgMoney(v)}`),
+        supportingEvidence: factors.map(([k, v]) => `${bgMoney(v)} into ${k} since the last observation`),
+        contradictingEvidence: [...(contractIncome ? ['contract income is still arriving'] : []), ...(cashDelta > 0 ? [`cash rose ${bgMoney(cashDelta)} in the last observation`] : [])]
+      });
+    } else if (prevHyps.some(h => h.id === 'bgh_economy')) {
+      const old = prevHyps.find(h => h.id === 'bgh_economy')!;
+      out.push({ ...old, contradictingEvidence: Array.from(new Set([`cash is no longer falling (${bgMoney(world.player.money)})`, ...old.contradictingEvidence])).slice(0, 4), confidence: 'low', status: 'weakened', lastUpdated: turn });
+    }
+    Object.values(world.regions).filter(r => r.controlledByPlayer).forEach(r => {
+      const rivalUp = r.rivalDeposit - (prevObs.rivalDeposits[r.code] || 0);
+      if (rivalUp > 0 || prevHyps.some(h => h.id === `bgh_region_${r.code}`)) {
+        const oursNow = r.playerDeposit;
+        merge({
+          id: `bgh_region_${r.code}`, question: `Why is ${r.code} under pressure?`,
+          explanation: rivalUp > 0 ? `${r.code} is under pressure because the rival added ${bgMoney(rivalUp)} there.` : `Pressure on ${r.code} has eased since the rival stopped adding deposits.`,
+          factors: rivalUp > 0 ? [`rival deposit +${bgMoney(rivalUp)}`] : [],
+          supportingEvidence: rivalUp > 0 ? [`rival deposit in ${r.code} rose to ${bgMoney(r.rivalDeposit)}`] : [],
+          contradictingEvidence: oursNow > r.rivalDeposit * 1.5 ? [`your deposit (${bgMoney(oursNow)}) still clearly leads`] : []
+        });
+      }
+    });
+  }
+  if (world.win && world.win.playerValue < world.win.opponentValue) {
+    const g = world.win;
+    merge({
+      id: 'bgh_losing', question: 'Why am I losing?',
+      explanation: `You trail on ${g.metricLabel} (${g.playerValue} vs ${g.opponentValue}).${g.regionsTarget ? ` You hold ${g.playerRegions} region(s) to the rival's ${g.rivalRegions}.` : ''}`,
+      factors: [`${g.metricLabel} gap ${g.opponentValue - g.playerValue}`],
+      supportingEvidence: [`${g.metricLabel}: ${g.playerValue} vs ${g.opponentValue}`],
+      contradictingEvidence: []
+    });
+  }
+  return out.slice(0, budget);
+}
+
+export function deriveBackgroundDiagnoses(world: GIWorld, a: BackgroundStrategicAssessment, threats: BackgroundThreat[], hyps: BackgroundHypothesis[], opps: BackgroundOpportunity[]): BackgroundDiagnosis[] {
+  const eco = hyps.find(h => h.id === 'bgh_economy' && h.status !== 'weakened');
+  const regionThreat = threats.find(t => t.status === 'active' && (t.type === 'region_vulnerable' || t.type === 'region_thin_margin'));
+  const contractOpp = opps.find(o => o.type === 'profitable_contract');
+  const out: BackgroundDiagnosis[] = [
+    { domain: 'economy', status: a.economy, primaryCause: eco ? eco.factors[0] || null : null, secondaryCause: eco ? eco.factors[1] || null : null, risk: threats.find(t => t.type === 'reserve_violation' || t.type === 'liquidity_collapse')?.possibleImpact || (a.liquidity === 'Tight' ? 'little room above your reserve and exposures' : null), bestResponse: a.economy === 'Stable' || a.economy === 'Growing' ? null : contractOpp ? `Take on ${contractOpp.subject} before further expansion` : 'Build liquidity (sales, work, contracts) before large commitments', evidence: a.evidence.map(e => `${e.label}: ${e.value}`) },
+    { domain: 'regions', status: a.regions, primaryCause: regionThreat ? regionThreat.evidence.join('; ') : null, secondaryCause: null, risk: regionThreat?.possibleImpact || null, bestResponse: regionThreat ? (regionThreat.mitigationOptions[0]?.label || `Reinforce ${regionThreat.subject}`) : null, evidence: regionThreat ? regionThreat.evidence : [] },
+    { domain: 'objectives', status: a.objectives, primaryCause: world.objective?.blockers[0] || null, secondaryCause: null, risk: null, bestResponse: world.objective?.recommendedNextStep?.label || null, evidence: world.objective ? [`${world.objective.progress.completed}/${world.objective.progress.total} requirements`] : [] }
+  ];
+  if (world.team?.enabled) out.push({ domain: 'team', status: a.team, primaryCause: world.team.evaluation.health.reason || null, secondaryCause: null, risk: threats.find(t => t.type === 'team_blockage' || t.type === 'teammate_recovery')?.possibleImpact || null, bestResponse: null, evidence: [`Team OS health: ${world.team.evaluation.health.health}`] });
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3 : null;
+  if (g3?.progress) out.push({ domain: 'strategy', status: a.planHealth, primaryCause: g3.progress.blockers[0]?.label || null, secondaryCause: null, risk: null, bestResponse: g3.progress.nextMove?.label || null, evidence: [`GI3 phase ${g3.progress.phaseIndex + 1}`] });
+  return out;
+}
+
+// ---- WATCH: attention queue with dynamic priority and decay --------------------------------------------
+
+export function deriveBackgroundAttention(world: GIWorld, threats: BackgroundThreat[], opps: BackgroundOpportunity[], preds: BackgroundPrediction[], prevQueue: BackgroundAttentionItem[]): BackgroundAttentionItem[] {
+  const turn = world.turn;
+  const items: BackgroundAttentionItem[] = [];
+  const trendOf = (id: string, importance: BackgroundAttentionItem['importance']): BackgroundAttentionItem['trend'] => {
+    const before = prevQueue.find(p => p.id === id);
+    if (!before) return 'new';
+    const r = (x: BackgroundAttentionItem['importance']) => (x === 'watching' ? 0 : bgSevRank[x]);
+    return r(importance) > r(before.importance) ? 'rising' : r(importance) < r(before.importance) ? 'falling' : 'stable';
+  };
+  // A region keeps one attention identity even when its threat type changes (thin margin → vulnerable), so
+  // its trend reads as rising/falling rather than "new".
+  const attId = (t: BackgroundThreat) => `att_${t.regionId && (t.type === 'region_vulnerable' || t.type === 'region_thin_margin' || t.type === 'rival_pressure') ? `region_${t.regionId}` : t.id}`;
+  threats.filter(t => t.status === 'active').forEach(t => items.push({
+    id: attId(t), domain: t.type.startsWith('region') || t.type === 'rival_pressure' ? 'regions' : t.type === 'team_blockage' || t.type === 'teammate_recovery' ? 'team' : t.type === 'objective_at_risk' ? 'strategy' : 'economy',
+    subject: t.type === 'region_vulnerable' ? `${t.subject} rival pressure` : t.subject, importance: t.severity, urgency: t.urgency, confidence: t.confidence,
+    reversibility: t.type === 'region_vulnerable' ? 'hard_to_reverse' : 'reversible', deadline: t.urgency === 'now' ? turn + 1 : null, trend: trendOf(attId(t), t.severity),
+    reason: t.possibleImpact, evidence: t.evidence, lastUpdated: turn, status: 'active'
+  }));
+  opps.slice(0, 3).forEach(o => { const imp: BGSeverity = o.urgency === 'now' ? 'high' : o.strategicAlignment === 'aligned' ? 'medium' : 'low'; items.push({ id: `att_${o.id}`, domain: o.type === 'cheap_expansion' ? 'regions' : 'economy', subject: `${o.subject} opportunity`, importance: imp, urgency: o.urgency, confidence: o.confidence, reversibility: 'reversible', deadline: o.expiresTurn, trend: trendOf(`att_${o.id}`, imp), reason: o.reason, evidence: [o.reason], lastUpdated: turn, status: 'active' }); });
+  preds.filter(p => p.watchCondition === 'contract_expires' || p.watchCondition === 'match_ends').forEach(p => items.push({ id: `att_${p.id}`, domain: 'world', subject: p.event, importance: 'watching', urgency: 'later', confidence: p.confidence, reversibility: 'irreversible', deadline: p.resolveByTurn, trend: trendOf(`att_${p.id}`, 'watching'), reason: p.impact, evidence: p.evidence, lastUpdated: turn, status: 'active' }));
+  // Decay: items that no longer have a live cause fade for one evaluation, then drop (no stale attention).
+  prevQueue.filter(p => p.status === 'active' && !items.some(i => i.id === p.id)).forEach(p => items.push({ ...p, status: 'decaying', importance: 'watching', trend: 'falling', lastUpdated: turn }));
+  const score = (i: BackgroundAttentionItem) => (i.status === 'decaying' ? -1 : 0) + (i.importance === 'watching' ? 0 : bgSevRank[i.importance] * 10) + (i.urgency === 'now' ? 3 : i.urgency === 'soon' ? 2 : 1);
+  const sorted = items.sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
+  // Budget: at most 2 critical items, a bounded total.
+  let criticals = 0;
+  return sorted.filter(i => (i.importance === 'critical' ? ++criticals <= BACKGROUND_AI_LIMITS.criticalAttention : true)).slice(0, BACKGROUND_AI_LIMITS.attention);
+}
+
+// ---- PLAN: move evaluation over canonical Contextual Actions (never an action engine of its own) -------------
+
+const bgRegionIn = (world: GIWorld, text: string): string | null => Object.keys(world.regions).find(c => new RegExp(`\\b${c}\\b`).test(text.toUpperCase())) || null;
+
+export function evaluateBackgroundMoves(world: GIWorld, threats: BackgroundThreat[], focusRegion: string | null, budget: number): BackgroundMoveEvaluation[] {
+  const cash = world.player.money;
+  const reserve = bgExplicitReserve(world).amount || 0;
+  const avoidDebt = bgAvoidsDebt(world);
+  const topRegionThreat = threats.find(t => t.status === 'active' && (t.type === 'region_vulnerable' || t.type === 'region_thin_margin')) || null;
+  const exposure = topRegionThreat?.exposure || 0;
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3.active : null;
+  const targets = new Set((g3?.goals || []).filter(g => g.type === 'control_region' && g.status !== 'removed' && g.regionId).map(g => g.regionId!));
+  const humanTasks = (world.team?.state.contract?.taskGraph || []).filter(t => t.assignedActorIds.includes(world.player.id) && !['completed', 'cancelled', 'superseded', 'failed'].includes(t.status));
+  const legal = (world.actionSet?.ranked || []).filter(c => c.legal && c.execution?.kind === 'copilot_candidate').slice(0, budget);
+  return legal.map(c => {
+    const u: any = c.execution?.kind === 'copilot_candidate' ? c.execution.candidate : {};
+    const blob = `${c.actionType} ${c.label}`.toLowerCase();
+    const targetId: string | null = String(u.targetId || u.regionId || u.parameters?.region || u.parameters?.destinationRegion || '').toUpperCase() || bgRegionIn(world, c.label);
+    const cost = Math.max(0, Number(c.costEstimate || u.costEstimate || 0));
+    const cashDelta = Number(u.expectedStateDelta?.cashDelta || 0);
+    const cashAfter = cash - cost + Math.max(0, cashDelta);
+    const isDefense = /deposit|defend|reinforce|secure|claim|control/.test(blob);
+    const isLoan = /loan|borrow/.test(blob);
+    const d = { strategicAlignment: 0, immediateValue: 0, futureValue: 0, risk: 0, resourceCost: 0, apCost: 0, reversibility: 0, urgency: 0, objectiveProgress: 0, constraintCompliance: 0, teamImpact: 0 };
+    d.immediateValue = cashDelta > 0 ? Math.min(20, Math.max(1, Math.round(cashDelta / 200))) : Math.max(-20, Math.round(cashDelta / 200));
+    d.resourceCost = -Math.min(20, Math.round(cost / 250));
+    d.apCost = -Number(c.apCost ?? 1);
+    d.risk = -Math.min(20, Math.round(Number(u.riskFactor || 0) / 5));
+    d.reversibility = /sell/.test(blob) || isDefense ? -1 : 0;
+    d.strategicAlignment = c.strategyAlignment ? Math.round(c.strategyAlignment.score / 3) : 0;
+    if (focusRegion && targetId === focusRegion) d.strategicAlignment += 10;
+    if (topRegionThreat && targetId === topRegionThreat.regionId && isDefense) d.urgency = topRegionThreat.severity === 'critical' ? 25 : topRegionThreat.severity === 'high' ? 15 : 8;
+    if (c.objectiveRelation) d.objectiveProgress = 8;
+    if (targetId && targets.has(targetId) && isDefense) d.futureValue += 10;
+    if (/invest|project|infrastructure|contract/.test(blob)) d.futureValue += 6;
+    if (cost > 0 && reserve && cashAfter < reserve) d.constraintCompliance -= 20;
+    if (isLoan && avoidDebt) d.constraintCompliance -= 25;
+    if (isLoan) d.risk -= 8;          // borrowed cash is repaid with interest — never "free" value
+    // While liquidity is tight (below reserve/exposure plus a margin), spending cash works against the plan.
+    if (cost > 0 && cashDelta <= 0 && cash < Math.max(reserve, exposure) + 1000) d.constraintCompliance -= 6;
+    if (cost >= 500 && exposure && cash >= exposure && cashAfter < exposure && !(targetId === topRegionThreat?.regionId && isDefense)) d.constraintCompliance -= 15;
+    if (humanTasks.some(t => (t.regionId && t.regionId === targetId) || (t.type === 'generate_cash' && cashDelta > 0))) d.teamImpact = 8;
+    const total = Object.values(d).reduce((s, v) => s + v, 0);
+    const named: Array<[string, number]> = [['addresses the most urgent threat', d.urgency], ['fits the strategy', d.strategicAlignment], ['adds cash now', d.immediateValue], ['builds future value', d.futureValue], ['advances your objective', d.objectiveProgress], ['matches your team task', d.teamImpact]];
+    const pos = named.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k);
+    const neg = d.constraintCompliance < 0 ? ['strains an explicit constraint'] : [];
+    return { actionId: c.id, label: c.label, actionType: c.actionType, targetId, legal: true, dimensions: d, total, reason: [...pos, ...neg].join('; ') || 'a legal move with no strong strategic effect' };
+  }).sort((a, b) => b.total - a.total || a.actionId.localeCompare(b.actionId));
+}
+
+export function classifyBackgroundMoves(evals: BackgroundMoveEvaluation[], economyWeak: boolean, hasStrategy: boolean): Array<BackgroundMoveRef & { moveClass: BackgroundMoveClass }> {
+  const out: Array<BackgroundMoveRef & { moveClass: BackgroundMoveClass }> = [];
+  const ref = (e: BackgroundMoveEvaluation, moveClass: BackgroundMoveClass, reason: string) => out.push({ actionId: e.actionId, label: e.label, actionType: e.actionType, targetId: e.targetId, reason, moveClass });
+  // Each class prefers a move not already named by an earlier class, so alternatives are real alternatives.
+  const used = new Set<string>();
+  const best = (pred: (e: BackgroundMoveEvaluation) => boolean, key: (e: BackgroundMoveEvaluation) => number) => {
+    const pool = evals.filter(pred).sort((a, b) => key(b) - key(a) || a.actionId.localeCompare(b.actionId));
+    const pick = pool.find(e => !used.has(e.actionId)) || pool[0] || null;
+    if (pick) used.add(pick.actionId);
+    return pick;
+  };
+  const top = evals[0];
+  // A near-neutral legal move still beats doing nothing while actions are available.
+  if (top && top.total > -4) { ref(top, 'best_immediate', top.reason); used.add(top.actionId); }
+  const eco = best(e => e.dimensions.immediateValue > 0, e => e.dimensions.immediateValue);
+  if (eco) ref(eco, 'best_economic', 'largest immediate cash gain');
+  const reg = best(e => Boolean(e.targetId) && e.total > 0 && /deposit|defend|claim|control|travel/.test(`${e.actionType} ${e.label}`.toLowerCase()), e => e.total);
+  if (reg) ref(reg, 'best_regional', `best move for ${reg.targetId}`);
+  const safe = best(e => e.dimensions.risk >= -4 && e.dimensions.constraintCompliance >= 0 && e.total > -5, e => e.total);
+  if (safe) ref(safe, 'safest', 'lowest risk while respecting your constraints');
+  const up = best(e => e.dimensions.immediateValue + e.dimensions.futureValue > 0, e => e.dimensions.immediateValue + e.dimensions.futureValue);
+  if (up) ref(up, 'highest_upside', 'highest combined immediate and future value');
+  if (hasStrategy) { const al = best(e => e.dimensions.strategicAlignment > 0, e => e.dimensions.strategicAlignment); if (al) ref(al, 'strategy_aligned', 'most aligned with the strategy'); }
+  if (economyWeak) { const rec = best(e => e.dimensions.immediateValue > 0 && e.dimensions.resourceCost === 0, e => e.dimensions.immediateValue); if (rec) ref(rec, 'best_recovery', 'rebuilds cash without spending'); }
+  if (!evals.length || evals.every(e => e.total <= -4)) out.push({ actionId: 'end_turn', label: 'Wait (end turn)', actionType: 'end_turn', targetId: null, reason: 'no available move improves your position; waiting keeps your cash', moveClass: 'best_waiting' });
+  return out;
+}
+
+// ---- SIMULATE: small, cached, rollback-safe What-If preparation -------------------------------------------
+
+export function prepareBackgroundSimulations(world: GIWorld, evals: BackgroundMoveEvaluation[], prev: BackgroundPreparedSimulation[], budget: number, stateHash: string, threats: BackgroundThreat[]): BackgroundPreparedSimulation[] {
+  if (budget <= 0) return [];
+  const exposure = threats.find(t => t.status === 'active' && t.type === 'region_vulnerable')?.exposure || 0;
+  const out: BackgroundPreparedSimulation[] = [];
+  evals.slice(0, budget).forEach(e => {
+    const cached = prev.find(p => p.actionId === e.actionId && p.stateHash === stateHash);
+    if (cached) { out.push(cached); return; }
+    const cand = world.actionSet?.ranked.find(c => c.id === e.actionId);
+    const u: any = cand?.execution?.kind === 'copilot_candidate' ? cand.execution.candidate : null;
+    let outcome: GISimulationOutcome | null = null;
+    // The What-If tool runs the canonical reducer on a CLONE — the live game is never touched.
+    try { outcome = world.tools.simulate && u ? world.tools.simulate({ actionType: e.actionType, parameters: u.parameters, targetId: u.targetId || e.targetId || undefined, costEstimate: Number(u.costEstimate || 0) }) : null; } catch { outcome = null; }
+    const cashDelta = outcome?.ok ? outcome.cashDelta : Number(u?.expectedStateDelta?.cashDelta || 0) - Number(u?.costEstimate || 0);
+    const cashAfter = outcome?.ok ? outcome.after.cash : world.player.money + cashDelta;
+    const risks: string[] = [];
+    if (exposure && cashAfter < exposure && world.player.money >= exposure) risks.push(`leaves ${bgMoney(cashAfter)}, below the ${bgMoney(exposure)} needed to answer a challenge`);
+    if (outcome && !outcome.ok) risks.push(outcome.error || 'the rules reject this action right now');
+    const benefits: string[] = [];
+    if (cashDelta > 0) benefits.push(`+${bgMoney(cashDelta)} cash`);
+    if (outcome?.ok && Object.keys(outcome.depositDelta).length) benefits.push(`deposits: ${Object.entries(outcome.depositDelta).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${bgMoney(v)}`).join(', ')}`);
+    if (outcome?.locationChange) benefits.push(`moves you to ${outcome.locationChange.to}`);
+    out.push({
+      actionId: e.actionId, label: e.label, stateHash, horizon: 'this action',
+      outcomeSummary: outcome ? (outcome.ok ? `${cashDelta >= 0 ? '+' : '−'}${bgMoney(Math.abs(cashDelta))} → ${bgMoney(cashAfter)}${outcome.certainty !== 'deterministic' ? ` (${outcome.certainty})` : ''}` : `would not execute: ${outcome.error || 'rejected'}`) : `estimated ${cashDelta >= 0 ? '+' : '−'}${bgMoney(Math.abs(cashDelta))} (no simulator)`,
+      benefits, risks, goalImpact: e.dimensions.strategicAlignment > 0 || e.dimensions.urgency > 0 ? 'advances the current plan' : e.dimensions.constraintCompliance < 0 ? 'works against a constraint' : 'neutral for the plan',
+      confidence: outcome?.ok ? (outcome.certainty === 'deterministic' ? 'high' : 'moderate') : 'low', createdTurn: world.turn, cashAfter
+    });
+  });
+  return out;
+}
+
+// ---- PLAN: rolling Shadow Plan (never the player's plan; GI3 stays canonical player intent) ----------------
+
+export function buildBackgroundShadowPlan(world: GIWorld, prevPlan: BackgroundShadowPlan | null, threats: BackgroundThreat[], opps: BackgroundOpportunity[], moves: Array<BackgroundMoveRef & { moveClass: BackgroundMoveClass }>, evals: BackgroundMoveEvaluation[], overrides: BackgroundAIState['overrides'], depth: number): BackgroundShadowPlan {
+  const turn = world.turn;
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3 : null;
+  const reserve = bgExplicitReserve(world);
+  const active = threats.filter(t => t.status === 'active');
+  const regionThreat = active.find(t => (t.type === 'region_vulnerable' && (t.severity === 'critical' || t.severity === 'high')) || (t.type === 'region_thin_margin' && t.severity === 'high')) || null;
+  const focusRegion = regionThreat?.regionId || null;
+  const exposure = regionThreat?.exposure || 0;
+  const rival = bgRival(world);
+  const lastOverride = overrides.filter(o => turn - o.turn <= 2).slice(-1)[0] || null;
+  let goals: string[] = [];
+  let source: BackgroundShadowPlan['source'] = 'background';
+  let currentPhase = '';
+  if (g3?.active) {
+    source = 'player_strategy';
+    const live = g3.active.goals.filter(g => g.status !== 'removed');
+    goals = live.map(g => g.label);
+    const phaseGoal = live[g3.progress?.phaseIndex ?? g3.active.phaseIndex];
+    currentPhase = phaseGoal?.label || 'Strategy complete';
+    // Background AI never rewrites the player's strategy; if the state calls for a different first step it
+    // says so here (and as a divergence) — the player decides.
+    if (focusRegion && phaseGoal && phaseGoal.regionId !== focusRegion && !(phaseGoal.type === 'protect_region' && phaseGoal.regionId === focusRegion)) currentPhase = `Stabilize ${focusRegion} first, then: ${phaseGoal.label}`;
+  } else {
+    if (focusRegion) goals.push(`Hold ${bgRegionName(world, focusRegion)}`);
+    const econWeak = world.player.money < Math.max(reserve.amount || 0, exposure) + 1000;
+    if (econWeak) goals.push(`Build liquidity to ${bgMoney(Math.max(1000, Math.ceil((Math.max(reserve.amount || 0, exposure) + 2000) / 500) * 500))}`);
+    if (world.objective && world.objective.id !== 'explore') goals.push(world.objective.title);
+    const exp = opps.find(o => o.type === 'cheap_expansion' && o.strategicAlignment !== 'conflicts');
+    if (exp && !goals.some(g => g.includes(exp.subject))) goals.push(`Expand into ${bgRegionName(world, exp.subject)}`);
+    if (!goals.length) goals.push(world.win ? `Improve ${world.win.metricLabel} (win condition)` : 'Grow your position');
+    currentPhase = goals[0];
+  }
+  // Next move: for a serious region threat, the best mitigation; after an override, the CHEAPEST one.
+  const mitigations = evals.filter(e => focusRegion && e.targetId === focusRegion && /deposit|defend|reinforce|secure|claim|control|travel/.test(`${e.actionType} ${e.label}`.toLowerCase()));
+  let next: BackgroundMoveRef | null = null;
+  let adaptation: string | null = null;
+  if (lastOverride && focusRegion && lastOverride.chosenRegion !== focusRegion) {
+    const cheapest = [...mitigations].sort((a, b) => -a.dimensions.resourceCost - -b.dimensions.resourceCost || b.total - a.total)[0];
+    if (cheapest) next = { actionId: cheapest.actionId, label: cheapest.label, actionType: cheapest.actionType, targetId: cheapest.targetId, reason: `cheapest way to stabilize ${focusRegion}` };
+    adaptation = `Since you prioritized ${lastOverride.chosenRegion ? bgRegionName(world, lastOverride.chosenRegion) : lastOverride.chosen}, I'm now looking for the cheapest way to stabilize ${bgRegionName(world, focusRegion)} without abandoning it.`;
+    if (lastOverride.chosenRegion && !goals.some(g => g.includes(bgRegionName(world, lastOverride.chosenRegion)))) goals.splice(1, 0, `Keep the ${bgRegionName(world, lastOverride.chosenRegion)} expansion going`);
+  } else if (lastOverride) {
+    adaptation = `Plan adjusted to your choice (${lastOverride.chosen}).`;
+  }
+  if (!next && mitigations[0] && regionThreat && (regionThreat.severity === 'critical' || regionThreat.severity === 'high')) next = { actionId: mitigations[0].actionId, label: mitigations[0].label, actionType: mitigations[0].actionType, targetId: mitigations[0].targetId, reason: mitigations[0].reason };
+  if (!next) { const top = moves.find(m => m.moveClass === 'best_immediate') || moves.find(m => m.moveClass === 'best_waiting') || null; next = top ? { actionId: top.actionId, label: top.label, actionType: top.actionType, targetId: top.targetId, reason: top.reason } : null; }
+  const conditions: Array<{ when: string; then: string }> = [];
+  if (focusRegion) conditions.push({ when: `${rival?.name || 'The rival'} increases pressure on ${focusRegion}`, then: `delay expansion and reinforce ${focusRegion}` });
+  const unseen = active.find(t => t.type === 'region_thin_margin');
+  if (unseen) conditions.push({ when: `the rival's cash becomes visible and exceeds ${bgMoney(unseen.exposure || 0)}`, then: `reinforce ${unseen.subject}` });
+  if (reserve.amount) conditions.push({ when: `cash falls below ${bgMoney(reserve.amount)}`, then: 'pause spending moves until it recovers' });
+  const invValue = Object.entries(world.player.inventory).reduce((s, [k, q]) => s + (world.market[k] || 0) * q, 0);
+  const fallbacks: string[] = [];
+  if (invValue > 0) fallbacks.push(`Sell inventory (about ${bgMoney(invValue)})`);
+  if (world.systems?.team?.treasuryBalance) fallbacks.push('Request Team Treasury support');
+  fallbacks.push('Ask Co-Pilot to take a turn (only if you choose to)');
+  const preserve = Math.max(reserve.amount || 0, exposure ? Math.ceil((exposure * 1.5) / 500) * 500 : 0) || null;
+  const resourceAssumptions = [
+    `cash ${bgMoney(world.player.money)}`, ...(reserve.amount ? [`reserve ${bgMoney(reserve.amount)} (${reserve.source})`] : []), ...(exposure ? [`${focusRegion} challenge cost about ${bgMoney(exposure)}`] : []), ...(preserve ? [`preserve at least ${bgMoney(preserve)} until ${focusRegion || 'threats'} are secure`] : [])
+  ];
+  const confidence: BGBand = !next ? 'low' : world.settings.fogOfWar || active.some(t => t.confidence === 'low') ? 'moderate' : 'high';
+  const reason = regionThreat ? `${regionThreat.evidence.join('; ')} — ${regionThreat.possibleImpact}.` : g3 ? 'Carrying your active strategy forward from the current state.' : 'No serious threat; building toward your objective and win condition.';
+  const plan: BackgroundShadowPlan = {
+    source, label: source === 'player_strategy' ? 'Background AI view of your strategy' : 'Background AI plan (provisional — not chosen by you)',
+    strategySummary: goals.slice(0, 4).join(' → '), primaryGoal: goals[0] || '', secondaryGoals: goals.slice(1, 4), currentPhase, nextMove: next,
+    followingMoves: goals.slice(1, 1 + depth), conditions: conditions.slice(0, 3), fallbacks: fallbacks.slice(0, 3), resourceAssumptions, timeHorizon: depth > 1 ? `next ${depth} turns` : 'this turn',
+    confidence, reason, lastReplannedTurn: turn, revision: (prevPlan?.revision || 0) + 1, adaptation, focusRegion
+  };
+  // Stability: an unchanged structure keeps the previous plan (same revision) — no churn on minor events.
+  const sig = (p: BackgroundShadowPlan) => [p.source, p.strategySummary, p.currentPhase, p.nextMove?.actionId || '', p.adaptation || '', p.focusRegion || ''].join('|');
+  return prevPlan && sig(prevPlan) === sig(plan) ? prevPlan : plan;
+}
+export const backgroundPlanPreserveCash = (plan: BackgroundShadowPlan | null): number | null => {
+  const line = plan?.resourceAssumptions.find(l => l.startsWith('preserve at least'));
+  const m = line?.match(/\$([\d,]+)/);
+  return m ? Number(m[1].replace(/,/g, '')) : null;
+};
+
+// ---- Divergence: player intent vs Background AI plan (never judgemental, never a replacement) -------------
+
+export function deriveBackgroundDivergence(world: GIWorld, plan: BackgroundShadowPlan | null, threats: BackgroundThreat[], overrides: BackgroundAIState['overrides'], prev: BackgroundPlanDivergence | null): BackgroundPlanDivergence | null {
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3 : null;
+  const turn = world.turn;
+  const t = threats.find(x => x.status === 'active' && x.regionId === plan?.focusRegion) || null;
+  if (g3?.active && plan?.focusRegion && t) {
+    const live = g3.active.goals.filter(g => g.status !== 'removed');
+    const phase = live[g3.progress?.phaseIndex ?? g3.active.phaseIndex];
+    if (phase && phase.regionId !== plan.focusRegion) {
+      const id = `bgd_strategy_${phase.id}_${plan.focusRegion}`;
+      return {
+        id, kind: 'strategy', severity: t.severity === 'critical' ? 'major' : 'meaningful', playerIntent: phase.label, backgroundPlan: `Hold ${plan.focusRegion} first`,
+        reason: `${t.evidence.join('; ')}.`, expectedImpact: t.possibleImpact, confidence: t.confidence, reversible: true,
+        requiresInterrupt: t.severity === 'critical', turn: prev?.id === id ? prev.turn : turn, acknowledged: prev?.id === id ? prev.acknowledged : false
+      };
+    }
+  }
+  const o = overrides.filter(x => turn - x.turn <= 1).slice(-1)[0];
+  if (o) return { id: `bgd_action_${o.turn}_${bgHash(o.chosen)}`, kind: 'action', severity: 'meaningful', playerIntent: o.chosen, backgroundPlan: o.recommended, reason: 'Your move prioritized something else than the move Background AI had prepared.', expectedImpact: plan?.adaptation || 'plan re-evaluated from the new state', confidence: 'moderate', reversible: true, requiresInterrupt: false, turn: o.turn, acknowledged: true };
+  return null;
+}
+
+// ---- Interruption model + cooldowns ------------------------------------------------------------------------
+
+const BG_LEVEL_BY_SCORE = (s: number): BGInterruptLevel => (s >= 0.9 ? 'critical' : s >= 0.55 ? 'warning' : s >= 0.3 ? 'notice' : s >= 0.15 ? 'indicator' : 'silent');
+const BG_BAND_VALUE: Record<BGBand, number> = { high: 1, moderate: 0.75, low: 0.5 };
+
+export function scoreBackgroundInterruption(parts: { importance: number; urgency: number; confidence: number; irreversibility: number }): number {
+  return Math.round(parts.importance * parts.urgency * parts.confidence * parts.irreversibility * 100) / 100;
+}
+
+export function deriveBackgroundIntervention(world: GIWorld, mode: BackgroundAIMode, threats: BackgroundThreat[], opps: BackgroundOpportunity[], divergence: BackgroundPlanDivergence | null, insights: BackgroundAIState['teamInsights'], cooldowns: BackgroundAIState['cooldowns'], playerModel: BackgroundAIState['playerModel']): { rec: BackgroundInterventionRecommendation | null; cooldowns: BackgroundAIState['cooldowns']; fresh: boolean } {
+  const turn = world.turn;
+  type Cand = Omit<BackgroundInterventionRecommendation, 'level' | 'surfacedTurn'> & { signature: string; domain: string };
+  const cands: Cand[] = [];
+  threats.filter(t => t.status === 'active').slice(0, 3).forEach(t => {
+    const score = scoreBackgroundInterruption({ importance: ({ critical: 1, high: 0.75, medium: 0.45, low: 0.2 } as const)[t.severity], urgency: ({ now: 1, soon: 0.7, later: 0.4 } as const)[t.urgency], confidence: BG_BAND_VALUE[t.confidence], irreversibility: t.type === 'region_vulnerable' ? 1 : 0.7 });
+    cands.push({ score, reason: t.evidence.join('; '), message: `${t.possibleImpact.replace(/^./, c => c.toUpperCase())}.`, cooldownKey: `threat:${t.id}`, actionContext: { actionId: t.mitigationOptions[0]?.actionId || null, query: `What happens if I ignore ${t.subject}?` }, confidence: t.confidence, subjectKind: t.type === 'contract_expiry' ? 'deadline' : 'threat', signature: `${t.severity}:${bgHash(t.evidence.join('|'))}`, domain: t.type.startsWith('region') ? 'regions' : 'economy' });
+  });
+  opps.slice(0, 2).forEach(o => {
+    const score = scoreBackgroundInterruption({ importance: o.urgency === 'now' ? 0.55 : o.strategicAlignment === 'aligned' ? 0.5 : 0.35, urgency: ({ now: 1, soon: 0.7, later: 0.4 } as const)[o.urgency], confidence: BG_BAND_VALUE[o.confidence], irreversibility: 0.7 });
+    cands.push({ score, reason: o.reason, message: `Opportunity: ${o.subject} — ${o.reason}.`, cooldownKey: `opportunity:${o.id}`, actionContext: { actionId: o.actionIds[0] || null, query: 'What opportunities do you see?' }, confidence: o.confidence, subjectKind: 'opportunity', signature: `${o.urgency}:${bgHash(o.reason)}`, domain: 'opportunities' });
+  });
+  if (divergence && divergence.kind === 'strategy') cands.push({ score: scoreBackgroundInterruption({ importance: divergence.severity === 'major' ? 0.8 : 0.5, urgency: 0.8, confidence: BG_BAND_VALUE[divergence.confidence], irreversibility: 0.8 }), reason: divergence.reason, message: `Your strategy's current step is “${divergence.playerIntent}”; Background AI would ${divergence.backgroundPlan.toLowerCase()} because ${divergence.reason.replace(/\.$/, '')}.`, cooldownKey: `divergence:${divergence.id}`, actionContext: { actionId: null, query: 'How does my plan differ from yours?' }, confidence: divergence.confidence, subjectKind: 'divergence', signature: divergence.severity, domain: 'strategy' });
+  insights.slice(0, 1).forEach(i => cands.push({ score: 0.35, reason: i.text, message: i.text, cooldownKey: `team:${i.id}`, actionContext: { actionId: null, query: 'What should we change?' }, confidence: 'high', subjectKind: 'team', signature: bgHash(i.text), domain: 'team' }));
+  // Cooldowns for issues that no longer exist are dropped, so a condition that resolves and returns resurfaces.
+  let cds = cooldowns.filter(c => cands.some(x => x.cooldownKey === c.key));
+  const ranked = cands.map(c => {
+    let level = BG_LEVEL_BY_SCORE(c.score);
+    // Personalization: repeatedly dismissed low-priority domains are shown less (never for critical issues).
+    if ((playerModel.dismissals[c.domain] || 0) >= 3 && level !== 'critical' && bgLevelRank[level] > 0) level = (['silent', 'indicator', 'notice', 'warning', 'critical'] as BGInterruptLevel[])[bgLevelRank[level] - 1];
+    // Mode gating: proactivity only — never authority.
+    if (mode === 'observe') level = 'silent';
+    else if (mode === 'alert' && bgLevelRank[level] < bgLevelRank.notice) level = 'silent';
+    const cd = cds.find(x => x.key === c.cooldownKey);
+    const escalated = cd ? bgLevelRank[level] > bgLevelRank[cd.level] : false;
+    const newEvidence = cd ? cd.signature !== c.signature : false;
+    const expired = cd ? turn - cd.lastSurfacedTurn >= BACKGROUND_AI_COOLDOWN_TURNS && !cd.acknowledged : false;
+    const suppressed = Boolean(cd) && !escalated && !(newEvidence && !cd!.acknowledged) && !expired;
+    return { c, level, suppressed, cd };
+  }).sort((a, b) => b.c.score - a.c.score || a.c.cooldownKey.localeCompare(b.c.cooldownKey));
+  const pick = ranked.find(r => !r.suppressed && bgLevelRank[r.level] >= bgLevelRank.notice) || null;
+  let fresh = false;
+  if (pick) {
+    fresh = true;
+    cds = [...cds.filter(x => x.key !== pick.c.cooldownKey), { key: pick.c.cooldownKey, lastSurfacedTurn: turn, signature: pick.c.signature, level: pick.level, acknowledged: false }].slice(-BACKGROUND_AI_LIMITS.cooldowns);
+  }
+  // Keep showing the still-valid surfaced item without "re-surfacing" it.
+  const keep = !pick ? ranked.find(r => r.cd && !r.cd.acknowledged && bgLevelRank[r.level] >= bgLevelRank.notice) || null : null;
+  const chosen = pick || keep;
+  const rec = chosen ? { score: chosen.c.score, level: chosen.level, reason: chosen.c.reason, message: chosen.c.message, cooldownKey: chosen.c.cooldownKey, actionContext: chosen.c.actionContext, confidence: chosen.c.confidence, subjectKind: chosen.c.subjectKind, surfacedTurn: pick ? turn : chosen.cd!.lastSurfacedTurn } : ranked[0] ? { score: ranked[0].c.score, level: 'silent' as BGInterruptLevel, reason: ranked[0].c.reason, message: ranked[0].c.message, cooldownKey: ranked[0].c.cooldownKey, actionContext: ranked[0].c.actionContext, confidence: ranked[0].c.confidence, subjectKind: ranked[0].c.subjectKind, surfacedTurn: turn } : null;
+  return { rec, cooldowns: cds, fresh };
+}
+
+// ---- Team OS read-only insights (Team OS decides role changes — never Background AI) ------------------------
+
+export function deriveBackgroundTeamInsights(world: GIWorld): BackgroundAIState['teamInsights'] {
+  const team = world.team;
+  if (!team?.enabled || !team.state.contract) return [];
+  const out: BackgroundAIState['teamInsights'] = [];
+  const nextFocus = team.state.contract.taskGraph.find(t => (t.type === 'take_region' || t.type === 'reach_region') && !['completed', 'cancelled', 'superseded'].includes(t.status))?.regionId
+    || (world.gi3?.active?.goals.find(g => g.type === 'control_region' && g.status !== 'completed' && g.status !== 'removed')?.regionId) || null;
+  team.state.contract.taskGraph.filter(t => t.type === 'generate_cash').forEach(t => {
+    t.assignedActorIds.filter(id => !team.inputs.actors.find(a => a.id === id)?.isHuman).forEach(id => {
+      const a = team.inputs.actors.find(x => x.id === id);
+      const target = Number(t.amount || t.resourceRequirement || 0);
+      const done = t.status === 'completed' || (a && target > 0 && a.money - a.protectedCash >= target);
+      if (a && done) out.push({ id: `bgi_cash_${t.id}_${id}`, text: `${a.name}'s economy task (“${t.label}”) is effectively complete${target ? ` — ${bgMoney(a.money - a.protectedCash)} free against ${bgMoney(target)}` : ''}.`, suggestion: `The team may be ready to shift ${a.name} toward ${nextFocus ? `${nextFocus} preparation` : 'the next objective'}. Team Intelligence decides the actual role change.` });
+    });
+  });
+  return out.slice(0, 2);
+}
+
+// ---- PREPARE: Co-Pilot handoff package (context only — Co-Pilot keeps its own authority) --------------------
+
+export function buildBackgroundHandoffPackage(world: GIWorld, st: Pick<BackgroundAIState, 'shadowPlan' | 'threats' | 'opportunities' | 'alternativeMoves' | 'preparedSimulations' | 'overrides' | 'confidence' | 'coPilotHandoffPackage'>, stateHash: string): BackgroundCoPilotHandoffPackage {
+  const g3 = world.gi3?.active?.status === 'active' ? world.gi3.active : null;
+  const reserve = bgExplicitReserve(world);
+  const plan = st.shadowPlan;
+  const seq: BackgroundMoveRef[] = [];
+  if (plan?.nextMove) seq.push(plan.nextMove);
+  st.alternativeMoves.filter(m => m.actionId !== plan?.nextMove?.actionId && m.actionId !== 'end_turn').slice(0, 2).forEach(m => seq.push({ actionId: m.actionId, label: m.label, actionType: m.actionType, targetId: m.targetId, reason: m.reason }));
+  const prev = st.coPilotHandoffPackage;
+  return {
+    status: prev?.status === 'delivered' ? 'delivered' : 'ready',
+    strategySummary: g3 ? `Your strategy: ${g3.summary}` : plan ? `Background AI plan: ${plan.strategySummary}` : 'No strategy yet',
+    currentPhase: plan?.currentPhase || '', activeGoals: plan ? [plan.primaryGoal, ...plan.secondaryGoals].filter(Boolean) : [],
+    constraints: [...(reserve.amount ? [`keep ${bgMoney(reserve.amount)} (${reserve.source})`] : []), ...(bgAvoidsDebt(world) ? ['avoid new debt'] : []), ...((g3?.constraints.deprioritizedRegions || []).map(r => `deprioritize ${r}`))],
+    reserve: reserve.amount, avoidDebt: bgAvoidsDebt(world), currentObjective: world.objective?.title || null, recommendedSequence: seq, focusRegion: plan?.focusRegion || null,
+    threats: st.threats.filter(t => t.status === 'active').slice(0, 3).map(t => `${t.subject} (${t.severity}): ${t.possibleImpact}`),
+    opportunities: st.opportunities.slice(0, 2).map(o => `${o.subject}: ${o.reason}`),
+    resourceStatus: `cash ${bgMoney(world.player.money)}${reserve.amount ? `, reserve ${bgMoney(reserve.amount)}` : ''}, debt ${bgMoney(world.player.debtTotal)}`,
+    teamResponsibilities: (world.gi3?.active?.responsibilities || []).map(r => `${r.actorId === 'player' ? 'You' : world.actors.find(a => a.id === r.actorId)?.name || r.actorId}: ${r.focus}${r.regionId ? ` ${r.regionId}` : ''}`),
+    preparedSimulations: st.preparedSimulations.slice(0, 3).map(s => `${s.label}: ${s.outcomeSummary}`),
+    fallbacks: plan?.fallbacks || [], recentPlayerDecisions: st.overrides.slice(-3).map(o => `turn ${o.turn}: chose ${o.chosen} over ${o.recommended}`),
+    confidence: st.confidence, sourceStateHash: stateHash, preparedTurn: world.turn,
+    deliveredTurn: prev?.status === 'delivered' ? prev.deliveredTurn : null, sessionId: prev?.status === 'delivered' ? prev.sessionId : null
+  };
+}
+
+/**
+ * Co-Pilot side of the handoff: while a delegated Co-Pilot session is active, its OWN valid candidates get a
+ * bounded utility nudge toward the handed-off plan and away from its constraints. Validity, authority,
+ * Guardian, AP, Treasury, Governor and execution stay entirely Co-Pilot's.
+ */
+export function applyBackgroundHandoffToCoPilotCandidates(candidates: any[], handoff: BackgroundCoPilotHandoffPackage | null | undefined): number {
+  // Called by Co-Pilot only while the player has an active delegated session (the delegation itself).
+  if (!handoff || handoff.status === 'returned') return 0;
+  let touched = 0;
+  const seqTypes = handoff.recommendedSequence.map(m => String(m.actionType || '').toLowerCase());
+  candidates.forEach(c => {
+    if (!c || !c.isValid) return;
+    const type = String(c.actionType || c.type || '').toLowerCase();
+    const text = `${type} ${c.title || ''}`.toLowerCase();
+    const target = String(c.targetId || c.regionId || c.parameters?.region || '').toUpperCase();
+    let bias = 0;
+    const idx = seqTypes.indexOf(type);
+    if (idx >= 0) bias += idx === 0 ? 12 : 6;
+    if (handoff.focusRegion && target === handoff.focusRegion && /deposit|defend|reinforce|claim|control/.test(text)) bias += 8;
+    if (handoff.avoidDebt && /loan|borrow/.test(text)) bias -= 15;
+    if (handoff.reserve && Number(c.costEstimate || 0) > 0 && typeof c.cashAfter === 'number' && c.cashAfter < handoff.reserve) bias -= 10;
+    if (bias) { c.utilityScore = Number(c.utilityScore || 0) + Math.max(-15, Math.min(15, bias)); c.backgroundHandoffNote = `Background AI handoff ${bias > 0 ? '+' : ''}${bias}`; touched += 1; }
+  });
+  return touched;
+}
+
+// ---- The event-driven loop ------------------------------------------------------------------------------
+
+export interface BackgroundEvaluationReport {
+  significance: BGSignificance;
+  events: Array<{ kind: string; significance: BGSignificance; summary: string }>;
+  recomputed: string[];
+  skipped: boolean;
+  surfaced: BackgroundInterventionRecommendation | null;
+  planChanged: boolean;
+  resolvedPredictions: BackgroundPrediction[];
+  impact: BackgroundImpactAssessment | null;
+}
+
+function bgImpact(world: GIWorld, prevObs: BackgroundObservation, obs: BackgroundObservation, prevThreats: BackgroundThreat[], threats: BackgroundThreat[], events: BackgroundEvaluationReport['events'], mode: BackgroundAIMode, plan: BackgroundShadowPlan | null): BackgroundImpactAssessment | null {
+  const lines: BackgroundImpactAssessment['lines'] = [];
+  if (obs.cash !== prevObs.cash) lines.push({ label: 'Liquidity', before: bgMoney(prevObs.cash), after: bgMoney(obs.cash), direction: obs.cash > prevObs.cash ? 'better' : 'worse' });
+  if (obs.depositsTotal !== prevObs.depositsTotal) lines.push({ label: 'Regional deposits', before: bgMoney(prevObs.depositsTotal), after: bgMoney(obs.depositsTotal), direction: 'changed' });
+  const regionCodes = Array.from(new Set([...prevThreats, ...threats].filter(t => t.regionId).map(t => t.regionId!)));
+  regionCodes.forEach(code => {
+    const b = prevThreats.find(t => t.regionId === code && t.status === 'active');
+    const a = threats.find(t => t.regionId === code && t.status === 'active');
+    if ((b?.severity || 'none') !== (a?.severity || 'none')) lines.push({ label: `${code} threat`, before: b?.severity || 'none', after: a?.severity || 'none', direction: !a ? 'better' : !b ? 'worse' : bgSevRank[a.severity] < bgSevRank[b.severity] ? 'better' : 'worse' });
+  });
+  prevObs.held.filter(c => !obs.held.includes(c)).forEach(c => lines.push({ label: c, before: 'held', after: 'lost', direction: 'worse' }));
+  obs.held.filter(c => !prevObs.held.includes(c)).forEach(c => lines.push({ label: c, before: 'not held', after: 'held', direction: 'better' }));
+  if (obs.debt !== prevObs.debt) lines.push({ label: 'Debt', before: bgMoney(prevObs.debt), after: bgMoney(obs.debt), direction: obs.debt < prevObs.debt ? 'better' : 'worse' });
+  if (!lines.length) return null;
+  const g3p = world.gi3?.active?.status === 'active' ? world.gi3.progress : null;
+  const planStatus = g3p ? `Your strategy: ${({ on_track: 'still on track', ahead: 'ahead', at_risk: 'at risk', blocked: 'blocked', recovering: 'recovering', needs_decision: 'needs a decision', completed: 'complete', failed: 'failed' } as Record<string, string>)[g3p.onTrack]}` : plan ? `Background AI plan: ${plan.currentPhase}` : 'No plan yet';
+  const exposure = threats.find(t => t.status === 'active' && t.type === 'region_vulnerable')?.exposure || 0;
+  const coachNote = mode === 'coach' ? (exposure && obs.cash < exposure ? `Keeping at least ${bgMoney(exposure)} lets you answer a challenge on your next turn — this move left ${bgMoney(obs.cash)}.` : lines.some(l => l.direction === 'better') ? 'This move improved your position on the measures Background AI tracks.' : null) : null;
+  return { turn: world.turn, actionSummary: events.filter(e => e.significance !== 'trivial').map(e => e.summary).slice(0, 2).join('; ') || 'your last action', lines: lines.slice(0, BACKGROUND_AI_LIMITS.impactLines), planStatus, coachNote };
+}
+
+/**
+ * One evaluation of the Background AI loop. Pure and deterministic: the same state + world produce the same
+ * output. Irrelevant changes are skipped; relevant ones recompute only the components that depend on them.
+ */
+export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefined, world: GIWorld, opts?: { force?: boolean; eventLabel?: string }): { state: BackgroundAIState; report: BackgroundEvaluationReport } {
+  const prev = prevIn || createEmptyBackgroundAIState();
+  const emptyReport = (skipped: boolean, significance: BGSignificance = 'trivial', events: BackgroundEvaluationReport['events'] = []): BackgroundEvaluationReport => ({ significance, events, recomputed: [], skipped, surfaced: null, planChanged: false, resolvedPredictions: [], impact: null });
+  if (!prev.enabled) return { state: prev, report: emptyReport(true) };
+  const force = Boolean(opts?.force);
+  const hashes = computeBackgroundDomainHashes(world);
+  const changed = (Object.keys(hashes) as BGDomain[]).filter(d => prev.domainHashes[d] !== hashes[d]);
+  const obs = observeBackgroundWorld(world);
+  const { significance, events } = classifyBackgroundEvents(prev.observation, obs);
+  if (!force && prev.observation && (!changed.length || (significance === 'trivial' && !changed.some(d => d === 'actions' || d === 'strategy' || d === 'team')))) {
+    return { state: prev, report: emptyReport(true, significance, events) };
+  }
+  const recompute = new Set<string>(Object.keys(BACKGROUND_AI_DEPENDENCIES).filter(k => force || !prev.observation || BACKGROUND_AI_DEPENDENCIES[k].some(d => changed.includes(d))));
+  const budget = BACKGROUND_AI_BUDGETS[prev.mode];
+  const turn = world.turn;
+  const deep = force || !prev.observation || bgSigRank[significance] >= bgSigRank.meaningful;
+  const cashHistory = (prev.cashHistory.length && prev.cashHistory[prev.cashHistory.length - 1].turn === turn ? [...prev.cashHistory.slice(0, -1), { turn, cash: obs.cash }] : [...prev.cashHistory, { turn, cash: obs.cash }]).slice(-BACKGROUND_AI_LIMITS.cashHistory);
+  const threats = recompute.has('threats') ? deriveBackgroundThreats(world, prev.threats) : prev.threats;
+  const opportunities = recompute.has('opportunities') ? deriveBackgroundOpportunities(world, prev.observation, threats) : prev.opportunities;
+  const assessment = recompute.has('assessment') || !prev.strategicAssessment ? deriveBackgroundAssessment(world, threats, opportunities, cashHistory) : prev.strategicAssessment;
+  // Predictions: resolve the ones whose horizon passed (calibration), keep open ones, add new ones.
+  const { stillOpen, resolved } = resolveBackgroundPredictions(prev.predictions, world);
+  const fresh = recompute.has('predictions') ? deriveBackgroundPredictions(world, threats, budget.predictions) : [];
+  const predictions = [...stillOpen, ...fresh.filter(f => !stillOpen.some(p => p.id === f.id))]
+    .filter(p => !p.regionId || world.regions[p.regionId]).slice(0, budget.predictions);
+  const calibration = { supported: prev.calibration.supported + resolved.filter(r => r.resolution === 'supported').length, contradicted: prev.calibration.contradicted + resolved.filter(r => r.resolution === 'contradicted').length, unresolved: prev.calibration.unresolved + resolved.filter(r => r.resolution === 'unresolved').length };
+  const hypotheses = recompute.has('hypotheses') ? deriveBackgroundHypotheses(world, prev.observation, prev.hypotheses, cashHistory, budget.hypotheses) : prev.hypotheses;
+  const diagnoses = recompute.has('diagnoses') ? deriveBackgroundDiagnoses(world, assessment, threats, hypotheses, opportunities) : prev.diagnoses;
+  const attentionQueue = deriveBackgroundAttention(world, threats, opportunities, predictions, prev.attentionQueue);
+  // Override detection from the Activity Ledger (a player action that went elsewhere than the prepared move).
+  let overrides = prev.overrides;
+  const playerId = world.player.id;
+  const newActions = (world.ledgerEvents || []).filter((e: any) => e && e.category === 'action' && (String(e.actorId) === playerId || e.actorId === 'player'));
+  const seenIdx = prev.observation?.lastLedgerId ? newActions.findIndex((e: any) => String(e.id) === prev.observation!.lastLedgerId) : -1;
+  const since = prev.observation ? (seenIdx >= 0 ? newActions.slice(seenIdx + 1) : newActions.filter((e: any) => Number(e.turn ?? -1) >= prev.lastEvaluationTurn).slice(-3)) : [];
+  const focus = prev.shadowPlan?.focusRegion || null;
+  since.forEach((e: any) => {
+    const region = bgRegionIn(world, String(e.summary || ''));
+    const recId = prev.shadowPlan?.nextMove?.actionId || null;
+    const tookRec = recId && (String(e.summary || '').toLowerCase().includes(String(prev.shadowPlan?.nextMove?.label || '').toLowerCase().slice(0, 12)));
+    if (focus && region && region !== focus && /deposit|claim|control|travel|expan/i.test(String(e.summary || '')) && !tookRec && !overrides.some(o => o.turn === Number(e.turn ?? turn) && o.chosenRegion === region)) {
+      overrides = [...overrides, { turn: Number(e.turn ?? turn), recommended: prev.shadowPlan?.nextMove?.label || `stabilize ${focus}`, chosen: String(e.summary || '').slice(0, 80), chosenRegion: region }].slice(-BACKGROUND_AI_LIMITS.overrides);
+    }
+  });
+  const evalsNeeded = recompute.has('moves') || !prev.moveEvaluations.length || (prev.recommendedNextMove && prev.recommendedNextMove.actionId !== 'end_turn' && !world.actionSet?.ranked.some(c => c.id === prev.recommendedNextMove!.actionId && c.legal));
+  const threatFocus = threats.find(t => t.status === 'active' && (t.type === 'region_vulnerable' || t.type === 'region_thin_margin'))?.regionId || null;
+  const moveEvaluations = evalsNeeded ? evaluateBackgroundMoves(world, threats, threatFocus, budget.candidates) : prev.moveEvaluations;
+  const economyWeak = /Critical|Below|Weakening|Recovering/.test(assessment.economy) || assessment.liquidity === 'Tight';
+  const classes = evalsNeeded ? classifyBackgroundMoves(moveEvaluations, economyWeak, Boolean(world.gi3?.active?.status === 'active')) : null;
+  const planNeeded = !prev.shadowPlan || deep || evalsNeeded || overrides !== prev.overrides;
+  const shadowPlan = planNeeded ? buildBackgroundShadowPlan(world, prev.shadowPlan, threats, opportunities, classes || [], moveEvaluations, overrides, budget.planDepth) : prev.shadowPlan;
+  const recommendedNextMove = shadowPlan?.nextMove || null;
+  const alternativeMoves = classes ? classes.filter(m => m.actionId !== recommendedNextMove?.actionId).filter((m, i, arr) => arr.findIndex(x => x.actionId === m.actionId) === i).slice(0, budget.alternatives) : prev.alternativeMoves;
+  const simHash = `${hashes.economy}:${hashes.regions}:${hashes.actions}`;
+  const preparedSimulations = prepareBackgroundSimulations(world, moveEvaluations, prev.preparedSimulations, budget.simulations, simHash, threats);
+  const planDivergence = deriveBackgroundDivergence(world, shadowPlan, threats, overrides, prev.planDivergence);
+  const teamInsights = recompute.has('teamInsights') ? deriveBackgroundTeamInsights(world) : prev.teamInsights;
+  const intervention = deriveBackgroundIntervention(world, prev.mode, threats, opportunities, planDivergence, teamInsights, prev.cooldowns, prev.playerModel);
+  const impact = prev.observation && deep && world.isHumanTurn && obs.lastLedgerId !== prev.observation.lastLedgerId && events.some(e => e.significance !== 'trivial' && e.kind !== 'turn_changed') && since.length
+    ? bgImpact(world, prev.observation, obs, prev.threats, threats, events, prev.mode, shadowPlan) : null;
+  const confidence: BGBand = world.settings.fogOfWar ? 'moderate' : shadowPlan?.confidence || 'moderate';
+  const planChanged = Boolean(prev.shadowPlan && shadowPlan && shadowPlan.revision !== prev.shadowPlan.revision);
+  const activeThreats = threats.filter(t => t.status === 'active');
+  const status: BGStatus = intervention.rec && bgLevelRank[intervention.rec.level] >= bgLevelRank.warning ? 'needs_attention'
+    : activeThreats.some(t => bgSevRank[t.severity] >= bgSevRank.high) ? 'concern'
+    : planChanged ? 'plan_updated'
+    : opportunities.length && !activeThreats.length ? 'opportunity'
+    : attentionQueue.length ? 'watching' : 'quiet';
+  const history = [...prev.history];
+  const log = (kind: string, summary: string) => history.push({ turn, kind, summary: summary.slice(0, 180) });
+  events.filter(e => bgSigRank[e.significance] >= bgSigRank.major).slice(0, 2).forEach(e => log(`event_${e.kind}`, e.summary));
+  if (planChanged && deep) log('plan_changed', `Shadow Plan rev ${shadowPlan!.revision}: ${shadowPlan!.currentPhase}${shadowPlan!.adaptation ? ` — ${shadowPlan!.adaptation}` : ''}`);
+  if (intervention.fresh && intervention.rec) log(`surfaced_${intervention.rec.level}`, intervention.rec.message);
+  resolved.forEach(r => log(`prediction_${r.resolution}`, `${r.event}: ${r.resolution}`));
+  const base: BackgroundAIState = {
+    ...prev, lastEvaluationTurn: turn, lastEvaluationEvent: opts?.eventLabel || events[0]?.summary || prev.lastEvaluationEvent, domainHashes: hashes,
+    observation: significance === 'trivial' && prev.observation ? { ...prev.observation, lastLedgerId: obs.lastLedgerId, turn: obs.turn } : obs,
+    cashHistory, strategicAssessment: assessment,
+    activeGoals: shadowPlan ? [shadowPlan.primaryGoal, ...shadowPlan.secondaryGoals].filter(Boolean) : [], currentPhase: shadowPlan?.currentPhase || null,
+    attentionQueue, shadowPlan, recommendedNextMove, alternativeMoves, moveEvaluations, threats, opportunities, predictions,
+    resolvedPredictions: [...prev.resolvedPredictions, ...resolved].slice(-BACKGROUND_AI_LIMITS.resolvedPredictions), calibration, hypotheses, diagnoses, preparedSimulations,
+    explicitPlayerConstraints: [...(bgExplicitReserve(world).amount ? [`reserve ${bgMoney(bgExplicitReserve(world).amount!)} (${bgExplicitReserve(world).source})`] : []), ...(bgAvoidsDebt(world) ? ['avoid new debt (your strategy)'] : [])],
+    planDivergence, interventionRecommendation: intervention.rec, cooldowns: intervention.cooldowns, recentImpactAssessment: impact || prev.recentImpactAssessment,
+    overrides, teamInsights, status, confidence, history: history.slice(-BACKGROUND_AI_LIMITS.history),
+    diagnostics: { significance, events: events.map(e => `${e.significance}: ${e.summary}`).slice(0, 8), recomputed: Array.from(recompute), skipped: false }
+  };
+  base.coPilotHandoffPackage = buildBackgroundHandoffPackage(world, base, simHash);
+  base.lastMeaningfulHash = bgHash([shadowPlan?.revision, shadowPlan?.nextMove?.actionId, activeThreats.map(t => `${t.id}:${t.severity}`).join(','), opportunities.map(o => o.id).join(','), intervention.rec ? `${intervention.rec.cooldownKey}:${intervention.rec.level}:${intervention.rec.surfacedTurn}` : '', planDivergence?.id || '', predictions.map(p => p.id).join(','), hypotheses.map(h => `${h.id}:${h.confidence}`).join(','), impact ? impact.turn : '', status, alternativeMoves.map(m => m.actionId).join(','), preparedSimulations.map(s => s.actionId + s.stateHash).join(','), teamInsights.map(i => i.id).join(','), assessment.overallPosition, assessment.economy, assessment.liquidity].join('|'));
+  return { state: base, report: { significance, events, recomputed: Array.from(recompute), skipped: false, surfaced: intervention.fresh ? intervention.rec : null, planChanged, resolvedPredictions: resolved, impact } };
+}
+
+/** Persistence signature: what the component commits on (never the per-evaluation diagnostics). */
+export function backgroundAISignature(st: BackgroundAIState | null | undefined): string {
+  if (!st) return 'none';
+  return bgHash([st.enabled ? 1 : 0, st.mode, st.lastMeaningfulHash, st.cooldowns.map(c => `${c.key}:${c.acknowledged ? 1 : 0}:${c.lastSurfacedTurn}`).join(','), st.history.length, st.overrides.length, st.coPilotHandoffPackage?.status || '', st.coPilotReturn?.turn ?? '', Object.values(st.playerModel.dismissals).join(','), st.playerModel.followed, st.playerModel.ignored, st.playerModel.explanationRequests, st.observation?.lastLedgerId || ''].join('|'));
+}
+
+// ---- Pre-action strategic warning (advises; never blocks a legal action) ---------------------------------
+
+export interface BackgroundPreActionCheck { warn: boolean; level: BGInterruptLevel; lines: string[]; cashAfter: number; exposure: number | null; preserve: number | null; saferMove: BackgroundMoveRef | null; key: string }
+
+export function evaluateBackgroundPreAction(st: BackgroundAIState | null | undefined, world: GIWorld, candidate: { id: string; label: string; actionType: string; costEstimate?: number | null; targetId?: string | null }): BackgroundPreActionCheck {
+  const none: BackgroundPreActionCheck = { warn: false, level: 'silent', lines: [], cashAfter: world.player.money, exposure: null, preserve: null, saferMove: null, key: '' };
+  if (!st?.enabled || st.mode === 'observe') return none;
+  const cost = Math.max(0, Number(candidate.costEstimate || 0));
+  const cash = world.player.money;
+  const cashAfter = cash - cost;
+  if (cost < Math.max(500, cash * 0.1)) return none;               // the normal action path stays fast
+  const target = (candidate.targetId || bgRegionIn(world, candidate.label) || '').toUpperCase() || null;
+  const threat = st.threats.find(t => t.status === 'active' && (t.type === 'region_vulnerable' || t.type === 'region_thin_margin')) || null;
+  const isMitigation = Boolean(threat && target === threat.regionId && /deposit|defend|reinforce|secure|claim|control/.test(`${candidate.actionType} ${candidate.label}`.toLowerCase()));
+  if (isMitigation) return none;
+  const key = `preaction:${candidate.id}:${threat?.id || 'none'}`;
+  if (st.overrides.some(o => o.turn === world.turn && o.chosen === candidate.label)) return none;   // no nagging after "Continue Anyway"
+  const preserve = backgroundPlanPreserveCash(st.shadowPlan);
+  const exposure = threat?.exposure || null;
+  const lines: string[] = [];
+  let level: BGInterruptLevel = 'silent';
+  if (threat && exposure && cash >= exposure && cashAfter < exposure) {
+    const rival = bgRival(world);
+    lines.push(`This would leave you with ${bgMoney(cashAfter)}.`);
+    lines.push(threat.type === 'region_vulnerable' ? `${rival?.name || 'The rival'} can currently challenge ${threat.subject} for about ${bgMoney(exposure)}.` : `${threat.subject} can be challenged for about ${bgMoney(exposure)} (the rival's cash is hidden).`);
+    level = threat.severity === 'critical' ? 'critical' : threat.type === 'region_vulnerable' ? 'warning' : 'notice';
+  }
+  if (preserve && cashAfter < preserve && cash >= preserve) {
+    if (!lines.length) lines.push(`This would leave you with ${bgMoney(cashAfter)}.`);
+    lines.push(`My current plan was to preserve at least ${bgMoney(preserve)}${threat ? ` until ${threat.subject} is secure` : ''}.`);
+    if (level === 'silent') level = 'notice';
+  }
+  if (level === 'silent' || (st.mode === 'alert' && bgLevelRank[level] < bgLevelRank.warning)) return none;
+  const safer = st.moveEvaluations.filter(e => e.actionId !== candidate.id && e.dimensions.constraintCompliance >= 0 && e.total > 0).sort((a, b) => (b.dimensions.urgency - a.dimensions.urgency) || b.total - a.total)[0] || null;
+  return { warn: true, level, lines, cashAfter, exposure, preserve, saferMove: safer ? { actionId: safer.actionId, label: safer.label, actionType: safer.actionType, targetId: safer.targetId, reason: safer.reason } : null, key };
+}
+
+export function buildBackgroundPreActionAnswer(check: BackgroundPreActionCheck, candidate: { id: string; label: string }): GameIntelligenceAnswer {
+  return {
+    id: nextIntelligenceAnswerId('bgpre'), query: candidate.label, kind: 'why', title: 'Before you do that',
+    lines: [...check.lines, 'You decide — this is advice, not a block.'],
+    evidence: [{ source: 'Background AI', detail: `Prepared from visible state: cash, visible rival resources and your plan${check.exposure ? ` (exposure ${bgMoney(check.exposure)})` : ''}.` }],
+    buttons: [
+      { id: `bg_continue_${candidate.id}`, label: 'Continue Anyway', kind: 'bg_continue_action', candidateId: candidate.id, tone: check.level === 'critical' ? 'danger' : 'primary' },
+      ...(check.saferMove ? [{ id: `bg_safer_${check.saferMove.actionId}`, label: 'Show Safer Move', kind: 'why' as GameIntelligenceButtonKind, candidateId: check.saferMove.actionId }] : []),
+      { id: 'bg_pre_why', label: 'Why?', kind: 'ask', query: 'Why are you warning me about this move?' }
+    ],
+    sourceSystems: ['Background AI'], grounded: true
+  };
+}
+
+// ---- Player-driven updates (the ONLY ways Background AI state changes outside evaluation) --------------------
+
+export function recordBackgroundOverride(st: BackgroundAIState, o: { turn: number; recommended: string; chosen: string; chosenRegion: string | null }): BackgroundAIState {
+  // The player chose differently: remember it, stop nagging about it, adapt the plan on the next evaluation.
+  const cds = st.cooldowns.map(c => (c.key.startsWith('threat:') || c.key.startsWith('divergence:') ? { ...c, acknowledged: true } : c));
+  return {
+    ...st, overrides: [...st.overrides, o].slice(-BACKGROUND_AI_LIMITS.overrides), cooldowns: cds,
+    playerModel: { ...st.playerModel, ignored: st.playerModel.ignored + 1 }, planDivergence: st.planDivergence ? { ...st.planDivergence, acknowledged: true } : null,
+    history: [...st.history, { turn: o.turn, kind: 'divergence_acknowledged', summary: `You chose ${o.chosen} over ${o.recommended}` }].slice(-BACKGROUND_AI_LIMITS.history)
+  };
+}
+export function noteBackgroundAdviceFollowed(st: BackgroundAIState): BackgroundAIState { return { ...st, playerModel: { ...st.playerModel, followed: st.playerModel.followed + 1 } }; }
+export function noteBackgroundExplanationRequest(st: BackgroundAIState): BackgroundAIState { return { ...st, playerModel: { ...st.playerModel, explanationRequests: st.playerModel.explanationRequests + 1 } }; }
+export function setBackgroundAIMode(st: BackgroundAIState, mode: BackgroundAIMode): BackgroundAIState { return { ...st, mode, domainHashes: {}, history: [...st.history, { turn: st.lastEvaluationTurn, kind: 'mode_changed', summary: `Mode set to ${BACKGROUND_AI_MODE_META[mode].label} by the player` }].slice(-BACKGROUND_AI_LIMITS.history) }; }
+export function setBackgroundAIEnabled(st: BackgroundAIState, enabled: boolean): BackgroundAIState { return { ...st, enabled, domainHashes: {} }; }
+export function dismissBackgroundIntervention(st: BackgroundAIState, key: string): BackgroundAIState {
+  const domain = key.startsWith('opportunity:') ? 'opportunities' : key.startsWith('team:') ? 'team' : key.startsWith('divergence:') ? 'strategy' : st.threats.find(t => `threat:${t.id}` === key)?.type.startsWith('region') ? 'regions' : 'economy';
+  const cds = st.cooldowns.some(c => c.key === key) ? st.cooldowns.map(c => (c.key === key ? { ...c, acknowledged: true } : c)) : [...st.cooldowns, { key, lastSurfacedTurn: st.lastEvaluationTurn, signature: '', level: 'notice' as BGInterruptLevel, acknowledged: true }];
+  return { ...st, cooldowns: cds.slice(-BACKGROUND_AI_LIMITS.cooldowns), interventionRecommendation: st.interventionRecommendation?.cooldownKey === key ? { ...st.interventionRecommendation, level: 'silent' } : st.interventionRecommendation, playerModel: { ...st.playerModel, dismissals: { ...st.playerModel.dismissals, [domain]: (st.playerModel.dismissals[domain] || 0) + 1 } } };
+}
+export function markBackgroundHandoffDelivered(st: BackgroundAIState, sessionId: string | null, turn: number): BackgroundAIState {
+  if (!st.coPilotHandoffPackage) return st;
+  return { ...st, coPilotHandoffPackage: { ...st.coPilotHandoffPackage, status: 'delivered', deliveredTurn: turn, sessionId }, history: [...st.history, { turn, kind: 'copilot_handoff', summary: `Handed Co-Pilot: ${st.coPilotHandoffPackage.strategySummary}` }].slice(-BACKGROUND_AI_LIMITS.history) };
+}
+export function recordBackgroundCoPilotReturn(st: BackgroundAIState, actions: string[], turn: number): BackgroundAIState {
+  const summary = actions.length ? `Co-Pilot took ${actions.length} action(s): ${actions.slice(0, 3).join('; ')}` : 'Co-Pilot returned control without taking actions';
+  return {
+    ...st, coPilotReturn: { turn, actions: actions.slice(0, 8), summary: summary.slice(0, 240) }, coPilotHandoffPackage: st.coPilotHandoffPackage ? { ...st.coPilotHandoffPackage, status: 'returned' } : null,
+    domainHashes: {}, history: [...st.history, { turn, kind: 'copilot_return', summary }].slice(-BACKGROUND_AI_LIMITS.history)
+  };
+}
+
+// ---- Save / load -------------------------------------------------------------------------------------------
+
+export function sanitizeBackgroundAIState(raw: unknown): BackgroundAIState {
+  const out = createEmptyBackgroundAIState();
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as any;
+  const arr = (v: unknown, n: number) => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object').slice(-n) : []);
+  const str = (v: unknown, d = '') => (typeof v === 'string' ? v.slice(0, 400) : d);
+  const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const modes: BackgroundAIMode[] = ['observe', 'alert', 'advisor', 'strategist', 'coach'];
+  out.enabled = r.enabled !== false;
+  out.mode = modes.includes(r.mode) ? r.mode : 'advisor';
+  out.lastEvaluationTurn = num(r.lastEvaluationTurn, -1);
+  out.lastEvaluationEvent = typeof r.lastEvaluationEvent === 'string' ? r.lastEvaluationEvent.slice(0, 200) : null;
+  // Domain hashes are cleared so the first evaluation after load re-validates everything against the live
+  // state (rehydration); prepared simulations are never persisted as valid cache.
+  out.domainHashes = {};
+  out.preparedSimulations = [];
+  const o = r.observation;
+  out.observation = o && typeof o === 'object' ? { turn: num(o.turn), day: num(o.day), cash: num(o.cash), debt: num(o.debt), apRemaining: typeof o.apRemaining === 'number' ? o.apRemaining : null, held: arr2(o.held), threatened: arr2(o.threatened), depositsTotal: num(o.depositsTotal), projectInvested: num(o.projectInvested), contracts: obj2(o.contracts), rivalDeposits: objNum(o.rivalDeposits), market: objNum(o.market), gi3Revision: typeof o.gi3Revision === 'string' ? o.gi3Revision : null, teamRevision: typeof o.teamRevision === 'string' ? o.teamRevision : null, sessionStatus: typeof o.sessionStatus === 'string' ? o.sessionStatus : null, lastLedgerId: typeof o.lastLedgerId === 'string' ? o.lastLedgerId : null } : null;
+  out.cashHistory = arr(r.cashHistory, BACKGROUND_AI_LIMITS.cashHistory).map((x: any) => ({ turn: num(x.turn), cash: num(x.cash) }));
+  const plan = r.shadowPlan;
+  out.shadowPlan = plan && typeof plan === 'object' && typeof plan.strategySummary === 'string' ? {
+    source: plan.source === 'player_strategy' ? 'player_strategy' : 'background', label: str(plan.label, 'Background AI plan'), strategySummary: str(plan.strategySummary), primaryGoal: str(plan.primaryGoal), secondaryGoals: arr2(plan.secondaryGoals).slice(0, 4), currentPhase: str(plan.currentPhase),
+    nextMove: plan.nextMove && typeof plan.nextMove.actionId === 'string' ? { actionId: plan.nextMove.actionId, label: str(plan.nextMove.label), actionType: str(plan.nextMove.actionType), reason: str(plan.nextMove.reason), targetId: typeof plan.nextMove.targetId === 'string' ? plan.nextMove.targetId : null } : null,
+    followingMoves: arr2(plan.followingMoves).slice(0, 4), conditions: arr(plan.conditions, 3).map((c: any) => ({ when: str(c.when), then: str(c.then) })), fallbacks: arr2(plan.fallbacks).slice(0, 3), resourceAssumptions: arr2(plan.resourceAssumptions).slice(0, 5),
+    timeHorizon: str(plan.timeHorizon), confidence: bandOf(plan.confidence), reason: str(plan.reason), lastReplannedTurn: num(plan.lastReplannedTurn), revision: num(plan.revision, 1), adaptation: typeof plan.adaptation === 'string' ? plan.adaptation.slice(0, 300) : null, focusRegion: typeof plan.focusRegion === 'string' ? plan.focusRegion : null
+  } : null;
+  // Predictions / hypotheses / attention are kept (bounded); the first evaluation re-validates them.
+  out.predictions = arr(r.predictions, 8).filter((p: any) => typeof p.id === 'string' && typeof p.watchCondition === 'string').map((p: any) => ({ id: p.id, event: str(p.event), subject: str(p.subject), likelihoodBand: ['high', 'moderate', 'low', 'uncertain'].includes(p.likelihoodBand) ? p.likelihoodBand : 'uncertain', confidence: bandOf(p.confidence), evidence: arr2(p.evidence).slice(0, 4), timeHorizon: str(p.timeHorizon), impact: str(p.impact), watchCondition: p.watchCondition, createdTurn: num(p.createdTurn), resolveByTurn: num(p.resolveByTurn), resolution: 'unresolved', regionId: typeof p.regionId === 'string' ? p.regionId : undefined, amount: typeof p.amount === 'number' ? p.amount : undefined }));
+  out.resolvedPredictions = arr(r.resolvedPredictions, BACKGROUND_AI_LIMITS.resolvedPredictions).filter((p: any) => typeof p.id === 'string').map((p: any) => ({ ...p, event: str(p.event), evidence: arr2(p.evidence).slice(0, 4) }));
+  out.calibration = { supported: num(r.calibration?.supported), contradicted: num(r.calibration?.contradicted), unresolved: num(r.calibration?.unresolved) };
+  out.hypotheses = arr(r.hypotheses, 5).filter((h: any) => typeof h.id === 'string').map((h: any) => ({ id: h.id, question: str(h.question), explanation: str(h.explanation), factors: arr2(h.factors).slice(0, 4), confidence: bandOf(h.confidence), supportingEvidence: arr2(h.supportingEvidence).slice(0, 4), contradictingEvidence: arr2(h.contradictingEvidence).slice(0, 4), status: ['active', 'weakened', 'replaced', 'resolved'].includes(h.status) ? h.status : 'active', lastUpdated: num(h.lastUpdated) }));
+  out.attentionQueue = arr(r.attentionQueue, BACKGROUND_AI_LIMITS.attention).filter((a: any) => typeof a.id === 'string').map((a: any) => ({ ...a, subject: str(a.subject), reason: str(a.reason), evidence: arr2(a.evidence).slice(0, 4) }));
+  out.threats = arr(r.threats, BACKGROUND_AI_LIMITS.threats).filter((t: any) => typeof t.id === 'string' && t.status === 'active').map((t: any) => ({ ...t, evidence: arr2(t.evidence).slice(0, 4), mitigationOptions: arr(t.mitigationOptions, 2) }));
+  out.cooldowns = arr(r.cooldowns, BACKGROUND_AI_LIMITS.cooldowns).filter((c: any) => typeof c.key === 'string').map((c: any) => ({ key: c.key, lastSurfacedTurn: num(c.lastSurfacedTurn), signature: str(c.signature), level: ['silent', 'indicator', 'notice', 'warning', 'critical'].includes(c.level) ? c.level : 'notice', acknowledged: c.acknowledged === true }));
+  out.overrides = arr(r.overrides, BACKGROUND_AI_LIMITS.overrides).map((x: any) => ({ turn: num(x.turn), recommended: str(x.recommended), chosen: str(x.chosen), chosenRegion: typeof x.chosenRegion === 'string' ? x.chosenRegion : null }));
+  const h = r.coPilotHandoffPackage;
+  out.coPilotHandoffPackage = h && typeof h === 'object' && typeof h.strategySummary === 'string' ? { ...createHandoffShell(), ...h, status: ['ready', 'delivered', 'returned'].includes(h.status) ? h.status : 'ready', recommendedSequence: arr(h.recommendedSequence, 4), activeGoals: arr2(h.activeGoals).slice(0, 5), constraints: arr2(h.constraints).slice(0, 5), threats: arr2(h.threats).slice(0, 3), opportunities: arr2(h.opportunities).slice(0, 3), teamResponsibilities: arr2(h.teamResponsibilities).slice(0, 4), preparedSimulations: [], fallbacks: arr2(h.fallbacks).slice(0, 3), recentPlayerDecisions: arr2(h.recentPlayerDecisions).slice(0, 3) } : null;
+  out.coPilotReturn = r.coPilotReturn && typeof r.coPilotReturn === 'object' ? { turn: num(r.coPilotReturn.turn), actions: arr2(r.coPilotReturn.actions).slice(0, 8), summary: str(r.coPilotReturn.summary) } : null;
+  const pm = r.playerModel || {};
+  out.playerModel = { dismissals: objNum(pm.dismissals), explanationRequests: num(pm.explanationRequests), followed: num(pm.followed), ignored: num(pm.ignored), avoidsDebt: pm.avoidsDebt === true, protectsRegions: pm.protectsRegions === true };
+  out.history = arr(r.history, BACKGROUND_AI_LIMITS.history).map((x: any) => ({ turn: num(x.turn), kind: str(x.kind), summary: str(x.summary) }));
+  out.recentImpactAssessment = r.recentImpactAssessment && typeof r.recentImpactAssessment === 'object' && Array.isArray(r.recentImpactAssessment.lines) ? { turn: num(r.recentImpactAssessment.turn), actionSummary: str(r.recentImpactAssessment.actionSummary), lines: arr(r.recentImpactAssessment.lines, BACKGROUND_AI_LIMITS.impactLines).map((l: any) => ({ label: str(l.label), before: str(l.before), after: str(l.after), direction: ['better', 'worse', 'same', 'changed'].includes(l.direction) ? l.direction : 'changed' })), planStatus: str(r.recentImpactAssessment.planStatus), coachNote: typeof r.recentImpactAssessment.coachNote === 'string' ? r.recentImpactAssessment.coachNote : null } : null;
+  out.strategicAssessment = r.strategicAssessment && typeof r.strategicAssessment === 'object' && typeof r.strategicAssessment.overallPosition === 'string' ? { ...r.strategicAssessment, evidence: arr(r.strategicAssessment.evidence, 8) } : null;
+  return out;
+  function arr2(v: unknown): string[] { return Array.isArray(v) ? v.filter(x => typeof x === 'string').map(x => (x as string).slice(0, 300)).slice(0, 20) : []; }
+  function obj2(v: unknown): Record<string, string> { return v && typeof v === 'object' ? Object.fromEntries(Object.entries(v as any).filter(([, x]) => typeof x === 'string').slice(0, 40)) as Record<string, string> : {}; }
+  function objNum(v: unknown): Record<string, number> { return v && typeof v === 'object' ? Object.fromEntries(Object.entries(v as any).filter(([, x]) => typeof x === 'number' && Number.isFinite(x)).slice(0, 40)) as Record<string, number> : {}; }
+  function bandOf(v: unknown): BGBand { return v === 'low' || v === 'high' ? v : 'moderate'; }
+  function createHandoffShell(): BackgroundCoPilotHandoffPackage { return { status: 'ready', strategySummary: '', currentPhase: '', activeGoals: [], constraints: [], reserve: null, avoidDebt: false, currentObjective: null, recommendedSequence: [], focusRegion: null, threats: [], opportunities: [], resourceStatus: '', teamResponsibilities: [], preparedSimulations: [], fallbacks: [], recentPlayerDecisions: [], confidence: 'moderate', sourceStateHash: '', preparedTurn: 0, deliveredTurn: null, sessionId: null }; }
+}
+
+/** Activity Ledger: meaningful intelligence events only (never every evaluation). */
+export function backgroundLedgerEvents(prev: BackgroundAIState | null | undefined, next: BackgroundAIState, report: BackgroundEvaluationReport | null): Array<{ kind: string; summary: string }> {
+  const out: Array<{ kind: string; summary: string }> = [];
+  if (report?.surfaced && bgLevelRank[report.surfaced.level] >= bgLevelRank.warning) out.push({ kind: `bg_${report.surfaced.level}_surfaced`, summary: report.surfaced.message });
+  if (report?.planChanged && bgSigRank[report.significance] >= bgSigRank.major && next.shadowPlan) out.push({ kind: 'bg_plan_changed', summary: `Background AI plan rev ${next.shadowPlan.revision}: ${next.shadowPlan.currentPhase}` });
+  (report?.resolvedPredictions || []).filter(p => p.resolution !== 'unresolved').forEach(p => out.push({ kind: 'bg_prediction_resolved', summary: `${p.event}: ${p.resolution}` }));
+  if (prev?.coPilotHandoffPackage?.status !== 'delivered' && next.coPilotHandoffPackage?.status === 'delivered') out.push({ kind: 'bg_copilot_handoff', summary: `Background AI handed Co-Pilot its context: ${next.coPilotHandoffPackage.strategySummary}` });
+  if (prev && next.coPilotReturn && next.coPilotReturn.turn !== prev.coPilotReturn?.turn) out.push({ kind: 'bg_copilot_return', summary: next.coPilotReturn.summary });
+  if (prev && next.overrides.length > prev.overrides.length) out.push({ kind: 'bg_divergence_acknowledged', summary: `Player chose ${next.overrides[next.overrides.length - 1].chosen}` });
+  return out.slice(0, 4);
+}
+
+// ---- Contextual Actions metadata (Contextual Actions stay the canonical player-facing selection) ------------
+
+export function annotateContextualActionsWithBackground(set: ContextualActionSet, st: BackgroundAIState | null | undefined): ContextualActionSet {
+  if (!st?.enabled || !st.moveEvaluations.length || st.mode === 'observe') return set;
+  const byId = new Map(st.moveEvaluations.map((e, i) => [e.actionId, { e, rank: i + 1 }]));
+  const tag = (c: ContextualActionCandidate): ContextualActionCandidate => {
+    const hit = byId.get(c.id);
+    return hit ? { ...c, backgroundRank: hit.rank, backgroundReason: hit.e.reason, backgroundStrategicAlignment: hit.e.dimensions.strategicAlignment, backgroundRisk: hit.e.dimensions.risk + Math.min(0, hit.e.dimensions.constraintCompliance) } : c;
+  };
+  return { ...set, recommended: set.recommended ? tag(set.recommended) : set.recommended, useful: set.useful.map(tag), available: set.available.map(tag), blocked: set.blocked, ranked: set.ranked.map(tag) };
+}
+
+// ---- Game Intelligence front door to Background AI ----------------------------------------------------------
+
+export type BackgroundQueryTopic = 'status' | 'watching' | 'worried' | 'plan' | 'would_do' | 'why' | 'changed' | 'opportunities' | 'rival' | 'losing' | 'differ' | 'ignore' | 'simulated' | 'compare' | 'review' | 'handoff';
+
+/** Questions addressed to Background AI itself ("what are YOU watching?"). Ordinary game questions stay with GI 2.1. */
+export function detectBackgroundAIQuery(normalized: string): BackgroundQueryTopic | null {
+  const q = ` ${normalized} `;
+  const explicit = /\b(background ai|parallel intelligence|shadow plan|ai plan)\b/.test(q);
+  if (/\bwhat are you (watching|tracking|monitoring|keeping an eye on|looking at)\b/.test(q)) return 'watching';
+  if (/\bwhat are you (worried|concerned|nervous) about\b|\bwhat worries you\b/.test(q)) return 'worried';
+  if (/\bwhat (s|is) your (current )?plan\b|\bwhat's your (current )?plan\b|\bshow (me )?(your|the ai|the background ai) plan\b|\byour shadow plan\b/.test(q)) return 'plan';
+  if (/\bwhat would you do\b|\bwhat would you recommend\b|\bif you were me\b/.test(q)) return 'would_do';
+  if (/\bwhy are you warning me\b|\bwhy do you (prefer|recommend|suggest)\b/.test(q)) return 'why';
+  if (/\bwhat changed in your (plan|thinking)\b|\bwhy did your plan change\b|\bhow did your plan change\b/.test(q)) return 'changed';
+  if (/\bwhat opportunities do you see\b|\bany opportunities you see\b/.test(q)) return 'opportunities';
+  if (/\bwhat do you think \w+ (will|might|is going to|could) do\b|\bwhat do you expect \w+ to do\b/.test(q)) return 'rival';
+  if (/\bwhy do you think i (m|am) losing\b|\bwhy do you think i'm losing\b/.test(q)) return 'losing';
+  if (/\bhow does my (move|plan|choice|strategy) differ\b|\bmy plan (vs|versus) (yours|your plan|the ai plan)\b|\bcompare (our|the) plans\b|\bcompare plans\b/.test(q)) return 'differ';
+  if (/\bwhat happens if i ignore (?!the plan|my plan|the strategy|my strategy|our plan)\w+/.test(q)) return 'ignore';
+  if (/\bwhat have you (already )?simulated\b|\bwhat did you simulate\b|\bprepared simulations?\b/.test(q)) return 'simulated';
+  if (/\bcompare (moves|options|my options)\b/.test(q)) return 'compare';
+  if (/\bwhat warnings did you give\b|\bwhich warnings mattered\b|\bwhen did your plan diverge\b|\bwas your prediction right\b|\bwere your predictions right\b/.test(q)) return 'review';
+  if (/\bwhat (will|would) you (hand|give) (the )?co ?pilot\b|\bhandoff\b/.test(q)) return 'handoff';
+  if (explicit) return /\bplan\b/.test(q) ? 'plan' : /\bworr|risk|threat/.test(q) ? 'worried' : 'status';
+  return null;
+}
+
+const bgClaim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed') => claim(text, kind, certainty, ['bg.state'], { derived: giNumbersIn(text).map(n => n.value) });
+const BG_STATUS_TEXT: Record<BGStatus, string> = { quiet: 'Quiet', watching: 'Watching', plan_updated: 'Plan updated', concern: 'Concern', opportunity: 'Opportunity', needs_attention: 'Needs attention' };
+const bgBandWord = (b: BGBand) => (b === 'high' ? 'high' : b === 'moderate' ? 'moderate' : 'low');
+
+export function composeBackgroundAIAnswer(topic: BackgroundQueryTopic, world: GIWorld, normalized: string): GIComposePart & { shape: GIAnswerShape } {
+  const st = world.backgroundAI || null;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | ''>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const footer = () => say('authority', null, [bgClaim('Background AI only thinks alongside you — it never takes actions, spends money or changes your plan. You decide.', 'caveat')]);
+  if (!st || !st.enabled) {
+    say('off', null, [bgClaim('Background AI is off in this match. Turn it on in INTELLIGENCE → Background AI to have it watch and prepare advice.', 'caveat')]);
+    return { title: 'Background AI', sections, buttons, shape: 'explanation' };
+  }
+  if (!st.strategicAssessment) {
+    say('none', null, [bgClaim('Background AI has not analysed this match yet — it starts once a match is running.', 'caveat')]);
+    return { title: 'Background AI', sections, buttons, shape: 'explanation' };
+  }
+  const plan = st.shadowPlan;
+  const a = st.strategicAssessment;
+  const moveButton = (m: BackgroundMoveRef | null, label = 'Do it') => {
+    if (!m || m.actionId === 'end_turn') return;
+    const cand = world.actionSet?.ranked.find(c => c.id === m.actionId && c.legal);
+    if (cand) buttons.push({ id: `bg_do_${m.actionId}`, label: `${label}: ${cand.label}`.slice(0, 48), kind: 'do', candidateId: cand.id, tone: 'primary' }, { id: `bg_why_${m.actionId}`, label: 'Why?', kind: 'why', candidateId: cand.id });
+  };
+  const planSection = () => {
+    if (!plan) return;
+    say('plan', plan.label, [
+      bgClaim(`Strategy: ${plan.strategySummary}.`),
+      bgClaim(`Current phase: ${plan.currentPhase}.`),
+      plan.nextMove && bgClaim(`Next move: ${plan.nextMove.label} — ${plan.nextMove.reason}.`, 'recommendation', plan.confidence === 'high' ? 'confirmed' : 'high'),
+      plan.followingMoves.length > 0 && bgClaim(`After that: ${plan.followingMoves.join(' → ')}.`, 'inference', 'high'),
+      ...plan.conditions.map(c => bgClaim(`If ${c.when}: ${c.then}.`, 'inference', 'moderate')),
+      plan.adaptation && bgClaim(plan.adaptation, 'fact'),
+      bgClaim(`Confidence: ${bgBandWord(plan.confidence)}.${plan.confidence !== 'high' ? ' Some inputs are uncertain (hidden rival information or close calls).' : ''}`, 'caveat')
+    ]);
+  };
+  let title = 'Background AI';
+  let shape: GIAnswerShape = 'explanation';
+  switch (topic) {
+    case 'status':
+    case 'watching': {
+      title = 'What Background AI is watching';
+      say('status', null, [bgClaim(`Status: ${BG_STATUS_TEXT[st.status]} (${BACKGROUND_AI_MODE_META[st.mode].label} mode). Overall position: ${a.overallPosition}.`)]);
+      say('attention', 'Attention', st.attentionQueue.filter(i => i.status === 'active').slice(0, 5).map(i => bgClaim(`${i.importance === 'watching' ? 'Watching' : i.importance.toUpperCase()}: ${i.subject} — ${i.reason}${i.trend === 'rising' ? ' (rising)' : ''}.`)));
+      if (!st.attentionQueue.length) say('calm', null, [bgClaim('Nothing currently needs attention.')]);
+      break;
+    }
+    case 'worried': {
+      title = 'What Background AI is worried about';
+      const threats = st.threats.filter(t => t.status === 'active');
+      say('threats', null, threats.length ? threats.slice(0, 4).map(t => bgClaim(`${t.subject} (${t.severity}, ${t.urgency}): ${t.possibleImpact}. Evidence: ${t.evidence.join('; ')}.${t.confidence === 'low' ? ' Confidence is low.' : ''}`, t.confidence === 'high' ? 'fact' : 'inference', t.confidence === 'high' ? 'confirmed' : 'moderate')) : [bgClaim('No active threats from what is visible right now.')]);
+      if (threats[0]?.mitigationOptions[0]) { const m = threats[0].mitigationOptions[0]; const cand = world.actionSet?.ranked.find(c => c.id === m.actionId && c.legal); if (cand) buttons.push({ id: `bg_mit_${cand.id}`, label: `Why ${cand.label}?`.slice(0, 48), kind: 'why', candidateId: cand.id }); }
+      break;
+    }
+    case 'plan': {
+      title = plan?.source === 'player_strategy' ? 'Background AI view of your strategy' : 'Background AI plan';
+      shape = 'plan';
+      planSection();
+      if (st.planDivergence && st.planDivergence.kind === 'strategy') say('divergence', 'Plan divergence', [bgClaim(`Your strategy's current step: ${st.planDivergence.playerIntent}. Background AI would ${st.planDivergence.backgroundPlan.toLowerCase()} because ${st.planDivergence.reason.replace(/\.$/, '')}.`, 'inference', 'high')]);
+      if (plan && plan.source === 'background') say('label', null, [bgClaim('This is Background AI’s provisional plan — not a plan you chose.', 'caveat')]);
+      buttons.push({ id: 'bg_compare', label: 'Compare Moves', kind: 'ask', query: 'Compare moves' });
+      if (plan) {
+        const g3 = world.gi3?.active?.status === 'active';
+        // "Use AI Plan" adopts the PLAN through GI3's own preview/apply — it never executes anything.
+        const adopt = g3 && plan.focusRegion ? `Actually protect ${plan.focusRegion} first` : `My strategy: ${[plan.primaryGoal, ...plan.secondaryGoals].filter(Boolean).slice(0, 3).join(', then ')}.`;
+        buttons.push({ id: 'bg_use_plan', label: 'Use AI Plan (preview)', kind: 'ask', query: adopt });
+      }
+      break;
+    }
+    case 'would_do':
+    case 'why': {
+      title = topic === 'why' ? 'Why Background AI prefers this' : 'What Background AI would do';
+      shape = 'recommendation';
+      const rec = st.recommendedNextMove;
+      const ev = rec ? st.moveEvaluations.find(e => e.actionId === rec.actionId) : null;
+      if (rec) {
+        say('rec', null, [bgClaim(`I would ${rec.label.charAt(0).toLowerCase()}${rec.label.slice(1)}: ${rec.reason}.`, 'recommendation', plan?.confidence === 'high' ? 'confirmed' : 'high')]);
+        if (plan?.reason) say('reason', 'Why', [bgClaim(plan.reason, 'inference', 'high')]);
+        if (ev) say('factors', 'Main factors', Object.entries(ev.dimensions).filter(([, v]) => v !== 0).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 4).map(([k, v]) => bgClaim(`${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${v > 0 ? '+' : ''}${v}`)));
+        if (st.alternativeMoves.length) say('alts', 'Alternatives', st.alternativeMoves.slice(0, 3).map(m => bgClaim(`${m.moveClass.replace(/_/g, ' ')}: ${m.label} — ${m.reason}.`, 'recommendation', 'high')));
+        say('unc', null, [bgClaim(`Confidence: ${bgBandWord(plan?.confidence || st.confidence)}.${st.predictions.some(p => p.likelihoodBand === 'uncertain' || p.confidence === 'low') ? ' The rival’s next move is uncertain.' : ''}`, 'caveat')]);
+        moveButton(rec);
+      } else say('none', null, [bgClaim('No legal move clearly improves your position right now.', 'inference', 'high')]);
+      break;
+    }
+    case 'changed': {
+      title = 'What changed in Background AI’s thinking';
+      const changes = st.history.filter(h => /plan_changed|surfaced|divergence|copilot|event_/.test(h.kind)).slice(-5).reverse();
+      say('changes', null, changes.length ? changes.map(h => bgClaim(`Turn ${h.turn}: ${h.summary}`)) : [bgClaim('Nothing material has changed since the plan was formed.')]);
+      if (plan?.adaptation) say('adapt', null, [bgClaim(plan.adaptation)]);
+      break;
+    }
+    case 'opportunities': {
+      title = 'Opportunities Background AI sees';
+      say('opps', null, st.opportunities.length ? st.opportunities.slice(0, 4).map(o => bgClaim(`${o.subject}: ${o.reason}${o.strategicAlignment === 'aligned' ? ' (fits your strategy)' : o.strategicAlignment === 'conflicts' ? ' (competes with your current priority)' : ''}.`)) : [bgClaim('No clear opportunity right now.')]);
+      break;
+    }
+    case 'rival': {
+      title = 'What Background AI expects';
+      shape = 'prediction';
+      const preds = st.predictions.filter(p => /rival|contested|challenge|press/i.test(`${p.event} ${p.watchCondition}`));
+      say('preds', null, preds.length ? preds.slice(0, 4).map(p => bgClaim(`${p.likelihoodBand === 'uncertain' ? 'Uncertain' : `${p.likelihoodBand[0].toUpperCase()}${p.likelihoodBand.slice(1)} likelihood`}: ${p.event} (${p.timeHorizon}). Evidence: ${p.evidence.join('; ')}.`, 'inference', p.likelihoodBand === 'high' ? 'high' : 'moderate')) : [bgClaim('There is not enough visible evidence to predict the rival’s next move.', 'caveat')]);
+      say('basis', null, [bgClaim(world.settings.fogOfWar ? 'Fog of war is on: predictions use only visible actions and public state — never hidden rival plans or memories.' : 'Predictions use observed actions, visible resources and the rules — never hidden rival plans.', 'caveat')]);
+      break;
+    }
+    case 'losing': {
+      title = 'Why Background AI thinks you are behind';
+      const hs = st.hypotheses.filter(h => h.id === 'bgh_losing' || h.id === 'bgh_economy' || h.id.startsWith('bgh_region'));
+      say('hyps', null, hs.length ? hs.slice(0, 3).map(h => bgClaim(`${h.explanation} Confidence: ${bgBandWord(h.confidence)}${h.status === 'weakened' ? ' (weakened by newer evidence)' : ''}.${h.supportingEvidence.length ? ` Supporting: ${h.supportingEvidence.slice(0, 2).join('; ')}.` : ''}${h.contradictingEvidence.length ? ` Against: ${h.contradictingEvidence.slice(0, 2).join('; ')}.` : ''}`, 'inference', h.confidence === 'high' ? 'high' : 'moderate')) : [bgClaim(world.win && world.win.playerValue >= world.win.opponentValue ? 'You are not behind on the win condition right now.' : 'There is not enough evidence yet to explain the gap.', 'inference', 'moderate')]);
+      break;
+    }
+    case 'differ': {
+      title = 'Your plan vs Background AI';
+      const d = st.planDivergence;
+      if (d) say('div', null, [bgClaim(d.kind === 'strategy' ? `Your strategy prioritizes “${d.playerIntent}”. Background AI was prioritizing “${d.backgroundPlan}” because ${d.reason.replace(/\.$/, '')}.` : `Your move prioritized ${d.playerIntent}. Background AI had prepared ${d.backgroundPlan}.`, 'inference', 'high'), bgClaim(`Expected impact: ${d.expectedImpact}.`, 'inference', 'moderate'), bgClaim('You may know something Background AI does not — your choice stands.', 'caveat')]);
+      else say('none', null, [bgClaim('Your current plan and Background AI’s plan agree.')]);
+      planSection();
+      buttons.push({ id: 'bg_show_plan', label: 'Show AI Plan', kind: 'ask', query: 'What is your current plan?' }, { id: 'bg_update', label: 'Update My Strategy', kind: 'ask', query: 'How do I change the strategy?' });
+      break;
+    }
+    case 'ignore': {
+      const code = Object.keys(world.regions).find(c => new RegExp(`\\b${c.toLowerCase()}\\b`).test(normalized) || normalized.includes((world.regions[c].name || '').toLowerCase()));
+      const t = st.threats.find(x => x.status === 'active' && (x.regionId === code || x.subject.toLowerCase().includes((code || '###').toLowerCase())));
+      title = `If you ignore ${code || 'it'}`;
+      say('ignore', null, t ? [bgClaim(`${t.possibleImpact} (${t.timeHorizon}). Evidence: ${t.evidence.join('; ')}.`, 'inference', t.confidence === 'high' ? 'high' : 'moderate'), ...st.predictions.filter(p => p.regionId === code).slice(0, 1).map(p => bgClaim(`${p.likelihoodBand[0].toUpperCase()}${p.likelihoodBand.slice(1)} likelihood: ${p.event}.`, 'inference', 'moderate'))] : [bgClaim(code ? `${code} is not under a visible threat right now, so ignoring it for a turn carries little visible risk.` : 'Name the region or issue you want to ignore.', 'inference', 'moderate')]);
+      break;
+    }
+    case 'simulated':
+    case 'compare': {
+      title = topic === 'compare' ? 'Compare moves' : 'Prepared simulations';
+      shape = 'comparison';
+      const sims = st.preparedSimulations;
+      if (topic === 'compare') say('moves', null, st.moveEvaluations.slice(0, 4).map(e => bgClaim(`${e.label}: score ${e.total} — ${e.reason}.${sims.find(s => s.actionId === e.actionId) ? ` Simulated: ${sims.find(s => s.actionId === e.actionId)!.outcomeSummary}.` : ''}`)));
+      else say('sims', null, sims.length ? sims.map(s => bgClaim(`${s.label}: ${s.outcomeSummary}${s.risks.length ? `; risk: ${s.risks[0]}` : ''}${s.benefits.length ? `; ${s.benefits.join(', ')}` : ''}.`)) : [bgClaim(st.mode === 'observe' || st.mode === 'alert' ? 'Simulations are prepared in Advisor mode and above.' : 'No simulations are prepared for the current state yet.', 'caveat')]);
+      say('safe', null, [bgClaim('Simulations run on a copy of the game — the live match is never changed.', 'caveat')]);
+      st.moveEvaluations.slice(0, 2).forEach(e => moveButton({ actionId: e.actionId, label: e.label, actionType: e.actionType, reason: e.reason }, 'Do'));
+      break;
+    }
+    case 'review': {
+      title = 'Background AI review';
+      const warns = st.history.filter(h => h.kind.startsWith('surfaced_')).slice(-5);
+      say('warns', 'Warnings given', warns.length ? warns.map(h => bgClaim(`Turn ${h.turn}: ${h.summary}`)) : [bgClaim('No warnings surfaced in this match yet.')]);
+      const div = st.history.filter(h => h.kind === 'divergence_acknowledged').slice(-3);
+      if (div.length) say('div', 'Where your plan diverged', div.map(h => bgClaim(`Turn ${h.turn}: ${h.summary}`)));
+      const c = st.calibration;
+      say('cal', 'Predictions', [bgClaim(`${c.supported} supported, ${c.contradicted} contradicted, ${c.unresolved} unresolved so far.`), ...st.resolvedPredictions.slice(-3).map(p => bgClaim(`${p.event}: ${p.resolution}.`))]);
+      break;
+    }
+    case 'handoff': {
+      title = 'Co-Pilot handoff package';
+      const h = st.coPilotHandoffPackage;
+      say('handoff', null, h ? [bgClaim(`${h.strategySummary}. Current phase: ${h.currentPhase || '—'}.`), h.constraints.length > 0 && bgClaim(`Constraints: ${h.constraints.join('; ')}.`), h.recommendedSequence.length > 0 && bgClaim(`Prepared sequence: ${h.recommendedSequence.map(m => m.label).join(' → ')}.`), h.threats.length > 0 && bgClaim(`Threats: ${h.threats.join('; ')}.`), bgClaim(`Status: ${h.status}.`)] : [bgClaim('No handoff package is prepared yet.')]);
+      say('auth', null, [bgClaim('Only you can start Co-Pilot. It then acts with its own authority, validators, Guardian and approvals — Background AI just hands it context.', 'caveat')]);
+      break;
+    }
+  }
+  footer();
+  return { title, sections, buttons, shape };
+}
+
+// ---- Background AI deterministic self-tests -----------------------------------------------------------------
+
+export function runBackgroundAISelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const MAIN = 'Protect NSW, reach $15K, then go Victoria. No loans.';
+  const cand = (id: string, actionType: string, title: string, utility: number, cashDelta: number, cost: number, targetId?: string) => ({
+    id, actionType, title, description: title, category: 'economy', apCost: 1, costEstimate: cost, utilityScore: utility, riskFactor: 10, rewardScore: 60,
+    isValid: true, expectedStateDelta: { cashDelta, apDelta: -1 }, parameters: targetId ? { region: targetId } : {}, targetId
+  });
+  const withActions = (w: GIWorld, cands: any[]): GIWorld => {
+    const ranked = rankContextualRecommendations(cands, w.objective, { apRemaining: 3, cash: w.player.money, limit: 12 });
+    return { ...w, actionSet: buildContextualActionSet({ rankedRecommendations: ranked, invalidCandidates: [], objective: w.objective, attention: w.attention, apRemaining: 3, isHumanTurn: true }) };
+  };
+  const setRival = (w: GIWorld, money: number | null): GIWorld => ({ ...w, actors: w.actors.map(a => (a.relation === 'rival' ? { ...a, money, visible: money !== null } : a)), settings: { ...w.settings, fogOfWar: money === null } });
+  const setCash = (w: GIWorld, money: number): GIWorld => ({ ...w, player: { ...w.player, money }, actors: w.actors.map(a => (a.relation === 'self' ? { ...a, money } : a)) });
+  const turnOf = (w: GIWorld, turn: number): GIWorld => ({ ...w, turn });
+  const base = () => createGIFixtureWorld().world;
+  const STD = (w: GIWorld) => withActions(w, [
+    cand('c_sell_gold', 'sell', 'Sell Gold at market', 70, 1000, 0),
+    cand('c_def_nsw_small', 'deposit_region', 'Deposit $1,000 into NSW', 55, -1000, 1000, 'NSW'),
+    cand('c_def_nsw', 'deposit_region', 'Deposit $2,000 into NSW', 60, -2000, 2000, 'NSW'),
+    cand('c_vic', 'deposit_region', 'Deposit $5,500 into VIC', 65, -5500, 5500, 'VIC'),
+    cand('c_loan', 'take_loan', 'Take Commercial Loan', 45, 1000, 0)
+  ]);
+  const ev = (st: BackgroundAIState | null, w: GIWorld, force = false) => evaluateBackgroundAI(st, w, { force });
+  const fresh = (mode: BackgroundAIMode) => createEmptyBackgroundAIState(mode);
+  const gi3For = (w: GIWorld) => {
+    const ctx = createGIConversationContext();
+    const c = compileGI3StrategyIntent(parseGILanguage(MAIN, w, ctx), w, ctx, null).contract;
+    return evaluateGI3Strategy(activateGI3Strategy(createEmptyGI3StrategyState(), c, w.turn, 'test'), w).state;
+  };
+  const withGi3 = (w: GIWorld, prev?: GI3StrategyState | null): GIWorld => ({ ...w, gi3: prev ? evaluateGI3Strategy(prev, w).state : gi3For(w) });
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+
+  // Boundary / safety
+  check('bg_boundary', 'Boundary: BACKGROUND_AI_CAN_EXECUTE is false and evaluation never mutates the world', () => {
+    const w = STD(base());
+    const before = canon({ ...w, tools: null });
+    const out = ev(fresh('coach'), w);
+    if (canon({ ...w, tools: null }) !== before) return 'world mutated';
+    if (JSON.stringify(JSON.parse(JSON.stringify(out.state))) !== JSON.stringify(out.state)) return 'state is not plain data';
+    return BACKGROUND_AI_CAN_EXECUTE === false || 'can execute';
+  });
+  check('bg_action_safety', 'Action safety: no Background AI function references an executor, dispatcher, end turn or Co-Pilot start', () => {
+    const fns: Array<(...a: any[]) => any> = [evaluateBackgroundAI, deriveBackgroundThreats, deriveBackgroundOpportunities, deriveBackgroundAssessment, deriveBackgroundPredictions, deriveBackgroundHypotheses, deriveBackgroundAttention, evaluateBackgroundMoves, classifyBackgroundMoves, prepareBackgroundSimulations, buildBackgroundShadowPlan, deriveBackgroundDivergence, deriveBackgroundIntervention, deriveBackgroundTeamInsights, buildBackgroundHandoffPackage, evaluateBackgroundPreAction, recordBackgroundOverride, sanitizeBackgroundAIState, composeBackgroundAIAnswer, annotateContextualActionsWithBackground];
+    const forbidden = /dispatchGameState|dispatchPlayer|executeIntentRecommendation|executeAction|requestManualAction|handleEndTurn|requestCoPilotStart|initiateCoPilotTakeover|setGameSettings|trackedSetGameSettings|Math\.random/;
+    const bad = fns.filter(f => forbidden.test(String(f)));
+    return !bad.length || `forbidden reference in: ${bad.map(f => f.name).join(', ')}`;
+  });
+  check('bg_modes', 'Modes: Observe silent · Alert significant only · Advisor recommends · Strategist plans+simulates · all execute nothing', () => {
+    const w = STD(base());
+    const ob = ev(fresh('observe'), w).state;
+    const al = ev(fresh('alert'), w).state;
+    const ad = ev(fresh('advisor'), w).state;
+    const sg = ev(fresh('strategist'), w).state;
+    if (ob.interventionRecommendation && ob.interventionRecommendation.level !== 'silent') return `observe level ${ob.interventionRecommendation.level}`;
+    if (evaluateBackgroundPreAction(ob, w, { id: 'c_vic', label: 'Deposit $5,500 into VIC', actionType: 'deposit_region', costEstimate: 5500, targetId: 'VIC' }).warn) return 'observe pre-action warned';
+    if (!al.interventionRecommendation || !['notice', 'warning', 'critical'].includes(al.interventionRecommendation.level)) return `alert level ${al.interventionRecommendation?.level}`;
+    if (!ad.recommendedNextMove) return 'advisor has no recommendation';
+    if (!sg.shadowPlan || !sg.alternativeMoves.length) return 'strategist lacks plan/alternatives';
+    if (ad.preparedSimulations.length > BACKGROUND_AI_BUDGETS.advisor.simulations || sg.preparedSimulations.length > BACKGROUND_AI_BUDGETS.strategist.simulations) return 'simulation budget exceeded';
+    if (ob.preparedSimulations.length || al.preparedSimulations.length) return 'observe/alert ran simulations';
+    return true;
+  });
+  check('bg_event_driven', 'Event-driven: identical and trivial changes skip; meaningful changes recompute', () => {
+    const w = STD(base());
+    const a = ev(fresh('advisor'), w);
+    const same = ev(a.state, w);
+    const trivial = ev(a.state, setCash(w, w.player.money + 50));
+    const big = ev(a.state, setCash(w, w.player.money - 3000));
+    if (!same.report.skipped || same.state !== a.state) return 'identical world re-evaluated';
+    if (!trivial.report.skipped) return `trivial change recomputed (${trivial.report.significance})`;
+    return (!big.report.skipped && big.report.recomputed.length > 0) || 'meaningful change skipped';
+  });
+  check('bg_dependency_graph', 'Dependency graph: a market-only change does not recompute team insights or the plan structure', () => {
+    const w = STD(base());
+    const a = ev(fresh('advisor'), w).state;
+    const moved = { ...w, market: { ...w.market, Gold: Math.round(w.market.Gold * 1.3) } };
+    const r = ev(a, moved).report;
+    return (!r.recomputed.includes('teamInsights') && r.recomputed.includes('opportunities')) || r.recomputed.join(',');
+  });
+
+  // Attention
+  check('bg_attention_dynamic', 'Attention: NSW medium → critical as pressure rises, then decays when it resolves', () => {
+    const fogged = STD({ ...setRival(base(), null), regions: { ...base().regions, NSW: { ...base().regions.NSW, rivalCostToControl: 1200 } } });
+    const s1 = ev(fresh('advisor'), fogged).state;
+    const n1 = s1.attentionQueue.find(i => i.subject.startsWith('NSW'));
+    if (n1?.importance !== 'medium') return `start ${n1?.importance}`;
+    const hot = withGi3(STD(setRival(base(), 9000)));
+    const s2 = ev(s1, hot).state;
+    const n2 = s2.attentionQueue.find(i => i.subject.startsWith('NSW'));
+    if (n2?.importance !== 'critical' || n2.trend !== 'rising') return `hot ${n2?.importance} ${n2?.trend}`;
+    const calm = { ...hot, actors: hot.actors.map(a => (a.relation === 'rival' ? { ...a, money: 500 } : a)) };
+    const s3 = ev(s2, calm).state;
+    const n3 = s3.attentionQueue.find(i => i.subject.startsWith('NSW'));
+    if (n3?.status !== 'decaying') return `after resolve ${n3?.status}`;
+    const s4 = ev(s3, turnOf(calm, calm.turn + 1)).state;
+    return !s4.attentionQueue.some(i => i.subject.startsWith('NSW')) || 'stale attention kept';
+  });
+
+  // Interruptions
+  check('bg_interruptions', 'Interruptions: opportunity ≤ notice · region threat warning · strategy-protected critical · cooldown prevents spam', () => {
+    const calm = STD(setRival(base(), 1000));
+    const c = ev(fresh('advisor'), calm).state.interventionRecommendation;
+    if (c && ['warning', 'critical'].includes(c.level)) return `calm ${c.level}`;
+    const hot = STD(setRival(base(), 9000));
+    const h = ev(fresh('advisor'), hot);
+    if (h.state.interventionRecommendation?.level !== 'warning' || !h.report.surfaced) return `threat ${h.state.interventionRecommendation?.level}`;
+    const crit = ev(fresh('advisor'), withGi3(hot)).state.interventionRecommendation;
+    if (crit?.level !== 'critical') return `protected ${crit?.level}`;
+    const again = ev(h.state, hot, true);
+    const later = ev(again.state, turnOf(hot, hot.turn + 1), true);
+    return (!again.report.surfaced && !later.report.surfaced) || 'repeated identical issue surfaced again';
+  });
+  check('bg_interrupt_resurface', 'Cooldown: resurfaces when severity escalates or the condition returns after resolving', () => {
+    const hot = STD(setRival(base(), 9000));
+    const s = ev(fresh('advisor'), hot).state;
+    const esc = ev(s, withGi3(hot), true);
+    if (!esc.report.surfaced || esc.report.surfaced.level !== 'critical') return 'escalation not surfaced';
+    const calm = ev(esc.state, STD(setRival(base(), 500))).state;
+    const back = ev(calm, turnOf(withGi3(hot), hot.turn), true);
+    return Boolean(back.report.surfaced) || 'returned condition not surfaced';
+  });
+
+  // Shadow plan
+  check('bg_shadow_plan_stability', 'Shadow Plan: same state → same plan; irrelevant change → stable; major change → updated', () => {
+    const w = STD(setRival(base(), 1000));
+    const a = ev(fresh('strategist'), w).state;
+    const b = ev(fresh('strategist'), w).state;
+    if (canon(a.shadowPlan) !== canon(b.shadowPlan)) return 'non-deterministic plan';
+    const minor = ev(a, { ...w, market: { ...w.market, 'Iron Ore': (w.market['Iron Ore'] || 100) + 5 } }, true).state;
+    if (minor.shadowPlan?.revision !== a.shadowPlan?.revision) return 'plan churned on an irrelevant change';
+    const major = ev(a, STD(setRival(base(), 9000))).state;
+    return (major.shadowPlan!.revision > a.shadowPlan!.revision && major.shadowPlan!.focusRegion === 'NSW') || `rev ${major.shadowPlan?.revision} focus ${major.shadowPlan?.focusRegion}`;
+  });
+  check('bg_player_label', 'Plan labels: without GI3 it is “Background AI plan”, never “your plan”', () => {
+    const p = ev(fresh('strategist'), STD(base())).state.shadowPlan!;
+    return (p.source === 'background' && /Background AI plan/.test(p.label) && !/your plan/i.test(p.label)) || p.label;
+  });
+  check('bg_gi3_respect', 'GI3: the Shadow Plan carries the player strategy, never rewrites it, and states divergence explicitly', () => {
+    const w = withGi3(STD(setRival(base(), 1000)));
+    const before = canon(w.gi3);
+    const s = ev(fresh('strategist'), w).state;
+    if (canon(w.gi3) !== before) return 'GI3 strategy mutated';
+    if (s.shadowPlan?.source !== 'player_strategy') return `source ${s.shadowPlan?.source}`;
+    const labels = w.gi3!.active!.goals.filter(g => g.status !== 'removed').map(g => g.label);
+    if (!labels.every(l => s.shadowPlan!.strategySummary.includes(l))) return s.shadowPlan!.strategySummary;
+    // Advance the strategy to the Victoria phase, then threaten NSW: divergence, not a rewrite.
+    const vicPhase = { ...w.gi3!, active: { ...w.gi3!.active!, phaseIndex: 2 }, progress: { ...w.gi3!.progress!, phaseIndex: 2 } };
+    const hot = { ...STD(setRival(base(), 9000)), gi3: vicPhase };
+    const d = ev(s, hot).state;
+    return (d.planDivergence?.kind === 'strategy' && /NSW/.test(d.planDivergence.backgroundPlan) && canon(hot.gi3) === canon(vicPhase)) || JSON.stringify(d.planDivergence);
+  });
+
+  // Player override
+  check('bg_player_override', 'Override: the player’s choice stands, the plan adapts, no repeated nagging', () => {
+    const hot = STD(setRival(base(), 9000));
+    const s = ev(fresh('strategist'), hot).state;
+    const o = recordBackgroundOverride(s, { turn: hot.turn, recommended: s.recommendedNextMove?.label || 'defend', chosen: 'Deposit $5,500 into VIC', chosenRegion: 'VIC' });
+    const after = ev(o, setCash(hot, hot.player.money - 5500), true);
+    const plan = after.state.shadowPlan!;
+    if (!/Since you prioritized Victoria/.test(plan.adaptation || '')) return plan.adaptation || 'no adaptation';
+    if (after.report.surfaced && after.report.surfaced.cooldownKey.startsWith('threat:bgt_region_NSW')) return 'nagged about NSW again';
+    return (evaluateBackgroundPreAction(after.state, hot, { id: 'c_vic', label: 'Deposit $5,500 into VIC', actionType: 'deposit_region', costEstimate: 5500, targetId: 'VIC' }).warn === false) || 'pre-action warned again after Continue Anyway';
+  });
+
+  // Simulations
+  check('bg_simulations', 'Prepared simulations: cached when unchanged, invalidated on relevant change, never touch the live game', () => {
+    const fx = createGIFixtureWorld({ simulate: true });
+    const w = STD(fx.world);
+    const live = JSON.stringify(fx.liveState);
+    const a = ev(fresh('strategist'), w).state;
+    if (!a.preparedSimulations.length) return 'no simulations prepared';
+    const b = ev(a, { ...w, turn: w.turn + 1 }, true).state;
+    if (b.preparedSimulations[0] !== a.preparedSimulations[0]) return 'cache not reused';
+    const c = ev(b, setCash(w, w.player.money - 2000)).state;
+    if (c.preparedSimulations.some(s => a.preparedSimulations.some(x => x === s))) return 'stale simulation reused';
+    return JSON.stringify(fx.liveState) === live || 'simulation mutated the live state';
+  });
+
+  // Predictions / hypotheses
+  check('bg_predictions_fog', 'Predictions: under fog of war only observable evidence, with explicit uncertainty', () => {
+    const w = STD(setRival(base(), null));
+    const s = ev(fresh('strategist'), w).state;
+    if (s.predictions.some(p => p.watchCondition === 'rival_can_challenge')) return 'used hidden rival cash';
+    if (s.predictions.some(p => p.evidence.some(e => /\$9,000/.test(e)))) return 'leaked hidden cash';
+    return s.predictions.every(p => ['high', 'moderate', 'low', 'uncertain'].includes(p.likelihoodBand)) || 'numeric probability';
+  });
+  check('bg_prediction_calibration', 'Calibration: predictions resolve as supported or contradicted after their horizon', () => {
+    const hot = STD(setRival(base(), 9000));
+    const s = ev(fresh('strategist'), hot).state;
+    const later = ev(s, turnOf(STD(setRival(base(), 500)), hot.turn + 2)).state;
+    return (later.calibration.contradicted + later.calibration.supported > 0) || JSON.stringify(later.calibration);
+  });
+  check('bg_hypotheses', 'Hypotheses: supporting evidence strengthens, contradicting evidence weakens', () => {
+    const w = STD(setRival(base(), 1000));
+    const s0 = ev(fresh('strategist'), w).state;
+    const spend = (x: GIWorld, cash: number, dep: number): GIWorld => ({ ...setCash(x, cash), regions: { ...x.regions, NSW: { ...x.regions.NSW, playerDeposit: dep } } });
+    const s1 = ev(s0, turnOf(spend(w, 4000, 5000), w.turn + 1)).state;
+    const s2 = ev(s1, turnOf(spend(w, 2500, 6500), w.turn + 2)).state;
+    const h2 = s2.hypotheses.find(h => h.id === 'bgh_economy');
+    if (!h2 || h2.confidence !== 'high' || !/regional deposits/.test(h2.explanation)) return `strengthen: ${h2?.confidence} ${h2?.explanation}`;
+    const s3 = ev(s2, turnOf(spend(w, 6000, 6500), w.turn + 3)).state;
+    const h3 = s3.hypotheses.find(h => h.id === 'bgh_economy');
+    return (h3?.status === 'weakened' && h3.contradictingEvidence.length > 0) || JSON.stringify(h3);
+  });
+
+  // Team OS
+  check('bg_team_os', 'Team OS: roles are read, a completed economy task is surfaced as a suggestion, Team OS is never changed', () => {
+    const ins = createTeamOSFixtureInputs({ mateMoney: 12000 });
+    const w0 = createTeamGIFixtureWorld(ins);
+    const ctx = createGIConversationContext();
+    const cmd = parseTeamCommandFromFrame(parseGILanguage("I'll defend NSW. Riley makes money.", w0, ctx), w0, ctx);
+    if (!cmd) return 'team command not parsed';
+    const w = createTeamGIFixtureWorld(ins, evaluateTeamOperatingSystem(null, ins, cmd).state);
+    const before = canon(w.team!.state);
+    const s = ev(fresh('advisor'), w).state;
+    if (canon(w.team!.state) !== before) return 'Team OS state mutated';
+    const cashTask = w.team!.state.contract?.taskGraph.find(t => t.type === 'generate_cash');
+    if (!cashTask) return 'fixture has no economy task';
+    return (s.teamInsights.length > 0 && /Team Intelligence decides/.test(s.teamInsights[0].suggestion)) || `insights ${JSON.stringify(s.teamInsights)}`;
+  });
+
+  // Co-Pilot handoff / return
+  check('bg_copilot_handoff', 'Co-Pilot handoff: context only, and only while the player has delegated a session', () => {
+    const w = withGi3(STD(setRival(base(), 9000)));
+    const s = ev(fresh('strategist'), w).state;
+    const h = s.coPilotHandoffPackage!;
+    if (!h || !/Your strategy/.test(h.strategySummary) || !h.constraints.some(c => /debt/.test(c)) || h.recommendedSequence[0]?.targetId !== 'NSW') return JSON.stringify({ sum: h?.strategySummary, cons: h?.constraints, seq: h?.recommendedSequence });
+    const mk = () => [{ id: 'a', actionType: 'deposit_region', targetId: 'NSW', title: 'Deposit into NSW', utilityScore: 40, isValid: true }, { id: 'b', actionType: 'take_loan', title: 'Take loan', utilityScore: 60, isValid: true }, { id: 'c', actionType: 'sell', title: 'Sell', utilityScore: 50, isValid: false }];
+    const plain = mk();
+    const delivered = mk();
+    applyBackgroundHandoffToCoPilotCandidates(delivered, markBackgroundHandoffDelivered(s, 'tok', w.turn).coPilotHandoffPackage);
+    const returned = mk();
+    applyBackgroundHandoffToCoPilotCandidates(returned, { ...h, status: 'returned' });
+    if (delivered[0].utilityScore <= plain[0].utilityScore || delivered[1].utilityScore >= plain[1].utilityScore) return 'handoff did not bias Co-Pilot ranking';
+    if (delivered[2].isValid !== false || delivered[2].utilityScore !== 50) return 'invalid candidate touched';
+    return canon(returned) === canon(plain) || 'returned package still biased Co-Pilot';
+  });
+  check('bg_control_return', 'Control return: Co-Pilot results are recorded and analysis resumes without a reset', () => {
+    const w = withGi3(STD(setRival(base(), 9000)));
+    const s = markBackgroundHandoffDelivered(ev(fresh('strategist'), w).state, 'tok', w.turn);
+    const r = recordBackgroundCoPilotReturn(s, ['Deposited $2,000 into NSW'], w.turn + 1);
+    const after = ev(r, turnOf(setCash(w, 4000), w.turn + 1)).state;
+    return (after.shadowPlan !== null && after.history.some(h => h.kind === 'copilot_handoff') && after.history.some(h => h.kind === 'copilot_return') && after.coPilotReturn?.actions.length === 1 && !after.diagnostics.skipped) || 'context lost on return';
+  });
+
+  // Pre-action / impact
+  check('bg_pre_action', 'Pre-action: warns on a meaningful risk only; mitigation and small moves pass silently; never a block', () => {
+    const w = STD(setRival(base(), 9000));
+    const s = ev(fresh('advisor'), setCash(w, 7000)).state;
+    const vic = evaluateBackgroundPreAction(s, setCash(w, 7000), { id: 'c_vic', label: 'Deposit $5,500 into VIC', actionType: 'deposit_region', costEstimate: 5500, targetId: 'VIC' });
+    if (!vic.warn || !vic.lines.some(l => /\$1,500/.test(l)) || !vic.lines.some(l => /challenge NSW/.test(l))) return JSON.stringify(vic.lines);
+    const ans = buildBackgroundPreActionAnswer(vic, { id: 'c_vic', label: 'Deposit $5,500 into VIC' });
+    if (!ans.buttons.some(b => b.kind === 'bg_continue_action' && b.label === 'Continue Anyway') || !ans.buttons.some(b => b.label === 'Show Safer Move')) return ans.buttons.map(b => b.label).join(',');
+    if (evaluateBackgroundPreAction(s, setCash(w, 7000), { id: 'c_def_nsw', label: 'Deposit $2,000 into NSW', actionType: 'deposit_region', costEstimate: 2000, targetId: 'NSW' }).warn) return 'warned on the mitigation';
+    return !evaluateBackgroundPreAction(s, setCash(w, 7000), { id: 'x', label: 'Buy a map', actionType: 'buy', costEstimate: 100 }).warn || 'warned on a trivial purchase';
+  });
+  check('bg_impact', 'After-action impact: measured from the actual post-action state', () => {
+    const w = STD(setRival(base(), 9000));
+    const w1 = { ...setCash(w, 14000), ledgerEvents: [{ id: 'l1', category: 'action', actorId: 'player', turn: w.turn, summary: 'start' }] };
+    const s = ev(fresh('coach'), w1).state;
+    const w2 = { ...setCash(w, 7000), regions: { ...w.regions, NSW: { ...w.regions.NSW, playerDeposit: 10000, rivalCostToControl: 12000 } }, ledgerEvents: [...(w1.ledgerEvents as any[]), { id: 'l2', category: 'action', actorId: 'player', turn: w.turn, summary: 'Deposited $7,000 into NSW' }] };
+    const imp = ev(s, w2).state.recentImpactAssessment;
+    if (!imp) return 'no impact assessment';
+    const liq = imp.lines.find(l => l.label === 'Liquidity');
+    const nsw = imp.lines.find(l => l.label === 'NSW threat');
+    return (liq?.before === '$14,000' && liq.after === '$7,000' && nsw?.direction === 'better') || JSON.stringify(imp.lines);
+  });
+
+  // Persistence / determinism / GI
+  check('bg_save_load', 'Save/load: sanitised; simulations and domain hashes are not restored; old saves load safely', () => {
+    const s = ev(fresh('strategist'), STD(setRival(base(), 9000))).state;
+    const loaded = sanitizeBackgroundAIState(JSON.parse(JSON.stringify(s)));
+    if (loaded.preparedSimulations.length || Object.keys(loaded.domainHashes).length) return 'stale cache restored';
+    if (loaded.mode !== 'strategist' || canon(loaded.shadowPlan) !== canon(s.shadowPlan)) return 'plan/mode lost';
+    const legacy = sanitizeBackgroundAIState(undefined);
+    const junk = sanitizeBackgroundAIState({ mode: 'godmode', threats: 'x', shadowPlan: { strategySummary: 5 } });
+    return (legacy.mode === 'advisor' && legacy.enabled && junk.mode === 'advisor' && junk.shadowPlan === null && junk.threats.length === 0) || 'bad input survived';
+  });
+  check('bg_rehydration', 'Rehydration: after load the first evaluation re-validates advice against the live state', () => {
+    const s = ev(fresh('strategist'), STD(setRival(base(), 9000))).state;
+    const loaded = sanitizeBackgroundAIState(JSON.parse(JSON.stringify(s)));
+    const calmNow = STD(setRival(base(), 500));
+    const r = ev(loaded, calmNow);
+    return (!r.report.skipped && !r.state.threats.some(t => t.status === 'active' && t.regionId === 'NSW') && r.state.preparedSimulations.every(p => p.stateHash !== 'x')) || 'stale threat kept after load';
+  });
+  check('bg_determinism', 'Determinism: identical state + settings → identical analysis', () => {
+    const w = withGi3(STD(setRival(base(), 9000)));
+    return canon(ev(fresh('coach'), w).state) === canon(ev(fresh('coach'), w).state) || 'outputs differ';
+  });
+  check('bg_gi_queries', 'Game Intelligence can query Background AI; ordinary questions keep their routes', () => {
+    const w = STD(setRival(base(), 9000));
+    const world = { ...w, backgroundAI: ev(fresh('strategist'), w).state };
+    const qs = ['What are you watching?', 'What are you worried about?', "What's your current plan?", 'What would you do?', 'What have you simulated?', 'How does my plan differ from yours?', 'What happens if I ignore NSW?'];
+    const bad = qs.filter(q => runGameIntelligenceCore(q, world, createGIConversationContext()).understanding.primary !== 'background_ai');
+    if (bad.length) return `not routed: ${bad.join(' | ')}`;
+    const g = runGameIntelligenceCore('Should I sell Gold?', world, createGIConversationContext());
+    const why = runGameIntelligenceCore('What would you do?', world, createGIConversationContext());
+    if (why.answer.buttons.some(b => b.kind !== 'do' && b.kind !== 'why' && b.kind !== 'ask')) return 'unexpected authority-bearing button';
+    return g.understanding.primary !== 'background_ai' || 'ordinary question captured';
+  });
+  check('bg_ledger', 'Ledger: only meaningful intelligence events, nothing for skipped evaluations', () => {
+    const w = STD(setRival(base(), 9000));
+    const a = ev(fresh('advisor'), w);
+    const first = backgroundLedgerEvents(createEmptyBackgroundAIState(), a.state, a.report);
+    const b = ev(a.state, w);
+    return (first.some(e => e.kind === 'bg_warning_surfaced') && backgroundLedgerEvents(a.state, b.state, b.report).length === 0) || `${first.map(e => e.kind)}`;
+  });
+  check('bg_contextual_metadata', 'Contextual Actions: Background AI adds metadata only — the canonical set, order and legality are unchanged', () => {
+    const w = STD(setRival(base(), 9000));
+    const s = ev(fresh('advisor'), w).state;
+    const view = annotateContextualActionsWithBackground(w.actionSet!, s);
+    if (view.ranked.map(c => `${c.id}:${c.legal}`).join(',') !== w.actionSet!.ranked.map(c => `${c.id}:${c.legal}`).join(',')) return 'order or legality changed';
+    return view.ranked.some(c => typeof c.backgroundRank === 'number' && c.backgroundReason) || 'no metadata';
+  });
+
+  // Longitudinal scenario (Part 69)
+  check('bg_longitudinal', 'Scenario: follow → pressure → override → Co-Pilot handoff → control return, with continuity throughout', () => {
+    let w = withGi3(STD(setRival(setCash(base(), 6000), 1000)));
+    let st = ev(fresh('strategist'), w).state;
+    // Turn 1: calm — a liquidity move; the player follows it.
+    if (!/sell/i.test(st.recommendedNextMove?.label || '')) return `T1 rec ${st.recommendedNextMove?.label}`;
+    const summary1 = st.shadowPlan!.strategySummary;
+    w = withGi3(STD(setRival(turnOf(setCash(base(), 7000), 8), 1000)), w.gi3);
+    st = ev(noteBackgroundAdviceFollowed(st), w).state;
+    if (st.shadowPlan!.strategySummary !== summary1) return 'T1 strategy drifted';
+    // Turn 2: heavy NSW pressure.
+    w = withGi3(STD(setRival(turnOf(setCash(base(), 7000), 9), 9000)), w.gi3);
+    const t2 = ev(st, w);
+    st = t2.state;
+    const nsw = st.attentionQueue.find(i => i.subject.startsWith('NSW'));
+    if (nsw?.importance !== 'critical') return `T2 attention ${nsw?.importance}`;
+    if (st.recommendedNextMove?.targetId !== 'NSW') return `T2 rec ${st.recommendedNextMove?.label}`;
+    if (!t2.report.surfaced || !['warning', 'critical'].includes(t2.report.surfaced.level)) return 'T2 no warning';
+    // Turn 3: the player expands VIC anyway.
+    const pre = evaluateBackgroundPreAction(st, w, { id: 'c_vic', label: 'Deposit $5,500 into VIC', actionType: 'deposit_region', costEstimate: 5500, targetId: 'VIC' });
+    if (!pre.warn) return 'T3 no pre-action warning';
+    st = recordBackgroundOverride(st, { turn: 9, recommended: st.recommendedNextMove!.label, chosen: 'Deposit $5,500 into VIC', chosenRegion: 'VIC' });
+    w = { ...withGi3(STD(setRival(turnOf(setCash(base(), 1500), 9), 9000)), w.gi3), ledgerEvents: [{ id: 'lv', category: 'action', actorId: 'player', turn: 9, summary: 'Deposited $5,500 into VIC' }] };
+    const t3 = ev(st, w);
+    st = t3.state;
+    if (!/cheapest way to stabilize New South Wales without abandoning it/.test(st.shadowPlan?.adaptation || '')) return `T3 ${st.shadowPlan?.adaptation}`;
+    if (t3.report.surfaced?.cooldownKey === 'threat:bgt_region_NSW') return 'T3 nagged';
+    if (!st.history.some(h => h.kind === 'divergence_acknowledged')) return 'T3 divergence not recorded';
+    // Turn 4: the player hands the turn to Co-Pilot.
+    st = markBackgroundHandoffDelivered(st, 'session-1', 10);
+    const h = st.coPilotHandoffPackage!;
+    if (h.focusRegion !== 'NSW' || !h.constraints.some(c => /debt/.test(c)) || !/Your strategy/.test(h.strategySummary)) return 'T4 handoff incomplete';
+    // Turn 5: control returns; analysis resumes from the new state without a reset.
+    st = recordBackgroundCoPilotReturn(st, ['Deposited $1,000 into NSW'], 11);
+    w = withGi3(STD(setRival(turnOf(setCash(base(), 900), 11), 9000)), w.gi3);
+    const t5 = ev(st, w).state;
+    return (t5.shadowPlan !== null && t5.overrides.length >= 1 && t5.history.some(x => x.kind === 'copilot_return') && t5.lastEvaluationTurn === 11) || 'T5 continuity lost';
+  });
+  return results;
+}
+
+// ---- Background AI UI: compact PLAY strip, INTELLIGENCE workspace, LAB Parallel Intelligence Inspector ------
+// Information and buttons only. Buttons ask questions, dismiss notices or open the canonical action path the
+// player chooses — nothing here executes a game action.
+
+const BG_STATUS_META: Record<BGStatus, { label: string; cls: string }> = {
+  quiet: { label: 'Quiet', cls: 'bg-slate-500 text-white' },
+  watching: { label: 'Watching', cls: 'bg-sky-600 text-white' },
+  plan_updated: { label: 'Plan updated', cls: 'bg-indigo-600 text-white' },
+  concern: { label: 'Concern', cls: 'bg-amber-500 text-black' },
+  opportunity: { label: 'Opportunity', cls: 'bg-emerald-600 text-white' },
+  needs_attention: { label: 'Needs attention', cls: 'bg-red-600 text-white' }
+};
+const bgImportanceIcon = (i: BackgroundAttentionItem['importance']) => (i === 'critical' ? '🔴' : i === 'high' ? '🟠' : i === 'medium' ? '🟡' : i === 'low' ? '🔵' : '👁️');
+
+export interface BackgroundAIPanelProps {
+  state: BackgroundAIState | null;
+  theme: V9Theme;
+  onAsk: (query: string) => void;
+  onButton: (button: GameIntelligenceButton) => void;
+}
+
+/** PLAY: one compact card — watching, plan, next, confidence — plus the surfaced notice, if any. */
+export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: () => void }> = ({ state, theme, onAsk, onButton, onOpen }) => {
+  if (!state?.enabled || !state.strategicAssessment) return null;
+  const top = state.attentionQueue.find(i => i.status === 'active') || null;
+  const plan = state.shadowPlan;
+  const rec = state.interventionRecommendation;
+  const showRec = rec && (rec.level === 'notice' || rec.level === 'warning' || rec.level === 'critical');
+  const meta = BG_STATUS_META[state.status];
+  const quietMode = state.mode === 'observe';
+  return (
+    <section aria-label="Background AI" data-testid="bg-play-strip" className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 text-xs space-y-1`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">🧠 Background AI</span>
+        <span className={`px-2 py-0.5 rounded-full font-bold ${meta.cls}`} data-testid="bg-status">{meta.label}</span>
+        <span className="opacity-70">{BACKGROUND_AI_MODE_META[state.mode].label} • thinks alongside you, never acts</span>
+      </div>
+      {!quietMode && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-x-3 gap-y-0.5">
+          <div className="min-w-0 truncate" title={top?.reason}><span className="opacity-70">Watching </span>{top ? `${bgImportanceIcon(top.importance)} ${top.subject}` : 'nothing pressing'}</div>
+          <div className="min-w-0 truncate md:col-span-2" title={plan?.reason}><span className="opacity-70">Plan </span>{plan?.strategySummary || '—'}</div>
+          <div className="min-w-0 truncate" title={plan?.nextMove?.reason}><span className="opacity-70">Next </span>{plan?.nextMove?.label || '—'} <span className="opacity-60">({plan?.confidence || state.confidence})</span></div>
+        </div>
+      )}
+      {showRec && !quietMode && (
+        <div role="status" data-testid="bg-notice" className={`rounded-lg border px-2 py-1 flex flex-wrap items-center gap-2 ${rec!.level === 'critical' ? 'border-red-500/70' : rec!.level === 'warning' ? 'border-amber-500/70' : theme.border}`}>
+          <span className="flex-1 min-w-[12rem]">{rec!.level === 'critical' ? '⚠️' : rec!.level === 'warning' ? '❗' : 'ℹ️'} {rec!.message}</span>
+          {rec!.actionContext.query && <button type="button" className="underline" onClick={() => onAsk(rec!.actionContext.query!)}>Why?</button>}
+          <button type="button" className="underline opacity-80" onClick={() => onButton({ id: `bg_dismiss_${rec!.cooldownKey}`, label: 'Dismiss', kind: 'bg_dismiss', candidateId: rec!.cooldownKey })}>Dismiss</button>
+        </div>
+      )}
+      {state.shadowPlan?.adaptation && !quietMode && <div className="opacity-85" data-testid="bg-adaptation">🔁 Plan adjusted — {state.shadowPlan.adaptation}</div>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="underline" onClick={() => onAsk('Why do you prefer this move?')}>Why?</button>
+        <button type="button" className="underline" onClick={onOpen}>Show Plan</button>
+        <button type="button" className="underline" onClick={() => onAsk('Compare moves')}>Compare Moves</button>
+      </div>
+    </section>
+  );
+};
+
+/** INTELLIGENCE: the full Background AI workspace. */
+export const BackgroundAIWorkspace: React.FC<BackgroundAIPanelProps & { onToggle: () => void }> = ({ state, theme, onAsk, onButton, onToggle }) => {
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70';
+  const st = state;
+  const section = (title: string, children: React.ReactNode, testId?: string) => <div data-testid={testId}><div className={label}>{title}</div>{children}</div>;
+  if (!st?.enabled) {
+    return (
+      <section aria-labelledby="bg-ws-heading" data-testid="bg-workspace" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-2 text-sm`}>
+        <h2 id="bg-ws-heading" className="font-bold">🧠 Background AI</h2>
+        <p className="text-xs opacity-80">Background AI is off. When on, it watches the match, prepares advice and simulations, and explains — while you keep full control. It never takes actions.</p>
+        <button type="button" className={`${theme.button} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={onToggle}>Turn on Background AI</button>
+      </section>
+    );
+  }
+  const a = st.strategicAssessment;
+  const plan = st.shadowPlan;
+  const deep = st.mode === 'strategist' || st.mode === 'coach';
+  return (
+    <section aria-labelledby="bg-ws-heading" data-testid="bg-workspace" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} space-y-3 text-sm`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="bg-ws-heading" className="font-bold">🧠 Background AI</h2>
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${BG_STATUS_META[st.status].cls}`}>{BG_STATUS_META[st.status].label}</span>
+        <span className="text-[11px] opacity-70">Co-Pilot acts for you. Background AI thinks alongside you.</span>
+        <button type="button" className="ml-auto text-xs underline opacity-80" onClick={onToggle}>Turn off</button>
+      </div>
+      <div role="radiogroup" aria-label="Background AI mode" className="flex flex-wrap gap-1 text-[11px]">
+        {(Object.keys(BACKGROUND_AI_MODE_META) as BackgroundAIMode[]).map(m => (
+          <button key={m} type="button" role="radio" aria-checked={st.mode === m} title={BACKGROUND_AI_MODE_META[m].description}
+            className={`px-2 py-0.5 rounded border ${st.mode === m ? theme.button : `${theme.border} opacity-80`}`}
+            onClick={() => onButton({ id: `bg_mode_${m}`, label: BACKGROUND_AI_MODE_META[m].label, kind: 'bg_mode', query: m })}>{BACKGROUND_AI_MODE_META[m].label}</button>
+        ))}
+      </div>
+      <p className="text-[11px] opacity-70">{BACKGROUND_AI_MODE_META[st.mode].description} Modes change how proactive it is — never its authority.</p>
+      {a && section('Assessment', (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs" data-testid="bg-assessment">
+          {([['Overall', a.overallPosition], ['Economy', a.economy], ['Liquidity', a.liquidity], ['Regions', a.regions], ['Primary risk', a.risk], ['Primary opportunity', a.opportunity], ['Plan health', a.planHealth], ['Next deadline', a.nextDeadline || '—']] as Array<[string, string]>).map(([k, v]) => (
+            <div key={k}><div className="opacity-60">{k}</div><div className="font-semibold">{v}</div></div>
+          ))}
+        </div>
+      ))}
+      {section('Attention', st.attentionQueue.length ? <ul className="text-xs space-y-0.5">{st.attentionQueue.slice(0, 6).map(i => <li key={i.id} className={i.status === 'decaying' ? 'opacity-50' : ''}>{bgImportanceIcon(i.importance)} <span className="font-semibold">{i.subject}</span> — {i.reason}{i.trend === 'rising' ? ' ↑' : i.trend === 'falling' ? ' ↓' : ''}</li>)}</ul> : <div className="text-xs opacity-70">Nothing needs attention.</div>)}
+      {plan && section(plan.label, (
+        <div className="text-xs space-y-0.5" data-testid="bg-shadow-plan">
+          <div><span className="font-semibold">Plan:</span> {plan.strategySummary}</div>
+          <div><span className="font-semibold">Current phase:</span> {plan.currentPhase}</div>
+          {plan.nextMove && <div><span className="font-semibold">Next move:</span> {plan.nextMove.label} — {plan.nextMove.reason}</div>}
+          {deep && plan.followingMoves.length > 0 && <div><span className="font-semibold">After that:</span> {plan.followingMoves.join(' → ')}</div>}
+          {deep && plan.conditions.map((c, i) => <div key={i} className="opacity-85">If {c.when}: {c.then}</div>)}
+          {plan.adaptation && <div className="opacity-85">🔁 {plan.adaptation}</div>}
+          <div className="opacity-70">Confidence: {plan.confidence}</div>
+        </div>
+      ))}
+      {st.alternativeMoves.length > 0 && section('Alternatives', <ul className="text-xs space-y-0.5">{st.alternativeMoves.map(m => <li key={`${m.moveClass}_${m.actionId}`}>{m.moveClass.replace(/_/g, ' ')}: <span className="font-semibold">{m.label}</span> — {m.reason}</li>)}</ul>)}
+      {section('Threats', st.threats.filter(t => t.status === 'active').length ? <ul className="text-xs space-y-0.5">{st.threats.filter(t => t.status === 'active').slice(0, 4).map(t => <li key={t.id}>{t.severity === 'critical' ? '🔴' : t.severity === 'high' ? '🟠' : '🟡'} {t.subject}: {t.possibleImpact} <span className="opacity-60">({t.confidence} confidence)</span></li>)}</ul> : <div className="text-xs opacity-70">No visible threats.</div>)}
+      {st.opportunities.length > 0 && section('Opportunities', <ul className="text-xs space-y-0.5">{st.opportunities.slice(0, 4).map(o => <li key={o.id}>✨ {o.subject}: {o.reason}</li>)}</ul>)}
+      {st.predictions.length > 0 && section('Predictions (observable evidence only)', <ul className="text-xs space-y-0.5">{st.predictions.slice(0, 4).map(p => <li key={p.id}>{p.likelihoodBand} likelihood — {p.event} <span className="opacity-60">({p.timeHorizon})</span></li>)}</ul>)}
+      {deep && st.hypotheses.length > 0 && section('Hypotheses', <ul className="text-xs space-y-0.5">{st.hypotheses.map(h => <li key={h.id}>{h.explanation} <span className="opacity-60">({h.confidence}{h.status === 'weakened' ? ', weakened' : ''})</span></li>)}</ul>)}
+      {deep && st.preparedSimulations.length > 0 && section('Prepared simulations (on a copy of the game)', <ul className="text-xs space-y-0.5">{st.preparedSimulations.map(s => <li key={s.actionId}>{s.label}: {s.outcomeSummary}{s.risks[0] ? ` — risk: ${s.risks[0]}` : ''}</li>)}</ul>)}
+      {st.planDivergence && section('Your plan vs Background AI', <div className="text-xs">{st.planDivergence.kind === 'strategy' ? `Your strategy's current step is “${st.planDivergence.playerIntent}”; Background AI would ${st.planDivergence.backgroundPlan.toLowerCase()} — ${st.planDivergence.reason}` : `You chose ${st.planDivergence.playerIntent}; Background AI had prepared ${st.planDivergence.backgroundPlan}.`}</div>, 'bg-divergence')}
+      {st.recentImpactAssessment && section('Recent impact', (
+        <div className="text-xs space-y-0.5" data-testid="bg-impact">
+          <div className="opacity-80">After {st.recentImpactAssessment.actionSummary} (turn {st.recentImpactAssessment.turn}):</div>
+          {st.recentImpactAssessment.lines.map((l, i) => <div key={i}>{l.label}: {l.before} → {l.after} {l.direction === 'better' ? '✅' : l.direction === 'worse' ? '⚠️' : ''}</div>)}
+          <div className="opacity-80">{st.recentImpactAssessment.planStatus}</div>
+          {st.mode === 'coach' && st.recentImpactAssessment.coachNote && <div className="opacity-90">🎓 {st.recentImpactAssessment.coachNote}</div>}
+        </div>
+      ))}
+      {st.teamInsights.length > 0 && section('Team (Team Intelligence decides)', <ul className="text-xs space-y-0.5">{st.teamInsights.map(i => <li key={i.id}>{i.text} {i.suggestion}</li>)}</ul>)}
+      {st.coPilotReturn && section('Last Co-Pilot handback', <div className="text-xs">{st.coPilotReturn.summary}</div>)}
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={`${theme.button} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => onAsk('What would you do?')}>What would you do?</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('What are you worried about?')}>Worries</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('Compare moves')}>Compare Moves</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('How does my plan differ from yours?')}>Compare Plans</button>
+        <button type="button" className={`${theme.buttonSecondary} px-2.5 py-1 rounded-lg text-xs`} onClick={() => onAsk('What is your current plan?')}>Show AI Plan</button>
+      </div>
+    </section>
+  );
+};
+
+export interface ParallelIntelligenceInspectorProps {
+  state: BackgroundAIState | null;
+  theme: V9Theme;
+  perf: { lastMs: number; maxMs: number; evaluations: number; skipped: number };
+}
+
+/** LAB: Parallel Intelligence Inspector — structured state, scores and dependencies (no hidden reasoning). */
+export const ParallelIntelligenceInspector: React.FC<ParallelIntelligenceInspectorProps> = ({ state, theme, perf }) => {
+  const [open, setOpen] = React.useState(false);
+  const st = state;
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70 mt-2';
+  const row = (k: string, v: React.ReactNode, key?: string | number) => <div key={key ?? k} className="flex gap-2"><span className="opacity-70 min-w-[10rem]">{k}</span><span className="break-words min-w-0">{v}</span></div>;
+  return (
+    <section aria-labelledby="pi-lab-heading" data-testid="pi-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`}>
+      <div className="flex items-center gap-2">
+        <h2 id="pi-lab-heading" className="font-bold text-sm">🧠 Parallel Intelligence Inspector</h2>
+        <span className="opacity-70">{st ? `${st.enabled ? 'enabled' : 'disabled'} • ${st.mode} • can execute: ${String(BACKGROUND_AI_CAN_EXECUTE)}` : 'no state'}</span>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && st && (
+        <div className="space-y-1 mt-2">
+          <div className={label}>Runtime</div>
+          {row('last evaluation', `turn ${st.lastEvaluationTurn} — ${st.lastEvaluationEvent || '—'}`)}
+          {row('state hash', st.lastMeaningfulHash || '—')}
+          {row('significance', `${st.diagnostics.significance}${st.diagnostics.skipped ? ' (skipped)' : ''}`)}
+          {row('events', st.diagnostics.events.join(' | ') || '—')}
+          {row('recomputed', st.diagnostics.recomputed.join(', ') || '—')}
+          {row('timing', `last ${perf.lastMs}ms • max ${perf.maxMs}ms • ${perf.evaluations} evaluations (${perf.skipped} skipped as irrelevant)`)}
+          {row('budget', Object.entries(BACKGROUND_AI_BUDGETS[st.mode]).map(([k, v]) => `${k} ${v}`).join(' • '))}
+          <div className={label}>Dependencies</div>
+          {Object.entries(BACKGROUND_AI_DEPENDENCIES).map(([k, v]) => row(k, v.join(', '), `dep_${k}`))}
+          {row('domain hashes', Object.entries(st.domainHashes).map(([k, v]) => `${k}:${v}`).join(' ') || '—')}
+          <div className={label}>Attention queue</div>
+          {st.attentionQueue.map(i => row(i.subject, `${i.importance} • ${i.urgency} • ${i.confidence} • ${i.trend} • ${i.status} — ${i.reason}`, i.id))}
+          <div className={label}>Assessment</div>
+          {st.strategicAssessment && Object.entries(st.strategicAssessment).filter(([k]) => k !== 'evidence').map(([k, v]) => row(k, String(v ?? '—'), `a_${k}`))}
+          <div className={label}>Shadow Plan</div>
+          {st.shadowPlan ? [row('source', `${st.shadowPlan.source} (rev ${st.shadowPlan.revision}, replanned turn ${st.shadowPlan.lastReplannedTurn})`), row('summary', st.shadowPlan.strategySummary), row('phase', st.shadowPlan.currentPhase), row('next', st.shadowPlan.nextMove ? `${st.shadowPlan.nextMove.label} [${st.shadowPlan.nextMove.actionId}]` : '—'), row('assumptions', st.shadowPlan.resourceAssumptions.join('; ')), row('adaptation', st.shadowPlan.adaptation || '—')] : row('plan', '—')}
+          <div className={label}>Move evaluations (canonical action ids)</div>
+          {st.moveEvaluations.map(e => row(`${e.label} [${e.actionId}]`, `total ${e.total} — ${Object.entries(e.dimensions).filter(([, v]) => v).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`).join(', ')}`, e.actionId))}
+          <div className={label}>Threats / opportunities</div>
+          {st.threats.map(t => row(`${t.type} ${t.subject}`, `${t.severity} • ${t.urgency} • ${t.confidence} • ${t.status} — ${t.evidence.join('; ')}`, t.id))}
+          {st.opportunities.map(o => row(`${o.type} ${o.subject}`, `${o.urgency} • ${o.confidence} • ${o.strategicAlignment} — ${o.reason}`, o.id))}
+          <div className={label}>Predictions & calibration</div>
+          {st.predictions.map(p => row(p.event, `${p.likelihoodBand} • resolve by turn ${p.resolveByTurn} • ${p.evidence.join('; ')}`, p.id))}
+          {row('calibration', `${st.calibration.supported} supported • ${st.calibration.contradicted} contradicted • ${st.calibration.unresolved} unresolved`)}
+          <div className={label}>Hypotheses</div>
+          {st.hypotheses.map(h => row(h.question, `${h.confidence} • ${h.status} • for: ${h.supportingEvidence.join('; ') || '—'} • against: ${h.contradictingEvidence.join('; ') || '—'}`, h.id))}
+          <div className={label}>Simulations</div>
+          {st.preparedSimulations.map(s => row(s.label, `${s.outcomeSummary} • hash ${s.stateHash.slice(0, 16)} • turn ${s.createdTurn}`, s.actionId))}
+          <div className={label}>Divergence & intervention</div>
+          {row('divergence', st.planDivergence ? `${st.planDivergence.kind} ${st.planDivergence.severity}: ${st.planDivergence.playerIntent} vs ${st.planDivergence.backgroundPlan}` : '—')}
+          {row('intervention', st.interventionRecommendation ? `${st.interventionRecommendation.level} (score ${st.interventionRecommendation.score}) — ${st.interventionRecommendation.message}` : '—')}
+          {st.cooldowns.map(c => row(`cooldown ${c.key}`, `${c.level} • surfaced turn ${c.lastSurfacedTurn}${c.acknowledged ? ' • acknowledged' : ''}`, c.key))}
+          {row('player model', `followed ${st.playerModel.followed} • ignored ${st.playerModel.ignored} • explanations ${st.playerModel.explanationRequests} • dismissals ${JSON.stringify(st.playerModel.dismissals)}`)}
+          <div className={label}>Co-Pilot handoff</div>
+          {st.coPilotHandoffPackage ? [row('status', `${st.coPilotHandoffPackage.status}${st.coPilotHandoffPackage.deliveredTurn !== null ? ` (turn ${st.coPilotHandoffPackage.deliveredTurn})` : ''}`), row('summary', st.coPilotHandoffPackage.strategySummary), row('sequence', st.coPilotHandoffPackage.recommendedSequence.map(m => m.label).join(' → ') || '—'), row('constraints', st.coPilotHandoffPackage.constraints.join('; ') || '—'), row('source hash', st.coPilotHandoffPackage.sourceStateHash.slice(0, 24))] : row('handoff', '—')}
+          {row('last return', st.coPilotReturn?.summary || '—')}
+          <div className={label}>History</div>
+          {st.history.slice(-10).map((h, i) => row(`t${h.turn} ${h.kind}`, h.summary, i))}
+        </div>
+      )}
+    </section>
+  );
+};
+
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
@@ -114748,6 +116947,9 @@ function AustraliaGame() {
   // callbacks and the GI world. Refreshed again below once the live evaluation has run.
   const gi3StateRef = useRef<GI3StrategyState | null>(null);
   gi3StateRef.current = ((gameState as any).gi3Strategy as GI3StrategyState | undefined) || null;
+  // Background AI: latest (live-evaluated) prepared analysis for callbacks and the GI world.
+  const bgStateRef = useRef<BackgroundAIState | null>(null);
+  bgStateRef.current = ((gameState as any).backgroundAI as BackgroundAIState | undefined) || null;
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -116639,6 +118841,7 @@ function dispatchGameSettingsChange(
         teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
         teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
         gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
+        backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -144767,6 +146970,7 @@ function dispatchGameSettingsChange(
       team_governance: (() => { const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null; return team ? [team.governanceMode || null, team.leaderId || null] : null; })(),
       approvals: (pendingApprovalRequests || []).map((r: any) => `${r?.id}:${r?.status || 'pending'}`),
       // GI3 strategy: identity, revision, lifecycle, phase and tracked status (answers about the plan go stale on change).
+      background: (() => { const b: any = (gameState as any).backgroundAI; return b ? [b.enabled, b.mode, b.lastMeaningfulHash] : null; })(),
       strategy: (() => { const g3: any = (gameState as any).gi3Strategy; const c = g3?.active; return c ? [c.id, c.revision, c.status, c.phaseIndex, g3.progress?.onTrack || null, (g3.notices || []).filter((n: any) => !n.dismissed).length] : [(g3?.history || []).length]; })(),
       memory: [gameSettings.aiMemoryFullInspectionEnabled === true, ((gameState as any).aiMemory?.version ?? (gameState as any).aiMemoryVersion ?? null)],
       scenarios: (((gameState as any).scenarioObjectives || (gameState as any).activeScenarioConfig?.objectives || []) as any[]).map(o => `${o?.id}:${o?.currentValue ?? ''}`)
@@ -144949,6 +147153,7 @@ function dispatchGameSettingsChange(
       ledgerEvents: ((gameState.gameActivityLedger?.events || []) as any[]).slice(-40),
       team: teamOsViewRef.current,
       gi3: gi3StateRef.current,
+      backgroundAI: bgStateRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -145412,6 +147617,99 @@ function dispatchGameSettingsChange(
   /** Co-Pilot context: the strategy is context for explanations and ranking — never extra authority. */
   const gi3CoPilot = useMemo(() => gi3CoPilotContext(gi3Live), [gi3Live]);
 
+  // ---- Background AI / Parallel Intelligence System: live runtime ----------------------------------------
+  // Thinks alongside the player; never acts. The evaluation reads the same fog-filtered GI world as Game
+  // Intelligence, is skipped when nothing strategically relevant changed, and commits its prepared analysis
+  // to gameState.backgroundAI loop-safely. The runtime is given NO executor, dispatcher for gameplay, or
+  // settings setter — only this UI-state commit (BACKGROUND_AI_CAN_EXECUTE === false).
+  const bgStoredRaw = (gameState as any).backgroundAI as BackgroundAIState | undefined;
+  const bgStored = useMemo(() => sanitizeBackgroundAIState(bgStoredRaw), [bgStoredRaw]);
+  const bgPerfRef = useRef<{ lastMs: number; maxMs: number; evaluations: number; skipped: number }>({ lastMs: 0, maxMs: 0, evaluations: 0, skipped: 0 });
+  const bgEvaluation = useMemo<{ state: BackgroundAIState; report: BackgroundEvaluationReport } | null>(() => {
+    if (!isLiveIntentMatch || !bgStored.enabled) return null;
+    try {
+      const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+      const world = { ...giWorldBuilderRef.current(), gi3: gi3StateRef.current };
+      const out = evaluateBackgroundAI(bgStored, world);
+      const ms = typeof performance !== 'undefined' ? performance.now() - t0 : 0;
+      const perf = bgPerfRef.current;
+      perf.lastMs = Math.round(ms * 10) / 10; perf.maxMs = Math.max(perf.maxMs, perf.lastMs); perf.evaluations += 1; if (out.report.skipped) perf.skipped += 1;
+      return out;
+    } catch (err) {
+      console.warn('[Background AI] evaluation skipped:', err);
+      return null;
+    }
+    // v9GiFingerprint covers the canonical slices the world reads; GI3 and Team OS feed strategy/team context.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgStored, v9GiFingerprint, gi3Live, teamOsView, isLiveIntentMatch]);
+  const bgLive: BackgroundAIState = bgEvaluation?.state || bgStored;
+  bgStateRef.current = bgLive;
+  const bgCommitRef = useRef<{ turn: number; commits: number; lastSig: string }>({ turn: -1, commits: 0, lastSig: '' });
+
+  /** Commit Background AI's prepared analysis (UI/intelligence state only — never gameplay state). */
+  const persistBackgroundAI = useCallback((next: BackgroundAIState, report: BackgroundEvaluationReport | null, source: 'evaluation' | 'player'): BackgroundAIState => {
+    const prev = sanitizeBackgroundAIState((gameState as any).backgroundAI);
+    const sig = backgroundAISignature(next);
+    const tracker = bgCommitRef.current;
+    const turn = Number(gameState.turnCounter || 0);
+    if (tracker.turn !== turn) { tracker.turn = turn; tracker.commits = 0; }
+    if (source === 'evaluation' && (sig === backgroundAISignature(prev) || sig === tracker.lastSig || tracker.commits >= 20)) return prev;
+    tracker.lastSig = sig;
+    tracker.commits += 1;
+    bgStateRef.current = next;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { backgroundAI: next } as any });
+    if (!(gameState as any).isolatedReplayRuntime) {
+      backgroundLedgerEvents(prev, next, report).forEach(ev => appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: ev.kind, summary: ev.summary.slice(0, 200) } as any));
+      const surfaced = report?.surfaced;
+      if (surfaced && source === 'evaluation' && (surfaced.level === 'notice' || surfaced.level === 'warning' || surfaced.level === 'critical')) {
+        addNotification(`🧠 Background AI: ${surfaced.message}`.slice(0, 180), surfaced.level === 'notice' ? 'info' : 'warning', false, 'system');
+      }
+    }
+    return next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState, addNotification, appendGameActivityLedgerEvent]);
+
+  const bgLiveSig = bgEvaluation && !bgEvaluation.report.skipped ? backgroundAISignature(bgEvaluation.state) : '';
+  useEffect(() => {
+    if (bgEvaluation && !bgEvaluation.report.skipped) persistBackgroundAI(bgEvaluation.state, bgEvaluation.report, 'evaluation');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgLiveSig]);
+
+  // Co-Pilot handoff (only the PLAYER starts Co-Pilot; Background AI just hands it context) and return.
+  const bgSessionActive = Boolean(takeoverSession && !['terminated', 'disabled', 'interrupted'].includes(String(takeoverSession.status)));
+  const bgSessionToken = takeoverSession?.sessionToken ? String(takeoverSession.sessionToken) : null;
+  const bgPrevSessionRef = useRef<{ active: boolean; token: string | null }>({ active: false, token: null });
+  useEffect(() => {
+    const prevSession = bgPrevSessionRef.current;
+    bgPrevSessionRef.current = { active: bgSessionActive, token: bgSessionToken };
+    const st = bgStateRef.current;
+    if (!st?.enabled || !isLiveIntentMatch) return;
+    const turn = Number(gameState.turnCounter || 0);
+    if (bgSessionActive && !prevSession.active && st.coPilotHandoffPackage) {
+      persistBackgroundAI(markBackgroundHandoffDelivered(st, bgSessionToken, turn), null, 'player');
+    } else if (!bgSessionActive && prevSession.active) {
+      const delivered = st.coPilotHandoffPackage?.deliveredTurn ?? turn;
+      const actions = ((gameState.gameActivityLedger?.events || []) as any[])
+        .filter(e => e && (e.category === 'copilot_action' || (e.category === 'action' && /co-?pilot/i.test(String(e.summary || '')))) && Number(e.turn ?? 0) >= delivered)
+        .slice(-8).map(e => String(e.summary || e.eventType || 'action').slice(0, 80));
+      persistBackgroundAI(recordBackgroundCoPilotReturn(st, actions, turn), null, 'player');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgSessionActive, bgSessionToken]);
+
+  const setBackgroundMode = useCallback((mode: BackgroundAIMode) => {
+    persistBackgroundAI(setBackgroundAIMode(sanitizeBackgroundAIState(bgStateRef.current), mode), null, 'player');
+  }, [persistBackgroundAI]);
+  const toggleBackgroundAI = useCallback(() => {
+    const st = sanitizeBackgroundAIState(bgStateRef.current);
+    persistBackgroundAI(setBackgroundAIEnabled(st, !st.enabled), null, 'player');
+  }, [persistBackgroundAI]);
+  const dismissBackgroundNotice = useCallback((key: string) => {
+    persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
+  }, [persistBackgroundAI]);
+  /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
+  const v9ActionSetView = useMemo(() => annotateContextualActionsWithBackground(v9ActionSet, bgLive), [v9ActionSet, bgLive]);
+
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
@@ -145430,6 +147728,7 @@ function dispatchGameSettingsChange(
       });
       giContextRef.current = result.context;
       pushIntelAnswer(result.answer);
+      if (result.understanding?.primary === 'background_ai' && bgStateRef.current) persistBackgroundAI(noteBackgroundExplanationRequest(sanitizeBackgroundAIState(bgStateRef.current)), null, 'player');
       setGiDiagnostics(prev => [...prev, result.diagnostics].slice(-8));
       if (result.answer.immediate?.kind === 'take_control') handleTakeControl();
       else if (result.answer.immediate?.kind === 'set_mode') setPlayerControlMode(result.answer.immediate.mode);
@@ -145439,7 +147738,7 @@ function dispatchGameSettingsChange(
     } finally {
       setV9IntelBusy(false);
     }
-  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI]);
+  }, [v9IntelBusy, updateUiState, pushIntelAnswer, handleTakeControl, setPlayerControlMode, askAI, persistBackgroundAI]);
 
   // One dispatcher for every V9 button (PLAY cards, Intelligence answers). Each kind maps onto an
   // existing canonical path; none of them bypass legality, approvals or Co-Pilot authority.
@@ -145447,7 +147746,8 @@ function dispatchGameSettingsChange(
     const candidate = findContextualCandidate(v9ActionSet, button.candidateId);
     switch (button.kind) {
       case 'do':
-      case 'gi3_continue_action': {
+      case 'gi3_continue_action':
+      case 'bg_continue_action': {
         if (!candidate || !candidate.legal || candidate.execution?.kind !== 'copilot_candidate') return;
         const exec = candidate.execution;
         // GI3 divergence: a material conflict with the active strategy shows a notice first. The player
@@ -145467,6 +147767,25 @@ function dispatchGameSettingsChange(
             const ev: GI3StrategyEvent = { id: `g3e_override_${turn}_${candidate.id}`.slice(0, 80), turn, kind: 'player_override', significance: 'meaningful', summary: `Player chose ${candidate.label} despite the strategy: ${check.message}`.slice(0, 200) };
             persistGI3State({ ...base, events: [...base.events.filter(e => e.id !== ev.id), ev].slice(-GI3_LIMITS.events) }, 'player');
             appendGameActivityLedgerEvent('plan', { actorId: 'player', eventType: 'gi3_player_override', summary: ev.summary } as any);
+          }
+        }
+        // Background AI pre-action advice: shown only for a meaningful risk, and never blocks — "Continue
+        // Anyway" runs exactly the same canonical action. (Skipped after a GI3 notice to avoid a double prompt.)
+        const bg = bgStateRef.current;
+        if (bg?.enabled && button.kind !== 'gi3_continue_action') {
+          const ec: any = exec.candidate || {};
+          const targetId = String(ec.targetId || ec.regionId || ec.parameters?.region || ec.parameters?.destinationRegion || '').toUpperCase() || null;
+          if (button.kind === 'do') {
+            const check = evaluateBackgroundPreAction(bg, giWorldBuilderRef.current(), { id: candidate.id, label: candidate.label, actionType: candidate.actionType, costEstimate: candidate.costEstimate, targetId });
+            if (check.warn) {
+              pushIntelAnswer(buildBackgroundPreActionAnswer(check, candidate));
+              setExperienceLayer('intelligence');
+              return;
+            }
+            if (bg.recommendedNextMove?.actionId === candidate.id) persistBackgroundAI(noteBackgroundAdviceFollowed(sanitizeBackgroundAIState(bg)), null, 'player');
+          } else {
+            // The player chose differently: remember it, stop nagging, and let the plan adapt.
+            persistBackgroundAI(recordBackgroundOverride(sanitizeBackgroundAIState(bg), { turn: Number(gameState.turnCounter || 0), recommended: bg.recommendedNextMove?.label || 'the prepared plan', chosen: candidate.label, chosenRegion: targetId && (REGIONS as any)[targetId] ? targetId : null }), null, 'player');
           }
         }
         requestManualAction(() => executeIntentRecommendation(exec.candidate));
@@ -145540,10 +147859,17 @@ function dispatchGameSettingsChange(
       case 'gi3_dismiss':
         if (button.candidateId) dismissGI3Notice(button.candidateId);
         return;
+      case 'bg_dismiss':
+        if (button.candidateId) dismissBackgroundNotice(button.candidateId);
+        return;
+      case 'bg_mode':
+        // Only the PLAYER changes Background AI's mode (it affects proactivity, never authority).
+        if (button.query && ['observe', 'alert', 'advisor', 'strategist', 'coach'].includes(button.query)) setBackgroundMode(button.query as BackgroundAIMode);
+        return;
       default:
         return;
     }
-  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money]);
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money, persistBackgroundAI, dismissBackgroundNotice, setBackgroundMode]);
 
   const handleV9ControlStart = useCallback(() => {
     requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
@@ -161115,6 +163441,14 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
+          <BackgroundAIPlayStrip
+            state={bgLive}
+            theme={themeStyles}
+            onAsk={q => void submitIntelligenceQuery(q)}
+            onButton={handleV9Button}
+            onOpen={() => setExperienceLayer('intelligence')}
+          />
+
           <GI3PlayStrip
             state={gi3Live}
             theme={themeStyles}
@@ -161134,7 +163468,7 @@ function dispatchGameSettingsChange(
           )}
 
           <ContextualActionPanel
-            actionSet={v9ActionSet}
+            actionSet={v9ActionSetView}
             control={playerControlState}
             theme={themeStyles}
             onButton={handleV9Button}
@@ -161212,9 +163546,17 @@ function dispatchGameSettingsChange(
               nameOf={id => { const a: any = (actorsById as any)?.[id]; return String(a?.displayName || a?.name || id); }}
             />
 
+            <BackgroundAIWorkspace
+              state={bgLive}
+              theme={themeStyles}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onButton={handleV9Button}
+              onToggle={toggleBackgroundAI}
+            />
+
             <section aria-label="Recommended">
               <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Recommended · with reasons</div>
-              <ContextualActionPanel actionSet={v9ActionSet} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
+              <ContextualActionPanel actionSet={v9ActionSetView} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
             </section>
 
             <section aria-label="Plan">
@@ -161303,7 +163645,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -161334,6 +163676,7 @@ function dispatchGameSettingsChange(
           teamOsContract={teamOsView?.state.contract ? { id: teamOsView.state.contract.id, revision: teamOsView.state.contract.revision, mission: teamOsView.state.contract.mission.label } : null}
           coPilot={gi3CoPilot}
         />
+        <ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} />
       </div>
     );
 
