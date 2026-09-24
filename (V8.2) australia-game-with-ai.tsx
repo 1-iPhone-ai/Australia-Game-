@@ -126375,6 +126375,737 @@ export function runRegionalFactions2SelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION
+// ============================================================================
+// A pure, read-only PRESENTATION projection. It composes structured outputs that the canonical systems
+// already produced (Current Objective, GI3, Contextual Actions, Background AI, World Reaction, Living Regions,
+// Factions, Diplomacy, Team OS, control state) into one player moment. It never reasons on its own, never
+// executes, never changes authority and is never saved. Identical inputs → identical output.
+
+export type V9AttentionClass = 'critical' | 'important' | 'useful' | 'background' | 'hidden';
+export type V9Presentation = 'simple' | 'guided' | 'advanced' | 'expert';
+
+export interface V9CohesionEvent {
+  id: string; turn: number; source: 'world' | 'regions' | 'factions' | 'diplomacy' | 'team' | 'strategy';
+  significance: 'minor' | 'meaningful' | 'major' | 'critical'; text: string; subjectId: string | null; actorId: string | null;
+  claim: 'fact' | 'inference'; why: boolean; national?: boolean;
+}
+export interface V9CohesionInputs {
+  turn: number; day: number; totalDays: number; teamMode: boolean;
+  isHumanTurn: boolean; currentActorName: string; actorStatus: string | null;
+  control: { owner: string; headline: string; copilotHoldsControl: boolean; rescue: boolean; actionProgress: { current: number; total: number } | null; currentActionLabel: string | null };
+  ap: { finite: boolean; remaining: number | null };
+  cash: number;
+  win: { label: string; value: string; target: string | null; opponent: string | null };
+  transit: { destination: string; day: number; total: number } | null;
+  presentation: V9Presentation;
+  critical: { label: string; detail: string } | null;
+  objective: { id: string; title: string; completed: number; total: number; next: string | null; blocked: boolean } | null;
+  strategy: { phases: string[]; phaseIndex: number; locked: boolean; onTrack: string | null; nextMove: { label: string; reason: string } | null; cashTarget: number | null; regions: string[]; notices: Array<{ id: string; text: string }> } | null;
+  actions: { recommendedId: string | null; ranked: ContextualActionCandidate[] };
+  background: { nextMove: { label: string; reason: string; actionId: string | null } | null; intervention: { level: string; message: string; subjectKind: string; query: string | null; key: string; actionId?: string | null } | null } | null;
+  events: V9CohesionEvent[];
+  diplomacy: Array<{ id: string; kind: string; text: string; dealId: string | null; turnsLeft: number | null }>;
+  factions: { requests: Array<{ id: string; faction: string; title: string; deadline: number; regionId: string; urgent: boolean; committed: boolean }>; commitments: Array<{ id: string; faction: string; promise: string; due: number }>; dilemma: { id: string; title: string; regionId: string; need: string; options: Array<{ id: string; label: string; summary: string }> } | null; regionNotes: Record<string, string[]> };
+  contracts: Array<{ id: string; title: string; regionId: string | null; turnsLeft: number | null; reward: number; active: boolean }>;
+  crises: Array<{ id: string; name: string; regions: string[]; stage: number }>;
+  team: { mission: string; you: string | null; mates: Array<{ name: string; focus: string }>; issue: string | null } | null;
+  regions: Record<string, { name: string; momentum: string; identity: string; risk: string | null; need: string | null; heldByYou: boolean; rivalPressure: boolean }>;
+  focusRegion: string | null;
+  pendingApprovals: number;
+  lastBriefTurn: number | null;
+}
+
+export interface V9CohesionRecommendation { candidateId: string; label: string; icon: string; why: string; cost: string; helps: string | null; risk: string | null; strength: 'Strong recommendation' | 'Worth considering' | 'Uncertain'; provenance: string[]; alternativeNote: string | null }
+export interface V9Cohesion {
+  hash: string;
+  header: { dayLabel: string; turnLabel: string; whoseTurn: 'you' | 'other'; controlLabel: string; controlTone: 'you' | 'copilot' | 'rescue' | 'waiting'; apLabel: string; cashLabel: string; winLabel: string; transitLabel: string | null; critical: string | null };
+  focus: { title: string; detail: string | null; progress: string | null; next: string | null; source: 'decision' | 'critical' | 'crisis' | 'strategy' | 'objective' | 'win'; temporary: boolean; returnTo: string | null; breadcrumb: Array<{ label: string; current: boolean }> };
+  decision: { kind: 'diplomatic_response' | 'faction_dilemma' | 'governance'; title: string; detail: string; options: Array<{ id: string; label: string; summary: string }>; refId: string } | null;
+  change: { text: string; why: string | null; eventId: string | null; extra: string[]; source: string } | null;
+  situation: string[] | null;
+  recommended: V9CohesionRecommendation | null;
+  useful: Array<{ candidateId: string; label: string; icon: string; why: string; cost: string }>;
+  upcoming: Array<{ id: string; turnsLeft: number; text: string; kind: 'diplomacy' | 'faction' | 'contract' | 'crisis' | 'strategy' }>;
+  commitments: Array<{ id: string; text: string; due: string }>;
+  status: Array<{ id: string; icon: string; text: string; tone: 'good' | 'warn' | 'bad' | 'info' }>;
+  team: { mission: string; lines: string[]; issue: string | null } | null;
+  waiting: { actor: string; status: string | null; watching: string[]; recent: string[] } | null;
+  turnBrief: { changed: string | null; focus: string; recommended: string | null; upcoming: string | null } | null;
+  endTurnWarnings: string[];
+  attention: Array<{ id: string; cls: V9AttentionClass; text: string }>;
+  /** Normalised keys of what PLAY already shows — notifications repeating them are suppressed. */
+  surfacedKeys: string[];
+}
+
+const V9_SIG: Record<V9CohesionEvent['significance'], number> = { minor: 1, meaningful: 2, major: 3, critical: 4 };
+const v9Norm = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9$ ]/g, ' ').replace(/\s+/g, ' ').trim();
+const v9Words = (s: string) => new Set(v9Norm(s).split(' ').filter(w => w.length > 3));
+function v9Similar(a: string, b: string): boolean {
+  const A = v9Words(a); const B = v9Words(b);
+  if (!A.size || !B.size) return false;
+  let hit = 0; A.forEach(w => { if (B.has(w)) hit += 1; });
+  return hit / Math.min(A.size, B.size) >= 0.6;
+}
+function v9Hash(v: unknown): string { const raw = JSON.stringify(v); let h = 2166136261; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+const v9Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const v9Simple = (p: V9Presentation) => p === 'simple' || p === 'guided';
+
+/** Compact signature: only rebuild presentation when one of these changes (never the whole game state). */
+export function v9CohesionSignature(i: V9CohesionInputs): string {
+  return v9Hash([i.turn, i.day, i.isHumanTurn, i.currentActorName, i.control.owner, i.control.copilotHoldsControl, i.ap.remaining, Math.round(i.cash), i.win.value, i.transit, i.presentation, i.critical?.label, i.objective && [i.objective.id, i.objective.completed, i.objective.next], i.strategy && [i.strategy.phaseIndex, i.strategy.onTrack, i.strategy.nextMove?.label, i.strategy.notices.length], i.actions.recommendedId, i.actions.ranked.slice(0, 8).map(c => [c.id, c.legal, Math.round(c.relevance)]), i.background?.nextMove?.label, i.background?.intervention?.key, i.events.map(e => e.id), i.diplomacy.map(d => d.id), i.factions.requests.map(r => [r.id, r.committed]), i.factions.commitments.map(c => c.id), i.factions.dilemma?.id, i.contracts.map(c => [c.id, c.turnsLeft]), i.crises.map(c => [c.id, c.stage]), i.team?.issue, i.focusRegion, i.pendingApprovals, i.lastBriefTurn]);
+}
+
+/** Relevance of a world event to THIS player's plan (world importance and personal importance both count). */
+function v9EventScore(e: V9CohesionEvent, i: V9CohesionInputs): number {
+  let s = V9_SIG[e.significance] * 10;
+  const planRegions = new Set([...(i.strategy?.regions || []), ...(i.focusRegion ? [i.focusRegion] : []), ...Object.entries(i.regions).filter(([, r]) => r.heldByYou).map(([c]) => c)]);
+  if (e.subjectId && planRegions.has(e.subjectId)) s += 12;
+  if (e.national && V9_SIG[e.significance] >= 3) s += 15; // major national events override personal relevance
+  if (i.turn - e.turn > 1) s -= 15;
+  if (e.source === 'regions' || e.source === 'factions') s -= 2; // prefer the root cause when stories merge
+  return s;
+}
+
+/** Merge events that describe the SAME story (same subject, same turn) across systems into one. */
+export function v9MergeEvents(events: V9CohesionEvent[]): Array<V9CohesionEvent & { extra: string[] }> {
+  const out: Array<V9CohesionEvent & { extra: string[] }> = [];
+  events.slice().sort((a, b) => V9_SIG[b.significance] - V9_SIG[a.significance] || b.turn - a.turn || a.id.localeCompare(b.id)).forEach(e => {
+    const same = out.find(x => (x.subjectId && x.subjectId === e.subjectId && Math.abs(x.turn - e.turn) <= 1) || v9Similar(x.text, e.text));
+    if (same) { if (!v9Similar(same.text, e.text) && same.extra.length < 2 && !same.extra.some(t => v9Similar(t, e.text))) same.extra.push(e.text); return; }
+    out.push({ ...e, extra: [] });
+  });
+  return out;
+}
+
+const v9CostOf = (c: ContextualActionCandidate) => [c.apCost !== null && c.apCost !== undefined ? `${c.apCost} action${c.apCost === 1 ? '' : 's'}` : null, c.costEstimate ? v9Money(c.costEstimate) : null].filter(Boolean).join(' · ') || 'Free';
+const v9Matches = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && (v9Norm(a) === v9Norm(b) || v9Similar(a, b)));
+
+/** ONE recommendation from the ranked canonical candidates, agreement-weighted; the player's strategy wins ties. */
+export function v9ResolveRecommendation(i: V9CohesionInputs): { recommended: V9CohesionRecommendation | null; useful: V9Cohesion['useful'] } {
+  const legal = i.actions.ranked.filter(c => c.legal && c.execution?.kind !== 'end_turn');
+  if (!legal.length) return { recommended: null, useful: [] };
+  const stratLabel = i.strategy?.nextMove?.label || null;
+  const bgLabel = i.background?.nextMove?.label || null; const bgId = i.background?.nextMove?.actionId || null;
+  const objLabel = i.objective?.next || null;
+  const scored = legal.map((c, idx) => {
+    const byStrategy = v9Matches(c.label, stratLabel) || c.strategyAlignment?.label === 'high';
+    const conflict = c.strategyAlignment?.label === 'conflict';
+    const byBg = c.id === bgId || v9Matches(c.label, bgLabel) || c.backgroundRank === 1;
+    const byObjective = v9Matches(c.label, objLabel) || Boolean(c.objectiveRelation);
+    const byRank = c.id === i.actions.recommendedId;
+    let score = c.relevance - idx * 0.01 + (byRank ? 6 : 0) + (byStrategy ? (i.strategy?.locked ? 25 : 9) : 0) + (byBg ? 5 : 0) + (byObjective ? 6 : 0) - (conflict ? (i.strategy?.locked ? 30 : 12) : 0) + (c.urgency === 'critical' ? 20 : 0);
+    return { c, score, byStrategy, byBg, byObjective, byRank, conflict };
+  }).sort((a, b) => b.score - a.score || a.c.id.localeCompare(b.c.id));
+  const top = scored[0];
+  const provenance = [top.byStrategy ? 'Your strategy' : null, top.byObjective ? 'Current objective' : null, top.byBg ? 'Situation analysis' : null, top.byRank ? 'Action ranking' : null].filter(Boolean) as string[];
+  // Disagreement: the situation analysis prefers something else — say so, never silently override the plan.
+  const bgPick = scored.find(x => x.byBg && x.c.id !== top.c.id && !x.byStrategy);
+  let alternativeNote: string | null = null;
+  const ivFor = i.background?.intervention && bgPick && (!i.background.intervention.actionId || i.background.intervention.actionId === bgPick.c.id) ? i.background.intervention : null;
+  if (bgPick && ivFor && (ivFor.subjectKind === 'threat' || ivFor.level !== 'notice')) alternativeNote = `Alternative: ${bgPick.c.label}. ${ivFor.message.replace(/\.$/, '')}${top.byStrategy ? `, but ${top.c.label} stays aligned with your ${i.strategy?.locked ? 'locked ' : ''}strategy` : ''}.`;
+  else if (bgPick && bgPick.c.backgroundReason) alternativeNote = `Also worth considering: ${bgPick.c.label} — ${bgPick.c.backgroundReason.replace(/\.$/, '')}.`;
+  const agree = [top.byStrategy, top.byBg, top.byObjective].filter(Boolean).length;
+  const strength: V9CohesionRecommendation['strength'] = top.c.urgency === 'critical' || agree >= 2 ? 'Strong recommendation' : (top.c.confidence !== null && top.c.confidence !== undefined && top.c.confidence < 0.4) ? 'Uncertain' : 'Worth considering';
+  const helps = top.byStrategy && i.strategy ? `advances your current phase (${i.strategy.phases[i.strategy.phaseIndex] || 'strategy'})` : top.byObjective && i.objective ? `advances ${i.objective.title}` : top.c.benefit;
+  const why = top.byStrategy && stratLabel && v9Matches(top.c.label, stratLabel) ? (i.strategy?.nextMove?.reason || top.c.reasons[0] || top.c.description) : (top.c.reasons[0] || top.c.backgroundReason || top.c.description);
+  const recommended: V9CohesionRecommendation = { candidateId: top.c.id, label: top.c.label, icon: top.c.icon, why, cost: v9CostOf(top.c), helps: helps || null, risk: top.c.risk, strength, provenance, alternativeNote };
+  const max = v9Simple(i.presentation) ? 2 : 4;
+  const useful: V9Cohesion['useful'] = [];
+  scored.slice(1).forEach(x => { if (useful.length < max && !useful.some(u => v9Matches(u.label, x.c.label)) && !v9Matches(x.c.label, top.c.label)) useful.push({ candidateId: x.c.id, label: x.c.label, icon: x.c.icon, why: x.c.reasons[0] || x.c.description, cost: v9CostOf(x.c) }); });
+  return { recommended, useful };
+}
+
+export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
+  const simple = v9Simple(i.presentation);
+  const you = i.isHumanTurn;
+  // ---- Match header (control ownership is read, never decided here) ----
+  const controlTone: V9Cohesion['header']['controlTone'] = !you ? 'waiting' : i.control.rescue ? 'rescue' : i.control.copilotHoldsControl ? 'copilot' : 'you';
+  const controlLabel = controlTone === 'waiting' ? `WAITING FOR ${i.currentActorName.toUpperCase()}` : controlTone === 'rescue' ? 'CO-PILOT RESCUE' : controlTone === 'copilot' ? 'CO-PILOT CONTROLLING' : "YOU'RE PLAYING";
+  const header: V9Cohesion['header'] = {
+    dayLabel: `Day ${i.day} / ${i.totalDays}${i.teamMode ? ` · Round ${i.turn}` : ''}`, turnLabel: you ? 'YOUR TURN' : `${i.currentActorName.toUpperCase()}'S TURN`, whoseTurn: you ? 'you' : 'other', controlLabel, controlTone,
+    apLabel: !you ? '' : i.ap.finite ? `${i.ap.remaining ?? 0} action${i.ap.remaining === 1 ? '' : 's'}` : 'Unlimited actions', cashLabel: v9Money(i.cash),
+    winLabel: i.win.target ? `${i.win.value} / ${i.win.target}` : `${i.win.label}: ${i.win.value}`, transitLabel: i.transit ? `🚢 En route to ${i.transit.destination} · Day ${i.transit.day}/${i.transit.total}` : null, critical: i.critical ? i.critical.label : null
+  };
+  // ---- Decisions (mandatory) override ordinary recommendation surfaces ----
+  let decision: V9Cohesion['decision'] = null;
+  const proposal = i.diplomacy.find(d => d.kind === 'proposal');
+  if (proposal && you) decision = { kind: 'diplomatic_response', title: /counter/i.test(proposal.text) ? 'Respond to the counteroffer' : 'Respond to a proposal', detail: proposal.text, options: [{ id: 'open', label: 'Review & respond', summary: 'Open the proposal with its terms and your options.' }], refId: proposal.dealId || proposal.id };
+  else if (i.factions.dilemma && you) decision = { kind: 'faction_dilemma', title: i.factions.dilemma.title, detail: i.factions.dilemma.need, options: i.factions.dilemma.options, refId: i.factions.dilemma.id };
+  else if (i.pendingApprovals > 0 && you) decision = { kind: 'governance', title: 'Approval needed', detail: `${i.pendingApprovals} request${i.pendingApprovals === 1 ? '' : 's'} waiting for your approval.`, options: [{ id: 'open', label: 'Review requests', summary: 'Approve or decline what is waiting for you.' }], refId: 'approvals' };
+  // ---- Focus: base (strategy → objective → win) + temporary interrupts that never rewrite the strategy ----
+  const phases = i.strategy?.phases || [];
+  const baseTitle = i.strategy && phases.length ? phases[Math.min(i.strategy.phaseIndex, phases.length - 1)] : i.objective?.title || `Win: ${i.win.label}`;
+  const baseSource: V9Cohesion['focus']['source'] = i.strategy && phases.length ? 'strategy' : i.objective ? 'objective' : 'win';
+  const crisis = i.crises.find(c => c.regions.some(r => i.regions[r]?.heldByYou || (i.strategy?.regions || []).includes(r)) || c.regions.includes('ALL'));
+  const breadcrumb = phases.length > 1 ? phases.map((p, k) => ({ label: p, current: k === i.strategy!.phaseIndex })) : [];
+  let focus: V9Cohesion['focus'];
+  if (decision) focus = { title: decision.title, detail: decision.detail, progress: null, next: null, source: 'decision', temporary: true, returnTo: baseTitle, breadcrumb };
+  else if (i.critical) focus = { title: i.critical.label, detail: i.critical.detail, progress: null, next: null, source: 'critical', temporary: true, returnTo: baseTitle, breadcrumb };
+  else if (crisis) focus = { title: `${crisis.name} response`, detail: `A crisis is affecting ${crisis.regions.map(r => i.regions[r]?.name || r).slice(0, 2).join(', ')} (stage ${crisis.stage + 1}).`, progress: null, next: null, source: 'crisis', temporary: true, returnTo: baseTitle, breadcrumb };
+  else focus = {
+    title: baseTitle,
+    detail: baseSource === 'strategy' && i.strategy?.onTrack ? `Strategy ${i.strategy.onTrack.replace(/_/g, ' ')}.` : i.objective?.blocked ? 'Currently blocked.' : null,
+    progress: i.objective && (baseSource === 'objective' || v9Matches(i.objective.title, baseTitle)) ? `${i.objective.completed} / ${i.objective.total} requirements complete` : null,
+    next: (baseSource === 'strategy' ? i.strategy?.nextMove?.label : null) || i.objective?.next || null, source: baseSource, temporary: false, returnTo: null, breadcrumb
+  };
+  // ---- What changed (one merged story) or Situation ----
+  const merged = v9MergeEvents(i.events.filter(e => i.turn - e.turn <= 1));
+  const best = merged.map(e => ({ e, s: v9EventScore(e, i) })).filter(x => x.s >= 20).sort((a, b) => b.s - a.s || a.e.id.localeCompare(b.e.id))[0];
+  const change: V9Cohesion['change'] = best ? { text: best.e.text, why: best.e.why ? best.e.id : null, eventId: best.e.id, extra: simple ? best.e.extra.slice(0, 1) : best.e.extra, source: best.e.source } : null;
+  let situation: string[] | null = null;
+  if (!change) {
+    const lines: string[] = [];
+    const fr = i.focusRegion && i.regions[i.focusRegion] ? i.regions[i.focusRegion] : null;
+    if (fr) lines.push(`${fr.name} is ${fr.momentum.toLowerCase()}${fr.identity ? ` — ${fr.identity}` : ''}.`);
+    const target = i.strategy?.cashTarget || null;
+    if (target && i.cash < target) lines.push(`Your main constraint is liquidity: ${v9Money(target - i.cash)} below your ${v9Money(target)} target.`);
+    else if (i.objective?.blocked && !(focus.detail || '').includes('blocked')) lines.push(`${i.objective.title} is currently blocked.`);
+    const rival = Object.values(i.regions).find(r => r.rivalPressure);
+    if (rival) lines.push(`Rival pressure is concentrated on ${rival.name}.`);
+    situation = lines.length ? lines.slice(0, 3) : [`${focus.title} — no major changes since your last turn.`];
+  }
+  const { recommended, useful } = v9ResolveRecommendation(i);
+  // ---- Upcoming: imminent / important / plan-relevant only ----
+  const upcoming: V9Cohesion['upcoming'] = [];
+  i.diplomacy.filter(d => d.kind === 'expiring' || d.kind === 'payment_due' || d.kind === 'violation_risk').forEach(d => upcoming.push({ id: d.id, turnsLeft: d.turnsLeft ?? 1, text: d.text.replace(/ This may be a good window.*$/, ''), kind: 'diplomacy' }));
+  i.factions.commitments.forEach(c => upcoming.push({ id: c.id, turnsLeft: Math.max(0, c.due - i.turn), text: `${c.faction}: ${c.promise}`, kind: 'faction' }));
+  i.factions.requests.filter(r => !r.committed && (r.urgent || (i.strategy?.regions || []).includes(r.regionId) || i.regions[r.regionId]?.heldByYou)).forEach(r => upcoming.push({ id: r.id, turnsLeft: Math.max(0, r.deadline - i.turn), text: `${r.faction} asks: ${r.title}`, kind: 'faction' }));
+  i.contracts.filter(c => c.active && c.turnsLeft !== null && c.turnsLeft <= 3).forEach(c => upcoming.push({ id: c.id, turnsLeft: c.turnsLeft!, text: `${c.title} deadline`, kind: 'contract' }));
+  const upcomingSorted = upcoming.filter(u => u.turnsLeft <= 3 || u.kind === 'faction').sort((a, b) => a.turnsLeft - b.turnsLeft || a.id.localeCompare(b.id)).filter((u, k, arr) => arr.findIndex(x => v9Similar(x.text, u.text)) === k).slice(0, simple ? 2 : 4);
+  const commitments = i.factions.commitments.map(c => ({ id: c.id, text: `${c.faction}: ${c.promise}`, due: c.due - i.turn <= 0 ? 'due now' : `due in ${c.due - i.turn} turn${c.due - i.turn === 1 ? '' : 's'}` }));
+  // ---- Strategic status strip (≤4, dynamically chosen) ----
+  const status: V9Cohesion['status'] = [];
+  (i.strategy?.regions || []).slice(0, 2).forEach(code => { const r = i.regions[code]; if (r) status.push({ id: `reg_${code}`, icon: r.rivalPressure ? '🔴' : r.heldByYou ? '✅' : '⬜', text: `${code} ${r.rivalPressure ? 'rival pressure high' : r.heldByYou ? r.momentum.toLowerCase() : 'not held'}`, tone: r.rivalPressure ? 'bad' : r.heldByYou ? 'good' : 'info' }); });
+  if (i.strategy?.cashTarget && i.cash < i.strategy.cashTarget) status.push({ id: 'cash', icon: '⚠', text: `Cash ${v9Money(i.strategy.cashTarget - i.cash)} below target`, tone: 'warn' });
+  const nextDue = upcomingSorted[0]; if (nextDue && status.length < 4) status.push({ id: `due_${nextDue.id}`, icon: '⏳', text: `${nextDue.text.slice(0, 40)} · ${nextDue.turnsLeft <= 0 ? 'now' : `${nextDue.turnsLeft}t`}`, tone: nextDue.turnsLeft <= 1 ? 'warn' : 'info' });
+  const rivalHot = Object.entries(i.regions).find(([code, r]) => r.rivalPressure && !(i.strategy?.regions || []).includes(code)); if (rivalHot && status.length < 4) status.push({ id: `riv_${rivalHot[0]}`, icon: '🔴', text: `${rivalHot[0]} rival pressure high`, tone: 'bad' });
+  // ---- Team (compact) ----
+  const team: V9Cohesion['team'] = i.team ? { mission: i.team.mission, lines: [...(i.team.you ? [`You — ${i.team.you}`] : []), ...i.team.mates.slice(0, simple ? 1 : 3).map(m => `${m.name} — ${m.focus}`)], issue: i.team.issue } : null;
+  // ---- Waiting for another actor (observable only) ----
+  const waiting: V9Cohesion['waiting'] = you ? null : { actor: i.currentActorName, status: i.actorStatus, watching: [...(i.strategy?.regions || []).slice(0, 2).map(c => `${c} ${i.regions[c]?.rivalPressure ? 'pressure' : 'status'}`), ...commitments.slice(0, 1).map(c => c.text)].slice(0, 3), recent: merged.filter(e => e.actorId && v9Norm(e.text).includes(v9Norm(i.currentActorName).split(' ')[0])).slice(0, 2).map(e => e.text) };
+  // ---- Turn brief (inline, collapsible; once per turn) ----
+  const turnBrief = you && i.lastBriefTurn !== i.turn ? { changed: change?.text || null, focus: focus.title, recommended: recommended?.label || null, upcoming: upcomingSorted[0]?.text || null } : null;
+  // ---- End-turn context (never a forced block) ----
+  const endTurnWarnings: string[] = [];
+  if (you && i.ap.finite && (i.ap.remaining || 0) > 0 && recommended) endTurnWarnings.push(`${i.ap.remaining} action${i.ap.remaining === 1 ? '' : 's'} unused`);
+  upcomingSorted.filter(u => u.turnsLeft <= 1).slice(0, 2).forEach(u => endTurnWarnings.push(`${u.text} — ${u.turnsLeft <= 0 ? 'expires this turn' : 'due next turn'}`));
+  if (decision) endTurnWarnings.push(`Unresolved: ${decision.title}`);
+  // ---- Attention (1–3 things) ----
+  const att: Array<{ id: string; cls: V9AttentionClass; text: string; w: number }> = [];
+  if (decision) att.push({ id: 'decision', cls: 'critical', text: decision.title, w: 100 });
+  if (i.critical) att.push({ id: 'critical', cls: 'critical', text: i.critical.label, w: 95 });
+  const iv = i.background?.intervention; if (iv && (iv.level === 'critical' || iv.level === 'warning')) att.push({ id: `bg_${iv.key}`, cls: iv.level === 'critical' ? 'critical' : 'important', text: iv.message, w: iv.level === 'critical' ? 90 : 60 });
+  if (change) att.push({ id: `chg_${change.eventId}`, cls: best!.s >= 40 ? 'important' : 'useful', text: change.text, w: best!.s });
+  upcomingSorted.filter(u => u.turnsLeft <= 1).slice(0, 1).forEach(u => att.push({ id: `due_${u.id}`, cls: 'important', text: u.text, w: 55 }));
+  if (recommended) att.push({ id: 'rec', cls: 'useful', text: recommended.label, w: 30 });
+  const attention = att.sort((a, b) => b.w - a.w || a.id.localeCompare(b.id)).slice(0, 3).map(({ w, ...x }) => x);
+  const surfacedKeys = [change?.text, ...(change?.extra || []), decision?.detail, recommended?.label, ...upcomingSorted.map(u => u.text), iv?.message].filter(Boolean).map(t => v9Norm(t as string));
+  return { hash: v9CohesionSignature(i), header, focus, decision, change, situation, recommended, useful, upcoming: upcomingSorted, commitments, status: status.slice(0, simple ? 2 : 4), team, waiting, turnBrief, endTurnWarnings, attention, surfacedKeys };
+}
+
+/** Notification cohesion: drop repeats of what PLAY already shows and collapse near-duplicates (critical always kept). */
+export function v9DedupeNotifications<T extends { message?: string; text?: string; type?: string }>(list: T[], surfacedKeys: string[], isCritical: (n: T) => boolean): T[] {
+  const kept: T[] = [];
+  list.forEach(n => {
+    const text = String(n.message || n.text || '');
+    if (isCritical(n)) { if (!kept.some(k => v9Norm(String(k.message || k.text || '')) === v9Norm(text))) kept.push(n); return; }
+    if (surfacedKeys.some(k => k && v9Similar(k, text))) return;
+    if (kept.some(k => v9Similar(String(k.message || k.text || ''), text))) return;
+    kept.push(n);
+  });
+  return kept;
+}
+
+/** Notification classes (player language, not subsystem names). */
+export function v9NotificationClass(n: { type?: string; message?: string; notificationType?: string }): 'decision_required' | 'critical_warning' | 'important_change' | 'deadline' | 'completion' | 'information' {
+  const t = String(n.message || '').toLowerCase();
+  if (/waiting for your (answer|decision|approval)|respond|approve/.test(t)) return 'decision_required';
+  if (n.type === 'error' || /bankrupt|critical|danger/.test(t)) return 'critical_warning';
+  if (/expires|due (next|this)|deadline/.test(t)) return 'deadline';
+  if (n.type === 'success' || /completed|fulfilled|funded/.test(t)) return 'completion';
+  if (n.type === 'warning') return 'important_change';
+  return 'information';
+}
+
+// ---- Selected-region context: ONE coherent regional story (summaries of canonical systems) ------------
+
+export interface V9RegionContext { code: string; name: string; headline: string; lines: Array<{ label: string; value: string }>; stakeholders: string[]; suggestion: string | null; contract: string | null; whyQuestions: string[] }
+
+export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | null, rf: RegionalFactionsWorldView | null, standing: number | null): V9RegionContext | null {
+  const reg = lr?.state.regions[code];
+  const s = lr?.inputs || null;
+  if (!reg) return null;
+  const lines: V9RegionContext['lines'] = [];
+  lines.push({ label: 'Identity', value: reg.identity.label });
+  if (standing !== null) lines.push({ label: 'You', value: `${standing >= 50 ? 'Strong' : standing >= 20 ? 'Positive' : standing <= -20 ? 'Weak' : 'Neutral'} standing` });
+  const rivalry = reg.risks.find(x => x.kind === 'high_rivalry');
+  lines.push({ label: 'Rival pressure', value: rivalry ? (rivalry.severity === 'high' ? 'High' : 'Moderate') : 'Low' });
+  const need = reg.needs.find(n => n.status === 'open'); if (need) lines.push({ label: 'Current need', value: `${LR_NEED_LABEL[need.category]} (${need.severity})` });
+  const opp = reg.opportunities[0]; if (opp) lines.push({ label: 'Opportunity', value: opp.label });
+  const risk = reg.risks.find(x => x.kind !== 'high_rivalry'); if (risk) lines.push({ label: 'Risk', value: risk.label });
+  const stakeholders = rf && rf.inputs ? rfFactionsInRegion(rf.state, code, 3).filter(x => x.influence >= 30).slice(0, 2).map(x => {
+    const mine = rfVisibleRelationship(rf.state, x.def.id, rf.viewerId, rf.viewerKeys, rf.inputs!.fogOfWar);
+    const rivals = rf.inputs!.actors.filter(a => !rf.viewerKeys.includes(a.id)).map(a => ({ a, v: rfVisibleRelationship(rf.state, x.def.id, a.id, rf.viewerKeys, rf.inputs!.fogOfWar) })).find(r => r.v.band && ['positive', 'strong', 'trusted'].includes(r.v.band));
+    return `${x.def.name} — ${rfInfluenceLabel(x.influence).toLowerCase()} influence; ${rivals ? `leans ${rivals.a.name}` : mine.band && ['positive', 'strong', 'trusted'].includes(mine.band) ? 'supports you' : mine.band ? RF_REL_LABEL[mine.band].toLowerCase() + ' toward you' : 'unknown'}`;
+  }) : [];
+  const project = need && s ? s.projects.find(p => p.regionId === code && (p.status === 'unlocked' || p.status === 'under_construction') && (LR_PROJECT_PROFILE[p.projectType]?.capacity[LR_NEED_CAPACITY[need.category] as keyof LRCapacity] || 0) > 0) : null;
+  const contract = s ? s.contracts.filter(c => c.regionId === code && c.status === 'available').map(c => ({ c, rel: lrContractRelevance(lr!.state, c).score })).sort((a, b) => b.rel - a.rel)[0] : null;
+  return {
+    code, name: reg.name, headline: `${LR_MOMENTUM_LABEL[reg.momentum.band]} · ${reg.identity.label}`, lines: lines.slice(0, 6), stakeholders,
+    suggestion: project ? `Suggested development: ${project.title}` : null, contract: contract && contract.rel >= 10 ? `Relevant contract: ${contract.c.title}` : null,
+    whyQuestions: [`What's happening in ${reg.name}?`, ...(LR_MOM_RANK[reg.momentum.band] >= 3 ? [`Why is ${reg.name} growing?`] : []), ...(rivalry ? [`Why is ${reg.name} valuable?`] : []), ...(need ? [`What does ${reg.name} need?`] : []), `Who matters in ${reg.name}?`].slice(0, 4)
+  };
+}
+
+// ---- V9 Cohesion UI (one consistent visual language: size/contrast for priority, semantic tones) --------
+
+const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
+const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
+
+export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding }) => {
+  const h = c.header;
+  const w = c.endTurnWarnings;
+  return (
+    <header className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow}`} data-testid="v9-match-header" aria-label="Match status">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="font-semibold">{h.dayLabel}</span>
+        <span className="font-extrabold" data-testid="v9-turn-owner">{h.turnLabel}</span>
+        <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
+        {h.apLabel && <span>{h.apLabel}</span>}
+        <span className="font-bold">{h.cashLabel}</span>
+        <button type="button" className="underline decoration-dotted" onClick={onStanding} title="Match standing">{h.winLabel}</button>
+        {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
+        {h.critical && <span className="px-2 py-0.5 rounded bg-red-700 text-white text-xs font-bold" role="alert">⚠ {h.critical}</span>}
+        {onEndTurn && (
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {endTurnExtra}
+            {/* End-turn context is informative, never a forced block; the game's own End Turn confirmation (with "Don't ask again") still applies. */}
+            {w.length > 0 && <span className="text-xs text-amber-300" role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
+            <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg text-xs font-bold`} data-testid="v9-header-end-turn" aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn</button>
+            {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only">{w.join('. ')}</span>}
+          </span>
+        )}
+      </div>
+    </header>
+  );
+};
+
+export interface V9PlayHandlers {
+  onDo: (candidateId: string) => void; onWhyAction: (candidateId: string) => void; onWhatIf: (label: string) => void; onAsk: (q: string) => void;
+  onWhyEvent: (eventId: string) => void; onViewPlan: () => void; onAllActions: () => void; onDecision: (kind: string, optionId: string, refId: string) => void;
+  onDismissBrief: () => void; onRegion: (code: string) => void;
+}
+
+export interface V9AfterAction { rootId: string; did: string; changed: string[]; affected: string[] }
+
+export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter }) => {
+  const card = `${theme.card} ${theme.border} border rounded-xl ${theme.shadow}`;
+  const label = 'text-[11px] font-bold uppercase tracking-wider opacity-70';
+  const alerts = c.attention.filter(a => a.id.startsWith('bg_'));
+  return (
+    <div className="space-y-3" data-testid="v9-cohesion-play">
+      {alerts.map(a => (
+        <div key={a.id} role="alert" className={`rounded-xl border-2 px-3 py-2 text-sm flex flex-wrap items-center gap-2 ${a.cls === 'critical' ? 'border-red-500/70' : 'border-amber-500/70'} ${theme.card}`} data-testid="v9-attention-alert">
+          <span className="font-bold">{a.cls === 'critical' ? '⚠️' : '❗'}</span><span className="flex-1 min-w-[12rem]">{a.text}</span>
+          <button type="button" className="text-xs underline" onClick={() => h.onAsk(a.text.replace(/\.$/, '') + ' — what should I do?')}>Why? / What now?</button>
+        </div>
+      ))}
+
+      {c.turnBrief && (
+        <section className={`${card} p-3 text-sm`} aria-label="Turn brief" data-testid="v9-turn-brief">
+          <div className="flex items-center justify-between"><span className="font-extrabold">YOUR TURN</span><button type="button" className="text-xs underline opacity-80" onClick={h.onDismissBrief}>Got it</button></div>
+          <dl className="grid grid-cols-1 md:grid-cols-4 gap-x-4 text-xs mt-1">
+            {c.turnBrief.changed && <div><dt className={label}>What changed</dt><dd>{c.turnBrief.changed}</dd></div>}
+            <div><dt className={label}>Current focus</dt><dd>{c.turnBrief.focus}</dd></div>
+            {c.turnBrief.recommended && <div><dt className={label}>Recommended</dt><dd>{c.turnBrief.recommended}</dd></div>}
+            {c.turnBrief.upcoming && <div><dt className={label}>Upcoming</dt><dd>{c.turnBrief.upcoming}</dd></div>}
+          </dl>
+        </section>
+      )}
+
+      {c.waiting && (
+        <section className={`${card} p-3 text-sm`} aria-label="Waiting for another player" data-testid="v9-waiting">
+          <div className="font-extrabold">{c.waiting.actor.toUpperCase()}'S TURN</div>
+          {c.waiting.status && <div className="text-xs opacity-80">{c.waiting.status}</div>}
+          {c.waiting.watching.length > 0 && <div className="text-xs mt-1"><span className={label}>Watching </span>{c.waiting.watching.join(' · ')}</div>}
+          {c.waiting.recent.length > 0 && <div className="text-xs"><span className={label}>Recent </span>{c.waiting.recent.join(' · ')}</div>}
+        </section>
+      )}
+
+      {c.decision ? (
+        <section className={`${card} p-4 border-2 border-amber-500/70`} aria-labelledby="v9-decision-h" data-testid="v9-decision">
+          <div className={label}>Decision required</div>
+          <h2 id="v9-decision-h" className="text-lg font-extrabold">{c.decision.title}</h2>
+          <p className="text-sm opacity-90">{c.decision.detail}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+            {c.decision.options.map((o, k) => (
+              <button key={o.id} type="button" disabled={!humanCanAct} className={`${k === 0 ? theme.button : theme.buttonSecondary} text-left px-3 py-2 rounded-lg text-sm disabled:opacity-50`} onClick={() => h.onDecision(c.decision!.kind, o.id, c.decision!.refId)}>
+                <div className="font-bold">{o.label}</div><div className="text-xs opacity-85">{o.summary}</div>
+              </button>
+            ))}
+          </div>
+          {c.focus.returnTo && <div className="text-xs opacity-70 mt-2">Afterwards you return to: {c.focus.returnTo}</div>}
+        </section>
+      ) : (
+        <section className={`${card} p-4 ${c.focus.temporary ? 'border-2 border-red-500/60' : ''}`} aria-labelledby="v9-focus-h" data-testid="v9-current-focus">
+          <div className={label}>Current focus</div>
+          <h2 id="v9-focus-h" className="text-xl font-extrabold">{c.focus.title}</h2>
+          {!simple && c.focus.breadcrumb.length > 1 && <div className="text-xs mt-0.5" data-testid="v9-breadcrumb">{c.focus.breadcrumb.map((b, k) => <span key={k}>{k > 0 && ' → '}<span className={b.current ? 'font-bold underline' : 'opacity-70'}>{b.label}</span></span>)}</div>}
+          {c.focus.detail && <p className="text-sm opacity-90 mt-1">{c.focus.detail}</p>}
+          {c.focus.progress && <p className="text-sm">{c.focus.progress}</p>}
+          {c.focus.next && <p className="text-sm mt-1"><span className="font-semibold">Next: </span>{c.focus.next}</p>}
+          {c.focus.returnTo && <p className="text-xs opacity-70 mt-1">Temporary — afterwards you return to {c.focus.returnTo}.</p>}
+          <div className="flex flex-wrap gap-3 text-xs mt-2">
+            <button type="button" className="underline" onClick={() => h.onAsk(`Why is ${c.focus.title} my focus?`)}>Why?</button>
+            <button type="button" className="underline" onClick={h.onViewPlan}>View Plan</button>
+            <button type="button" className="underline" onClick={h.onViewPlan}>Change Goal</button>
+          </div>
+        </section>
+      )}
+
+      {afterAction ? (
+        <section className={`${card} p-3 text-sm`} aria-label="After your action" data-testid="v9-after-action">
+          <div className="flex items-center justify-between"><div className={label}>What you did</div>{onDismissAfter && <button type="button" className="text-xs opacity-70 underline" onClick={onDismissAfter}>Dismiss</button>}</div>
+          <p className="font-semibold">{afterAction.did}</p>
+          {afterAction.changed.length > 0 && <><div className={`${label} mt-1`}>What changed</div>{afterAction.changed.map(x => <p key={x} className="text-xs">↓ {x}</p>)}</>}
+          {afterAction.affected.length > 0 && <div className="text-xs mt-1"><span className={label}>What it affected </span>{afterAction.affected.join(' · ')}</div>}
+          <button type="button" className="text-xs underline mt-1" onClick={() => h.onWhyEvent(afterAction.rootId)}>Why?</button>
+        </section>
+      ) : c.change ? (
+        <section className={`${card} p-3 text-sm`} aria-label="What changed" data-testid="v9-what-changed">
+          <div className={label}>What changed</div>
+          <p className="font-semibold">{c.change.text}</p>
+          {c.change.extra.map(x => <p key={x} className="text-xs opacity-85">{x}</p>)}
+          {c.change.why && <button type="button" className="text-xs underline mt-1" onClick={() => h.onWhyEvent(c.change!.why!)}>Why?</button>}
+        </section>
+      ) : c.situation && (
+        <section className={`${card} p-3 text-sm`} aria-label="Situation" data-testid="v9-situation">
+          <div className={label}>Situation</div>
+          {c.situation.map(x => <p key={x}>{x}</p>)}
+        </section>
+      )}
+
+      <section className={`${card} p-3 ${c.decision ? 'opacity-90' : ''}`} aria-label="Recommended action" data-testid="v9-recommended">
+        <div className={label}>{c.decision ? 'Meanwhile — recommended action' : 'Recommended action'}</div>
+        {c.recommended ? (
+          <div className="mt-1">
+            <div className="text-lg font-bold">{c.recommended.icon} {c.recommended.label}</div>
+            <div className="text-sm"><span className="font-semibold">Why: </span>{c.recommended.why}</div>
+            <div className="text-xs opacity-80">Cost: {c.recommended.cost}{c.recommended.helps ? ` · Helps: ${c.recommended.helps}` : ''}{c.recommended.risk ? ` · Risk: ${c.recommended.risk}` : ''}</div>
+            {!simple && <div className="text-[11px] opacity-70">{c.recommended.strength}{c.recommended.provenance.length ? ` — ${c.recommended.provenance.join(', ')}` : ''}</div>}
+            {c.recommended.alternativeNote && <div className="text-xs mt-1 rounded border border-amber-500/50 px-2 py-1" data-testid="v9-alt-note">{c.recommended.alternativeNote}</div>}
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button type="button" disabled={!humanCanAct} className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold disabled:opacity-50`} data-testid="v9-rec-do" onClick={() => h.onDo(c.recommended!.candidateId)}>Do It</button>
+              <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} onClick={() => h.onWhyAction(c.recommended!.candidateId)}>Why?</button>
+              <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} data-testid="v9-rec-whatif" onClick={() => h.onWhatIf(c.recommended!.label)}>What If?</button>
+            </div>
+          </div>
+        ) : <div className="text-sm opacity-70 mt-1">No legal action to recommend right now.</div>}
+        {c.useful.length > 0 && (
+          <div className="mt-3" data-testid="v9-useful">
+            <div className={label}>Other useful options</div>
+            <ul className="mt-1 space-y-1">
+              {c.useful.map(u => (
+                <li key={u.candidateId} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="flex-1 min-w-[10rem]">{u.icon} {u.label} <span className="text-xs opacity-70">— {u.why} ({u.cost})</span></span>
+                  <button type="button" disabled={!humanCanAct} className="text-xs underline disabled:opacity-50" onClick={() => h.onDo(u.candidateId)}>Do It</button>
+                  <button type="button" className="text-xs underline" onClick={() => h.onWhyAction(u.candidateId)}>Why?</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button type="button" className="text-xs underline mt-2" onClick={h.onAllActions} data-testid="v9-view-all-actions">View All Actions</button>
+      </section>
+
+      {(c.upcoming.length > 0 || c.commitments.length > 0) && (
+        <section className={`${card} p-3 text-sm`} aria-label="Upcoming and commitments" data-testid="v9-upcoming">
+          {c.upcoming.length > 0 && <><div className={label}>Upcoming</div><ul>{c.upcoming.map(u => <li key={u.id}><span className="font-bold">{u.turnsLeft <= 0 ? 'NOW' : `${u.turnsLeft} TURN${u.turnsLeft === 1 ? '' : 'S'}`}</span> · {u.text}</li>)}</ul></>}
+          {c.commitments.length > 0 && <div className="mt-1" data-testid="v9-commitments"><div className={label}>Commitments</div><ul>{c.commitments.map(x => <li key={x.id}>{x.text} — {x.due}</li>)}</ul></div>}
+        </section>
+      )}
+
+      {c.team && (
+        <section className={`${card} p-3 text-sm`} aria-label="Team" data-testid="v9-team-summary">
+          <div className={label}>Team plan — {c.team.mission}</div>
+          {c.team.lines.map(l => <div key={l}>{l}</div>)}
+          {c.team.issue && <div className="text-amber-300 text-xs mt-1">Issue: {c.team.issue}</div>}
+        </section>
+      )}
+
+      {c.status.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs" aria-label="Strategic status" data-testid="v9-status-strip">
+          {c.status.map(x => <span key={x.id} className={`px-2 py-1 rounded-lg border ${V9_TONE[x.tone]}`}>{x.icon} {x.text}</span>)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** ONE coherent selected-region story (Living Regions + stakeholders + rival pressure + contracts + infrastructure). */
+export const V9RegionContextPanel: React.FC<{ ctx: V9RegionContext | null; theme: any; onAsk: (q: string) => void; onTravel?: () => void; onContracts?: () => void; onNegotiate?: () => void; onInvest?: () => void; more: React.ReactNode }> = ({ ctx, theme, onAsk, onTravel, onContracts, onNegotiate, onInvest, more }) => {
+  const [open, setOpen] = useState(false);
+  if (!ctx) return null;
+  return (
+    <section aria-labelledby={`v9-rc-${ctx.code}`} className={`${theme.card} ${theme.border} border rounded-xl p-3 text-sm space-y-2`} data-testid="v9-region-context">
+      <div><h4 id={`v9-rc-${ctx.code}`} className="font-extrabold">{ctx.name}</h4><div className="text-xs opacity-85">{ctx.headline}</div></div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">{ctx.lines.map(l => <React.Fragment key={l.label}><dt className="opacity-70">{l.label}</dt><dd className="font-semibold">{l.value}</dd></React.Fragment>)}</dl>
+      {ctx.stakeholders.length > 0 && <div className="text-xs"><span className="opacity-70">Stakeholders: </span>{ctx.stakeholders.join(' · ')}</div>}
+      {(ctx.suggestion || ctx.contract) && <div className="text-xs">{[ctx.suggestion, ctx.contract].filter(Boolean).join(' · ')}</div>}
+      <div className="flex flex-wrap gap-2 text-xs">
+        {onTravel && <button type="button" className={`${theme.button} px-3 py-1 rounded-lg font-bold`} onClick={onTravel}>Travel</button>}
+        {onInvest && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onInvest}>Invest</button>}
+        {onContracts && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onContracts}>Contracts</button>}
+        {onNegotiate && <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg`} onClick={onNegotiate}>Negotiate</button>}
+        <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Less' : 'More'}</button>
+      </div>
+      <div className="flex flex-wrap gap-2 text-[11px]">{ctx.whyQuestions.map(q => <button key={q} type="button" className="underline opacity-85" onClick={() => onAsk(q)}>{q}</button>)}</div>
+      {open && <div className="space-y-2" data-testid="v9-region-more">{more}</div>}
+    </section>
+  );
+};
+
+/** LAB: how the PLAY moment was composed (sources, provenance, attention, hash). */
+export const V9CohesionInspector: React.FC<{ c: V9Cohesion; inputs: V9CohesionInputs; theme: any }> = ({ c, inputs, theme }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <section aria-labelledby="v9c-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v9-cohesion-inspector">
+      <div className="flex items-center gap-2">
+        <h2 id="v9c-lab-h" className="font-bold text-sm">🧭 Gameplay Cohesion Inspector</h2>
+        <span className="opacity-70">hash {c.hash} · focus {c.focus.source} · {inputs.actions.ranked.length} candidates · {inputs.events.length} events</span>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-1">
+          <div><b>Recommendation:</b> {c.recommended ? `${c.recommended.label} — ${c.recommended.strength} (${c.recommended.provenance.join(', ') || 'ranking only'})` : 'none'}</div>
+          {c.recommended?.alternativeNote && <div><b>Alternative:</b> {c.recommended.alternativeNote}</div>}
+          <div><b>Attention:</b> {c.attention.map(a => `${a.cls}: ${a.text}`).join(' | ') || 'none'}</div>
+          <div><b>Surfaced keys (notification dedupe):</b> {c.surfacedKeys.length}</div>
+          <div><b>End-turn context:</b> {c.endTurnWarnings.join(' | ') || 'none'}</div>
+          <pre className="whitespace-pre-wrap break-words max-h-64 overflow-auto opacity-80">{JSON.stringify({ header: c.header, focus: c.focus, decision: c.decision, change: c.change, upcoming: c.upcoming }, null, 1)}</pre>
+        </div>
+      )}
+    </section>
+  );
+};
+
+/** INTELLIGENCE: the Strategic Brief + player-question navigation (not system names). */
+export const V9StrategicBrief: React.FC<{ c: V9Cohesion; theme: any; strategyLine: string | null; extra: Array<{ label: string; text: string }> }> = ({ c, theme, strategyLine, extra }) => (
+  <section aria-labelledby="v9-brief-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm space-y-1`} data-testid="v9-strategic-brief">
+    <h2 id="v9-brief-h" className="font-bold text-lg">📋 Strategic Brief</h2>
+    <div><span className="font-semibold">Your plan: </span>{strategyLine || c.focus.title}</div>
+    <div><span className="font-semibold">Current situation: </span>{c.change ? c.change.text : (c.situation || []).join(' ')}</div>
+    {c.recommended && <div><span className="font-semibold">Recommended: </span>{c.recommended.label} — {c.recommended.why}</div>}
+    {c.recommended?.alternativeNote && <div className="opacity-90">{c.recommended.alternativeNote}</div>}
+    {c.upcoming[0] && <div><span className="font-semibold">Upcoming: </span>{c.upcoming[0].text}</div>}
+    {extra.map(x => <div key={x.label}><span className="font-semibold">{x.label}: </span>{x.text}</div>)}
+  </section>
+);
+
+export const V9_INTEL_SECTIONS: Array<[string, string]> = [['ask', 'Ask'], ['strategy', 'Strategy'], ['situation', 'Situation'], ['world', 'World'], ['team', 'Team'], ['rivals', 'Rivals'], ['diplomacy', 'Diplomacy'], ['whatif', 'What-If']];
+export const V9IntelNav: React.FC<{ onGo: (id: string) => void; onAsk: (q: string) => void; region: string | null }> = ({ onGo, onAsk, region }) => (
+  <nav aria-label="Intelligence sections" className="flex flex-wrap gap-1.5 text-xs" data-testid="v9-intel-nav">
+    {V9_INTEL_SECTIONS.map(([id, l]) => <button key={id} type="button" className="px-2.5 py-1 rounded-full border border-slate-500/50" onClick={() => (id === 'whatif' ? onAsk('What if I end my turn now?') : onGo(id))}>{l}</button>)}
+    {region && <button type="button" className="px-2.5 py-1 rounded-full border border-teal-500/60" onClick={() => onAsk(`What's happening in ${region}?`)}>About {region}</button>}
+  </nav>
+);
+
+// ---- V9 Gameplay Cohesion self-tests (deterministic fixtures; presentation only) -------------------------
+
+export function createV9CohesionFixture(o: Partial<V9CohesionInputs> = {}): V9CohesionInputs {
+  return {
+    turn: 6, day: 6, totalDays: 30, teamMode: false, isHumanTurn: true, currentActorName: 'You', actorStatus: null,
+    control: { owner: 'human', headline: "You're playing", copilotHoldsControl: false, rescue: false, actionProgress: null, currentActionLabel: null },
+    ap: { finite: true, remaining: 2 }, cash: 12000,
+    win: { label: 'Net worth', value: '$12,000', target: '$50,000', opponent: null }, transit: null, presentation: 'advanced', critical: null,
+    objective: { id: 'obj1', title: 'Secure Queensland Logistics', completed: 1, total: 3, next: 'Complete Port Expansion', blocked: false },
+    strategy: null, actions: { recommendedId: null, ranked: [] }, background: null, events: [], diplomacy: [],
+    factions: { requests: [], commitments: [], dilemma: null, regionNotes: {} }, contracts: [], crises: [], team: null,
+    regions: { QLD: { name: 'Queensland', momentum: 'Growing', identity: 'Logistics hub', risk: null, need: null, heldByYou: true, rivalPressure: false }, NSW: { name: 'New South Wales', momentum: 'Stable', identity: 'Finance centre', risk: null, need: null, heldByYou: false, rivalPressure: true } },
+    focusRegion: 'QLD', pendingApprovals: 0, lastBriefTurn: null, ...o
+  };
+}
+
+export function createV9Candidate(id: string, label: string, x: Partial<ContextualActionCandidate> = {}): ContextualActionCandidate {
+  return { id, actionType: id, label, description: `${label} description`, category: 'economy', icon: '•', navigation: null, execution: { kind: 'copilot_candidate', candidateId: id } as any, legal: true, blockReason: null, relevance: 50, urgency: 'normal', benefit: null, risk: null, costEstimate: null, apCost: 1, objectiveRelation: null, reasons: [`${label} reason`], evidence: [], sourceSystem: 'test', confidence: 0.7, requiresConfirmation: false, scoreBreakdown: [], strategyAlignment: null, backgroundRank: null, backgroundReason: null, ...x };
+}
+
+export function runV9GameplayCohesionSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const fx = createV9CohesionFixture;
+  const cand = createV9Candidate;
+  const strategy = (x: Partial<NonNullable<V9CohesionInputs['strategy']>> = {}): NonNullable<V9CohesionInputs['strategy']> => ({ phases: ['Build cash reserve', 'Secure Queensland Logistics', 'Expand into NSW'], phaseIndex: 1, locked: false, onTrack: 'on_track', nextMove: { label: 'Complete Port Expansion', reason: 'Unlocks the export route your plan depends on.' }, cashTarget: null, regions: ['QLD'], notices: [], ...x });
+  const ev = (id: string, x: Partial<V9CohesionEvent> = {}): V9CohesionEvent => ({ id, turn: 6, source: 'world', significance: 'major', text: `Event ${id}`, subjectId: null, actorId: null, claim: 'fact', why: true, ...x });
+
+  check('vc_one_rec_agree', 'GI3, Background AI and contextual actions agree → ONE recommendation with merged provenance', () => {
+    const ranked = [cand('port', 'Complete Port Expansion', { strategyAlignment: { score: 0.9, label: 'high', reason: '', dimensions: { goalProgress: 1, constraintCompliance: 1, phaseAlignment: 1 } }, backgroundRank: 1 }), cand('shop', 'Visit Shop'), cand('sell', 'Sell Resources')];
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy(), actions: { recommendedId: 'port', ranked }, background: { nextMove: { label: 'Complete Port Expansion', reason: 'x', actionId: 'port' }, intervention: null } }));
+    const r = c.recommended;
+    return (r?.candidateId === 'port' && r.strength === 'Strong recommendation' && ['Your strategy', 'Current objective', 'Situation analysis', 'Action ranking'].every(p => r.provenance.includes(p)) && !r.alternativeNote && !c.useful.some(u => u.candidateId === 'port') && c.useful.length === 2) || J(r);
+  });
+
+  check('vc_locked_strategy_wins', 'Disagreement: locked strategy wins and the alternative is surfaced, not hidden', () => {
+    const ranked = [cand('defend', 'Defend NSW', { relevance: 70, backgroundRank: 1 }), cand('port', 'Complete Port Expansion', { relevance: 55, strategyAlignment: { score: 0.9, label: 'high', reason: '', dimensions: { goalProgress: 1, constraintCompliance: 1, phaseAlignment: 1 } } })];
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy({ locked: true }), actions: { recommendedId: 'defend', ranked }, background: { nextMove: { label: 'Defend NSW', reason: 'Riley is pressuring NSW', actionId: 'defend' }, intervention: { level: 'warning', message: 'Riley is pressuring NSW.', subjectKind: 'threat', query: null, key: 'k1', actionId: 'defend' } } }));
+    return (c.recommended?.candidateId === 'port' && /Alternative: Defend NSW/.test(c.recommended.alternativeNote || '') && /locked strategy/.test(c.recommended.alternativeNote || '')) || J(c.recommended);
+  });
+
+  check('vc_alt_note_matches_subject', 'Alternative note never pairs an action with an unrelated background message', () => {
+    const ranked = [cand('port', 'Complete Port Expansion', { relevance: 60, strategyAlignment: { score: 0.9, label: 'high', reason: '', dimensions: { goalProgress: 1, constraintCompliance: 1, phaseAlignment: 1 } } }), cand('wages', 'Work for Wages', { relevance: 50, backgroundRank: 1, backgroundReason: 'Rebuilds your cash reserve' })];
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy(), actions: { recommendedId: 'port', ranked }, background: { nextMove: null, intervention: { level: 'warning', message: 'Opportunity: NSW can be taken cheaply.', subjectKind: 'opportunity', query: null, key: 'k2', actionId: 'take_nsw' } } }));
+    const note = c.recommended?.alternativeNote || '';
+    return (/Work for Wages — Rebuilds your cash reserve/.test(note) && !/NSW/.test(note)) || note;
+  });
+
+  check('vc_decision_dilemma', 'Faction dilemma takes Current Focus as a Decision with a return-to base focus', () => {
+    const dilemma = { id: 'dl1', title: 'Mining Consortium vs Clean Energy Council', regionId: 'QLD', need: 'Both want your support in Queensland.', options: [{ id: 'a', label: 'Back mining', summary: 's' }, { id: 'b', label: 'Back clean energy', summary: 's' }] };
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy(), factions: { requests: [], commitments: [], dilemma, regionNotes: {} } }));
+    return (c.decision?.kind === 'faction_dilemma' && c.decision.options.length === 2 && c.focus.source === 'decision' && c.focus.temporary && c.focus.returnTo === 'Secure Queensland Logistics' && c.attention[0].id === 'decision' && c.endTurnWarnings.some(w => /Unresolved/.test(w))) || J({ d: c.decision, f: c.focus });
+  });
+
+  check('vc_decision_proposal_first', 'Incoming diplomatic proposal outranks dilemma and governance', () => {
+    const dilemma = { id: 'dl1', title: 'D', regionId: 'QLD', need: 'n', options: [] };
+    const c = resolveV9GameplayCohesion(fx({ diplomacy: [{ id: 'p1', kind: 'proposal', text: 'Riley sent a counteroffer for WA.', dealId: 'deal1', turnsLeft: 2 }], factions: { requests: [], commitments: [], dilemma, regionNotes: {} }, pendingApprovals: 2 }));
+    return (c.decision?.kind === 'diplomatic_response' && c.decision.title === 'Respond to the counteroffer' && c.decision.refId === 'deal1') || J(c.decision);
+  });
+
+  check('vc_no_decision_when_waiting', 'Decisions never take focus on another actor\'s turn; waiting view is shown', () => {
+    const c = resolveV9GameplayCohesion(fx({ isHumanTurn: false, currentActorName: 'Riley', actorStatus: 'Reviewing trade options', diplomacy: [{ id: 'p1', kind: 'proposal', text: 'x', dealId: null, turnsLeft: 1 }] }));
+    return (!c.decision && c.header.controlLabel === 'WAITING FOR RILEY' && c.header.turnLabel === "RILEY'S TURN" && c.waiting?.actor === 'Riley' && !c.turnBrief && c.endTurnWarnings.length === 0) || J({ h: c.header, w: c.waiting });
+  });
+
+  check('vc_quiet_situation', 'Quiet match shows Situation, never an empty What Changed', () => {
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy({ cashTarget: 20000 }), events: [ev('m1', { significance: 'minor', text: 'Minor price wobble' })] }));
+    return (c.change === null && Array.isArray(c.situation) && c.situation.length >= 2 && c.situation.some(s => /liquidity/.test(s)) && c.situation.some(s => /Rival pressure is concentrated on New South Wales/.test(s))) || J({ ch: c.change, s: c.situation });
+  });
+
+  check('vc_world_dedupe', 'One world story across SWR + Living Regions + Factions merges into ONE What Changed', () => {
+    const events = [ev('w1', { text: 'Queensland port expansion completed', subjectId: 'QLD' }), ev('r1', { source: 'regions', significance: 'meaningful', text: 'Queensland momentum rising — logistics capacity up', subjectId: 'QLD' }), ev('f1', { source: 'factions', significance: 'meaningful', text: 'Port Authority influence increased', subjectId: 'QLD' }), ev('w2', { text: 'Queensland port expansion has been completed', subjectId: null })];
+    const merged = v9MergeEvents(events);
+    const c = resolveV9GameplayCohesion(fx({ events }));
+    return (merged.length === 1 && c.change?.eventId === 'w1' && c.change.extra.length === 2 && c.change.why === 'w1' && c.surfacedKeys.some(k => /port expansion/.test(k))) || J({ merged: merged.map(m => [m.id, m.extra]), ch: c.change });
+  });
+
+  check('vc_national_override', 'Major national event outranks a meaningful local one', () => {
+    const c = resolveV9GameplayCohesion(fx({ events: [ev('loc', { significance: 'meaningful', text: 'Queensland retail steady', subjectId: 'QLD' }), ev('nat', { text: 'Interest rates rise nationally', national: true })] }));
+    return c.change?.eventId === 'nat' || J(c.change);
+  });
+
+  check('vc_crisis_temporary', 'Crisis in a held region becomes temporary focus with return to strategy', () => {
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy(), crises: [{ id: 'cy', name: 'Cyclone', regions: ['QLD'], stage: 1 }] }));
+    const quiet = resolveV9GameplayCohesion(fx({ strategy: strategy(), crises: [{ id: 'cy', name: 'Cyclone', regions: ['TAS'], stage: 1 }] }));
+    return (c.focus.source === 'crisis' && c.focus.temporary && c.focus.returnTo === 'Secure Queensland Logistics' && quiet.focus.source === 'strategy' && !quiet.focus.temporary) || J([c.focus, quiet.focus]);
+  });
+
+  check('vc_focus_unified', 'Objective and strategy unify into one focus with breadcrumb', () => {
+    const c = resolveV9GameplayCohesion(fx({ strategy: strategy() }));
+    const noStrat = resolveV9GameplayCohesion(fx());
+    return (c.focus.title === 'Secure Queensland Logistics' && c.focus.progress === '1 / 3 requirements complete' && c.focus.next === 'Complete Port Expansion' && c.focus.breadcrumb.length === 3 && c.focus.breadcrumb[1].current && noStrat.focus.source === 'objective' && noStrat.focus.breadcrumb.length === 0) || J(c.focus);
+  });
+
+  check('vc_region_context', 'Region context integrates Living Regions + stakeholders and is fog-safe', () => {
+    const mk = (fog: boolean) => {
+      const s = createRFFixtureInputs({ fog });
+      let st = initializeRegionalFactions(s);
+      const fid = rfFactionsInRegion(st, 'QLD', 3).filter(x => x.influence >= 30)[0]?.def.id;
+      if (fid) st = { ...st, factions: { ...st.factions, [fid]: { ...st.factions[fid], relationshipsByActor: { ...st.factions[fid].relationshipsByActor, ai: { value: 83, reliability: 60, history: [{ turn: 4, actorId: 'ai', delta: 20, text: 'secret deal', sourceEventId: null, public: false }] } } } } };
+      const lrv: LivingRegionsWorldView = { state: s.regions, inputs: s.lr, viewerId: 'player', viewerKeys: ['player'], names: { player: 'You', ai: 'Riley' } };
+      const rfv: RegionalFactionsWorldView = { state: st, inputs: s, viewerId: 'player', viewerKeys: ['player'], names: { player: 'You', ai: 'Riley' } };
+      return { ctx: buildV9RegionContext('QLD', lrv, rfv, 30), fid };
+    };
+    const open = mk(false); const fog = mk(true);
+    const labels = open.ctx?.lines.map(l => l.label) || [];
+    const fogText = J(fog.ctx);
+    return (Boolean(open.ctx) && labels.includes('Identity') && labels.includes('You') && labels.includes('Rival pressure') && open.ctx!.stakeholders.length >= 1 && open.ctx!.whyQuestions.length >= 2 && !/secret deal|83/.test(fogText) && !/leans Riley/.test(fogText) && buildV9RegionContext('ZZZ', null, null, null) === null) || J({ open: open.ctx, fog: fog.ctx?.stakeholders, fid: open.fid });
+  });
+
+  check('vc_copilot_label', 'Co-Pilot control and rescue labels come from control state (authority unchanged)', () => {
+    const cp = resolveV9GameplayCohesion(fx({ control: { owner: 'copilot', headline: 'x', copilotHoldsControl: true, rescue: false, actionProgress: { current: 2, total: 5 }, currentActionLabel: 'Buying iron' } }));
+    const rs = resolveV9GameplayCohesion(fx({ control: { owner: 'copilot', headline: 'x', copilotHoldsControl: true, rescue: true, actionProgress: null, currentActionLabel: null } }));
+    const me = resolveV9GameplayCohesion(fx());
+    return (cp.header.controlLabel === 'CO-PILOT CONTROLLING' && cp.header.controlTone === 'copilot' && rs.header.controlLabel === 'CO-PILOT RESCUE' && me.header.controlLabel === "YOU'RE PLAYING") || J([cp.header, rs.header]);
+  });
+
+  check('vc_transit_header', 'Transit is part of the match header', () => {
+    const c = resolveV9GameplayCohesion(fx({ transit: { destination: 'Perth', day: 2, total: 4 } }));
+    return (c.header.transitLabel === '🚢 En route to Perth · Day 2/4' && resolveV9GameplayCohesion(fx()).header.transitLabel === null) || J(c.header);
+  });
+
+  check('vc_team_compact', 'Team summary is compact (mission, you, mates) and respects simple mode', () => {
+    const team = { mission: 'Control 5 regions', you: 'Queensland logistics', mates: [{ name: 'Alex', focus: 'Victoria finance' }, { name: 'Sam', focus: 'WA mining' }], issue: 'WA transport blocked' };
+    const adv = resolveV9GameplayCohesion(fx({ teamMode: true, team }));
+    const sim = resolveV9GameplayCohesion(fx({ teamMode: true, team, presentation: 'simple' }));
+    return (adv.team?.lines.length === 3 && adv.team.issue === 'WA transport blocked' && sim.team?.lines.length === 2 && adv.header.dayLabel === 'Day 6 / 30 · Round 6') || J([adv.team, sim.team]);
+  });
+
+  check('vc_simple_limits', 'Simple mode limits alternatives, status and upcoming', () => {
+    const ranked = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, k) => cand(id, `Action ${id.toUpperCase()} unique${k}`, { relevance: 60 - k }));
+    const reqs = ['Fund harbour dredging', 'Hire regional workers', 'Build community school', 'Upgrade freight rail', 'Clean polluted river'].map((t, j) => ({ k: j + 1, t })).map(({ k, t }) => ({ id: `rq${k}`, faction: `F${k}`, title: t, deadline: 7 + k, regionId: 'QLD', urgent: true, committed: false }));
+    const base = { actions: { recommendedId: null, ranked }, factions: { requests: reqs, commitments: [], dilemma: null, regionNotes: {} }, strategy: strategy({ regions: ['QLD', 'NSW'], cashTarget: 50000 }) };
+    const adv = resolveV9GameplayCohesion(fx(base));
+    const sim = resolveV9GameplayCohesion(fx({ ...base, presentation: 'simple' }));
+    return (sim.useful.length === 2 && adv.useful.length === 4 && sim.upcoming.length === 2 && adv.upcoming.length === 4 && sim.status.length <= 2 && adv.status.length <= 4 && adv.attention.length <= 3) || J({ su: sim.useful.length, au: adv.useful.length, sup: sim.upcoming.length, aup: adv.upcoming.length, ss: sim.status.length });
+  });
+
+  check('vc_empty_states', 'Empty inputs yield honest empty states, never crashes', () => {
+    const c = resolveV9GameplayCohesion(fx({ objective: null, focusRegion: null, regions: {}, ap: { finite: false, remaining: null } }));
+    return (c.recommended === null && c.useful.length === 0 && c.focus.source === 'win' && c.situation?.length === 1 && /no major changes/.test(c.situation[0]) && c.upcoming.length === 0 && c.header.apLabel === 'Unlimited actions' && c.endTurnWarnings.length === 0) || J(c);
+  });
+
+  check('vc_illegal_excluded', 'Illegal and end-turn candidates are never recommended', () => {
+    const c = resolveV9GameplayCohesion(fx({ actions: { recommendedId: 'bad', ranked: [cand('bad', 'Buy Port', { legal: false, relevance: 99 }), cand('end', 'End Turn', { execution: { kind: 'end_turn' } as any, relevance: 90 }), cand('ok', 'Sell Iron')] } }));
+    return (c.recommended?.candidateId === 'ok' && c.useful.length === 0) || J(c.recommended);
+  });
+
+  check('vc_notification_dedupe', 'Notifications repeating PLAY content are suppressed; critical always kept; near-dupes collapse', () => {
+    const keys = ['queensland port expansion completed'];
+    const list = [{ message: 'Queensland port expansion completed!', type: 'info' }, { message: 'Bankruptcy danger: cash critical', type: 'error' }, { message: 'Bankruptcy danger: cash critical', type: 'error' }, { message: 'Riley bought a hotel in Sydney', type: 'info' }, { message: 'Riley bought a hotel in Sydney today', type: 'info' }];
+    const out = v9DedupeNotifications(list, keys, n => n.type === 'error');
+    const cls = [v9NotificationClass({ message: 'Riley is waiting for your answer' }), v9NotificationClass({ type: 'error', message: 'x' }), v9NotificationClass({ message: 'Deal expires next turn' }), v9NotificationClass({ type: 'success', message: 'Contract fulfilled' }), v9NotificationClass({ message: 'hello' })];
+    return (out.length === 2 && out[0].type === 'error' && J(cls) === J(['decision_required', 'critical_warning', 'deadline', 'completion', 'information'])) || J({ out, cls });
+  });
+
+  check('vc_end_turn_warnings', 'End-turn warnings are contextual (unused actions, expiring items) and never block', () => {
+    const c = resolveV9GameplayCohesion(fx({ actions: { recommendedId: null, ranked: [cand('ok', 'Sell Iron')] }, diplomacy: [{ id: 'x1', kind: 'expiring', text: 'Trade deal with Riley expires', dealId: 'd', turnsLeft: 1 }] }));
+    const none = resolveV9GameplayCohesion(fx({ ap: { finite: true, remaining: 0 } }));
+    return (c.endTurnWarnings.length === 2 && /2 actions unused/.test(c.endTurnWarnings[0]) && /due next turn/.test(c.endTurnWarnings[1]) && none.endTurnWarnings.length === 0) || J(c.endTurnWarnings);
+  });
+
+  check('vc_turn_brief_once', 'Turn brief appears once per turn and not after dismissal', () => {
+    const a = resolveV9GameplayCohesion(fx());
+    const b = resolveV9GameplayCohesion(fx({ lastBriefTurn: 6 }));
+    return (a.turnBrief?.focus === 'Secure Queensland Logistics' && b.turnBrief === null) || J([a.turnBrief, b.turnBrief]);
+  });
+
+  check('vc_upcoming_filter', 'Upcoming shows only imminent/important items; distant contracts omitted', () => {
+    const c = resolveV9GameplayCohesion(fx({ contracts: [{ id: 'c1', title: 'Iron supply', regionId: 'QLD', turnsLeft: 2, reward: 5000, active: true }, { id: 'c2', title: 'Wool supply', regionId: 'NSW', turnsLeft: 9, reward: 5000, active: true }], factions: { requests: [{ id: 'r1', faction: 'Port Authority', title: 'Fund dredging', deadline: 9, regionId: 'TAS', urgent: false, committed: false }], commitments: [{ id: 'm1', faction: 'Port Authority', promise: 'Fund dredging', due: 7 }], dilemma: null, regionNotes: {} } }));
+    const ids = c.upcoming.map(u => u.id);
+    return (ids.includes('c1') && !ids.includes('c2') && !ids.includes('r1') && ids.includes('m1') && c.commitments[0].due === 'due in 1 turn') || J(c.upcoming);
+  });
+
+  check('vc_deterministic', 'Identical inputs → identical output and hash; derived only (survives save/load round-trip)', () => {
+    const i = fx({ strategy: strategy(), events: [ev('w1', { subjectId: 'QLD' })], actions: { recommendedId: 'a', ranked: [cand('a', 'Alpha'), cand('b', 'Beta')] } });
+    const a = resolveV9GameplayCohesion(i); const b = resolveV9GameplayCohesion(JSON.parse(J(i)));
+    const changed = resolveV9GameplayCohesion({ ...i, cash: 99999 });
+    return (J(a) === J(b) && a.hash === v9CohesionSignature(i) && changed.hash !== a.hash) || 'non-deterministic';
+  });
+
+  check('vc_fog_waiting', 'Waiting view shows only observable events about the acting rival', () => {
+    const c = resolveV9GameplayCohesion(fx({ isHumanTurn: false, currentActorName: 'Riley', events: [ev('e1', { text: 'Riley bought a mine in WA', actorId: 'ai' }), ev('e2', { text: 'Sam expanded in VIC', actorId: 'sam' })] }));
+    return (J(c.waiting?.recent) === J(['Riley bought a mine in WA'])) || J(c.waiting);
+  });
+
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -159356,6 +160087,88 @@ function dispatchGameSettingsChange(
 
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
+
+  // ---- V9 Gameplay Cohesion: ONE player moment composed from the canonical systems' outputs -------------
+  // Presentation only: never saved, never executes, never decides authority. Rebuilt only when the compact
+  // signature of its inputs changes (never on every state update).
+  const [v9BriefSeenTurn, setV9BriefSeenTurn] = useState<number | null>(null);
+  const v9CohesionInputs = useMemo<V9CohesionInputs>(() => {
+    const pid = String(player?.id || 'player');
+    const keys = lrViewerKeys;
+    const names = swrInputs.ownerNames;
+    const g3 = gi3Live?.active && gi3Live.active.status === 'active' ? gi3Live.active : null;
+    const g3Goals = g3 ? g3.goals.filter(g => g.status !== 'removed') : [];
+    const lrs = lrState;
+    const regions: V9CohesionInputs['regions'] = {};
+    (lrInputs.regions || []).forEach(r => {
+      const reg = lrs?.regions[r.code];
+      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
+    });
+    const events: V9CohesionEvent[] = [];
+    if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
+    if (swrEnabled && lrs) pickRegionalShifts(lrs, dnRound, []).forEach(d => events.push({ id: d.id, turn: d.turn, source: 'regions', significance: d.significance, text: personalizeWorldText(d.text, names[pid]), subjectId: d.regionId, actorId: null, claim: 'fact', why: false }));
+    const rf = swrEnabled ? rfState : null;
+    const recentlyDecided = (d: RFDilemma) => (rf?.decisions || []).some(x => x.regionId === d.regionId && x.label.startsWith(d.title) && dnRound - x.turn < 4);
+    const planRegions = new Set([...g3Goals.map(g => g.regionId).filter(Boolean) as string[], ...Object.entries(regions).filter(([, r]) => r.heldByYou).map(([c]) => c)]);
+    let dilemma: V9CohesionInputs['factions']['dilemma'] = null;
+    if (rf) { try { const d = rfBuildDilemmas(rf, rfInputs).find(x => planRegions.has(x.regionId) && !recentlyDecided(x)); if (d) dilemma = { id: d.id, title: d.title, regionId: d.regionId, need: d.need, options: d.options.map(o => ({ id: o.id, label: o.label, summary: [...o.effect.slice(0, 1), ...o.risk.slice(0, 1)].join(' · ') })) }; } catch { dilemma = null; } }
+    const bgNext = bgLive?.enabled ? (bgLive.shadowPlan?.nextMove || bgLive.recommendedNextMove || null) : null;
+    const iv = bgLive?.enabled ? bgLive.interventionRecommendation : null;
+    const tc = teamOsView?.state.contract || null;
+    const journey = isActorInTransit(player) ? player.activeJourney : null;
+    const destName = journey ? ((REGIONS as any)[journey.destinationRegion] || (EXTERNAL_TERRITORIES as any)[journey.destinationRegion])?.name || journey.destinationRegion : '';
+    const tTotal = journey ? (EXTERNAL_TERRITORIES as any)[journey.destinationRegion]?.multiTurnDuration || journey.daysRemaining || 1 : 1;
+    const metric = gameSettings.winCondition as WinMetric;
+    let winValue = '';
+    try { const me = getCompetitiveMetricValue(metric, { side: 'player', teamMode: isTeamMode }); const opp = gameState.selectedMode === 'single' ? null : getCompetitiveMetricValue(metric, { side: 'opponent', teamMode: isTeamMode }); winValue = opp === null ? formatWinMetricValue(metric, me) : `${formatWinMetricValue(metric, me)} vs ${formatWinMetricValue(metric, opp)}`; } catch { winValue = '—'; }
+    const att = intentLayerComputed.attention;
+    const obj = intentLayerComputed.objective;
+    const control = playerControlState;
+    return {
+      turn: dnRound, day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 0), teamMode: isTeamMode,
+      isHumanTurn: isPlayerTurnForCoPilot, currentActorName: v9CurrentActorName, actorStatus: isPlayerTurnForCoPilot ? null : gameState.isAiThinking ? 'Thinking about their move…' : String((currentActor as any)?.aiPlan?.summary || 'Planning next move'),
+      control: { owner: control.owner, headline: control.headline, copilotHoldsControl: control.copilotHoldsControl, rescue: control.phase === 'rescue_active', actionProgress: control.actionProgress, currentActionLabel: control.currentActionLabel },
+      ap: { finite: v9ApFinite, remaining: v9ApFinite ? v9ApRemaining : null }, cash: Number(player?.money || 0),
+      win: { label: WIN_METRIC_PROFILES[metric]?.label || 'Win condition', value: winValue, target: null, opponent: null },
+      transit: journey ? { destination: destName, day: Math.min(tTotal, Math.max(1, tTotal - journey.daysRemaining + 1)), total: tTotal } : null,
+      presentation: getIntentPresentationLevel(gameSettings) as V9Presentation,
+      critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : null,
+      objective: obj ? { id: String(obj.sourceId || obj.title), title: obj.title, completed: obj.progress.completed, total: obj.progress.total, next: obj.recommendedNextStep?.label || null, blocked: (obj.blockers || []).length > 0 } : null,
+      strategy: g3 ? { phases: g3Goals.map(g => g.label), phaseIndex: gi3Live.progress?.phaseIndex ?? g3.phaseIndex, locked: Boolean(g3.locks.mission || g3.locks.primaryGoal || g3.locks.ordering || g3Goals.some(g => g.locked)), onTrack: gi3Live.progress?.onTrack || null, nextMove: gi3Live.progress?.nextMove || null, cashTarget: gi3Live.progress?.resourceStatus.reserve ?? null, regions: g3Goals.map(g => g.regionId).filter(Boolean) as string[], notices: gi3Live.notices.filter(n => !n.dismissed).map(n => ({ id: n.id, text: n.text })) } : null,
+      actions: { recommendedId: v9ActionSetView?.recommended?.id || null, ranked: (v9ActionSetView?.ranked || []).slice(0, 12) },
+      background: bgLive?.enabled ? { nextMove: bgNext ? { label: bgNext.label, reason: bgNext.reason, actionId: bgNext.actionId || null } : null, intervention: iv ? { level: iv.level, message: iv.message, subjectKind: iv.subjectKind, query: iv.actionContext?.query || null, key: iv.cooldownKey, actionId: iv.actionContext?.actionId || null } : null } : null,
+      events,
+      diplomacy: dnObservations.map(o => ({ id: o.id, kind: o.kind, text: o.text, dealId: o.dealId, turnsLeft: o.kind === 'expiring' || o.kind === 'payment_due' ? 1 : null })),
+      factions: rf ? {
+        requests: rf.requests.filter(r => r.status === 'open').map(r => ({ id: r.id, faction: RF_DEF_BY_ID[r.factionId]?.name || r.factionId, title: r.title, deadline: r.deadlineTurn, regionId: r.regionId, urgent: r.urgency === 'urgent', committed: rf.commitments.some(c => c.requestId === r.id && c.actorId === pid) })).slice(0, 8),
+        commitments: rf.commitments.filter(c => c.actorId === pid && c.compliance === 'pending').map(c => ({ id: c.id, faction: RF_DEF_BY_ID[c.factionId]?.name || c.factionId, promise: c.promise, due: c.dueTurn })).slice(0, 4),
+        dilemma, regionNotes: {}
+      } : { requests: [], commitments: [], dilemma: null, regionNotes: {} },
+      contracts: (lrInputs.contracts || []).filter(c => c.assignedActorId === pid && c.status !== 'completed' && c.status !== 'failed').map(c => ({ id: c.id, title: c.title, regionId: c.regionId, turnsLeft: null, reward: c.rewardMoney, active: true })).slice(0, 4),
+      crises: (lrInputs.crises || []).filter(c => c.status === 'active').map(c => ({ id: c.id, name: c.name, regions: c.affectedRegions, stage: c.stageIndex })),
+      team: isTeamMode && tc ? { mission: tc.mission.label, you: (() => { const a = tc.assignments.find(x => x.actorId === 'player' || x.actorId === pid); const r = tc.roles.find(x => x.actorId === 'player' || x.actorId === pid); return a ? `${a.focus}${a.regionId ? ` · ${a.regionId}` : ''}` : r ? r.responsibility || String(r.primaryRole) : null; })(), mates: (tc.assignments.some(x => x.actorId !== 'player' && x.actorId !== pid) ? tc.assignments.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: `${x.focus}${x.regionId ? ` · ${x.regionId}` : ''}` })) : tc.roles.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: x.responsibility || String(x.primaryRole) }))), issue: ['blocked', 'needs_decision', 'recovering'].includes(String(teamOsView?.evaluation.health.health)) ? teamOsView!.evaluation.health.reason : null } : null,
+      regions, focusRegion: lrFocusRegion || (player?.currentRegion ? String(player.currentRegion) : null),
+      pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
+      lastBriefTurn: v9BriefSeenTurn
+    };
+  }, [player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
+  const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const v9Cohesion = useMemo(() => resolveV9GameplayCohesion(v9CohesionInputsRef.current), [v9CohesionSig]);
+  // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
+  const [v9AfterDismissed, setV9AfterDismissed] = useState<string[]>([]);
+  const [v9PlayDetailsOpen, setV9PlayDetailsOpen] = useState(false);
+  const v9AfterAction = useMemo<V9AfterAction | null>(() => {
+    if (!swrEnabled || !swrState) return null;
+    const pid = String(player?.id || 'player'); const tid = player?.teamId ? String(player.teamId) : null;
+    const chain = pickPlayConsequenceChain(swrState, pid, tid, dnRound, v9AfterDismissed);
+    if (!chain || !(chain[0].actorId === pid || (tid !== null && chain[0].actorId === tid))) return null;
+    const names = swrInputs.ownerNames;
+    const say = (e: StrategicWorldEvent) => personalizeWorldText(e.strategicMeaning, names[pid], tid ? names[tid] : null) + (e.claimKind === 'inference' ? ' (likely)' : '');
+    const domains = Array.from(new Set(chain.flatMap(e => e.affectedDomains))).slice(0, 4).map(d => d.replace(/_/g, ' '));
+    return { rootId: chain[0].id, did: say(chain[0]), changed: chain.slice(1).map(say), affected: domains };
+  }, [swrEnabled, swrState, player?.id, player?.teamId, dnRound, v9AfterDismissed, swrInputs.ownerNames]);
   const showWorldExplanation = useCallback((eventId: string) => {
     const v = swrViewRef.current;
     const ans = v ? buildWorldExplanationAnswer(eventId, v) : null;
@@ -172294,6 +173107,8 @@ function dispatchGameSettingsChange(
         return prio === 'critical' || prio === 'important' || (prio === 'update' && !isRoutineActivityNotification(n));
       });
     }
+    // V9 cohesion: PLAY already tells this story — suppress repeats and collapse near-duplicates (critical always kept).
+    if (experienceLayer === 'play' && isLiveIntentMatch) filtered = v9DedupeNotifications(filtered, v9Cohesion.surfacedKeys, n => isCriticalNotification(n));
     if (filtered.length === 0) return null;
     const ordered = settings.stackOrder === 'newest-first'
       ? [...filtered].reverse()
@@ -172350,6 +173165,8 @@ function dispatchGameSettingsChange(
               key={notification.id}
               className={`${themeStyles.card} border-l-4 rounded-lg p-2.5 ${borderClass} ${shadowClass} transform transition-all duration-300 hover:scale-105 pointer-events-none select-none`}
               data-testid="notification-toast"
+              data-v9-class={v9NotificationClass(notification as any)}
+              aria-label={`${v9NotificationClass(notification as any).replace(/_/g, ' ')}: ${String((notification as any).message || '')}`}
               style={{
                 borderLeftColor: notifType.color,
                 opacity: (settings.opacity || 100) / 100,
@@ -175098,59 +175915,62 @@ function dispatchGameSettingsChange(
       </div>
     );
 
+    const v9HumanCanAct = playerControlState.isHumanTurn && !playerControlState.copilotHoldsControl && playerControlState.owner !== 'ai_only';
+    const v9Simple = getIntentPresentationLevel(gameSettings) === 'simple' || getIntentPresentationLevel(gameSettings) === 'guided';
+    const v9EndTurn = () => handleV9Button({ id: 'v9_header_end_turn', label: 'End Turn', kind: 'end_turn' });
+    const v9PlayHandlers: V9PlayHandlers = {
+      onDo: id => {
+        const cand = (v9ActionSetView?.ranked || []).find(x => x.id === id);
+        if (!cand) return;
+        const buttons = buildContextualCandidateButtons(cand, playerControlState, { includeWhy: false });
+        const primary = buttons.find(b => b.kind === 'do' || b.kind === 'end_turn') || buttons.find(b => b.kind === 'open');
+        if (primary) handleV9Button(primary);
+      },
+      onWhyAction: id => handleV9Button({ id: `why_${id}`, label: 'Why?', kind: 'why', candidateId: id }),
+      onWhatIf: label => void submitIntelligenceQuery(`What if I ${label.charAt(0).toLowerCase()}${label.slice(1)}?`),
+      onAsk: q => void submitIntelligenceQuery(q),
+      onWhyEvent: id => showWorldExplanation(id),
+      onViewPlan: () => setExperienceLayer('intelligence'),
+      onAllActions: showAllActions,
+      onDecision: (kind, optionId, refId) => {
+        if (kind === 'faction_dilemma') {
+          const d = rfState && rfViewRef.current?.inputs ? rfBuildDilemmas(rfState, rfViewRef.current.inputs).find(x => x.id === refId) : null;
+          if (d) rfChoose(d, optionId);
+        } else if (kind === 'diplomatic_response') handleV9Button({ id: 'v9_dn_open', label: 'Review & respond', kind: 'dn_open', candidateId: refId });
+        else updateUiState({ showCoPilotProposalModal: true });
+      },
+      onDismissBrief: () => setV9BriefSeenTurn(dnRound),
+      onRegion: code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }
+    };
+
+    /** Selected region → ONE coherent story (UiGameplayContext: selection only, never saved). */
+    const v9RegionContextFor = (code: string | null | undefined): V9RegionContext | null => {
+      if (!code) return null;
+      const st = lrInputs.standing?.[String(player?.id || 'player')]?.[code];
+      return buildV9RegionContext(code, lrViewRef.current, rfViewRef.current, typeof st === 'number' ? st : null);
+    };
+
     const renderV9PlayHud = () => {
-      const turnOwnerLabel = isPlayerTurn
-        ? 'Your turn'
-        : `${currentActor?.displayName || currentActor?.name || v9CurrentActorName}'s turn`;
-      const apLabel = v9ApFinite ? `${apRemainingNow} left` : 'Unlimited';
+      const introDismissed = (gameSettings.playerIntentOnboardingDismissed || []).includes('v9_cohesion_intro');
       return (
         <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3" data-testid="v9-play-hud">
-          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-3 ${themeStyles.shadow} grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 text-sm`}>
-            <div className="col-span-2 md:col-span-3 xl:col-span-2 min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Objective</div>
-              <div className="font-bold truncate" title={currentObjective.description}>{currentObjective.title}</div>
-              <div className="text-xs opacity-75">
-                {currentObjective.progress.completed}/{currentObjective.progress.total} requirements
-                {currentObjective.recommendedNextStep ? ` • Next: ${currentObjective.recommendedNextStep.label}` : ''}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Day</div>
-              <div className="font-bold">{gameState.day} / {gameSettings.totalDays}</div>
-              <div className="text-xs opacity-75">{isTeamMode ? `Round ${gameState.roundNumber} • ` : ''}{turnOwnerLabel}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Actions</div>
-              <div className="font-bold">{apLabel}</div>
-              <div className="text-xs opacity-75">{v9ApFinite ? `${v9ApUsed} used this turn` : 'Action limits off'}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Cash</div>
-              <div className="font-bold">${Number(player.money || 0).toLocaleString()}</div>
-              <div className="text-xs opacity-75 truncate" title={winConditionLabel}>{WIN_METRIC_PROFILES[gameSettings.winCondition]?.label || 'Win condition'}</div>
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70">Location</div>
-              <div className="font-bold truncate">{currentRegion?.name || player.currentRegion}</div>
-              <div className="text-xs opacity-75 truncate">Control: {currentRegionControllerName || 'None'}</div>
-            </div>
-          </div>
+          <V9MatchHeader
+            c={v9Cohesion}
+            theme={themeStyles}
+            onEndTurn={v9HumanCanAct ? v9EndTurn : null}
+            endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
+            onStanding={() => void submitIntelligenceQuery('Who is winning and why?')}
+          />
 
-          {attention.state !== 'good' && (
-            <div
-              role="alert"
-              className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm ${attention.state === 'critical' ? 'border-red-500/70' : 'border-amber-500/70'} ${themeStyles.card}`}
-            >
-              <span className="font-extrabold">{attention.state === 'critical' ? '⚠️' : '❗'} {attention.label}</span>
+          {attention.state === 'needs_attention' && !v9Cohesion.focus.temporary && (
+            <div role="alert" className={`rounded-xl border-2 px-3 py-2 flex flex-wrap items-center gap-2 text-sm border-amber-500/70 ${themeStyles.card}`}>
+              <span className="font-extrabold">❗ {attention.label}</span>
               <span className="opacity-90 flex-1 min-w-[12rem]">{attention.detail}</span>
               {attention.navigation && (
                 <button type="button" className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => openIntentNav(attention.navigation)}>
                   {attention.navigation.label}
                 </button>
               )}
-              <button type="button" className={`${themeStyles.buttonSecondary} px-2.5 py-1 rounded-lg text-xs font-semibold`} onClick={() => void submitIntelligenceQuery('What should I do next?')}>
-                Why? / What now?
-              </button>
             </div>
           )}
 
@@ -175183,53 +176003,49 @@ function dispatchGameSettingsChange(
             </div>
           )}
 
-          <BackgroundAIPlayStrip
-            state={bgLive}
+          {!introDismissed && (
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="v9-cohesion-intro">
+              <span className="font-semibold">💡 How to read PLAY</span>
+              <span className="opacity-85 flex-1 min-w-[12rem]">Your <b>Current Focus</b> is the strategic goal. The <b>Recommended Action</b> is the best next step toward it. <b>What Changed</b> is the one story that matters since your last turn. Ask <b>Why?</b> anywhere — INTELLIGENCE answers, LAB shows the machinery.</span>
+              <button
+                type="button"
+                className="opacity-70 underline"
+                onClick={() => trackedSetGameSettings('direct_player_change', 'Intent onboarding', prev => ({
+                  ...prev,
+                  playerIntentOnboardingDismissed: [...(prev.playerIntentOnboardingDismissed || []), 'v9_cohesion_intro']
+                }))}
+              >
+                Got it
+              </button>
+            </div>
+          )}
+
+          <V9CohesionPlay
+            c={v9Cohesion}
             theme={themeStyles}
-            onAsk={q => void submitIntelligenceQuery(q)}
-            onButton={handleV9Button}
-            onOpen={() => setExperienceLayer('intelligence')}
-            settingsObservation={siBackgroundObservation}
-            diplomacyObservation={dnObservations[0]?.text || null}
+            h={v9PlayHandlers}
+            simple={v9Simple}
+            humanCanAct={v9HumanCanAct}
+            afterAction={v9AfterAction}
+            onDismissAfter={() => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20))}
           />
 
-          {swrEnabled && (
-            <WorldConsequenceChainStrip state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} />
+          <div className="text-xs">
+            <button type="button" className="underline opacity-80" aria-expanded={v9PlayDetailsOpen} data-testid="v9-play-details-toggle" onClick={() => setV9PlayDetailsOpen(o => !o)}>
+              {v9PlayDetailsOpen ? 'Hide system breakdown' : 'Show system breakdown (strategy, analysis, world, regions, factions, team)'}
+            </button>
+          </div>
+          {v9PlayDetailsOpen && (
+            <div className="space-y-3" data-testid="v9-play-details">
+              <GI3PlayStrip state={gi3Live} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onView={() => setExperienceLayer('intelligence')} />
+              <BackgroundAIPlayStrip state={bgLive} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpen={() => setExperienceLayer('intelligence')} settingsObservation={siBackgroundObservation} diplomacyObservation={dnObservations[0]?.text || null} />
+              {swrEnabled && <WorldConsequenceChainStrip state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} />}
+              {swrEnabled && <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
+              {swrEnabled && <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />}
+              {teamOsView && <TeamMissionBoard view={teamOsView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpenLab={() => setExperienceLayer('lab')} />}
+              <ContextualActionPanel actionSet={v9ActionSetView} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
+            </div>
           )}
-
-          {swrEnabled && (
-            <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />
-          )}
-
-          {swrEnabled && (
-            <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true }); }} />
-          )}
-
-          <GI3PlayStrip
-            state={gi3Live}
-            theme={themeStyles}
-            onAsk={q => void submitIntelligenceQuery(q)}
-            onButton={handleV9Button}
-            onView={() => setExperienceLayer('intelligence')}
-          />
-
-          {teamOsView && (
-            <TeamMissionBoard
-              view={teamOsView}
-              theme={themeStyles}
-              onAsk={q => void submitIntelligenceQuery(q)}
-              onButton={handleV9Button}
-              onOpenLab={() => setExperienceLayer('lab')}
-            />
-          )}
-
-          <ContextualActionPanel
-            actionSet={v9ActionSetView}
-            control={playerControlState}
-            theme={themeStyles}
-            onButton={handleV9Button}
-            onShowAllActions={showAllActions}
-          />
         </div>
       );
     };
@@ -175248,8 +176064,28 @@ function dispatchGameSettingsChange(
       const compactPanel = renderCompactCoPilotPanel();
       return (
         <div role="tabpanel" id="v9-layer-panel-intelligence" aria-labelledby="v9-layer-tab-intelligence" className="mb-4 grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="v9-intelligence">
+          <div className="xl:col-span-3 space-y-2 min-w-0">
+            <V9StrategicBrief
+              c={v9Cohesion}
+              theme={themeStyles}
+              strategyLine={v9Cohesion.focus.source === 'strategy' && gi3Live?.active && gi3Live.active.status === 'active' ? `${gi3Live.active.mission.label}${v9Cohesion.focus.breadcrumb.length ? ` — ${v9Cohesion.focus.breadcrumb.map(b => b.label).join(' → ')}` : ''}` : null}
+              extra={[
+                ...(v9Cohesion.status.filter(x => x.tone === 'bad' || x.tone === 'warn').slice(0, 1).map(x => ({ label: 'Main risk', text: x.text }))),
+                ...(v9Cohesion.team ? [{ label: 'Team', text: `${v9Cohesion.team.mission}${v9Cohesion.team.issue ? ` — issue: ${v9Cohesion.team.issue}` : ''}` }] : [])
+              ]}
+            />
+            <V9IntelNav
+              region={lrFocusRegion ? (lrState?.regions[lrFocusRegion]?.name || lrFocusRegion) : null}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onGo={id => {
+                const el = typeof document !== 'undefined' ? document.getElementById(`v9-intel-${id}`) : null;
+                if (el) { el.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); return; }
+                void submitIntelligenceQuery(id === 'rivals' ? (isTeamMode ? 'What is the enemy team doing?' : 'What is the opponent threatening?') : id === 'diplomacy' ? 'What agreements do I have?' : id === 'team' ? 'What is my teammate doing?' : 'What should I do next?');
+              }}
+            />
+          </div>
           <div className="xl:col-span-2 space-y-4 min-w-0">
-            <section aria-labelledby="v9-intel-ask-heading" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow} space-y-3`}>
+            <section id="v9-intel-ask" aria-labelledby="v9-intel-ask-heading" className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 ${themeStyles.shadow} space-y-3`}>
               <div>
                 <h2 id="v9-intel-ask-heading" className="font-bold text-lg">🧠 Game Intelligence</h2>
                 <p className={`text-xs ${themeStyles.textMuted || 'opacity-75'}`}>
@@ -175294,6 +176130,7 @@ function dispatchGameSettingsChange(
               )}
             </section>
 
+            <div id="v9-intel-strategy" />
             <GI3StrategicCommandCenter
               state={gi3Live}
               theme={themeStyles}
@@ -175302,6 +176139,7 @@ function dispatchGameSettingsChange(
               nameOf={id => { const a: any = (actorsById as any)?.[id]; return String(a?.displayName || a?.name || id); }}
             />
 
+            <div id="v9-intel-situation" />
             <BackgroundAIWorkspace
               state={bgLive}
               theme={themeStyles}
@@ -175310,12 +176148,25 @@ function dispatchGameSettingsChange(
               onToggle={toggleBackgroundAI}
             />
 
+            <div id="v9-intel-world" />
+            {swrEnabled && (
+              <div className="space-y-2">
+                <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
+                <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
+              </div>
+            )}
             {swrEnabled && (
               <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
             )}
 
+            {teamOsView && (
+              <div id="v9-intel-team">
+                <TeamMissionBoard view={teamOsView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onButton={handleV9Button} onOpenLab={() => setExperienceLayer('lab')} />
+              </div>
+            )}
+
             <section aria-label="Recommended">
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Recommended · with reasons</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">All ranked actions · with reasons</div>
               <ContextualActionPanel actionSet={v9ActionSetView} control={playerControlState} theme={themeStyles} onButton={handleV9Button} onShowAllActions={showAllActions} />
             </section>
 
@@ -175405,7 +176256,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -175442,6 +176293,7 @@ function dispatchGameSettingsChange(
         <WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} />
         <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
         <FactionInspector view={rfViewRef.current} theme={themeStyles} />
+        <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
       </div>
     );
 
@@ -175479,11 +176331,10 @@ function dispatchGameSettingsChange(
         {/* Notification Bar */}
         {renderNotificationBar()}
         
-        {/* Turn Indicator */}
-        {renderTurnIndicator()}
+        {/* Turn Indicator / Transit banner — in PLAY the unified Match Header carries both (no duplicate floating pill). */}
+        {experienceLayer !== 'play' && renderTurnIndicator()}
 
-        {/* HUD Transit Banner */}
-        {renderHudTransitBanner()}
+        {experienceLayer !== 'play' && renderHudTransitBanner()}
 
         {/* V9: PLAY | INTELLIGENCE | LAB + the single persistent Human/AI control status.
             (Replaces the separate CoPilotLiveTurnIndicator banner; same Take Control / Resume / Start paths.) */}
@@ -175573,7 +176424,7 @@ function dispatchGameSettingsChange(
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2 max-w-[95vw]">
-                <span className={quickActionLabelClass}>Quick Actions:</span>
+                <span className={quickActionLabelClass} title="Shortcuts to common actions. Your recommended next step is on the PLAY card above.">Shortcuts:</span>
                 {filteredQuickActions.length > 0 ? (
                   filteredQuickActions.map((action, index) => {
                     const isPinned = (uiState.quickActionPinned || []).includes(action.id);
@@ -175622,6 +176473,8 @@ function dispatchGameSettingsChange(
 
         {/* V9: the classic board (status, map, region, full action bar, stats) is the PLAY layer. */}
         {experienceLayer === 'play' && (<>
+        <details className="mb-4" open={!v9Simple} data-testid="v9-match-standing">
+          <summary className="cursor-pointer text-xs font-semibold opacity-80 mb-2">📊 Match standing, conditions & events</summary>
 	        {/* Top Status Bar */}
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-4 mb-4 ${themeStyles.shadow}`}>
 	          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -176546,6 +177399,7 @@ function dispatchGameSettingsChange(
         );
       })()}
 
+        </details>
         {/* Action Buttons Bar (V9: the complete action set — "More Actions" scrolls here) */}
         <div id="v9-all-actions-bar" />
         {simplifiedActionBarActive ? (
@@ -176908,8 +177762,16 @@ function dispatchGameSettingsChange(
                         {Object.keys(lrState.regions).map(c => <option key={c} value={c}>{lrState.regions[c].name}</option>)}
                       </select>
                     </label>
-                    <LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} />
-                    <RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} />
+                    <V9RegionContextPanel
+                      ctx={v9RegionContextFor(focus)}
+                      theme={themeStyles}
+                      onAsk={q => void submitIntelligenceQuery(q)}
+                      onTravel={focus !== player.currentRegion ? () => updateUiState({ showTravelModal: true }) : undefined}
+                      onInvest={() => updateUiState({ showInfrastructureProjectsModal: true })}
+                      onContracts={() => updateUiState({ showRegionalContractsModal: true })}
+                      onNegotiate={() => updateUiState({ showAiRivalryModal: true })}
+                      more={<><LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>}
+                    />
                   </div>
                 );
               })()}
@@ -176948,7 +177810,7 @@ function dispatchGameSettingsChange(
                           <div>{selectedPreviewActiveEvent ? `Event: ${selectedPreviewActiveEvent.name}` : 'No active event'}</div>
                         </div>
                       </div>
-                      <div className="mt-3 space-y-2"><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></div>
+                      <div className="mt-3 space-y-2"><V9RegionContextPanel ctx={v9RegionContextFor(selectedPreviewRegionCode)} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onContracts={() => updateUiState({ showRegionalContractsModal: true })} onNegotiate={() => updateUiState({ showAiRivalryModal: true })} more={<><LivingRegionCard view={lrViewRef.current} regionId={selectedPreviewRegionCode} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={selectedPreviewRegionCode} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>} /></div>
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
@@ -184940,7 +185802,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     const activeContracts = contracts.filter((c: any) => c.status === 'active');
     // Living Regions ranks relevance only (the contract system still decides what exists and what it pays).
     // Faction priorities (issuer influence, open requests) add to the regional relevance — ranking only.
-    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c).score + rfContractRelevance(rfState, c, rfPlayerId).score })).sort((a: any, b: any) => b.rel - a.rel || a.i - b.i).map((x: any) => x.c);
+    const availableContracts = contracts.filter((c: any) => c.status === 'available').map((c: any, i: number) => ({ c, i, rel: lrContractRelevance(lrState, c).score + rfContractRelevance(rfState, c, rfPlayerId).score, sel: lrFocusRegion && (c.issuingRegionId || c.regionId) === lrFocusRegion ? 1 : 0 })).sort((a: any, b: any) => b.sel - a.sel || b.rel - a.rel || a.i - b.i).map((x: any) => x.c); // V9: the selected region's contracts first (selection context carries across screens)
     const completedContracts = contracts.filter((c: any) => c.status === 'completed' || c.status === 'failed');
 
     return (
