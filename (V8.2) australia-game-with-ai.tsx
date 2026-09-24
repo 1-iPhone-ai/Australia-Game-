@@ -10366,6 +10366,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     teamOperatingSystem: sanitizeTeamOperatingSystemState(save?.teamOperatingSystem || gameState?.teamOperatingSystem),
     gi3Strategy: sanitizeGI3StrategyState(save?.gi3Strategy || gameState?.gi3Strategy),
     backgroundAI: sanitizeBackgroundAIState(save?.backgroundAI || gameState?.backgroundAI),
+    settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10535,6 +10536,7 @@ export function canonicalStateFromLiveRuntime(
     teamOperatingSystem: sanitizeTeamOperatingSystemState(liveState.teamOperatingSystem || gameState?.teamOperatingSystem),
     gi3Strategy: sanitizeGI3StrategyState(liveState.gi3Strategy || gameState?.gi3Strategy),
     backgroundAI: sanitizeBackgroundAIState(liveState.backgroundAI || gameState?.backgroundAI),
+    settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -20521,6 +20523,8 @@ export interface GameExperienceScreenProps {
   onOpenAdvancedSettings?: (tab?: string, section?: string) => void;
   isDark?: boolean;
   isRetro?: boolean;
+  /** Settings Intelligence 2.0 (read + recommend; applies only through the canonical transaction engine). */
+  settingsIntelligence?: SettingsIntelligenceBinding | null;
 }
 
 export interface SettingsExperienceShellProps {
@@ -20538,6 +20542,7 @@ export interface SettingsExperienceShellProps {
   children?: React.ReactNode;
   /** Built only when the Advanced tab is shown — evaluating the hub tree on Game Experience crashes Proceed. */
   renderAdvanced?: () => React.ReactNode;
+  settingsIntelligence?: SettingsIntelligenceBinding | null;
 }
 
 export function scheduleAutoModeEvaluationBoundary(
@@ -21613,6 +21618,7 @@ interface SaveGameData {
   teamOperatingSystem?: TeamOperatingSystemState;
   gi3Strategy?: GI3StrategyState;
   backgroundAI?: BackgroundAIState;
+  settingsIntelligence?: SettingsIntelligenceState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35604,7 +35610,8 @@ export const initialGameState = {
   teamStrategicPlansByTeam: {} as Record<string, TeamStrategicPlan>,
   teamOperatingSystem: { version: 1, byTeam: {} } as TeamOperatingSystemState,
   gi3Strategy: createEmptyGI3StrategyState(),
-  backgroundAI: createEmptyBackgroundAIState()
+  backgroundAI: createEmptyBackgroundAIState(),
+  settingsIntelligence: createEmptySettingsIntelligenceState()
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -79505,6 +79512,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.gi3Strategy = sanitizeGI3StrategyState(migrated.gameState.gi3Strategy || migrated.gi3Strategy);
   // Background AI: older saves load with a fresh (advisor) state; prepared simulations are never restored.
   if (migrated.gameState) migrated.gameState.backgroundAI = sanitizeBackgroundAIState(migrated.gameState.backgroundAI || migrated.backgroundAI);
+  // Settings Intelligence: only acknowledgements, monitoring and recent history persist (never previews).
+  if (migrated.gameState) migrated.gameState.settingsIntelligence = sanitizeSettingsIntelligenceState(migrated.gameState.settingsIntelligence || migrated.settingsIntelligence);
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
 
@@ -97799,7 +97808,8 @@ export const GameExperienceScreen: React.FC<GameExperienceScreenProps> = ({
   isLiveMatch = false,
   onOpenAdvancedSettings,
   isDark = true,
-  isRetro = false
+  isRetro = false,
+  settingsIntelligence = null
 }) => {
   const currentProfile = profile || gameSettings?.smartSettingsProfile || createDefaultSmartSettingsProfile();
   const [isPreviewOpen, setIsPreviewOpen] = React.useState<boolean>(false);
@@ -97928,6 +97938,12 @@ export const GameExperienceScreen: React.FC<GameExperienceScreenProps> = ({
         </div>
       </div>
 
+      {settingsIntelligence && (
+        <InlineRenderErrorBoundary fallbackTitle="Settings Intelligence could not render">
+          <SettingsIntelligencePanel binding={settingsIntelligence} isDark={isDark} />
+        </InlineRenderErrorBoundary>
+      )}
+
       <InlineRenderErrorBoundary fallbackTitle="Game Experience Director crashed after applying Autonomous">
       <GameExperienceDirectorPanel
         profile={currentProfile}
@@ -98034,7 +98050,8 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
   isLiveMatch = false,
   initialTab = 'experience',
   children,
-  renderAdvanced
+  renderAdvanced,
+  settingsIntelligence = null
 }) => {
   const [viewMode, setViewMode] = React.useState<'experience' | 'advanced'>(
     initialTab === 'advanced' || (uiState?.settingsActiveTab && uiState.settingsActiveTab !== 'home' && uiState.settingsActiveTab !== 'experience')
@@ -98245,6 +98262,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
             onUpdateProfile={onUpdateProfile}
             onApplyPlan={onApplyPlan}
             isLiveMatch={isLiveMatch}
+            settingsIntelligence={settingsIntelligence}
             onOpenAdvancedSettings={(tab, section) => {
               setViewMode('advanced');
               if (updateUiState) {
@@ -98267,6 +98285,11 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
               onSwitchToExperience={() => setViewMode('experience')}
               uiState={uiState}
             />
+            {settingsIntelligence?.snapshot && (currentProfile.interfaceLevel === 'advanced' || currentProfile.interfaceLevel === 'expert') && (
+              <div className="px-3 sm:px-6 pt-2 shrink-0 max-h-[40vh] overflow-y-auto">
+                <SettingsIntelligenceAnnotations snapshot={settingsIntelligence.snapshot} level={currentProfile.interfaceLevel} isDark={isDark} />
+              </div>
+            )}
             <AdvancedSettingsContainer
               profile={currentProfile}
               gameSettings={gameSettings}
@@ -100258,6 +100281,12 @@ export type GameIntelligenceButtonKind =
   | 'bg_continue_action'
   | 'bg_dismiss'
   | 'bg_mode'
+  | 'bg_analyze_settings'
+  | 'si_apply'
+  | 'si_ack'
+  | 'si_open'
+  | 'si_undo'
+  | 'si_keep'
   | 'team_cancel'
   | 'team_proposal_accept'
   | 'team_proposal_reject'
@@ -101817,6 +101846,8 @@ export interface GIWorld {
   gi3?: GI3StrategyState | null;
   /** Background AI (Parallel Intelligence System): its prepared, read-only analysis (null when off). */
   backgroundAI?: BackgroundAIState | null;
+  /** Settings Intelligence 2.0: read-only view of the configuration plus its bounded state and evidence. */
+  settingsIntel?: SettingsIntelligenceWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -102018,6 +102049,8 @@ export interface GIConversationContext {
   pendingTeamDraft?: { kind: 'apply' | 'adopt'; command: TeamCommandIntent; summary: string } | null;
   /** GI3: a strategy preview / what-if waiting for Activate / Adopt (never applied automatically). */
   pendingGI3Draft?: { kind: 'activate' | 'adopt'; contract: GI3StrategyContract; changes: string[] } | null;
+  /** Settings Intelligence: the recommendation last previewed (rebuilt from current settings at Apply time). */
+  pendingSettingsRec?: { id: string; text: string; goal: string } | null;
   /** Which strategy layer the last strategic exchange touched (routes "make that…" repairs). */
   lastStrategyDomain?: 'gi3' | 'team' | null;
   /** GI3 references: last goal / field / change discussed ("drop the second goal", "why did that change?"). */
@@ -102130,7 +102163,8 @@ export function sanitizeGIConversationContext(raw: unknown): GIConversationConte
     lastStrategyDomain: src.lastStrategyDomain === 'gi3' || src.lastStrategyDomain === 'team' ? src.lastStrategyDomain : null,
     lastStrategyGoalId: typeof src.lastStrategyGoalId === 'string' ? src.lastStrategyGoalId.slice(0, 80) : null,
     lastStrategyField: ['cash', 'reserve', 'region', 'loan'].includes(src.lastStrategyField as string) ? src.lastStrategyField! : null,
-    lastStrategyChange: typeof src.lastStrategyChange === 'string' ? src.lastStrategyChange.slice(0, 200) : null
+    lastStrategyChange: typeof src.lastStrategyChange === 'string' ? src.lastStrategyChange.slice(0, 200) : null,
+    pendingSettingsRec: src.pendingSettingsRec && typeof src.pendingSettingsRec.id === 'string' ? { id: src.pendingSettingsRec.id.slice(0, 120), text: String(src.pendingSettingsRec.text || '').slice(0, 300), goal: String(src.pendingSettingsRec.goal || '').slice(0, 40) } : null
   };
 }
 
@@ -104443,7 +104477,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104473,6 +104507,8 @@ export interface GIQueryUnderstanding {
   strategyIntent?: GI3IntentKind;
   /** Background AI: the question is addressed to Background AI itself. */
   backgroundTopic?: BackgroundQueryTopic;
+  /** Settings Intelligence: a configuration question or desired-experience request. */
+  settingsIntent?: SIIntent;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104871,10 +104907,32 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     }
   }
 
+  // ---- Settings Intelligence 2.0: configuration questions and desired-experience requests ----
+  // GI3 (what the player wants in the match) stays separate: only AI / teammate / game-configuration
+  // language reaches here, and a GI3 strategy never becomes settings permission.
+  let settingsIntent: SIIntent | undefined;
+  if (primary !== 'control' && !strategyIntent && !backgroundTopic) {
+    const si = world.settingsIntel ? understandSettingsIntent(frame.originalQuery || normalized, world.actors.filter(a => a.relation === 'teammate').map(a => a.name)) : null;
+    // A behaviour symptom ("why won't my teammate spend?") belongs to Settings Intelligence only when the
+    // configuration actually contributes (or settings are named); otherwise the cross-system answer explains it.
+    const symptomNeedsConfig = Boolean(si && si.symptom && !/\bsettings?|configur/.test(normalized) && (() => {
+      const v = world.settingsIntel!;
+      const { snapshot } = buildSettingsIntelligenceHealth(v.settings, v.ctx, v.state);
+      const d = diagnoseSettingsSymptom(si!, snapshot, v.settings, v.evidence);
+      return d.classification === 'gameplay' || d.classification === 'none';
+    })());
+    if (si && !symptomNeedsConfig) {
+      settingsIntent = si;
+      primary = 'settings_intelligence';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false;
+    }
+  }
+
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -104894,7 +104952,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -104907,7 +104965,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -104950,10 +105008,11 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence'].includes(primary),
     teamCommand,
     strategyIntent,
     backgroundTopic,
+    settingsIntent,
     strategyControl
   };
 }
@@ -105077,7 +105136,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105120,7 +105179,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   strategy_status: ['gi3_state'],
   strategy_control: ['gi3_state'],
   strategy_whatif: ['gi3_state'],
-  background_ai: ['bg_state']
+  background_ai: ['bg_state'],
+  settings_intelligence: ['si_state']
 };
 
 export interface GIQueryPlan {
@@ -105144,7 +105204,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules'
 };
 
 function giHash(text: string): string {
@@ -105211,6 +105271,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('team_command') || want('team_explain') || want('team_whatif')) add('team_state', {}, { purpose: 'Team Operating System: mission, objectives, tasks, roles, resources, conflicts' });
     if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
+    if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
   }
 
   const complex = u.queryType === 'compound' || u.options.length >= 2 || Boolean(u.horizon && u.horizon.count > 1);
@@ -105718,6 +105779,12 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         }
       }
       return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'si_state': {
+      const view = world.settingsIntel;
+      const facts: GIFact[] = [];
+      if (view) { const f = fact('si.config', 'Configuration (Settings Intelligence)', computeSettingsIntelligenceHash(view.settings, view.ctx), 'Settings Intelligence (canonical settings + dependency inspection)', 'rules'); facts.push(f); g.fact(f); }
+      return { ...base, ok: Boolean(view), data: view ? { mode: view.ctx.mode } : null, facts };
     }
     case 'bg_state': {
       const st = world.backgroundAI;
@@ -107646,6 +107713,16 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'settings_intelligence': {
+      kind = 'next_step';
+      const part = composeSettingsIntelligenceAnswer(u.settingsIntent!, world);
+      title = part.title || 'Settings Intelligence';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      Object.assign(ctx, part.ctx);
+      break;
+    }
     case 'background_ai': {
       kind = 'next_step';
       const part = composeBackgroundAIAnswer(u.backgroundTopic || 'status', world, u.normalizedQuery);
@@ -107852,6 +107929,7 @@ function updateGIContext(prev: GIConversationContext, u: GIQueryUnderstanding, c
     if (cu.pendingClarification !== undefined) next.pendingClarification = cu.pendingClarification;
     if (cu.pendingTeamDraft !== undefined) next.pendingTeamDraft = cu.pendingTeamDraft;
     if (cu.pendingGI3Draft !== undefined) next.pendingGI3Draft = cu.pendingGI3Draft;
+    if (cu.pendingSettingsRec !== undefined) next.pendingSettingsRec = cu.pendingSettingsRec;
     if (cu.lastStrategyDomain !== undefined) next.lastStrategyDomain = cu.lastStrategyDomain;
     if (cu.lastStrategyGoalId !== undefined) next.lastStrategyGoalId = cu.lastStrategyGoalId;
     if (cu.lastStrategyField !== undefined) next.lastStrategyField = cu.lastStrategyField;
@@ -108156,6 +108234,7 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   team_state: ['team_strategy', 'team_resources', 'team_governance', 'approvals', 'actors', 'world', 'player'],
   gi3_state: ['strategy', 'player', 'world', 'projects', 'contracts', 'team_strategy', 'team_resources'],
   bg_state: ['background', 'strategy', 'player', 'world', 'actors', 'contracts', 'team_strategy'],
+  si_state: ['assistance', 'team_strategy', 'team_resources', 'history'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -115565,7 +115644,7 @@ export interface BackgroundAIPanelProps {
 }
 
 /** PLAY: one compact card — watching, plan, next, confidence — plus the surfaced notice, if any. */
-export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: () => void }> = ({ state, theme, onAsk, onButton, onOpen }) => {
+export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: () => void; settingsObservation?: string | null }> = ({ state, theme, onAsk, onButton, onOpen, settingsObservation = null }) => {
   if (!state?.enabled || !state.strategicAssessment) return null;
   const top = state.attentionQueue.find(i => i.status === 'active') || null;
   const plan = state.shadowPlan;
@@ -115595,6 +115674,12 @@ export const BackgroundAIPlayStrip: React.FC<BackgroundAIPanelProps & { onOpen: 
         </div>
       )}
       {state.shadowPlan?.adaptation && !quietMode && <div className="opacity-85" data-testid="bg-adaptation">🔁 Plan adjusted — {state.shadowPlan.adaptation}</div>}
+      {settingsObservation && !quietMode && (
+        <div className="rounded-lg border border-sky-500/50 px-2 py-1 flex flex-wrap items-center gap-2" data-testid="bg-settings-observation">
+          <span className="flex-1 min-w-[12rem]">⚙️ {settingsObservation}</span>
+          <button type="button" className="underline" onClick={() => onButton({ id: 'bg_analyze_settings', label: 'Analyze Settings', kind: 'bg_analyze_settings' })}>Analyze Settings</button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <button type="button" className="underline" onClick={() => onAsk('Why do you prefer this move?')}>Why?</button>
         <button type="button" className="underline" onClick={onOpen}>Show Plan</button>
@@ -115744,6 +115829,2222 @@ export const ParallelIntelligenceInspector: React.FC<ParallelIntelligenceInspect
           {row('last return', st.coPilotReturn?.summary || '—')}
           <div className={label}>History</div>
           {st.history.slice(-10).map((h, i) => row(`t${h.turn} ${h.kind}`, h.summary, i))}
+        </div>
+      )}
+    </section>
+  );
+};
+
+
+// ============================================================================
+// SECTION 20G: SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR
+// ----------------------------------------------------------------------------
+// An intelligence layer ABOVE the Game Experience Director / Smart Settings. It reads, interprets,
+// diagnoses, recommends, previews and monitors — it never writes settings. Every recommendation compiles
+// into an ordinary SmartSettingsPlan that the player approves and applySmartSettingsPlan() applies (live
+// safety, deferral and undo stay canonical). Technical facts (defaults, validation, ranges, live safety,
+// fairness flag) come from SMART_CONTROLLABLE_SETTINGS_REGISTRY; this section only adds MEANING.
+// ============================================================================
+
+export type SIDomain = 'ai' | 'team' | 'economy' | 'automation' | 'fairness' | 'randomness' | 'pace' | 'interface' | 'replay' | 'privacy';
+export type SIImpactDim =
+  | 'ai_intelligence' | 'ai_aggression' | 'ai_caution' | 'ai_planning' | 'ai_responsiveness'
+  | 'team_coordination' | 'team_spending_freedom' | 'team_protection' | 'team_autonomy'
+  | 'player_control' | 'automation' | 'guidance' | 'game_pace' | 'randomness' | 'complexity'
+  | 'fairness' | 'performance_cost' | 'replay_compatibility';
+export type SIStatus = 'healthy' | 'healthy_custom' | 'caution' | 'imbalanced' | 'conflicted' | 'partially_inactive' | 'high_risk' | 'invalid';
+export type SIProblemType = 'dependency_missing' | 'conflicting_settings' | 'redundant_protection' | 'overly_restrictive' | 'overly_permissive' | 'extreme_value' | 'inert_setting'
+  | 'mode_inapplicable' | 'authority_mismatch' | 'fairness_mismatch' | 'performance_heavy' | 'replay_risk' | 'manual_override_drift' | 'preset_drift' | 'strategy_mismatch' | 'healthy_custom';
+export type SIConfidence = 'high' | 'moderate' | 'low';
+export type SILiveTiming = 'now' | 'turn_end' | 'next_match';
+
+export const SI_IMPACT_LABELS: Record<SIImpactDim, string> = {
+  ai_intelligence: 'AI intelligence', ai_aggression: 'AI aggression', ai_caution: 'AI caution', ai_planning: 'AI planning depth', ai_responsiveness: 'AI responsiveness',
+  team_coordination: 'Team coordination', team_spending_freedom: 'Team spending freedom', team_protection: 'Team financial protection', team_autonomy: 'Team AI autonomy',
+  player_control: 'Player control', automation: 'Automation', guidance: 'Guidance', game_pace: 'Game pace', randomness: 'Randomness', complexity: 'Complexity',
+  fairness: 'Fairness', performance_cost: 'Browser performance cost', replay_compatibility: 'Replay compatibility'
+};
+
+export interface SIBand { upTo: number; label: string; meaning: string }
+export interface SILevel { rank: number; label: string; meaning: string }
+export interface SIRequirement { key: string; equals?: any; notEquals?: any; label: string }
+
+/** Semantic sidecar: ONLY what the registry does not already say (meaning, bands, context, effects). */
+export interface SettingsIntelligenceMetadata {
+  key: string;
+  /** Label for settings that are not in the Smart Settings registry (registry labels win otherwise). */
+  label?: string;
+  domain: SIDomain;
+  axis: string;
+  playerMeaning: string;
+  /** Numeric range for settings outside the registry (registry min/max win otherwise). */
+  range?: [number, number];
+  bands?: SIBand[];
+  levels?: Record<string, SILevel>;
+  on?: { meaning: string; why: string; hurts: string };
+  off?: { meaning: string; why: string; hurts: string };
+  /** Base recommended zone (numeric value or level rank) plus per-AI-profile context adjustments. */
+  zone?: { base: [number, number]; byIntelligence?: Partial<Record<AiIntelligencePreference, [number, number]>>; byMode?: { team?: [number, number] } };
+  extremeLow?: number;
+  extremeHigh?: number;
+  tradeoff?: string;
+  goodFor?: string;
+  badFor?: string;
+  /** Qualitative browser cost per step above the minimum (only for settings that change AI search work). */
+  perf?: number;
+  /** Whose authority the setting changes: the player's (Co-Pilot / Auto Mode) or AI teammates'. */
+  authority?: 'player' | 'team_ai';
+  /** Consent-protected: Settings Intelligence may explain and navigate, never include it in a plan. */
+  consent?: boolean;
+  modes?: 'team' | 'any';
+  requires?: SIRequirement[];
+  /** Effect of RAISING the value (or turning it ON) on each impact dimension. */
+  effects?: Partial<Record<SIImpactDim, number>>;
+  related?: string[];
+  why?: { lower: string; raise: string };
+  expert?: string;
+  /** Canonical read for mirrored/nested settings (top-level compatibility value vs subsystem value). */
+  read?: (s: GameSettingsState) => any;
+}
+
+const SI_COMPETITIVE: SIRequirement = { key: 'teamCompetitiveAiEnabled', equals: true, label: 'Competitive Team AI' };
+const SI_GOVERNOR: SIRequirement = { key: 'teamEconomyGovernorEnabled', equals: true, label: 'Team Economy Governor' };
+const SI_TEAM_LEVELS = (a: string, b: string, c: string, d: string): Record<string, SILevel> => ({ low: { rank: 1, label: 'Loose', meaning: a }, balanced: { rank: 2, label: 'Balanced', meaning: b }, high: { rank: 3, label: 'Tight', meaning: c }, strict: { rank: 4, label: 'Strict', meaning: d } });
+
+export const SETTINGS_INTELLIGENCE_METADATA: SettingsIntelligenceMetadata[] = [
+  // ---- AI decision quality / performance ----
+  {
+    key: 'aiPlanningDepth', domain: 'ai', axis: 'AI planning', playerMeaning: 'How many steps ahead AI actors look before choosing an action.',
+    bands: [{ upTo: 1, label: 'Fast', meaning: 'Fast decisions with limited lookahead — reacts well to immediate opportunities, sees fewer multi-step consequences.' }, { upTo: 2, label: 'Standard', meaning: 'Considers the next step or two before committing.' }, { upTo: 3, label: 'Deep', meaning: 'Compares short multi-step plans before committing.' }, { upTo: 4, label: 'Very deep', meaning: 'Plans several steps ahead; stronger long-term comparisons.' }, { upTo: 5, label: 'Maximum', meaning: 'Deepest supported planning — best long-term comparison, highest computation cost.' }],
+    zone: { base: [2, 3], byIntelligence: { casual: [1, 2], capable: [2, 3], advanced: [2, 4], expert: [3, 5], maximum: [4, 5] } },
+    extremeHigh: 5, tradeoff: 'Deeper planning costs more browser computation and can make AI turns slower.', goodFor: 'Strategic, expert play', badFor: 'Fast casual matches on slower devices',
+    perf: 1.5, effects: { ai_intelligence: 1, ai_planning: 2, performance_cost: 1 }, related: ['teamAiTacticalLookaheadDepth', 'teamAiCandidateEvaluationWidth', 'projectedOutcomeHorizon', 'aiThinkingDepth'],
+    why: { lower: 'AI turns feel slow, or you want a gentler, more reactive opponent.', raise: 'AI misses obvious two-step plays and you want stronger strategy without numerical advantages.' },
+    expert: 'Search depth for AI planning (1–5). Multiplies with candidate width for search cost.'
+  },
+  {
+    key: 'aiThinkingDepth', domain: 'ai', axis: 'AI thinking tier', playerMeaning: 'Overall thinking budget tier used by AI actors.',
+    levels: { fast: { rank: 1, label: 'Fast', meaning: 'Quick heuristic decisions.' }, balanced: { rank: 2, label: 'Balanced', meaning: 'Standard evaluation budget.' }, deep: { rank: 3, label: 'Deep', meaning: 'More evaluation before each decision.' } },
+    zone: { base: [2, 2], byIntelligence: { casual: [1, 2], capable: [2, 2], advanced: [2, 3], expert: [2, 3], maximum: [3, 3] } },
+    tradeoff: 'Deep thinking is slower.', perf: 1, effects: { ai_intelligence: 1, performance_cost: 1 }, related: ['aiPlanningDepth'],
+    why: { lower: 'You want faster AI turns.', raise: 'You want more considered AI decisions.' }
+  },
+  {
+    key: 'teamAiTacticalLookaheadDepth', domain: 'ai', axis: 'Team AI lookahead', playerMeaning: 'How far Team Mode AI actors look ahead tactically.', modes: 'team',
+    bands: [{ upTo: 1, label: 'Fast', meaning: 'Immediate tactics only.' }, { upTo: 2, label: 'Standard', meaning: 'Looks one move beyond the current one.' }, { upTo: 3, label: 'Deep', meaning: 'Coordinates short sequences.' }, { upTo: 5, label: 'Very deep', meaning: 'Long tactical sequences; expensive.' }],
+    zone: { base: [2, 3], byIntelligence: { casual: [1, 2], capable: [2, 3], advanced: [2, 3], expert: [3, 4], maximum: [3, 5] } },
+    extremeHigh: 5, tradeoff: 'More lookahead makes team AI turns slower.', perf: 1.2, effects: { ai_intelligence: 1, ai_planning: 1, team_coordination: 1, performance_cost: 1 }, related: ['teamAiCandidateEvaluationWidth', 'aiPlanningDepth'],
+    why: { lower: 'Team Mode AI turns take too long.', raise: 'Teammates and rival teams miss short combinations.' }
+  },
+  {
+    key: 'teamAiCandidateEvaluationWidth', domain: 'ai', axis: 'Candidate evaluation', playerMeaning: 'How many candidate actions each Team Mode AI compares before choosing.', modes: 'team',
+    bands: [{ upTo: 2, label: 'Narrow', meaning: 'Compares very few options — fast but can miss good moves.' }, { upTo: 6, label: 'Standard', meaning: 'Compares a healthy set of options.' }, { upTo: 10, label: 'Wide', meaning: 'Compares many options — better choices, more computation.' }, { upTo: 15, label: 'Exhaustive', meaning: 'Compares nearly everything — the most expensive setting.' }],
+    zone: { base: [4, 6], byIntelligence: { casual: [3, 5], capable: [4, 6], advanced: [5, 8], expert: [6, 10], maximum: [8, 12] } },
+    extremeHigh: 13, tradeoff: 'Wider evaluation multiplies AI computation, especially with deep lookahead.', perf: 0.35, effects: { ai_intelligence: 1, performance_cost: 1 }, related: ['teamAiTacticalLookaheadDepth', 'aiPlanningDepth'],
+    why: { lower: 'AI turns are slow and the AI already plays well.', raise: 'AI overlooks good alternatives.' }
+  },
+  {
+    key: 'projectedOutcomeHorizon', domain: 'ai', axis: 'Outcome horizon', playerMeaning: 'How many days ahead AI projects outcomes when comparing plans.',
+    bands: [{ upTo: 3, label: 'Short', meaning: 'Short-term projections — reactive.' }, { upTo: 6, label: 'Normal', meaning: 'Balanced short and medium-term projections.' }, { upTo: 8, label: 'Long', meaning: 'Values long-term payoffs.' }, { upTo: 10, label: 'Very long', meaning: 'Heavily weights distant outcomes; costlier.' }],
+    zone: { base: [4, 6], byIntelligence: { casual: [3, 5], capable: [4, 6], advanced: [4, 7], expert: [5, 8], maximum: [5, 9] } },
+    extremeHigh: 10, perf: 0.2, effects: { ai_planning: 1, performance_cost: 1 }, related: ['aiPlanningDepth'],
+    why: { lower: 'AI undervalues immediate chances.', raise: 'AI chases short-term gains at the expense of later ones.' }
+  },
+  {
+    key: 'teamAiPlanMaximumDurationDays', domain: 'team', axis: 'Plan commitment', playerMeaning: 'How long Team AI sticks to a plan before re-planning.', modes: 'team',
+    bands: [{ upTo: 2, label: 'Short', meaning: 'Re-plans often — adaptive but less committed.' }, { upTo: 5, label: 'Normal', meaning: 'Balanced commitment.' }, { upTo: 10, label: 'Long', meaning: 'Sticks with plans; slower to adapt.' }],
+    zone: { base: [3, 5] }, effects: { team_coordination: 1, ai_responsiveness: -1 },
+    why: { lower: 'Team AI feels stuck on outdated plans.', raise: 'Team AI changes its mind too often (feels chaotic).' }
+  },
+  // ---- AI behaviour ----
+  {
+    key: 'aiStrategyLabPreset', domain: 'ai', axis: 'AI temperament', playerMeaning: 'The general strategic temperament of AI actors.',
+    levels: { defensive: { rank: 1, label: 'Defensive', meaning: 'Protects what it has; contests rarely.' }, economic: { rank: 2, label: 'Economic', meaning: 'Builds money first.' }, balanced: { rank: 3, label: 'Balanced', meaning: 'Mixes economy, expansion and defense.' }, classic: { rank: 3, label: 'Classic', meaning: 'Original balanced behaviour.' }, custom: { rank: 3, label: 'Custom', meaning: 'Custom Strategy Lab weights.' }, aggressive: { rank: 5, label: 'Aggressive', meaning: 'Contests and expands frequently.' } },
+    zone: { base: [2, 4] }, effects: { ai_aggression: 1, ai_caution: -1 }, related: ['adaptiveAiRiskBias'],
+    why: { lower: 'Opponents are too aggressive.', raise: 'Opponents feel passive.' }
+  },
+  {
+    key: 'adaptiveAiRiskBias', label: 'Adaptive AI Risk Appetite', domain: 'ai', axis: 'AI risk appetite', playerMeaning: 'How willing adaptive AI is to take risks.', range: [0.5, 2],
+    bands: [{ upTo: 0.79, label: 'Cautious', meaning: 'Avoids risk; tends to pass on contests.' }, { upTo: 1.2, label: 'Balanced', meaning: 'Takes reasonable risks.' }, { upTo: 1.7, label: 'Bold', meaning: 'Accepts risk for upside.' }, { upTo: 2, label: 'Reckless', meaning: 'Takes risks even when the odds are poor.' }],
+    zone: { base: [0.8, 1.3] }, extremeHigh: 1.8, requires: [{ key: 'adaptiveAiEnabled', equals: true, label: 'Adaptive AI' }], effects: { ai_aggression: 1, ai_caution: -1 }, related: ['aiStrategyLabPreset'],
+    why: { lower: 'AI throws money into bad risks.', raise: 'AI passes on reasonable opportunities.' }
+  },
+  {
+    key: 'teamAiEndgameAggressionMultiplier', label: 'Team AI Endgame Aggression', domain: 'ai', axis: 'Endgame aggression', playerMeaning: 'How much harder Team Mode AI pushes near the end of a match.', range: [0.5, 3], modes: 'team',
+    bands: [{ upTo: 0.99, label: 'Calm', meaning: 'No extra push in the endgame.' }, { upTo: 1.6, label: 'Normal', meaning: 'A reasonable late push.' }, { upTo: 2.2, label: 'Strong', meaning: 'A strong late push.' }, { upTo: 3, label: 'All-in', meaning: 'Spends heavily at the end regardless of reserves.' }],
+    zone: { base: [1, 1.8] }, requires: [SI_COMPETITIVE], effects: { ai_aggression: 1, team_protection: -1 },
+    why: { lower: 'Team AI wrecks its economy late.', raise: 'Team AI coasts to the finish.' }
+  },
+  // ---- Team coordination ----
+  {
+    key: 'teamModeAiSystemsEnabled', domain: 'team', axis: 'Team AI systems', playerMeaning: 'Master switch for Team Mode AI systems.', modes: 'team',
+    on: { meaning: 'Team Mode AI systems (team planning, support, coordination) run.', why: 'Team Mode with capable AI teammates and rivals.', hurts: 'Adds AI work each turn.' },
+    off: { meaning: 'Team Mode AI runs without its team-level systems.', why: 'Simplest possible Team Mode.', hurts: 'Teammates coordinate poorly and many team settings become inactive.' },
+    effects: { team_coordination: 2, complexity: 1 }
+  },
+  {
+    key: 'teamBrainTeammateSupportBias', domain: 'team', axis: 'Teammate support', playerMeaning: 'How strongly AI teammates prioritize helping each other.', modes: 'team',
+    bands: [{ upTo: 0.5, label: 'Independent', meaning: 'Teammates mostly act alone.' }, { upTo: 1.5, label: 'Cooperative', meaning: 'Teammates help when it is clearly useful.' }, { upTo: 3, label: 'Devoted', meaning: 'Teammates prioritize support heavily, sometimes over their own progress.' }],
+    zone: { base: [0.8, 2] }, effects: { team_coordination: 1 }, why: { lower: 'Teammates neglect their own goals to help.', raise: 'Teammates ignore each other.' }
+  },
+  {
+    key: 'parallelAiPlanningCoordinationStrictness', domain: 'team', axis: 'Team plan coordination', playerMeaning: 'How strictly parallel AI plans are coordinated to avoid clashes.', modes: 'team',
+    levels: SI_TEAM_LEVELS('Plans overlap freely — lively but can collide.', 'Clashes resolved sensibly.', 'Plans tightly coordinated.', 'Very tight coordination; fewer independent moves.'),
+    zone: { base: [2, 3] }, requires: [{ key: 'parallelAiPlanningEnabled', equals: true, label: 'Parallel AI Planning' }], effects: { team_coordination: 1, ai_responsiveness: -1 },
+    why: { lower: 'Team AI feels rigid.', raise: 'Team AI feels chaotic or duplicates effort.' }
+  },
+  {
+    key: 'teamAiReservationStrictness', domain: 'economy', axis: 'Resource reservations', playerMeaning: 'How strictly team AI reserves money/resources for planned actions.', modes: 'team',
+    levels: SI_TEAM_LEVELS('Reservations are soft; spending is flexible.', 'Reservations respected sensibly.', 'Reserved money is rarely touched.', 'Reserved money is locked until the plan runs.'),
+    zone: { base: [2, 3] }, effects: { team_protection: 1, team_spending_freedom: -1 }, related: ['vaultLockPercentage', 'economyReserveStrength'],
+    why: { lower: 'Team AI holds money for plans that never happen.', raise: 'Team AI spends money it had set aside.' }
+  },
+  {
+    key: 'teamAiStrategicCommandEnabled', domain: 'team', axis: 'Strategic Command', playerMeaning: 'Turns strategy into concrete directives for AI teammates.', modes: 'team',
+    on: { meaning: 'AI teammates receive concrete directives from the team strategy.', why: 'You want AI teammates to follow a shared plan.', hurts: 'Directives can override opportunistic moves.' },
+    off: { meaning: 'AI teammates choose freely; team strategies act only as advice.', why: 'You prefer independent teammates.', hurts: 'A Team OS strategy cannot reach AI directives.' },
+    requires: [SI_COMPETITIVE, { key: 'teamAiOverseerSystemEnabled', equals: true, label: 'Overseer system' }], effects: { team_coordination: 2, team_autonomy: -1 }
+  },
+  {
+    key: 'teamIntelligenceOsEnabled', label: 'Team Intelligence 2.0', domain: 'team', axis: 'Team Operating System', playerMeaning: 'The Team Operating System that plans roles and tasks for the team.', modes: 'team',
+    on: { meaning: 'Team OS keeps a team strategy with roles, tasks and resources.', why: 'Coordinated Team Mode.', hurts: 'Adds a planning layer.' },
+    off: { meaning: 'No team strategy layer.', why: 'Simplest Team Mode.', hurts: 'Team questions and team plans stop working.' },
+    effects: { team_coordination: 2 }
+  },
+  {
+    key: 'teamOsAuthorityLevel', label: 'Team OS Authority', domain: 'team', axis: 'Team AI authority', playerMeaning: 'How much Team OS may change the team strategy on its own.', modes: 'team', authority: 'team_ai',
+    levels: { manual: { rank: 1, label: 'Manual', meaning: 'Team OS analyses only.' }, advisor: { rank: 2, label: 'Advisor', meaning: 'Recommends; you decide.' }, assisted: { rank: 3, label: 'Assisted', meaning: 'Adjusts small things itself.' }, delegated: { rank: 4, label: 'Delegated', meaning: 'Runs the team strategy within your limits.' }, autonomous: { rank: 5, label: 'Autonomous', meaning: 'Runs the team strategy by itself.' } },
+    zone: { base: [2, 3] }, requires: [{ key: 'teamIntelligenceOsEnabled', notEquals: false, label: 'Team Intelligence 2.0' }], effects: { team_autonomy: 1, player_control: -1 }
+  },
+  {
+    key: 'teamCompetitiveAiEnabled', label: 'Competitive Team AI', domain: 'team', axis: 'Competitive Team AI', playerMeaning: 'Master system for team economics: Treasury, Cash Vault and Economy Governor.', modes: 'team',
+    on: { meaning: 'Team economic systems (Treasury, Cash Vault, Economy Governor, Strategic Command) can run.', why: 'Deep Team Mode economics.', hurts: 'More rules affect AI spending.' },
+    off: { meaning: 'Team economic systems are inactive, whatever their own switches say.', why: 'Simpler Team Mode.', hurts: 'Treasury, Cash Vault and the Economy Governor do nothing.' },
+    effects: { team_protection: 1, complexity: 1 }
+  },
+  // ---- Economy protection (the "spending freedom" stack) ----
+  {
+    key: 'teamEconomyGovernorEnabled', domain: 'economy', axis: 'Economy Governor', playerMeaning: 'Approves or refuses AI spending to keep reserves healthy.', modes: 'team',
+    on: { meaning: 'AI spending is checked against reserves and the economic phase.', why: 'Prevents AI actors from spending themselves broke.', hurts: 'Combined with other protections it can make AI too conservative.' },
+    off: { meaning: 'AI spends without Governor approval.', why: 'Maximum AI spending freedom.', hurts: 'AI actors may overspend and fall into recovery.' },
+    requires: [SI_COMPETITIVE], effects: { team_protection: 2, team_spending_freedom: -2 }, related: ['economySpendingApprovalStrictness', 'economyReserveStrength', 'vaultLockPercentage']
+  },
+  {
+    key: 'economySpendingApprovalStrictness', label: 'Governor Strictness', domain: 'economy', axis: 'Governor strictness', playerMeaning: 'How strict the Economy Governor is when approving spending.', modes: 'team',
+    levels: { relaxed: { rank: 1, label: 'Relaxed', meaning: 'Approves most reasonable spending.' }, balanced: { rank: 2, label: 'Balanced', meaning: 'Blocks risky spending.' }, strict: { rank: 3, label: 'Strict', meaning: 'Blocks anything that dents reserves.' } },
+    zone: { base: [1, 2] }, requires: [SI_COMPETITIVE, SI_GOVERNOR], effects: { team_protection: 1, team_spending_freedom: -1 },
+    why: { lower: 'AI actors pass on useful spending.', raise: 'AI actors overspend.' }
+  },
+  {
+    key: 'economyReserveStrength', label: 'Reserve Strength', domain: 'economy', axis: 'Reserve strength', playerMeaning: 'How much cash the Economy Governor keeps in reserve.', modes: 'team',
+    levels: { low: { rank: 1, label: 'Light', meaning: 'Small reserves; more spending.' }, balanced: { rank: 2, label: 'Balanced', meaning: 'Sensible reserves.' }, high: { rank: 3, label: 'High', meaning: 'Large reserves; less spending.' }, maximum: { rank: 4, label: 'Maximum', meaning: 'Very large reserves; AI rarely spends.' } },
+    zone: { base: [1, 2] }, extremeHigh: 4, requires: [SI_COMPETITIVE, SI_GOVERNOR], effects: { team_protection: 1, team_spending_freedom: -1 },
+    why: { lower: 'AI hoards cash instead of using it.', raise: 'AI keeps running out of money.' }
+  },
+  {
+    key: 'economyRecoverySpendingCap', label: 'Recovery Spending Limit', domain: 'economy', axis: 'Recovery spending', playerMeaning: 'The share of cash an AI in economic recovery may spend.', range: [0, 1], modes: 'team',
+    bands: [{ upTo: 0.05, label: 'Very tight', meaning: 'Recovering AI barely acts.' }, { upTo: 0.15, label: 'Balanced', meaning: 'Recovering AI makes small safe moves.' }, { upTo: 0.3, label: 'Loose', meaning: 'Recovering AI spends fairly freely.' }, { upTo: 1, label: 'Very loose', meaning: 'Recovery barely restricts spending.' }],
+    zone: { base: [0.07, 0.2] }, extremeLow: 0.02, requires: [SI_COMPETITIVE, SI_GOVERNOR], effects: { team_spending_freedom: 1, team_protection: -1 },
+    why: { lower: 'AI actors repeatedly spend themselves back into economic trouble.', raise: 'Recovering AI actors stay inactive after they could safely act.' }
+  },
+  {
+    key: 'teamCashVaultEnabled', label: 'Team Cash Vault', domain: 'economy', axis: 'Cash Vault', playerMeaning: 'Locks away a share of each actor’s cash as protected savings.', modes: 'team',
+    on: { meaning: 'Part of each AI actor’s cash is protected and cannot be spent.', why: 'Stops AI from spending everything.', hurts: 'Less working cash; stacked with the Governor it can over-restrict.' },
+    off: { meaning: 'All cash is spendable.', why: 'Maximum flexibility.', hurts: 'No safety net for AI spending.' },
+    requires: [SI_COMPETITIVE], effects: { team_protection: 1, team_spending_freedom: -1 }, related: ['vaultLockPercentage']
+  },
+  {
+    key: 'vaultLockPercentage', label: 'Protected Cash', domain: 'economy', axis: 'Protected cash', playerMeaning: 'The share of cash the Cash Vault protects from spending.', range: [0, 100], modes: 'team',
+    bands: [{ upTo: 30, label: 'Light', meaning: 'A small safety buffer.' }, { upTo: 55, label: 'Balanced', meaning: 'A sensible protected share.' }, { upTo: 75, label: 'High', meaning: 'Most cash protected — limits discretionary spending.' }, { upTo: 100, label: 'Very high', meaning: 'Almost everything protected — AI can barely spend.' }],
+    zone: { base: [30, 55] }, extremeHigh: 85, requires: [SI_COMPETITIVE, { key: 'teamCashVaultEnabled', equals: true, label: 'Team Cash Vault' }], effects: { team_protection: 1, team_spending_freedom: -1 },
+    why: { lower: 'AI teammates barely spend even when they have money.', raise: 'AI teammates spend savings they should keep.' }
+  },
+  {
+    key: 'economyCashFloor', label: 'Economy Cash Floor', domain: 'economy', axis: 'Cash floor', playerMeaning: 'The minimum cash AI tries to keep at all times.', modes: 'team',
+    bands: [{ upTo: 300, label: 'Low', meaning: 'AI keeps very little in hand.' }, { upTo: 1500, label: 'Balanced', meaning: 'AI keeps a sensible cushion.' }, { upTo: 4000, label: 'High', meaning: 'AI keeps a large cushion.' }, { upTo: 10000, label: 'Very high', meaning: 'AI keeps most of its money idle.' }],
+    zone: { base: [200, 1500] }, extremeHigh: 5000, requires: [SI_COMPETITIVE, SI_GOVERNOR], effects: { team_protection: 1, team_spending_freedom: -1 }
+  },
+  {
+    key: 'teamTreasuryEnabled', label: 'Team Treasury', domain: 'economy', axis: 'Team Treasury', playerMeaning: 'A shared team fund AI actors can contribute to and request from.', modes: 'team',
+    on: { meaning: 'A shared fund can bridge funding gaps.', why: 'Teams that pool money.', hurts: 'Money sits in the Treasury instead of with actors.' },
+    off: { meaning: 'No shared fund; every actor relies on their own cash.', why: 'Simpler economics.', hurts: 'Team funding gaps cannot be bridged.' },
+    requires: [SI_COMPETITIVE], effects: { team_coordination: 1, team_spending_freedom: 1 }
+  },
+  // ---- Automation / authority ----
+  {
+    key: 'coPilotAuthorityMode', label: 'Co-Pilot Authority', domain: 'automation', axis: 'Co-Pilot authority', playerMeaning: 'How much Co-Pilot may do on your behalf.', authority: 'player',
+    levels: { off: { rank: 0, label: 'Off', meaning: 'Co-Pilot is off.' }, monitor_only: { rank: 1, label: 'Monitor', meaning: 'Watches only.' }, warnings: { rank: 1, label: 'Warnings', meaning: 'Warns about risks.' }, recommendations: { rank: 2, label: 'Advisor', meaning: 'Recommends; never acts.' }, ask_before_acting: { rank: 3, label: 'Assistant', meaning: 'Acts after asking you.' }, automatic_rescue: { rank: 4, label: 'Rescue', meaning: 'Takes over in emergencies.' }, full_co_pilot: { rank: 5, label: 'Autonomous', meaning: 'Plays turns for you.' } },
+    zone: { base: [0, 2] }, effects: { automation: 1, player_control: -1, guidance: 1 },
+    read: s => s.coPilotSettings?.authorityMode ?? s.coPilotAuthorityMode ?? 'off'
+  },
+  {
+    key: 'coPilotEnabled', label: 'Co-Pilot', domain: 'automation', axis: 'Co-Pilot', playerMeaning: 'Whether Co-Pilot is available at all.', authority: 'player',
+    on: { meaning: 'Co-Pilot runs at its authority level.', why: 'Help or delegation when you want it.', hurts: 'Depending on authority, it may act for you.' },
+    off: { meaning: 'Co-Pilot is fully off.', why: 'Complete manual play.', hurts: 'No recommendations or rescue.' },
+    effects: { automation: 1, player_control: -1 }, read: s => s.coPilotSettings?.coPilotEnabled ?? s.coPilotEnabled ?? false
+  },
+  {
+    key: 'permissionMode', label: 'Auto Mode Permission', domain: 'automation', axis: 'Auto Mode authority', playerMeaning: 'What Auto Mode may change by itself.', authority: 'player',
+    levels: { read_only: { rank: 0, label: 'Read-only', meaning: 'Observes only.' }, observe: { rank: 0, label: 'Observe', meaning: 'Observes only.' }, recommend: { rank: 1, label: 'Recommend', meaning: 'Recommends changes.' }, recommend_only: { rank: 1, label: 'Recommend', meaning: 'Recommends changes.' }, recommendation_only: { rank: 1, label: 'Recommend', meaning: 'Recommends changes.' }, proposal_only: { rank: 1, label: 'Proposals', meaning: 'Proposes changes.' }, assist_only: { rank: 2, label: 'Assist', meaning: 'Applies small assists.' }, assisted: { rank: 2, label: 'Assisted', meaning: 'Applies small changes.' }, auto_apply_non_intrusive: { rank: 3, label: 'Auto-apply', meaning: 'Applies non-intrusive changes.' }, autonomous: { rank: 4, label: 'Autonomous', meaning: 'Manages the match by itself.' }, full_adaptive: { rank: 4, label: 'Fully adaptive', meaning: 'Manages the match by itself.' }, full_auto: { rank: 5, label: 'Full auto', meaning: 'Manages everything.' } },
+    zone: { base: [0, 1] }, requires: [{ key: 'autoModeEnabled', equals: true, label: 'Auto Mode' }], effects: { automation: 1, player_control: -1 },
+    read: s => (s as any).autoModeSettings?.permissionMode ?? (s as any).autoModeSettings?.permission ?? (s as any).permissionMode ?? 'recommend'
+  },
+  {
+    key: 'autoModeEnabled', domain: 'automation', axis: 'Auto Mode', playerMeaning: 'The Adaptive Match Manager.', authority: 'player',
+    on: { meaning: 'Auto Mode watches the match and applies its permission level.', why: 'Hands-off match management.', hurts: 'Changes can happen without you, depending on permission.' },
+    off: { meaning: 'Auto Mode is inactive.', why: 'Full manual control.', hurts: 'No automatic match balancing.' },
+    effects: { automation: 1, player_control: -1 }, read: s => (s as any).autoModeSettings?.autoModeEnabled ?? s.autoModeEnabled ?? false
+  },
+  {
+    key: 'guardianAiResponseMode', label: 'Guardian Response', domain: 'automation', axis: 'Guardian prompts', playerMeaning: 'How Guardian responds when it spots a risky action.',
+    levels: { notify_only: { rank: 1, label: 'Notify', meaning: 'Shows a note; never interrupts.' }, warn_before_action: { rank: 2, label: 'Warn', meaning: 'Warns before risky actions.' }, adaptive: { rank: 2, label: 'Adaptive', meaning: 'Warns or asks depending on risk.' }, require_confirmation: { rank: 3, label: 'Confirm', meaning: 'Asks you to confirm risky actions.' } },
+    zone: { base: [1, 2] }, requires: [{ key: 'guardianAiEnabled', equals: true, label: 'Guardian AI' }], effects: { guidance: 1, game_pace: -1 },
+    read: s => s.guardianAiSettings?.responseMode ?? (s as any).guardianAiResponseMode ?? 'adaptive'
+  },
+  {
+    key: 'guardianAiEnabled', domain: 'automation', axis: 'Guardian', playerMeaning: 'Guardian AI mistake prevention.',
+    on: { meaning: 'Guardian checks your actions for serious mistakes.', why: 'Safety net for risky moves.', hurts: 'Occasional confirmation prompts.' },
+    off: { meaning: 'No mistake prevention.', why: 'No interruptions at all.', hurts: 'Serious mistakes go unflagged.' },
+    effects: { guidance: 1 }, read: s => s.guardianAiSettings?.enabled ?? (s as any).guardianAiEnabled ?? false
+  },
+  {
+    key: 'humanAutomationEnabled', domain: 'automation', axis: 'Player automation rules', playerMeaning: 'Your own automation rules that act for you.', authority: 'player',
+    on: { meaning: 'Your automation rules may act for you.', why: 'Automating repetitive actions.', hurts: 'Actions happen without a click.' },
+    off: { meaning: 'Nothing acts for you automatically.', why: 'Full manual control.', hurts: 'No automation convenience.' },
+    effects: { automation: 1, player_control: -1 }
+  },
+  // ---- Fairness ----
+  {
+    key: 'allowNumericalModifiers', domain: 'fairness', axis: 'Numerical handicaps', playerMeaning: 'Whether AI difficulty may use numerical bonuses.',
+    on: { meaning: 'AI may receive numerical advantages (income/cost modifiers).', why: 'Very strong opponents regardless of decision quality.', hurts: 'The AI is no longer on equal numerical terms.' },
+    off: { meaning: 'AI gets no numerical bonuses — difficulty comes from decision quality only.', why: 'Fair competition.', hurts: 'Top difficulty depends on planning settings.' },
+    effects: { fairness: -2, ai_intelligence: 0 }
+  },
+  {
+    key: 'aiFairnessLevel', domain: 'fairness', axis: 'AI economic multiplier', playerMeaning: 'Multiplier applied to AI economics (1 = equal terms).',
+    bands: [{ upTo: 0.9, label: 'AI handicapped', meaning: 'AI economics are reduced below yours.' }, { upTo: 1.05, label: 'Equal', meaning: 'Equal terms.' }, { upTo: 2, label: 'AI advantaged', meaning: 'AI economics are boosted above yours.' }],
+    zone: { base: [0.95, 1.05] }, effects: { fairness: -1, ai_intelligence: 0 }
+  },
+  {
+    key: 'fogOfWarEnabled', domain: 'fairness', axis: 'Fog of war', playerMeaning: 'Hides rival details for everyone (players and AI alike).',
+    on: { meaning: 'Rival cash and locations are hidden — for you and for AI.', why: 'Uncertainty and bluffing.', hurts: 'Harder to plan precisely.' },
+    off: { meaning: 'All details are visible.', why: 'Clear, strategic play.', hurts: 'Less uncertainty.' },
+    effects: { randomness: 1, complexity: 1 }
+  },
+  // ---- Randomness / pace / interface / replay / privacy ----
+  {
+    key: 'randomnessMode', domain: 'randomness', axis: 'Randomness', playerMeaning: 'How much luck affects outcomes.',
+    levels: { predictable: { rank: 1, label: 'Predictable', meaning: 'Low variance.' }, deterministic: { rank: 1, label: 'Deterministic', meaning: 'Repeatable outcomes.' }, balanced: { rank: 2, label: 'Balanced', meaning: 'Moderate variance.' }, unpredictable: { rank: 3, label: 'Unpredictable', meaning: 'High variance.' }, chaotic: { rank: 4, label: 'Chaotic', meaning: 'Very high variance.' } },
+    zone: { base: [1, 3] }, effects: { randomness: 1 }
+  },
+  {
+    key: 'worldRngMode', domain: 'replay', axis: 'World RNG', playerMeaning: 'Whether world randomness is seeded (replayable).',
+    levels: { deterministic: { rank: 1, label: 'Seeded', meaning: 'Replayable world randomness.' }, random: { rank: 2, label: 'Random', meaning: 'Unseeded — replays can diverge.' } },
+    zone: { base: [1, 2] }, effects: { replay_compatibility: -1 }
+  },
+  {
+    key: 'aiReplayRecordingEnabled', domain: 'replay', axis: 'Replay recording', playerMeaning: 'Records AI decisions for replay.',
+    on: { meaning: 'AI decisions are recorded for replay.', why: 'Reviewing matches.', hurts: 'Needs seeded RNG to replay exactly.' },
+    off: { meaning: 'No replay recording.', why: 'Lighter matches.', hurts: 'Matches cannot be replayed.' }, effects: { replay_compatibility: 1 }
+  },
+  {
+    key: 'totalDays', domain: 'pace', axis: 'Match length', playerMeaning: 'How many days a match lasts.',
+    bands: [{ upTo: 15, label: 'Short', meaning: 'A quick match.' }, { upTo: 40, label: 'Standard', meaning: 'A normal match.' }, { upTo: 100, label: 'Long', meaning: 'A long strategic match.' }],
+    zone: { base: [20, 40] }, effects: { game_pace: -1 }
+  },
+  {
+    key: 'decisionTransparencyEnabled', domain: 'interface', axis: 'Decision transparency', playerMeaning: 'Shows why AI made its decisions.',
+    on: { meaning: 'AI decision explanations are shown.', why: 'Learning how the AI thinks.', hurts: 'More on screen.' },
+    off: { meaning: 'AI decisions are not explained on screen.', why: 'A cleaner interface.', hurts: 'Less insight into AI behaviour.' }, effects: { complexity: 1, guidance: 1 }
+  },
+  {
+    key: 'gameActivityLedgerDetailLevel', domain: 'interface', axis: 'Ledger detail', playerMeaning: 'How much detail the Activity Ledger records and shows.',
+    levels: { standard: { rank: 1, label: 'Standard', meaning: 'Key events.' }, detailed: { rank: 2, label: 'Detailed', meaning: 'More events.' }, developer: { rank: 3, label: 'Developer', meaning: 'Everything, for debugging.' } },
+    zone: { base: [1, 2] }, effects: { complexity: 1 }
+  },
+  {
+    key: 'aiPersistentMemoryEnabled', label: 'Persistent AI Memory', domain: 'privacy', axis: 'Persistent memory', playerMeaning: 'AI remembers you across matches (requires your consent).', consent: true,
+    on: { meaning: 'AI keeps memories between matches.', why: 'Rivals that learn your habits over time.', hurts: 'Stores data about your play; needs explicit consent.' },
+    off: { meaning: 'Nothing is remembered between matches.', why: 'Privacy and fresh rivals each match.', hurts: 'Rivals never learn across matches.' }
+  }
+];
+
+const SI_META = new Map(SETTINGS_INTELLIGENCE_METADATA.map(m => [m.key, m]));
+export const getSettingsIntelligenceMetadata = (key: string) => SI_META.get(key) || null;
+const siRegistry = (key: string) => SMART_CONTROLLABLE_SETTINGS_REGISTRY.find(r => r.key === key) || null;
+export const siLabel = (key: string) => siRegistry(key)?.label || SI_META.get(key)?.label || humanizeSettingKey(key);
+
+/** Canonical (effective-source) read for a setting, honouring mirrored/nested subsystem values. */
+export function siReadSetting(settings: GameSettingsState, key: string): any {
+  const m = SI_META.get(key);
+  if (m?.read) return m.read(settings);
+  return (settings as any)[key];
+}
+
+// ---- Context --------------------------------------------------------------------------------------
+
+export type SIMatchPhase = 'menu' | 'pre_match' | 'live' | 'replay' | 'what_if' | 'ai_vs_ai';
+export interface SettingsIntelligenceContext {
+  mode: string;
+  isTeamMode: boolean;
+  phase: SIMatchPhase;
+  isLiveMatch: boolean;
+  aiIntelligence: AiIntelligencePreference;
+  aiFairness: AiFairnessPreference;
+  interfaceLevel: SettingsExperienceLevel;
+  automation: AutomationPreference;
+}
+
+export function buildSettingsIntelligenceContext(settings: GameSettingsState, opts: { mode?: string; phase?: SIMatchPhase } = {}): SettingsIntelligenceContext {
+  const p = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const mode = String(opts.mode || (settings as any).selectedMode || 'ai');
+  const phase = opts.phase || 'menu';
+  return {
+    mode, isTeamMode: isTeamModeSelection(mode), phase, isLiveMatch: phase === 'live' || phase === 'ai_vs_ai',
+    aiIntelligence: p.aiIntelligence || 'capable', aiFairness: p.aiFairness || 'smarter_decisions_only', interfaceLevel: p.interfaceLevel || 'guided', automation: p.automation || 'recommendations'
+  };
+}
+
+// ---- Value interpretation ---------------------------------------------------------------------------
+
+export interface SIValueInterpretation {
+  key: string;
+  label: string;
+  value: any;
+  /** Normalized position used for zone comparisons (number value or level rank). */
+  position: number | null;
+  level: string;
+  meaning: string;
+  likelyEffect: string;
+  goodFor: string | null;
+  tradeoff: string | null;
+  zone: { lo: number; hi: number; base: [number, number]; contextNote: string | null } | null;
+  zoneStatus: 'below' | 'within' | 'above' | 'n/a';
+  extreme: 'low' | 'high' | null;
+  booleanMeaning: { on: string; off: string; whyOff: string; hurtsOff: string; whyOn: string; hurtsOn: string } | null;
+}
+
+const siRange = (key: string): [number, number] | null => {
+  const r = siRegistry(key);
+  if (r && typeof r.minValue === 'number' && typeof r.maxValue === 'number') return [r.minValue, r.maxValue];
+  return SI_META.get(key)?.range || null;
+};
+
+export function interpretSettingValue(key: string, value: any, ctx: SettingsIntelligenceContext): SIValueInterpretation {
+  const m = SI_META.get(key);
+  const label = siLabel(key);
+  const out: SIValueInterpretation = { key, label, value, position: null, level: String(value), meaning: m?.playerMeaning || siRegistry(key)?.description || '', likelyEffect: '', goodFor: m?.goodFor || null, tradeoff: m?.tradeoff || null, zone: null, zoneStatus: 'n/a', extreme: null, booleanMeaning: null };
+  if (!m) return out;
+  if (typeof value === 'boolean' || (m.on && m.off && (value === undefined || value === null))) {
+    const on = Boolean(value);
+    out.level = on ? 'On' : 'Off';
+    out.booleanMeaning = { on: m.on?.meaning || 'Enabled.', off: m.off?.meaning || 'Disabled.', whyOff: m.off?.why || '', hurtsOff: m.off?.hurts || '', whyOn: m.on?.why || '', hurtsOn: m.on?.hurts || '' };
+    out.likelyEffect = on ? (m.on?.meaning || '') : (m.off?.meaning || '');
+    out.tradeoff = on ? (m.on?.hurts || null) : (m.off?.hurts || null);
+    return out;
+  }
+  if (m.levels) {
+    const lv = m.levels[String(value)];
+    out.position = lv ? lv.rank : null;
+    out.level = lv ? lv.label : String(value);
+    out.likelyEffect = lv ? lv.meaning : 'Unrecognised value — treated as custom.';
+  } else if (typeof value === 'number' && m.bands) {
+    out.position = value;
+    const band = m.bands.find(b => value <= b.upTo) || m.bands[m.bands.length - 1];
+    out.level = band.label;
+    out.likelyEffect = band.meaning;
+  }
+  if (m.zone && out.position !== null) {
+    const byI = m.zone.byIntelligence?.[ctx.aiIntelligence];
+    const byMode = ctx.isTeamMode ? m.zone.byMode?.team : undefined;
+    const z = byMode || byI || m.zone.base;
+    out.zone = { lo: z[0], hi: z[1], base: m.zone.base, contextNote: byI && (byI[0] !== m.zone.base[0] || byI[1] !== m.zone.base[1]) ? `Adjusted for your ${ctx.aiIntelligence} AI profile` : null };
+    out.zoneStatus = out.position < z[0] ? 'below' : out.position > z[1] ? 'above' : 'within';
+  }
+  if (out.position !== null) {
+    if (typeof m.extremeHigh === 'number' && out.position >= m.extremeHigh) out.extreme = 'high';
+    if (typeof m.extremeLow === 'number' && out.position <= m.extremeLow) out.extreme = 'low';
+  }
+  return out;
+}
+
+// ---- Effective settings resolver (configured → effective) --------------------------------------------
+
+export interface SISettingSnapshot {
+  key: string;
+  label: string;
+  domain: SIDomain;
+  configuredValue: any;
+  effectiveValue: any;
+  active: boolean;
+  inertReason: string | null;
+  dependencyState: 'ok' | 'parent_off' | 'mode_inapplicable' | 'dependency_violation';
+  interpretation: SIValueInterpretation;
+  locked: boolean;
+  lockedBy: 'setting' | 'category' | null;
+  manualOverride: boolean;
+  intentional: boolean;
+  fairnessImpact: boolean;
+  authorityImpact: 'player' | 'team_ai' | null;
+  consent: boolean;
+  performanceImpact: 'none' | 'low' | 'moderate' | 'high';
+  liveSafety: SILiveTiming;
+  related: string[];
+  badges: string[];
+  status: 'healthy' | 'custom' | 'extreme' | 'extreme_intentional' | 'inactive' | 'locked' | 'outside_range';
+}
+
+export interface SISnapshot {
+  hash: string;
+  ctx: SettingsIntelligenceContext;
+  settings: SISettingSnapshot[];
+  byKey: Record<string, SISettingSnapshot>;
+  dependencyReport: SettingsDependencyReport;
+}
+
+export function siLiveTiming(key: string, isLiveMatch: boolean): SILiveTiming {
+  const check = checkLiveMatchSafety(key, null, isLiveMatch);
+  if (check.isSafe) return 'now';
+  return getSettingDeferralScope(key) === 'next_match' ? 'next_match' : 'turn_end';
+}
+
+function siCategoryOf(key: string): SmartSettingsCategory | null {
+  return siRegistry(key)?.category || null;
+}
+
+/** Compact deterministic signature of the settings Settings Intelligence reads (no giant stringify). */
+export function computeSettingsIntelligenceHash(settings: GameSettingsState, ctx: SettingsIntelligenceContext, extra = ''): string {
+  const groups: Record<string, string[]> = { core: [], ai: [], team: [], automation: [], economy: [], interface: [] };
+  SETTINGS_INTELLIGENCE_METADATA.forEach(m => {
+    const g = m.domain === 'ai' ? 'ai' : m.domain === 'team' ? 'team' : m.domain === 'economy' ? 'economy' : m.domain === 'automation' ? 'automation' : m.domain === 'interface' ? 'interface' : 'core';
+    groups[g].push(`${m.key}=${JSON.stringify(siReadSetting(settings, m.key) ?? null)}`);
+  });
+  ['teamCompetitiveAiEnabled', 'teamAiOverseerSystemEnabled', 'adaptiveAiEnabled', 'parallelAiPlanningEnabled', 'gameActivityLedgerEnabled', 'teamAiStrategicCommandEnabledForFriendlyTeam'].forEach(k => groups.core.push(`${k}=${JSON.stringify((settings as any)[k] ?? null)}`));
+  const p = settings.smartSettingsProfile;
+  const profile = p ? [p.aiIntelligence, p.aiFairness, p.interfaceLevel, p.automation, (p.lockedSettingKeys || []).join(','), (p.lockedCategories || []).join(','), (p.manualOverrides || []).map(o => o.settingKey).join(',')].join('|') : '';
+  let h = 2166136261;
+  const text = `${Object.entries(groups).map(([k, v]) => `${k}:${v.join(';')}`).join('#')}#${profile}#${ctx.mode}:${ctx.phase}#${extra}`;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
+
+export function resolveSettingsIntelligenceSnapshot(settings: GameSettingsState, ctx: SettingsIntelligenceContext, intentionalKeys: string[] = []): SISnapshot {
+  const dependencyReport = inspectSettingsDependencies(settings);
+  const eff = dependencyReport.effectiveSettings;
+  const p = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const lockedKeys = new Set(p.lockedSettingKeys || []);
+  const lockedCats = new Set(p.lockedCategories || []);
+  const overrides = new Set((p.manualOverrides || []).map(o => o.settingKey));
+  const out: SISettingSnapshot[] = SETTINGS_INTELLIGENCE_METADATA.map(m => {
+    const configuredValue = siReadSetting(settings, m.key);
+    let effectiveValue = siReadSetting(eff, m.key);
+    let inertReason: string | null = null;
+    let dependencyState: SISettingSnapshot['dependencyState'] = 'ok';
+    const violation = dependencyReport.violations.find(v => v.settingKey === m.key);
+    if (violation) { inertReason = violation.message; dependencyState = 'dependency_violation'; }
+    if (!inertReason && m.modes === 'team' && !ctx.isTeamMode) { inertReason = 'Only applies in Team Mode.'; dependencyState = 'mode_inapplicable'; }
+    if (!inertReason) {
+      const missing = (m.requires || []).find(r => {
+        const v = siReadSetting(eff, r.key);
+        return r.equals !== undefined ? v !== r.equals : r.notEquals !== undefined ? v === r.notEquals : !v;
+      });
+      if (missing) { inertReason = `${missing.label} is currently off.`; dependencyState = 'parent_off'; }
+    }
+    const isBool = Boolean(m.on && m.off);
+    if (inertReason && isBool) effectiveValue = false;
+    const active = !inertReason;
+    const interpretation = interpretSettingValue(m.key, configuredValue, ctx);
+    const cat = siCategoryOf(m.key);
+    const locked = lockedKeys.has(m.key) || Boolean(cat && lockedCats.has(cat));
+    const intentional = intentionalKeys.includes(m.key);
+    const perfSteps = m.perf && interpretation.position !== null ? (interpretation.position - (siRange(m.key)?.[0] ?? 1)) * m.perf : 0;
+    const performanceImpact: SISettingSnapshot['performanceImpact'] = !m.perf ? 'none' : perfSteps >= 4 ? 'high' : perfSteps >= 2 ? 'moderate' : 'low';
+    const status: SISettingSnapshot['status'] = !active ? 'inactive' : interpretation.extreme ? (intentional ? 'extreme_intentional' : 'extreme') : interpretation.zoneStatus === 'above' || interpretation.zoneStatus === 'below' ? 'outside_range' : overrides.has(m.key) ? 'custom' : 'healthy';
+    const fairnessImpact = Boolean(siRegistry(m.key)?.affectsFairness) || m.domain === 'fairness';
+    const badges: string[] = [];
+    if (status === 'healthy') badges.push('Healthy');
+    if (interpretation.zoneStatus === 'within' && active) badges.push('Recommended');
+    if (overrides.has(m.key)) badges.push('Custom', 'Overridden');
+    if (interpretation.extreme) badges.push(intentional ? 'Extreme (intentional)' : 'Extreme');
+    if (!active) badges.push('Inactive');
+    if (locked) badges.push('Locked');
+    if (dependencyState === 'dependency_violation' || dependencyState === 'parent_off') badges.push('Dependency');
+    if (m.authority) badges.push('Authority');
+    if (fairnessImpact) badges.push('Fairness');
+    if (performanceImpact === 'moderate' || performanceImpact === 'high') badges.push('Performance');
+    if (siLiveTiming(m.key, ctx.isLiveMatch) !== 'now') badges.push('Deferred');
+    if (Math.abs(Object.values(m.effects || {}).reduce((s, v) => s + Math.abs(v || 0), 0)) >= 3) badges.push('High impact');
+    return {
+      key: m.key, label: siLabel(m.key), domain: m.domain, configuredValue, effectiveValue, active, inertReason, dependencyState, interpretation, locked,
+      lockedBy: lockedKeys.has(m.key) ? 'setting' : locked ? 'category' : null, manualOverride: overrides.has(m.key), intentional, fairnessImpact,
+      authorityImpact: m.authority || null, consent: Boolean(m.consent), performanceImpact, liveSafety: siLiveTiming(m.key, ctx.isLiveMatch), related: m.related || [], badges, status
+    };
+  });
+  return { hash: computeSettingsIntelligenceHash(settings, ctx, intentionalKeys.join(',')), ctx, settings: out, byKey: Object.fromEntries(out.map(s => [s.key, s])), dependencyReport };
+}
+
+// ---- Interaction engine (multi-setting behavioural effects, not just dependency errors) -------------------
+
+export interface SIFixStrategy {
+  id: string;
+  label: string;
+  changes: Array<{ key: string; value: any }>;
+  improves: string;
+  worsens: string;
+  keeps: string;
+}
+
+export interface SIIssue {
+  id: string;
+  type: SIProblemType;
+  severity: 'info' | 'caution' | 'warning' | 'critical';
+  domain: SIDomain;
+  title: string;
+  explanation: string;
+  contributors: string[];
+  lockedContributors: string[];
+  strategies: SIFixStrategy[];
+  confidence: SIConfidence;
+  ruleId: string;
+  acknowledged: boolean;
+}
+
+export interface SettingsInteractionRule {
+  id: string;
+  title: string;
+  settingKeys: string[];
+  domains: SIDomain[];
+  problem: SIProblemType;
+  modeApplicability: 'team' | 'any';
+  confidence: SIConfidence;
+  effect: string;
+  desiredExperienceImpact: string;
+  /** Returns contributors when the combination is present (evaluated against EFFECTIVE values). */
+  evaluate: (snap: SISnapshot, settings: GameSettingsState) => { contributors: string[]; severity: SIIssue['severity']; explanation: string } | null;
+  recommendationStrategy: (snap: SISnapshot, settings: GameSettingsState, contributors: string[]) => SIFixStrategy[];
+}
+
+const siActive = (snap: SISnapshot, key: string) => Boolean(snap.byKey[key]?.active);
+const siVal = (snap: SISnapshot, key: string) => snap.byKey[key]?.configuredValue;
+const siRank = (key: string, value: any) => SI_META.get(key)?.levels?.[String(value)]?.rank ?? null;
+
+/** Next value one semantic step up/down (levels by rank; numbers by a sensible step, clamped). */
+export function siStepValue(key: string, current: any, direction: 1 | -1, steps = 1): any {
+  const m = SI_META.get(key);
+  if (!m) return current;
+  if (m.levels) {
+    const reg = siRegistry(key);
+    const allowed = (reg?.allowedValues as string[] | undefined) || Object.keys(m.levels);
+    const ranked = allowed.filter(v => m.levels![String(v)]).map(v => ({ v, r: m.levels![String(v)].rank })).sort((a, b) => a.r - b.r);
+    const cur = m.levels[String(current)]?.rank ?? ranked[Math.floor(ranked.length / 2)]?.r ?? 0;
+    const target = direction > 0 ? ranked.filter(x => x.r > cur) : ranked.filter(x => x.r < cur).reverse();
+    return target.length ? target[Math.min(steps, target.length) - 1].v : current;
+  }
+  if (typeof current === 'number' || m.bands) {
+    const range = siRange(key) || [0, 100];
+    const span = range[1] - range[0];
+    const integral = Number.isInteger(range[0]) && Number.isInteger(range[1]);
+    const unit = integral && span <= 5 ? 1 : integral && span <= 15 ? 2 : integral && span >= 50 ? Math.round(span / 8) : Math.round((span / 8) * 100) / 100;
+    const STEP_OVERRIDES: Record<string, number> = { economyRecoverySpendingCap: 0.05, adaptiveAiRiskBias: 0.2, teamAiEndgameAggressionMultiplier: 0.3, teamBrainTeammateSupportBias: 0.5, economyCashFloor: 500, vaultLockPercentage: 15, aiFairnessLevel: 0.25 };
+    const step = STEP_OVERRIDES[key] ?? unit;
+    const base = typeof current === 'number' ? current : Number(siRegistry(key)?.defaultValue ?? range[0]);
+    const next = Math.round((base + direction * step * steps) * 100) / 100;
+    return Math.max(range[0], Math.min(range[1], next));
+  }
+  return current;
+}
+
+const siRelaxLayer = (key: string, current: any): any => (key === 'economySpendingApprovalStrictness' || key === 'economyReserveStrength' || key === 'teamAiReservationStrictness' ? siStepValue(key, current, -1) : key === 'economyRecoverySpendingCap' ? siStepValue(key, current, 1) : siStepValue(key, current, -1));
+
+/** Which protection layers are actively restricting AI spending right now (effective values only). */
+export function siSpendingProtectionLayers(snap: SISnapshot): Array<{ key: string; label: string; strength: number }> {
+  const layers: Array<{ key: string; label: string; strength: number }> = [];
+  const gov = siActive(snap, 'teamEconomyGovernorEnabled') && siVal(snap, 'teamEconomyGovernorEnabled') === true;
+  if (siActive(snap, 'vaultLockPercentage') && Number(siVal(snap, 'vaultLockPercentage')) >= 56) layers.push({ key: 'vaultLockPercentage', label: `Protected Cash ${siVal(snap, 'vaultLockPercentage')}% (${snap.byKey.vaultLockPercentage.interpretation.level})`, strength: Number(siVal(snap, 'vaultLockPercentage')) >= 76 ? 2 : 1 });
+  if (gov && siVal(snap, 'economySpendingApprovalStrictness') === 'strict') layers.push({ key: 'economySpendingApprovalStrictness', label: 'Economy Governor: Strict', strength: 1 });
+  if (gov && ['high', 'maximum'].includes(String(siVal(snap, 'economyReserveStrength')))) layers.push({ key: 'economyReserveStrength', label: `Reserve strength: ${snap.byKey.economyReserveStrength.interpretation.level}`, strength: siVal(snap, 'economyReserveStrength') === 'maximum' ? 2 : 1 });
+  if (gov && Number(siVal(snap, 'economyCashFloor')) >= 1500) layers.push({ key: 'economyCashFloor', label: `Cash floor $${Number(siVal(snap, 'economyCashFloor')).toLocaleString()}`, strength: 1 });
+  if (gov && Number(siVal(snap, 'economyRecoverySpendingCap')) <= 0.05) layers.push({ key: 'economyRecoverySpendingCap', label: `Recovery spending limit ${Math.round(Number(siVal(snap, 'economyRecoverySpendingCap')) * 100)}%`, strength: 1 });
+  if (siActive(snap, 'teamAiReservationStrictness') && ['high', 'strict'].includes(String(siVal(snap, 'teamAiReservationStrictness')))) layers.push({ key: 'teamAiReservationStrictness', label: `Resource reservations: ${snap.byKey.teamAiReservationStrictness.interpretation.level}`, strength: 1 });
+  return layers;
+}
+
+export function siSpendingFreedom(snap: SISnapshot): 'very low' | 'low' | 'balanced' | 'high' | 'n/a' {
+  if (!snap.ctx.isTeamMode) return 'n/a';
+  const layers = siSpendingProtectionLayers(snap);
+  const s = layers.reduce((a, l) => a + l.strength, 0);
+  const gov = siActive(snap, 'teamEconomyGovernorEnabled') && siVal(snap, 'teamEconomyGovernorEnabled') === true;
+  return s >= 4 ? 'very low' : s >= 3 ? 'low' : !gov && !s ? 'high' : 'balanced';
+}
+
+/** Qualitative AI computation load from the settings that change search work (no invented milliseconds). */
+export function siAiLoad(settings: GameSettingsState, ctx: SettingsIntelligenceContext): { score: number; label: 'light' | 'moderate' | 'high' | 'very high'; drivers: Array<{ key: string; share: number }> } {
+  const parts: Array<{ key: string; share: number }> = [];
+  const add = (key: string, teamOnly: boolean) => {
+    if (teamOnly && !ctx.isTeamMode) return;
+    const m = SI_META.get(key)!;
+    const v = siReadSetting(settings, key);
+    const pos = m.levels ? (m.levels[String(v)]?.rank ?? 2) : Number(v ?? siRegistry(key)?.defaultValue ?? 1);
+    const min = m.levels ? 1 : siRange(key)?.[0] ?? 1;
+    parts.push({ key, share: Math.max(0, (pos - min) * (m.perf || 0)) });
+  };
+  add('aiPlanningDepth', false); add('aiThinkingDepth', false); add('projectedOutcomeHorizon', false); add('teamAiTacticalLookaheadDepth', true); add('teamAiCandidateEvaluationWidth', true);
+  const score = Math.round(parts.reduce((s, p) => s + p.share, 0) * 10) / 10;
+  return { score, label: score < 4 ? 'light' : score < 7.5 ? 'moderate' : score < 10.5 ? 'high' : 'very high', drivers: parts.filter(p => p.share > 0).sort((a, b) => b.share - a.share) };
+}
+
+export const SETTINGS_INTERACTION_RULES: SettingsInteractionRule[] = [
+  {
+    id: 'over_restrictive_spending', title: 'AI spending may be over-restricted', settingKeys: ['vaultLockPercentage', 'economySpendingApprovalStrictness', 'economyReserveStrength', 'economyCashFloor', 'economyRecoverySpendingCap', 'teamAiReservationStrictness'],
+    domains: ['economy', 'team'], problem: 'overly_restrictive', modeApplicability: 'team', confidence: 'moderate',
+    effect: 'AI spending freedom very low', desiredExperienceImpact: 'AI teammates and rivals reject useful spending opportunities.',
+    evaluate: snap => {
+      const layers = siSpendingProtectionLayers(snap);
+      const strength = layers.reduce((a, l) => a + l.strength, 0);
+      if (strength < 3) return null;
+      return { contributors: layers.map(l => l.key), severity: strength >= 4 ? 'warning' : 'caution', explanation: `These settings are individually defensive, but together they can make AI actors reject useful spending: ${layers.map(l => l.label).join(', ')}.${layers.length >= 4 ? ` You have ${layers.length} protection layers acting on the same spending behaviour.` : ''}` };
+    },
+    recommendationStrategy: (snap, _s, contributors) => {
+      const order = ['vaultLockPercentage', 'economyReserveStrength', 'economySpendingApprovalStrictness', 'economyCashFloor', 'economyRecoverySpendingCap', 'teamAiReservationStrictness'];
+      const out: SIFixStrategy[] = order.filter(k => contributors.includes(k)).map(k => ({
+        id: `relax_${k}`, label: `Relax ${siLabel(k)} one level`, changes: [{ key: k, value: siRelaxLayer(k, siVal(snap, k)) }],
+        improves: 'AI spending freedom', worsens: 'Economic safety (slightly)', keeps: 'Every other protection stays on'
+      }));
+      if (siActive(snap, 'teamTreasuryEnabled') && siVal(snap, 'teamTreasuryEnabled') === true) {
+        const reserve = Number((_s as any).teamTreasuryReserve ?? 500);
+        if (reserve > 250) out.push({ id: 'treasury_reserve', label: 'Keep protections; make more Treasury money available', changes: [{ key: 'teamTreasuryReserve', value: Math.max(0, reserve - 250) }], improves: 'Treasury funding for spending gaps', worsens: 'Treasury safety buffer', keeps: 'All personal-cash protections' });
+      }
+      return out;
+    }
+  },
+  {
+    id: 'expensive_ai_compute', title: 'AI planning may be unnecessarily expensive', settingKeys: ['aiPlanningDepth', 'aiThinkingDepth', 'teamAiTacticalLookaheadDepth', 'teamAiCandidateEvaluationWidth', 'projectedOutcomeHorizon'],
+    domains: ['ai'], problem: 'performance_heavy', modeApplicability: 'any', confidence: 'moderate',
+    effect: 'High AI computation load', desiredExperienceImpact: 'AI turns may take longer.',
+    evaluate: (snap, settings) => {
+      const load = siAiLoad(settings, snap.ctx);
+      const heavyForProfile = load.label === 'very high' || (load.label === 'high' && ['casual', 'capable'].includes(snap.ctx.aiIntelligence));
+      if (!heavyForProfile) return null;
+      const drivers = load.drivers.slice(0, 3).map(d => d.key);
+      return { contributors: drivers, severity: 'caution', explanation: `${drivers.map(k => `${siLabel(k)} (${snap.byKey[k]?.interpretation.level})`).join(' + ')} together make AI computation ${load.label}${['casual', 'capable'].includes(snap.ctx.aiIntelligence) ? `, beyond what your ${snap.ctx.aiIntelligence} AI profile needs` : ''}.` };
+    },
+    recommendationStrategy: (snap, settings) => siFasterLevers(snap, settings).map(ch => ({ id: `speed_${ch.key}`, label: `Reduce ${siLabel(ch.key)}`, changes: [ch], improves: 'Faster AI turns', worsens: 'Slightly fewer options compared', keeps: 'Other planning settings' }))
+  },
+  {
+    id: 'strategy_unreachable', title: 'Team strategy cannot reach AI directives', settingKeys: ['teamOsAuthorityLevel', 'teamAiStrategicCommandEnabled'], domains: ['team'], problem: 'strategy_mismatch', modeApplicability: 'team', confidence: 'high',
+    effect: 'Delegated team strategy has no directive channel', desiredExperienceImpact: 'The Team OS plan exists but AI teammates cannot be directed by it.',
+    evaluate: snap => {
+      const auth = String(siVal(snap, 'teamOsAuthorityLevel') || 'advisor');
+      if (!siActive(snap, 'teamOsAuthorityLevel') || !['delegated', 'autonomous'].includes(auth)) return null;
+      if (siActive(snap, 'teamAiStrategicCommandEnabled') && siVal(snap, 'teamAiStrategicCommandEnabled') === true) return null;
+      return { contributors: ['teamOsAuthorityLevel', 'teamAiStrategicCommandEnabled'], severity: 'caution', explanation: `Team OS authority is ${auth}, but Strategic Command is ${snap.byKey.teamAiStrategicCommandEnabled?.active ? 'off' : `inactive (${snap.byKey.teamAiStrategicCommandEnabled?.inertReason})`}, so the team strategy cannot become AI directives.` };
+    },
+    recommendationStrategy: snap => [
+      ...(snap.byKey.teamAiStrategicCommandEnabled?.dependencyState === 'ok' ? [{ id: 'enable_sc', label: 'Enable Strategic Command', changes: [{ key: 'teamAiStrategicCommandEnabled', value: true }], improves: 'Team strategy reaches AI teammates', worsens: 'Teammates follow directives more than opportunities', keeps: 'Your own authority' }] : []),
+      { id: 'lower_team_os', label: 'Set Team OS authority to Advisor', changes: [{ key: 'teamOsAuthorityLevel', value: 'advisor' }], improves: 'Configuration matches what can actually happen', worsens: 'Team OS no longer runs the plan itself', keeps: 'Team OS recommendations' }
+    ]
+  },
+  {
+    id: 'fairness_mismatch', title: 'Numerical AI advantages under a fair profile', settingKeys: ['allowNumericalModifiers', 'aiFairnessLevel'], domains: ['fairness'], problem: 'fairness_mismatch', modeApplicability: 'any', confidence: 'high',
+    effect: 'AI receives numerical advantages', desiredExperienceImpact: 'Your fairness profile promises no numerical cheats.',
+    evaluate: (snap, settings) => {
+      if (!['strictly_equal', 'smarter_decisions_only'].includes(snap.ctx.aiFairness)) return null;
+      const c: string[] = [];
+      if (settings.allowNumericalModifiers === true) c.push('allowNumericalModifiers');
+      if (typeof settings.aiFairnessLevel === 'number' && settings.aiFairnessLevel > 1.05) c.push('aiFairnessLevel');
+      return c.length ? { contributors: c, severity: 'warning', explanation: `Your fairness profile is “${snap.ctx.aiFairness.replace(/_/g, ' ')}”, but ${c.map(k => siLabel(k)).join(' and ')} gives the AI numerical advantages.` } : null;
+    },
+    recommendationStrategy: (_snap, settings) => [{ id: 'restore_fair', label: 'Remove numerical AI advantages', changes: [...(settings.allowNumericalModifiers === true ? [{ key: 'allowNumericalModifiers', value: false }] : []), ...(typeof settings.aiFairnessLevel === 'number' && settings.aiFairnessLevel > 1.05 ? [{ key: 'aiFairnessLevel', value: 1 }] : [])], improves: 'Fairness matches your profile', worsens: 'AI loses its numerical edge', keeps: 'AI decision quality' }]
+  },
+  {
+    id: 'authority_mismatch', title: 'Automation authority is higher than your automation preference', settingKeys: ['coPilotAuthorityMode', 'permissionMode'], domains: ['automation'], problem: 'authority_mismatch', modeApplicability: 'any', confidence: 'high',
+    effect: 'More automation authority than chosen', desiredExperienceImpact: 'Things may happen on your behalf that your profile says should not.',
+    evaluate: (snap, settings) => {
+      if (!['manual', 'recommendations'].includes(snap.ctx.automation)) return null;
+      const c: string[] = [];
+      const cp = siRank('coPilotAuthorityMode', siReadSetting(settings, 'coPilotAuthorityMode')) ?? 0;
+      const coPilotOn = settings.coPilotSettings?.coPilotEnabled ?? settings.coPilotEnabled ?? false;
+      if (coPilotOn && cp >= 4) c.push('coPilotAuthorityMode');
+      if (siActive(snap, 'permissionMode') && (siRank('permissionMode', siReadSetting(settings, 'permissionMode')) ?? 0) >= 3) c.push('permissionMode');
+      return c.length ? { contributors: c, severity: 'warning', explanation: `Your automation preference is “${snap.ctx.automation}”, but ${c.map(k => `${siLabel(k)} is ${snap.byKey[k]?.interpretation.level}`).join(' and ')}.` } : null;
+    },
+    recommendationStrategy: (_snap, _s, contributors) => [{ id: 'lower_authority', label: 'Lower automation authority to match your preference', changes: contributors.map(k => ({ key: k, value: k === 'coPilotAuthorityMode' ? 'recommendations' : 'recommend' })), improves: 'You stay in control', worsens: 'Less hands-off help', keeps: 'Recommendations' }]
+  },
+  {
+    id: 'harder_but_fair', title: 'Demanding but fair AI', settingKeys: ['aiPlanningDepth', 'allowNumericalModifiers'], domains: ['ai', 'fairness'], problem: 'healthy_custom', modeApplicability: 'any', confidence: 'high',
+    effect: 'Harder AI through decision quality only', desiredExperienceImpact: 'A coherent, demanding configuration.',
+    evaluate: (snap, settings) => (['expert', 'maximum'].includes(snap.ctx.aiIntelligence) && Number(settings.aiPlanningDepth) >= 4 && settings.allowNumericalModifiers !== true
+      ? { contributors: ['aiPlanningDepth'], severity: 'info', explanation: 'Deep planning with no numerical advantages: harder AI through decision quality, not cheats. This is a healthy, intentional-looking combination.' } : null),
+    recommendationStrategy: () => []
+  }
+];
+
+// ---- Health report (semantic layer ABOVE the dependency inspector's validity/score) ----------------------
+
+export interface SIDomainHealth { domain: string; label: string; status: 'healthy' | 'healthy_custom' | 'caution' | 'over-restricted' | 'imbalanced' | 'high_risk' | 'inactive' | 'n/a'; reason: string }
+export interface SettingsIntelligenceHealthReport {
+  hash: string;
+  overallStatus: SIStatus;
+  overallReason: string;
+  dependencyHealth: { valid: boolean; score: number; reason: string };
+  behaviorHealth: SIDomainHealth['status'];
+  interactionHealth: SIDomainHealth['status'];
+  authorityHealth: SIDomainHealth['status'];
+  fairnessHealth: SIDomainHealth['status'];
+  performanceHealth: { load: 'light' | 'moderate' | 'high' | 'very high'; reason: string };
+  replayHealth: { preserved: boolean; reason: string };
+  domains: SIDomainHealth[];
+  issues: SIIssue[];
+  acknowledged: SIIssue[];
+  warnings: string[];
+  opportunities: string[];
+  inertSettings: Array<{ key: string; label: string; configured: any; reason: string }>;
+  spendingFreedom: ReturnType<typeof siSpendingFreedom>;
+  effectiveConfigurationSummary: string[];
+}
+
+export function buildSettingsIntelligenceHealth(settings: GameSettingsState, ctx: SettingsIntelligenceContext, ack: SettingsIntelligenceState | null = null): { snapshot: SISnapshot; report: SettingsIntelligenceHealthReport } {
+  const intentional = ack?.intentionalKeys || [];
+  const snap = resolveSettingsIntelligenceSnapshot(settings, ctx, intentional);
+  const p = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const lockedKeys = new Set(p.lockedSettingKeys || []);
+  const lockedCats = new Set(p.lockedCategories || []);
+  const isLocked = (k: string) => lockedKeys.has(k) || Boolean(siCategoryOf(k) && lockedCats.has(siCategoryOf(k)!));
+  const ackIds = new Set((ack?.acknowledgedIssues || []).map(a => a.issueId));
+  const all: SIIssue[] = [];
+  const push = (i: Omit<SIIssue, 'acknowledged' | 'lockedContributors'>) => all.push({ ...i, lockedContributors: i.contributors.filter(isLocked), acknowledged: ackIds.has(i.id) });
+  SETTINGS_INTERACTION_RULES.forEach(rule => {
+    if (rule.modeApplicability === 'team' && !ctx.isTeamMode) return;
+    const hit = rule.evaluate(snap, settings);
+    if (!hit) return;
+    push({ id: `rule_${rule.id}`, type: rule.problem === 'overly_restrictive' && hit.contributors.length >= 4 ? 'redundant_protection' : rule.problem, severity: hit.severity, domain: rule.domains[0], title: rule.title, explanation: hit.explanation, contributors: hit.contributors, strategies: rule.recommendationStrategy(snap, settings, hit.contributors), confidence: rule.confidence, ruleId: rule.id });
+  });
+  snap.dependencyReport.violations.forEach(v => {
+    const meta = SI_META.get(v.settingKey);
+    if (!meta && !SI_META.get(v.dependentMasterKey)) return;
+    push({ id: `dep_${v.settingKey}`, type: 'dependency_missing', severity: 'caution', domain: meta?.domain || 'team', title: `${siLabel(v.settingKey)} is on but inactive`, explanation: `${v.message} Configured ON, effectively OFF — this is not a gameplay bug; the prerequisite (${siLabel(v.dependentMasterKey)}) is off.`, contributors: [v.settingKey, v.dependentMasterKey], strategies: [
+      { id: 'enable_parent', label: `Enable ${siLabel(v.dependentMasterKey)}`, changes: [{ key: v.dependentMasterKey, value: true }], improves: `${siLabel(v.settingKey)} starts working`, worsens: 'Adds the parent system’s behaviour', keeps: 'Everything else' },
+      { id: 'disable_child', label: `Turn ${siLabel(v.settingKey)} off`, changes: [{ key: v.settingKey, value: v.autoFixValue ?? false }], improves: 'Configuration matches reality', worsens: 'Nothing that currently works', keeps: 'Everything else' }
+    ], confidence: 'high', ruleId: 'dependency_inspector' });
+  });
+  snap.dependencyReport.conflicts.forEach(c => push({ id: `conflict_${c.settingA}_${c.settingB}`, type: c.settingA === 'worldRngMode' || c.settingB === 'aiReplayRecordingEnabled' ? 'replay_risk' : 'conflicting_settings', severity: 'caution', domain: 'replay', title: `${siLabel(c.settingA)} conflicts with ${siLabel(c.settingB)}`, explanation: `${c.description} ${c.recommendedResolution}`, contributors: [c.settingA, c.settingB], strategies: [{ id: 'autofix', label: c.recommendedResolution, changes: Object.entries(c.autoFixSettings || {}).map(([key, value]) => ({ key, value })), improves: 'Conflict resolved', worsens: 'See description', keeps: 'Everything else' }], confidence: 'high', ruleId: 'dependency_inspector' }));
+  snap.settings.filter(s => s.active && s.interpretation.extreme && s.interpretation.zoneStatus !== 'within').forEach(s => push({ id: `extreme_${s.key}`, type: s.intentional ? 'healthy_custom' : 'extreme_value', severity: s.intentional ? 'info' : 'caution', domain: s.domain, title: s.intentional ? `${s.label}: extreme, intentional` : `${s.label} is at an extreme value`, explanation: s.intentional ? `${s.label} is ${s.interpretation.level} by your choice.` : `${s.label} is ${s.interpretation.level} — outside the recommended range for your setup (${s.interpretation.zone ? `${s.interpretation.zone.lo}–${s.interpretation.zone.hi}` : 'n/a'}). ${s.interpretation.tradeoff || ''}`.trim(), contributors: [s.key], strategies: [{ id: 'to_zone', label: `Bring ${s.label} back into the recommended range`, changes: [{ key: s.key, value: siToZone(s) }], improves: 'Balanced behaviour', worsens: 'Less of the extreme effect', keeps: 'Everything else' }], confidence: 'moderate', ruleId: 'extreme' }));
+  const overrides = (p.manualOverrides || []).length;
+  if (overrides >= 5) push({ id: 'override_drift', type: 'manual_override_drift', severity: 'info', domain: 'ai', title: 'Many manual overrides', explanation: `${overrides} settings differ from your preset. This is fine if intentional — it just means the preset label no longer describes your configuration.`, contributors: (p.manualOverrides || []).map(o => o.settingKey).slice(0, 6), strategies: [], confidence: 'high', ruleId: 'overrides' });
+  const drift = siNearestIntelligenceProfile(settings);
+  if (drift && drift !== ctx.aiIntelligence) push({ id: 'preset_drift', type: 'preset_drift', severity: 'info', domain: 'ai', title: 'AI configuration drifted from its profile', explanation: `Your current AI settings behave closer to “${drift}” than to your “${ctx.aiIntelligence}” profile. The profile label is not changed automatically.`, contributors: ['aiPlanningDepth', 'teamAiCandidateEvaluationWidth'], strategies: [], confidence: 'moderate', ruleId: 'drift' });
+  const issues = all.filter(i => !i.acknowledged);
+  const acknowledged = all.filter(i => i.acknowledged);
+  const load = siAiLoad(settings, ctx);
+  const spend = siSpendingFreedom(snap);
+  const worst = issues.filter(i => i.severity !== 'info');
+  const has = (t: SIProblemType) => worst.some(i => i.type === t);
+  const inert = snap.settings.filter(s => !s.active && (s.configuredValue === true || (s.configuredValue !== false && s.configuredValue !== undefined && s.configuredValue !== null && !s.interpretation.booleanMeaning))).map(s => ({ key: s.key, label: s.label, configured: s.configuredValue, reason: s.inertReason || '' }));
+  const overallStatus: SIStatus = snap.dependencyReport.conflicts.length ? 'conflicted'
+    : has('authority_mismatch') || worst.some(i => i.severity === 'critical') ? 'high_risk'
+    : has('overly_restrictive') || has('redundant_protection') || has('performance_heavy') || has('fairness_mismatch') ? 'imbalanced'
+    : has('dependency_missing') ? 'partially_inactive'
+    : worst.length ? 'caution'
+    : issues.some(i => i.type === 'healthy_custom') || overrides > 0 ? 'healthy_custom' : 'healthy';
+  const reasonOf: Record<SIStatus, string> = {
+    healthy: 'Settings are coherent for your profile and mode.', healthy_custom: 'Custom but coherent — nothing looks accidental.', caution: worst[0]?.explanation || '', imbalanced: worst[0]?.explanation || '',
+    conflicted: 'Some settings contradict each other.', partially_inactive: 'Some settings are switched on but inactive because a prerequisite is off.', high_risk: worst[0]?.explanation || '', invalid: 'Configuration is invalid.'
+  };
+  const domain = (id: string, label: string, dom: SIDomain[], extra?: SIDomainHealth): SIDomainHealth => {
+    if (extra) return extra;
+    const di = worst.filter(i => dom.includes(i.domain));
+    const info = issues.filter(i => dom.includes(i.domain) && i.type === 'healthy_custom');
+    return { domain: id, label, status: di.some(i => i.type === 'overly_restrictive' || i.type === 'redundant_protection') ? 'over-restricted' : di.some(i => i.type === 'authority_mismatch') ? 'high_risk' : di.length ? 'caution' : info.length ? 'healthy_custom' : 'healthy', reason: di[0]?.explanation || info[0]?.explanation || 'No problems detected.' };
+  };
+  const coPilot = snap.byKey.coPilotAuthorityMode?.interpretation.level || 'Off';
+  const domains: SIDomainHealth[] = [
+    domain('ai', 'AI Intelligence', ['ai']),
+    ctx.isTeamMode ? domain('team', 'Team Coordination', ['team']) : { domain: 'team', label: 'Team Coordination', status: 'n/a', reason: 'Only applies in Team Mode.' },
+    ctx.isTeamMode ? domain('economy', 'Economy', ['economy']) : { domain: 'economy', label: 'Economy', status: 'n/a', reason: 'Team economy systems only apply in Team Mode.' },
+    domain('automation', 'Automation', ['automation']),
+    { ...domain('fairness', 'Fairness', ['fairness']), reason: has('fairness_mismatch') ? worst.find(i => i.type === 'fairness_mismatch')!.explanation : `${ctx.aiFairness.replace(/_/g, ' ')}: ${settings.allowNumericalModifiers === true ? 'numerical modifiers allowed' : 'no numerical AI advantages'}.` },
+    { domain: 'performance', label: 'Performance', status: load.label === 'very high' || (load.label === 'high' && ['casual', 'capable'].includes(ctx.aiIntelligence)) ? 'caution' : 'healthy', reason: `AI computation load ${load.label}${load.drivers[0] ? ` — mostly ${siLabel(load.drivers[0].key)}` : ''}.` },
+    { domain: 'replay', label: 'Replay', status: has('replay_risk') || (settings.aiReplayRecordingEnabled === true && !snap.dependencyReport.invalidationReport.preservesReplayCompatibility) ? 'caution' : 'healthy', reason: snap.dependencyReport.invalidationReport.preservesReplayCompatibility ? 'Replay-critical settings match replay-safe values.' : settings.aiReplayRecordingEnabled === true ? `Replay recording is on, but replay-critical settings differ from replay-safe values: ${snap.dependencyReport.invalidationReport.invalidatingKeys.map(k => String(k.key)).slice(0, 3).join(', ')}.` : 'Replay recording is off, so deterministic-replay settings are not required.' }
+  ];
+  const report: SettingsIntelligenceHealthReport = {
+    hash: snap.hash, overallStatus, overallReason: reasonOf[overallStatus],
+    dependencyHealth: { valid: snap.dependencyReport.isValid, score: snap.dependencyReport.healthScore, reason: snap.dependencyReport.isValid ? 'All dependencies satisfied.' : `${snap.dependencyReport.violations.length} dependency issue(s), ${snap.dependencyReport.conflicts.length} conflict(s).` },
+    behaviorHealth: domains.find(d => d.domain === 'economy')!.status === 'over-restricted' ? 'over-restricted' : worst.some(i => ['overly_restrictive', 'performance_heavy', 'extreme_value'].includes(i.type)) ? 'caution' : 'healthy',
+    interactionHealth: worst.some(i => i.ruleId !== 'extreme' && i.ruleId !== 'dependency_inspector') ? 'caution' : 'healthy',
+    authorityHealth: has('authority_mismatch') ? 'high_risk' : 'healthy',
+    fairnessHealth: has('fairness_mismatch') ? 'caution' : 'healthy',
+    performanceHealth: { load: load.label, reason: domains.find(d => d.domain === 'performance')!.reason },
+    replayHealth: { preserved: snap.dependencyReport.invalidationReport.preservesReplayCompatibility, reason: domains.find(d => d.domain === 'replay')!.reason },
+    domains, issues, acknowledged,
+    warnings: worst.map(i => i.title),
+    opportunities: [...(spend === 'high' && ctx.isTeamMode ? ['AI spending is unconstrained — consider a light protection layer if AI teammates overspend.'] : []), ...(load.label === 'light' && ['expert', 'maximum'].includes(ctx.aiIntelligence) ? ['There is headroom for deeper AI planning.'] : [])],
+    inertSettings: inert, spendingFreedom: spend,
+    effectiveConfigurationSummary: [`Co-Pilot: ${coPilot}`, `Auto Mode: ${snap.byKey.autoModeEnabled?.effectiveValue ? snap.byKey.permissionMode?.interpretation.level : 'off'}`, `AI planning: ${snap.byKey.aiPlanningDepth?.interpretation.level}`, `AI load: ${load.label}`, ...(ctx.isTeamMode ? [`Team spending freedom: ${spend}`] : []), `Fairness: ${ctx.aiFairness.replace(/_/g, ' ')}`]
+  };
+  return { snapshot: snap, report };
+}
+
+function siToZone(s: SISettingSnapshot): any {
+  const z = s.interpretation.zone;
+  const m = SI_META.get(s.key);
+  if (!z || !m) return s.configuredValue;
+  const target = s.interpretation.zoneStatus === 'above' ? z.hi : z.lo;
+  if (m.levels) return Object.entries(m.levels).filter(([k]) => ((siRegistry(s.key)?.allowedValues as string[] | undefined) || Object.keys(m.levels!)).includes(k)).sort((a, b) => Math.abs(a[1].rank - target) - Math.abs(b[1].rank - target))[0]?.[0] ?? s.configuredValue;
+  return target;
+}
+
+/** Which AI-intelligence preference the current planning settings actually resemble (profile drift). */
+export function siNearestIntelligenceProfile(settings: GameSettingsState): AiIntelligencePreference | null {
+  const keys = ['aiPlanningDepth', 'teamAiTacticalLookaheadDepth', 'teamAiCandidateEvaluationWidth'];
+  let best: { pref: AiIntelligencePreference; d: number } | null = null;
+  SMART_SETTINGS_RULES.filter(r => r.dimension === 'aiIntelligence').forEach(r => {
+    let d = 0; let n = 0;
+    keys.forEach(k => { const t = r.targetSettings[k]; const v = (settings as any)[k]; if (typeof t === 'number' && typeof v === 'number') { const span = (siRange(k)?.[1] ?? 10) - (siRange(k)?.[0] ?? 0) || 1; d += Math.abs(t - v) / span; n += 1; } });
+    if (n && (!best || d / n < best.d)) best = { pref: r.preferenceValue as AiIntelligencePreference, d: d / n };
+  });
+  return best ? (best as { pref: AiIntelligencePreference; d: number }).pref : null;
+}
+
+// ---- Intent understanding (settings-specific; GI 2.1 routes here, parseMultiClauseExperienceIntent is reused) --
+
+export type SIGoal = 'opponents_smarter' | 'opponents_easier' | 'opponents_more_aggressive' | 'opponents_less_aggressive' | 'mate_smarter' | 'mate_spend_more' | 'mate_spend_less'
+  | 'team_more_active' | 'team_calmer' | 'team_coordinated' | 'ai_faster' | 'less_help' | 'more_help' | 'more_automation' | 'simpler' | 'keep_setting' | 'everything_smart'
+  | 'health' | 'explain_setting' | 'too_high' | 'too_low' | 'why_inactive' | 'turn_off' | 'turn_on' | 'affects' | 'copilot_asking';
+export type SIProtection = 'fairness' | 'authority' | 'randomness' | 'copilot' | 'difficulty' | 'performance' | 'reckless' | 'interface_only';
+export interface SIIntent { goal: SIGoal; text: string; target: 'opponents' | 'teammate' | 'team' | 'ai' | 'player' | 'game'; symptom: boolean; protections: SIProtection[]; magnitude: 1 | 2; settingKey: string | null; value: number | null; mateName: string | null }
+
+const SI_ALIASES: Array<[RegExp, string]> = [
+  [/\bplanning depth|planning\b/, 'aiPlanningDepth'], [/\bthinking (depth|tier)\b/, 'aiThinkingDepth'], [/\blookahead\b/, 'teamAiTacticalLookaheadDepth'], [/\bcandidate (width|evaluation)|evaluation width\b/, 'teamAiCandidateEvaluationWidth'],
+  [/\b(outcome )?horizon\b/, 'projectedOutcomeHorizon'], [/\bprotected cash|vault lock\b/, 'vaultLockPercentage'], [/\bcash vault|vault\b/, 'teamCashVaultEnabled'], [/\bgovernor strictness|spending approval\b/, 'economySpendingApprovalStrictness'],
+  [/\b(economy )?governor\b/, 'teamEconomyGovernorEnabled'], [/\breserve strength\b/, 'economyReserveStrength'], [/\brecovery (spending )?(limit|cap)\b/, 'economyRecoverySpendingCap'], [/\bcash floor\b/, 'economyCashFloor'],
+  [/\btreasury\b/, 'teamTreasuryEnabled'], [/\bcompetitive (team )?ai\b/, 'teamCompetitiveAiEnabled'], [/\bstrategic command\b/, 'teamAiStrategicCommandEnabled'], [/\bteam os authority|team intelligence authority\b/, 'teamOsAuthorityLevel'],
+  [/\bteam os|team intelligence\b/, 'teamIntelligenceOsEnabled'], [/\bco-?pilot\b/, 'coPilotAuthorityMode'], [/\bauto ?mode permission\b/, 'permissionMode'], [/\bauto ?mode\b/, 'autoModeEnabled'], [/\bguardian\b/, 'guardianAiResponseMode'],
+  [/\bpersistent (ai )?memory\b/, 'aiPersistentMemoryEnabled'], [/\bfog of war\b/, 'fogOfWarEnabled'], [/\brandomness\b/, 'randomnessMode'], [/\brisk (appetite|tolerance|bias)\b/, 'adaptiveAiRiskBias'],
+  [/\b(numerical (modifiers|handicaps)|cheats?)\b/, 'allowNumericalModifiers'], [/\bstrategy (lab )?preset|temperament\b/, 'aiStrategyLabPreset'], [/\breservations?\b/, 'teamAiReservationStrictness'], [/\bexpert\b/, 'aiPlanningDepth']
+];
+
+export function siFindSettingKey(text: string): string | null {
+  const q = text.toLowerCase();
+  const exact = SETTINGS_INTELLIGENCE_METADATA.find(m => q.includes(m.key.toLowerCase()) || q.includes(siLabel(m.key).toLowerCase()));
+  if (exact) return exact.key;
+  for (const [re, key] of SI_ALIASES) if (re.test(q)) return key;
+  return null;
+}
+
+export function understandSettingsIntent(raw: string, mateNames: string[] = []): SIIntent | null {
+  const text = String(raw || '').trim();
+  const q = ` ${text.toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9$%.' -]+/g, ' ').replace(/\s+/g, ' ')} `;
+  const mates = mateNames.map(n => n.toLowerCase()).filter(Boolean);
+  const mateRe = new RegExp(`\\b(${['riley', 'teammate', 'my mate', 'partner', 'ally', ...mates.map(giEscape)].join('|')})\\b`);
+  const mateName = mates.find(n => q.includes(` ${n} `)) || (/\briley\b/.test(q) ? 'riley' : null);
+  const protections = new Set<SIProtection>();
+  if (/\b(fair|no cheats?|don'?t give (them|it|him) cheats|without cheat|not unfair|no hidden (info|information)|no numerical)\b/.test(q)) protections.add('fairness');
+  if (/\b(don'?t (let (him|her|it|them|co-?pilot) )?take over|keep me in control|recommendations only|i still want to play|without (giving|more) (him|it|them)? ?(more )?authority|don'?t let .{1,20} take over)\b/.test(q)) protections.add('authority');
+  if (/\b(don'?t (change|touch) (the )?randomness|keep (the )?randomness)\b/.test(q)) protections.add('randomness');
+  if (/\b(don'?t touch my co-?pilot|leave (my )?co-?pilot|keep my co-?pilot)\b/.test(q)) protections.add('copilot');
+  if (/\b(without (reducing|lowering|changing) (the )?difficulty( too much)?|without making (it|them|him) (stupid|dumber|easier|worse)|keep (it|them) (smart|hard|challenging)|without changing behaviou?r( too much)?)\b/.test(q)) protections.add('difficulty');
+  if (/\b(keep (the )?turns? fast|but (keep it )?faster|without slowing|keep (it|turns) quick|smarter but fast)\b/.test(q)) protections.add('performance');
+  if (/\bnot reckless|without being reckless\b/.test(q)) protections.add('reckless');
+  if (/\bkeep the advanced simulation|simplify the interface|interface only\b/.test(q)) protections.add('interface_only');
+  // Reuse the Director's settings-specific parser for protected dimensions it already understands.
+  try {
+    const parsed = parseMultiClauseExperienceIntent(text);
+    (parsed.protectedDimensions || []).forEach(d => { if (d === 'randomness') protections.add('randomness'); if (d === 'aiFairness') protections.add('fairness'); if (d === 'automation' || d === 'coPilotMode') protections.add('authority'); });
+  } catch { /* the dedicated parser is optional here */ }
+  const magnitude: 1 | 2 = /\b(much|a lot|way|significantly|really|very|maximum|max)\b/.test(q) ? 2 : 1;
+  const settingKey = siFindSettingKey(q);
+  const num = q.match(/\b(\d+(?:\.\d+)?)\b/);
+  const value = num ? Number(num[1]) : null;
+  const make = (goal: SIGoal, target: SIIntent['target'], symptom = false): SIIntent => ({ goal, text, target, symptom, protections: Array.from(protections).sort() as SIProtection[], magnitude, settingKey, value, mateName });
+  const aiSubj = /\b(opponents?|rivals?|enemy|enemies|the ai|ai|them|computer)\b/;
+  const mateSubj = mateRe.test(q);
+  // Configuration questions.
+  if (/\b(are|is) my settings (good|ok|okay|healthy|fine)|any settings? (hurting|wrong|bad)|settings? (are|is) hurting|check my (settings|configuration)|configuration health|settings health|are any of my settings\b|how (healthy|good|are) (are )?my (settings|configuration)|(analy[sz]e|audit|review|diagnose) my (settings|configuration)|my (settings|configuration) (look )?(healthy|ok|okay|good)\b/.test(q)) return make('health', 'game');
+  if (/\bwhich settings affect\b|\bwhat settings affect\b/.test(q)) return make('affects', mateSubj ? 'teammate' : /\bteam\b/.test(q) ? 'team' : 'game');
+  if (/\bis (anything|something) too (high|low)\b/.test(q)) return make(/too high/.test(q) ? 'too_high' : 'too_low', 'game');
+  if (/\btoo (high|low)\b/.test(q) && settingKey) return make(/too high/.test(q) ? 'too_high' : 'too_low', 'game');
+  if (/\bwhy is (this|the|my)? ?.{0,30}(setting )?(inactive|not working|greyed|disabled|doing nothing)\b/.test(q) && settingKey) return make('why_inactive', 'game');
+  if (/\bwhat (happens|would happen) if i turn (this|it|.{1,30}) (off|on)\b/.test(q) && settingKey) return make(/ on\b/.test(q.slice(q.lastIndexOf('turn'))) ? 'turn_on' : 'turn_off', 'game');
+  if (/\b(explain|what does|what is) (this|the)? ?.{0,30}setting\b|\bexplain (the )?.{1,30}\b/.test(q) && settingKey && !/\bwhy\b/.test(q)) return make('explain_setting', 'game');
+  if (/\bwhy (does|is|do) co-?pilot (keep )?(ask|asking|prompt)|explain why co-?pilot keeps asking\b/.test(q)) return make('copilot_asking', 'player');
+  if (/\bkeep (the )?(maximum|max|my) .{1,30}\b/.test(q) && settingKey && !aiSubj.test(q.replace(settingKey, ''))) return make('keep_setting', 'game');
+  if (/\b(turn|switch) everything smart on|everything smart|max(imize)? everything\b/.test(q)) return make('everything_smart', 'game');
+  // Behaviour / experience goals.
+  if (/\b(let|allow) co-?pilot (to )?(do|take|handle|play) more|more automation|co-?pilot (should )?take over more|give co-?pilot more (control|authority)\b/.test(q)) return make('more_automation', 'player');
+  if (/\bless (ai )?help|fewer (hints|prompts)|stop helping\b/.test(q)) return make('less_help', 'player');
+  if (/\bmore (ai )?help|help me more\b/.test(q)) return make('more_help', 'player');
+  if (/\b(simpler|simplify|less complex|too complicated)\b/.test(q)) return make('simpler', 'game');
+  if (/\b(ai )?turns? (are|is) (taking )?(too |so )?(long|slow)|ai (is )?(too )?slow|why is the ai taking so long|faster ai|ai (turns? )?faster|make (the )?ai (turns? )?faster|speed up (the )?ai\b/.test(q)) return make('ai_faster', 'ai', /\btaking|slow|long\b/.test(q));
+  if (mateSubj && /\b(isn'?t|is not|doesn'?t|does not|won'?t|never)\b.{0,25}\bspend(ing|s)?\b/.test(q)) return make('mate_spend_more', 'teammate', true);
+  if (mateSubj && /\b(barely spends?|doesn'?t spend|does not spend|won'?t spend|not spending|n'?t spending|never spends?|spends? (too )?little|spend more|hoards?|too conservative|should spend more)\b/.test(q)) return make('mate_spend_more', 'teammate', !/\bshould|more\b/.test(q) || /\bbarely|doesn'?t|n'?t|not|never|little|hoard\b/.test(q));
+  if (mateSubj && /\b(spends? too much|overspends?|spend less|wastes? money)\b/.test(q)) return make('mate_spend_less', 'teammate', true);
+  if (mateSubj && /\b(smarter|better|stronger|more capable|sharper)\b/.test(q)) return make('mate_smarter', 'teammate');
+  if (/\bteam mode\b.*\b(too )?(passive|conservative|slow to act)\b/.test(q)) return make('team_more_active', 'team', true);
+  if (/\bteam mode\b.*\b(too )?chaotic\b/.test(q)) return make('team_calmer', 'team', true);
+  if (/\b(team mode|the team|teammates)\b.*\bcoordinated\b|\bmore coordinated\b/.test(q)) return make('team_coordinated', 'team');
+  if ((aiSubj.test(q) || /\bgame\b/.test(q)) && /\b(too passive|more aggressive|less passive|aggressive but|not aggressive enough|barely (attack|contest))\b/.test(q)) return make('opponents_more_aggressive', 'opponents', /\btoo passive|not aggressive enough|barely\b/.test(q));
+  if (aiSubj.test(q) && /\b(too aggressive|less aggressive|calmer|more passive)\b/.test(q)) return make('opponents_less_aggressive', 'opponents', /\btoo aggressive\b/.test(q));
+  if ((aiSubj.test(q) || /\b(the game|game)\b/.test(q)) && /\b(smarter|harder|tougher|stronger|more challenging|better)\b/.test(q)) return make('opponents_smarter', 'opponents');
+  if ((aiSubj.test(q) || /\b(the game|game)\b/.test(q)) && /\b(easier|too hard|dumber|weaker|less challenging)\b/.test(q)) return make('opponents_easier', 'opponents', /\btoo hard\b/.test(q));
+  return null;
+}
+
+// ---- Evidence (read-only, from gameplay systems) ----------------------------------------------------------
+
+export interface SIEvidence {
+  /** Team OS view of the relevant teammate (never duplicated state — a small read-only summary). */
+  mate?: { id: string; name: string; money: number; protectedCash: number; inRecovery: boolean; tasks: string[]; taskTypes: string[]; reserveFloor: number | null } | null;
+  /** Governor rejections of useful AI spending observed recently (Activity Ledger / Background AI evidence). */
+  recentSpendRejections?: number;
+  /** Rival-side opportunity: can any visible rival afford to contest anything right now? (null = hidden / unknown) */
+  rivalCanContest?: boolean | null;
+  gi3Active?: boolean;
+}
+
+export interface SIDiagnosis {
+  symptom: SIGoal;
+  classification: 'configuration' | 'gameplay' | 'mixed' | 'none';
+  configurationCauses: Array<{ key: string; label: string; detail: string }>;
+  gameplayCauses: string[];
+  lockedContributors: string[];
+  confidence: SIConfidence;
+  summary: string;
+}
+
+export function diagnoseSettingsSymptom(intent: SIIntent, snap: SISnapshot, settings: GameSettingsState, evidence: SIEvidence = {}): SIDiagnosis {
+  const causes: SIDiagnosis['configurationCauses'] = [];
+  const gameplay: string[] = [];
+  const p = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const locked = (k: string) => (p.lockedSettingKeys || []).includes(k) || Boolean(siCategoryOf(k) && (p.lockedCategories || []).includes(siCategoryOf(k)!));
+  const who = evidence.mate?.name || (intent.mateName ? intent.mateName.replace(/^./, c => c.toUpperCase()) : 'Your teammate');
+  switch (intent.goal) {
+    case 'mate_spend_more':
+    case 'team_more_active': {
+      siSpendingProtectionLayers(snap).forEach(l => causes.push({ key: l.key, label: siLabel(l.key), detail: l.label }));
+      if (!snap.ctx.isTeamMode) gameplay.push('Team spending settings only apply in Team Mode.');
+      const m = evidence.mate;
+      if (m) {
+        if (m.taskTypes.some(t => t === 'generate_cash' || t === 'preserve_reserve')) gameplay.push(`${m.name}'s current Team OS task is “${m.tasks[m.taskTypes.findIndex(t => t === 'generate_cash' || t === 'preserve_reserve')]}”, which intentionally builds or preserves cash.`);
+        if (m.reserveFloor) gameplay.push(`The active team strategy keeps a $${m.reserveFloor.toLocaleString()} reserve floor.`);
+        if (m.inRecovery) gameplay.push(`${m.name} is in economic recovery, which restricts spending by design.`);
+        if (m.money - m.protectedCash < 500) gameplay.push(`${m.name} only has $${Math.max(0, Math.round(m.money - m.protectedCash)).toLocaleString()} of spendable cash.`);
+      }
+      break;
+    }
+    case 'mate_spend_less': {
+      const layers = siSpendingProtectionLayers(snap);
+      if (!layers.length && snap.ctx.isTeamMode) causes.push({ key: 'teamEconomyGovernorEnabled', label: siLabel('teamEconomyGovernorEnabled'), detail: siVal(snap, 'teamEconomyGovernorEnabled') ? 'Governor on but lightly configured' : 'No spending protection is active' });
+      break;
+    }
+    case 'opponents_more_aggressive': {
+      const preset = String(siVal(snap, 'aiStrategyLabPreset') || 'balanced');
+      if (['defensive', 'economic'].includes(preset)) causes.push({ key: 'aiStrategyLabPreset', label: siLabel('aiStrategyLabPreset'), detail: `${snap.byKey.aiStrategyLabPreset.interpretation.level} temperament` });
+      if (siActive(snap, 'adaptiveAiRiskBias') && Number(siVal(snap, 'adaptiveAiRiskBias')) < 0.8) causes.push({ key: 'adaptiveAiRiskBias', label: siLabel('adaptiveAiRiskBias'), detail: 'Cautious risk appetite' });
+      if (Number(siVal(snap, 'aiPlanningDepth')) <= 1) causes.push({ key: 'aiPlanningDepth', label: siLabel('aiPlanningDepth'), detail: 'Very short planning misses multi-step attacks' });
+      if (snap.ctx.isTeamMode && siActive(snap, 'teamAiEndgameAggressionMultiplier') && Number(siVal(snap, 'teamAiEndgameAggressionMultiplier')) < 1) causes.push({ key: 'teamAiEndgameAggressionMultiplier', label: siLabel('teamAiEndgameAggressionMultiplier'), detail: 'No endgame push' });
+      if (evidence.rivalCanContest === false) gameplay.push('Right now no rival can afford to contest a region — passivity may simply reflect a lack of legal opportunities.');
+      break;
+    }
+    case 'opponents_less_aggressive': {
+      if (String(siVal(snap, 'aiStrategyLabPreset')) === 'aggressive') causes.push({ key: 'aiStrategyLabPreset', label: siLabel('aiStrategyLabPreset'), detail: 'Aggressive temperament' });
+      if (siActive(snap, 'adaptiveAiRiskBias') && Number(siVal(snap, 'adaptiveAiRiskBias')) > 1.3) causes.push({ key: 'adaptiveAiRiskBias', label: siLabel('adaptiveAiRiskBias'), detail: 'Bold risk appetite' });
+      break;
+    }
+    case 'ai_faster': {
+      siAiLoad(settings, snap.ctx).drivers.slice(0, 3).forEach(d => causes.push({ key: d.key, label: siLabel(d.key), detail: `${siLabel(d.key)}: ${snap.byKey[d.key]?.interpretation.level}` }));
+      break;
+    }
+    case 'copilot_asking': {
+      const cp = siReadSetting(settings, 'coPilotAuthorityMode');
+      if (cp === 'ask_before_acting') causes.push({ key: 'coPilotAuthorityMode', label: siLabel('coPilotAuthorityMode'), detail: 'Co-Pilot is set to ask before acting' });
+      if (snap.byKey.guardianAiResponseMode?.active && siReadSetting(settings, 'guardianAiResponseMode') === 'require_confirmation') causes.push({ key: 'guardianAiResponseMode', label: siLabel('guardianAiResponseMode'), detail: 'Guardian asks you to confirm risky actions' });
+      break;
+    }
+    default: break;
+  }
+  const lockedContributors = causes.map(c => c.key).filter(locked);
+  const cfg = causes.length;
+  const classification: SIDiagnosis['classification'] = cfg >= 2 && gameplay.length ? 'mixed' : cfg >= 2 || (cfg === 1 && !gameplay.length && ['ai_faster', 'copilot_asking', 'opponents_more_aggressive', 'opponents_less_aggressive', 'mate_spend_less'].includes(intent.goal)) ? 'configuration' : gameplay.length ? 'gameplay' : cfg ? 'configuration' : 'none';
+  const confidence: SIConfidence = classification === 'mixed' ? 'moderate' : classification === 'gameplay' ? (gameplay.length >= 2 ? 'high' : 'moderate') : cfg >= 3 ? 'high' : cfg ? 'moderate' : 'low';
+  const summary = classification === 'gameplay'
+    ? `Your settings look healthy for this. ${gameplay[0]}`
+    : classification === 'mixed'
+      ? `${who === 'Your teammate' ? 'This' : `${who}'s behaviour`} is partly by design (${gameplay[0].replace(/\.$/, '')}), but your configuration is also unusually restrictive: ${causes.map(c => c.detail).join(', ')}.`
+      : classification === 'configuration'
+        ? `Configuration is the likely contributor: ${causes.map(c => c.detail).join(', ')}.`
+        : 'Nothing in the configuration explains this, and there is no clear gameplay cause either.';
+  return { symptom: intent.goal, classification, configurationCauses: causes, gameplayCauses: gameplay, lockedContributors, confidence, summary };
+}
+
+// ---- Minimal-change optimizer ---------------------------------------------------------------------------
+
+export interface SIChange { key: string; label: string; from: any; to: any; fromLevel: string; toLevel: string; effect: string; tradeoff: string; timing: SILiveTiming; category: SmartSettingsCategory | null }
+export interface SIImpactRow { dim: SIImpactDim; label: string; change: 'much lower' | 'lower' | 'slightly lower' | 'unchanged' | 'slightly higher' | 'higher' | 'much higher' }
+export interface SettingsIntelligenceRecommendation {
+  id: string;
+  intent: SIIntent;
+  diagnosis: SIDiagnosis | null;
+  desiredOutcome: string;
+  confidence: SIConfidence;
+  affectedDomains: SIDomain[];
+  currentBehavior: string;
+  recommendedBehavior: string;
+  changes: SIChange[];
+  profileChange: Partial<SmartSettingsProfile> | null;
+  alternatives: SIFixStrategy[];
+  unchangedProtections: string[];
+  lockedNotes: string[];
+  skipped: string[];
+  expectedEffects: SIImpactRow[];
+  tradeoffs: string[];
+  risks: string[];
+  timing: { now: number; turn_end: number; next_match: number };
+  fairnessImpact: string;
+  authorityImpact: string;
+  authorityIncrease: boolean;
+  performanceImpact: string;
+  replayImpact: string;
+  reason: string;
+  noChangeNeeded: boolean;
+}
+
+/** Performance levers ordered by least behavioural side effect (width → horizon → lookahead → thinking → planning). */
+export function siFasterLevers(snap: SISnapshot, settings: GameSettingsState, protectDifficulty = false): Array<{ key: string; value: any }> {
+  const out: Array<{ key: string; value: any }> = [];
+  const order = ['teamAiCandidateEvaluationWidth', 'projectedOutcomeHorizon', 'teamAiTacticalLookaheadDepth', 'aiThinkingDepth', 'aiPlanningDepth'];
+  order.forEach(k => {
+    const s = snap.byKey[k];
+    if (!s || !s.active) return;
+    const z = s.interpretation.zone;
+    if (s.interpretation.zoneStatus === 'above' && z) out.push({ key: k, value: siToZone(s) });
+  });
+  if (!out.length && !protectDifficulty) {
+    const w = snap.byKey.teamAiCandidateEvaluationWidth;
+    if (w?.active && Number(w.configuredValue) > 3) out.push({ key: 'teamAiCandidateEvaluationWidth', value: siStepValue('teamAiCandidateEvaluationWidth', w.configuredValue, -1) });
+    else if (snap.byKey.aiThinkingDepth?.configuredValue === 'deep') out.push({ key: 'aiThinkingDepth', value: 'balanced' });
+  }
+  void settings;
+  return out;
+}
+
+const SI_AUTHORITY_KEYS = new Set(['coPilotEnabled', 'coPilotAuthorityMode', 'permissionMode', 'autoModeEnabled', 'humanAutomationEnabled', 'teamOsAuthorityLevel', 'teamAiStrategicCommandAuthorityMode']);
+const SI_RANDOMNESS_KEYS = new Set(['randomnessMode', 'worldRngMode', 'aiDeterministic', 'deterministicRngActive']);
+const SI_COPILOT_KEYS = new Set(['coPilotEnabled', 'coPilotAuthorityMode', 'guardianAiResponseMode', 'guardianAiEnabled']);
+const SI_INTELLIGENCE_KEYS = new Set(['aiPlanningDepth', 'aiThinkingDepth', 'teamAiTacticalLookaheadDepth', 'teamAiCandidateEvaluationWidth', 'projectedOutcomeHorizon']);
+
+function siDirection(key: string, from: any, to: any): number {
+  const m = SI_META.get(key);
+  if (!m) return 0;
+  if (m.levels) return Math.sign((m.levels[String(to)]?.rank ?? 0) - (m.levels[String(from)]?.rank ?? 0));
+  if (typeof to === 'boolean' || typeof from === 'boolean') return to === from ? 0 : to ? 1 : -1;
+  return Math.sign(Number(to) - Number(from));
+}
+
+function siMagnitude(key: string, from: any, to: any): number {
+  const m = SI_META.get(key);
+  if (!m) return 0;
+  if (m.levels) return Math.abs((m.levels[String(to)]?.rank ?? 0) - (m.levels[String(from)]?.rank ?? 0));
+  if (typeof to === 'boolean') return to === from ? 0 : 1.5;
+  const r = siRange(key) || [0, 10];
+  return Math.min(3, (Math.abs(Number(to) - Number(from)) / ((r[1] - r[0]) || 1)) * 4);
+}
+
+export function estimateSettingsImpact(changes: Array<{ key: string; from: any; to: any }>, before: GameSettingsState, after: GameSettingsState, ctx: SettingsIntelligenceContext): SIImpactRow[] {
+  const acc: Partial<Record<SIImpactDim, number>> = {};
+  changes.forEach(c => {
+    const m = SI_META.get(c.key);
+    if (!m?.effects) return;
+    const dir = siDirection(c.key, c.from, c.to);
+    const mag = siMagnitude(c.key, c.from, c.to);
+    (Object.entries(m.effects) as Array<[SIImpactDim, number]>).forEach(([d, w]) => { acc[d] = (acc[d] || 0) + dir * mag * w * 0.5; });
+  });
+  const la = siAiLoad(before, ctx).score;
+  const lb = siAiLoad(after, ctx).score;
+  acc.performance_cost = Math.round((lb - la) / 2 * 10) / 10 || acc.performance_cost || 0;
+  const label = (x: number): SIImpactRow['change'] => (Math.abs(x) < 0.25 ? 'unchanged' : x > 0 ? (x < 0.75 ? 'slightly higher' : x < 1.75 ? 'higher' : 'much higher') : (x > -0.75 ? 'slightly lower' : x > -1.75 ? 'lower' : 'much lower'));
+  const dims: SIImpactDim[] = ['ai_intelligence', 'ai_aggression', 'ai_caution', 'ai_planning', 'team_coordination', 'team_spending_freedom', 'team_protection', 'team_autonomy', 'player_control', 'automation', 'guidance', 'complexity', 'randomness', 'fairness', 'performance_cost', 'replay_compatibility'];
+  const rows = dims.map(d => ({ dim: d, label: SI_IMPACT_LABELS[d], change: label(acc[d] || 0) }));
+  // Always show the protected axes, even when unchanged.
+  return rows.filter(r => r.change !== 'unchanged' || ['player_control', 'fairness', 'performance_cost'].includes(r.dim));
+}
+
+function siGoalLevers(intent: SIIntent, snap: SISnapshot, settings: GameSettingsState): { levers: Array<{ key: string; value: any }>; profileChange: Partial<SmartSettingsProfile> | null; alternatives: SIFixStrategy[]; desired: string } {
+  const step = (k: string, dir: 1 | -1, n = 1) => ({ key: k, value: siStepValue(k, siReadSetting(settings, k), dir, n) });
+  const team = snap.ctx.isTeamMode;
+  const perf = intent.protections.includes('performance');
+  const big = intent.magnitude === 2;
+  switch (intent.goal) {
+    case 'opponents_smarter':
+    case 'everything_smart': {
+      const levers = [step('aiPlanningDepth', 1)];
+      if (settings.aiThinkingDepth !== 'deep' && !perf) levers.push({ key: 'aiThinkingDepth', value: 'deep' });
+      if (team && !perf) levers.push(step('teamAiCandidateEvaluationWidth', 1));
+      if (team && (big || intent.goal === 'everything_smart')) levers.push(step('teamAiTacticalLookaheadDepth', 1));
+      if (perf) siFasterLevers(snap, settings, true).forEach(l => { if (l.key !== 'aiPlanningDepth') levers.push(l); });
+      if (intent.goal === 'everything_smart') { levers.push({ key: 'guardianAiEnabled', value: true }, { key: 'aiPersistentMemoryEnabled', value: true }); }
+      return { levers: big || intent.goal === 'everything_smart' ? levers : levers.slice(0, 3), profileChange: null, alternatives: [], desired: intent.goal === 'everything_smart' ? 'Every intelligence system on, within your consent and authority choices' : 'Stronger AI decisions without numerical advantages' };
+    }
+    case 'opponents_easier': return { levers: [step('aiPlanningDepth', -1), ...(team ? [step('teamAiCandidateEvaluationWidth', -1)] : [])], profileChange: null, alternatives: [], desired: 'A gentler opponent' };
+    case 'opponents_more_aggressive': {
+      const levers: Array<{ key: string; value: any }> = [];
+      const preset = String(settings.aiStrategyLabPreset || 'balanced');
+      if (['defensive', 'economic'].includes(preset)) levers.push({ key: 'aiStrategyLabPreset', value: 'balanced' });
+      else if (!intent.protections.includes('reckless') || preset !== 'aggressive') levers.push({ key: 'aiStrategyLabPreset', value: 'aggressive' });
+      if (snap.byKey.adaptiveAiRiskBias?.active) { const v = siStepValue('adaptiveAiRiskBias', settings.adaptiveAiRiskBias ?? 1, 1); levers.push({ key: 'adaptiveAiRiskBias', value: intent.protections.includes('reckless') ? Math.min(1.3, v) : v }); }
+      if (team && snap.byKey.teamAiEndgameAggressionMultiplier?.active) levers.push(step('teamAiEndgameAggressionMultiplier', 1));
+      if (Number(settings.aiPlanningDepth) <= 1) levers.push(step('aiPlanningDepth', 1));
+      return { levers: levers.slice(0, 2), profileChange: null, alternatives: [], desired: intent.protections.includes('reckless') ? 'More assertive AI that still respects risk' : 'More assertive opponents' };
+    }
+    case 'opponents_less_aggressive': return { levers: [...(String(settings.aiStrategyLabPreset) === 'aggressive' ? [{ key: 'aiStrategyLabPreset', value: 'balanced' }] : [{ key: 'aiStrategyLabPreset', value: 'defensive' }]), ...(snap.byKey.adaptiveAiRiskBias?.active ? [step('adaptiveAiRiskBias', -1)] : [])].slice(0, 2), profileChange: null, alternatives: [], desired: 'Calmer opponents' };
+    case 'mate_smarter': return { levers: [step('teamAiTacticalLookaheadDepth', 1), ...(perf ? [] : [step('teamAiCandidateEvaluationWidth', 1)]), step('teamBrainTeammateSupportBias', 1)].slice(0, big ? 3 : 2), profileChange: null, alternatives: [], desired: 'Smarter AI teammates with unchanged authority' };
+    case 'mate_spend_more':
+    case 'team_more_active': {
+      const layers = siSpendingProtectionLayers(snap);
+      const rule = SETTINGS_INTERACTION_RULES.find(r => r.id === 'over_restrictive_spending')!;
+      const alternatives = rule.recommendationStrategy(snap, settings, layers.map(l => l.key));
+      return { levers: alternatives[0]?.changes || [], profileChange: null, alternatives, desired: 'Moderately more AI spending flexibility, keeping economic safety systems on' };
+    }
+    case 'mate_spend_less': {
+      const levers: Array<{ key: string; value: any }> = [];
+      if (snap.byKey.vaultLockPercentage?.active) levers.push(step('vaultLockPercentage', 1));
+      else if (snap.byKey.economyReserveStrength?.active) levers.push(step('economyReserveStrength', 1));
+      else if (snap.byKey.teamEconomyGovernorEnabled?.dependencyState === 'ok' && settings.teamEconomyGovernorEnabled !== true) levers.push({ key: 'teamEconomyGovernorEnabled', value: true });
+      else if (snap.byKey.teamAiReservationStrictness?.active) levers.push(step('teamAiReservationStrictness', 1));
+      return { levers, profileChange: null, alternatives: [], desired: 'More disciplined AI spending' };
+    }
+    case 'team_calmer': return { levers: [...(snap.byKey.parallelAiPlanningCoordinationStrictness?.active ? [step('parallelAiPlanningCoordinationStrictness', 1)] : []), step('teamAiPlanMaximumDurationDays', 1)].slice(0, 2), profileChange: null, alternatives: [], desired: 'Steadier, less chaotic team AI' };
+    case 'team_coordinated': return { levers: [step('teamBrainTeammateSupportBias', 1), ...(snap.byKey.parallelAiPlanningCoordinationStrictness?.active ? [step('parallelAiPlanningCoordinationStrictness', 1)] : [])], profileChange: null, alternatives: [], desired: 'Better team coordination without taking control from you' };
+    case 'ai_faster': return { levers: siFasterLevers(snap, settings, intent.protections.includes('difficulty')).slice(0, 2), profileChange: null, alternatives: [], desired: 'Faster AI turns with minimal behaviour change' };
+    case 'less_help': {
+      const levers: Array<{ key: string; value: any }> = [];
+      if ((siRank('coPilotAuthorityMode', siReadSetting(settings, 'coPilotAuthorityMode')) ?? 0) > 2) levers.push({ key: 'coPilotAuthorityMode', value: 'recommendations' });
+      if (snap.byKey.guardianAiResponseMode?.active && siReadSetting(settings, 'guardianAiResponseMode') === 'require_confirmation') levers.push({ key: 'guardianAiResponseMode', value: 'warn_before_action' });
+      if (!levers.length && settings.decisionTransparencyEnabled) levers.push({ key: 'decisionTransparencyEnabled', value: false });
+      return { levers, profileChange: null, alternatives: [], desired: 'Less assistance, same game' };
+    }
+    case 'more_help': return { levers: [...(siReadSetting(settings, 'guardianAiEnabled') ? [] : [{ key: 'guardianAiEnabled', value: true }]), ...(settings.decisionTransparencyEnabled ? [] : [{ key: 'decisionTransparencyEnabled', value: true }])], profileChange: null, alternatives: [], desired: 'More guidance without handing over control' };
+    case 'more_automation': {
+      const cur = siReadSetting(settings, 'coPilotAuthorityMode');
+      const next = (siRank('coPilotAuthorityMode', cur) ?? 0) < 3 ? 'ask_before_acting' : siStepValue('coPilotAuthorityMode', cur, 1);
+      return { levers: [...(siReadSetting(settings, 'coPilotEnabled') ? [] : [{ key: 'coPilotEnabled', value: true }]), { key: 'coPilotAuthorityMode', value: next }], profileChange: null, alternatives: [], desired: 'Co-Pilot handles more for you' };
+    }
+    case 'copilot_asking': {
+      const levers: Array<{ key: string; value: any }> = [];
+      if (siReadSetting(settings, 'coPilotAuthorityMode') === 'ask_before_acting') levers.push({ key: 'coPilotAuthorityMode', value: 'recommendations' });
+      if (snap.byKey.guardianAiResponseMode?.active && siReadSetting(settings, 'guardianAiResponseMode') === 'require_confirmation') levers.push({ key: 'guardianAiResponseMode', value: 'warn_before_action' });
+      return { levers: levers.slice(0, 1), profileChange: null, alternatives: [], desired: 'Fewer confirmation prompts' };
+    }
+    case 'simpler': return { levers: [...(settings.decisionTransparencyEnabled ? [{ key: 'decisionTransparencyEnabled', value: false }] : []), ...(settings.gameActivityLedgerDetailLevel && settings.gameActivityLedgerDetailLevel !== 'standard' ? [{ key: 'gameActivityLedgerDetailLevel', value: 'standard' }] : [])], profileChange: (settings.smartSettingsProfile?.interfaceLevel || 'guided') !== 'simple' ? { interfaceLevel: 'simple' } : null, alternatives: [], desired: 'A simpler interface; difficulty and simulation unchanged' };
+    default: return { levers: [], profileChange: null, alternatives: [], desired: '' };
+  }
+}
+
+export function buildSettingsIntelligenceRecommendation(intent: SIIntent, settings: GameSettingsState, ctx: SettingsIntelligenceContext, evidence: SIEvidence = {}, state: SettingsIntelligenceState | null = null): SettingsIntelligenceRecommendation {
+  const { snapshot: snap } = buildSettingsIntelligenceHealth(settings, ctx, state);
+  const symptomGoals: SIGoal[] = ['mate_spend_more', 'team_more_active', 'mate_spend_less', 'opponents_more_aggressive', 'opponents_less_aggressive', 'ai_faster', 'copilot_asking'];
+  const diagnosis = symptomGoals.includes(intent.goal) ? diagnoseSettingsSymptom(intent, snap, settings, evidence) : null;
+  return siFinalizeRecommendation(intent, siGoalLevers(intent, snap, settings), snap, settings, ctx, diagnosis);
+}
+
+/** A health issue's fix strategy as a recommendation (same checks, preview and plan compilation). */
+export function buildSettingsIntelligenceFixRecommendation(issueId: string, strategyId: string, settings: GameSettingsState, ctx: SettingsIntelligenceContext, state: SettingsIntelligenceState | null = null): SettingsIntelligenceRecommendation | null {
+  const { snapshot: snap, report } = buildSettingsIntelligenceHealth(settings, ctx, state);
+  const issue = [...report.issues, ...report.acknowledged].find(i => i.id === issueId);
+  const strategy = issue?.strategies.find(s => s.id === strategyId);
+  if (!issue || !strategy) return null;
+  const intent: SIIntent = { goal: 'health', text: `Fix: ${issue.title}`, target: 'game', symptom: false, protections: [], magnitude: 1, settingKey: strategy.changes[0]?.key || null, value: null, mateName: null };
+  const rec = siFinalizeRecommendation(intent, { levers: strategy.changes, profileChange: null, alternatives: issue.strategies.filter(s => s.id !== strategyId), desired: `${strategy.label} — improves ${strategy.improves.toLowerCase()}` }, snap, settings, ctx, null, true);
+  return { ...rec, id: `sifix_${issueId}_${strategyId}`, reason: issue.explanation, currentBehavior: issue.explanation };
+}
+
+function siFinalizeRecommendation(intent: SIIntent, plan: ReturnType<typeof siGoalLevers>, snap: SISnapshot, settings: GameSettingsState, ctx: SettingsIntelligenceContext, diagnosis: SIDiagnosis | null, allowParentEnable = false): SettingsIntelligenceRecommendation {
+  const p = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const lockedKeys = new Set(p.lockedSettingKeys || []);
+  const lockedCats = new Set(p.lockedCategories || []);
+  const skipped: string[] = [];
+  const lockedNotes: string[] = [];
+  const explicitAuthorityRequest = intent.goal === 'more_automation';
+  let levers = plan.levers;
+  // Do not blame settings when gameplay explains the behaviour.
+  if (diagnosis && diagnosis.classification === 'gameplay') levers = [];
+  // Mixed: the smallest change only.
+  if (diagnosis && diagnosis.classification === 'mixed') levers = levers.slice(0, 1);
+  const tryLevers = (candidateLevers: Array<{ key: string; value: any }>, record: boolean) => {
+  const accepted: Array<{ key: string; value: any }> = [];
+  for (const l of candidateLevers) {
+    const m = SI_META.get(l.key);
+    const cur = siReadSetting(settings, l.key);
+    const cat = siCategoryOf(l.key);
+    if (l.value === undefined || settingsValuesEqual(cur, l.value)) continue;
+    if (m?.consent) { skipped.push(`${siLabel(l.key)} needs your explicit consent — not changed. You can enable it yourself in Settings.`); continue; }
+    if (lockedKeys.has(l.key) || (cat && lockedCats.has(cat))) { lockedNotes.push(`${siLabel(l.key)} is contributing, but it is locked${lockedKeys.has(l.key) ? '' : ` (category “${cat}” is locked)`} — I could improve this further, but I won't unlock it.`); continue; }
+    if (snap.byKey[l.key] && !snap.byKey[l.key].active && !(m?.on && l.value === true && snap.byKey[l.key].dependencyState === 'ok') && !(allowParentEnable && m?.on)) { skipped.push(`${siLabel(l.key)} is inactive (${snap.byKey[l.key].inertReason}) — changing it would do nothing.`); continue; }
+    const dir = siDirection(l.key, cur, l.value);
+    if (intent.protections.includes('fairness') && (m?.domain === 'fairness')) { skipped.push(`${siLabel(l.key)} left unchanged (fairness protected).`); continue; }
+    if (SI_RANDOMNESS_KEYS.has(l.key) && intent.protections.includes('randomness')) { skipped.push(`${siLabel(l.key)} left unchanged (randomness protected).`); continue; }
+    if (SI_COPILOT_KEYS.has(l.key) && intent.protections.includes('copilot')) { skipped.push(`${siLabel(l.key)} left unchanged (you asked not to touch Co-Pilot).`); continue; }
+    if (SI_AUTHORITY_KEYS.has(l.key) && dir > 0 && (!explicitAuthorityRequest || intent.protections.includes('authority'))) { skipped.push(`${siLabel(l.key)} would raise automation authority — never changed without an explicit request.`); continue; }
+    if (intent.protections.includes('difficulty') && SI_INTELLIGENCE_KEYS.has(l.key) && dir < 0 && l.key === 'aiPlanningDepth') { skipped.push(`${siLabel(l.key)} kept (difficulty protected).`); continue; }
+    if (intent.protections.includes('interface_only') && m && m.domain !== 'interface') continue;
+    accepted.push(l);
+  }
+  void record;
+  return accepted;
+  };
+  let accepted = tryLevers(levers, true);
+  // A locked or inapplicable first choice falls through to the next alternative strategy (never unlocks).
+  if (!accepted.length && levers.length && plan.alternatives.length && !(diagnosis && diagnosis.classification === 'gameplay')) {
+    for (const alt of plan.alternatives.slice(1)) {
+      const lockedNow = lockedNotes.length; const skippedNow = skipped.length;
+      const got = tryLevers(alt.changes, true);
+      if (got.length) { accepted = got; break; }
+      lockedNotes.length = lockedNow; skipped.length = skippedNow;
+    }
+  }
+  const after: GameSettingsState = { ...settings };
+  accepted.forEach(l => siWriteForPreview(after, l.key, l.value));
+  const changes: SIChange[] = accepted.map(l => {
+    const from = siReadSetting(settings, l.key);
+    const fi = interpretSettingValue(l.key, from, ctx);
+    const ti = interpretSettingValue(l.key, l.value, ctx);
+    const m = SI_META.get(l.key);
+    const up = siDirection(l.key, from, l.value) > 0;
+    return { key: l.key, label: siLabel(l.key), from, to: l.value, fromLevel: fi.level, toLevel: ti.level, effect: ti.likelyEffect || (up ? m?.why?.raise : m?.why?.lower) || '', tradeoff: up ? (m?.tradeoff || (m?.on?.hurts ?? '')) : (m?.why?.raise ? `Less of: ${m.why.raise.replace(/\.$/, '')}` : ''), timing: siLiveTiming(l.key, ctx.isLiveMatch), category: siCategoryOf(l.key) };
+  });
+  const timing = { now: changes.filter(c => c.timing === 'now').length, turn_end: changes.filter(c => c.timing === 'turn_end').length, next_match: changes.filter(c => c.timing === 'next_match').length };
+  const impacts = estimateSettingsImpact(changes.map(c => ({ key: c.key, from: c.from, to: c.to })), settings, after, ctx);
+  const authorityIncrease = changes.some(c => SI_AUTHORITY_KEYS.has(c.key) && siDirection(c.key, c.from, c.to) > 0);
+  const coPilot = interpretSettingValue('coPilotAuthorityMode', siReadSetting(settings, 'coPilotAuthorityMode'), ctx).level;
+  const auto = siReadSetting(settings, 'autoModeEnabled') ? interpretSettingValue('permissionMode', siReadSetting(settings, 'permissionMode'), ctx).level : 'Off';
+  const unchanged: string[] = [];
+  if (!changes.some(c => SI_AUTHORITY_KEYS.has(c.key))) unchanged.push(`Co-Pilot stays ${coPilot}`, `Auto Mode stays ${auto}`, 'Player control unchanged');
+  if (ctx.isTeamMode && !changes.some(c => c.key === 'teamOsAuthorityLevel')) unchanged.push(`Team OS authority stays ${interpretSettingValue('teamOsAuthorityLevel', settings.teamOsAuthorityLevel || 'advisor', ctx).level}`);
+  if (!changes.some(c => SI_META.get(c.key)?.domain === 'fairness')) unchanged.push(`Fairness unchanged (${ctx.aiFairness.replace(/_/g, ' ')}${settings.allowNumericalModifiers === true ? '' : ', no numerical advantages'})`);
+  if (!changes.some(c => SI_RANDOMNESS_KEYS.has(c.key))) unchanged.push('Randomness unchanged');
+  if (['mate_spend_more', 'team_more_active'].includes(intent.goal)) { if (settings.teamEconomyGovernorEnabled && !changes.some(c => c.key === 'teamEconomyGovernorEnabled')) unchanged.push('Economy Governor stays enabled'); if (settings.teamTreasuryEnabled && !changes.some(c => c.key === 'teamTreasuryEnabled')) unchanged.push('Treasury stays enabled'); }
+  const beforeRep = inspectSettingsDependencies(settings).invalidationReport.preservesReplayCompatibility;
+  const afterRep = inspectSettingsDependencies(after).invalidationReport.preservesReplayCompatibility;
+  const replayTouched = changes.some(c => REPLAY_CRITICAL_SETTING_KEYS.has(c.key as keyof GameSettingsState) || SI_RANDOMNESS_KEYS.has(c.key));
+  const perfRow = impacts.find(r => r.dim === 'performance_cost');
+  const noChangeNeeded = !changes.length && !plan.profileChange;
+  return {
+    id: `sirec_${computeSettingsIntelligenceHash(settings, ctx, `${intent.goal}:${intent.protections.join(',')}`)}`,
+    intent, diagnosis, desiredOutcome: plan.desired, confidence: diagnosis?.confidence || (changes.length ? 'moderate' : 'low'),
+    affectedDomains: Array.from(new Set(changes.map(c => SI_META.get(c.key)?.domain).filter(Boolean) as SIDomain[])),
+    currentBehavior: diagnosis?.summary || changes.map(c => `${c.label}: ${c.fromLevel}`).join('; ') || 'Current configuration already matches this goal.',
+    recommendedBehavior: plan.desired, changes, profileChange: plan.profileChange,
+    alternatives: plan.alternatives.filter(a => a.changes.every(ch => !lockedKeys.has(ch.key))), unchangedProtections: unchanged, lockedNotes, skipped,
+    expectedEffects: impacts, tradeoffs: changes.map(c => c.tradeoff).filter(Boolean), risks: authorityIncrease ? ['Raises automation authority — requires your explicit confirmation.'] : [],
+    timing, fairnessImpact: changes.some(c => SI_META.get(c.key)?.domain === 'fairness') ? 'Changes fairness-related settings.' : 'No change to fairness (no numerical advantages, no hidden information).',
+    authorityImpact: authorityIncrease ? 'Increases what automation may do on your behalf.' : changes.some(c => SI_AUTHORITY_KEYS.has(c.key)) ? 'Reduces automation authority — you keep more control.' : 'No change to who controls your turns.',
+    authorityIncrease, performanceImpact: perfRow && perfRow.change !== 'unchanged' ? `Browser performance cost: ${perfRow.change}.` : 'No meaningful performance change expected.',
+    replayImpact: replayTouched || beforeRep !== afterRep ? 'This change affects deterministic replay configuration.' : 'Replay compatibility preserved.',
+    reason: diagnosis?.summary || plan.desired, noChangeNeeded
+  };
+}
+
+/** Write helper used ONLY on an isolated copy for previews/what-if (never the live settings). */
+function siWriteForPreview(copy: GameSettingsState, key: string, value: any) {
+  if (key === 'coPilotAuthorityMode') { copy.coPilotSettings = { ...(copy.coPilotSettings || createDefaultCoPilotSettings()), authorityMode: value }; (copy as any).coPilotAuthorityMode = value; return; }
+  if (key === 'permissionMode') { (copy as any).autoModeSettings = { ...((copy as any).autoModeSettings || createDefaultAutoModeGlobalSettings()), permissionMode: value, permission: value }; return; }
+  if (key === 'guardianAiResponseMode') { copy.guardianAiSettings = { ...(copy.guardianAiSettings || createDefaultGuardianAiSettings()), responseMode: value }; (copy as any)[key] = value; return; }
+  if (key === 'guardianAiEnabled') { copy.guardianAiSettings = { ...(copy.guardianAiSettings || createDefaultGuardianAiSettings()), enabled: Boolean(value) }; (copy as any)[key] = value; return; }
+  if (key === 'autoModeEnabled') { (copy as any).autoModeSettings = { ...((copy as any).autoModeSettings || createDefaultAutoModeGlobalSettings()), autoModeEnabled: Boolean(value), enabled: Boolean(value) }; (copy as any)[key] = value; return; }
+  (copy as any)[key] = value;
+}
+
+/** Isolated what-if: the proposed configuration applied to a COPY (live settings never touched). */
+export function simulateSettingsChange(rec: SettingsIntelligenceRecommendation, settings: GameSettingsState, ctx: SettingsIntelligenceContext, spendProbe?: (s: GameSettingsState) => { valid: number; rejected: number; examples: string[] } | null) {
+  const copy: GameSettingsState = JSON.parse(JSON.stringify(settings));
+  rec.changes.forEach(c => siWriteForPreview(copy, c.key, c.to));
+  if (rec.profileChange) copy.smartSettingsProfile = { ...(copy.smartSettingsProfile || createDefaultSmartSettingsProfile()), ...rec.profileChange } as SmartSettingsProfile;
+  const before = buildSettingsIntelligenceHealth(settings, ctx).report;
+  const after = buildSettingsIntelligenceHealth(copy, ctx).report;
+  const resolved = before.issues.filter(i => !after.issues.some(j => j.id === i.id)).map(i => i.title);
+  const introduced = after.issues.filter(i => !before.issues.some(j => j.id === i.id)).map(i => i.title);
+  const sb = spendProbe ? spendProbe(settings) : null;
+  const sa = spendProbe ? spendProbe(copy) : null;
+  return {
+    before: { status: before.overallStatus, spendingFreedom: before.spendingFreedom, aiLoad: before.performanceHealth.load },
+    after: { status: after.overallStatus, spendingFreedom: after.spendingFreedom, aiLoad: after.performanceHealth.load },
+    resolved, introduced,
+    spending: sb && sa ? { before: sb, after: sa, newlyViable: sa.examples.filter(e => !sb.examples.includes(e)) } : null
+  };
+}
+
+/** Honest "current vs proposed" spend check: counts real Governor approvals for real candidate spends. */
+export function probeSpendingApprovals(actor: { money: number; protectedCash?: number; inEconomicRecovery?: boolean; id?: string }, spends: Array<{ label: string; category: EconomySpendCategory; cost: number }>, settings: GameSettingsState, day: number): { valid: number; rejected: number; examples: string[] } {
+  let valid = 0; let rejected = 0; const examples: string[] = [];
+  spends.forEach(s => {
+    if (s.cost > actor.money) return;
+    const r = evaluateEconomySpendingApproval(actor, s.category, s.cost, settings, day);
+    if (r.approved) { valid += 1; examples.push(s.label); } else rejected += 1;
+  });
+  return { valid, rejected, examples };
+}
+
+// ---- Compile into the EXISTING SmartSettingsPlan (the only way changes are ever applied) -----------------
+
+export function compileSettingsIntelligencePlan(rec: SettingsIntelligenceRecommendation, settings: GameSettingsState, isLiveMatch: boolean): { plan: SmartSettingsPlan; risk: TransitionRiskAssessment } {
+  const profile = { ...(settings.smartSettingsProfile || createDefaultSmartSettingsProfile()), ...(rec.profileChange || {}) } as SmartSettingsProfile;
+  const changes: SmartSettingsChange[] = rec.changes.map(c => ({
+    settingKey: c.key, category: (c.category || SI_META.get(c.key)?.domain || 'ai') as SmartSettingsCategory, previousValue: c.from, proposedValue: c.to,
+    sourcePreference: `settings_intelligence:${rec.intent.goal}`, reason: rec.reason, safetyStatus: checkLiveMatchSafety(c.key, c.to, isLiveMatch).isSafe ? 'safe' : 'unsafe_deferred'
+  }));
+  const updatedSettings: GameSettingsState = { ...settings };
+  changes.forEach(c => { if (c.safetyStatus === 'safe') siWriteForPreview(updatedSettings, c.settingKey, c.proposedValue); });
+  const plan: SmartSettingsPlan = {
+    planId: `plan_si_${rec.id}_${rec.changes.length}`, timestamp: 0, profile, changes, conflicts: [], autoModeBoundaries: {},
+    fairnessSummary: rec.fairnessImpact, summary: `Settings Intelligence: ${rec.desiredOutcome} (${changes.length} change(s)).`,
+    changedKeys: changes.map(c => c.settingKey), updatedSettings, confidence: rec.confidence === 'high' ? 0.9 : rec.confidence === 'moderate' ? 0.7 : 0.5,
+    protectedDimensions: rec.intent.protections, undoableBaseline: { ...(settings as any), _undoStack: undefined }
+  };
+  // Authority increases go through the existing high-risk transition assessment.
+  const fromProfile = settings.smartSettingsProfile || createDefaultSmartSettingsProfile();
+  const cpAfter = changes.find(c => c.settingKey === 'coPilotAuthorityMode');
+  const cpEnabledAfter = changes.find(c => c.settingKey === 'coPilotEnabled')?.proposedValue ?? (settings.coPilotSettings?.coPilotEnabled ?? settings.coPilotEnabled ?? false);
+  const toProfile: SmartSettingsProfile = { ...profile, coPilotMode: cpAfter || changes.some(c => c.settingKey === 'coPilotEnabled') ? mapTechnicalSettingsToConceptualMode(Boolean(cpEnabledAfter), cpAfter ? cpAfter.proposedValue : siReadSetting(settings, 'coPilotAuthorityMode')) : fromProfile.coPilotMode, automation: changes.some(c => c.settingKey === 'permissionMode' && (siRank('permissionMode', c.proposedValue) ?? 0) >= 3) ? 'mostly_automatic' : fromProfile.automation };
+  const risk = evaluateTransitionRisk({ ...fromProfile, coPilotMode: mapTechnicalSettingsToConceptualMode(settings.coPilotSettings?.coPilotEnabled ?? settings.coPilotEnabled ?? false, siReadSetting(settings, 'coPilotAuthorityMode')) }, toProfile, plan);
+  return { plan, risk };
+}
+
+// ---- Monitoring after an approved change ------------------------------------------------------------------
+
+export type SIMetric = 'mate_spend_rate' | 'rival_contest_rate' | 'none';
+export interface SettingsAdjustmentObservation {
+  recommendationId: string;
+  transactionId: string;
+  goal: SIGoal;
+  metric: SIMetric;
+  expected: 'increase' | 'decrease' | 'none';
+  baseline: { value: number | null; samples: number };
+  startTurn: number;
+  observationWindow: number;
+  observed: { value: number | null; samples: number } | null;
+  result: 'monitoring' | 'improved' | 'worse' | 'no_change' | 'inconclusive';
+  confidence: SIConfidence;
+  status: 'monitoring' | 'complete' | 'kept' | 'undone';
+  confounders: string[];
+  note: string | null;
+  changes: Array<{ key: string; label: string; from: any; to: any }>;
+  transaction: SmartSettingsTransaction | null;
+}
+
+export function siMetricForGoal(goal: SIGoal): { metric: SIMetric; expected: SettingsAdjustmentObservation['expected'] } {
+  if (goal === 'mate_spend_more' || goal === 'team_more_active') return { metric: 'mate_spend_rate', expected: 'increase' };
+  if (goal === 'mate_spend_less') return { metric: 'mate_spend_rate', expected: 'decrease' };
+  if (goal === 'opponents_more_aggressive') return { metric: 'rival_contest_rate', expected: 'increase' };
+  if (goal === 'opponents_less_aggressive') return { metric: 'rival_contest_rate', expected: 'decrease' };
+  return { metric: 'none', expected: 'none' };
+}
+
+/** Bounded metric from Activity Ledger events (actual runtime evidence, not predictions). */
+export function computeSettingsMetric(metric: SIMetric, events: any[], actorIds: string[], sinceTurn: number, untilTurn = Infinity): { value: number | null; samples: number } {
+  const inWindow = events.filter(e => e && Number(e.turn ?? 0) >= sinceTurn && Number(e.turn ?? 0) < untilTurn);
+  if (metric === 'mate_spend_rate') {
+    const mine = inWindow.filter(e => actorIds.includes(String(e.actorId)));
+    const spends = mine.filter(e => e.category === 'action' && /deposit|invest|buy|purchase|fund|travel|contract|spend/i.test(`${e.eventType} ${e.summary}`)).length;
+    const rejects = mine.filter(e => /governor|reserve|approval/i.test(`${e.eventType} ${e.summary}`) && /reject|block|denied|refus|breach/i.test(`${e.eventType} ${e.summary}`)).length;
+    return { value: spends + rejects ? Math.round((spends / (spends + rejects)) * 100) / 100 : null, samples: spends + rejects };
+  }
+  if (metric === 'rival_contest_rate') {
+    const rival = inWindow.filter(e => e.category === 'action' && actorIds.includes(String(e.actorId)));
+    const contests = rival.filter(e => /deposit|claim|contest|sabotage|attack/i.test(`${e.eventType} ${e.summary}`)).length;
+    return { value: rival.length ? Math.round((contests / rival.length) * 100) / 100 : null, samples: rival.length };
+  }
+  return { value: null, samples: 0 };
+}
+
+export function evaluateSettingsObservation(obs: SettingsAdjustmentObservation, now: { value: number | null; samples: number }, turn: number, confounders: string[], sideEffect: string | null = null): SettingsAdjustmentObservation {
+  if (obs.status !== 'monitoring') return obs;
+  const elapsed = turn - obs.startTurn;
+  const next: SettingsAdjustmentObservation = { ...obs, observed: now, confounders: Array.from(new Set([...obs.confounders, ...confounders])).slice(0, 4) };
+  if (elapsed < obs.observationWindow) return { ...next, result: 'monitoring' };
+  if (obs.metric === 'none') return { ...next, result: 'inconclusive', status: 'complete', confidence: 'low', note: 'There is no direct in-match measure for this change; judge it by feel.' };
+  if (next.confounders.length) return { ...next, result: 'inconclusive', status: 'complete', confidence: 'low', note: `Result inconclusive because ${next.confounders[0]} during the observation window.` };
+  if (now.samples < 3 || now.value === null || obs.baseline.value === null) return { ...next, result: 'inconclusive', status: 'complete', confidence: 'low', note: 'Not enough observed decisions to judge the change yet.' };
+  const delta = now.value - obs.baseline.value;
+  const want = obs.expected === 'increase' ? 1 : -1;
+  const result: SettingsAdjustmentObservation['result'] = Math.abs(delta) < 0.15 ? 'no_change' : Math.sign(delta) === want ? 'improved' : 'worse';
+  return { ...next, result, status: 'complete', confidence: now.samples >= 6 ? 'moderate' : 'low', note: result === 'improved' ? `The adjustment appears to be helping (${obs.baseline.value} → ${now.value}).${sideEffect ? ` ${sideEffect}` : ''}` : result === 'worse' ? `The measure moved the wrong way (${obs.baseline.value} → ${now.value}).` : 'No meaningful improvement detected.' };
+}
+
+// ---- Bounded state (acknowledgements, monitoring, recent history) ---------------------------------------
+
+export interface SettingsIntelligenceState {
+  version: 1;
+  lastAnalysisHash: string;
+  acknowledgedIssues: Array<{ issueId: string; kind: 'acknowledged' | 'intentional' | 'ignored'; turn: number }>;
+  intentionalKeys: string[];
+  monitoring: SettingsAdjustmentObservation | null;
+  recentRecommendations: Array<{ id: string; goal: SIGoal; turn: number; summary: string; reason: string; changes: Array<{ key: string; label: string; from: any; to: any }>; status: 'applied' | 'undone' | 'kept' | 'ignored'; result: string | null }>;
+  lastUpdatedTurn: number;
+}
+
+export function createEmptySettingsIntelligenceState(): SettingsIntelligenceState {
+  return { version: 1, lastAnalysisHash: '', acknowledgedIssues: [], intentionalKeys: [], monitoring: null, recentRecommendations: [], lastUpdatedTurn: 0 };
+}
+
+export function sanitizeSettingsIntelligenceState(raw: unknown): SettingsIntelligenceState {
+  const out = createEmptySettingsIntelligenceState();
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as any;
+  const arr = (v: unknown, n: number) => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object').slice(-n) : []);
+  out.lastAnalysisHash = typeof r.lastAnalysisHash === 'string' ? r.lastAnalysisHash : '';
+  out.acknowledgedIssues = arr(r.acknowledgedIssues, 30).filter((a: any) => typeof a.issueId === 'string').map((a: any) => ({ issueId: a.issueId, kind: ['acknowledged', 'intentional', 'ignored'].includes(a.kind) ? a.kind : 'acknowledged', turn: Number(a.turn) || 0 }));
+  out.intentionalKeys = Array.isArray(r.intentionalKeys) ? r.intentionalKeys.filter((k: any) => typeof k === 'string' && SI_META.has(k)).slice(0, 20) : [];
+  const m = r.monitoring;
+  out.monitoring = m && typeof m === 'object' && typeof m.recommendationId === 'string' && ['monitoring', 'complete', 'kept', 'undone'].includes(m.status) ? {
+    recommendationId: m.recommendationId, transactionId: String(m.transactionId || ''), goal: m.goal, metric: ['mate_spend_rate', 'rival_contest_rate', 'none'].includes(m.metric) ? m.metric : 'none', expected: ['increase', 'decrease', 'none'].includes(m.expected) ? m.expected : 'none',
+    baseline: { value: typeof m.baseline?.value === 'number' ? m.baseline.value : null, samples: Number(m.baseline?.samples) || 0 }, startTurn: Number(m.startTurn) || 0, observationWindow: Math.max(1, Math.min(10, Number(m.observationWindow) || 3)),
+    observed: m.observed && typeof m.observed === 'object' ? { value: typeof m.observed.value === 'number' ? m.observed.value : null, samples: Number(m.observed.samples) || 0 } : null,
+    result: ['monitoring', 'improved', 'worse', 'no_change', 'inconclusive'].includes(m.result) ? m.result : 'monitoring', confidence: ['high', 'moderate', 'low'].includes(m.confidence) ? m.confidence : 'low',
+    status: m.status, confounders: Array.isArray(m.confounders) ? m.confounders.filter((x: any) => typeof x === 'string').slice(0, 4) : [], note: typeof m.note === 'string' ? m.note : null,
+    changes: arr(m.changes, 8).map((c: any) => ({ key: String(c.key), label: String(c.label || c.key), from: c.from, to: c.to })),
+    transaction: m.transaction && typeof m.transaction === 'object' && m.transaction.priorValues && typeof m.transaction.priorValues === 'object' ? m.transaction : null
+  } : null;
+  out.recentRecommendations = arr(r.recentRecommendations, 10).filter((x: any) => typeof x.id === 'string').map((x: any) => ({ id: x.id, goal: x.goal, turn: Number(x.turn) || 0, summary: String(x.summary || ''), reason: String(x.reason || ''), changes: arr(x.changes, 8).map((c: any) => ({ key: String(c.key), label: String(c.label || c.key), from: c.from, to: c.to })), status: ['applied', 'undone', 'kept', 'ignored'].includes(x.status) ? x.status : 'applied', result: typeof x.result === 'string' ? x.result : null }));
+  out.lastUpdatedTurn = Number(r.lastUpdatedTurn) || 0;
+  return out;
+}
+
+export function acknowledgeSettingsIssue(st: SettingsIntelligenceState, issueId: string, kind: 'acknowledged' | 'intentional' | 'ignored', turn: number, settingKey?: string | null): SettingsIntelligenceState {
+  const intentionalKeys = kind === 'intentional' && settingKey && SI_META.has(settingKey) ? Array.from(new Set([...st.intentionalKeys, settingKey])).slice(0, 20) : st.intentionalKeys;
+  return { ...st, intentionalKeys, acknowledgedIssues: [...st.acknowledgedIssues.filter(a => a.issueId !== issueId), { issueId, kind, turn }].slice(-30), lastUpdatedTurn: turn };
+}
+
+export function recordSettingsRecommendationApplied(st: SettingsIntelligenceState, rec: SettingsIntelligenceRecommendation, transaction: SmartSettingsTransaction | null, turn: number, baseline: { value: number | null; samples: number }): SettingsIntelligenceState {
+  const { metric, expected } = siMetricForGoal(rec.intent.goal);
+  const changes = rec.changes.map(c => ({ key: c.key, label: c.label, from: c.from, to: c.to }));
+  return {
+    ...st, lastUpdatedTurn: turn,
+    monitoring: { recommendationId: rec.id, transactionId: transaction?.transactionId || '', goal: rec.intent.goal, metric, expected, baseline, startTurn: turn, observationWindow: 3, observed: null, result: 'monitoring', confidence: 'low', status: 'monitoring', confounders: [], note: null, changes, transaction },
+    recentRecommendations: [...st.recentRecommendations, { id: rec.id, goal: rec.intent.goal, turn, summary: rec.desiredOutcome, reason: rec.reason, changes, status: 'applied' as const, result: 'Monitoring' }].slice(-10)
+  };
+}
+
+// ---- Game Intelligence front door to Settings Intelligence ------------------------------------------------
+
+export interface SettingsIntelligenceWorldView {
+  settings: GameSettingsState;
+  ctx: SettingsIntelligenceContext;
+  state: SettingsIntelligenceState;
+  evidence: SIEvidence;
+}
+
+const siClaim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed') => claim(text, kind, certainty, ['si.config'], { derived: giNumbersIn(text).map(n => n.value) });
+const SI_STATUS_TEXT: Record<SIStatus, string> = { healthy: 'Healthy', healthy_custom: 'Healthy (custom)', caution: 'Caution', imbalanced: 'Imbalanced', conflicted: 'Conflicted', partially_inactive: 'Partially inactive', high_risk: 'High risk', invalid: 'Invalid' };
+const siFmt = (v: any) => (typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : v === undefined || v === null ? '—' : String(v));
+
+/** Preview sections shared by Game Intelligence answers (behavioural, not just raw diffs). */
+export function settingsRecommendationSections(rec: SettingsIntelligenceRecommendation, level: SettingsExperienceLevel): GIAnswerSection[] {
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  if (rec.diagnosis) say('diag', 'Diagnosis', [siClaim(rec.diagnosis.summary, rec.diagnosis.classification === 'configuration' ? 'fact' : 'inference', rec.diagnosis.confidence === 'high' ? 'high' : 'moderate'), ...rec.diagnosis.configurationCauses.slice(0, 4).map((c, i) => siClaim(`${i + 1}. ${c.detail}`)), ...rec.diagnosis.gameplayCauses.slice(0, 2).map(g => siClaim(`Gameplay: ${g}`, 'inference', 'high')), siClaim(`Confidence: ${rec.diagnosis.confidence}.`, 'caveat')]);
+  if (rec.noChangeNeeded) {
+    say('none', null, [siClaim(rec.diagnosis?.classification === 'gameplay' ? 'No settings change recommended — the current behaviour comes from the game situation, not your configuration.' : 'No change needed — your configuration already supports this.', 'inference', 'high')]);
+  } else {
+    say('goal', 'Goal', [siClaim(rec.desiredOutcome)]);
+    say('changes', 'Changes', rec.changes.map(c => siClaim(`${c.label}: ${c.fromLevel} → ${c.toLevel}${level === 'advanced' || level === 'expert' ? ` (${siFmt(c.from)} → ${siFmt(c.to)})` : ''} — ${c.effect}${c.timing !== 'now' ? ` [applies ${c.timing === 'turn_end' ? 'at turn end' : 'next match'}]` : ''}`)).concat(rec.profileChange?.interfaceLevel ? [siClaim(`Interface level → ${rec.profileChange.interfaceLevel}.`)] : []));
+    say('impact', 'Expected effect', rec.expectedEffects.map(r => siClaim(`${r.label}: ${r.change}`, 'projection', 'moderate')));
+    say('unchanged', 'Unchanged', rec.unchangedProtections.map(u => siClaim(`${u}.`)));
+    if (rec.tradeoffs.length) say('tradeoffs', 'Tradeoffs', rec.tradeoffs.slice(0, 3).map(t => siClaim(t, 'inference', 'moderate')));
+    say('meta', null, [siClaim(rec.authorityImpact), siClaim(rec.fairnessImpact), siClaim(rec.performanceImpact, 'projection', 'moderate'), siClaim(rec.replayImpact), rec.timing.turn_end + rec.timing.next_match > 0 && siClaim(`${rec.timing.now} apply now, ${rec.timing.turn_end} at turn end, ${rec.timing.next_match} next match.`)]);
+  }
+  if (rec.lockedNotes.length) say('locked', null, rec.lockedNotes.map(n => siClaim(n, 'caveat')));
+  if (rec.skipped.length) say('skipped', null, rec.skipped.slice(0, 3).map(n => siClaim(n, 'caveat')));
+  if (rec.alternatives.length > 0 && !rec.noChangeNeeded) say('alts', 'Other ways to do this', rec.alternatives.slice(0, 2).map(a => siClaim(`${a.label}: improves ${a.improves.toLowerCase()}; costs ${a.worsens.toLowerCase()}.`, 'recommendation', 'moderate')));
+  return sections;
+}
+
+/** A preview card for Game Intelligence (Apply goes back through the canonical transaction engine). */
+export function buildSettingsPreviewAnswer(rec: SettingsIntelligenceRecommendation, level: SettingsExperienceLevel, applyCandidateId: string): GameIntelligenceAnswer {
+  const sections = settingsRecommendationSections(rec, level);
+  return {
+    id: nextIntelligenceAnswerId('si'), query: rec.intent.text, kind: 'next_step', title: rec.noChangeNeeded ? 'Settings diagnosis' : 'Settings change preview',
+    lines: sections.flatMap(s => s.claims.map(c => c.text)).slice(0, 14), sections,
+    evidence: [{ source: 'Settings Intelligence', detail: 'Effective settings, dependency inspection and interaction rules; applied only via the Smart Settings transaction engine.' }],
+    buttons: rec.noChangeNeeded ? [] : [
+      { id: `si_apply_${rec.id}`, label: rec.authorityIncrease ? 'Review & Apply' : 'Apply', kind: 'si_apply', candidateId: applyCandidateId, tone: 'primary' },
+      { id: 'si_open_dir', label: 'Explain in Director', kind: 'si_open', tone: 'secondary' },
+      { id: 'si_cancel', label: 'Cancel', kind: 'si_ack', candidateId: `ignored:${rec.id}`, tone: 'secondary' }
+    ],
+    sourceSystems: ['Settings Intelligence', 'Game Experience Director'], grounded: true
+  };
+}
+
+/** The existing high-risk transition assessment, surfaced before any authority increase is applied. */
+export function buildSettingsRiskAnswer(rec: SettingsIntelligenceRecommendation, risk: TransitionRiskAssessment | undefined, applyCandidateId: string): GameIntelligenceAnswer {
+  return {
+    id: nextIntelligenceAnswerId('sirisk'), query: rec.intent.text, kind: 'control', title: 'Confirm a higher-authority change',
+    lines: [...(risk?.risks || []).map(r => `${r.dimension}: ${String(r.fromValue)} → ${String(r.toValue)} (${r.severity}) — ${r.description}`), rec.authorityImpact, 'Nothing changes unless you confirm.'],
+    evidence: [{ source: 'Game Experience Director', detail: 'evaluateTransitionRisk() — the same high-risk transition check the Director uses.' }],
+    buttons: [
+      { id: `si_confirm_${rec.id}`, label: 'Confirm high-risk change', kind: 'si_apply', candidateId: applyCandidateId, query: 'confirmed', tone: 'danger' },
+      { id: 'si_cancel_risk', label: 'Cancel', kind: 'si_ack', candidateId: `ignored:${rec.id}`, tone: 'secondary' }
+    ],
+    sourceSystems: ['Settings Intelligence'], grounded: true
+  };
+}
+
+export function composeSettingsIntelligenceAnswer(intent: SIIntent, world: GIWorld): GIComposePart & { shape: GIAnswerShape; ctx: Partial<GIConversationContext> } {
+  const view = world.settingsIntel || null;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const ctxOut: Partial<GIConversationContext> = {};
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  if (!view) { say('none', null, [siClaim('Settings Intelligence is not available in this view.', 'caveat')]); return { title: 'Settings', sections, buttons, shape: 'explanation', ctx: ctxOut }; }
+  const { settings, ctx, state, evidence } = view;
+  const { snapshot: snap, report } = buildSettingsIntelligenceHealth(settings, ctx, state);
+  const level = ctx.interfaceLevel;
+  const s = intent.settingKey ? snap.byKey[intent.settingKey] : null;
+  const openBtn = () => buttons.push({ id: 'si_open', label: 'Open Game Experience Director', kind: 'si_open', tone: 'secondary' });
+  let title = 'Settings Intelligence';
+  let shape: GIAnswerShape = 'explanation';
+  switch (intent.goal) {
+    case 'health': {
+      title = 'Configuration health';
+      shape = 'diagnosis';
+      say('overall', null, [siClaim(`Overall: ${SI_STATUS_TEXT[report.overallStatus]}. ${report.overallReason}`)]);
+      say('domains', 'By area', report.domains.filter(d => d.status !== 'n/a').map(d => siClaim(`${d.label}: ${d.status.replace(/_/g, ' ')} — ${d.reason}`)));
+      if (report.issues.length) say('issues', 'Problems & interactions', report.issues.filter(i => i.severity !== 'info').slice(0, 3).map((i, n) => siClaim(`${n + 1}. ${i.title}: ${i.explanation}`, 'inference', 'high')));
+      if (report.inertSettings.length) say('inert', 'Inactive settings', [siClaim(`${report.inertSettings.length} setting(s) are configured but currently inactive: ${report.inertSettings.slice(0, 3).map(x => `${x.label} (${x.reason.replace(/\.$/, '')})`).join('; ')}.`)]);
+      const fix = report.issues.find(i => i.severity !== 'info' && i.strategies.length);
+      if (fix) { buttons.push({ id: `si_fix_${fix.id}`, label: `Preview fix: ${fix.strategies[0].label}`.slice(0, 48), kind: 'si_apply', candidateId: `fix:${fix.id}:${fix.strategies[0].id}`, query: 'preview', tone: 'primary' }); }
+      openBtn();
+      break;
+    }
+    case 'too_high':
+    case 'too_low': {
+      if (s) {
+        const i = s.interpretation;
+        title = `${s.label}: ${intent.goal === 'too_high' ? 'too high?' : 'too low?'}`;
+        const value = intent.value !== null && typeof s.configuredValue === 'number' ? intent.value : s.configuredValue;
+        const iv = value !== s.configuredValue ? interpretSettingValue(s.key, value, ctx) : i;
+        const heavy = SETTINGS_INTERACTION_RULES.find(r => r.id === 'expensive_ai_compute')!.evaluate(snap, settings);
+        const verdict = iv.zoneStatus === 'within' ? `It is ${iv.level.toLowerCase()}, but not inherently bad — with your ${ctx.aiIntelligence} AI profile it is within the intended range (${iv.zone!.lo}–${iv.zone!.hi}).` : iv.zoneStatus === 'above' ? `It is above the range intended for your ${ctx.aiIntelligence} AI profile (${iv.zone!.lo}–${iv.zone!.hi}).` : iv.zoneStatus === 'below' ? `It is below the range intended for your ${ctx.aiIntelligence} AI profile (${iv.zone!.lo}–${iv.zone!.hi}).` : `${iv.level}: ${iv.likelyEffect}`;
+        say('verdict', null, [siClaim(`${s.label} ${siFmt(value)} = ${iv.level}. ${verdict}`), siClaim(iv.likelyEffect), iv.tradeoff && siClaim(`Tradeoff: ${iv.tradeoff}`, 'inference', 'moderate'), heavy && heavy.contributors.includes(s.key) && heavy.contributors.length > 1 && siClaim(`The bigger performance cost is the combination: ${heavy.explanation}`, 'inference', 'moderate'), !s.active && siClaim(`Note: it is currently inactive — ${s.inertReason}`, 'caveat')]);
+      } else {
+        title = intent.goal === 'too_high' ? 'Anything too high?' : 'Anything too low?';
+        const list = snap.settings.filter(x => x.active && x.interpretation.zoneStatus === (intent.goal === 'too_high' ? 'above' : 'below'));
+        say('list', null, list.length ? list.slice(0, 5).map(x => siClaim(`${x.label}: ${x.interpretation.level}${x.intentional ? ' (intentional)' : ''} — recommended ${x.interpretation.zone?.lo}–${x.interpretation.zone?.hi} for your setup.`)) : [siClaim(`Nothing is ${intent.goal === 'too_high' ? 'above' : 'below'} its recommended range for your setup.`)]);
+      }
+      break;
+    }
+    case 'explain_setting':
+    case 'why_inactive': {
+      if (!s) { say('none', null, [siClaim('Tell me which setting — for example “Explain protected cash”.', 'caveat')]); break; }
+      const i = s.interpretation;
+      title = intent.goal === 'why_inactive' ? `Why is ${s.label} inactive?` : `${s.label}`;
+      if (intent.goal === 'why_inactive' || !s.active) say('active', null, [siClaim(s.active ? `${s.label} is active.` : `Configured: ${siFmt(s.configuredValue)}. Effective: inactive. Why: ${s.inertReason} This is not a gameplay bug — the setting's prerequisite or mode does not apply.`)]);
+      const m = getSettingsIntelligenceMetadata(s.key);
+      say('explain', intent.goal === 'why_inactive' ? 'About this setting' : null, [
+        siClaim(`What it controls: ${m?.playerMeaning || i.meaning}`), siClaim(`Current value: ${siFmt(s.configuredValue)} — ${i.level}. ${i.likelyEffect}`),
+        i.zone && siClaim(`Recommended range for your setup: ${i.zone.lo}–${i.zone.hi}${i.zone.contextNote ? ` (${i.zone.contextNote.toLowerCase()})` : ''}.`),
+        i.booleanMeaning && siClaim(`OFF: ${i.booleanMeaning.off} ${i.booleanMeaning.whyOff ? `Why use OFF: ${i.booleanMeaning.whyOff}.` : ''} ${i.booleanMeaning.hurtsOff ? `When OFF hurts: ${i.booleanMeaning.hurtsOff}` : ''}`.trim()),
+        i.booleanMeaning && siClaim(`ON: ${i.booleanMeaning.on} ${i.booleanMeaning.hurtsOn ? `Tradeoff: ${i.booleanMeaning.hurtsOn}` : ''}`.trim()),
+        m?.why && siClaim(`Lower it if: ${m.why.lower} Raise it if: ${m.why.raise}`),
+        s.related.length > 0 && siClaim(`Related: ${s.related.map(k => siLabel(k)).join(', ')}.`),
+        report.issues.some(x => x.contributors.includes(s.key)) && siClaim(`Current interaction: ${report.issues.find(x => x.contributors.includes(s.key))!.title}.`, 'inference', 'high'),
+        siClaim(`Changing it now: ${s.liveSafety === 'now' ? 'applies immediately' : s.liveSafety === 'turn_end' ? 'deferred to turn end' : 'deferred to the next match'}${s.locked ? ' — it is locked, so recommendations will not change it' : ''}.`),
+        level === 'expert' && siClaim(`Key: ${s.key}. Configured ${JSON.stringify(s.configuredValue)}; effective ${JSON.stringify(s.effectiveValue)}; dependency ${s.dependencyState}; badges: ${s.badges.join(', ')}.`)
+      ]);
+      const dep = report.issues.find(x => x.type === 'dependency_missing' && x.contributors[0] === s.key);
+      if (dep) dep.strategies.forEach(st => buttons.push({ id: `si_dep_${st.id}`, label: st.label.slice(0, 48), kind: 'si_apply', candidateId: `fix:${dep.id}:${st.id}`, query: 'preview' }));
+      if (dep) buttons.push({ id: 'si_keep_cfg', label: 'Keep configuration', kind: 'si_ack', candidateId: `acknowledged:${dep.id}` });
+      break;
+    }
+    case 'turn_off':
+    case 'turn_on': {
+      if (!s) { say('none', null, [siClaim('Tell me which setting you mean.', 'caveat')]); break; }
+      const m = getSettingsIntelligenceMetadata(s.key);
+      const target = intent.goal === 'turn_on';
+      title = `What if ${s.label} is turned ${target ? 'on' : 'off'}?`;
+      const dependents = SETTINGS_INTELLIGENCE_METADATA.filter(x => (x.requires || []).some(r => r.key === s.key)).map(x => siLabel(x.key));
+      say('consequence', null, [
+        siClaim(target ? `ON: ${m?.on?.meaning || 'Enabled.'}` : `OFF: ${m?.off?.meaning || 'Disabled.'}`),
+        !target && m?.off?.hurts && siClaim(`What you lose: ${m.off.hurts}`, 'inference', 'high'),
+        target && m?.on?.hurts && siClaim(`Tradeoff: ${m.on.hurts}`, 'inference', 'high'),
+        dependents.length > 0 && siClaim(`${target ? 'Becomes possible' : 'Stops working'}: ${dependents.join(', ')}.`),
+        !s.active && siClaim(`Right now it has no effect anyway: ${s.inertReason}`, 'caveat'),
+        s.key === 'teamIntelligenceOsEnabled' && world.team?.state.contract && !target && siClaim('Your current Team OS strategy would stop coordinating the team.', 'inference', 'high'),
+        s.key === 'teamTreasuryEnabled' && world.team?.evaluation.fundingIntents.length && !target ? siClaim('Team OS currently relies on Treasury funding for at least one task.', 'inference', 'high') : null,
+        m?.consent && siClaim('This is consent-protected: Settings Intelligence will not change it for you — you can change it yourself in Settings.', 'caveat'),
+        siClaim(`Timing: ${s.liveSafety === 'now' ? 'safe to change now' : s.liveSafety === 'turn_end' ? 'would apply at turn end' : 'would apply next match'}.`)
+      ]);
+      openBtn();
+      break;
+    }
+    case 'affects': {
+      title = intent.target === 'teammate' ? 'Settings that affect your teammate' : intent.target === 'team' ? 'Settings that affect Team OS' : 'Settings that matter here';
+      const keys = SETTINGS_INTELLIGENCE_METADATA.filter(m => intent.target === 'game' ? m.domain === 'ai' : ['team', 'economy'].includes(m.domain)).map(m => snap.byKey[m.key]).filter(Boolean);
+      say('list', null, keys.slice(0, 10).map(x => siClaim(`${x.label}: ${x.active ? x.interpretation.level : `inactive (${x.inertReason?.replace(/\.$/, '')})`}`)));
+      break;
+    }
+    case 'keep_setting': {
+      title = s ? `Keep ${s.label}` : 'Keep setting';
+      say('keep', null, [siClaim(s ? `Understood — ${s.label} (${s.interpretation.level}) will be treated as intentional and not flagged again.` : 'Which setting should I keep?', 'fact')]);
+      if (s) buttons.push({ id: 'si_keep_intentional', label: `Keep ${s.label} (intentional)`.slice(0, 48), kind: 'si_ack', candidateId: `intentional:extreme_${s.key}:${s.key}`, tone: 'primary' });
+      break;
+    }
+    default: {
+      const rec = buildSettingsIntelligenceRecommendation(intent, settings, ctx, evidence, state);
+      title = rec.noChangeNeeded ? 'Settings diagnosis' : 'Settings change preview';
+      shape = rec.noChangeNeeded ? 'diagnosis' : 'plan';
+      sections.push(...settingsRecommendationSections(rec, level));
+      if (!rec.noChangeNeeded) {
+        const sim = simulateSettingsChange(rec, settings, ctx);
+        if (sim.resolved.length || sim.before.aiLoad !== sim.after.aiLoad || sim.before.spendingFreedom !== sim.after.spendingFreedom) say('whatif', 'Simulated on a copy (live settings untouched)', [
+          sim.before.spendingFreedom !== sim.after.spendingFreedom && siClaim(`Team spending freedom: ${sim.before.spendingFreedom} → ${sim.after.spendingFreedom}.`, 'projection', 'moderate'),
+          sim.before.aiLoad !== sim.after.aiLoad && siClaim(`AI computation load: ${sim.before.aiLoad} → ${sim.after.aiLoad}.`, 'projection', 'moderate'),
+          sim.resolved.length > 0 && siClaim(`Resolves: ${sim.resolved.join('; ')}.`, 'projection', 'moderate')
+        ]);
+        buttons.push({ id: `si_apply_${rec.id}`, label: rec.authorityIncrease ? 'Review & Apply' : 'Apply', kind: 'si_apply', candidateId: rec.id, tone: 'primary' });
+        buttons.push({ id: 'si_ignore', label: 'Ignore', kind: 'si_ack', candidateId: `ignored:${rec.id}`, tone: 'secondary' });
+      }
+      openBtn();
+      ctxOut.pendingSettingsRec = { id: rec.id, text: intent.text, goal: intent.goal };
+      break;
+    }
+  }
+  say('authority', null, [siClaim('Settings Intelligence only recommends. Nothing changes until you approve it, and every change can be undone.', 'caveat')]);
+  return { title, sections, buttons, shape, ctx: ctxOut };
+}
+
+// ---- Settings Intelligence 2.0 deterministic self-tests ---------------------------------------------------
+
+export function runSettingsIntelligence2SelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const TEAM = 'team_human_ai_vs_ai_ai';
+  const base = (o: Record<string, any> = {}): GameSettingsState => ({ ...createDefaultGameSettings(), selectedMode: TEAM, ...o } as GameSettingsState);
+  const ctxOf = (s: GameSettingsState, phase: SIMatchPhase = 'live', mode = TEAM) => buildSettingsIntelligenceContext(s, { mode, phase });
+  const withProfile = (s: GameSettingsState, p: Partial<SmartSettingsProfile>): GameSettingsState => ({ ...s, smartSettingsProfile: { ...(s.smartSettingsProfile || createDefaultSmartSettingsProfile()), ...p } as SmartSettingsProfile });
+  const RESTRICTIVE = { teamCompetitiveAiEnabled: true, gameActivityLedgerEnabled: true, teamEconomyGovernorEnabled: true, economySpendingApprovalStrictness: 'strict', economyReserveStrength: 'high', teamCashVaultEnabled: true, vaultLockPercentage: 65, teamTreasuryEnabled: true };
+  const intent = (q: string) => understandSettingsIntent(q, ['Riley'])!;
+  const rec = (s: GameSettingsState, q: string, ev: SIEvidence = {}, st: SettingsIntelligenceState | null = null) => buildSettingsIntelligenceRecommendation(intent(q), s, ctxOf(s), ev, st);
+  const mateRich: SIEvidence = { mate: { id: 'mate', name: 'Riley', money: 18000, protectedCash: 0, inRecovery: false, tasks: ['Take VIC'], taskTypes: ['take_region'], reserveFloor: null } };
+  const mateSaving: SIEvidence = { mate: { id: 'mate', name: 'Riley', money: 300, protectedCash: 0, inRecovery: false, tasks: ['Generate $1,000'], taskTypes: ['generate_cash'], reserveFloor: 1000 } };
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+
+  check('si_value_semantics', 'Value semantics: low / recommended / high / extreme bands, contextual to the AI profile', () => {
+    const c = ctxOf(base());
+    const lo = interpretSettingValue('aiPlanningDepth', 1, c);
+    const mid = interpretSettingValue('aiPlanningDepth', 2, c);
+    const hi = interpretSettingValue('aiPlanningDepth', 5, c);
+    const max = interpretSettingValue('aiPlanningDepth', 5, ctxOf(withProfile(base(), { aiIntelligence: 'maximum' })));
+    if (lo.level !== 'Fast' || lo.zoneStatus !== 'below') return `low ${lo.level}/${lo.zoneStatus}`;
+    if (mid.zoneStatus !== 'within') return `mid ${mid.zoneStatus}`;
+    if (hi.level !== 'Maximum' || hi.extreme !== 'high' || hi.zoneStatus !== 'above') return `high ${hi.level}/${hi.extreme}/${hi.zoneStatus}`;
+    return (max.zoneStatus === 'within' && Boolean(max.zone?.contextNote)) || `maximum profile ${max.zoneStatus}`;
+  });
+  check('si_boolean_meaning', 'Boolean meaning: ON and OFF each explain what they do, why use them and when they hurt', () => {
+    const c = ctxOf(base());
+    const on = interpretSettingValue('teamTreasuryEnabled', true, c);
+    const off = interpretSettingValue('teamTreasuryEnabled', false, c);
+    const b = on.booleanMeaning;
+    return (Boolean(b && b.on && b.off && b.whyOff && b.hurtsOff && b.hurtsOn) && on.likelyEffect !== off.likelyEffect) || JSON.stringify(b);
+  });
+  check('si_effective_vs_configured', 'Effective vs configured: Treasury ON with Competitive Team AI OFF is inactive (dependency), with fixes', () => {
+    const s = base({ teamTreasuryEnabled: true, teamCompetitiveAiEnabled: false });
+    const { snapshot, report } = buildSettingsIntelligenceHealth(s, ctxOf(s));
+    const t = snapshot.byKey.teamTreasuryEnabled;
+    if (t.configuredValue !== true || t.effectiveValue !== false || t.active || t.dependencyState !== 'dependency_violation') return JSON.stringify({ c: t.configuredValue, e: t.effectiveValue, a: t.active, d: t.dependencyState });
+    const issue = report.issues.find(i => i.id === 'dep_teamTreasuryEnabled');
+    return (Boolean(issue) && issue!.strategies.map(x => x.id).join(',') === 'enable_parent,disable_child' && /not a gameplay bug/.test(issue!.explanation)) || JSON.stringify(issue);
+  });
+  check('si_inert_mode', 'Inert settings: team-only settings are inactive outside Team Mode', () => {
+    const s = base({ selectedMode: 'ai', ...RESTRICTIVE });
+    const snap = resolveSettingsIntelligenceSnapshot(s, ctxOf(s, 'live', 'ai'));
+    return (snap.byKey.vaultLockPercentage.inertReason === 'Only applies in Team Mode.' && !buildSettingsIntelligenceHealth(s, ctxOf(s, 'live', 'ai')).report.issues.some(i => i.ruleId === 'over_restrictive_spending')) || String(snap.byKey.vaultLockPercentage.inertReason);
+  });
+  check('si_interaction', 'Interaction: a valid but over-restrictive combination is detected; the fix changes the minimum', () => {
+    const s = base(RESTRICTIVE);
+    const dep = inspectSettingsDependencies(s);
+    const { report } = buildSettingsIntelligenceHealth(s, ctxOf(s));
+    if (!dep.isValid) return 'fixture not dependency-valid';
+    const issue = report.issues.find(i => i.ruleId === 'over_restrictive_spending');
+    if (!issue) return `no behavioural issue: ${report.issues.map(i => i.id)}`;
+    const r = rec(s, 'Riley barely spends any money.', mateRich);
+    return (r.changes.length === 1 && r.changes[0].key === 'vaultLockPercentage' && r.changes[0].to === 50) || JSON.stringify(r.changes.map(c => [c.key, c.to]));
+  });
+  check('si_no_false_positive', 'No false positive: default and conservative-but-healthy configurations are not labelled broken', () => {
+    const d = base();
+    const cons = base({ teamCompetitiveAiEnabled: true, gameActivityLedgerEnabled: true, teamEconomyGovernorEnabled: true, economyReserveStrength: 'high' });
+    const a = buildSettingsIntelligenceHealth(d, ctxOf(d)).report;
+    const b = buildSettingsIntelligenceHealth(cons, ctxOf(cons)).report;
+    return (['healthy', 'healthy_custom'].includes(a.overallStatus) && ['healthy', 'healthy_custom'].includes(b.overallStatus) && !b.issues.some(i => i.severity !== 'info')) || `${a.overallStatus} / ${b.overallStatus}: ${b.issues.map(i => i.id)}`;
+  });
+  check('si_intentional_extreme', 'Intentional extreme: acknowledged maximum planning is reported as intentional, not re-flagged', () => {
+    const s = base({ aiPlanningDepth: 5 });
+    const before = buildSettingsIntelligenceHealth(s, ctxOf(s)).report;
+    if (!before.issues.some(i => i.id === 'extreme_aiPlanningDepth' && i.type === 'extreme_value')) return 'extreme not detected';
+    const st = acknowledgeSettingsIssue(createEmptySettingsIntelligenceState(), 'extreme_aiPlanningDepth', 'intentional', 3, 'aiPlanningDepth');
+    const { report, snapshot } = buildSettingsIntelligenceHealth(s, ctxOf(s), st);
+    return (snapshot.byKey.aiPlanningDepth.status === 'extreme_intentional' && !report.issues.some(i => i.id === 'extreme_aiPlanningDepth')) || `${snapshot.byKey.aiPlanningDepth.status} ${report.issues.map(i => i.id)}`;
+  });
+  check('si_riley_config', "“Riley doesn't spend” — restrictive configuration: settings recommendation", () => {
+    const r = rec(base(RESTRICTIVE), 'Riley barely spends any money.', mateRich);
+    return (r.diagnosis?.classification === 'configuration' && r.changes.length === 1 && r.unchangedProtections.some(u => /Economy Governor stays enabled/.test(u))) || `${r.diagnosis?.classification} ${r.changes.length}`;
+  });
+  check('si_riley_gameplay', "“Riley doesn't spend” — healthy settings but Team OS says save: no settings change, Team OS cause explained", () => {
+    const r = rec(base(), "Why isn't Riley spending?", mateSaving);
+    return (r.noChangeNeeded && r.diagnosis?.classification === 'gameplay' && /Team OS task/.test(r.diagnosis.summary)) || `${r.diagnosis?.classification} ${r.changes.length} ${r.diagnosis?.summary}`;
+  });
+  check('si_harder_but_fair', 'Harder but fair: decision intelligence up, fairness protected, no cheats or hidden information, tradeoff explained', () => {
+    const s = base();
+    const r = rec(s, 'Make the opponents harder but fair.');
+    if (!r.intent.protections.includes('fairness')) return 'fairness protection missing';
+    if (!r.changes.some(c => c.key === 'aiPlanningDepth' && c.to > c.from)) return 'no intelligence increase';
+    if (r.changes.some(c => ['allowNumericalModifiers', 'aiFairnessLevel', 'fogOfWarEnabled'].includes(c.key))) return 'fairness setting changed';
+    const { plan } = compileSettingsIntelligencePlan(r, s, false);
+    const applied = applySmartSettingsPlan(plan, s, false).updatedSettings;
+    return (applied.allowNumericalModifiers === s.allowNumericalModifiers && applied.aiFairnessLevel === s.aiFairnessLevel && r.tradeoffs.length > 0 && /No change to fairness/.test(r.fairnessImpact)) || 'fairness not preserved';
+  });
+  check('si_smarter_no_takeover', "Smarter but no takeover: intelligence may change; Co-Pilot / Auto Mode / Team OS authority unchanged and recorded", () => {
+    const s = base({ coPilotSettings: { ...(createDefaultGameSettings().coPilotSettings as any), coPilotEnabled: true, authorityMode: 'recommendations' } });
+    const r = rec(s, "Make Riley smarter but don't let him take over.");
+    const auth = ['coPilotEnabled', 'coPilotAuthorityMode', 'permissionMode', 'autoModeEnabled', 'humanAutomationEnabled', 'teamOsAuthorityLevel'];
+    if (!r.intent.protections.includes('authority')) return 'authority protection missing';
+    if (!r.changes.length || r.changes.some(c => auth.includes(c.key))) return JSON.stringify(r.changes.map(c => c.key));
+    return (r.unchangedProtections.some(u => /Co-Pilot stays Advisor/.test(u)) && r.unchangedProtections.includes('Player control unchanged') && !r.authorityIncrease) || r.unchangedProtections.join(' | ');
+  });
+  check('si_ai_too_passive', 'AI too passive: diagnoses temperament/risk/planning and legal opportunity; never blindly maxes aggression', () => {
+    const noOpp = rec(base(), 'The opponents are too passive.', { rivalCanContest: false });
+    if (!noOpp.noChangeNeeded || noOpp.diagnosis?.classification !== 'gameplay') return `no-opportunity case: ${noOpp.diagnosis?.classification} ${noOpp.changes.length}`;
+    const defensive = rec(base({ aiStrategyLabPreset: 'defensive' }), 'The opponents are too passive.', { rivalCanContest: true });
+    const c = defensive.changes.find(x => x.key === 'aiStrategyLabPreset');
+    return (Boolean(c) && c!.to === 'balanced' && defensive.changes.length <= 2) || JSON.stringify(defensive.changes.map(x => [x.key, x.to]));
+  });
+  check('si_ai_too_slow', 'AI too slow: reduces the most expensive dimensions first and keeps planning depth when possible', () => {
+    const s = base({ aiPlanningDepth: 3, teamAiCandidateEvaluationWidth: 14, projectedOutcomeHorizon: 10 });
+    const r = rec(s, 'AI turns are taking too long.');
+    if (!r.changes.length) return 'no change';
+    if (r.changes.some(c => c.key === 'aiPlanningDepth')) return 'reduced difficulty although cheaper levers existed';
+    return (r.changes[0].key === 'teamAiCandidateEvaluationWidth' && /lower/.test(r.performanceImpact)) || `${r.changes.map(c => c.key)} ${r.performanceImpact}`;
+  });
+  check('si_locks', 'Locks: a locked contributor is diagnosed but never changed; the next safe option is used', () => {
+    const s = withProfile(base(RESTRICTIVE), { lockedSettingKeys: ['vaultLockPercentage'] });
+    const r = rec(s, 'Riley barely spends any money.', mateRich);
+    if (r.changes.some(c => c.key === 'vaultLockPercentage')) return 'changed a locked setting';
+    if (!r.lockedNotes.some(n => /locked/.test(n) && /Protected Cash/.test(n))) return 'lock not explained';
+    return r.changes.length === 1 || `${r.changes.length} changes`;
+  });
+  check('si_live_safety', 'Live safety: apply now / deferred to turn end / deferred to next match, via the existing deferral engine', () => {
+    const s = base();
+    const c = ctxOf(s);
+    const mk = (key: string, to: any): SIChange => ({ key, label: siLabel(key), from: (s as any)[key], to, fromLevel: '', toLevel: '', effect: '', tradeoff: '', timing: siLiveTiming(key, true), category: null });
+    const changes = [mk('aiPlanningDepth', 3), mk('playerActionsPerDay', 4), mk('totalDays', 40)];
+    const r0 = rec(s, 'Make the opponents harder but fair.');
+    const r = { ...r0, changes, timing: { now: changes.filter(x => x.timing === 'now').length, turn_end: changes.filter(x => x.timing === 'turn_end').length, next_match: changes.filter(x => x.timing === 'next_match').length } };
+    if (r.timing.now !== 1 || r.timing.turn_end !== 1 || r.timing.next_match !== 1) return JSON.stringify(r.timing);
+    const { plan } = compileSettingsIntelligencePlan(r, s, true);
+    const applied = applySmartSettingsPlan(plan, s, true).updatedSettings as any;
+    const scopes = (applied.deferredTransactions || []).map((d: any) => `${d.settingKey}:${d.deferralScope}`).sort().join(',');
+    void c;
+    return (applied.aiPlanningDepth === 3 && applied.playerActionsPerDay === s.playerActionsPerDay && scopes === 'playerActionsPerDay:turn_end,totalDays:next_match') || `${applied.aiPlanningDepth} ${scopes}`;
+  });
+  check('si_transition_risk', 'Transition risk: raising Co-Pilot authority goes through the existing high-risk workflow (never silent)', () => {
+    const s = base({ coPilotSettings: { ...(createDefaultGameSettings().coPilotSettings as any), coPilotEnabled: true, authorityMode: 'recommendations' } });
+    const r = rec(s, 'Let Co-Pilot take over more');
+    const { risk } = compileSettingsIntelligencePlan(r, s, false);
+    return (r.authorityIncrease && risk.isHighRisk && r.risks.length > 0) || `${r.authorityIncrease} ${risk.isHighRisk}`;
+  });
+  check('si_fairness_guardrail', 'Fairness: a protected fairness profile survives plan generation and application', () => {
+    const s = withProfile(base({ allowNumericalModifiers: false, aiFairnessLevel: 1 }), { aiFairness: 'strictly_equal' });
+    const r = rec(s, 'Make opponents smarter but still fair');
+    const { plan } = compileSettingsIntelligencePlan(r, s, false);
+    const applied = applySmartSettingsPlan(plan, s, false).updatedSettings;
+    return (applied.allowNumericalModifiers === false && applied.aiFairnessLevel === 1 && applied.smartSettingsProfile?.aiFairness === 'strictly_equal') || 'fairness changed';
+  });
+  check('si_privacy_consent', '“Turn everything smart on” never silently enables consent-protected persistent memory', () => {
+    const s = base({ aiPersistentMemoryEnabled: false });
+    const r = rec(s, 'Turn everything smart on');
+    if (r.changes.some(c => c.key === 'aiPersistentMemoryEnabled')) return 'consent key in plan';
+    const { plan } = compileSettingsIntelligencePlan(r, s, false);
+    const applied = applySmartSettingsPlan(plan, s, false).updatedSettings;
+    return (applied.aiPersistentMemoryEnabled === false && r.skipped.some(x => /consent/.test(x))) || 'consent not respected';
+  });
+  check('si_minimal_change', 'Minimal change: one setting solves it → one setting changes', () => {
+    const r = rec(base(RESTRICTIVE), 'Riley barely spends any money.', mateRich);
+    return r.changes.length === 1 || `${r.changes.length} changes`;
+  });
+  check('si_manual_overrides', 'Manual overrides: an unrelated override survives the recommendation', () => {
+    const s = withProfile(base({ totalDays: 45 }), { manualOverrides: [{ settingKey: 'totalDays', presetValue: 30, overrideValue: 45 }] });
+    const r = rec(s, 'Make the opponents harder but fair.');
+    const { plan } = compileSettingsIntelligencePlan(r, s, false);
+    const applied = applySmartSettingsPlan(plan, s, false).updatedSettings;
+    return (applied.totalDays === 45 && (applied.smartSettingsProfile?.manualOverrides || []).some(o => o.settingKey === 'totalDays')) || 'override lost';
+  });
+  check('si_preview', 'Preview: changes, behavioural impact, tradeoffs, authority, fairness and timing are all present', () => {
+    const r = rec(base(), 'Make the opponents harder but fair.');
+    const sections = settingsRecommendationSections(r, 'guided');
+    const ids = sections.map(x => x.id);
+    return (r.changes.every(c => c.fromLevel && c.toLevel && c.effect) && r.expectedEffects.some(e => e.dim === 'ai_intelligence') && r.tradeoffs.length > 0 && Boolean(r.authorityImpact && r.fairnessImpact && r.performanceImpact && r.replayImpact) && ['changes', 'impact', 'unchanged', 'meta'].every(x => ids.includes(x))) || ids.join(',');
+  });
+  check('si_undo', 'Undo: the existing transaction machinery restores the exact prior settings and subsystem values', () => {
+    const s = base({ coPilotSettings: { ...(createDefaultGameSettings().coPilotSettings as any), coPilotEnabled: true, authorityMode: 'recommendations' } });
+    const r = rec(s, 'Let Co-Pilot take over more');
+    const { plan } = compileSettingsIntelligencePlan(r, s, false);
+    const res = applySmartSettingsPlan(plan, s, false);
+    if (res.updatedSettings.coPilotSettings?.authorityMode === 'recommendations') return 'apply did nothing';
+    const undone = undoSmartSettingsTransaction(res.transaction, res.updatedSettings);
+    return (canon(undone.coPilotSettings) === canon(s.coPilotSettings) && canon(undone.smartSettingsProfile) === canon(s.smartSettingsProfile)) || 'not restored exactly';
+  });
+  check('si_monitoring', 'Monitoring: improved / worse / no change / inconclusive, from actual evidence', () => {
+    const r = rec(base(RESTRICTIVE), 'Riley barely spends any money.', mateRich);
+    const ev = (turn: number, summary: string, eventType = 'deposit') => ({ id: `${turn}_${summary}`, turn, actorId: 'mate', category: 'action', eventType, summary });
+    const baseLedger = [ev(1, 'Deposit $500 into NSW'), ev(1, 'Governor rejected spend', 'economy_governor_rejected'), ev(2, 'Governor rejected spend', 'economy_governor_rejected'), ev(2, 'Governor rejected spend', 'economy_governor_rejected')];
+    const baseline = computeSettingsMetric('mate_spend_rate', baseLedger, ['mate'], 0, 3);
+    const st = recordSettingsRecommendationApplied(createEmptySettingsIntelligenceState(), r, null, 3, baseline);
+    const mon = st.monitoring!;
+    const better = computeSettingsMetric('mate_spend_rate', [ev(3, 'Deposit $500 into VIC'), ev(4, 'Invest in rail'), ev(5, 'Deposit $900'), ev(5, 'Governor rejected spend', 'economy_governor_rejected')], ['mate'], 3, 7);
+    const improved = evaluateSettingsObservation(mon, better, 6, []);
+    const worse = evaluateSettingsObservation({ ...mon, expected: 'decrease' }, better, 6, []);
+    const same = evaluateSettingsObservation(mon, { value: baseline.value, samples: 5 }, 6, []);
+    const conf = evaluateSettingsObservation(mon, better, 6, ['the team strategy also changed']);
+    const thin = evaluateSettingsObservation(mon, { value: 1, samples: 1 }, 6, []);
+    const early = evaluateSettingsObservation(mon, better, 4, []);
+    return (improved.result === 'improved' && worse.result === 'worse' && same.result === 'no_change' && conf.result === 'inconclusive' && /team strategy also changed/.test(conf.note || '') && thin.result === 'inconclusive' && early.result === 'monitoring') || [improved, worse, same, conf, thin, early].map(x => x.result).join(',');
+  });
+  check('si_background_ai', 'Background AI provides evidence only: evaluating it never mutates settings', () => {
+    const s = base(RESTRICTIVE);
+    const before = canon(s);
+    const w = { ...createGIFixtureWorld().world, settingsIntel: { settings: s, ctx: ctxOf(s), state: createEmptySettingsIntelligenceState(), evidence: { recentSpendRejections: 4 } } } as GIWorld;
+    evaluateBackgroundAI(createEmptyBackgroundAIState('strategist'), w);
+    const r = buildSettingsIntelligenceRecommendation(intent('Riley barely spends any money.'), s, ctxOf(s), { ...mateRich, recentSpendRejections: 4 });
+    return (canon(s) === before && BACKGROUND_AI_CAN_EXECUTE === false && r.changes.length === 1) || 'settings mutated';
+  });
+  check('si_gi3_separation', 'GI3 separation: gameplay strategy language is not settings permission', () => {
+    const s = base();
+    const w = { ...createGIFixtureWorld().world, settingsIntel: { settings: s, ctx: ctxOf(s), state: createEmptySettingsIntelligenceState(), evidence: {} } } as GIWorld;
+    const a = runGameIntelligenceCore('I want to play aggressively', w, createGIConversationContext()).understanding.primary;
+    const b = runGameIntelligenceCore('Protect NSW, reach $15K, then go Victoria. No loans.', w, createGIConversationContext()).understanding.primary;
+    return (a !== 'settings_intelligence' && b === 'strategy_preview' && understandSettingsIntent('I want to play aggressively') === null) || `${a} ${b}`;
+  });
+  check('si_gi_routing', 'Game Intelligence answers settings questions and experience requests', () => {
+    const s = base(RESTRICTIVE);
+    const w = { ...createGIFixtureWorld().world, settingsIntel: { settings: s, ctx: ctxOf(s), state: createEmptySettingsIntelligenceState(), evidence: mateRich } } as GIWorld;
+    const qs = ['Are my settings good?', 'How healthy are my settings?', 'Analyze my settings', 'Is anything too high?', 'What settings are hurting Riley?', 'Why is the AI taking so long?', 'Which settings affect Team OS?', 'Why is Team Treasury inactive?', 'What happens if I turn Team Treasury off?', 'Is planning depth 5 too high?', 'Make the opponents harder but fair.', "Make Riley smarter but don't let him take over.", 'Make the game simpler without changing difficulty', 'Make the AI faster without making it stupid', 'Explain protected cash'];
+    const bad = qs.filter(q => runGameIntelligenceCore(q, w, createGIConversationContext()).understanding.primary !== 'settings_intelligence');
+    const sell = runGameIntelligenceCore('Should I sell Gold?', w, createGIConversationContext()).understanding.primary;
+    return (!bad.length && sell !== 'settings_intelligence') || `not routed: ${bad.join(' | ')} / sell=${sell}`;
+  });
+  check('si_protected_intent', 'Protected intent: “don’t touch my Co-Pilot” / “don’t change randomness” are honoured', () => {
+    const s = base({ coPilotSettings: { ...(createDefaultGameSettings().coPilotSettings as any), coPilotEnabled: true, authorityMode: 'ask_before_acting' } });
+    const r = buildSettingsIntelligenceRecommendation(understandSettingsIntent("I want less AI help. Don't touch my Co-Pilot settings.")!, s, ctxOf(s));
+    return (r.intent.protections.includes('copilot') && !r.changes.some(c => /coPilot/.test(c.key))) || JSON.stringify(r.changes.map(c => c.key));
+  });
+  check('si_no_second_mutation_path', 'No second settings mutation path: engine functions never write settings', () => {
+    const fns: Array<(...a: any[]) => any> = [buildSettingsIntelligenceHealth, resolveSettingsIntelligenceSnapshot, buildSettingsIntelligenceRecommendation, buildSettingsIntelligenceFixRecommendation, compileSettingsIntelligencePlan, simulateSettingsChange, diagnoseSettingsSymptom, understandSettingsIntent, composeSettingsIntelligenceAnswer, evaluateSettingsObservation];
+    const bad = fns.filter(f => /setGameSettings|trackedSetGameSettings|dispatchGameSettingsChange|dispatchGameState|Math\.random/.test(String(f)));
+    const s = base(RESTRICTIVE); const before = canon(s);
+    rec(s, 'Riley barely spends any money.', mateRich); simulateSettingsChange(rec(s, 'Riley barely spends any money.', mateRich), s, ctxOf(s));
+    return (!bad.length && canon(s) === before) || `forbidden in ${bad.map(f => f.name)}`;
+  });
+  check('si_determinism', 'Determinism: same configuration, mode, intent and evidence → identical health, diagnosis, recommendation and preview', () => {
+    const s = base(RESTRICTIVE);
+    const a = [buildSettingsIntelligenceHealth(s, ctxOf(s)).report, rec(s, 'Riley barely spends any money.', mateRich)];
+    const b = [buildSettingsIntelligenceHealth(s, ctxOf(s)).report, rec(s, 'Riley barely spends any money.', mateRich)];
+    // Claim ids are session counters; compare the rendered content only.
+    const sec = (r: SettingsIntelligenceRecommendation) => settingsRecommendationSections(r, 'expert').map((x: any) => ({ ...x, claims: (x.claims || []).map((c: any) => c.text) }));
+    if (canon(a[0]) !== canon(b[0])) return 'health differs';
+    if (canon(a[1]) !== canon(b[1])) return 'recommendation differs';
+    return canon(sec(a[1] as SettingsIntelligenceRecommendation)) === canon(sec(b[1] as SettingsIntelligenceRecommendation)) || 'preview differs';
+  });
+  check('si_state_sanitize', 'Save/load: bounded state sanitised; previews never persisted; old saves load empty', () => {
+    const r = rec(base(RESTRICTIVE), 'Riley barely spends any money.', mateRich);
+    const st = recordSettingsRecommendationApplied(acknowledgeSettingsIssue(createEmptySettingsIntelligenceState(), 'x', 'intentional', 1, 'aiPlanningDepth'), r, null, 2, { value: 0.2, samples: 4 });
+    const loaded = sanitizeSettingsIntelligenceState(JSON.parse(JSON.stringify({ ...st, activePreview: { huge: true } })));
+    const empty = sanitizeSettingsIntelligenceState(undefined);
+    return ((loaded as any).activePreview === undefined && loaded.intentionalKeys[0] === 'aiPlanningDepth' && loaded.monitoring?.metric === 'mate_spend_rate' && empty.monitoring === null && empty.acknowledgedIssues.length === 0) || 'sanitize mismatch';
+  });
+  return results;
+}
+
+// ---- Settings Intelligence UI: Director panel, advanced annotations, search hint, LAB inspector ------------
+
+export interface SettingsIntelligenceBinding {
+  health: SettingsIntelligenceHealthReport | null;
+  snapshot: SISnapshot | null;
+  state: SettingsIntelligenceState;
+  ctx: SettingsIntelligenceContext;
+  evidence: SIEvidence;
+  buildFromText: (text: string) => SettingsIntelligenceRecommendation | null;
+  buildFix: (issueId: string, strategyId: string) => SettingsIntelligenceRecommendation | null;
+  simulate: (rec: SettingsIntelligenceRecommendation) => ReturnType<typeof simulateSettingsChange>;
+  apply: (rec: SettingsIntelligenceRecommendation, confirmedHighRisk?: boolean) => { status: 'applied' | 'needs_confirmation' | 'nothing'; risk?: TransitionRiskAssessment; deferred?: number };
+  undo: () => void;
+  keep: () => void;
+  lock: (keys: string[]) => void;
+  acknowledge: (issueId: string, kind: 'acknowledged' | 'intentional' | 'ignored', key?: string | null) => void;
+}
+
+const SI_UI_STATUS: Record<string, { label: string; cls: string }> = {
+  healthy: { label: 'Healthy', cls: 'bg-emerald-600 text-white' }, healthy_custom: { label: 'Healthy (custom)', cls: 'bg-emerald-700 text-white' }, caution: { label: 'Caution', cls: 'bg-amber-500 text-black' },
+  imbalanced: { label: 'Imbalanced', cls: 'bg-amber-600 text-white' }, 'over-restricted': { label: 'Over-restricted', cls: 'bg-amber-600 text-white' }, conflicted: { label: 'Conflicted', cls: 'bg-red-600 text-white' },
+  partially_inactive: { label: 'Partially inactive', cls: 'bg-slate-500 text-white' }, high_risk: { label: 'High risk', cls: 'bg-red-700 text-white' }, invalid: { label: 'Invalid', cls: 'bg-red-800 text-white' }, 'n/a': { label: 'n/a', cls: 'bg-slate-600 text-white' }, inactive: { label: 'Inactive', cls: 'bg-slate-500 text-white' }
+};
+const siChip = (status: string) => { const m = SI_UI_STATUS[status] || { label: status, cls: 'bg-slate-600 text-white' }; return <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${m.cls}`}>{m.label}</span>; };
+const siShowValue = (v: any) => (typeof v === 'boolean' ? (v ? 'ON' : 'OFF') : v === undefined || v === null ? '—' : String(v));
+
+/** A contextual range bar: [lo ═ hi] recommended zone with the current value marker (never a restriction). */
+export const SettingsRangeBar: React.FC<{ s: SISettingSnapshot }> = ({ s }) => {
+  const m = getSettingsIntelligenceMetadata(s.key);
+  const z = s.interpretation.zone;
+  const pos = s.interpretation.position;
+  if (!m || !z || pos === null) return null;
+  const range: [number, number] = m.levels ? [Math.min(...Object.values(m.levels).map(l => l.rank)), Math.max(...Object.values(m.levels).map(l => l.rank))] : (siRange(s.key) || [z.lo, z.hi]);
+  const pct = (x: number) => `${Math.max(0, Math.min(100, ((x - range[0]) / ((range[1] - range[0]) || 1)) * 100))}%`;
+  return (
+    <div className="relative h-2 rounded bg-slate-600/40 mt-1" role="img" aria-label={`Recommended ${z.lo}–${z.hi}, current ${siShowValue(s.configuredValue)}`}>
+      <div className="absolute top-0 h-2 rounded bg-emerald-500/60" style={{ left: pct(z.lo), width: `calc(${pct(z.hi)} - ${pct(z.lo)})` }} />
+      <div className={`absolute -top-1 w-1 h-4 rounded ${s.interpretation.zoneStatus === 'within' ? 'bg-white' : 'bg-amber-400'}`} style={{ left: pct(pos) }} />
+    </div>
+  );
+};
+
+export const SettingsIntelligencePanel: React.FC<{ binding: SettingsIntelligenceBinding; isDark?: boolean }> = ({ binding, isDark = true }) => {
+  const [text, setText] = React.useState('');
+  const [rec, setRec] = React.useState<SettingsIntelligenceRecommendation | null>(null);
+  const [sim, setSim] = React.useState<ReturnType<typeof simulateSettingsChange> | null>(null);
+  const [confirmRisk, setConfirmRisk] = React.useState<TransitionRiskAssessment | null>(null);
+  const [message, setMessage] = React.useState<string | null>(null);
+  const [notUnderstood, setNotUnderstood] = React.useState(false);
+  const h = binding.health;
+  const level = binding.ctx.interfaceLevel;
+  const card = `${isDark ? 'bg-slate-900/70 border-slate-700' : 'bg-white border-slate-200'} border rounded-xl p-4 space-y-2 text-sm`;
+  const btn = `${isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-600' : 'bg-slate-100 hover:bg-slate-200 border-slate-300'} border px-2.5 py-1 rounded-lg text-xs font-semibold`;
+  const primary = 'bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded-lg text-xs font-bold';
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70';
+  const mon = binding.state.monitoring;
+  const open = (r: SettingsIntelligenceRecommendation | null) => { setRec(r); setSim(null); setConfirmRisk(null); setMessage(null); };
+  const doApply = (confirmed = false) => {
+    if (!rec) return;
+    const out = binding.apply(rec, confirmed);
+    if (out.status === 'needs_confirmation') { setConfirmRisk(out.risk || null); return; }
+    setMessage(out.status === 'applied' ? `Applied${out.deferred ? ` — ${out.deferred} change(s) deferred to a safe point` : ''}. Monitoring the result.` : 'Nothing to apply.');
+    setRec(null); setConfirmRisk(null);
+  };
+  if (!h) return null;
+  return (
+    <section aria-labelledby="si-heading" data-testid="si-panel" className="space-y-3">
+      <div className={card}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 id="si-heading" className="font-bold">🧩 Configuration Health</h3>
+          <span data-testid="si-overall">{siChip(h.overallStatus)}</span>
+          <span className="text-[11px] opacity-70">Settings Intelligence 2.0 · explains, diagnoses and recommends — you approve every change</span>
+        </div>
+        <p className="text-xs opacity-85">{h.overallReason}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs" data-testid="si-domains">
+          {h.domains.map(d => (
+            <div key={d.domain} title={d.reason}><div className="opacity-70">{d.label}</div><div className="flex items-center gap-1">{siChip(d.status)}</div>{level !== 'simple' && <div className="opacity-70 text-[11px] mt-0.5 line-clamp-2">{d.reason}</div>}</div>
+          ))}
+          <div><div className="opacity-70">Inactive settings</div><div className="font-bold">{h.inertSettings.length}</div></div>
+        </div>
+      </div>
+
+      {h.issues.filter(i => i.severity !== 'info' || level === 'expert').length > 0 && (
+        <div className={card} data-testid="si-problems">
+          <div className={label}>Problems & interactions</div>
+          {h.issues.filter(i => i.severity !== 'info' || level === 'expert').slice(0, level === 'simple' ? 2 : 5).map((i, n) => (
+            <div key={i.id} className={`rounded-lg border ${isDark ? 'border-slate-700' : 'border-slate-200'} p-2 space-y-1`}>
+              <div className="font-semibold">{n + 1}. {i.title} <span className="text-[11px] opacity-60">({i.confidence} confidence)</span></div>
+              <div className="text-xs opacity-85">{i.explanation}</div>
+              {i.lockedContributors.length > 0 && <div className="text-[11px] opacity-75">🔒 {i.lockedContributors.map(k => siLabel(k)).join(', ')} contribute but are locked — recommendations won't change them.</div>}
+              {level === 'expert' && <div className="text-[11px] font-mono opacity-60">rule {i.ruleId} · type {i.type} · {i.contributors.join(', ')}</div>}
+              <div className="flex flex-wrap gap-1.5">
+                {i.strategies.slice(0, level === 'simple' ? 1 : 3).map(st => <button key={st.id} type="button" className={btn} onClick={() => open(binding.buildFix(i.id, st.id))}>Preview: {st.label}</button>)}
+                {i.type === 'extreme_value' && <button type="button" className={btn} onClick={() => binding.acknowledge(i.id, 'intentional', i.contributors[0])}>Keep (intentional)</button>}
+                <button type="button" className={btn} onClick={() => binding.acknowledge(i.id, 'acknowledged')}>Acknowledge</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className={card}>
+        <div className={label}>Tell the game what experience you want</div>
+        <form className="flex flex-col sm:flex-row gap-2" onSubmit={e => { e.preventDefault(); const r = binding.buildFromText(text); setNotUnderstood(!r); open(r); }}>
+          <input aria-label="Describe the experience you want" value={text} onChange={e => setText(e.target.value)} placeholder="e.g. Make Riley smarter but don't let him take over" className={`flex-1 border rounded-lg px-3 py-1.5 text-sm bg-transparent ${isDark ? 'border-slate-600' : 'border-slate-300'}`} />
+          <button type="submit" className={primary} disabled={!text.trim()}>Analyze</button>
+        </form>
+        {notUnderstood && <div className="text-xs opacity-80">I couldn't map that to the game's configuration. Try “The opponents are too passive”, “Riley barely spends money” or “Make AI turns faster”.</div>}
+        {rec && <SettingsRecommendationPreview rec={rec} sim={sim} level={level} isDark={isDark} />}
+        {rec && confirmRisk && (
+          <div role="alertdialog" aria-label="High-risk change" className="rounded-lg border border-red-500/70 p-2 text-xs space-y-1" data-testid="si-risk">
+            <div className="font-bold">⚠️ This raises automation authority</div>
+            {confirmRisk.risks.map((r, i) => <div key={i}>{r.dimension}: {String(r.fromValue)} → {String(r.toValue)} ({r.severity}) — {r.description}</div>)}
+            <div className="flex gap-1.5"><button type="button" className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-lg font-bold" onClick={() => doApply(true)}>Confirm high-risk change</button><button type="button" className={btn} onClick={() => setConfirmRisk(null)}>Cancel</button></div>
+          </div>
+        )}
+        {rec && !rec.noChangeNeeded && !confirmRisk && (
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" className={btn} onClick={() => setSim(binding.simulate(rec))}>Simulate</button>
+            <button type="button" className={primary} data-testid="si-apply" onClick={() => doApply(false)}>Apply</button>
+            <button type="button" className={btn} onClick={() => { binding.acknowledge(`ignored:${rec.id}`, 'ignored'); open(null); }}>Ignore</button>
+            <button type="button" className={btn} onClick={() => open(null)}>Cancel</button>
+          </div>
+        )}
+        {message && <div className="text-xs" role="status">{message}</div>}
+      </div>
+
+      {mon && (mon.status === 'monitoring' || mon.status === 'complete') && (
+        <div className={card} data-testid="si-monitoring">
+          <div className={label}>Monitoring your last change</div>
+          <div className="text-xs">{mon.changes.map(c => `${c.label}: ${siShowValue(c.from)} → ${siShowValue(c.to)}`).join(' · ')}</div>
+          <div className="text-xs">Result: <span className="font-semibold">{mon.result === 'monitoring' ? `monitoring (${mon.observationWindow}-turn window)` : mon.result.replace(/_/g, ' ')}</span>{mon.note ? ` — ${mon.note}` : ''}</div>
+          {mon.baseline.value !== null && <div className="text-[11px] opacity-75">Before: {mon.baseline.value} ({mon.baseline.samples} decisions){mon.observed ? ` · Now: ${mon.observed.value ?? '—'} (${mon.observed.samples})` : ''}</div>}
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" className={btn} onClick={binding.keep}>Keep</button>
+            <button type="button" className={btn} onClick={() => { setText(''); open(null); }}>Fine Tune</button>
+            <button type="button" className={btn} data-testid="si-undo" onClick={binding.undo} disabled={!mon.transaction}>Undo</button>
+            <button type="button" className={btn} onClick={() => binding.lock(mon.changes.map(c => c.key))}>Lock These Settings</button>
+          </div>
+        </div>
+      )}
+
+      {binding.state.recentRecommendations.length > 0 && level !== 'simple' && (
+        <div className={card}>
+          <div className={label}>Change history</div>
+          {binding.state.recentRecommendations.slice().reverse().slice(0, 5).map(r => (
+            <div key={`${r.id}_${r.turn}`} className="text-xs"><span className="font-semibold">Turn {r.turn}</span> · Goal: {r.summary} · Changed: {r.changes.map(c => `${c.label} ${siShowValue(c.from)} → ${siShowValue(c.to)}`).join(', ') || '—'} · Reason: {r.reason} · Result: {r.status === 'undone' ? 'Undone' : r.result || r.status}</div>
+          ))}
+        </div>
+      )}
+      {(level === 'advanced' || level === 'expert') && binding.snapshot && <SettingsIntelligenceAnnotations snapshot={binding.snapshot} level={level} isDark={isDark} />}
+    </section>
+  );
+};
+
+export const SettingsRecommendationPreview: React.FC<{ rec: SettingsIntelligenceRecommendation; sim: ReturnType<typeof simulateSettingsChange> | null; level: SettingsExperienceLevel; isDark?: boolean }> = ({ rec, sim, level }) => (
+  <div className="space-y-1.5 text-xs" data-testid="si-preview">
+    {rec.diagnosis && <div><span className="font-semibold">Diagnosis:</span> {rec.diagnosis.summary} <span className="opacity-60">(confidence {rec.diagnosis.confidence})</span></div>}
+    {rec.noChangeNeeded ? <div className="font-semibold">No settings change recommended — {rec.diagnosis?.classification === 'gameplay' ? 'this comes from the game situation, not your configuration.' : 'your configuration already supports this.'}</div> : (
+      <>
+        <div><span className="font-semibold">Goal:</span> {rec.desiredOutcome}</div>
+        <div className="font-semibold">Changes</div>
+        {rec.changes.map(c => <div key={c.key} data-testid="si-change">• {c.label}: {c.fromLevel} → {c.toLevel}{level === 'advanced' || level === 'expert' ? ` (${siShowValue(c.from)} → ${siShowValue(c.to)})` : ''} — {c.effect} <span className="opacity-70">[{c.timing === 'now' ? 'applies now' : c.timing === 'turn_end' ? 'applies at turn end' : 'applies next match'}]</span></div>)}
+        {rec.profileChange?.interfaceLevel && <div>• Interface level → {rec.profileChange.interfaceLevel}</div>}
+        <div className="font-semibold">Expected effect</div>
+        <div className="grid grid-cols-2 gap-x-3">{rec.expectedEffects.map(e => <div key={e.dim}>{e.label}: <span className="font-semibold">{e.change.includes('higher') ? '↑' : e.change.includes('lower') ? '↓' : '='} {e.change}</span></div>)}</div>
+        {rec.unchangedProtections.length > 0 && <div><span className="font-semibold">Unchanged:</span> {rec.unchangedProtections.join(' · ')}</div>}
+        {rec.tradeoffs.length > 0 && <div><span className="font-semibold">Tradeoffs:</span> {rec.tradeoffs.slice(0, 3).join(' · ')}</div>}
+        <div className="opacity-85">{rec.authorityImpact} {rec.fairnessImpact} {rec.performanceImpact} {rec.replayImpact}</div>
+        {(rec.timing.turn_end + rec.timing.next_match) > 0 && <div data-testid="si-timing">{rec.changes.length} change(s): {rec.timing.now} apply now · {rec.timing.turn_end} at turn end · {rec.timing.next_match} next match</div>}
+      </>
+    )}
+    {rec.lockedNotes.map((n, i) => <div key={`l${i}`} className="opacity-80">🔒 {n}</div>)}
+    {rec.skipped.map((n, i) => <div key={`s${i}`} className="opacity-70">• {n}</div>)}
+    {rec.alternatives.length > 0 && !rec.noChangeNeeded && <div><span className="font-semibold">Other options:</span> {rec.alternatives.slice(0, 2).map(a => `${a.label} (improves ${a.improves.toLowerCase()}; costs ${a.worsens.toLowerCase()})`).join(' · ')}</div>}
+    {sim && (
+      <div className="rounded border border-sky-500/40 p-2" data-testid="si-sim">
+        <div className="font-semibold">Simulated on a copy — live settings untouched</div>
+        <div>Status: {sim.before.status} → {sim.after.status} · AI load: {sim.before.aiLoad} → {sim.after.aiLoad}{sim.before.spendingFreedom !== 'n/a' ? ` · Team spending freedom: ${sim.before.spendingFreedom} → ${sim.after.spendingFreedom}` : ''}</div>
+        {sim.resolved.length > 0 && <div>Resolves: {sim.resolved.join('; ')}</div>}
+        {sim.introduced.length > 0 && <div>Introduces: {sim.introduced.join('; ')}</div>}
+        {sim.spending && <div>Teammate spend checks (real Economy Governor): {sim.spending.before.valid} approved / {sim.spending.before.rejected} rejected → {sim.spending.after.valid} approved / {sim.spending.after.rejected} rejected{sim.spending.newlyViable.length ? ` · Newly viable: ${sim.spending.newlyViable.slice(0, 3).join(', ')}` : ''}</div>}
+      </div>
+    )}
+  </div>
+);
+
+/** Advanced/Expert: semantic label, range and badges beside each technical value (control stays in the Hub). */
+export const SettingsIntelligenceAnnotations: React.FC<{ snapshot: SISnapshot; level: SettingsExperienceLevel; isDark?: boolean }> = ({ snapshot, level, isDark = true }) => {
+  const [open, setOpen] = React.useState(false);
+  const [domain, setDomain] = React.useState<SIDomain | 'all'>('all');
+  const rows = snapshot.settings.filter(s => domain === 'all' || s.domain === domain);
+  return (
+    <div className={`${isDark ? 'bg-slate-900/70 border-slate-700' : 'bg-white border-slate-200'} border rounded-xl p-3 text-xs`} data-testid="si-annotations">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">🧩 Setting meanings ({level})</span>
+        <select aria-label="Filter by area" value={domain} onChange={e => setDomain(e.target.value as SIDomain | 'all')} className="bg-transparent border rounded px-1 py-0.5">
+          {['all', 'ai', 'team', 'economy', 'automation', 'fairness', 'randomness', 'pace', 'interface', 'replay', 'privacy'].map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {rows.map(s => (
+            <div key={s.key} className={`border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} pb-1`} data-testid={`si-row-${s.key}`}>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-semibold">{s.label}</span>
+                <span className="font-mono">{siShowValue(s.configuredValue)}</span>
+                <span className="opacity-80">= {s.active ? s.interpretation.level : 'Inactive'}</span>
+                {s.badges.map(b => <span key={b} className="px-1.5 rounded border border-slate-500/50 text-[10px]">{b}</span>)}
+              </div>
+              <div className="opacity-80">{s.active ? s.interpretation.likelyEffect : s.inertReason}</div>
+              {s.interpretation.zone && <div className="opacity-70">Recommended {s.interpretation.zone.lo}–{s.interpretation.zone.hi}{s.interpretation.zone.contextNote ? ` (${s.interpretation.zone.contextNote.toLowerCase()})` : ''} · Status: {s.status.replace(/_/g, ' ')}</div>}
+              <SettingsRangeBar s={s} />
+              {s.related.length > 0 && <div className="opacity-60">Related: {s.related.map(k => siLabel(k)).join(', ')}</div>}
+              {level === 'expert' && <div className="font-mono opacity-60">{s.key} · configured {JSON.stringify(s.configuredValue)} · effective {JSON.stringify(s.effectiveValue)} · {s.dependencyState} · live {s.liveSafety} · perf {s.performanceImpact}{s.authorityImpact ? ` · authority ${s.authorityImpact}` : ''}{s.fairnessImpact ? ' · fairness' : ''}{s.lockedBy ? ` · locked by ${s.lockedBy}` : ''}{s.manualOverride ? ' · manual override' : ''}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Settings Hub search: related settings and a Settings Intelligence analysis for symptom-like queries. */
+export function settingsIntelligenceSearchHint(query: string): { related: string[]; analyze: string | null } | null {
+  const q = String(query || '').toLowerCase().trim();
+  if (q.length < 3) return null;
+  const map: Array<[RegExp, string[], string]> = [
+    [/passive|timid|aggress/, ['aiStrategyLabPreset', 'adaptiveAiRiskBias', 'aiPlanningDepth'], 'Why is the AI too passive?'],
+    [/slow|lag|fast|speed|performance/, ['teamAiCandidateEvaluationWidth', 'aiPlanningDepth', 'projectedOutcomeHorizon'], 'AI turns are taking too long'],
+    [/spend|hoard|saving|money|cash/, ['vaultLockPercentage', 'economySpendingApprovalStrictness', 'economyReserveStrength'], 'Riley barely spends money'],
+    [/smart|clever|difficult|hard|easy/, ['aiPlanningDepth', 'aiThinkingDepth', 'teamAiCandidateEvaluationWidth'], 'Make the opponents harder but fair'],
+    [/help|prompt|asking|confirm/, ['coPilotAuthorityMode', 'guardianAiResponseMode'], 'Why does Co-Pilot keep asking me?'],
+    [/coordinat|chaos|chaotic|team/, ['teamBrainTeammateSupportBias', 'parallelAiPlanningCoordinationStrictness', 'teamAiStrategicCommandEnabled'], 'Make Team Mode coordinated without taking control from me']
+  ];
+  const hit = map.find(([re]) => re.test(q));
+  if (!hit) return null;
+  return { related: hit[1].map(k => siLabel(k)), analyze: hit[2] };
+}
+
+/** LAB: Settings Intelligence Inspector — structured evidence and rules (no hidden reasoning). */
+export const SettingsIntelligenceInspector: React.FC<{ binding: SettingsIntelligenceBinding; theme: V9Theme }> = ({ binding, theme }) => {
+  const [open, setOpen] = React.useState(false);
+  const h = binding.health;
+  const snap = binding.snapshot;
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70 mt-2';
+  const row = (k: string, v: React.ReactNode, key?: string | number) => <div key={key ?? k} className="flex gap-2"><span className="opacity-70 min-w-[11rem]">{k}</span><span className="break-words min-w-0">{v}</span></div>;
+  return (
+    <section aria-labelledby="si-lab-heading" data-testid="si-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`}>
+      <div className="flex items-center gap-2">
+        <h2 id="si-lab-heading" className="font-bold text-sm">🧩 Settings Intelligence Inspector</h2>
+        <span className="opacity-70">{h ? `${h.overallStatus} · hash ${h.hash} · ${binding.ctx.mode} · ${binding.ctx.phase}` : 'no analysis'}</span>
+        <button type="button" className="ml-auto underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && h && snap && (
+        <div className="space-y-1 mt-2">
+          <div className={label}>Configuration health</div>
+          {row('dependency (existing inspector)', `${h.dependencyHealth.valid ? 'valid' : 'invalid'} · score ${h.dependencyHealth.score} · ${h.dependencyHealth.reason}`)}
+          {h.domains.map(d => row(d.label, `${d.status} — ${d.reason}`, `d_${d.domain}`))}
+          {row('spending freedom', h.spendingFreedom)}{row('AI load', h.performanceHealth.load)}{row('replay', h.replayHealth.reason)}
+          <div className={label}>Interaction rules triggered</div>
+          {h.issues.concat(h.acknowledged).map(i => row(`${i.ruleId} · ${i.type}`, `${i.severity}${i.acknowledged ? ' (acknowledged)' : ''} — ${i.contributors.join(', ')}`, i.id))}
+          {!h.issues.length && !h.acknowledged.length && <div className="opacity-70">none</div>}
+          <div className={label}>Inert settings</div>
+          {h.inertSettings.map(x => row(x.label, `configured ${siShowValue(x.configured)} · ${x.reason}`, `i_${x.key}`))}
+          <div className={label}>Effective settings & semantic classification</div>
+          {snap.settings.map(s => row(s.key, `configured ${JSON.stringify(s.configuredValue)} → effective ${JSON.stringify(s.effectiveValue)} · ${s.active ? s.interpretation.level : 'inactive'}${s.interpretation.zone ? ` · zone ${s.interpretation.zone.lo}–${s.interpretation.zone.hi} (${s.interpretation.zoneStatus})` : ''} · ${s.badges.join('/')}`, `e_${s.key}`))}
+          <div className={label}>Constraints</div>
+          {row('locks', snap.settings.filter(s => s.locked).map(s => s.key).join(', ') || 'none')}
+          {row('manual overrides', snap.settings.filter(s => s.manualOverride).map(s => s.key).join(', ') || 'none')}
+          {row('fairness', `${binding.ctx.aiFairness} · fairness-sensitive: ${snap.settings.filter(s => s.fairnessImpact).map(s => s.key).join(', ')}`)}
+          {row('authority', `authority-sensitive: ${snap.settings.filter(s => s.authorityImpact).map(s => `${s.key}(${s.authorityImpact})`).join(', ')}`)}
+          {row('intentional', binding.state.intentionalKeys.join(', ') || 'none')}
+          <div className={label}>Evidence (read-only)</div>
+          {row('teammate', binding.evidence.mate ? `${binding.evidence.mate.name} $${binding.evidence.mate.money} · tasks ${binding.evidence.mate.taskTypes.join(', ') || 'none'} · recovery ${binding.evidence.mate.inRecovery}` : 'n/a')}
+          {row('recent spend rejections', String(binding.evidence.recentSpendRejections ?? 0))}{row('rival can contest', String(binding.evidence.rivalCanContest))}
+          <div className={label}>Monitoring</div>
+          {row('observation', binding.state.monitoring ? `${binding.state.monitoring.goal} · ${binding.state.monitoring.metric} · ${binding.state.monitoring.result} · ${binding.state.monitoring.status} · baseline ${binding.state.monitoring.baseline.value} (${binding.state.monitoring.baseline.samples})` : 'none')}
+          {row('recent recommendations', binding.state.recentRecommendations.map(r => `${r.goal}@t${r.turn}:${r.status}`).join(', ') || 'none')}
         </div>
       )}
     </section>
@@ -116950,6 +119251,8 @@ function AustraliaGame() {
   // Background AI: latest (live-evaluated) prepared analysis for callbacks and the GI world.
   const bgStateRef = useRef<BackgroundAIState | null>(null);
   bgStateRef.current = ((gameState as any).backgroundAI as BackgroundAIState | undefined) || null;
+  // Settings Intelligence 2.0: read-only configuration view handed to Game Intelligence (set below).
+  const siWorldViewRef = useRef<SettingsIntelligenceWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -118842,6 +121145,7 @@ function dispatchGameSettingsChange(
         teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
         gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
         backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
+        settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -147154,6 +149458,7 @@ function dispatchGameSettingsChange(
       team: teamOsViewRef.current,
       gi3: gi3StateRef.current,
       backgroundAI: bgStateRef.current,
+      settingsIntel: siWorldViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -147710,6 +150015,144 @@ function dispatchGameSettingsChange(
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
   const v9ActionSetView = useMemo(() => annotateContextualActionsWithBackground(v9ActionSet, bgLive), [v9ActionSet, bgLive]);
 
+  // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
+  // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
+  // player approves, applied ONLY by applySmartSettingsPlan() and undone ONLY by undoSmartSettingsTransaction().
+  const siPhase: SIMatchPhase = (gameState as any).isolatedReplayRuntime ? 'replay' : gameState.selectedMode === 'team_ai_vs_ai' && isLiveIntentMatch ? 'ai_vs_ai' : isLiveIntentMatch ? 'live' : gameState.gameMode === 'game' ? 'pre_match' : 'menu';
+  const siCtx = useMemo(() => buildSettingsIntelligenceContext(gameSettings, { mode: gameState.selectedMode, phase: siPhase }), [gameSettings, gameState.selectedMode, siPhase]);
+  const siStoredRaw = (gameState as any).settingsIntelligence as SettingsIntelligenceState | undefined;
+  const siState = useMemo(() => sanitizeSettingsIntelligenceState(siStoredRaw), [siStoredRaw]);
+  const siLedger = (gameState.gameActivityLedger?.events || []) as any[];
+  const siMateIds = useMemo(() => (teamOsView?.inputs.actors || []).filter(a => !a.isHuman).map(a => a.id), [teamOsView]);
+  const siEvidence = useMemo<SIEvidence>(() => {
+    const mateInput = teamOsView?.inputs.actors.find(a => !a.isHuman) || null;
+    const tasks = (teamOsView?.state.contract?.taskGraph || []).filter(t => mateInput && t.assignedActorIds.includes(mateInput.id) && !['completed', 'cancelled', 'superseded', 'failed'].includes(t.status));
+    const turn = Number(gameState.turnCounter || 0);
+    const rejections = siLedger.filter(e => e && Number(e.turn ?? 0) >= turn - 3 && siMateIds.includes(String(e.actorId)) && /governor|reserve|approval/i.test(`${e.eventType} ${e.summary}`) && /reject|block|denied|refus|breach/i.test(`${e.eventType} ${e.summary}`)).length;
+    let rivalCanContest: boolean | null = null;
+    try {
+      if (!gameSettings.fogOfWarEnabled && aiPlayer && typeof aiPlayer.money === 'number') {
+        rivalCanContest = Object.keys(REGIONS).some(code => { const info = getRegionControlInfo(code); return info.controllerId === playerControlKey && Number(info.minimumAiDeposit) <= Number(aiPlayer.money); });
+      }
+    } catch { rivalCanContest = null; }
+    return {
+      mate: mateInput ? { id: mateInput.id, name: mateInput.name, money: mateInput.money, protectedCash: mateInput.protectedCash, inRecovery: mateInput.inRecovery, tasks: tasks.map(t => t.label), taskTypes: tasks.map(t => t.type), reserveFloor: teamOsView?.state.contract?.constraints.reserveFloor ?? null } : null,
+      recentSpendRejections: rejections, rivalCanContest, gi3Active: Boolean(gi3Live.active && gi3Live.active.status === 'active')
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamOsView, siLedger.length, gameState.turnCounter, gameSettings.fogOfWarEnabled, aiPlayer?.money, siMateIds, gi3Live.active?.status]);
+  const siHealth = useMemo(() => {
+    try { return buildSettingsIntelligenceHealth(gameSettings, siCtx, siState); } catch (err) { console.warn('[Settings Intelligence] analysis skipped:', err); return null; }
+    // Recomputed only when the compact settings signature (settings, profile, locks, mode, phase, acknowledgements) changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computeSettingsIntelligenceHash(gameSettings, siCtx, `${siState.intentionalKeys.join(',')}|${siState.acknowledgedIssues.map(a => a.issueId).join(',')}`)]);
+  siWorldViewRef.current = { settings: gameSettings, ctx: siCtx, state: siState, evidence: siEvidence };
+
+  const persistSettingsIntelligence = useCallback((next: SettingsIntelligenceState) => {
+    dispatchGameState({ type: 'LOAD_STATE', payload: { settingsIntelligence: sanitizeSettingsIntelligenceState(next) } as any });
+  }, []);
+
+  /** Apply an approved recommendation through the canonical Smart Settings transaction engine. */
+  const applySettingsRecommendation = useCallback((rec: SettingsIntelligenceRecommendation, confirmedHighRisk = false): { status: 'applied' | 'needs_confirmation' | 'nothing'; risk?: TransitionRiskAssessment; deferred?: number } => {
+    if (rec.noChangeNeeded) return { status: 'nothing' };
+    const isLive = siCtx.isLiveMatch;
+    const { plan, risk } = compileSettingsIntelligencePlan(rec, gameSettings, isLive);
+    if ((risk.isHighRisk || rec.authorityIncrease) && !confirmedHighRisk) return { status: 'needs_confirmation', risk };
+    // The transaction for Undo is produced by the SAME engine from the current settings snapshot.
+    const txResult = applySmartSettingsPlan(plan, gameSettings, isLive);
+    trackedSetGameSettings('direct_player_change', 'Settings Intelligence', prev => {
+      const applied = applySmartSettingsPlan(plan, prev, isLive).updatedSettings;
+      return {
+        ...applied,
+        autoModeSettings: sanitizeAutoModeGlobalSettings(applied.autoModeSettings),
+        coPilotSettings: sanitizeCoPilotSettings(applied.coPilotSettings),
+        guardianAiSettings: sanitizeGuardianAiSettings(applied.guardianAiSettings),
+        _undoStack: undefined
+      } as GameSettingsState;
+    });
+    const turn = Number(gameState.turnCounter || 0);
+    const { metric } = siMetricForGoal(rec.intent.goal);
+    const actorIds = metric === 'rival_contest_rate' ? [String(aiPlayer?.id || 'ai')] : siMateIds;
+    const baseline = computeSettingsMetric(metric, siLedger, actorIds, Math.max(0, turn - 3), turn + 1);
+    persistSettingsIntelligence(recordSettingsRecommendationApplied(siState, rec, txResult.transaction, turn, baseline));
+    appendGameActivityLedgerEvent('settings_change', { actorId: 'player', eventType: 'settings_intelligence_applied', summary: `Settings Intelligence: ${rec.desiredOutcome} — ${rec.changes.map(c => `${c.label} ${c.fromLevel}→${c.toLevel}`).join(', ')}`.slice(0, 200) } as any);
+    const deferred = rec.timing.turn_end + rec.timing.next_match;
+    addNotification(`⚙️ Settings updated: ${rec.desiredOutcome}${deferred ? ` (${deferred} change(s) deferred)` : ''}. You can undo it from the Game Experience Director.`.slice(0, 200), 'success', false, 'system');
+    return { status: 'applied', risk, deferred };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameSettings, siCtx, siState, siMateIds, siLedger.length, gameState.turnCounter, aiPlayer?.id, trackedSetGameSettings, persistSettingsIntelligence, appendGameActivityLedgerEvent, addNotification]);
+
+  const undoSettingsRecommendation = useCallback(() => {
+    const mon = siState.monitoring;
+    if (!mon?.transaction) return;
+    const tx = mon.transaction;
+    trackedSetGameSettings('direct_player_change', 'Undo Settings Intelligence change', prev => ({ ...undoSmartSettingsTransaction(JSON.parse(JSON.stringify(tx)), prev), _undoStack: undefined } as GameSettingsState));
+    persistSettingsIntelligence({ ...siState, monitoring: { ...mon, status: 'undone' }, recentRecommendations: siState.recentRecommendations.map(r => (r.id === mon.recommendationId ? { ...r, status: 'undone' as const } : r)) });
+    appendGameActivityLedgerEvent('settings_change', { actorId: 'player', eventType: 'settings_intelligence_undone', summary: `Undid Settings Intelligence change: ${mon.changes.map(c => c.label).join(', ')}`.slice(0, 200) } as any);
+  }, [siState, trackedSetGameSettings, persistSettingsIntelligence, appendGameActivityLedgerEvent]);
+
+  const keepSettingsRecommendation = useCallback(() => {
+    const mon = siState.monitoring;
+    if (!mon) return;
+    persistSettingsIntelligence({ ...siState, monitoring: { ...mon, status: 'kept' }, recentRecommendations: siState.recentRecommendations.map(r => (r.id === mon.recommendationId ? { ...r, status: 'kept' as const, result: mon.result } : r)) });
+  }, [siState, persistSettingsIntelligence]);
+
+  const lockSettingsKeys = useCallback((keys: string[]) => {
+    trackedSetGameSettings('direct_player_change', 'Lock settings (Settings Intelligence)', prev => {
+      const prof = prev.smartSettingsProfile || createDefaultSmartSettingsProfile();
+      return { ...prev, smartSettingsProfile: { ...prof, lockedSettingKeys: Array.from(new Set([...(prof.lockedSettingKeys || []), ...keys])) } };
+    });
+  }, [trackedSetGameSettings]);
+
+  const acknowledgeSettings = useCallback((issueId: string, kind: 'acknowledged' | 'intentional' | 'ignored', key?: string | null) => {
+    persistSettingsIntelligence(acknowledgeSettingsIssue(siState, issueId, kind, Number(gameState.turnCounter || 0), key || null));
+  }, [siState, persistSettingsIntelligence, gameState.turnCounter]);
+
+  /** Honest current-vs-proposed spend check for the AI teammate, using the real Economy Governor. */
+  const siSpendProbe = useCallback((s: GameSettingsState) => {
+    const mate = teamOsView?.inputs.actors.find(a => !a.isHuman);
+    if (!mate || !isTeamMode) return null;
+    const spends: Array<{ label: string; category: EconomySpendCategory; cost: number }> = [];
+    (teamOsView?.state.contract?.taskGraph || []).filter(t => t.resourceRequirement > 0).slice(0, 4).forEach(t => spends.push({ label: t.label, category: t.regionId ? 'region_deposit' : 'investment', cost: t.resourceRequirement }));
+    [500, 1000, 2000].forEach(c => spends.push({ label: `$${c.toLocaleString()} regional support deposit`, category: 'region_deposit', cost: c }));
+    return probeSpendingApprovals({ id: mate.id, money: mate.money, protectedCash: mate.protectedCash, inEconomicRecovery: mate.inRecovery }, spends, s, Number(gameState.day || 1));
+  }, [teamOsView, isTeamMode, gameState.day]);
+
+  // Monitoring: judge an applied change against actual runtime evidence once its window has passed.
+  const siMonitorStartRef = useRef<{ id: string; teamRev: string | null; gi3Rev: string | null } | null>(null);
+  useEffect(() => {
+    const mon = siState.monitoring;
+    if (!mon || mon.status !== 'monitoring') return;
+    const teamRev = teamOsView?.state.contract ? `${teamOsView.state.contract.id}:${teamOsView.state.contract.revision}` : null;
+    const gi3Rev = gi3Live.active ? `${gi3Live.active.id}:${gi3Live.active.revision}` : null;
+    if (!siMonitorStartRef.current || siMonitorStartRef.current.id !== mon.recommendationId) siMonitorStartRef.current = { id: mon.recommendationId, teamRev, gi3Rev };
+    const confounders: string[] = [];
+    if (siMonitorStartRef.current.teamRev && siMonitorStartRef.current.teamRev !== teamRev) confounders.push('the team strategy also changed');
+    if (siMonitorStartRef.current.gi3Rev && siMonitorStartRef.current.gi3Rev !== gi3Rev) confounders.push('your GI3 strategy also changed');
+    const turn = Number(gameState.turnCounter || 0);
+    const actorIds = mon.metric === 'rival_contest_rate' ? [String(aiPlayer?.id || 'ai')] : siMateIds;
+    const now = computeSettingsMetric(mon.metric, siLedger, actorIds, mon.startTurn, turn + 1);
+    const next = evaluateSettingsObservation(mon, now, turn, confounders);
+    if (next.result !== mon.result || next.status !== mon.status || JSON.stringify(next.observed) !== JSON.stringify(mon.observed)) {
+      persistSettingsIntelligence({ ...siState, monitoring: next, recentRecommendations: siState.recentRecommendations.map(r => (r.id === next.recommendationId ? { ...r, result: next.result === 'monitoring' ? 'Monitoring' : next.note || next.result } : r)) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.turnCounter, siState.monitoring?.recommendationId, siState.monitoring?.status]);
+
+  // Background AI observes behaviour; Settings Intelligence judges whether configuration contributes. Neither
+  // changes settings — the player gets an "Analyze Settings" entry point.
+  const siBackgroundObservation = (siEvidence.recentSpendRejections || 0) >= 3 && siHealth?.report.issues.some(i => i.type === 'overly_restrictive' || i.type === 'redundant_protection')
+    ? `${siEvidence.mate?.name || 'Your teammate'} has repeatedly had spending rejected. Configuration may be contributing to this.` : null;
+  const siBinding: SettingsIntelligenceBinding = {
+    health: siHealth?.report || null, snapshot: siHealth?.snapshot || null, state: siState, ctx: siCtx, evidence: siEvidence,
+    buildFromText: text => { const i = understandSettingsIntent(text, (teamOsView?.inputs.actors || []).filter(a => !a.isHuman).map(a => a.name)); return i ? buildSettingsIntelligenceRecommendation(i, gameSettings, siCtx, siEvidence, siState) : null; },
+    buildFix: (issueId, strategyId) => buildSettingsIntelligenceFixRecommendation(issueId, strategyId, gameSettings, siCtx, siState),
+    simulate: rec => simulateSettingsChange(rec, gameSettings, siCtx, siSpendProbe),
+    apply: applySettingsRecommendation, undo: undoSettingsRecommendation, keep: keepSettingsRecommendation, lock: lockSettingsKeys, acknowledge: acknowledgeSettings
+  };
+  const siBindingRef = useRef(siBinding);
+  siBindingRef.current = siBinding;
+
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
     if (!query || v9IntelBusy) return;
@@ -147859,6 +150302,36 @@ function dispatchGameSettingsChange(
       case 'gi3_dismiss':
         if (button.candidateId) dismissGI3Notice(button.candidateId);
         return;
+      case 'si_apply': {
+        // Settings Intelligence: rebuild the recommendation from CURRENT settings (never a stale preview),
+        // preview it, and apply only after approval through the canonical transaction engine.
+        const cid = button.candidateId || '';
+        let rec: SettingsIntelligenceRecommendation | null = null;
+        if (cid.startsWith('fix:')) { const [, issueId, strategyId] = cid.split(':'); rec = siBindingRef.current.buildFix(issueId, strategyId); }
+        else if (giContextRef.current.pendingSettingsRec) rec = siBindingRef.current.buildFromText(giContextRef.current.pendingSettingsRec.text);
+        if (!rec) { addNotification('That settings preview has expired — ask again to rebuild it.', 'warning', false, 'system'); return; }
+        if (button.query === 'preview') { pushIntelAnswer(buildSettingsPreviewAnswer(rec, siBindingRef.current.ctx.interfaceLevel, cid)); setExperienceLayer('intelligence'); return; }
+        const out = siBindingRef.current.apply(rec, button.query === 'confirmed');
+        if (out.status === 'needs_confirmation') { pushIntelAnswer(buildSettingsRiskAnswer(rec, out.risk, cid)); setExperienceLayer('intelligence'); return; }
+        if (out.status === 'applied') giContextRef.current = { ...giContextRef.current, pendingSettingsRec: null };
+        return;
+      }
+      case 'si_ack': {
+        const [kind, issueId, key] = String(button.candidateId || '').split(':');
+        if (issueId && (kind === 'acknowledged' || kind === 'intentional' || kind === 'ignored')) siBindingRef.current.acknowledge(issueId, kind, key || null);
+        if (kind === 'ignored') giContextRef.current = { ...giContextRef.current, pendingSettingsRec: null };
+        return;
+      }
+      case 'si_open':
+      case 'bg_analyze_settings':
+        updateUiState({ showSettings: true });
+        return;
+      case 'si_undo':
+        siBindingRef.current.undo();
+        return;
+      case 'si_keep':
+        siBindingRef.current.keep();
+        return;
       case 'bg_dismiss':
         if (button.candidateId) dismissBackgroundNotice(button.candidateId);
         return;
@@ -147869,7 +150342,7 @@ function dispatchGameSettingsChange(
       default:
         return;
     }
-  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money, persistBackgroundAI, dismissBackgroundNotice, setBackgroundMode]);
+  }, [v9ActionSet, requestManualAction, executeIntentRecommendation, handleEndTurn, openIntentNav, pushIntelAnswer, playerControlState, setExperienceLayer, setPlayerControlMode, requestCoPilotStart, handleTakeControl, handleResumeCoPilot, submitIntelligenceQuery, askAI, addNotification, applyTeamOsCommand, resolveTeamOsProposal, activateGI3Draft, controlGI3, dismissGI3Notice, persistGI3State, appendGameActivityLedgerEvent, gameState.turnCounter, player?.money, persistBackgroundAI, dismissBackgroundNotice, setBackgroundMode, updateUiState]);
 
   const handleV9ControlStart = useCallback(() => {
     requestCoPilotStart(playerControlState.mode === 'rescue' ? 'rescue' : 'autonomous');
@@ -148808,6 +151281,7 @@ function dispatchGameSettingsChange(
         }}
         gameSettings={gameSettings}
         profile={gameSettings.smartSettingsProfile || createDefaultSmartSettingsProfile()}
+        settingsIntelligence={siBinding}
         onApplyPlan={(plan) => {
           const autonomousJump = plan?.profile?.coPilotMode === 'autonomous_takeover'
             || plan?.profile?.coPilotMode === 'takeover_requested'
@@ -149795,6 +152269,16 @@ function dispatchGameSettingsChange(
 
           {/* Scrollable Content */}
           <div ref={settingsScrollRef} data-settings-scroll="true" className={`p-3 sm:p-6 pt-2 sm:pt-4 flex-1 min-h-0 overflow-y-auto ${themeStyles.scrollbar}`} style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            {(() => {
+              const hint = settingsIntelligenceSearchHint(uiState.settingsSearchQuery || '');
+              return hint ? (
+                <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 mb-3 text-xs flex flex-wrap items-center gap-2`} data-testid="si-search-hint">
+                  <span className="font-semibold">🧩 Related settings:</span>
+                  <span className="opacity-85">{hint.related.join(' • ')}</span>
+                  {hint.analyze && <button type="button" className="underline ml-auto" onClick={() => { updateUiState({ showSettings: false, showSettingsHub: false }); void submitIntelligenceQuery(hint.analyze!); }}>Settings Intelligence: analyze “{hint.analyze}”</button>}
+                </div>
+              ) : null;
+            })()}
             {settingsSearchMatchedIds !== null && settingsSearchMatchedIds.size === 0 && (
               <div className="text-sm opacity-75 mb-4">No settings match "{uiState.settingsSearchQuery}".</div>
             )}
@@ -163447,6 +165931,7 @@ function dispatchGameSettingsChange(
             onAsk={q => void submitIntelligenceQuery(q)}
             onButton={handleV9Button}
             onOpen={() => setExperienceLayer('intelligence')}
+            settingsObservation={siBackgroundObservation}
           />
 
           <GI3PlayStrip
@@ -163645,7 +166130,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -163677,6 +166162,7 @@ function dispatchGameSettingsChange(
           coPilot={gi3CoPilot}
         />
         <ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} />
+        <SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} />
       </div>
     );
 
