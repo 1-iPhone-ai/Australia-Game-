@@ -1883,7 +1883,7 @@ export const PRESET_REGIONAL_CONTRACTS: RegionalContract[] = [
     issuingFactionId: 'nsw_farmers_coop',
     requirements: { requiredMoney: 15000, minRegionalStanding: 20, requiredEquipment: ['Heavy Transport Truck'], maxDurationTurns: 10 },
     rewards: { money: 35000, regionalStandingBoost: 15, devPoints: 150 },
-    objectives: [{ id: 'obj_grain_1', type: 'deliver_resource', description: 'Deliver 50 units of Grain to NSW distribution center', targetRegion: 'NSW', targetItem: 'Grain', targetValue: 50, currentProgress: 0, completed: false, isMandatory: true }],
+    objectives: [{ id: 'obj_grain_1', type: 'deliver_resource', description: 'Deliver 50 units of Wheat to NSW distribution center', targetRegion: 'NSW', targetItem: 'Wheat', targetValue: 50, currentProgress: 0, completed: false, isMandatory: true }],
     status: 'available',
     durationTurns: 10,
     turnsRemaining: 10
@@ -5341,11 +5341,14 @@ export const WIN_METRIC_PROFILES: Record<WinMetric, WinMetricProfile> = {
         const teamId = side === 'player' ? 'team_player' : 'team_opponent';
         const protectedDeduction = vaultExclusionActive ? getTeamActors(teamId).reduce((sum, a) => sum + (a.protectedCash || 0), 0) : 0;
         const treasuryInclusion = treasuryInclusionActive ? (teamsById[teamId]?.treasury?.balance || 0) : 0;
-        return Math.max(0, computeTeamMoney(teamId) - protectedDeduction + treasuryInclusion);
+        // V9.1: borrowed cash is not a cash lead — outstanding loans are netted out (otherwise three
+        // emergency loans on the final day added $1,500 of "cash" for 0 AP with no interest ever charged).
+        const teamDebt = getTeamActors(teamId).reduce((sum, a) => sum + calculateActorOutstandingDebt(a), 0);
+        return Math.max(0, computeTeamMoney(teamId) - protectedDeduction + treasuryInclusion - teamDebt);
       }
       const soloActor = side === 'player' ? player : aiPlayer;
       const soloProtectedDeduction = vaultExclusionActive ? ((soloActor as ActorState)?.protectedCash || 0) : 0;
-      return Math.max(0, (soloActor?.money || 0) - soloProtectedDeduction);
+      return Math.max(0, (soloActor?.money || 0) - soloProtectedDeduction - calculateActorOutstandingDebt(soloActor));
     },
     lowCashThreshold: 650,
     aiActionScoreBaseline: 80,
@@ -6421,12 +6424,12 @@ export function normalizeActionPointId(actionId: string): ActionPointActionId | 
   if (key === 'sell_resources' || key === 'sellresource' || key === 'market' || key === 'sell' || key === 'sell_market') return 'sell_resources';
   if (key === 'buy_resources' || key === 'buyresource' || key === 'resourcemarket' || key === 'resource_market' || key === 'buy_market') return 'buy_resources';
   if (key === 'take_loan' || key === 'take_advanced_loan' || key === 'draw_credit_line' || key === 'investments' || key === 'investment' || key === 'invest' || key === 'repay_loan' || key === 'repay_advanced_loan' || key === 'repay_debt' || key === 'pay_debt' || key === 'refinance_loan' || key === 'refinance_advanced_loan' || key === 'emergency_restructure') return 'investments';
-  if (key === 'emergency_loan' || key === 'loans' || key === 'loan') return 'emergency_loan';
+  if (key === 'emergency_loan' || key === 'loans' || key === 'loan' || key === 'repay_emergency_loan') return 'emergency_loan';
   if (key === 'regional_deposit' || key === 'regionalcontrol') return 'regional_deposit';
   if (key === 'equipment_purchase' || key === 'buy_equipment' || key === 'buy_equipment_for_actor' || key === 'shop' || key === 'equipment' || key === 'craft') return 'equipment_purchase';
   if (key === 'infrastructure_project' || key === 'infrastructure' || key === 'start_infrastructure_project' || key === 'build_infrastructure' || key === 'fund_infrastructure' || key === 'invest_infrastructure_project' || key === 'investinfrastructure') return 'infrastructure_project';
   if (key === 'contract_accept' || key === 'contracts' || key === 'accept_regional_contract') return 'contract_accept';
-  if (key === 'contract_objective' || key === 'fulfill_regional_contract') return 'contract_objective';
+  if (key === 'contract_objective' || key === 'fulfill_regional_contract' || key === 'deliver_contract_objectives' || key === 'progress_contract_objective') return 'contract_objective';
   if (key === 'attack') return 'attack';
   if (key === 'sabotage') return 'sabotage';
   if (key === 'regional_competition') return 'regional_competition';
@@ -6549,6 +6552,9 @@ export function applyExecutedGameplayActionPointSpend(
   const alreadySpent = (Number(actor.actionsUsedThisTurn) || 0) > (Number(usedAtStart) || 0);
   if (alreadySpent) return;
   let cost = typeof getActionPointCost === 'function' ? getActionPointCost(actionType, actor, settings) : 1;
+  // V9.1 parity: an action the rules explicitly make free (sell/buy/loan/contract accept …) is free on every
+  // path. The old floor charged Co-Pilot/AI 1 AP for what cost the human 0. Unmapped types still cost 1.
+  if (Number.isFinite(cost) && cost <= 0 && normalizeActionPointId(actionType)) return;
   if (!Number.isFinite(cost) || cost <= 0) cost = 1;
   actor.actionsUsedThisTurn = (Number(usedAtStart) || 0) + cost;
   if (typeof actor.actionPoints === 'number') {
@@ -6571,6 +6577,17 @@ export function canActorAffordActionPoints(
     cost,
     remaining
   };
+}
+
+/**
+ * V9.1 fairness: hidden catch-up / anti-leader NUMERIC effects (underdog discounts, "investor interest" cash,
+ * "market correction" on the leader, AI-only emergency stipend) apply only when the player opted into
+ * adaptive handicaps. Under "Strictly Equal" and "Smarter Decisions Only" every side plays by identical numbers.
+ */
+export function allowsAdaptiveHandicap(settings: any): boolean {
+  if (settings?.adaptiveAiRubberBanding === true) return true;
+  const f = settings?.smartSettingsProfile?.aiFairness;
+  return f === 'limited_adaptation' || f === 'fully_adaptive';
 }
 
 export function calculateActionPointOverrideCost(actor: any, settings: any, overridesUsedToday: number = 0): number {
@@ -7636,6 +7653,7 @@ export interface BranchComparisonDelta {
 export type Phase4GameActionType =
   | 'accept_regional_contract'
   | 'progress_contract_objective'
+  | 'deliver_contract_objectives'
   | 'complete_regional_contract'
   | 'cancel_regional_contract'
   | 'expire_regional_contracts'
@@ -10724,6 +10742,204 @@ interface ActionTransitionResult {
   ledgerEvent?: GameActivityLedgerEvent;
 }
 
+// ---- V9.1 correctness: contract objectives progress only through real deliverables ------------------
+// Before V9.1 the canonical accept/fulfil paths only checked status (a contract paid its full reward with
+// 0 objectives done) and the AI path advanced objectives by an arbitrary caller-supplied delta. Objectives
+// now progress from canonical state: resources handed over in the target region, capital paid in, the
+// region's infrastructure, and turns of presence. Same rule for every actor (human, Co-Pilot, AI).
+
+/** Resources a delivery objective without a named item accepts (any traded commodity). */
+const CONTRACT_DELIVERABLE_RESOURCES = new Set<string>(BASE_MARKET_RESOURCES);
+
+function contractStandingSource(state: any): any {
+  return state?.standingPerActor ? state : (state?.gameState?.standingPerActor ? state.gameState : state);
+}
+
+/** Apply every deliverable the actor can hand over right now. Mutates the (already cloned) contract/actor. */
+export function deliverContractObjectives(contract: any, actor: any, state: any): { changed: boolean; notes: string[] } {
+  const notes: string[] = [];
+  let changed = false;
+  if (!contract || !actor || contract.status !== 'active') return { changed, notes };
+  (contract.objectives || []).forEach((obj: any) => {
+    if (!obj || obj.completed) return;
+    const remaining = Math.max(0, Number(obj.targetValue || 0) - Number(obj.currentProgress || 0));
+    if (remaining <= 0) { obj.completed = true; changed = true; return; }
+    const here = !obj.targetRegion || actor.currentRegion === obj.targetRegion;
+    if (obj.type === 'deliver_resource') {
+      if (!here) { notes.push(`Travel to ${obj.targetRegion} to deliver`); return; }
+      const inv: string[] = Array.isArray(actor.inventory) ? [...actor.inventory] : [];
+      let moved = 0;
+      for (let i = inv.length - 1; i >= 0 && moved < remaining; i--) {
+        const item = inv[i];
+        if (obj.targetItem ? item === obj.targetItem : CONTRACT_DELIVERABLE_RESOURCES.has(item)) { inv.splice(i, 1); moved += 1; }
+      }
+      if (moved > 0) { actor.inventory = inv; obj.currentProgress = Number(obj.currentProgress || 0) + moved; changed = true; notes.push(`Delivered ${moved} ${obj.targetItem || 'units'}`); }
+      else notes.push(`No ${obj.targetItem || 'deliverable resources'} in inventory`);
+    } else if (obj.type === 'invest_capital') {
+      if (!here) { notes.push(`Travel to ${obj.targetRegion} to invest`); return; }
+      const pay = Math.max(0, Math.min(Math.floor(Number(actor.money || 0)), remaining));
+      if (pay > 0) { actor.money -= pay; obj.currentProgress = Number(obj.currentProgress || 0) + pay; changed = true; notes.push(`Invested $${pay.toLocaleString()}`); }
+      else notes.push('No capital available');
+    } else if (obj.type === 'build_infrastructure') {
+      const projects = Object.values((state?.infrastructureProjects || state?.gameState?.infrastructureProjects || {}) as Record<string, any>);
+      const built = projects.filter(p => p && (p.regionId === obj.targetRegion || p.stateCode === obj.targetRegion) && ['active', 'completed', 'operational'].includes(String(p.status))).length;
+      if (built > Number(obj.currentProgress || 0)) { obj.currentProgress = built; changed = true; notes.push(`${built} project(s) operating in ${obj.targetRegion}`); }
+      else notes.push(`Needs an operating infrastructure project in ${obj.targetRegion}`);
+    }
+    // maintain_presence advances at end of turn (see end_turn) — it cannot be delivered on demand.
+    if (Number(obj.currentProgress || 0) >= Number(obj.targetValue || 0)) obj.completed = true;
+  });
+  return { changed, notes };
+}
+
+/**
+ * Live day advance for ACCEPTED contracts: presence objectives tick for actors standing in the target region,
+ * and the accepted contract's own deadline counts down (expiring at 0). Available contracts are untouched —
+ * the deadline is a commitment you take on when you accept, not a timer on the offer.
+ */
+export function advanceActiveRegionalContractsDay(contracts: Record<string, any> | null | undefined, positions: Record<string, string | null | undefined>): Record<string, any> | null {
+  if (!contracts) return null;
+  let changed = false;
+  const next: Record<string, any> = {};
+  Object.entries(contracts).forEach(([id, c0]) => {
+    if (!c0 || c0.status !== 'active') { next[id] = c0; return; }
+    const c = { ...c0, objectives: (c0.objectives || []).map((o: any) => ({ ...o })) };
+    const here = c.assignedActorId ? positions[c.assignedActorId] : null;
+    c.objectives.forEach((o: any) => {
+      if (!o.completed && o.type === 'maintain_presence' && here && here === o.targetRegion) {
+        o.currentProgress = Number(o.currentProgress || 0) + 1;
+        if (o.currentProgress >= o.targetValue) o.completed = true;
+      }
+    });
+    if (typeof c.turnsRemaining === 'number' && !contractObjectivesDone(c)) {
+      c.turnsRemaining -= 1;
+      if (c.turnsRemaining <= 0) c.status = 'expired';
+    }
+    changed = true;
+    next[id] = c;
+  });
+  return changed ? next : contracts;
+}
+
+/** The single contract payout rule (reward, XP, regional development). Caller guarantees objectives are done. */
+export function completeRegionalContractPayout(nextState: any, contract: any, actor: any): void {
+  const baseRewardMoney = contract.rewards?.money || 0;
+  const rewardBoost = actor?.rewardBoostPct ?? 0;
+  actor.money += Math.round(baseRewardMoney * (1 + rewardBoost));
+  actor.xp = (actor.xp || 0) + 50;
+  contract.status = 'completed';
+  contract.completedAtTurn = nextState.turn;
+  const reg = contract.issuingRegionId;
+  if (reg) {
+    if (!nextState.regionalDevLevels) nextState.regionalDevLevels = {};
+    const currentDev = nextState.regionalDevLevels[reg] || { regionId: reg, tier: 0, tierName: 'Untapped', currentExp: 0, expToNextTier: 500, totalInvestedCapital: 0, localEconomicMultiplier: 1.0, standingBonusModifier: 1.0, travelCostReductionPercent: 0, unlockedInfrastructureIds: [], activeRegionalBonuses: [] };
+    currentDev.currentExp += contract.rewards?.devPoints || 100;
+    if (currentDev.currentExp >= currentDev.expToNextTier) {
+      currentDev.tier = Math.min(5, currentDev.tier + 1);
+      currentDev.currentExp = 0;
+      currentDev.expToNextTier = Math.round(currentDev.expToNextTier * 1.5);
+    }
+    nextState.regionalDevLevels[reg] = currentDev;
+  }
+}
+
+
+// ---- V9.1: canonical outcome formulas (single source of truth for live play AND balance simulation) -------
+
+/** Challenge success probability. Live play passes its weather/season/event/equipment/sabotage modifiers. */
+export function computeChallengeSuccessChanceCore(i: {
+  difficulty: number; type: string; stats: { strength: number; charisma: number; luck: number; intelligence: number };
+  characterName?: string | null; level?: number; weatherEffect?: number; seasonEffect?: number; eventBonus?: number;
+  equipmentBonus?: number; underdogBonus?: number; leaderPenalty?: number; fatiguePenalty?: number; sabotagePenalty?: number;
+}): number {
+  const st = i.stats;
+  const statValue = i.type === 'finale'
+    ? ((st.strength || 3) + (st.charisma || 3) + (st.luck || 3) + (st.intelligence || 3)) / 4
+    : ((i.type === 'physical' ? st.strength : i.type === 'social' ? st.charisma : i.type === 'wildlife' ? st.luck : st.intelligence) || 3);
+  const raw = 0.5 + statValue * 0.05 - i.difficulty * 0.1 + (i.characterName === 'Tourist' ? 0.1 : 0) + (i.level || 0) * 0.02
+    + (i.weatherEffect || 0) + (i.seasonEffect || 0) + (i.eventBonus || 0) + (i.underdogBonus || 0) - (i.leaderPenalty || 0)
+    - (i.fatiguePenalty || 0) - (i.sabotagePenalty || 0) + (i.equipmentBonus || 0);
+  return Math.min(0.95, Math.max(0.1, raw));
+}
+
+/** Challenge payout on a win (the wager is kept; a loss costs the wager). */
+export function computeChallengeRewardCore(i: {
+  wager: number; rewardMultiplier: number; characterName?: string | null; leaderPenalty?: boolean;
+  luckyStreak?: boolean; consecutiveWins?: number; masteryCount?: number;
+}): { reward: number; luckyStreakBonus: number; streakBonus: number; masteryBonus: number; masteryLabel: string } {
+  let reward = Math.floor(i.wager * i.rewardMultiplier);
+  if (i.characterName === 'Tourist') reward = Math.floor(reward * 1.2);
+  if (i.characterName === 'Businessman') reward = Math.floor(reward * 1.1);
+  if (i.leaderPenalty) reward = Math.floor(reward * 0.9);
+  let luckyStreakBonus = 0;
+  if (i.luckyStreak && (i.consecutiveWins || 0) > 0) { luckyStreakBonus = Math.min(0.5, (i.consecutiveWins || 0) * 0.1); reward = Math.floor(reward * (1 + luckyStreakBonus)); }
+  const newStreak = (i.consecutiveWins || 0) + 1;
+  let streakBonus = 0;
+  const tiers = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a);
+  for (const t of tiers) { if (newStreak >= t) { streakBonus = (STREAK_BONUSES as Record<number, any>)[t].rewardBonus; break; } }
+  if (streakBonus && !i.luckyStreak) reward = Math.floor(reward * (1 + streakBonus));
+  const m = Math.min(i.masteryCount || 1, 4);
+  const masteryBonus = m === 2 ? 0.25 : m === 3 ? 0.5 : m === 4 ? 1.0 : 0;
+  const masteryLabel = m === 2 ? 'Mastered' : m === 3 ? 'Expert' : m === 4 ? 'Legendary' : '';
+  if (masteryBonus > 0) reward = Math.floor(reward * (1 + masteryBonus));
+  return { reward, luckyStreakBonus, streakBonus: i.luckyStreak ? 0 : streakBonus, masteryBonus, masteryLabel };
+}
+
+/** Travel cost between two regions (adjacent $200 / external territory / long-haul $500, TAS $800). */
+export function computeTravelCostCore(i: {
+  from: string; to: string; characterName?: string | null; mastery?: string[]; weatherMod?: number; seasonMod?: number; eventMod?: number;
+  standingMult?: number | null; equipmentDiscount?: number; underdog?: boolean; leaderTax?: boolean;
+}): number {
+  const mastery = i.mastery || [];
+  const person = (c: number) => { let x = c; if (i.characterName === 'Explorer') x *= 0.75; if (mastery.includes('Globe Trotter')) x *= 0.85; if (mastery.includes('Negotiator')) x *= 0.8; return x; };
+  const env = (i.weatherMod ?? 1) * (i.seasonMod ?? 1) * (i.eventMod ?? 1);
+  const disc = (c: number) => (i.equipmentDiscount && i.equipmentDiscount > 0 ? c * (1 - i.equipmentDiscount) : c);
+  if ((ADJACENT_REGIONS as Record<string, string[]>)[i.from]?.includes(i.to)) {
+    if (mastery.includes('Pathfinder')) return 0;
+    let c = person(200) * env;
+    if (typeof i.standingMult === 'number') c *= i.standingMult;
+    return Math.floor(disc(c));
+  }
+  if (isExternalTerritory(i.to) && EXTERNAL_TERRITORIES[i.to]) {
+    let c = person(EXTERNAL_TERRITORIES[i.to].travelCost || 1200) * env;
+    if (typeof i.standingMult === 'number') c *= i.standingMult;
+    return Math.floor(disc(c));
+  }
+  let c = person(i.to === 'TAS' ? 800 : 500);
+  if (mastery.includes('Fast Travel')) return 300;
+  c = disc(c * env);
+  if (i.underdog) c *= 0.75;
+  if (i.leaderTax) c *= 1.05;
+  return Math.floor(c);
+}
+
+/**
+ * What repaying a simple loan costs. V9.1 balance (T3): a loan repaid before its first daily tick still pays one
+ * day's interest — otherwise a 0-AP loan taken and repaid the same day was free intraday leverage
+ * (borrow → wager → repay beat the baseline 63% vs 50% across 8 seeds).
+ */
+export function simpleLoanRepaymentAmount(loan: any): number {
+  const amount = Math.ceil(Number(loan?.amount || 0));
+  const principal = typeof loan?.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(amount, LOAN_AMOUNT);
+  return Number(loan?.accrued || 0) > 0 ? amount : amount + Math.floor(principal * LOAN_INTEREST_RATE);
+}
+
+/** Simple (emergency) loan daily tick: 25% of the outstanding amount is charged; unpaid interest capitalises. */
+export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { money: number; loans: any[] } {
+  if (!state.loans || state.loans.length === 0) return { money: state.money, loans: [] };
+  let money = state.money;
+  const loans = state.loans.map((loan: any) => {
+    // V9.1 balance (T1): interest is charged on the PRINCIPAL. Unpaid interest still becomes debt, but it no
+    // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
+    const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
+    const interest = Math.floor(principal * LOAN_INTEREST_RATE);
+    const payment = Math.min(interest, money);
+    money -= payment;
+    return { ...loan, principal, amount: loan.amount + interest - payment, accrued: (loan.accrued || 0) + interest };
+  }).filter((loan: any) => loan.amount > 0.5);
+  return { money, loans };
+}
+
 export function reduceGameAction(
   state: CanonicalGameState,
   action: GameAction,
@@ -10782,9 +10998,21 @@ export function reduceGameAction(
           break;
         }
 
+        case 'emergency_loan': {
+          // V9.1: the same emergency loan the human takes from Quick Actions ($500, 25%/day, max 3, tracked
+          // in `loans` so interest, net worth and repayment all see it). Previously this path granted $1,000
+          // of untracked, interest-free `debt`.
+          const loans = Array.isArray(actor?.loans) ? actor.loans : [];
+          if (actor && loans.length < MAX_ACTIVE_LOANS) {
+            actor.money += LOAN_AMOUNT;
+            actor.loans = [...loans, { id: nextCorrelationId(nextState.counters, 'loan'), amount: LOAN_AMOUNT, accrued: 0 }];
+            actionExecuted = true;
+          }
+          break;
+        }
+
         case 'take_advanced_loan':
         case 'take_loan':
-        case 'emergency_loan':
         case 'draw_credit_line': {
           const principal = action.investmentAmount || action.price || action.parameters?.principal || action.parameters?.amount || 1000;
           if (actor) {
@@ -10800,8 +11028,22 @@ export function reduceGameAction(
           break;
         }
 
+        case 'repay_emergency_loan':
         case 'repay_advanced_loan':
         case 'repay_loan': {
+          // V9.1: simple emergency loans (the `loans` list) are repaid by principal, smallest first. Like taking
+          // one, repaying via 'repay_emergency_loan' costs no action (same as the human Quick Action).
+          const simpleLoans = Array.isArray(actor?.loans) ? actor.loans.filter((l: any) => l && Number(l.amount) > 0) : [];
+          if ((action.type === 'repay_loan' || (action.type as string) === 'repay_emergency_loan') && actor && simpleLoans.length && !(actor.debt > 0)) {
+            const target = [...simpleLoans].sort((a: any, b: any) => Number(a.amount) - Number(b.amount))[0];
+            const owed = simpleLoanRepaymentAmount(target);
+            if (actor.money >= owed) {
+              actor.money -= owed;
+              actor.loans = actor.loans.filter((l: any) => l !== target);
+              actionExecuted = true;
+            }
+            break;
+          }
           const amount = action.investmentAmount || action.price || action.parameters?.repaymentAmount || action.parameters?.amount || 500;
           const currentDebt = actor?.debt || actor?.loans || 0;
           if (actor && actor.money >= amount && currentDebt > 0) {
@@ -11024,19 +11266,16 @@ export function reduceGameAction(
         case 'investment':
         case 'buy_investment':
         case 'invest_for_actor': {
-          const amount = action.investmentAmount || action.price || action.parameters?.cost || action.parameters?.amount || 100;
+          // V9.1: same rules as the human investment — the canonical price, one investment per region, and no
+          // side effect on region control (this path used to also write the amount as a region deposit, giving
+          // Co-Pilot/AI investments free control that the human's identical purchase never got).
           const region = action.targetRegion || action.parameters?.regionCode || actor?.currentRegion || 'QLD';
-          if (actor && actor.money >= amount) {
+          const canonicalCost = REGIONAL_INVESTMENTS[region]?.cost;
+          const amount = canonicalCost ?? (action.investmentAmount || action.price || action.parameters?.cost || action.parameters?.amount || 100);
+          const alreadyOwned = canonicalCost !== undefined && (actor?.investments || []).includes(region);
+          if (actor && actor.money >= amount && !alreadyOwned) {
             actor.money -= amount;
             actor.investments = [...(actor.investments || []), region];
-            if (!nextState.gameState.regionDeposits) {
-              nextState.gameState.regionDeposits = {};
-            }
-            if (!nextState.gameState.regionDeposits[region]) {
-              nextState.gameState.regionDeposits[region] = {};
-            }
-            const currentDep = nextState.gameState.regionDeposits[region][teamId] || 0;
-            nextState.gameState.regionDeposits[region][teamId] = currentDep + amount;
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
               actor.actionPoints = Math.max(0, actor.actionPoints - apCost);
@@ -11182,6 +11421,19 @@ export function reduceGameAction(
 
         case 'end_turn':
         case 'turn_end': {
+          // V9.1: "maintain presence" contract objectives advance for each turn ended in the target region.
+          {
+            const regContracts = nextState.regionalContracts || (nextState as ExtendedGameState).gameState?.regionalContracts;
+            if (actor && regContracts) (Object.values(regContracts) as any[]).forEach(c => {
+              if (!c || c.status !== 'active' || c.assignedActorId !== actorId) return;
+              (c.objectives || []).forEach((o: any) => {
+                if (o && !o.completed && o.type === 'maintain_presence' && actor.currentRegion === o.targetRegion) {
+                  o.currentProgress = Number(o.currentProgress || 0) + 1;
+                  if (o.currentProgress >= o.targetValue) o.completed = true;
+                }
+              });
+            });
+          }
           nextState.turn += 1;
           nextState.turnCounter += 1;
           if (actor) {
@@ -11220,7 +11472,7 @@ export function reduceGameAction(
           const regContracts = nextState.regionalContracts || (nextState as ExtendedGameState).gameState?.regionalContracts;
           if (contractId && regContracts?.[contractId]) {
             const contract = regContracts[contractId];
-            if (contract.status === 'available') {
+            if (contract.status === 'available' && actor && !contractAcceptBlocker(contract, actor, contractStandingSource(nextState), (nextState as any).gameSettings)) {
               contract.status = 'active';
               contract.assignedActorId = actorId;
               contract.acceptedAtTurn = nextState.turn;
@@ -11258,39 +11510,8 @@ export function reduceGameAction(
           const regContracts = nextState.regionalContracts || (nextState as ExtendedGameState).gameState?.regionalContracts;
           if (contractId && regContracts?.[contractId]) {
             const contract = regContracts[contractId];
-            if (contract.status === 'active' && contract.assignedActorId === actorId && actor) {
-              const baseRewardMoney = contract.rewards.money || 0;
-              const actorAny: any = actor;
-              const rewardBoost = actorAny?.rewardBoostPct ?? 0;
-              actor.money += Math.round(baseRewardMoney * (1 + rewardBoost));
-              actor.xp = (actor.xp || 0) + 50;
-              contract.status = 'completed';
-              contract.completedAtTurn = nextState.turn;
-
-              const reg = contract.issuingRegionId;
-              if (reg) {
-                if (!nextState.regionalDevLevels) nextState.regionalDevLevels = {};
-                const currentDev = nextState.regionalDevLevels[reg] || {
-                  regionId: reg,
-                  tier: 0,
-                  tierName: 'Untapped',
-                  currentExp: 0,
-                  expToNextTier: 500,
-                  totalInvestedCapital: 0,
-                  localEconomicMultiplier: 1.0,
-                  standingBonusModifier: 1.0,
-                  travelCostReductionPercent: 0,
-                  unlockedInfrastructureIds: [],
-                  activeRegionalBonuses: []
-                };
-                currentDev.currentExp += contract.rewards.devPoints || 100;
-                if (currentDev.currentExp >= currentDev.expToNextTier) {
-                  currentDev.tier = Math.min(5, currentDev.tier + 1);
-                  currentDev.currentExp = 0;
-                  currentDev.expToNextTier = Math.round(currentDev.expToNextTier * 1.5);
-                }
-                nextState.regionalDevLevels[reg] = currentDev;
-              }
+            if (contract.status === 'active' && contract.assignedActorId === actorId && actor && contractObjectivesDone(contract)) {
+              completeRegionalContractPayout(nextState, contract, actor);
               actionExecuted = true;
             }
           }
@@ -11341,35 +11562,19 @@ export function reduceGameAction(
         }
 
         case 'progress_contract_objective':
-        case 'progressContractObjective': {
+        case 'progressContractObjective':
+        case 'deliver_contract_objectives': {
+          // V9.1: progress comes from real deliverables only (any caller-supplied progressDelta is ignored).
           const contractId = action.parameters?.contractId || action.item;
-          const objectiveId = action.parameters?.objectiveId;
-          const progressDelta = action.parameters?.progressDelta ?? 1;
           const regContracts = nextState.regionalContracts || (nextState as ExtendedGameState).gameState?.regionalContracts;
-          if (contractId && regContracts?.[contractId]) {
-            const contract = regContracts[contractId] as RegionalContract;
-            if (contract.status === 'active') {
-              if (contract.objectives && contract.objectives.length > 0) {
-                const obj = objectiveId
-                  ? contract.objectives.find((o: MissionObjective) => o.id === objectiveId)
-                  : contract.objectives.find((o: MissionObjective) => !o.completed);
-                if (obj) {
-                  obj.currentProgress = (obj.currentProgress || 0) + progressDelta;
-                  if (obj.currentProgress >= obj.targetValue) {
-                    obj.completed = true;
-                  }
-                  const allCompleted = contract.objectives.every((o: MissionObjective) => o.completed);
-                  if (allCompleted) {
-                    contract.status = 'completed';
-                    contract.completedAtTurn = nextState.turn;
-                    if (actor) {
-                      actor.money += (contract.rewards?.money || 0);
-                      actor.xp = (actor.xp || 0) + 50;
-                    }
-                  }
-                  actionExecuted = true;
-                }
-              }
+          const contract = contractId ? regContracts?.[contractId] : null;
+          if (contract && actor && contract.status === 'active' && contract.assignedActorId === actorId) {
+            const res = deliverContractObjectives(contract, actor, nextState);
+            if (contractObjectivesDone(contract)) {
+              completeRegionalContractPayout(nextState, contract, actor);
+              actionExecuted = true;
+            } else if (res.changed) {
+              actionExecuted = true;
             }
           }
           break;
@@ -32274,28 +32479,20 @@ function getActorScaledInvestmentReturn(
 
 
 
-export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null): number => {
+/** Outstanding debt an actor still owes (simple + advanced loans, or legacy `debt`). Used by net worth AND the cash win metric. */
+export function calculateActorOutstandingDebt(player: any): number {
   if (!player) return 0;
-  const money = typeof player.money === 'number' && Number.isFinite(player.money) ? player.money : 0;
-  const inventory = Array.isArray(player.inventory) ? player.inventory : [];
-  const inventoryValue = calculateInventoryMarketValue(inventory, resourcePrices);
-  const investments = Array.isArray(player.investments) ? player.investments : [];
-  const investmentsValue = investments.reduce((sum: number, regionCode: string) => {
-    return sum + (REGIONAL_INVESTMENTS[regionCode]?.cost || 0);
-  }, 0);
-  const equipment = Array.isArray(player.equipment) ? player.equipment : [];
-  const equipmentValue = equipment.reduce((sum: number, itemId: string) => {
-    return sum + (SHOP_ITEMS.find(item => item.id === itemId || item.name === itemId)?.cost || 0);
-  }, 0);
   const loans = Array.isArray(player.loans) ? player.loans : [];
   const advancedLoans = Array.isArray(player.advancedLoans) ? player.advancedLoans : [];
 
+  // V9.1: a simple loan's `amount` is what is still owed (unpaid interest is capitalised into it by the
+  // daily tick); `accrued` is the running total of interest charged, most of it already paid from cash.
+  // Counting amount + accrued double-counted every paid interest payment as debt.
   const simpleLoanDebt = loans.reduce((sum: number, loan: any) => {
     if (typeof loan === 'number') return sum + (Number.isFinite(loan) ? loan : 0);
     const amount = typeof loan?.amount === 'number' && Number.isFinite(loan.amount) ? loan.amount : 0;
-    const accrued = typeof loan?.accrued === 'number' && Number.isFinite(loan.accrued) ? loan.accrued : 0;
     const totalOwed = typeof loan?.totalOwed === 'number' && Number.isFinite(loan.totalOwed) ? loan.totalOwed : 0;
-    const val = totalOwed || (amount + accrued) || 0;
+    const val = totalOwed || amount || 0;
     return sum + val;
   }, 0);
 
@@ -32311,6 +32508,23 @@ export const calculateNetWorth = (player: any, resourcePrices?: Record<string, n
   const totalDebt = (simpleLoanDebt + advancedLoanDebt) > 0
     ? (simpleLoanDebt + advancedLoanDebt)
     : (typeof player.debt === 'number' && Number.isFinite(player.debt) ? player.debt : (typeof player.loans === 'number' && Number.isFinite(player.loans) ? player.loans : 0));
+  return Number.isFinite(totalDebt) ? Math.max(0, totalDebt) : 0;
+}
+
+export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null): number => {
+  if (!player) return 0;
+  const money = typeof player.money === 'number' && Number.isFinite(player.money) ? player.money : 0;
+  const inventory = Array.isArray(player.inventory) ? player.inventory : [];
+  const inventoryValue = calculateInventoryMarketValue(inventory, resourcePrices);
+  const investments = Array.isArray(player.investments) ? player.investments : [];
+  const investmentsValue = investments.reduce((sum: number, regionCode: string) => {
+    return sum + (REGIONAL_INVESTMENTS[regionCode]?.cost || 0);
+  }, 0);
+  const equipment = Array.isArray(player.equipment) ? player.equipment : [];
+  const equipmentValue = equipment.reduce((sum: number, itemId: string) => {
+    return sum + (SHOP_ITEMS.find(item => item.id === itemId || item.name === itemId)?.cost || 0);
+  }, 0);
+  const totalDebt = calculateActorOutstandingDebt(player);
   const rawWorth = money + inventoryValue + investmentsValue + equipmentValue - totalDebt;
   return Number.isFinite(rawWorth) ? rawWorth : 0;
 };
@@ -46492,7 +46706,7 @@ export interface AIAction {
     | 'launch_expedition' | 'launchExpedition' | 'equip_relic' | 'equipRelic' | 'use_relic_ability' | 'useRelicAbility' | 'accept_regional_contract' | 'accept_contract' | 'acceptContract' | 'fulfill_regional_contract'
     | 'start_narrative_story_leg' | 'startNarrativeStoryLeg' | 'resolveExpeditionBeatChoice' | 'resolve_expedition_beat_choice' | 'buy_supplies' | 'BUY_SUPPLIES'
     | 'invest_infrastructure' | 'invest_infrastructure_project' | 'start_infrastructure_project' | 'startInfrastructure' | 'contribute_infrastructure_labor' | 'contributeInfrastructureLabor' | 'complete_infrastructure_project' | 'upgrade_regional_dev_level' | 'apply_regional_bonus'
-    | 'resolve_crisis_choice' | 'resolveCrisisChoice' | 'mitigate_crisis' | 'mitigateCrisis' | 'work' | 'double_or_nothing' | 'support' | 'progress_contract_objective'
+    | 'resolve_crisis_choice' | 'resolveCrisisChoice' | 'mitigate_crisis' | 'mitigateCrisis' | 'work' | 'double_or_nothing' | 'support' | 'progress_contract_objective' | 'deliver_contract_objectives'
     | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
   description: string;
   data?: any;
@@ -64594,16 +64808,22 @@ export function contractObjectivesDone(contract: any): boolean {
   return mandatory.length === 0 || mandatory.every(o => o.completed === true || (typeof o.targetValue === 'number' && (o.currentProgress || 0) >= o.targetValue));
 }
 
-export function contractAcceptBlocker(contract: any, actor: any, gameState?: any): string | null {
+export function contractAcceptBlocker(contract: any, actor: any, gameState?: any, settingsIn?: any): string | null {
   if (!contract) return 'No contract selected';
   const req = contract.requirements || {};
   const cash = typeof actor?.money === 'number' ? actor.money : 0;
+  // V9.1: a requirement tied to a system the match has switched OFF can never be met (no shop → no equipment,
+  // no standing system → standing stays 0), which made those contracts dead content. Such requirements are
+  // waived — only when the settings say the system is off (unknown settings keep the requirement).
+  const settings = settingsIn || gameState?.gameSettings || null;
+  const shopOff = settings ? settings.equipmentShopEnabled === false : false;
+  const standingOff = settings ? settings.regionalStandingEnabled === false : false;
   if (typeof req.requiredMoney === 'number' && cash < req.requiredMoney) {
     return `Contract requires $${req.requiredMoney.toLocaleString()} (have $${cash.toLocaleString()})`;
   }
-  const missingEq = Array.isArray(req.requiredEquipment) ? req.requiredEquipment.filter((e: string) => !actorHasEquipment(actor, e)) : [];
+  const missingEq = !shopOff && Array.isArray(req.requiredEquipment) ? req.requiredEquipment.filter((e: string) => !actorHasEquipment(actor, e)) : [];
   if (missingEq.length) return `Contract requires equipment: ${missingEq.join(', ')}`;
-  if (typeof req.minRegionalStanding === 'number' && req.minRegionalStanding > 0) {
+  if (!standingOff && typeof req.minRegionalStanding === 'number' && req.minRegionalStanding > 0) {
     const regionId = contract.issuingRegionId || actor?.currentRegion;
     let standing = 0;
     if (typeof getActorRegionalStanding === 'function' && gameState && actor?.id) {
@@ -70694,11 +70914,11 @@ export function generateCoPilotPlayerActionCandidates(
       categoryIndex: 3,
       categoryName: 'Financial / Banking',
       title: 'Take Commercial Loan',
-      description: 'Draw ,000 credit line to expand working capital.',
+      description: 'Draw a $1,000 credit line to expand working capital.',
       actionType: 'take_loan',
       apCost: 1,
       costEstimate: 0,
-      expectedOutcome: 'Expand working capital by ,000',
+      expectedOutcome: 'Expand working capital by $1,000',
       utilityScore: 75,
       riskFactor: 15,
       rewardScore: 75,
@@ -70714,18 +70934,19 @@ export function generateCoPilotPlayerActionCandidates(
       categoryIndex: 3,
       categoryName: 'Financial / Banking',
       title: 'Emergency Commercial Micro-Loan',
-      description: 'Inject ,000 liquid capital to secure cash reserve floor and prevent operational default.',
+      description: `Take a $${LOAN_AMOUNT} emergency loan (25%/day interest until repaid) to restore a cash floor.`,
       actionType: 'emergency_loan',
       apCost: 0,
       costEstimate: 0,
-      expectedOutcome: 'Immediate +,000 liquidity buffer injection',
+      expectedOutcome: `+$${LOAN_AMOUNT} now; $${Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE)}/day interest until repaid`,
       utilityScore: 90,
       riskFactor: 30,
       rewardScore: 85,
       longTermScore: 60,
-      expectedStateDelta: { cashDelta: 1000, apDelta: 0 },
-      isValid: true,
-      parameters: { principal: 1000, amount: 1000 }
+      expectedStateDelta: { cashDelta: LOAN_AMOUNT, apDelta: 0 },
+      isValid: (Array.isArray(actorObj.loans) ? actorObj.loans.length : 0) < MAX_ACTIVE_LOANS,
+      invalidationReason: (Array.isArray(actorObj.loans) ? actorObj.loans.length : 0) < MAX_ACTIVE_LOANS ? undefined : 'Emergency loan limit reached',
+      parameters: { principal: LOAN_AMOUNT, amount: LOAN_AMOUNT }
     });
   }
 
@@ -79161,6 +79382,13 @@ const sanitizeRegionDeposits = (raw: any): RegionDeposits => {
   return sanitized;
 };
 
+/**
+ * V9.1 balance (T2): control needs a real stake. With a $1 floor an empty region cost $1 and any holding could be
+ * retaken for +$1, so a regions match was decided by whoever deposited last on the final day (100% of simulated
+ * matches were decided on the last day, always won by the last mover). A minimum stake ties control to capital.
+ */
+export const REGION_MIN_CONTROL_STAKE = 300;
+
 const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
   const entries = Object.entries(regionEntry)
     .filter(([, amount]) => typeof amount === 'number' && isFinite(amount) && amount > 0)
@@ -79170,7 +79398,7 @@ const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
   const highestDeposit = entries[0]?.amount || 0;
   const top = entries[0];
   const second = entries[1];
-  const controllerId = top && (!second || top.amount > second.amount) ? top.playerId : null;
+  const controllerId = top && top.amount >= REGION_MIN_CONTROL_STAKE && (!second || top.amount > second.amount) ? top.playerId : null;
 
   return {
     entries,
@@ -79188,7 +79416,7 @@ const getRequiredDepositToControl = (
   const snapshot = getRegionControlSnapshot(regionEntry);
   const actorCurrent = Math.floor(regionEntry?.[actorId] || 0);
   if (snapshot.controllerId === actorId) return 1;
-  const requiredTotal = snapshot.highestDeposit > 0 ? snapshot.highestDeposit + 1 : 1;
+  const requiredTotal = Math.max(REGION_MIN_CONTROL_STAKE, snapshot.highestDeposit > 0 ? snapshot.highestDeposit + 1 : 1);
   return Math.max(1, requiredTotal - actorCurrent);
 };
 
@@ -100729,6 +100957,8 @@ export function buildWhyActionIntelligenceAnswer(input: {
   candidate: ContextualActionCandidate;
   actionSet: ContextualActionSet | null;
   control: PlayerControlState;
+  /** V9.1: what doing this costs you right now (opportunity cost) — gameplay explanation, not telemetry. */
+  tradeoffs?: string[];
 }): GameIntelligenceAnswer {
   const c = input.candidate;
   const lines: string[] = [];
@@ -100746,6 +100976,9 @@ export function buildWhyActionIntelligenceAnswer(input: {
     lines.push(`It outranks ${ranked[1].label} (score ${Math.round(c.relevance)} vs ${Math.round(ranked[1].relevance)}).`);
   } else if (c.legal && idx > 0) {
     lines.push(`It ranks #${idx + 1}; ${ranked[0].label} currently scores higher (${Math.round(ranked[0].relevance)} vs ${Math.round(c.relevance)}).`);
+  }
+  if (c.legal && input.tradeoffs && input.tradeoffs.length) {
+    lines.push(`What it costs you: ${input.tradeoffs.join(' ')}`);
   }
   if (c.execution?.kind === 'copilot_candidate') {
     lines.push('Doing it runs through the canonical executor, which re-checks legality, Action Points, cash reserve, spending caps and Guardian protections at that moment.');
@@ -127106,6 +127339,931 @@ export function runV9GameplayCohesionSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20M: V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)
+// ============================================================================
+// Read-only diagnostics over the EXISTING mechanics. Nothing here is canonical state and nothing here
+// runs during normal play: balance simulations are invoked from LAB and self-tests only.
+// The simulator does not re-implement the game: every action is executed by the canonical reducer
+// (reduceGameAction) and every outcome uses the canonical formulas (computeChallengeSuccessChanceCore,
+// computeChallengeRewardCore, computeTravelCostCore, calculateActionPointOverrideCost, applySimpleLoanTick,
+// getActorScaledInvestmentReturn, computeDailyMarketUpdate, calculateNetWorth, getRegionControlSnapshot).
+
+export type BalanceWinMetric = 'money' | 'net_worth' | 'regions';
+export type BalanceCategory = 'income' | 'challenge' | 'travel' | 'market' | 'region' | 'investment' | 'loan' | 'override' | 'contract' | 'sabotage' | 'end';
+export type BalancePolicyId =
+  | 'balanced' | 'expert' | 'casual' | 'challenge_first' | 'never_challenge' | 'cash_hoard' | 'region_rush'
+  | 'market_only' | 'always_borrow' | 'investment_heavy' | 'always_sabotage' | 'contract_first' | 'late_loan' | 'loan_leverage';
+
+export interface BalanceFeatures { investments: boolean; contracts: boolean; sabotage: boolean; overrides: boolean }
+export interface BalanceSimConfig {
+  seed: number; days: number; apPerDay: number; winCondition: BalanceWinMetric; startingMoney: number;
+  features: BalanceFeatures; label?: string;
+  /** Optional starting handicap/advantage for snowball & comeback fixtures (cash added to subject). */
+  subjectCashDelta?: number;
+}
+
+type BalanceExec =
+  | { kind: 'work' } | { kind: 'challenge'; name: string; difficulty: number; type: string; reward: number; wager: number }
+  | { kind: 'travel'; to: string; cost: number } | { kind: 'sell'; item: string } | { kind: 'buy'; item: string; quantity?: number }
+  | { kind: 'deposit'; region: string; amount: number } | { kind: 'invest'; region: string } | { kind: 'loan' } | { kind: 'repay' }
+  | { kind: 'override' } | { kind: 'accept_contract'; id: string } | { kind: 'deliver_contract'; id: string }
+  | { kind: 'sabotage'; target: string; sabotageId: string; cost: number; duration: number } | { kind: 'end' };
+
+export interface BalanceOption {
+  id: string; category: BalanceCategory; label: string; apCost: number; cashCost: number;
+  /** Expected contribution to the ACTIVE win metric by match end (money units; regions valued at the region price). */
+  value: number; immediateCash: number; risk: number; reversible: boolean; legal: boolean; reason: string | null; exec: BalanceExec;
+  /** Value components (travel: resource / positional challenge pull / region pull). */
+  parts?: Record<string, number>;
+}
+
+/** Read-only per-actor snapshot (diagnostics, never saved). */
+export interface StrategicBalanceSnapshot {
+  day: number; actorId: string; cash: number; netWorth: number; debt: number; liquidity: number; incomePotential: number;
+  apRemaining: number; regionsControlled: number; regionalInvestment: number; inventoryValue: number; activeContracts: number;
+  strategicOptions: number; viableActions: number; dominantActionGap: number; winProgress: number; rivalWinProgress: number;
+  riskExposure: number; recoveryCapacity: number;
+}
+
+/** How interesting a decision state is. */
+export interface DecisionQualityProfile {
+  legalActionCount: number; strategicallyRelevantActionCount: number; viableActionCount: number; clearlyDominantActionCount: number;
+  meaningfullyDifferentAlternatives: number; actionCategoryDiversity: number; opportunityCostStrength: number;
+  dominantActionGap: number; fakeChoice: boolean; bestCategory: BalanceCategory | null;
+}
+
+export interface SnowballProfile { samples: number; earlyLeaderWins: number; persistence: number; avgEarlyLeadPct: number; avgFinalLeadPct: number }
+export interface RecoveryProfile { legalActions: number; incomeOptions: number; liquidAssets: number; loanAccess: boolean; regionalOpenings: number; strategicAlternatives: number; deficitPct: number; daysLeft: number; recoverable: 'likely' | 'possible' | 'unlikely' | 'effectively_lost' }
+
+interface BalActor {
+  id: string; name: string; kind: 'human' | 'ai'; teamId: string; money: number; inventory: string[]; currentRegion: string; visitedRegions: string[];
+  loans: any[]; investments: string[]; level: number; xp: number; stats: { strength: number; charisma: number; luck: number; intelligence: number };
+  character: { name: string }; completedThisSeason: string[]; consecutiveWins: number; actionsUsedThisTurn: number; overridesUsedToday: number;
+  overrideActionsGranted: number; debuffs: Array<{ type: string; remainingDays: number }>; masteryUnlocks: string[]; equipment: string[];
+}
+
+export interface BalanceWorld {
+  config: BalanceSimConfig; day: number; prices: Record<string, number>; trend: string; actors: Record<string, BalActor>;
+  deposits: Record<string, Record<string, number>>; contracts: Record<string, any>; rng: number;
+  log: Array<{ day: number; actorId: string; category: BalanceCategory; label: string; value: number; apSpent: number; cashDelta: number }>;
+  decisions: DecisionQualityProfile[]; snapshots: StrategicBalanceSnapshot[]; leaderByDay: Array<string | null>; predictedVsActual: Array<{ kind: string; predicted: number; actual: number }>;
+}
+
+const BAL_REGIONS = Object.keys(REGIONS).sort();
+const BAL_DEFAULT_FEATURES: BalanceFeatures = { investments: false, contracts: false, sabotage: false, overrides: true };
+export const BALANCE_PACE_PRESETS: Record<'fast' | 'normal' | 'long_strategic', { days: number; apPerDay: number }> = {
+  fast: { days: 15, apPerDay: 5 }, normal: { days: 30, apPerDay: 3 }, long_strategic: { days: 60, apPerDay: 2 }
+};
+
+export function createBalanceSimConfig(o: Partial<BalanceSimConfig> = {}): BalanceSimConfig {
+  return { seed: 1, days: 30, apPerDay: 3, winCondition: 'money', startingMoney: 1000, features: { ...BAL_DEFAULT_FEATURES, ...(o.features || {}) }, ...o, ...(o.features ? { features: { ...BAL_DEFAULT_FEATURES, ...o.features } } : {}) };
+}
+
+function balNext(w: BalanceWorld): number { const r = mulberry32Next(w.rng >>> 0); w.rng = r.nextState; return r.value; }
+
+function balSettings(cfg: BalanceSimConfig): any {
+  return { ...DEFAULT_GAME_SETTINGS, totalDays: cfg.days, playerActionsPerDay: cfg.apPerDay, aiActionsPerDay: cfg.apPerDay, winCondition: cfg.winCondition, actionLimitsEnabled: true, allowActionOverride: cfg.features.overrides, investmentsEnabled: cfg.features.investments, sabotageEnabled: cfg.features.sabotage, regionalContractsEnabled: cfg.features.contracts };
+}
+
+function balNewActor(id: string, name: string, kind: 'human' | 'ai', money: number, region: string): BalActor {
+  return { id, name, kind, teamId: kind === 'human' ? 'team_player' : 'team_opponent', money, inventory: [], currentRegion: region, visitedRegions: [region], loans: [], investments: [], level: 1, xp: 0, stats: { strength: 3, charisma: 3, luck: 3, intelligence: 3 }, character: { name: 'Balanced' }, completedThisSeason: [], consecutiveWins: 0, actionsUsedThisTurn: 0, overridesUsedToday: 0, overrideActionsGranted: 0, debuffs: [], masteryUnlocks: [], equipment: [] };
+}
+
+export function createBalanceWorld(cfg: BalanceSimConfig): BalanceWorld {
+  const prices: Record<string, number> = {};
+  BASE_MARKET_RESOURCES.forEach(r => { prices[r] = getResourceMarketPrice(r); });
+  const contracts: Record<string, any> = {};
+  if (cfg.features.contracts) PRESET_REGIONAL_CONTRACTS.forEach(c => { contracts[c.id] = JSON.parse(JSON.stringify(c)); });
+  const w: BalanceWorld = { config: cfg, day: 1, prices, trend: 'stable', actors: {}, deposits: {}, contracts, rng: (cfg.seed * 2654435761) >>> 0, log: [], decisions: [], snapshots: [], leaderByDay: [], predictedVsActual: [] };
+  // Deterministic, seed-varied starting regions (both actors start in different regions like live matches do).
+  const a = BAL_REGIONS[Math.floor(balNext(w) * BAL_REGIONS.length)];
+  let b = BAL_REGIONS[Math.floor(balNext(w) * BAL_REGIONS.length)];
+  if (b === a) b = BAL_REGIONS[(BAL_REGIONS.indexOf(a) + 3) % BAL_REGIONS.length];
+  w.actors.player = balNewActor('player', 'Subject', 'human', cfg.startingMoney + (cfg.subjectCashDelta || 0), a);
+  w.actors.ai = balNewActor('ai', 'Rival', 'ai', cfg.startingMoney, b);
+  return w;
+}
+
+const balRival = (id: string) => (id === 'player' ? 'ai' : 'player');
+const balDaysLeft = (w: BalanceWorld) => Math.max(0, w.config.days - w.day);
+function balApLeft(w: BalanceWorld, a: BalActor): number { return Math.max(0, w.config.apPerDay + a.overrideActionsGranted - a.actionsUsedThisTurn); }
+function balControllerOf(w: BalanceWorld, region: string): string | null { return getRegionControlSnapshot(w.deposits[region] || {}).controllerId; }
+export function balRegionsControlled(w: BalanceWorld, id: string): number { return BAL_REGIONS.filter(r => balControllerOf(w, r) === id).length; }
+function balNetWorth(w: BalanceWorld, a: BalActor): number { return calculateNetWorth(a, w.prices); }
+
+/** The active win metric for an actor (canonical definitions: cash net of debt / net worth / regions). */
+export function balanceMetricValue(w: BalanceWorld, id: string): number {
+  const a = w.actors[id];
+  if (w.config.winCondition === 'regions') return balRegionsControlled(w, id);
+  if (w.config.winCondition === 'net_worth') return balNetWorth(w, a);
+  return Math.max(0, a.money - calculateActorOutstandingDebt(a));
+}
+
+function balChallengeChance(a: BalActor, c: { difficulty: number; type: string }): number {
+  return computeChallengeSuccessChanceCore({ difficulty: c.difficulty, type: c.type, stats: a.stats, characterName: a.character.name, level: a.level });
+}
+function balChallengeWager(a: BalActor): number { return Math.max(0, Math.min(500, Math.floor(a.money))); }
+function balAvgRegionPrice(w: BalanceWorld, region: string): number {
+  const res = (REGIONAL_RESOURCES[region] || []).filter(r => w.prices[r] !== undefined);
+  return res.length ? res.reduce((s, r) => s + w.prices[r], 0) / res.length : 0;
+}
+function balBestChallengeEv(w: BalanceWorld, a: BalActor, region: string): number {
+  const wager = balChallengeWager(a);
+  return Math.max(0, ...((REGIONS[region]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).map(c => {
+    const p = balChallengeChance(a, c); const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    return p * r - (1 - p) * wager;
+  }));
+}
+/** $ value of one region toward a regions win (what it costs the rival to take it back, bounded). */
+function balRegionUnitValue(w: BalanceWorld): number { return w.config.winCondition === 'regions' ? 2500 : 0; }
+
+/** Every option the canonical rules allow this actor right now, with a strategic value estimate. */
+export function enumerateBalanceOptions(w: BalanceWorld, id: string): BalanceOption[] {
+  const a = w.actors[id];
+  const cfg = w.config; const settings = balSettings(cfg);
+  const ap = balApLeft(w, a); const days = balDaysLeft(w) + 1;
+  const metric = cfg.winCondition;
+  const out: BalanceOption[] = [];
+  const push = (o: Omit<BalanceOption, 'legal' | 'reason'> & { legal?: boolean; reason?: string | null }) => out.push({ legal: true, reason: null, ...o });
+  const needAp = (n: number) => (ap >= n ? null : 'No actions left');
+  // Under a regions victory cash is instrumental (it funds deposits and travel), so it keeps most of its value.
+  const cashW = metric === 'regions' ? 0.6 : 1;
+  // Income
+  push({ id: 'work', category: 'income', label: 'Work for wages', apCost: 1, cashCost: 0, value: 50 * cashW, immediateCash: 50, risk: 0, reversible: true, exec: { kind: 'work' }, legal: ap >= 1, reason: needAp(1) });
+  // Challenges in the current region (retry allowed until won; once per match on success)
+  ((REGIONS[a.currentRegion]?.challenges || []) as any[]).filter(c => !a.completedThisSeason.includes(c.name)).forEach(c => {
+    const wager = balChallengeWager(a); const p = balChallengeChance(a, c);
+    const r = computeChallengeRewardCore({ wager, rewardMultiplier: c.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+    const ev = p * r - (1 - p) * wager;
+    push({ id: `ch_${c.name}`, category: 'challenge', label: `Challenge: ${c.name} ($${wager})`, apCost: 1, cashCost: wager, value: ev * cashW, immediateCash: ev, risk: wager > 0 ? Math.sqrt(p * (1 - p)) * (r + wager) : 0, reversible: false, exec: { kind: 'challenge', name: c.name, difficulty: c.difficulty, type: c.type, reward: c.reward, wager }, legal: ap >= 1 && wager > 0, reason: needAp(1) || (wager > 0 ? null : 'No cash to wager') });
+  });
+  // Travel (collects one regional resource on arrival; positions for challenges / regions / contracts)
+  BAL_REGIONS.filter(r => r !== a.currentRegion).forEach(r => {
+    const cost = computeTravelCostCore({ from: a.currentRegion, to: r });
+    const resource = a.inventory.length < MAX_INVENTORY ? balAvgRegionPrice(w, r) : 0;
+    const positional = Math.min(days - 1, 2) > 0 ? balBestChallengeEv(w, a, r) * 0.6 : 0;
+    const regionPull = metric === 'regions' && balControllerOf(w, r) !== id ? balRegionUnitValue(w) * 0.25 : 0;
+    const blocked = isTravelBlocked(a.debuffs);
+    push({ id: `tr_${r}`, category: 'travel', label: `Travel to ${r} ($${cost})`, apCost: 1, cashCost: cost, parts: { resource, positional, regionPull }, value: resource + positional + regionPull - cost, immediateCash: resource - cost, risk: 0, reversible: true, exec: { kind: 'travel', to: r, cost }, legal: ap >= 1 && a.money >= cost && !blocked, reason: needAp(1) || (blocked ? 'Travel blocked (sabotage)' : a.money >= cost ? null : 'Cannot afford travel') });
+  });
+  // Market (0 AP): sell held goods; buy goods trading well below base (mean reversion)
+  Array.from(new Set(a.inventory)).sort().forEach(item => {
+    const price = Math.floor((w.prices[item] ?? getResourceMarketPrice(item)) * getSabotageSellMultiplier(a.debuffs));
+    const base = getResourceMarketPrice(item);
+    const holdGain = Math.max(0, (base - price) * (1 - Math.pow(0.88, Math.min(days, 5))));
+    push({ id: `sell_${item}`, category: 'market', label: `Sell ${item} ($${price})`, apCost: 0, cashCost: 0, value: metric === 'money' ? price - holdGain : -holdGain, immediateCash: price, risk: 0, reversible: false, exec: { kind: 'sell', item } });
+  });
+  // Canonical Resource Market purchase: always at the BASE price (plus tariff), and it uses an action. Buying is
+  // for crafting/contracts; the daily price only matters when selling (no buy-low/sell-high loop exists).
+  BASE_MARKET_RESOURCES.filter(r => w.prices[r] !== undefined && w.prices[r] > getResourceMarketPrice(r) * 1.12).sort().slice(0, 3).forEach(item => {
+    const base = getResourceMarketPrice(item); const premium = Math.floor(w.prices[item] - base);
+    push({ id: `buy_${item}`, category: 'market', label: `Buy ${item} ($${base}) to resell at $${Math.floor(w.prices[item])}`, apCost: 1, cashCost: base, value: premium, immediateCash: premium, risk: base * 0.1, reversible: true, exec: { kind: 'buy', item }, legal: ap >= 1 && a.money >= base && a.inventory.length < MAX_INVENTORY, reason: needAp(1) || (a.money >= base ? null : 'Cannot afford') });
+  });
+  // Region control (canonical: highest deposit controls; must be in the region)
+  {
+    const r = a.currentRegion; const snap = getRegionControlSnapshot(w.deposits[r] || {});
+    const mine = snap.controllerId === id;
+    // Canonical requirement (getRequiredDepositToControl); reinforcing adds half the rival's stake as a buffer.
+    const need = mine ? Math.max(1, Math.floor((snap.entries.find(e => e.playerId !== id)?.amount || 0) * 0.5)) : getRequiredDepositToControl(w.deposits, r, id);
+    const contested = snap.entries.some(e => e.playerId !== id);
+    const unit = metric === 'regions' ? balRegionUnitValue(w) : 0;
+    push({ id: `dep_${r}`, category: 'region', label: mine ? `Reinforce ${r} (+$${need})` : `Take control of ${r} ($${need})`, apCost: 1, cashCost: need, value: (mine ? (contested ? unit * 0.3 : 0) : unit) - need * cashW, immediateCash: -need, risk: contested ? need * 0.5 : 0, reversible: false, exec: { kind: 'deposit', region: r, amount: need }, legal: ap >= 1 && a.money >= need, reason: needAp(1) || (a.money >= need ? null : 'Cannot afford deposit') });
+  }
+  // Investments (optional feature; canonical price/income; counted at cost in net worth)
+  if (cfg.features.investments) {
+    const inv = REGIONAL_INVESTMENTS[a.currentRegion];
+    if (inv && !a.investments.includes(a.currentRegion)) {
+      const income = getActorScaledInvestmentReturn(inv.dailyIncome, a, w.day) * Math.max(0, days - 1);
+      push({ id: `inv_${a.currentRegion}`, category: 'investment', label: `Invest in ${inv.name} ($${inv.cost})`, apCost: 1, cashCost: inv.cost, value: metric === 'net_worth' ? income : income - inv.cost, immediateCash: -inv.cost, risk: inv.cost * 0.1, reversible: false, exec: { kind: 'invest', region: a.currentRegion }, legal: ap >= 1 && a.money >= inv.cost, reason: needAp(1) || (a.money >= inv.cost ? null : 'Cannot afford') });
+    }
+  }
+  // Loans (0 AP): liquidity now for interest until repaid
+  if (a.loans.length < MAX_ACTIVE_LOANS) push({ id: 'loan', category: 'loan', label: `Emergency loan (+$${LOAN_AMOUNT})`, apCost: 0, cashCost: 0, value: -Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE) * Math.max(0, days - 1), immediateCash: LOAN_AMOUNT, risk: LOAN_AMOUNT * 0.5, reversible: true, exec: { kind: 'loan' } });
+  const repay = [...a.loans].sort((x, y) => x.amount - y.amount)[0];
+  if (repay) { const owed = simpleLoanRepaymentAmount(repay); push({ id: 'repay', category: 'loan', label: `Repay loan ($${owed})`, apCost: 0, cashCost: owed, value: Math.floor(Math.min(repay.amount, LOAN_AMOUNT) * LOAN_INTEREST_RATE) * Math.max(0, days - 1) - (owed - Math.ceil(repay.amount)), immediateCash: -owed, risk: 0, reversible: false, exec: { kind: 'repay' }, legal: a.money >= owed, reason: a.money >= owed ? null : 'Cannot afford repayment' }); }
+  // Override (canonical escalating price; only when AP is exhausted)
+  if (cfg.features.overrides && ap === 0 && a.overridesUsedToday < (settings.maxDailyOverrides || OVERRIDE_DAILY_CAP)) {
+    const cost = calculateActionPointOverrideCost({ ...a, netWorth: balNetWorth(w, a) }, settings, a.overridesUsedToday);
+    push({ id: 'override', category: 'override', label: `Buy an extra action ($${cost})`, apCost: 0, cashCost: cost, value: -cost, immediateCash: -cost, risk: 0, reversible: false, exec: { kind: 'override' }, legal: a.money >= cost, reason: a.money >= cost ? null : 'Cannot afford override' });
+  }
+  // Contracts (optional feature; accept gates + deliverables are the canonical ones)
+  if (cfg.features.contracts) {
+    Object.values(w.contracts).forEach((c: any) => {
+      if (c.status === 'available') {
+        const blocker = contractAcceptBlocker(c, a, {}, balSettings(cfg));
+        const eff = estimateContractEffectiveValue(c, a, w);
+        push({ id: `acc_${c.id}`, category: 'contract', label: `Accept ${c.title}`, apCost: getActionPointCost('contract_accept', settings, false), cashCost: 0, value: eff.expectedValue * 0.5, immediateCash: 0, risk: eff.failureRisk * (c.rewards?.money || 0), reversible: true, exec: { kind: 'accept_contract', id: c.id }, legal: !blocker, reason: blocker });
+      } else if (c.status === 'active' && c.assignedActorId === id) {
+        // Sourcing: a named deliverable can be bought in one purchase (quantity) at the base price.
+        (c.objectives || []).filter((o: any) => !o.completed && o.type === 'deliver_resource' && o.targetItem).forEach((o: any) => {
+          const have = a.inventory.filter(x => x === o.targetItem).length;
+          const qty = Math.max(0, Math.min(MAX_INVENTORY - a.inventory.length, Number(o.targetValue) - Number(o.currentProgress || 0) - have));
+          const unit = getResourceMarketPrice(o.targetItem);
+          if (qty > 0) push({ id: `src_${c.id}`, category: 'contract', label: `Buy ${qty} ${o.targetItem} for ${c.title}`, apCost: 1, cashCost: unit * qty, value: (c.rewards?.money || 0) * 0.2 - unit * qty * 0.1, immediateCash: -unit * qty, risk: 0, reversible: true, exec: { kind: 'buy', item: o.targetItem, quantity: qty }, legal: ap >= 1 && a.money >= unit * qty, reason: needAp(1) || (a.money >= unit * qty ? null : 'Cannot afford the deliverables') });
+        });
+        const probe = deliverContractObjectives(JSON.parse(JSON.stringify(c)), JSON.parse(JSON.stringify(a)), {});
+        push({ id: `del_${c.id}`, category: 'contract', label: `Deliver ${c.title}`, apCost: 1, cashCost: 0, value: probe.changed ? (c.rewards?.money || 0) * 0.25 : 0, immediateCash: 0, risk: 0, reversible: false, exec: { kind: 'deliver_contract', id: c.id }, legal: ap >= 1 && probe.changed, reason: needAp(1) || (probe.changed ? null : probe.notes[0] || 'Nothing to deliver') });
+      }
+    });
+  }
+  // Sabotage (optional feature; canonical costs; damage = rival's expected lost value)
+  if (cfg.features.sabotage) {
+    const rival = w.actors[balRival(id)];
+    SABOTAGE_ACTIONS.forEach((s: any) => {
+      const dmg = /customs_hold|border_lockdown/.test(s.id) ? balBestChallengeEv(w, rival, rival.currentRegion) * 0.5 * s.duration + 150 * s.duration
+        : /rumors|market_panic/.test(s.id) ? rival.inventory.reduce((t, r) => t + (w.prices[r] || 0), 0) * (s.id === 'rumors' ? 0.2 : 0.35) * 0.5
+        : 100 * s.duration;
+      push({ id: `sab_${s.id}`, category: 'sabotage', label: `Sabotage: ${s.name} ($${s.cost})`, apCost: 1, cashCost: s.cost, value: dmg - s.cost, immediateCash: -s.cost, risk: s.cost * 0.3, reversible: false, exec: { kind: 'sabotage', target: rival.id, sabotageId: s.id, cost: s.cost, duration: s.duration }, legal: ap >= 1 && a.money >= s.cost, reason: needAp(1) || (a.money >= s.cost ? null : 'Cannot afford') });
+    });
+  }
+  out.push({ id: 'end', category: 'end', label: 'End turn', apCost: 0, cashCost: 0, value: 0, immediateCash: 0, risk: 0, reversible: true, legal: true, reason: null, exec: { kind: 'end' } });
+  return out;
+}
+
+/** Contract economics: total effective cost, not the headline reward (Part 19). */
+export function estimateContractEffectiveValue(c: any, a: { currentRegion: string } | null, w: BalanceWorld | null): { reward: number; requiredCapitalLocked: number; deliverableCost: number; travelCost: number; apEstimate: number; turns: number; failureRisk: number; expectedValue: number } {
+  const reward = Number(c?.rewards?.money || 0);
+  const req = c?.requirements || {};
+  let deliverableCost = 0; let apEstimate = 1; let travelCost = 0;
+  (c?.objectives || []).forEach((o: any) => {
+    if (o.type === 'deliver_resource') {
+      const price = o.targetItem ? (w?.prices[o.targetItem] ?? getResourceMarketPrice(o.targetItem)) : 120;
+      deliverableCost += price * Number(o.targetValue || 0);
+      apEstimate += Math.ceil(Number(o.targetValue || 0) / Math.max(1, MAX_INVENTORY)) + 1;
+    } else if (o.type === 'invest_capital') { deliverableCost += Number(o.targetValue || 0); apEstimate += 1; }
+    else if (o.type === 'maintain_presence') { apEstimate += 0; }
+    else if (o.type === 'build_infrastructure') { deliverableCost += 50000; apEstimate += 3; }
+    if (a && o.targetRegion && a.currentRegion !== o.targetRegion) travelCost = Math.max(travelCost, computeTravelCostCore({ from: a.currentRegion, to: o.targetRegion }));
+  });
+  const turns = Number(c?.durationTurns || req.maxDurationTurns || 10);
+  const failureRisk = Math.min(0.9, (apEstimate / Math.max(1, turns * 3)) * 0.6 + (req.requiredEquipment?.length ? 0.15 : 0));
+  const expectedValue = (reward - deliverableCost - travelCost) * (1 - failureRisk) - failureRisk * deliverableCost * 0.5;
+  return { reward, requiredCapitalLocked: Number(req.requiredMoney || 0), deliverableCost, travelCost, apEstimate, turns, failureRisk, expectedValue: Math.round(expectedValue) };
+}
+
+/** Decision quality of one decision state (Parts 4–7). */
+export function evaluateDecisionQuality(optionsIn: BalanceOption[]): DecisionQualityProfile {
+  // Viability = reasonable benefit AND acceptable downside (Part 5): judge options on risk-adjusted value.
+  const options = optionsIn.map(o => ({ ...o, value: o.value - o.risk * 0.15 }));
+  const legal = options.filter(o => o.legal && o.category !== 'end');
+  const relevant = legal.filter(o => o.value > 0 || o.category === 'region' || o.category === 'contract');
+  const sorted = [...legal].sort((x, y) => y.value - x.value);
+  const best = sorted[0]?.value ?? 0; const second = sorted[1]?.value ?? 0;
+  const scale = Math.max(50, Math.abs(best));
+  const viable = legal.filter(o => o.value > 0 && o.value >= best * 0.5);
+  const gap = best > 0 ? (best - Math.max(0, second)) / scale : 0;
+  const cats = new Set(viable.map(o => o.category));
+  const distinct = viable.filter((o, k) => viable.findIndex(x => x.category === o.category) === k).length;
+  return {
+    legalActionCount: legal.length, strategicallyRelevantActionCount: relevant.length, viableActionCount: viable.length,
+    clearlyDominantActionCount: gap >= 0.6 && best > 100 ? 1 : 0, meaningfullyDifferentAlternatives: Math.max(0, distinct - 1),
+    actionCategoryDiversity: cats.size, opportunityCostStrength: best > 0 ? Math.max(0, Math.min(1, second / best)) : 0,
+    dominantActionGap: Math.round(gap * 100) / 100, fakeChoice: legal.length >= 6 && viable.length <= 1, bestCategory: (sorted[0]?.category as BalanceCategory) || null
+  };
+}
+
+// ---- Policies: scripted TEST TOOLS (not AI). A brain-dead policy that dominates = a balance smell. ----------------
+const POLICY_BIAS: Record<BalancePolicyId, Partial<Record<BalanceCategory, number>>> = {
+  balanced: {}, expert: {}, casual: {},
+  challenge_first: { challenge: 3000 }, never_challenge: { challenge: -1e9 },
+  cash_hoard: { challenge: -1e9, travel: -1e9, region: -1e9, investment: -1e9, sabotage: -1e9, override: -1e9, loan: -1e9, contract: -1e9 },
+  region_rush: { region: 3000 }, market_only: { challenge: -1e9, market: 2000 }, always_borrow: {}, investment_heavy: { investment: 3000 },
+  always_sabotage: { sabotage: 3000 }, contract_first: { contract: 3000 }, late_loan: {}, loan_leverage: {}
+};
+
+function balScore(policy: BalancePolicyId, o: BalanceOption, w: BalanceWorld, a: BalActor): number {
+  if (!o.legal) return -Infinity;
+  const bias = POLICY_BIAS[policy][o.category] || 0;
+  let v = o.value;
+  if (policy === 'casual') v = o.immediateCash; // myopic: immediate cash only, no opportunity cost
+  if (policy === 'balanced') v = o.value - o.risk * 0.1;
+  if (policy === 'expert') {
+    // Planning horizon + opportunity cost: long-term value, AP value, risk sized to the lead.
+    const lead = balanceMetricValue(w, a.id) - balanceMetricValue(w, balRival(a.id));
+    v = o.value - o.risk * (lead > 0 ? 0.25 : 0.02);
+    if (o.category === 'travel') v += balBestChallengeEv(w, a, (o.exec as any).to) * 0.3;
+  }
+  if (policy === 'region_rush' && o.category === 'region' && (o.exec as any).amount > a.money * 0.9) v -= 1000;
+  if (policy === 'region_rush' && o.category === 'travel' && balControllerOf(w, (o.exec as any).to) !== a.id) v += 800;
+  if (policy === 'investment_heavy' && o.category === 'travel' && REGIONAL_INVESTMENTS[(o.exec as any).to] && !a.investments.includes((o.exec as any).to)) v += 600;
+  if (policy === 'always_borrow' && o.category === 'loan' && o.exec.kind === 'loan') v += 1e6;
+  if (policy === 'always_borrow' && o.exec.kind === 'repay') v -= 1e6;
+  if (policy === 'never_challenge' && o.category === 'travel') v -= (o.parts?.positional || 0);
+  if (policy === 'loan_leverage') {
+    // Borrow only to fund a positive-EV wager today, repay before the day ends (intraday leverage test).
+    const ap = balApLeft(w, a);
+    const wagerable = ((REGIONS[a.currentRegion]?.challenges || []) as any[]).some(c => !a.completedThisSeason.includes(c.name));
+    if (o.exec.kind === 'loan') v = ap > 0 && wagerable && a.money < 500 ? 1e5 : -1e9;
+    if (o.exec.kind === 'repay') v = ap === 0 ? 1e5 : -1e9;
+  }
+  if (policy === 'late_loan' && o.exec.kind === 'loan') v = balDaysLeft(w) === 0 ? 1e6 : -1e9;
+  if (policy === 'late_loan' && o.exec.kind === 'repay') v -= 1e6;
+  if (policy === 'contract_first' && o.category === 'travel') {
+    const target = Object.values(w.contracts).find((c: any) => c.status === 'active' && c.assignedActorId === a.id)?.objectives?.find((x: any) => !x.completed)?.targetRegion;
+    if (target && (o.exec as any).to === target) v += 2500;
+  }
+  if (o.category === 'end') return policy === 'cash_hoard' ? 0.5 : 0; // ends only when nothing better
+  return v + bias;
+}
+
+function balPick(policy: BalancePolicyId, w: BalanceWorld, id: string): { option: BalanceOption; options: BalanceOption[] } {
+  const options = enumerateBalanceOptions(w, id);
+  const a = w.actors[id];
+  const scored = options.map(o => ({ o, s: balScore(policy, o, w, a) })).filter(x => Number.isFinite(x.s)).sort((x, y) => y.s - x.s || x.o.id.localeCompare(y.o.id));
+  const top = scored[0];
+  // Zero-AP options with non-positive value are not taken (prevents 0-AP churn); End is the floor.
+  if (!top || (top.o.apCost === 0 && top.s <= 0 && top.o.category !== 'end')) return { option: options.find(o => o.category === 'end')!, options };
+  return { option: top.o, options };
+}
+
+// ---- Execution through the canonical reducer --------------------------------------------------------------
+function balBundle(w: BalanceWorld): any {
+  // The reducer only reads the action-point/limit settings; carrying the full 36 KB settings object three times
+  // per step made each simulated action ~4× slower without changing any outcome.
+  const full = balSettings(w.config);
+  const settings = { actionLimitsEnabled: full.actionLimitsEnabled, actionPointConsumptionSettings: full.actionPointConsumptionSettings, playerActionsPerDay: full.playerActionsPerDay, aiActionsPerDay: full.aiActionsPerDay, totalDays: full.totalDays, winCondition: full.winCondition, allowActionOverride: full.allowActionOverride, overrideCost: full.overrideCost, maxDailyOverrides: full.maxDailyOverrides, equipmentShopEnabled: full.equipmentShopEnabled, regionalStandingEnabled: full.regionalStandingEnabled };
+  return {
+    gameState: { day: w.day, turnCounter: w.day, currentActorId: 'player', selectedMode: 'ai', regionDeposits: JSON.parse(JSON.stringify(w.deposits)), regionalContracts: w.contracts, infrastructureProjects: {}, expeditionTargets: {}, expeditionCampaigns: {}, gameSettings: settings, markets: { resourcePrices: { ...w.prices } } },
+    gameSettings: settings,
+    player: w.actors.player, aiPlayer: w.actors.ai,
+    actorsById: { player: w.actors.player, ai: w.actors.ai }
+  };
+}
+
+function balReduce(w: BalanceWorld, id: string, action: any): boolean {
+  const res = reduceGameAction(canonicalStateFromLiveRuntime(balBundle(w)), { actorId: id, ...action } as GameAction, { active: true, operation: String(action.type), actorId: id } as ActionExecutionContext);
+  if (!res || !res.success || !res.nextState) return false;
+  const ns: any = res.nextState;
+  const next = ns.actorsById?.[id];
+  if (next) {
+    const a = w.actors[id];
+    a.money = next.money; a.inventory = [...(next.inventory || [])]; a.currentRegion = next.currentRegion; a.visitedRegions = [...(next.visitedRegions || a.visitedRegions)];
+    a.loans = [...(next.loans || [])]; a.investments = [...(next.investments || [])]; a.actionsUsedThisTurn = Number(next.actionsUsedThisTurn || 0);
+    a.xp = Number(next.xp || a.xp); a.consecutiveWins = Number(next.consecutiveWins ?? a.consecutiveWins);
+  }
+  const other = ns.actorsById?.[balRival(id)];
+  if (other) { w.actors[balRival(id)].debuffs = [...(other.debuffs || [])]; w.actors[balRival(id)].money = other.money; }
+  if (ns.gameState?.regionDeposits) w.deposits = JSON.parse(JSON.stringify(ns.gameState.regionDeposits));
+  const rc = ns.regionalContracts || ns.gameState?.regionalContracts;
+  if (rc) w.contracts = JSON.parse(JSON.stringify(rc));
+  return true;
+}
+
+function balExecute(w: BalanceWorld, id: string, o: BalanceOption): boolean {
+  const a = w.actors[id];
+  const e = o.exec;
+  const before = a.money;
+  let ok = false;
+  switch (e.kind) {
+    case 'work': ok = balReduce(w, id, { type: 'work', parameters: { wage: 50 } }); break;
+    case 'challenge': {
+      const p = balChallengeChance(a, e);
+      const win = balNext(w) < p;
+      const r = computeChallengeRewardCore({ wager: e.wager, rewardMultiplier: e.reward, characterName: a.character.name, consecutiveWins: a.consecutiveWins, masteryCount: 1 }).reward;
+      ok = balReduce(w, id, { type: 'challenge', price: e.wager, parameters: { wager: e.wager, isWin: win, reward: r, challengeName: e.name } });
+      if (ok && win) { a.completedThisSeason = [...a.completedThisSeason, e.name]; a.consecutiveWins += 1; } // canonical COMPLETE_CHALLENGE on success only
+      if (ok && !win) a.consecutiveWins = 0;
+      break;
+    }
+    case 'travel': {
+      ok = balReduce(w, id, { type: 'travel', targetRegion: e.to, price: e.cost, parameters: { cost: e.cost } });
+      if (ok) { const res = REGIONAL_RESOURCES[e.to] || []; if (res.length && a.inventory.length < MAX_INVENTORY) a.inventory = [...a.inventory, res[Math.floor(balNext(w) * res.length)]]; }
+      break;
+    }
+    case 'sell': ok = balReduce(w, id, { type: 'sell', item: e.item, price: Math.floor((w.prices[e.item] ?? getResourceMarketPrice(e.item)) * getSabotageSellMultiplier(a.debuffs)), parameters: { quantity: 1 } }); break;
+    case 'buy': ok = balReduce(w, id, { type: 'buy_market', item: e.item, price: getResourceMarketPrice(e.item), parameters: { quantity: e.quantity || 1 } }); break;
+    case 'deposit': ok = balReduce(w, id, { type: 'region_deposit', targetRegion: e.region, investmentAmount: e.amount }); break;
+    case 'invest': ok = balReduce(w, id, { type: 'invest', targetRegion: e.region }); break;
+    case 'loan': ok = balReduce(w, id, { type: 'emergency_loan' }); break;
+    case 'repay': ok = balReduce(w, id, { type: 'repay_emergency_loan' }); break;
+    case 'override': {
+      const cost = calculateActionPointOverrideCost({ ...a, netWorth: balNetWorth(w, a) }, balSettings(w.config), a.overridesUsedToday);
+      if (a.money >= cost) { a.money -= cost; a.overridesUsedToday += 1; a.overrideActionsGranted += 1; ok = true; } // canonical USE_ACTION_OVERRIDE
+      break;
+    }
+    case 'accept_contract': ok = balReduce(w, id, { type: 'accept_regional_contract', parameters: { contractId: e.id } }); break;
+    case 'deliver_contract': ok = balReduce(w, id, { type: 'deliver_contract_objectives', parameters: { contractId: e.id } }); break;
+    case 'sabotage': ok = balReduce(w, id, { type: 'sabotage', targetActorId: e.target, price: e.cost, parameters: { sabotageId: e.sabotageId, duration: e.duration } }); break;
+    case 'end': ok = true; break;
+  }
+  if (ok && e.kind !== 'end') {
+    w.log.push({ day: w.day, actorId: id, category: o.category, label: o.label, value: Math.round(o.value), apSpent: o.apCost, cashDelta: a.money - before });
+    if (e.kind === 'work' || e.kind === 'sell' || e.kind === 'loan') w.predictedVsActual.push({ kind: e.kind, predicted: o.immediateCash, actual: a.money - before });
+  }
+  return ok;
+}
+
+function balTakeTurn(w: BalanceWorld, id: string, policy: BalancePolicyId): void {
+  for (let guard = 0; guard < 40; guard++) {
+    const { option, options } = balPick(policy, w, id);
+    if (id === 'player' && option.apCost > 0) w.decisions.push(evaluateDecisionQuality(options));
+    if (option.category === 'end') break;
+    if (!balExecute(w, id, option)) break;
+  }
+}
+
+function balEndOfDay(w: BalanceWorld): void {
+  const settings = balSettings(w.config);
+  Object.values(w.actors).forEach(a => {
+    const tick = applySimpleLoanTick(a); a.money = tick.money; a.loans = tick.loans;
+    if (w.config.features.investments) a.money += (a.investments || []).reduce((s, r) => s + (REGIONAL_INVESTMENTS[r] ? getActorScaledInvestmentReturn(REGIONAL_INVESTMENTS[r].dailyIncome, a, w.day) : 0), 0);
+    a.actionsUsedThisTurn = 0; a.overridesUsedToday = 0; a.overrideActionsGranted = 0;
+    a.debuffs = a.debuffs.map(d => ({ ...d, remainingDays: d.remainingDays - 1 })).filter(d => d.remainingDays > 0);
+  });
+  if (w.config.features.contracts) {
+    const next = advanceActiveRegionalContractsDay(w.contracts, { player: w.actors.player.currentRegion, ai: w.actors.ai.currentRegion });
+    if (next) w.contracts = next;
+  }
+  const upd = computeDailyMarketUpdate(w.day + 1, w.prices, w.trend, null);
+  w.prices = upd.nextPrices; w.trend = upd.nextTrend;
+  void settings;
+}
+
+function balSnapshot(w: BalanceWorld, id: string): StrategicBalanceSnapshot {
+  const a = w.actors[id]; const opts = enumerateBalanceOptions(w, id); const dq = evaluateDecisionQuality(opts);
+  const debt = calculateActorOutstandingDebt(a); const nw = balNetWorth(w, a);
+  const mine = balanceMetricValue(w, id); const theirs = balanceMetricValue(w, balRival(id));
+  const rec = buildRecoveryProfile(w, id);
+  return { day: w.day, actorId: id, cash: a.money, netWorth: Math.round(nw), debt, liquidity: a.money - debt, incomePotential: Math.round(opts.filter(o => o.legal && o.apCost > 0).map(o => o.immediateCash).sort((x, y) => y - x).slice(0, w.config.apPerDay).reduce((s, v) => s + Math.max(0, v), 0)), apRemaining: balApLeft(w, a), regionsControlled: balRegionsControlled(w, id), regionalInvestment: BAL_REGIONS.reduce((s, r) => s + Math.floor((w.deposits[r] || {})[id] || 0), 0), inventoryValue: Math.round(calculateInventoryMarketValue(a.inventory, w.prices)), activeContracts: Object.values(w.contracts).filter((c: any) => c.status === 'active' && c.assignedActorId === id).length, strategicOptions: dq.legalActionCount, viableActions: dq.viableActionCount, dominantActionGap: dq.dominantActionGap, winProgress: mine, rivalWinProgress: theirs, riskExposure: Math.round(opts.filter(o => o.legal).reduce((s, o) => Math.max(s, o.risk), 0)), recoveryCapacity: rec.strategicAlternatives };
+}
+
+export function buildRecoveryProfile(w: BalanceWorld, id: string): RecoveryProfile {
+  const a = w.actors[id]; const opts = enumerateBalanceOptions(w, id).filter(o => o.legal && o.category !== 'end');
+  const mine = balanceMetricValue(w, id); const theirs = balanceMetricValue(w, balRival(id));
+  const deficitPct = theirs > 0 ? Math.max(0, (theirs - mine) / theirs) : 0;
+  const daysLeft = balDaysLeft(w);
+  const income = opts.filter(o => o.value > 0 && (o.category === 'income' || o.category === 'challenge' || o.category === 'market' || o.category === 'investment'));
+  const alternatives = new Set(opts.filter(o => o.value > 0).map(o => o.category)).size;
+  // Best-case catch-up: top positive values per AP for the remaining days (optimistic bound, not a forecast).
+  const perDay = opts.filter(o => o.apCost > 0 && o.value > 0).map(o => o.value).sort((x, y) => y - x).slice(0, w.config.apPerDay).reduce((s, v) => s + v, 0);
+  const gap = theirs - mine;
+  const recoverable: RecoveryProfile['recoverable'] = gap <= 0 ? 'likely' : w.config.winCondition === 'regions' ? (daysLeft * w.config.apPerDay >= gap ? 'possible' : 'effectively_lost') : perDay * daysLeft * 0.5 >= gap ? 'possible' : perDay * daysLeft >= gap ? 'unlikely' : 'effectively_lost';
+  return { legalActions: opts.length, incomeOptions: income.length, liquidAssets: a.money + Math.round(calculateInventoryMarketValue(a.inventory, w.prices)), loanAccess: a.loans.length < MAX_ACTIVE_LOANS, regionalOpenings: BAL_REGIONS.filter(r => balControllerOf(w, r) !== id).length, strategicAlternatives: alternatives, deficitPct: Math.round(deficitPct * 100) / 100, daysLeft, recoverable };
+}
+
+export interface BalanceMatchResult {
+  config: BalanceSimConfig; subjectPolicy: BalancePolicyId; rivalPolicy: BalancePolicyId; winner: 'player' | 'ai' | 'tie';
+  final: { player: number; ai: number }; decidedDay: number; earlyLeader: string | null; categoryCounts: Record<string, number>; apUsed: number; apAvailable: number;
+  loansTaken: number; overridesBought: number; decisions: { count: number; avgViable: number; fakeChoiceRate: number; dominantRate: number; avgDiversity: number; avgOpportunityCost: number };
+  cashByPhase: { early: number; mid: number; late: number }; snapshots: StrategicBalanceSnapshot[]; wastedAp: number; predictedVsActualMismatches: number; recoveryAtMid: RecoveryProfile | null;
+}
+
+/** Run one deterministic match: `subject` (player slot) vs `rival` (ai slot). Global RNG streams are restored after. */
+export function runBalanceMatch(cfg: BalanceSimConfig, subject: BalancePolicyId, rival: BalancePolicyId = 'balanced'): BalanceMatchResult {
+  const savedStreams = JSON.parse(JSON.stringify(globalRngRegistry.streams)); const savedSeed = globalRngRegistry.masterSeed;
+  try {
+    globalRngRegistry.initStreams((cfg.seed * 7919 + 17) >>> 0);
+    const w = createBalanceWorld(cfg);
+    const early = Math.max(1, Math.round(cfg.days * 0.25)); const mid = Math.max(1, Math.round(cfg.days * 0.5)); const late = Math.max(1, Math.round(cfg.days * 0.75));
+    let earlyLeader: string | null = null; let recoveryAtMid: RecoveryProfile | null = null;
+    const cash: number[] = [];
+    for (w.day = 1; w.day <= cfg.days; w.day++) {
+      // Alternate who moves first each day (no fixed first-mover advantage).
+      const order = w.day % 2 === 1 ? ['player', 'ai'] : ['ai', 'player'];
+      order.forEach(id => balTakeTurn(w, id, id === 'player' ? subject : rival));
+      const pv = balanceMetricValue(w, 'player'); const av = balanceMetricValue(w, 'ai');
+      w.leaderByDay.push(pv > av ? 'player' : av > pv ? 'ai' : null);
+      cash.push(w.actors.player.money);
+      if (w.day === early) { earlyLeader = w.leaderByDay[w.leaderByDay.length - 1]; w.snapshots.push(balSnapshot(w, 'player'), balSnapshot(w, 'ai')); }
+      if (w.day === mid) { w.snapshots.push(balSnapshot(w, 'player'), balSnapshot(w, 'ai')); const trailing = pv < av ? 'player' : av < pv ? 'ai' : null; if (trailing) recoveryAtMid = buildRecoveryProfile(w, trailing); }
+      if (w.day === cfg.days) w.snapshots.push(balSnapshot(w, 'player'), balSnapshot(w, 'ai'));
+      if (w.day < cfg.days) balEndOfDay(w);
+    }
+    w.day = cfg.days;
+    const pv = balanceMetricValue(w, 'player'); const av = balanceMetricValue(w, 'ai');
+    const winner = pv > av ? 'player' : av > pv ? 'ai' : 'tie';
+    let decidedDay = 1;
+    for (let d = w.leaderByDay.length - 1; d >= 0; d--) { if (w.leaderByDay[d] !== w.leaderByDay[w.leaderByDay.length - 1]) { decidedDay = d + 2; break; } }
+    const mine = w.log.filter(l => l.actorId === 'player');
+    const categoryCounts: Record<string, number> = {};
+    mine.forEach(l => { categoryCounts[l.category] = (categoryCounts[l.category] || 0) + 1; });
+    const dq = w.decisions;
+    const avg = (f: (d: DecisionQualityProfile) => number) => (dq.length ? Math.round((dq.reduce((s, d) => s + f(d), 0) / dq.length) * 100) / 100 : 0);
+    const phaseAvg = (from: number, to: number) => { const xs = cash.slice(from, to); return xs.length ? Math.round(xs.reduce((s, v) => s + v, 0) / xs.length) : 0; };
+    return {
+      config: cfg, subjectPolicy: subject, rivalPolicy: rival, winner, final: { player: Math.round(pv), ai: Math.round(av) }, decidedDay, earlyLeader,
+      categoryCounts, apUsed: mine.reduce((s, l) => s + l.apSpent, 0), apAvailable: cfg.days * cfg.apPerDay,
+      loansTaken: mine.filter(l => l.category === 'loan' && /loan/i.test(l.label) && !/Repay/.test(l.label)).length, overridesBought: mine.filter(l => l.category === 'override').length,
+      decisions: { count: dq.length, avgViable: avg(d => d.viableActionCount), fakeChoiceRate: avg(d => (d.fakeChoice ? 1 : 0)), dominantRate: avg(d => d.clearlyDominantActionCount), avgDiversity: avg(d => d.actionCategoryDiversity), avgOpportunityCost: avg(d => d.opportunityCostStrength) },
+      cashByPhase: { early: phaseAvg(0, early), mid: phaseAvg(early, late), late: phaseAvg(late, cfg.days) }, snapshots: w.snapshots,
+      wastedAp: mine.filter(l => l.apSpent > 0 && l.value <= 0).reduce((s, l) => s + l.apSpent, 0),
+      predictedVsActualMismatches: w.predictedVsActual.filter(x => Math.abs(x.predicted - x.actual) > 1).length, recoveryAtMid
+    };
+  } finally {
+    globalRngRegistry.streams = savedStreams; globalRngRegistry.masterSeed = savedSeed;
+  }
+}
+
+export interface BalancePolicyRow { policy: BalancePolicyId; matches: number; winRate: number; avgFinal: number; avgRivalFinal: number; avgDecidedDay: number; avgFakeChoice: number; avgViable: number; avgDominant: number; wastedAp: number; categoryShare: Record<string, number> }
+
+/** Policy vs the balanced baseline across a seed matrix (Part 61–63). */
+export function runBalancePolicyMatrix(policies: BalancePolicyId[], seeds: number[], base: Partial<BalanceSimConfig> = {}): BalancePolicyRow[] {
+  return policies.map(policy => {
+    const rs = seeds.map(seed => runBalanceMatch(createBalanceSimConfig({ ...base, seed }), policy, 'balanced'));
+    const n = rs.length || 1;
+    const cats: Record<string, number> = {}; let total = 0;
+    rs.forEach(r => Object.entries(r.categoryCounts).forEach(([k, v]) => { cats[k] = (cats[k] || 0) + v; total += v; }));
+    Object.keys(cats).forEach(k => { cats[k] = Math.round((cats[k] / Math.max(1, total)) * 100) / 100; });
+    return {
+      policy, matches: rs.length, winRate: Math.round((rs.filter(r => r.winner === 'player').length / n) * 100) / 100,
+      avgFinal: Math.round(rs.reduce((s, r) => s + r.final.player, 0) / n), avgRivalFinal: Math.round(rs.reduce((s, r) => s + r.final.ai, 0) / n),
+      avgDecidedDay: Math.round((rs.reduce((s, r) => s + r.decidedDay, 0) / n) * 10) / 10, avgFakeChoice: Math.round((rs.reduce((s, r) => s + r.decisions.fakeChoiceRate, 0) / n) * 100) / 100,
+      avgViable: Math.round((rs.reduce((s, r) => s + r.decisions.avgViable, 0) / n) * 100) / 100, avgDominant: Math.round((rs.reduce((s, r) => s + r.decisions.dominantRate, 0) / n) * 100) / 100,
+      wastedAp: Math.round((rs.reduce((s, r) => s + r.wastedAp, 0) / n) * 10) / 10, categoryShare: cats
+    };
+  });
+}
+
+/** Early leader persistence across seeds (Part 42). A lead should matter without deciding the match. */
+export function buildSnowballProfile(seeds: number[], base: Partial<BalanceSimConfig> = {}, subject: BalancePolicyId = 'balanced', rival: BalancePolicyId = 'balanced'): SnowballProfile {
+  const rs = seeds.map(seed => runBalanceMatch(createBalanceSimConfig({ ...base, seed }), subject, rival));
+  const withLeader = rs.filter(r => r.earlyLeader);
+  const kept = withLeader.filter(r => r.earlyLeader === r.winner).length;
+  const pct = (r: BalanceMatchResult, snapIdx: number) => { const p = r.snapshots[snapIdx]; const a = r.snapshots[snapIdx + 1]; if (!p || !a) return 0; const hi = Math.max(p.winProgress, a.winProgress, 1); return Math.abs(p.winProgress - a.winProgress) / hi; };
+  return { samples: withLeader.length, earlyLeaderWins: kept, persistence: withLeader.length ? Math.round((kept / withLeader.length) * 100) / 100 : 0, avgEarlyLeadPct: Math.round((rs.reduce((s, r) => s + pct(r, 0), 0) / Math.max(1, rs.length)) * 100) / 100, avgFinalLeadPct: Math.round((rs.reduce((s, r) => s + pct(r, 4), 0) / Math.max(1, rs.length)) * 100) / 100 };
+}
+
+// ---- Economic ROI inspector (Part 75) — cost, AP, time, payout, payback, risk, conditions. No "best" ranking. ----------
+export interface EconomicRoiRow { mechanic: string; cost: string; ap: number; time: string; payout: string; secondary: string; paybackTurns: number | null; risk: string; conditions: string; verdict: string }
+
+export function buildEconomicRoiTable(settings: any = DEFAULT_GAME_SETTINGS): EconomicRoiRow[] {
+  const days = Number(settings.totalDays || 30);
+  const rows: EconomicRoiRow[] = [];
+  const base = { strength: 3, charisma: 3, luck: 3, intelligence: 3 };
+  rows.push({ mechanic: 'Work for wages', cost: '$0', ap: 1, time: 'instant', payout: '$50', secondary: 'none', paybackTurns: 0, risk: 'none', conditions: 'always', verdict: 'Safe floor; low value per action.' });
+  [1, 2, 3].forEach(d => {
+    const c = { difficulty: d, type: 'physical', reward: d === 1 ? 1.6 : d === 2 ? 2.2 : 3.0 };
+    const p = computeChallengeSuccessChanceCore({ difficulty: d, type: 'physical', stats: base, level: 1 });
+    const r = computeChallengeRewardCore({ wager: 500, rewardMultiplier: c.reward, masteryCount: 1 }).reward;
+    const ev = Math.round(p * r - (1 - p) * 500);
+    rows.push({ mechanic: `Challenge (difficulty ${d}, ×${c.reward})`, cost: '$500 wager', ap: 1, time: 'instant', payout: `${Math.round(p * 100)}%: +$${r} / ${Math.round((1 - p) * 100)}%: −$500`, secondary: 'XP, streaks; once per match on success', paybackTurns: 0, risk: `σ≈$${Math.round(Math.sqrt(p * (1 - p)) * (r + 500))}`, conditions: 'be in the region; wager capped at $500 (dynamic wager off)', verdict: `EV ${ev >= 0 ? '+' : ''}$${ev}/action; supply limited to each region's challenges` });
+  });
+  rows.push({ mechanic: 'Double or Nothing', cost: 'last reward at stake', ap: 0, time: 'instant', payout: '50%: ×2 / 50%: lose it', secondary: 'variance tool', paybackTurns: null, risk: 'high', conditions: 'right after a won challenge', verdict: 'Zero EV — useful when behind, wrong when ahead.' });
+  rows.push({ mechanic: 'Travel (adjacent / long-haul / TAS)', cost: `$${computeTravelCostCore({ from: 'NSW', to: 'VIC' })} / $${computeTravelCostCore({ from: 'NSW', to: 'WA' })} / $${computeTravelCostCore({ from: 'NSW', to: 'TAS' })}`, ap: 1, time: 'instant', payout: '1 regional resource', secondary: 'positions for challenges, deposits, contracts', paybackTurns: null, risk: 'none', conditions: 'not blocked by sabotage', verdict: 'Positioning cost; value depends on what is there.' });
+  rows.push({ mechanic: 'Region control deposit', cost: 'rival deposit + $1 ($1 if empty)', ap: 1, time: 'instant', payout: '+1 controlled region', secondary: 'not counted in net worth; retake costs the rival your deposit + $1', paybackTurns: null, risk: 'contestable until the end', conditions: 'be in the region', verdict: 'Pure sink outside a regions victory; an auction inside it.' });
+  rows.push({ mechanic: 'Region cash-out (setting)', cost: 'lose control', ap: 1, time: 'instant', payout: '50% of your deposit back', secondary: 'frees liquidity', paybackTurns: null, risk: 'none', conditions: 'allowCashOut on; you control it', verdict: 'Never profitable to cycle (−50%); a real keep-or-liquidate decision.' });
+  Object.entries(REGIONAL_INVESTMENTS).forEach(([code, inv]) => {
+    const pay = Math.ceil(inv.cost / inv.dailyIncome);
+    rows.push({ mechanic: `Investment: ${inv.name} (${code})`, cost: `$${inv.cost}`, ap: 1, time: `${pay} days to pay back`, payout: `$${inv.dailyIncome}/day`, secondary: 'counted at cost in net worth', paybackTurns: pay, risk: 'capital locked for the match', conditions: 'investments setting on; be in region', verdict: pay > days ? 'Never pays back in cash before the match ends' : `Pays back by day ${pay + 1} if bought on day 1` });
+  });
+  rows.push({ mechanic: 'Emergency loan', cost: `$${Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE)}/day interest`, ap: 0, time: 'until repaid', payout: `+$${LOAN_AMOUNT} now`, secondary: 'netted out of cash victory', paybackTurns: 4, risk: 'interest compounds if unpaid', conditions: `max ${MAX_ACTIVE_LOANS} active`, verdict: 'Solves a liquidity problem for 4 days of interest per day kept.' });
+  [0, 1, 2].forEach(n => rows.push({ mechanic: `Action override #${n + 1}`, cost: `$${calculateActionPointOverrideCost({ netWorth: 5000, money: 5000 }, settings, n)} (at $5K net worth)`, ap: -1, time: 'today', payout: '+1 action', secondary: 'fatigue lowers challenge odds', paybackTurns: null, risk: 'none', conditions: `max ${settings.maxDailyOverrides || OVERRIDE_DAILY_CAP}/day`, verdict: 'Worth it only when the extra action beats its price.' }));
+  PRESET_REGIONAL_CONTRACTS.forEach(c => {
+    const e = estimateContractEffectiveValue(c, null, null);
+    rows.push({ mechanic: `Contract: ${c.title}`, cost: `needs $${(c.requirements?.requiredMoney || 0).toLocaleString()} on hand; deliverables ≈$${e.deliverableCost.toLocaleString()}`, ap: e.apEstimate, time: `${e.turns} turns once accepted`, payout: `$${e.reward.toLocaleString()}`, secondary: 'standing, regional development', paybackTurns: null, risk: `${Math.round(e.failureRisk * 100)}% est. failure`, conditions: 'contracts setting on; requirements met', verdict: `Effective EV ≈$${e.expectedValue.toLocaleString()}` });
+  });
+  SABOTAGE_ACTIONS.forEach((s: any) => rows.push({ mechanic: `Sabotage: ${s.name}`, cost: `$${s.cost}`, ap: 1, time: `${s.duration} day(s)`, payout: s.description, secondary: 'denies rival value', paybackTurns: null, risk: 'reveals hostility', conditions: 'sabotage setting on', verdict: 'Situational: worth it only when the rival has value to lose right now.' }));
+  return rows;
+}
+
+// ---- V9.1 balance change record + final summary (Parts 90, 54) -----------------------------------------------
+
+export interface BalanceChangeRecord { id: string; kind: 'correctness' | 'tuning'; system: string; parameter: string; before: string; after: string; problem: string; evidence: string; expectedEffect: string; risk: string }
+
+/** Every V9.1 change with its rationale. Evidence numbers come from the deterministic policy matrix (8 seeds). */
+export const V91_BALANCE_CHANGES: BalanceChangeRecord[] = [
+  { id: 'C1', kind: 'correctness', system: 'Regional contracts', parameter: 'accept / fulfil / objective progress', before: 'accept ignored requirements; fulfil paid the full reward with 0 objectives done; AI advanced objectives by an arbitrary delta; AI accept/progress were silent no-ops reported as success', after: 'accept checks requirements; objectives progress only from real deliverables (resources in region, capital, infrastructure, presence); fulfil requires every objective; AI uses the same reducer path', problem: 'A $15K-requirement contract paid $35K on day 1 with 0/50 deliveries', evidence: 'Reproduced through the human "Complete & Fulfill" button path (reducer)', expectedEffect: 'Contracts become commitments with capital/AP/travel cost', risk: 'Contracts are harder; offset by C9' },
+  { id: 'C2', kind: 'correctness', system: 'Action Points', parameter: 'override price', before: 'two curves (validator: base×1.5ⁿ×⌊NW/50K⌋; quick actions/AI: base×2ⁿ×wealth 1–3×)', after: 'one canonical calculateActionPointOverrideCost for every actor and path', problem: 'The same override cost different amounts depending on the button / actor', evidence: 'Code audit', expectedEffect: 'Escalation is predictable and equal', risk: 'none' },
+  { id: 'C3', kind: 'correctness', system: 'Net worth', parameter: 'simple-loan debt', before: 'amount + accrued', after: 'amount (what is still owed)', problem: 'Paid interest was counted as debt a second time', evidence: 'After 4 days a $500 loan counted as $1,000 debt', expectedEffect: 'Accurate net worth', risk: 'none' },
+  { id: 'C4', kind: 'correctness', system: 'Loans', parameter: 'emergency loan', before: 'no repayment path; reducer path granted $1,000 untracked interest-free debt', after: 'repay by principal (0 AP, like taking one); every path creates the same $500 @25%/day loan', problem: 'Interest-only forever; Co-Pilot/AI loans were free', evidence: 'Code audit', expectedEffect: 'Loans are a recoverable tool', risk: 'none' },
+  { id: 'C5', kind: 'correctness', system: 'AI fairness', parameter: 'hidden catch-up / anti-leader effects', before: 'active under "Smarter Decisions Only": AI-only $200 stipend, +$300 Investor Interest, −10% leader "market correction", underdog travel/odds/price bonuses', after: 'only with opted-in adaptive handicaps; under fair profiles the AI takes the same emergency loan the human can', problem: 'Hidden rubber-banding and an AI-only income source contradict the fairness profile', evidence: 'Code audit (4 mechanisms)', expectedEffect: 'Equal numbers; recovery from decisions', risk: 'Broke AIs now carry debt instead of free cash' },
+  { id: 'C6', kind: 'correctness', system: 'Investments', parameter: 'reducer invest', before: 'wrote the amount as a region deposit (free control), default price $100', after: 'canonical price, one per region, no deposit side effect', problem: 'Co-Pilot/AI investments bought region control the human purchase never did', evidence: 'Code audit', expectedEffect: 'Parity', risk: 'none' },
+  { id: 'C7', kind: 'correctness', system: 'Action Points', parameter: 'reducer AP floor', before: 'every executed action cost ≥1 AP', after: 'actions the rules make free (sell, buy, loan, accept) are free on every path', problem: 'Co-Pilot/AI paid 1 AP for what cost the human 0; candidates predicted apDelta 0', evidence: 'Predicted-vs-actual audit', expectedEffect: 'Parity and truthful previews', risk: 'none' },
+  { id: 'C8', kind: 'correctness', system: 'Victory (cash)', parameter: 'money metric', before: 'cash', after: 'cash net of outstanding loans', problem: 'Three emergency loans on the final day added $1,500 of "cash" for 0 AP', evidence: 'late_loan policy', expectedEffect: 'No end-of-match borrowing exploit', risk: 'none' },
+  { id: 'C9', kind: 'correctness', system: 'Regional contracts', parameter: 'requirements tied to disabled systems', before: 'equipment required with the shop off; standing required with standing off', after: 'waived only when the settings say that system is off', problem: 'Half the contracts could never be accepted in default settings (dead content)', evidence: 'contract_first never accepted a contract (0 contract actions)', expectedEffect: 'Contracts are reachable (late) opportunities', risk: 'none' },
+  { id: 'C10', kind: 'correctness', system: 'Region control', parameter: 'solo AI deposits', before: 'solo AI deposited in any region remotely', after: 'deposits only where it stands (like the human and team AIs); remote targets become travel reasons', problem: 'The AI skipped travel cost/AP the human pays', evidence: 'Code audit', expectedEffect: 'Equal rules', risk: 'AI region play needs travel' },
+  { id: 'T1', kind: 'tuning', system: 'Loans', parameter: 'interest base', before: '25% of the capitalised amount (compounds when unpaid)', after: '25% of the principal (unpaid interest still becomes debt, linearly)', problem: 'Debt spiral: one unpayable $500 loan exceeded $4,600 in 10 days', evidence: 'casual −$92,990 NW, always_borrow −$235,493 NW (baseline); after: −$1,826 / −$1,600', expectedEffect: 'Borrowing is costly but recoverable', risk: 'Loans slightly cheaper for defaulting players' },
+  { id: 'T2', kind: 'tuning', system: 'Region control', parameter: 'minimum stake to control', before: '$1', after: `$${REGION_MIN_CONTROL_STAKE}`, problem: 'Regions victory decided by the last deposit of the match', evidence: 'baseline: 100% of region matches decided on day 30, mirror match won by the last mover 100%; after: decided on day 11–19, rush-only 0.13 win', expectedEffect: 'Control is a capital commitment with counterplay (cash-out, contest)', risk: 'Small legacy deposits (<$300) no longer control a region' },
+  { id: 'T3', kind: 'tuning', system: 'Loans', parameter: 'same-day repayment', before: 'free', after: 'one day of interest', problem: 'Zero-AP intraday leverage (borrow → wager → repay)', evidence: 'loan_leverage 0.63 vs balanced 0.50; after: 0.50', expectedEffect: 'Leverage has a price', risk: 'none' }
+];
+
+export const V91_BALANCE_SUMMARY = {
+  imbalanced: [
+    'Contracts paid out without delivery; AI contract actions did nothing (correctness).',
+    'Regions victory was a $1 auction decided by the final deposit.',
+    'Loans: unrepayable, compounding death spiral, free intraday leverage, end-of-match cash inflation.',
+    'Hidden rubber-banding and an AI-only stipend under "fair" profiles.'
+  ],
+  intentionallyAsymmetric: [
+    'Challenges are the strongest cash engine (+EV per wager) but each is once per match and region-bound, so supply forces travel decisions.',
+    'Sabotage is niche (high cost, short effect) — a denial tool, not an engine.',
+    'Contracts need $10K+ on hand: late-game opportunities, not openers.',
+    'Investments are counted at cost in net worth (illiquid but safe); in cash games they must be bought early to pay back.',
+    'Double or Nothing is zero-EV variance — right when behind, wrong when ahead.'
+  ],
+  tests: 'runStrategicDepthBalanceSelfTests (policy matrix, exploits, fairness, determinism).'
+};
+
+// ---- Strategic Balance report (LAB; bounded; never runs during normal play) --------------------------------------
+
+export interface StrategicBalanceReport {
+  config: { days: number; apPerDay: number; winCondition: BalanceWinMetric; seeds: number };
+  policies: BalancePolicyRow[]; flags: Array<{ id: string; severity: 'info' | 'warning'; text: string }>;
+  snowball: SnowballProfile; roi: EconomicRoiRow[]; utilization: Array<{ category: string; share: number; status: 'overused' | 'healthy' | 'underused' | 'nearly_unused' }>;
+  decisionQuality: { avgViable: number; fakeChoiceRate: number; dominantRate: number };
+}
+
+export function buildStrategicBalanceReport(o: { winCondition?: BalanceWinMetric; days?: number; apPerDay?: number; seeds?: number[]; features?: Partial<BalanceFeatures> } = {}): StrategicBalanceReport {
+  const seeds = o.seeds || [1, 2, 3, 4];
+  const base: Partial<BalanceSimConfig> = { winCondition: o.winCondition || 'money', days: o.days || 30, apPerDay: o.apPerDay || 3, features: { ...BAL_DEFAULT_FEATURES, ...(o.features || {}) } };
+  const list: BalancePolicyId[] = ['balanced', 'challenge_first', 'never_challenge', 'cash_hoard', 'region_rush', 'market_only', 'always_borrow', 'casual', 'expert'];
+  if (base.features!.investments) list.push('investment_heavy');
+  if (base.features!.sabotage) list.push('always_sabotage');
+  if (base.features!.contracts) list.push('contract_first');
+  const policies = runBalancePolicyMatrix(list, seeds, base);
+  const flags: StrategicBalanceReport['flags'] = [];
+  const simple = new Set<BalancePolicyId>(['challenge_first', 'never_challenge', 'cash_hoard', 'region_rush', 'market_only', 'always_borrow', 'investment_heavy', 'always_sabotage', 'contract_first']);
+  policies.forEach(p => {
+    if (simple.has(p.policy) && p.winRate >= 0.8) flags.push({ id: `dominant_${p.policy}`, severity: 'warning', text: `One-dimensional policy "${p.policy}" wins ${Math.round(p.winRate * 100)}% vs the balanced baseline — investigate why before tuning.` });
+    if (p.avgFakeChoice >= 0.5) flags.push({ id: `fake_${p.policy}`, severity: 'warning', text: `"${p.policy}" faces fake choices in ${Math.round(p.avgFakeChoice * 100)}% of decisions (many legal, ≤1 viable).` });
+  });
+  const bal = policies.find(p => p.policy === 'balanced');
+  if (bal && bal.avgDecidedDay >= (base.days || 30) - 1) flags.push({ id: 'last_turn', severity: 'warning', text: 'Matches are decided on the final day — check last-turn exploits.' });
+  if (bal && bal.avgDecidedDay <= (base.days || 30) * 0.15) flags.push({ id: 'early_decided', severity: 'info', text: `Leader is settled by day ${bal.avgDecidedDay} — watch for an empty endgame.` });
+  const shares: Record<string, number> = {};
+  policies.filter(p => p.policy === 'balanced' || p.policy === 'expert').forEach(p => Object.entries(p.categoryShare).forEach(([k, v]) => { shares[k] = (shares[k] || 0) + v / 2; }));
+  const cats = ['income', 'challenge', 'travel', 'market', 'region', ...(base.features!.investments ? ['investment'] : []), 'loan', 'override', ...(base.features!.contracts ? ['contract'] : []), ...(base.features!.sabotage ? ['sabotage'] : [])];
+  const utilization = cats.map(c => { const share = Math.round((shares[c] || 0) * 100) / 100; return { category: c, share, status: (share >= 0.5 ? 'overused' : share >= 0.05 ? 'healthy' : share > 0 ? 'underused' : 'nearly_unused') as 'overused' | 'healthy' | 'underused' | 'nearly_unused' }; });
+  const all = policies.filter(p => p.policy === 'balanced' || p.policy === 'expert');
+  return {
+    config: { days: base.days!, apPerDay: base.apPerDay!, winCondition: base.winCondition!, seeds: seeds.length },
+    policies, flags, snowball: buildSnowballProfile(seeds, base), roi: buildEconomicRoiTable({ ...DEFAULT_GAME_SETTINGS, totalDays: base.days }), utilization,
+    decisionQuality: { avgViable: Math.round((all.reduce((s, p) => s + p.avgViable, 0) / Math.max(1, all.length)) * 100) / 100, fakeChoiceRate: Math.round((all.reduce((s, p) => s + p.avgFakeChoice, 0) / Math.max(1, all.length)) * 100) / 100, dominantRate: Math.round((all.reduce((s, p) => s + p.avgDominant, 0) / Math.max(1, all.length)) * 100) / 100 }
+  };
+}
+
+// ---- Gameplay explanation of real tradeoffs (Part 95) — never balance telemetry --------------------------------
+
+/** "What doing this costs you": the opportunity cost of a candidate in the current moment. */
+export function buildDecisionTradeoffLines(i: {
+  candidate: ContextualActionCandidate; actionSet: ContextualActionSet | null; apRemaining: number | null;
+  cohesion: V9Cohesion | null; daysLeft: number | null; cash: number;
+}): string[] {
+  const c = i.candidate; const out: string[] = [];
+  const others = (i.actionSet?.ranked || []).filter(x => x.id !== c.id && x.legal && x.execution?.kind !== 'end_turn');
+  const ap = c.apCost || 0;
+  if (ap > 0 && i.apRemaining !== null && Number.isFinite(i.apRemaining)) {
+    const left = Math.max(0, i.apRemaining - ap);
+    const alt = others.filter(x => (x.apCost || 0) > 0).slice(0, 2).map(x => x.label);
+    out.push(left === 0 ? `It uses your last action${alt.length ? ` — ${alt.join(' and ')} would have to wait` : ''}.` : `It uses ${ap} of your ${i.apRemaining} actions${alt.length ? `, leaving ${left} for ${alt.join(' or ')}` : ''}.`);
+  }
+  const due = (i.cohesion?.upcoming || []).filter(u => u.turnsLeft <= 1);
+  if (due.length) out.push(`${due[0].text} is due ${due[0].turnsLeft <= 0 ? 'now' : 'next turn'} and stays unanswered this turn.`);
+  const pressure = (i.cohesion?.status || []).find(s => s.tone === 'bad');
+  if (pressure) out.push(`${pressure.text.replace(/ high$/, '')} goes unanswered while you do this.`);
+  if (c.costEstimate && c.costEstimate > 0) {
+    const after = i.cash - c.costEstimate;
+    out.push(`It spends $${Math.round(c.costEstimate).toLocaleString()}, leaving $${Math.round(after).toLocaleString()}${after < 500 ? ' — little cushion for the next opportunity' : ''}.`);
+  }
+  if (i.daysLeft !== null && i.daysLeft <= 5 && /invest|infrastructure|build/i.test(c.actionType)) out.push(`Only ${i.daysLeft} day(s) remain — a long-payback investment may not return its cost before the match ends.`);
+  if (c.risk && /high|moderate/i.test(c.risk)) out.push(`Risk: ${c.risk}.`);
+  const alt = others[0];
+  if (alt && Math.abs((alt.relevance || 0) - (c.relevance || 0)) <= 10) out.push(`${alt.label} is close behind — which is better depends on ${alt.strategyAlignment?.label === 'high' ? 'your strategy' : 'what you want to protect this turn'}.`);
+  return out.slice(0, 5);
+}
+
+// ---- LAB: Strategic Balance Inspector (Part 93) -------------------------------------------------------------------
+
+export const StrategicBalanceInspector: React.FC<{ theme: any; winCondition: BalanceWinMetric; days: number; apPerDay: number; features: Partial<BalanceFeatures> }> = ({ theme, winCondition, days, apPerDay, features }) => {
+  const [report, setReport] = useState<StrategicBalanceReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const run = () => { setBusy(true); window.setTimeout(() => { try { setReport(buildStrategicBalanceReport({ winCondition, days, apPerDay, features })); } finally { setBusy(false); } }, 20); };
+  const label = 'text-[11px] font-semibold uppercase tracking-wider opacity-70 mt-2';
+  return (
+    <section aria-labelledby="sbi-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="strategic-balance-inspector">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="sbi-h" className="font-bold text-sm">⚖️ Strategic Balance Inspector</h2>
+        <span className="opacity-70">{winCondition.replace('_', ' ')} · {days} days × {apPerDay} actions</span>
+        <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+        {open && <button type="button" className={`${theme.buttonSecondary} px-2 py-0.5 rounded`} disabled={busy} onClick={run} data-testid="sbi-run">{busy ? 'Simulating…' : report ? 'Re-run simulation' : 'Run policy simulation'}</button>}
+      </div>
+      {open && (
+        <div className="space-y-1 mt-2">
+          <p className="opacity-80">Deterministic policy simulations on the canonical reducer and formulas. Diagnostics only — nothing here changes the match.</p>
+          <div className={label}>Balance change record</div>
+          <ul className="space-y-0.5">{V91_BALANCE_CHANGES.map(c => <li key={c.id}><b>{c.id}</b> {c.system} — {c.parameter}: {c.before} → {c.after}. <span className="opacity-75">Evidence: {c.evidence}</span></li>)}</ul>
+          <div className={label}>Intentionally asymmetric</div>
+          <ul className="list-disc pl-4">{V91_BALANCE_SUMMARY.intentionallyAsymmetric.map(t => <li key={t}>{t}</li>)}</ul>
+          {report && (
+            <>
+              <div className={label}>Policy simulation (vs balanced baseline, {report.config.seeds} seeds)</div>
+              <table className="w-full text-[11px]" data-testid="sbi-policies"><thead><tr className="opacity-70"><th className="text-left">Policy</th><th>Win</th><th>Final</th><th>Rival</th><th>Decided day</th><th>Viable</th><th>Fake</th></tr></thead>
+                <tbody>{report.policies.map(p => <tr key={p.policy}><td>{p.policy}</td><td className="text-center">{Math.round(p.winRate * 100)}%</td><td className="text-center">{p.avgFinal.toLocaleString()}</td><td className="text-center">{p.avgRivalFinal.toLocaleString()}</td><td className="text-center">{p.avgDecidedDay}</td><td className="text-center">{p.avgViable}</td><td className="text-center">{Math.round(p.avgFakeChoice * 100)}%</td></tr>)}</tbody></table>
+              <div className={label}>Findings</div>
+              {report.flags.length ? report.flags.map(f => <div key={f.id} className={f.severity === 'warning' ? 'text-amber-300' : ''}>• {f.text}</div>) : <div>No dominant simple policy and no fake-choice hotspots in this configuration.</div>}
+              <div className={label}>Mechanic utilization (balanced + expert)</div>
+              <div>{report.utilization.map(u => `${u.category} ${Math.round(u.share * 100)}% (${u.status.replace('_', ' ')})`).join(' · ')}</div>
+              <div className={label}>Snowball &amp; decision quality</div>
+              <div>Early leader (25%) won {report.snowball.earlyLeaderWins}/{report.snowball.samples} · lead at 25% {Math.round(report.snowball.avgEarlyLeadPct * 100)}% → final {Math.round(report.snowball.avgFinalLeadPct * 100)}% · viable options/decision {report.decisionQuality.avgViable} · fake-choice rate {Math.round(report.decisionQuality.fakeChoiceRate * 100)}%</div>
+              <div className={label}>Economic ROI</div>
+              <table className="w-full text-[11px]"><tbody>{report.roi.map(r => <tr key={r.mechanic} className="align-top"><td className="pr-2 font-semibold">{r.mechanic}</td><td className="pr-2">{r.cost}</td><td className="pr-2">{r.payout}</td><td className="pr-2 opacity-80">{r.verdict}</td></tr>)}</tbody></table>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- Self-tests ----------------------------------------------------------------------------------------------------
+
+export function runStrategicDepthBalanceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const seeds = [1, 2, 3, 4];
+  const cfg = (o: Partial<BalanceSimConfig> = {}) => createBalanceSimConfig(o);
+  const matrixCache: Record<string, BalancePolicyRow[]> = {};
+  const matrix = (wc: BalanceWinMetric, pols: BalancePolicyId[], features?: Partial<BalanceFeatures>) => {
+    const key = `${wc}|${pols.join(',')}|${J(features || {})}`;
+    return (matrixCache[key] = matrixCache[key] || runBalancePolicyMatrix(pols, seeds, { winCondition: wc, features: { ...BAL_DEFAULT_FEATURES, ...(features || {}) } }));
+  };
+  const row = (rows: BalancePolicyRow[], p: BalancePolicyId) => rows.find(r => r.policy === p)!;
+
+  check('bal_determinism', 'Same seed + settings + policy → identical balance result', () => {
+    const a = runBalanceMatch(cfg({ seed: 7 }), 'balanced', 'balanced'); const b = runBalanceMatch(cfg({ seed: 7 }), 'balanced', 'balanced');
+    const c = runBalanceMatch(cfg({ seed: 8 }), 'balanced', 'balanced');
+    return (J({ f: a.final, d: a.decidedDay, c: a.categoryCounts }) === J({ f: b.final, d: b.decidedDay, c: b.categoryCounts }) && J(a.final) !== J(c.final)) || J([a.final, b.final, c.final]);
+  });
+  check('bal_rng_isolated', 'Balance simulation restores the live RNG streams (never disturbs a match)', () => {
+    const before = J(globalRngRegistry.streams); runBalanceMatch(cfg({ seed: 3 }), 'balanced'); return J(globalRngRegistry.streams) === before || 'streams changed';
+  });
+  check('bal_mirror', 'Mirror match (balanced vs balanced) is not one-sided (12 seeds)', () => {
+    const r = runBalancePolicyMatrix(['balanced'], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], { winCondition: 'money' })[0]; return (r.winRate >= 0.25 && r.winRate <= 0.75) || J(r);
+  });
+  check('bal_no_simple_dominant', 'No one-dimensional policy dominates the balanced baseline (money)', () => {
+    const rows = matrix('money', ['challenge_first', 'cash_hoard', 'region_rush', 'market_only', 'always_borrow', 'never_challenge']);
+    const bad = rows.filter(r => r.winRate >= 0.8); return bad.length === 0 || J(bad.map(r => [r.policy, r.winRate]));
+  });
+  check('bal_cash_hoard', 'Cash hoarding (never spend) is not the optimum for a cash victory', () => { const r = row(matrix('money', ['cash_hoard']), 'cash_hoard'); return r.winRate < 0.5 || J(r); });
+  check('bal_region_rush', 'Region rush is not universally optimal and regions are not decided by the last deposit', () => {
+    const rows = matrix('regions', ['balanced', 'region_rush']); const rush = row(rows, 'region_rush'); const bal = row(rows, 'balanced');
+    return (rush.winRate < 0.8 && bal.avgDecidedDay < 29) || J(rows.map(r => [r.policy, r.winRate, r.avgDecidedDay]));
+  });
+  check('bal_max_loan', 'Always-borrow is not dominant and does not spiral to catastrophic debt', () => {
+    const r = row(matrix('net_worth', ['always_borrow']), 'always_borrow'); return (r.winRate < 0.5 && r.avgFinal > -5000) || J(r);
+  });
+  check('bal_late_loan', 'Borrowing on the final day does not inflate a cash victory', () => {
+    const w = createBalanceWorld(cfg({ seed: 2 })); const before = balanceMetricValue(w, 'player');
+    const opts = enumerateBalanceOptions(w, 'player'); const loan = opts.find(o => o.exec.kind === 'loan')!;
+    w.day = w.config.days; (balExecute as any)(w, 'player', loan);
+    return (w.actors.player.money > 1000 && balanceMetricValue(w, 'player') === before) || J({ before, after: balanceMetricValue(w, 'player'), money: w.actors.player.money });
+  });
+  check('bal_intraday_leverage', 'Loan taken and repaid the same day still costs one day of interest', () => {
+    const loan = { amount: LOAN_AMOUNT, accrued: 0 }; const aged = { amount: LOAN_AMOUNT, accrued: 125, principal: LOAN_AMOUNT };
+    return (simpleLoanRepaymentAmount(loan) === LOAN_AMOUNT + Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE) && simpleLoanRepaymentAmount(aged) === LOAN_AMOUNT) || J([simpleLoanRepaymentAmount(loan), simpleLoanRepaymentAmount(aged)]);
+  });
+  check('bal_debt_spiral_bounded', 'Unpaid loan interest grows linearly (no compounding death spiral)', () => {
+    let st: any = { money: 0, loans: [{ amount: LOAN_AMOUNT, accrued: 0 }] };
+    for (let d = 0; d < 10; d++) st = applySimpleLoanTick(st);
+    return st.loans[0].amount === LOAN_AMOUNT + 10 * Math.floor(LOAN_AMOUNT * LOAN_INTEREST_RATE) || J(st.loans[0]);
+  });
+  check('bal_ap_override', 'Consecutive overrides escalate in price for every actor (one canonical curve)', () => {
+    const s = { ...DEFAULT_GAME_SETTINGS }; const actor = { netWorth: 5000, money: 5000 };
+    const c = [0, 1, 2].map(n => calculateActionPointOverrideCost(actor, s, n));
+    return (c[0] < c[1] && c[1] < c[2] && c[2] >= c[0] * 2) || J(c);
+  });
+  check('bal_zero_ap', 'Zero-AP actions cannot loop into free money (sell is finite, buy costs an action at base price)', () => {
+    const w = createBalanceWorld(cfg({ seed: 4 })); w.actors.player.inventory = ['Gold']; w.actors.player.actionsUsedThisTurn = 99;
+    let guard = 0; for (; guard < 20; guard++) { const o = enumerateBalanceOptions(w, 'player').find(x => x.legal && x.apCost === 0 && x.category === 'market'); if (!o) break; (balExecute as any)(w, 'player', o); }
+    const buys = enumerateBalanceOptions(w, 'player').filter(o => o.exec.kind === 'buy');
+    return (guard <= 1 && buys.every(b => b.apCost >= 1)) || J({ guard, buys: buys.map(b => b.apCost) });
+  });
+  check('bal_cashout', 'Region cash-out can never be cycled for profit (50% refund)', () => {
+    const row0 = buildEconomicRoiTable().find(r => /cash-out/i.test(r.mechanic)); return Boolean(row0 && /50%/.test(row0.payout)) || J(row0);
+  });
+  check('bal_contract_roi', 'Contract ROI counts deliverables, travel, AP and failure risk — not the headline reward', () => {
+    const c = PRESET_REGIONAL_CONTRACTS.find(x => x.id === 'ag_logistics_nsw')!;
+    const e = estimateContractEffectiveValue(c, { currentRegion: 'WA' }, null);
+    return (e.deliverableCost > 0 && e.travelCost > 0 && e.apEstimate >= 2 && e.failureRisk > 0 && e.expectedValue < e.reward) || J(e);
+  });
+  check('bal_contract_gates', 'Contracts: accept needs requirements; fulfil needs every objective; objectives come from real deliveries', () => {
+    const { liveState } = createGIFixtureWorld({ money: 500 });
+    const gs = { ...liveState.gameState, regionalContracts: { ag_logistics_nsw: JSON.parse(JSON.stringify(PRESET_REGIONAL_CONTRACTS[0])) }, gameSettings: { ...DEFAULT_GAME_SETTINGS } };
+    const poor = reduceGameAction(canonicalStateFromLiveRuntime({ ...liveState, gameState: gs }), { type: 'accept_regional_contract', actorId: 'player', parameters: { contractId: 'ag_logistics_nsw' } });
+    const rich: any = { ...liveState, gameState: gs, player: { ...liveState.player, money: 20000 }, actorsById: { ...liveState.actorsById, player: { ...liveState.actorsById.player, money: 20000 } } };
+    const acc = reduceGameAction(canonicalStateFromLiveRuntime(rich), { type: 'accept_regional_contract', actorId: 'player', parameters: { contractId: 'ag_logistics_nsw' } });
+    const early = reduceGameAction(acc.nextState, { type: 'fulfill_regional_contract', actorId: 'player', parameters: { contractId: 'ag_logistics_nsw' } });
+    const ns: any = acc.nextState; const wheat = Array.from({ length: 50 }, () => 'Wheat');
+    ns.actorsById.player.inventory = [...wheat]; ns.actorsById.player.currentRegion = 'NSW'; ns.player = ns.actorsById.player;
+    const moneyBefore = ns.actorsById.player.money;
+    const del: any = reduceGameAction(ns, { type: 'deliver_contract_objectives', actorId: 'player', parameters: { contractId: 'ag_logistics_nsw' } });
+    const paid = del.nextState.actorsById.player.money - moneyBefore;
+    return (!poor.success && acc.success && !early.success && del.success && paid === 35000 && (del.nextState.regionalContracts || del.nextState.gameState?.regionalContracts).ag_logistics_nsw.status === 'completed') || J({ poor: poor.success, acc: acc.success, early: early.success, del: del.success, paid });
+  });
+  check('bal_contract_waiver', 'Requirements tied to a disabled system are waived; unknown settings keep them', () => {
+    const c = PRESET_REGIONAL_CONTRACTS[0]; const actor = { id: 'player', money: 20000, equipment: [], inventory: [] };
+    const off = contractAcceptBlocker(c, actor, {}, { equipmentShopEnabled: false, regionalStandingEnabled: false });
+    const on = contractAcceptBlocker(c, actor, {}, { equipmentShopEnabled: true, regionalStandingEnabled: true });
+    const unknown = contractAcceptBlocker(c, actor, {});
+    return (off === null && /equipment/i.test(on || '') && /equipment/i.test(unknown || '')) || J({ off, on, unknown });
+  });
+  check('bal_contract_presence', 'Maintain-presence objectives advance one step per day spent in the region', () => {
+    const c = JSON.parse(JSON.stringify(PRESET_REGIONAL_CONTRACTS.find(x => x.id === 'eco_trail_tas')!)); c.status = 'active'; c.assignedActorId = 'player';
+    let rc: any = { [c.id]: c };
+    rc = advanceActiveRegionalContractsDay(rc, { player: 'TAS' }); rc = advanceActiveRegionalContractsDay(rc, { player: 'VIC' }); rc = advanceActiveRegionalContractsDay(rc, { player: 'TAS' });
+    return (rc[c.id].objectives[0].currentProgress === 2 && rc[c.id].turnsRemaining === c.turnsRemaining - 3) || J(rc[c.id]);
+  });
+  check('bal_region_stake', 'Region control needs the minimum stake; taking a held region needs more than the holder', () => {
+    const empty = getRequiredDepositToControl({}, 'NSW', 'player');
+    const held = getRequiredDepositToControl({ NSW: { ai: 900 } }, 'NSW', 'player');
+    const cheap = getRegionControlSnapshot({ player: 1 }).controllerId;
+    return (empty === REGION_MIN_CONTROL_STAKE && held === 901 && cheap === null) || J({ empty, held, cheap });
+  });
+  check('bal_fair_no_handicap', 'Strictly Equal / Smarter Decisions Only: no hidden catch-up numbers; opted-in adaptation allows them', () => {
+    const fair = [{ smartSettingsProfile: { aiFairness: 'strictly_equal' } }, { smartSettingsProfile: { aiFairness: 'smarter_decisions_only' } }, {}].every(s => !allowsAdaptiveHandicap(s));
+    const adaptive = allowsAdaptiveHandicap({ smartSettingsProfile: { aiFairness: 'fully_adaptive' } }) && allowsAdaptiveHandicap({ adaptiveAiRubberBanding: true });
+    return (fair && adaptive) || J({ fair, adaptive });
+  });
+  check('bal_equal_rules', 'Player and AI use identical numbers: same override price, odds, travel, loan terms', () => {
+    const s = { ...DEFAULT_GAME_SETTINGS };
+    const human = { kind: 'human', netWorth: 8000, money: 8000 }; const ai = { kind: 'ai', netWorth: 8000, money: 8000 };
+    const same = calculateActionPointOverrideCost(human, s, 1) === calculateActionPointOverrideCost(ai, s, 1)
+      && computeTravelCostCore({ from: 'NSW', to: 'WA' }) === computeTravelCostCore({ from: 'NSW', to: 'WA' })
+      && simpleLoanRepaymentAmount({ amount: 500, accrued: 0 }) === simpleLoanRepaymentAmount({ amount: 500, accrued: 0 });
+    return same || 'rules differ';
+  });
+  check('bal_expert_vs_casual', 'Higher decision quality wastes less and finishes stronger than a myopic player (same numbers)', () => {
+    const rows = matrix('money', ['expert', 'casual']); const e = row(rows, 'expert'); const c = row(rows, 'casual');
+    return (e.avgFinal > c.avgFinal && e.winRate >= c.winRate && e.avgFakeChoice <= c.avgFakeChoice + 0.05) || J(rows.map(r => [r.policy, r.avgFinal, r.winRate, r.avgFakeChoice]));
+  });
+  check('bal_early_diversity', 'Opening turns offer several viable, different options', () => {
+    const w = createBalanceWorld(cfg({ seed: 5 })); const dq = evaluateDecisionQuality(enumerateBalanceOptions(w, 'player'));
+    return (dq.viableActionCount >= 2 && dq.actionCategoryDiversity >= 2 && !dq.fakeChoice) || J(dq);
+  });
+  check('bal_midgame_diversity', 'Midgame decisions average 2+ viable options and are rarely fake choices', () => {
+    const r = runBalanceMatch(cfg({ seed: 6 }), 'balanced'); return (r.decisions.avgViable >= 2 && r.decisions.fakeChoiceRate < 0.5 && r.decisions.dominantRate < 0.2) || J(r.decisions);
+  });
+  check('bal_snowball', 'An early lead matters but does not decide every match', () => {
+    const s = buildSnowballProfile(seeds); return (s.samples === 0 || s.persistence < 1) || J(s);
+  });
+  check('bal_comeback', 'A meaningful deficit still leaves multiple legal recovery routes (not guaranteed)', () => {
+    const w = createBalanceWorld(cfg({ seed: 2 })); w.day = 12; w.actors.ai.money = 9000; w.actors.player.money = 1500;
+    const r = buildRecoveryProfile(w, 'player'); return (r.strategicAlternatives >= 2 && r.incomeOptions >= 1 && r.loanAccess && r.recoverable !== 'likely') || J(r);
+  });
+  check('bal_hopeless', 'An extreme late deficit is recognised as effectively lost (diagnosis only, no rubber-banding)', () => {
+    const w = createBalanceWorld(cfg({ seed: 2 })); w.day = 29; w.actors.ai.money = 60000; w.actors.player.money = 200;
+    return buildRecoveryProfile(w, 'player').recoverable === 'effectively_lost' || J(buildRecoveryProfile(w, 'player'));
+  });
+  check('bal_endgame_decision', 'Near the end a contested leader weighs protect vs push vs earn (regions)', () => {
+    // Player leads 2–1 with 3 days left; the rival is contesting NSW where the player stands; VIC is the rival's.
+    const w = createBalanceWorld(cfg({ seed: 3, winCondition: 'regions' })); w.day = 27; w.actors.player.money = 2600; w.actors.player.currentRegion = 'NSW';
+    w.deposits = { NSW: { player: 400, ai: 380 }, QLD: { player: 500 }, VIC: { ai: 600 } };
+    const opts = enumerateBalanceOptions(w, 'player');
+    const dq = evaluateDecisionQuality(opts);
+    const protect = opts.find(o => o.id === 'dep_NSW'); const push = opts.find(o => o.id === 'tr_VIC'); const earn = opts.find(o => o.category === 'challenge');
+    return (Boolean(protect?.legal && push?.legal && earn?.legal) && dq.viableActionCount >= 2 && dq.actionCategoryDiversity >= 2) || J({ dq, protect: protect && [protect.legal, Math.round(protect.value)], push: push && [push.legal, Math.round(push.value)], earn: earn && Math.round(earn.value) });
+  });
+  check('bal_dead_investment', 'A long-payback investment late in a cash match is valued negatively', () => {
+    const w = createBalanceWorld(cfg({ seed: 1, features: { investments: true, contracts: false, sabotage: false, overrides: true } })); w.day = 28; w.actors.player.money = 5000; w.actors.player.currentRegion = 'WA';
+    const inv = enumerateBalanceOptions(w, 'player').find(o => o.category === 'investment'); return Boolean(inv && inv.value < 0) || J(inv);
+  });
+  check('bal_investment_payback', 'Representative investments can pay back before a default match ends when bought early', () => {
+    const rows = buildEconomicRoiTable().filter(r => r.mechanic.startsWith('Investment')); return (rows.length > 0 && rows.every(r => (r.paybackTurns || 99) < 30)) || J(rows.map(r => r.paybackTurns));
+  });
+  check('bal_sabotage_situational', 'Always-sabotage is not optimal (sabotage stays a situational tool)', () => {
+    const r = row(matrix('money', ['always_sabotage'], { sabotage: true }), 'always_sabotage'); return r.winRate < 0.5 || J(r);
+  });
+  check('bal_pace_fast_long', 'Fast and Long Strategic presets remain playable and undecided early', () => {
+    const f = runBalanceMatch(cfg({ seed: 2, ...BALANCE_PACE_PRESETS.fast }), 'balanced'); const l = runBalanceMatch(cfg({ seed: 2, ...BALANCE_PACE_PRESETS.long_strategic }), 'balanced');
+    return (f.apUsed > 0 && l.apUsed > 0 && l.decidedDay > 3 && f.final.player > 0 && l.final.player > 0) || J({ f: [f.final, f.decidedDay], l: [l.final, l.decidedDay] });
+  });
+  check('bal_expected_vs_actual', 'Predicted cash deltas of executed work/sell/loan actions match the canonical result', () => {
+    const r = runBalanceMatch(cfg({ seed: 4 }), 'balanced'); return r.predictedVsActualMismatches === 0 || `${r.predictedVsActualMismatches} mismatches`;
+  });
+  check('bal_no_duplication', 'Accounting: an action changes only its own actor and totals reconcile', () => {
+    const w = createBalanceWorld(cfg({ seed: 9 })); const total = () => w.actors.player.money + w.actors.ai.money;
+    const t0 = total(); const work = enumerateBalanceOptions(w, 'player').find(o => o.exec.kind === 'work')!; (balExecute as any)(w, 'player', work);
+    return (total() === t0 + 50 && w.actors.ai.money === w.config.startingMoney) || J({ t0, t1: total(), ai: w.actors.ai.money });
+  });
+  check('bal_team_transfer', 'Team / actor cash transfers conserve money (no duplication)', () => {
+    const { liveState } = createGIFixtureWorld({ money: 6000 });
+    const c0: any = canonicalStateFromLiveRuntime(liveState as any);
+    const before = c0.actorsById.player.money + c0.actorsById.ai.money;
+    const res: any = reduceGameAction(c0, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: 1500 } as GameAction);
+    const after = res.nextState.actorsById.player.money + res.nextState.actorsById.ai.money;
+    return (res.success && after === before && res.nextState.actorsById.player.money === 4500) || J({ before, after, ok: res.success });
+  });
+  check('bal_tradeoff_lines', 'Tradeoff explanation names the opportunity cost (actions left, deadline, rival pressure)', () => {
+    const c = createV9Candidate('ct', 'Complete NSW Contract', { apCost: 1, costEstimate: 0 });
+    const alt = createV9Candidate('tv', 'Travel to VIC', { apCost: 1 });
+    const set = { recommended: c, useful: [], available: [], blocked: [], ranked: [c, alt], fingerprint: 'x' } as any;
+    const coh = resolveV9GameplayCohesion(createV9CohesionFixture({ diplomacy: [{ id: 'x', kind: 'expiring', text: 'NSW pact with Riley expires', dealId: 'd', turnsLeft: 1 }], strategy: { phases: ['A'], phaseIndex: 0, locked: false, onTrack: null, nextMove: null, cashTarget: null, regions: ['NSW'], notices: [] }, regions: { NSW: { name: 'New South Wales', momentum: 'Stable', identity: '', risk: null, need: null, heldByYou: true, rivalPressure: true } } }));
+    const lines = buildDecisionTradeoffLines({ candidate: c, actionSet: set, apRemaining: 1, cohesion: coh, daysLeft: 20, cash: 5000 });
+    return (lines.some(l => /last action/.test(l) && /Travel to VIC/.test(l)) && lines.some(l => /pact/.test(l)) && lines.some(l => /NSW rival pressure/.test(l))) || J(lines);
+  });
+  check('bal_change_record', 'Every tuning change records problem, evidence, expected effect and risk', () => {
+    const t = V91_BALANCE_CHANGES.filter(c => c.kind === 'tuning');
+    return (t.length >= 3 && V91_BALANCE_CHANGES.every(c => c.problem && c.evidence && c.expectedEffect && c.risk && c.before && c.after)) || 'incomplete record';
+  });
+  return results;
+}
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -133947,31 +135105,24 @@ function dispatchGameSettingsChange(
     };
   }, [aiPlayer, player, computeNetWorth]);
 
+  // V9.1: ONE override price for every actor and every path (quick actions, AP validation, AI) — the
+  // canonical calculateActionPointOverrideCost. Previously this component used a different curve than
+  // validateActionPointRequest, so the same override cost different amounts depending on the button.
   const calculateActorOverrideCost = useCallback((actorId: string) => {
     const state = getActorState(actorId);
-    const base = gameSettings.overrideCost || OVERRIDE_BASE_COST;
-    const netWorth = computeNetWorth(state);
-    let wealthMultiplier = 1;
-    if (netWorth >= 20000) {
-      wealthMultiplier = 3;
-    } else if (netWorth >= 10000) {
-      wealthMultiplier = 2;
-    } else if (netWorth >= 5000) {
-      wealthMultiplier = 1.5;
-    }
-
-    const used = state?.overridesUsedToday || 0;
-    const scaled = base * Math.pow(2, used);
-    return Math.floor(scaled * wealthMultiplier);
-  }, [computeNetWorth, gameSettings.overrideCost, getActorState]);
+    return calculateActionPointOverrideCost({ ...(state || {}), netWorth: computeNetWorth(state) }, gameSettings, state?.overridesUsedToday || 0);
+  }, [computeNetWorth, gameSettings, getActorState]);
 
   const calculateOverrideCost = useCallback((target: 'player' | 'ai' = 'player') => {
     return calculateActorOverrideCost(target);
   }, [calculateActorOverrideCost]);
 
-  const getUnderdogBonus = useCallback((perspective: 'player' | 'ai') => {
+  // V9.1: `purpose` separates NUMERIC catch-up modifiers (travel/challenge/price/reward) from BEHAVIOURAL reads
+  // (an AI choosing to be aggressive because it is behind). Numeric modifiers are hidden rubber-banding, so they
+  // only apply when the player opted into adaptive handicaps; behaviour may always adapt to the score.
+  const getUnderdogBonus = useCallback((perspective: 'player' | 'ai', purpose: 'numeric' | 'behavior' = 'numeric') => {
     const { playerWorth, aiWorth } = getWealthState();
-    if (gameState.selectedMode !== 'ai') {
+    if (gameState.selectedMode !== 'ai' || (purpose === 'numeric' && !allowsAdaptiveHandicap(gameSettings))) {
       return { isUnderdog: false, ratio: 1, leader: null as null | 'player' | 'ai' };
     }
 
@@ -133984,7 +135135,7 @@ function dispatchGameSettingsChange(
       : (playerWorth > 0 ? aiWorth / playerWorth : 1);
 
     return { isUnderdog, ratio: deficitRatio, leader };
-  }, [getWealthState, gameState.selectedMode]);
+  }, [getWealthState, gameState.selectedMode, gameSettings]);
 
   const getOverrideFatigueIncrement = (used: number) => {
     if (used === 0) return 0;
@@ -135088,7 +136239,7 @@ function dispatchGameSettingsChange(
     if (!ability || aiState.specialAbilityUses <= 0) return -Infinity;
 
     let score = 0;
-    const underdogState = getUnderdogBonus('ai');
+    const underdogState = getUnderdogBonus('ai', 'behavior');
     const currentRegion = REGIONS[aiState.currentRegion];
 
     switch (ability.name) {
@@ -135286,7 +136437,7 @@ function dispatchGameSettingsChange(
     if (!gameSettings.sabotageEnabled || !isCompetitiveModeSelection(gameState.selectedMode)) {
       return { action, score: -Infinity };
     }
-    const underdogState = getUnderdogBonus('ai');
+    const underdogState = getUnderdogBonus('ai', 'behavior');
     const isAggressive = gameState.aiMood === 'aggressive' || gameState.aiMood === 'desperate';
     if (!underdogState.isUnderdog && !isAggressive) {
       return { action, score: -Infinity };
@@ -135306,7 +136457,9 @@ function dispatchGameSettingsChange(
     return { action, score };
   }, [gameSettings.sabotageEnabled, gameState.selectedMode, gameState.aiMood, getUnderdogBonus]);
 
-  const evaluateAiRegionControlMove = useCallback((aiState: any,currentState: any,_playerState: any): any => {
+  // V9.1 parity: like the human (and team AIs), the solo AI deposits only in the region it is standing in.
+  // scope 'any' is used for PLANNING (which region is worth travelling to), never for the deposit itself.
+  const evaluateAiRegionControlMove = useCallback((aiState: any,currentState: any,_playerState: any, scope: 'here' | 'any' = 'here'): any => {
     if (gameSettings.negotiationMode) return null;
     if (!isCompetitiveModeSelection(currentState.selectedMode)) return null;
 
@@ -135344,6 +136497,7 @@ function dispatchGameSettingsChange(
     let bestMove: { region: string; amount: number; score: number; reason: string } | null = null;
 
     Object.keys(REGIONS).forEach(regionCode => {
+      if (scope === 'here' && regionCode !== aiState.currentRegion) return;
       const regionEntry = regionDeposits[regionCode] || {};
       const snapshot = getRegionControlSnapshot(regionEntry);
       const aiDeposit = Math.floor(regionEntry.ai || 0);
@@ -135667,17 +136821,20 @@ function dispatchGameSettingsChange(
         }
       });
 
-      // Evaluate travel options
+      // Evaluate travel options (V9.1: a region worth controlling elsewhere is a reason to travel there first)
+      const remoteRegionTarget = evaluateAiRegionControlMove(aiState, gameState, playerState, 'any');
       Object.keys(REGIONS).forEach(region => {
         if (region !== aiState.currentRegion) {
           try {
             const evaluation = evaluateTravel(region, aiState, difficulty, gameState.resourcePrices);
-            if (evaluation.score > 0) {
+            const regionPull = remoteRegionTarget && remoteRegionTarget.region === region && aiState.money >= (evaluation.cost || 0) + remoteRegionTarget.amount ? Math.max(0, remoteRegionTarget.score) * 0.5 : 0;
+            const travelScore = Math.max(0, evaluation.score) + regionPull;
+            if (travelScore > 0) {
               decisions.push({
                 type: 'travel',
-                description: `Travel to ${REGIONS[region].name}`,
+                description: `Travel to ${REGIONS[region].name}${regionPull > 0 ? ' (region control)' : ''}`,
                 data: { region, cost: evaluation.cost },
-                score: evaluation.score * profile.decisionQuality
+                score: travelScore * profile.decisionQuality
               });
             }
           } catch (error) {
@@ -137011,7 +138168,7 @@ function dispatchGameSettingsChange(
 
       // Consider action override if AI is behind
       const aiOverrideRemaining = getActorOverridesRemaining('ai');
-      const aiUnderdog = getUnderdogBonus('ai').isUnderdog;
+      const aiUnderdog = getUnderdogBonus('ai', 'behavior').isUnderdog;
       if (actionsTaken >= actionBudget && aiOverrideRemaining > 0 && aiUnderdog) {
         const currentAi = aiPlayerRef.current;
         const overrideCost = calculateActorOverrideCost('ai');
@@ -138520,100 +139677,28 @@ function dispatchGameSettingsChange(
   }, [applyLoadedState, closeLoadPreview, loadPreview]);
 
   const calculateTravelCost = useCallback((fromRegion: any,toRegion: any) => {
-    // Weather modifier for travel costs
+    // V9.1: the canonical formula lives in computeTravelCostCore (shared with balance simulation).
     const weatherModifier = WEATHER_EFFECTS[gameState.weather]?.travelCostModifier || 1.0;
-    // Season modifier for travel costs
     const seasonModifier = SEASON_EFFECTS[gameState.season]?.travelCostModifier || 1.0;
     const equipmentEffects = gameSettings.equipmentShopEnabled &&
       !(gameSettings.sabotageEnabled && isEquipmentJammed(player.debuffs))
       ? getEquipmentEffects(player.equipment)
       : null;
-    const equipmentDiscount = equipmentEffects?.travelDiscount || 0;
-
-    // Check for active event affecting travel to this region
     let eventModifier = 1.0;
     gameState.activeEvents.forEach((event: any) => {
       if (event.region === toRegion && event.effect?.travelCost) {
         eventModifier *= event.effect.travelCost;
       }
     });
-
-    if ((ADJACENT_REGIONS as Record<string, string[]>)[fromRegion]?.includes(toRegion)) {
-      let baseCost = 200;
-      if (player.character.name === "Explorer") {
-        baseCost *= 0.75;
-      }
-      if (player.masteryUnlocks.includes("Globe Trotter")) {
-        baseCost *= 0.85;
-      }
-      if (player.masteryUnlocks.includes("Negotiator")) {
-        baseCost *= 0.8;
-      }
-      if (player.masteryUnlocks.includes("Pathfinder")) {
-        return 0;
-      }
-      // Apply weather, season, and event modifiers
-      baseCost = baseCost * weatherModifier * seasonModifier * eventModifier;
-      if (gameSettings.regionalStandingEnabled) {
-        const standing = getActorRegionalStanding(gameState, 'player', toRegion);
-        const standingMult = getRegionalStandingMultipliers(standing).travelCost;
-        baseCost *= standingMult;
-      }
-      if (equipmentDiscount > 0) {
-        baseCost = baseCost * (1 - equipmentDiscount);
-      }
-      return Math.floor(baseCost);
-    }
-
-    if (isExternalTerritory(toRegion) && EXTERNAL_TERRITORIES[toRegion]) {
-      let baseCost = EXTERNAL_TERRITORIES[toRegion].travelCost || 1200;
-      if (player.character.name === "Explorer") {
-        baseCost *= 0.75;
-      }
-      if (player.masteryUnlocks.includes("Globe Trotter")) {
-        baseCost *= 0.85;
-      }
-      if (player.masteryUnlocks.includes("Negotiator")) {
-        baseCost *= 0.8;
-      }
-      baseCost = baseCost * weatherModifier * seasonModifier * eventModifier;
-      if (gameSettings.regionalStandingEnabled) {
-        const standing = getActorRegionalStanding(gameState, 'player', toRegion);
-        const standingMult = getRegionalStandingMultipliers(standing).travelCost;
-        baseCost *= standingMult;
-      }
-      if (equipmentDiscount > 0) {
-        baseCost = baseCost * (1 - equipmentDiscount);
-      }
-      return Math.floor(baseCost);
-    }
-
-    let baseCost = toRegion === "TAS" ? 800 : 500;
-    if (player.character.name === "Explorer") {
-      baseCost *= 0.75;
-    }
-    if (player.masteryUnlocks.includes("Globe Trotter")) {
-      baseCost *= 0.85;
-    }
-    if (player.masteryUnlocks.includes("Negotiator")) {
-      baseCost *= 0.8;
-    }
-    if (player.masteryUnlocks.includes("Fast Travel")) {
-      return 300;
-    }
-    // Apply weather, season, and event modifiers
-    baseCost = baseCost * weatherModifier * seasonModifier * eventModifier;
-    if (equipmentDiscount > 0) {
-      baseCost = baseCost * (1 - equipmentDiscount);
-    }
+    const standingMult = gameSettings.regionalStandingEnabled
+      ? getRegionalStandingMultipliers(getActorRegionalStanding(gameState, 'player', toRegion)).travelCost
+      : null;
     const { isUnderdog, leader } = getUnderdogBonus('player');
-    if (isUnderdog) {
-      baseCost *= 0.75;
-    }
-    if (leader === 'player' && getWealthState().ratio > 2) {
-      baseCost *= 1.05;
-    }
-    return Math.floor(baseCost);
+    return computeTravelCostCore({
+      from: fromRegion, to: toRegion, characterName: player.character?.name, mastery: player.masteryUnlocks || [],
+      weatherMod: weatherModifier, seasonMod: seasonModifier, eventMod: eventModifier, standingMult,
+      equipmentDiscount: equipmentEffects?.travelDiscount || 0, underdog: isUnderdog, leaderTax: leader === 'player' && getWealthState().ratio > 2
+    });
   }, [player.character, player.masteryUnlocks, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const calculateSuccessChance = useCallback((challenge: any) => {
@@ -138657,13 +139742,8 @@ function dispatchGameSettingsChange(
     const fatiguePenalty = player.overrideFatigue || 0;
     const sabotagePenalty = gameSettings.sabotageEnabled ? getSabotageChallengePenalty(player.debuffs) : 0;
 
-    return Math.min(
-      0.95,
-      Math.max(
-        0.1,
-        baseChance + statBonus - difficultyPenalty + characterBonus + levelBonus + weatherEffect + seasonEffect + eventBonus + underdogBonus - leaderPenalty - fatiguePenalty - sabotagePenalty + equipmentBonus
-      )
-    );
+    void baseChance; void statBonus; void difficultyPenalty; void characterBonus; void levelBonus;
+    return computeChallengeSuccessChanceCore({ difficulty: challenge.difficulty, type: challenge.type, stats: playerStats, characterName: player?.character?.name, level: player.level, weatherEffect, seasonEffect, eventBonus, equipmentBonus, underdogBonus, leaderPenalty, fatiguePenalty, sabotagePenalty });
   }, [player.stats, player.character, player.level, player.currentRegion, player.overrideFatigue, player.equipment, player.debuffs, gameSettings.equipmentShopEnabled, gameSettings.sabotageEnabled, gameState.weather, gameState.season, gameState.activeEvents, getUnderdogBonus, getWealthState]);
 
   const getInventoryValue = useMemo(() => {
@@ -144766,23 +145846,7 @@ function dispatchGameSettingsChange(
     addNotification(outcome, executed.executed ? 'success' : 'info', false, 'system');
   }, [addNotification, gameSettings.aiCommunicationAutonomyLevel, gameSettings.coPilotSettings, gameState.aiCommunication, gameState.teamStrategicPlansByTeam, gameState.turnCounter, issueTeamDirective, player?.teamId, updateUiState]);
 
-  const applyLoanTick = useCallback((state: any) => {
-    if (!state.loans || state.loans.length === 0) {
-      return { money: state.money, loans: [] as typeof state.loans };
-    }
-    let money = state.money;
-    const updatedLoans = state.loans.map((loan: any) => {
-      const interest = Math.floor(loan.amount * LOAN_INTEREST_RATE);
-      const payment = Math.min(interest, money);
-      money -= payment;
-      return {
-        ...loan,
-        amount: loan.amount + interest - payment,
-        accrued: (loan.accrued || 0) + interest
-      };
-    }).filter((loan: any) => loan.amount > 0.5);
-    return { money, loans: updatedLoans };
-  }, []);
+  const applyLoanTick = useCallback((state: any) => applySimpleLoanTick(state), []);
 
   // Advanced Loan System handlers
   const takeAdvancedLoanForActor = useCallback((actorId: string, tierId: string, isEvent: boolean = false, eventId?: string, options?: { silent?: boolean; closeModal?: boolean; suppressLedgerEvent?: boolean }) => {
@@ -145288,25 +146352,14 @@ function dispatchGameSettingsChange(
           const success = drawGameplayRandom('Combat') < successChance;
 
           if (success) {
-            let reward = Math.floor(wager * challenge.reward);
-
-            if ((player?.character?.name === "Tourist")) {
-              reward = Math.floor(reward * 1.2);
-            }
-
-            if (player.character.name === "Businessman") {
-              reward = Math.floor(reward * 1.1);
-            }
-
+            // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
             const { isUnderdog, leader } = getUnderdogBonus('player');
-            if (leader === 'player' && getWealthState().ratio > 2) {
-              reward = Math.floor(reward * 0.9);
-            }
-
-            if (player.masteryUnlocks.includes("Lucky Streak") && player.consecutiveWins > 0) {
-              const streakBonus = Math.min(0.5, player.consecutiveWins * 0.1);
-              reward = Math.floor(reward * (1 + streakBonus));
-              addNotification(`Lucky Streak! +${Math.round(streakBonus * 100)}% bonus`, 'success');
+            const hasLuckyStreak = player.masteryUnlocks.includes("Lucky Streak");
+            const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
+            const rewardCore = computeChallengeRewardCore({ wager, rewardMultiplier: challenge.reward, characterName: player?.character?.name, leaderPenalty: leader === 'player' && getWealthState().ratio > 2, luckyStreak: hasLuckyStreak, consecutiveWins: player.consecutiveWins, masteryCount });
+            const reward = rewardCore.reward;
+            if (rewardCore.luckyStreakBonus > 0) {
+              addNotification(`Lucky Streak! +${Math.round(rewardCore.luckyStreakBonus * 100)}% bonus`, 'success');
             }
 
             const newStreak = player.consecutiveWins + 1;
@@ -145318,34 +146371,9 @@ function dispatchGameSettingsChange(
                 break;
               }
             }
-            if (appliedStreakBonus && !player.masteryUnlocks.includes("Lucky Streak")) {
-              reward = Math.floor(reward * (1 + appliedStreakBonus.rewardBonus));
-            }
 
-            const masteryCount = (player.challengeMastery?.[challenge.name] || 0) + 1;
-            let masteryRewardBonus = 0;
-            let masteryXpBonus = 0;
-            let masteryLabel = '';
-            switch (Math.min(masteryCount, 4)) {
-              case 2:
-                masteryRewardBonus = 0.25;
-                masteryXpBonus = 0.5;
-                masteryLabel = 'Mastered';
-                break;
-              case 3:
-                masteryRewardBonus = 0.5;
-                masteryXpBonus = 1.0;
-                masteryLabel = 'Expert';
-                break;
-              case 4:
-                masteryRewardBonus = 1.0;
-                masteryXpBonus = 2.0;
-                masteryLabel = 'Legendary';
-                break;
-            }
-            if (masteryRewardBonus > 0) {
-              reward = Math.floor(reward * (1 + masteryRewardBonus));
-            }
+            const masteryXpBonus = rewardCore.masteryLabel === 'Mastered' ? 0.5 : rewardCore.masteryLabel === 'Expert' ? 1.0 : rewardCore.masteryLabel === 'Legendary' ? 2.0 : 0;
+            const masteryLabel = rewardCore.masteryLabel;
 
             if (challengeApCost > 0) {
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: challengeApCost, actionId: 'challenges' } });
@@ -146299,6 +147327,21 @@ function dispatchGameSettingsChange(
     return null;
   }, [gameSettings.teamAiAdaptiveOverseerPersonality]);
 
+  /** V9.1: accepted contracts tick once per day (presence objectives + the accepted deadline). */
+  const advanceLiveContractsForDay = () => {
+    const gs: any = gameStateLiveRef.current;
+    const rc = gs?.regionalContracts;
+    if (!rc || !Object.values(rc).some((c: any) => c?.status === 'active')) return;
+    const positions: Record<string, string | null | undefined> = {};
+    Object.values(gs.actorsById || {}).forEach((a: any) => { if (a?.id !== undefined) positions[String(a.id)] = a.currentRegion; });
+    const pl: any = playerRef.current; const ai: any = aiPlayerRef.current;
+    if (pl?.id !== undefined) positions[String(pl.id)] = pl.currentRegion;
+    positions.player = pl?.currentRegion;
+    if (ai?.id !== undefined) positions[String(ai.id)] = ai.currentRegion;
+    const next = advanceActiveRegionalContractsDay(rc, positions);
+    if (next && next !== rc) dispatchGameState({ type: 'LOAD_STATE', payload: { regionalContracts: next } });
+  };
+
   const advanceDay = useCallback(() => {
     const prevDay = gameState.day;
     const currentPlayer = player;
@@ -146406,6 +147449,7 @@ function dispatchGameSettingsChange(
       }
 
       dispatchGameState({ type: 'NEXT_DAY' });
+      advanceLiveContractsForDay();
       dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
 
       if (seasonChanged) {
@@ -146649,9 +147693,17 @@ function dispatchGameSettingsChange(
         if (actor.kind === 'ai') {
           projected.stipendCooldown = Math.max(0, (projected.stipendCooldown || 0) - 1);
           if (projected.money < 100 && projected.stipendCooldown <= 0) {
-            projected.money += AI_STIPEND_AMOUNT;
-            projected.stipendCooldown = AI_STIPEND_COOLDOWN;
-            addNotification(`🤖 Emergency fund: ${projected.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+            if (allowsAdaptiveHandicap(gameSettings)) {
+              projected.money += AI_STIPEND_AMOUNT;
+              projected.stipendCooldown = AI_STIPEND_COOLDOWN;
+              addNotification(`🤖 Emergency fund: ${projected.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+            } else if ((projected.loans || []).length < MAX_ACTIVE_LOANS) {
+              // V9.1 parity: the same emergency loan (and interest) the human can take — never free money.
+              projected.money += LOAN_AMOUNT;
+              projected.loans = [...(projected.loans || []), { id: `ai_loan_${newDay}_${(projected.loans || []).length}`, amount: LOAN_AMOUNT, accrued: 0 }];
+              projected.stipendCooldown = AI_STIPEND_COOLDOWN;
+              addNotification(`🤖 ${projected.name} took an emergency loan ($${LOAN_AMOUNT}).`, 'ai', true);
+            }
           }
         }
 
@@ -146750,10 +147802,10 @@ function dispatchGameSettingsChange(
         .reduce((sum, actor) => sum + computeNetWorth(actor), 0);
       let projectedPlayerTeamCash = projectedActorList
         .filter(actor => actor.teamId === TEAM_PLAYER_ID)
-        .reduce((sum, actor) => sum + actor.money, 0);
+        .reduce((sum, actor) => sum + actor.money - calculateActorOutstandingDebt(actor), 0); // V9.1: cash net of outstanding loans
       let projectedOpponentTeamCash = projectedActorList
         .filter(actor => actor.teamId === TEAM_OPPONENT_ID)
-        .reduce((sum, actor) => sum + actor.money, 0);
+        .reduce((sum, actor) => sum + actor.money - calculateActorOutstandingDebt(actor), 0); // V9.1: cash net of outstanding loans
       let projectedControlSnapshot = computeRegionControlStats(
         sanitizeRegionDeposits(gameState.regionDeposits),
         gameState.regionControlStats?.controlHistory || []
@@ -146782,11 +147834,13 @@ function dispatchGameSettingsChange(
       const aiBehind = winProfile.goalKind === 'regions'
         ? projectedOpponentTeamRegions < projectedPlayerTeamRegions
         : projectedPrimaryOpponentValue < projectedPrimaryPlayerValue * 0.5;
-      if (playerBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
+      // V9.1: Investor Interest is hidden catch-up cash — only with opted-in adaptive handicaps.
+      const comebackAllowed = allowsAdaptiveHandicap(gameSettings);
+      if (comebackAllowed && playerBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
         projectedPlayer.money += 300;
         projectedActors.player = projectedPlayer;
         addNotification('Investor Interest! Backers toss your team $300 to fight back.', 'money', true);
-      } else if (aiBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
+      } else if (comebackAllowed && aiBehind && drawGameplayRandom('RandomEvents') < COMEBACK_EVENT_CHANCE) {
         projectedAi.money += 300;
         projectedActors.ai = projectedAi;
         addNotification(`🤖 Investor Interest! ${projectedAi.name} received $300 to catch up.`, 'ai', true);
@@ -146801,10 +147855,10 @@ function dispatchGameSettingsChange(
         .reduce((sum, actor) => sum + computeNetWorth(actor), 0);
       projectedPlayerTeamCash = projectedActorList
         .filter(actor => actor.teamId === TEAM_PLAYER_ID)
-        .reduce((sum, actor) => sum + actor.money, 0);
+        .reduce((sum, actor) => sum + actor.money - calculateActorOutstandingDebt(actor), 0); // V9.1: cash net of outstanding loans
       projectedOpponentTeamCash = projectedActorList
         .filter(actor => actor.teamId === TEAM_OPPONENT_ID)
-        .reduce((sum, actor) => sum + actor.money, 0);
+        .reduce((sum, actor) => sum + actor.money - calculateActorOutstandingDebt(actor), 0); // V9.1: cash net of outstanding loans
       projectedControlSnapshot = computeRegionControlStats(
         sanitizeRegionDeposits(gameState.regionDeposits),
         gameState.regionControlStats?.controlHistory || []
@@ -147774,6 +148828,7 @@ function dispatchGameSettingsChange(
     }
 
     dispatchGameState({ type: 'NEXT_DAY' });
+    advanceLiveContractsForDay();
     dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
 
     // Build projected states for daily maintenance before committing
@@ -147936,13 +148991,22 @@ function dispatchGameSettingsChange(
     // AI emergency stipend
     projectedAi.stipendCooldown = Math.max(0, (projectedAi.stipendCooldown || 0) - 1);
     if (projectedAi.money < 100 && projectedAi.stipendCooldown <= 0) {
-      projectedAi.money += AI_STIPEND_AMOUNT;
-      projectedAi.stipendCooldown = AI_STIPEND_COOLDOWN;
-      addNotification(`🤖 Emergency fund: ${projectedAi.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+      if (allowsAdaptiveHandicap(gameSettings)) {
+        projectedAi.money += AI_STIPEND_AMOUNT;
+        projectedAi.stipendCooldown = AI_STIPEND_COOLDOWN;
+        addNotification(`🤖 Emergency fund: ${projectedAi.name} received $${AI_STIPEND_AMOUNT}`, 'ai', true);
+      } else if ((projectedAi.loans || []).length < MAX_ACTIVE_LOANS) {
+        // V9.1 parity: the same emergency loan (and interest) the human can take — never free money.
+        projectedAi.money += LOAN_AMOUNT;
+        projectedAi.loans = [...(projectedAi.loans || []), { id: `ai_loan_${newDay}_${(projectedAi.loans || []).length}`, amount: LOAN_AMOUNT, accrued: 0 }];
+        projectedAi.stipendCooldown = AI_STIPEND_COOLDOWN;
+        addNotification(`🤖 ${projectedAi.name} took an emergency loan ($${LOAN_AMOUNT}).`, 'ai', true);
+      }
     }
 
-    // Catch-up comeback events & leader penalties
-    if (gameState.selectedMode === 'ai') {
+    // Catch-up comeback events & leader penalties — V9.1: only with opted-in adaptive handicaps (hidden
+    // rubber-banding otherwise). Recovery must come from decisions, not automatic cash.
+    if (gameState.selectedMode === 'ai' && allowsAdaptiveHandicap(gameSettings)) {
       const updatedPlayerWorth = computeNetWorth(projectedPlayer);
       const updatedAiWorth = computeNetWorth(projectedAi);
       const playerBehind = updatedPlayerWorth < updatedAiWorth * 0.5;
@@ -149174,29 +150238,25 @@ function dispatchGameSettingsChange(
       case 'acceptContract': {
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
-        if (contractId) {
-          dispatchGameState({
-            type: 'accept_regional_contract',
-            actorId,
-            parameters: { contractId }
-          });
+        // V9.1: the game-state reducer never handled these types (silent no-op reported as success).
+        // The AI now goes through the same canonical contract reducer as the human, with the same gates.
+        const res = contractId ? reduceGameAction({ ...(gameStateLiveRef.current as any), gameSettings } as any, { type: 'accept_regional_contract', actorId, parameters: { contractId } }, { active: true, operation: 'accept_regional_contract', actorId } as ActionExecutionContext) : null;
+        if (res?.success && res.nextState) {
+          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
           actionSucceeded = true;
         } else {
           actionSucceeded = false;
         }
         break;
       }
-      case 'progress_contract_objective': {
+      case 'progress_contract_objective':
+      case 'deliver_contract_objectives': {
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
-        const objectiveId = act.data?.objectiveId || act.parameters?.objectiveId;
-        const progressDelta = act.data?.progressDelta || act.parameters?.progressDelta || 1;
-        if (contractId) {
-          dispatchGameState({
-            type: 'progress_contract_objective',
-            actorId,
-            parameters: { contractId, objectiveId, progressDelta }
-          });
+        // Progress is derived from real deliverables (resources in region, capital, infrastructure) — never a delta.
+        const res = contractId ? reduceGameAction(gameStateLiveRef.current as any, { type: 'deliver_contract_objectives', actorId, parameters: { contractId } }, { active: true, operation: 'deliver_contract_objectives', actorId } as ActionExecutionContext) : null;
+        if (res?.success && res.nextState) {
+          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
           actionSucceeded = true;
         } else {
           actionSucceeded = false;
@@ -156314,6 +157374,29 @@ function dispatchGameSettingsChange(
         tooltip: 'Take out an emergency cash loan ($500)'
       });
     }
+
+    // V9.1: an emergency loan could never be repaid (interest-only at 25%/day forever). Repaying the
+    // principal is the recovery path: today's liquidity was bought with tomorrow's interest, not a life sentence.
+    const repayableLoan = (player.loans || []).filter((l: any) => l && Number(l.amount) > 0).sort((a: any, b: any) => Number(a.amount) - Number(b.amount))[0];
+    if (repayableLoan) {
+      const owed = simpleLoanRepaymentAmount(repayableLoan);
+      actions.push({
+        id: 'repay_emergency_loan',
+        group: 'economy' as const,
+        label: `Repay Loan ($${owed})`,
+        icon: '🏦',
+        action: () => {
+          if (player.money < owed) return;
+          dispatchPlayer({ type: 'SET_LOANS', payload: (player.loans || []).filter((l: any) => l !== repayableLoan) });
+          dispatchPlayer({ type: 'UPDATE_MONEY', payload: -owed });
+          addNotification(`Repaid an emergency loan ($${owed}). Its daily interest stops.`, 'success', true);
+        },
+        hotkey: null,
+        disabled: player.money < owed,
+        disabledReason: player.money < owed ? `Need $${owed}` : null,
+        tooltip: `Repay the loan principal ($${owed}) and stop its 25%/day interest`
+      });
+    }
     
     // Resources to sell
     if (player.inventory.length > 0) {
@@ -157312,14 +158395,33 @@ function dispatchGameSettingsChange(
       item: contractId,
       parameters: { contractId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
+    const res = reduceGameAction({ ...gameState, gameSettings } as any, action, execCtx);
+    if (res && res.success && res.nextState) {
       dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Accepted contract ${contractId}`, 'success', true);
       }
+    } else if (addNotification) {
+      const c = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
+      addNotification(contractAcceptBlocker(c, player, gameState, gameSettings) || 'This contract cannot be accepted right now.', 'warning', true);
     }
-  }, [gameState, player.id, player.teamId, addNotification]);
+  }, [gameState, gameSettings, player, addNotification]);
+
+  /** V9.1: hand over whatever the active contract needs right now (resources here, capital, infrastructure). */
+  const handleDeliverContract = useCallback((contractId: string) => {
+    const actorId = player.id || 'player';
+    const teamId = player.teamId || 'team_player';
+    const before = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
+    const res = reduceGameAction(gameState, { type: 'deliver_contract_objectives', actorId, teamId, item: contractId, parameters: { contractId } } as GameAction, { active: true, operation: 'deliver_contract_objectives', actorId, teamId });
+    if (res && res.success && res.nextState) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+      const after = listRegionalContracts(res.nextState as any).find((x: any) => x.id === contractId);
+      addNotification(after?.status === 'completed' ? `Contract complete: ${after.title || contractId}. Rewards credited.` : `Delivered to ${before?.title || contractId}.`, 'success', true);
+    } else {
+      const probe = before ? deliverContractObjectives(JSON.parse(JSON.stringify(before)), JSON.parse(JSON.stringify(player)), gameState) : { notes: [] as string[] };
+      addNotification(probe.notes[0] || 'Nothing to deliver yet.', 'warning', true);
+    }
+  }, [gameState, player, addNotification]);
 
   const handleFulfillContract = useCallback((contractId: string) => {
     const actorId = player.id || 'player';
@@ -157338,11 +158440,13 @@ function dispatchGameSettingsChange(
       parameters: { contractId }
     };
     const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
+    if (res && res.success && res.nextState) {
       dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Successfully fulfilled regional contract! Rewards credited.`, 'success', true);
       }
+    } else if (addNotification) {
+      addNotification('Contract objectives are not complete yet.', 'warning', true);
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
@@ -160156,6 +161260,8 @@ function dispatchGameSettingsChange(
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const v9Cohesion = useMemo(() => resolveV9GameplayCohesion(v9CohesionInputsRef.current), [v9CohesionSig]);
+  const v9CohesionRef = useRef<V9Cohesion | null>(null);
+  v9CohesionRef.current = v9Cohesion;
   // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
   const [v9AfterDismissed, setV9AfterDismissed] = useState<string[]>([]);
   const [v9PlayDetailsOpen, setV9PlayDetailsOpen] = useState(false);
@@ -160282,7 +161388,7 @@ function dispatchGameSettingsChange(
       case 'why':
         if (!candidate) return;
         giContextRef.current = noteGIContextEntity(giContextRef.current, { kind: 'action', id: candidate.id, label: candidate.label, confidence: 1, source: 'context' });
-        pushIntelAnswer(buildWhyActionIntelligenceAnswer({ query: `Why ${candidate.legal ? '' : 'not '}${candidate.label}?`, candidate, actionSet: v9ActionSet, control: playerControlState }));
+        pushIntelAnswer(buildWhyActionIntelligenceAnswer({ query: `Why ${candidate.legal ? '' : 'not '}${candidate.label}?`, candidate, actionSet: v9ActionSet, control: playerControlState, tradeoffs: buildDecisionTradeoffLines({ candidate, actionSet: v9ActionSet, apRemaining: v9ApFinite ? v9ApRemaining : null, cohesion: v9CohesionRef.current, daysLeft: Math.max(0, Number(gameSettings.totalDays || 0) - Number(gameState.day || 0)), cash: Number(player?.money || 0) }) }));
         setExperienceLayer('intelligence');
         return;
       case 'alternatives':
@@ -176256,7 +177362,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -176294,6 +177400,7 @@ function dispatchGameSettingsChange(
         <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
         <FactionInspector view={rfViewRef.current} theme={themeStyles} />
         <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
+        <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
       </div>
     );
 
@@ -185845,12 +186952,31 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                     {c.turnsRemaining != null && (
                       <div className="text-[11px] text-amber-400">Turns Remaining: {c.turnsRemaining}</div>
                     )}
-                    <button
-                      onClick={() => handleFulfillContract(c.id)}
-                      className="w-full mt-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold text-white transition-colors"
-                    >
-                      Complete & Fulfill Contract
-                    </button>
+                    {(c.objectives || []).length > 0 && (
+                      <ul className="text-[11px] text-gray-300 space-y-0.5" data-testid="contract-objectives">
+                        {(c.objectives || []).map((o: any) => (
+                          <li key={o.id}>{o.completed ? '✅' : '◻️'} {o.description} — {Math.min(o.targetValue, o.currentProgress || 0).toLocaleString()} / {Number(o.targetValue).toLocaleString()}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDeliverContract(c.id)}
+                        disabled={contractObjectivesDone(c)}
+                        className="flex-1 mt-2 py-1.5 bg-sky-700 hover:bg-sky-600 rounded text-xs font-bold text-white transition-colors disabled:opacity-40"
+                        data-testid="contract-deliver"
+                      >
+                        Deliver / Progress
+                      </button>
+                      <button
+                        onClick={() => handleFulfillContract(c.id)}
+                        disabled={!contractObjectivesDone(c)}
+                        title={contractObjectivesDone(c) ? 'Collect the reward' : 'Complete every objective first'}
+                        className="flex-1 mt-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-bold text-white transition-colors disabled:opacity-40"
+                      >
+                        Complete & Fulfill Contract
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
