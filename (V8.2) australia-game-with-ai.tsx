@@ -8698,7 +8698,9 @@ const getResourceMarketPrice = (resource: string) => {
 export function computeDailyMarketUpdate(
   newDay: number,
   currentPrices: Record<string, number>,
-  currentTrend: string
+  currentTrend: string,
+  /** World Reaction: bounded demand/supply pressure (fraction of base price, ±6%). No extra RNG draws. */
+  pressure?: Record<string, number> | null
 ): { nextTrend: string; nextPrices: Record<string, number> } {
   // 1. Market Trend Cycling: Re-roll every 3 days using seeded drawGameplayRandom('Markets')
   let nextTrend = currentTrend;
@@ -8748,7 +8750,8 @@ export function computeDailyMarketUpdate(
         break;
     }
 
-    const unclampedPrice = currPrice + meanReversion + delta;
+    const worldPressure = Math.max(-0.06, Math.min(0.06, Number(pressure?.[resource]) || 0));
+    const unclampedPrice = currPrice + meanReversion + delta + worldPressure * basePrice;
     const minPrice = Math.round(0.4 * basePrice);
     const maxPrice = Math.round(2.0 * basePrice);
     const finalPrice = Math.max(minPrice, Math.min(maxPrice, Math.round(unclampedPrice)));
@@ -8868,7 +8871,7 @@ const calculateInventoryMarketValue = (
   }, 0);
 };
 
-export function generateDynamicEvent(gameState: any, turnCounter: number, activeRegions: string[]): any {
+export function generateDynamicEvent(gameState: any, turnCounter: number, activeRegions: string[], worldContext?: { instability: number; shortage: number } | null): any {
   const turn = typeof turnCounter === 'number' && Number.isFinite(turnCounter) ? Math.max(1, turnCounter) : 1;
   const regions = Array.isArray(activeRegions) && activeRegions.length > 0
     ? activeRegions
@@ -8901,7 +8904,10 @@ export function generateDynamicEvent(gameState: any, turnCounter: number, active
     }
   ];
 
-  const typeIndex = Math.abs(turn * 13) % eventTypes.length;
+  // World Reaction context: strong shortage / instability makes the matching (existing) event class more
+  // appropriate. Still fully deterministic — no new randomness.
+  const contextIndex = worldContext && worldContext.shortage >= 0.6 ? 3 : worldContext && worldContext.instability >= 0.6 ? 1 : null;
+  const typeIndex = contextIndex !== null && turn % 2 === 0 ? contextIndex : Math.abs(turn * 13) % eventTypes.length;
   const chosenType = eventTypes[typeIndex];
   const duration = 2 + (turn % 3);
 
@@ -10369,6 +10375,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     backgroundAI: sanitizeBackgroundAIState(save?.backgroundAI || gameState?.backgroundAI),
     settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
+    worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
     lastMigrationResult: save?.lastMigrationResult || null,
     determinismReports: save?.determinismReports || null,
     expeditionRun: save?.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -10540,6 +10547,7 @@ export function canonicalStateFromLiveRuntime(
     backgroundAI: sanitizeBackgroundAIState(liveState.backgroundAI || gameState?.backgroundAI),
     settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
+    worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
     expeditionRun: liveState.expeditionRun || gameState?.expeditionRun || createDefaultExpeditionRunState()
@@ -21623,6 +21631,7 @@ interface SaveGameData {
   backgroundAI?: BackgroundAIState;
   settingsIntelligence?: SettingsIntelligenceState;
   diplomacyState?: DiplomacyState;
+  worldReaction?: WorldReactionState;
   campaignState?: CampaignState;
   publicStabilityState?: PublicStabilityState;
   crisisChainState?: CrisisChainState;
@@ -35616,7 +35625,8 @@ export const initialGameState = {
   gi3Strategy: createEmptyGI3StrategyState(),
   backgroundAI: createEmptyBackgroundAIState(),
   settingsIntelligence: createEmptySettingsIntelligenceState(),
-  diplomacyState: createEmptyDiplomacyState()
+  diplomacyState: createEmptyDiplomacyState(),
+  worldReaction: createEmptyWorldReactionState()
 };
 
 export type GameStateSnapshot = typeof initialGameState;
@@ -78586,7 +78596,9 @@ export function updatePublicStability(
 
 export function evaluateTurnCrisisChains(
   gameState: GameStateSnapshot,
-  gameSettings?: GameSettingsState
+  gameSettings?: GameSettingsState,
+  /** World Reaction context: bounded eligibility weighting (×1–1.5). Same number of RNG draws. */
+  worldContext?: { chanceMultiplier: number } | null
 ): GameStateSnapshot {
   const settings = gameSettings || (gameState as { gameSettings?: GameSettingsState }).gameSettings;
   if (!settings?.dynamicCrisisChainsEnabled) return gameState;
@@ -78601,7 +78613,7 @@ export function evaluateTurnCrisisChains(
     if (chain.status === 'inactive') {
       const meetsConditions = chain.triggerConditions.some((cond: CrisisTriggerCondition) => {
         if (cond.minDay && currentTurn < cond.minDay) return false;
-        if (cond.randomChancePerTurn && drawGameplayRandom('RandomEvents') > cond.randomChancePerTurn) return false;
+        if (cond.randomChancePerTurn && drawGameplayRandom('RandomEvents') > Math.min(1, cond.randomChancePerTurn * Math.max(1, Math.min(1.5, worldContext?.chanceMultiplier || 1)))) return false;
         return true;
       });
 
@@ -79521,6 +79533,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // Settings Intelligence: only acknowledgements, monitoring and recent history persist (never previews).
   if (migrated.gameState) migrated.gameState.settingsIntelligence = sanitizeSettingsIntelligenceState(migrated.gameState.settingsIntelligence || migrated.settingsIntelligence);
   // Diplomacy 2.0: old saves load empty; legacy pacts are migrated; trust / stance / historicEvents stay untouched.
+  // World Reaction: old saves start with empty history / windows / deferred queue (no ledger back-fill).
+  if (migrated.gameState) migrated.gameState.worldReaction = sanitizeWorldReactionState(migrated.gameState.worldReaction || migrated.worldReaction);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -101869,6 +101883,8 @@ export interface GIWorld {
   settingsIntel?: SettingsIntelligenceWorldView | null;
   /** Diplomacy & Negotiation 2.0: agreements, relationships and a player-perspective (fog-aware) deal world. */
   diplomacy?: DiplomacyWorldView | null;
+  /** Strategic Consequence / World Reaction: the causal record, windows and conditions (viewer-filtered on use). */
+  worldReaction?: WorldReactionWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -104503,7 +104519,7 @@ export type GICapability =
   | 'action_recommendation' | 'sequence_plan' | 'comparison' | 'simulation' | 'rival_assessment' | 'teammate_status'
   | 'region_info' | 'market_info' | 'project_info' | 'contract_info' | 'history' | 'settings_lookup' | 'rules_lookup'
   | 'control' | 'control_explain' | 'conflict_check' | 'ask_engine' | 'system_explain' | 'team_command' | 'team_explain' | 'team_whatif'
-  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy';
+  | 'strategy_preview' | 'strategy_status' | 'strategy_control' | 'strategy_whatif' | 'background_ai' | 'settings_intelligence' | 'diplomacy' | 'world_reaction';
 
 export type GIAnswerShape = 'fact' | 'explanation' | 'diagnosis' | 'recommendation' | 'comparison' | 'simulation' | 'plan' | 'control' | 'clarification' | 'status' | 'prediction' | 'delegated';
 
@@ -104536,6 +104552,7 @@ export interface GIQueryUnderstanding {
   /** Settings Intelligence: a configuration question or desired-experience request. */
   settingsIntent?: SIIntent;
   diplomacyQuery?: DNQuery;
+  worldReactionQuery?: SWRQuery;
   strategyControl?: GI3Control;
   /** GI 2.1: the question actually analysed (after conversation repair). */
   effectiveQuery?: string;
@@ -104917,10 +104934,22 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     }
   }
 
+  // ---- World Reaction: causal questions about what changed and why (only when causal records exist) ----
+  let worldReactionQuery: SWRQuery | undefined;
+  if (primary !== 'control' && !diplomacyQuery && world.worldReaction) {
+    const wq = detectWorldReactionQuery(frame.originalQuery || query, world);
+    if (wq) {
+      worldReactionQuery = wq;
+      primary = 'world_reaction';
+      supporting.splice(0, supporting.length);
+      needs.comparison = false; needs.simulation = false; needs.prediction = false; needs.recommendation = false; needs.diagnosis = false;
+    }
+  }
+
   // ---- Game Intelligence 3.0: persistent strategy (above Team OS; GI 2.1 frame is the only input) ----
   let strategyIntent: GI3IntentKind | undefined;
   let strategyControl: GI3Control | undefined;
-  if (primary !== 'control' && !diplomacyQuery) {
+  if (primary !== 'control' && !diplomacyQuery && !worldReactionQuery) {
     const det = detectGI3StrategyIntent(frame, world, ctx, world.gi3?.active || null);
     // A team-coordination instruction with no multi-turn goal stays with Team Intelligence.
     const teamOnly = det.kind === 'create' && Boolean(world.team?.enabled) && !det.signals.some(sg => sg === 'mission' || sg === 'ordered goals' || sg === 'cash target') && !/\b(my plan|strategy|over the next|few turns|win)\b/.test(normalized);
@@ -104935,7 +104964,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // ---- Background AI: questions addressed to it ("what are you watching?", "what would you do?") ----
   let backgroundTopic: BackgroundQueryTopic | undefined;
-  if (primary !== 'control' && !strategyIntent && !diplomacyQuery) {
+  if (primary !== 'control' && !strategyIntent && !diplomacyQuery && !worldReactionQuery) {
     // Read the player's own words too: typo correction can rewrite rare verbs ("watching" → "catching").
     const topic = detectBackgroundAIQuery(normalizeIntelligenceQuery(frame.originalQuery || '')) || detectBackgroundAIQuery(normalized);
     if (topic) {
@@ -104950,7 +104979,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // GI3 (what the player wants in the match) stays separate: only AI / teammate / game-configuration
   // language reaches here, and a GI3 strategy never becomes settings permission.
   let settingsIntent: SIIntent | undefined;
-  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery) {
+  if (primary !== 'control' && !strategyIntent && !backgroundTopic && !diplomacyQuery && !worldReactionQuery) {
     const si = world.settingsIntel ? understandSettingsIntent(frame.originalQuery || normalized, world.actors.filter(a => a.relation === 'teammate').map(a => a.name)) : null;
     // A behaviour symptom ("why won't my teammate spend?") belongs to Settings Intelligence only when the
     // configuration actually contributes (or settings are named); otherwise the cross-system answer explains it.
@@ -104971,7 +105000,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
   // ---- Team Intelligence 2.0: GI 2.1 is the front door to the Team Operating System ----
   let teamCommand: TeamCommandIntent | null = null;
   const teamView = world.team && world.team.enabled ? world.team : null;
-  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery) {
+  if (teamView && primary !== 'control' && !strategyIntent && !backgroundTopic && !settingsIntent && !diplomacyQuery && !worldReactionQuery) {
     const mateNames = world.actors.filter(a => a.relation === 'teammate').map(a => a.name.toLowerCase());
     const teamWords = /\b(our team|the team|team plan|team strategy|our plan|our strategy|we|us|our|teammate|partner|ally|roles?|swap|allocated|on track|enemy team|other team|rival team|opposing team|coordination|task|tasks|treasury|reserved|paused|postponed|replan|replanned|changed this turn|money first|funded first|which objective)\b/.test(normalized) || mateNames.some(n => new RegExp(`\\b${giEscape(n)}\\b`).test(normalized))
       || /\bwho should (handle|take|defend|hold|cover)\b/.test(normalized);
@@ -104991,7 +105020,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
 
   // Ambiguous references → clarification (never a guess).
   const clarificationNeeded = (
-    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy'].includes(primary))
+    (ambiguous.length > 0 && !['control', 'control_explain', 'comparison', 'team_command', 'team_explain', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction'].includes(primary))
     || (unresolved.length > 0 && ['affordability', 'simulation', 'action_validation', 'project_info'].includes(primary) && !entities.length && !options.length)
     || targetsReference
   );
@@ -105004,7 +105033,7 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     teammate_status: 'status', action_validation: 'explanation', sequence_plan: 'planning', action_recommendation: 'recommendation',
     history: 'history', project_info: 'factual', contract_info: 'factual', market_info: 'factual', region_info: 'factual',
     player_status: 'status', settings_lookup: 'settings', objective_status: 'status', ask_engine: cue('rules') ? 'rules' : 'factual',
-    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation'
+    system_explain: 'explanation', team_command: 'planning', team_explain: 'explanation', team_whatif: 'simulation', strategy_preview: 'planning', strategy_status: 'explanation', strategy_control: 'planning', strategy_whatif: 'simulation', background_ai: 'explanation', settings_intelligence: 'explanation', diplomacy: 'explanation', world_reaction: 'explanation'
   };
   const queryType: GIQueryType = clarificationNeeded ? 'clarification' : (majorFacets >= 2 && primary !== 'control' ? 'compound' : (typeByPrimary[primary] || 'factual'));
   const shapeByType: Record<GIQueryType, GIAnswerShape> = {
@@ -105047,12 +105076,13 @@ function understandGIQueryFromFrame(query: string, frame: GISemanticFrame, world
     confidences: { ...frame.confidence, referenceConfidence: unresolved.length ? Math.min(frame.confidence.referenceConfidence, 0.4) : frame.confidence.referenceConfidence },
     composedSteps: isComposed ? composedSteps : undefined,
     assumptions,
-    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy'].includes(primary),
+    memoryEvidence: isMemoryAwareAskIntent(ask.intent) && ask.confidence >= 0.45 && !['ask_engine', 'control', 'control_explain', 'team_command', 'team_whatif', 'strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif', 'background_ai', 'settings_intelligence', 'diplomacy', 'world_reaction'].includes(primary),
     teamCommand,
     strategyIntent,
     backgroundTopic,
     settingsIntent,
     diplomacyQuery,
+    worldReactionQuery,
     strategyControl
   };
 }
@@ -105176,7 +105206,7 @@ export type GIEvidenceDomain = 'player' | 'objectives' | 'world' | 'ai' | 'team'
 export type GIToolName =
   | 'player_state' | 'objective_state' | 'control_state' | 'region_state' | 'market_state' | 'project_state' | 'contract_state'
   | 'actor_state' | 'observed_history' | 'rank_actions' | 'plan_sequence' | 'validate_options' | 'affordability'
-  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state';
+  | 'simulate_options' | 'economy_scan' | 'threat_scan' | 'conflict_scan' | 'settings_search' | 'ask_engine' | 'system_state' | 'team_state' | 'gi3_state' | 'bg_state' | 'si_state' | 'dn_state' | 'swr_state';
 
 export interface GIPlanStep {
   id: string;
@@ -105221,7 +105251,8 @@ const GI_PRIMARY_TOOLS: Partial<Record<GICapability, GIToolName[]>> = {
   strategy_whatif: ['gi3_state'],
   background_ai: ['bg_state'],
   settings_intelligence: ['si_state'],
-  diplomacy: ['dn_state']
+  diplomacy: ['dn_state'],
+  world_reaction: ['swr_state']
 };
 
 export interface GIQueryPlan {
@@ -105245,7 +105276,7 @@ const GI_TOOL_DOMAINS: Record<GIToolName, GIEvidenceDomain> = {
   player_state: 'player', objective_state: 'objectives', control_state: 'assistance', region_state: 'world', market_state: 'world',
   project_state: 'world', contract_state: 'world', actor_state: 'ai', observed_history: 'history', rank_actions: 'rules',
   plan_sequence: 'rules', validate_options: 'rules', affordability: 'player', simulate_options: 'rules', economy_scan: 'player',
-  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai'
+  threat_scan: 'ai', conflict_scan: 'assistance', settings_search: 'rules', ask_engine: 'rules', system_state: 'team', team_state: 'team', gi3_state: 'objectives', bg_state: 'objectives', si_state: 'rules', dn_state: 'ai', swr_state: 'ai'
 };
 
 function giHash(text: string): string {
@@ -105313,6 +105344,7 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
     if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
+    if (want('world_reaction')) add('swr_state', {}, { purpose: 'World Reaction: causal chain of meaningful world changes, windows and conditions (viewer-filtered)' });
     if (want('diplomacy')) add('dn_state', {}, { purpose: 'Diplomacy 2.0: agreements, proposals, relationships and leverage (read-only, fog-aware)' });
   }
 
@@ -105821,6 +105853,12 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
         }
       }
       return { ...base, ok: true, data: st || null, facts };
+    }
+    case 'swr_state': {
+      const view = world.worldReaction;
+      const facts: GIFact[] = [];
+      if (view) { const f = fact('swr.state', 'World reaction record', view.state.revision, 'World Reaction (canonical state deltas, causal graph)', 'ai'); facts.push(f); g.fact(f); }
+      return { ...base, ok: Boolean(view), data: view ? { events: view.state.events.length } : null, facts };
     }
     case 'dn_state': {
       const view = world.diplomacy;
@@ -107766,6 +107804,15 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       Object.assign(ctx, part.ctx);
       break;
     }
+    case 'world_reaction': {
+      kind = 'next_step';
+      const part = composeWorldReactionAnswer(u.worldReactionQuery!, world, u.originalQuery);
+      title = part.title || 'World reactions';
+      shape = part.shape;
+      sections.push(...part.sections);
+      buttons.push(...part.buttons);
+      break;
+    }
     case 'diplomacy': {
       kind = 'next_step';
       const part = composeDiplomacyAnswer(u.diplomacyQuery!, world, convo, u.originalQuery);
@@ -108301,6 +108348,8 @@ const GI_TOOL_FINGERPRINT_DOMAINS: Record<GIToolName, GIFingerprintDomain[]> = {
   bg_state: ['background', 'strategy', 'player', 'world', 'actors', 'contracts', 'team_strategy'],
   si_state: ['assistance', 'team_strategy', 'team_resources', 'history'],
   dn_state: ['actors', 'world', 'player', 'history', 'strategy'],
+  // World reactions derive from canonical changes in these domains (not from ledger/notification churn).
+  swr_state: ['actors', 'world', 'player', 'strategy', 'contracts'],
   ask_engine: GI_FINGERPRINT_DOMAINS
 };
 
@@ -109612,6 +109661,8 @@ export interface TeamOSInputs {
   planningDepth?: 'basic' | 'standard' | 'deep';
   /** Diplomacy 2.0: regions this team's actors promised not to pressure (strategic constraints, not game rules). */
   diplomaticRestrictions?: DNRestriction[];
+  /** World Reaction: meaningful world changes as ordinary replan triggers (Team OS applies its own rules). */
+  worldReactionTriggers?: TeamReplanTrigger[];
 }
 
 export interface TeamSituationSnapshot {
@@ -110523,6 +110574,8 @@ export function evaluateTeamOperatingSystem(prevIn: TeamOSTeamState | null | und
   if (effectiveCommand) composed.contract.source = 'player_command';
   const draftSnap = teamSituationFromContract(inputs, composed.contract, composed.resources, composed.contract.confidence);
   const triggers: TeamReplanTrigger[] = command ? [{ key: 'player', label: 'You changed the team plan', severity: 5 }] : detectTeamReplanTriggers(prevSnap, draftSnap);
+  // World Reaction triggers: considered once (a trigger already answered by a revision this turn is ignored).
+  if (!command) (inputs.worldReactionTriggers || []).filter(t => !prev.revisions.some(rv => rv.trigger.includes(t.key) || rv.trigger.includes(t.label))).forEach(t => { if (!triggers.some(x => x.key === t.key)) triggers.push({ ...t, severity: Math.min(4, t.severity) }); });
   // A contingency that stops holding restores the underlying strategy (a material change).
   if (prevContract && prevResources && !command) {
     const pre = evaluateTeamContingencies(prevContract.contingencies, inputs, prevResources, prevRevision);
@@ -114173,7 +114226,9 @@ export function computeBackgroundDomainHashes(world: GIWorld): Record<BGDomain, 
     economy: bgHash([world.player.money, world.player.debtTotal, inv, Object.entries(world.market).sort().map(([k, v]) => `${k}${Math.round(v)}`).join(','), world.contracts.map(c => `${c.id}:${c.status}:${c.turnsRemaining ?? ''}`).join(','), world.projects.map(p => `${p.id}:${p.invested}`).join(','), world.systems?.team?.treasuryBalance ?? ''].join('#')),
     regions: bgHash(`${regions}#${actors}#${world.player.location}`),
     team: bgHash(team ? [team.state.contract?.id, team.state.contract?.revision, team.evaluation.health.health, (team.state.contract?.taskGraph || []).map(t => `${t.id}:${t.status}`).join(','), team.inputs.actors.map(a => `${a.id}:${a.money}:${a.inRecovery ? 1 : 0}`).join(',')].join('#') : 'none'),
-    strategy: bgHash([g3 ? `${g3.id}:${g3.revision}:${g3.status}:${g3.phaseIndex}` : 'none', world.objective ? `${world.objective.id}:${world.objective.progress.completed}/${world.objective.progress.total}` : 'none', world.win ? `${world.win.playerValue}:${world.win.opponentValue}` : ''].join('#')),
+    strategy: bgHash([g3 ? `${g3.id}:${g3.revision}:${g3.status}:${g3.phaseIndex}` : 'none', world.objective ? `${world.objective.id}:${world.objective.progress.completed}/${world.objective.progress.total}` : 'none', world.win ? `${world.win.playerValue}:${world.win.opponentValue}` : '',
+      // World Reaction: new observable major consequences / windows make Background AI look again.
+      world.worldReaction ? world.worldReaction.state.events.filter(e => canObserveSWREvent(e, world.player.id) && SWR_SIG_RANK[e.significance] >= 3).slice(-3).map(e => e.id).join(',') + '|' + world.worldReaction.state.windows.filter(w => w.status === 'open' && w.observers.includes(world.player.id)).map(w => w.id).join(',') : ''].join('#')),
     actions: bgHash([(world.actionSet?.ranked || []).slice(0, 12).map(c => `${c.id}:${c.legal ? 1 : 0}`).join(','), world.player.apRemaining ?? 'inf', world.isHumanTurn ? 1 : 0].join('#')),
     history: bgHash([(world.ledgerEvents || []).length, (world.ledgerEvents || []).slice(-1)[0]?.id || '', world.observed.length].join('#')),
     world: bgHash([world.turn, world.day, world.settings.fogOfWar ? 1 : 0, world.session?.status || 'none'].join('#'))
@@ -114915,7 +114970,11 @@ export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefine
   const calibration = { supported: prev.calibration.supported + resolved.filter(r => r.resolution === 'supported').length, contradicted: prev.calibration.contradicted + resolved.filter(r => r.resolution === 'contradicted').length, unresolved: prev.calibration.unresolved + resolved.filter(r => r.resolution === 'unresolved').length };
   const hypotheses = recompute.has('hypotheses') ? deriveBackgroundHypotheses(world, prev.observation, prev.hypotheses, cashHistory, budget.hypotheses) : prev.hypotheses;
   const diagnoses = recompute.has('diagnoses') ? deriveBackgroundDiagnoses(world, assessment, threats, hypotheses, opportunities) : prev.diagnoses;
-  const attentionQueue = deriveBackgroundAttention(world, threats, opportunities, predictions, prev.attentionQueue);
+  // World Reaction: recent observable consequences + open windows feed attention/opportunities (Background AI ranks them).
+  const worldInputs = backgroundWorldReactionInputs(world);
+  const opportunitiesAll = worldInputs.opportunities.length ? [...opportunities.filter(o => !worldInputs.opportunities.some(w => w.id === o.id)), ...worldInputs.opportunities].slice(0, 8) : opportunities;
+  const attentionBase = deriveBackgroundAttention(world, threats, opportunitiesAll, predictions, prev.attentionQueue);
+  const attentionQueue = worldInputs.attention.length ? [...attentionBase.filter(a => !worldInputs.attention.some(w => w.id === a.id)), ...worldInputs.attention.filter(w => !attentionBase.some(a => a.subject === w.subject && a.reason === w.reason))].sort((a, b) => ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[b.importance] - ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[a.importance]).slice(0, Math.max(attentionBase.length, 6)) : attentionBase;
   // Override detection from the Activity Ledger (a player action that went elsewhere than the prepared move).
   let overrides = prev.overrides;
   const playerId = world.player.id;
@@ -114966,7 +115025,7 @@ export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefine
     observation: significance === 'trivial' && prev.observation ? { ...prev.observation, lastLedgerId: obs.lastLedgerId, turn: obs.turn } : obs,
     cashHistory, strategicAssessment: assessment,
     activeGoals: shadowPlan ? [shadowPlan.primaryGoal, ...shadowPlan.secondaryGoals].filter(Boolean) : [], currentPhase: shadowPlan?.currentPhase || null,
-    attentionQueue, shadowPlan, recommendedNextMove, alternativeMoves, moveEvaluations, threats, opportunities, predictions,
+    attentionQueue, shadowPlan, recommendedNextMove, alternativeMoves, moveEvaluations, threats, opportunities: opportunitiesAll, predictions,
     resolvedPredictions: [...prev.resolvedPredictions, ...resolved].slice(-BACKGROUND_AI_LIMITS.resolvedPredictions), calibration, hypotheses, diagnoses, preparedSimulations,
     explicitPlayerConstraints: [...(bgExplicitReserve(world).amount ? [`reserve ${bgMoney(bgExplicitReserve(world).amount!)} (${bgExplicitReserve(world).source})`] : []), ...(bgAvoidsDebt(world) ? ['avoid new debt (your strategy)'] : [])],
     planDivergence, interventionRecommendation: intervention.rec, cooldowns: intervention.cooldowns, recentImpactAssessment: impact || prev.recentImpactAssessment,
@@ -121295,6 +121354,1586 @@ export const DiplomacyInspector: React.FC<{ binding: DiplomacyBinding; theme: an
 };
 
 // ============================================================================
+// SECTION 20I: STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM
+// ----------------------------------------------------------------------------
+// The causal routing layer between existing systems. It:
+//   1. compares compact canonical domain snapshots and emits only MEANINGFUL strategic events
+//      (threshold bands with hysteresis, dedupe, significance, visibility, compact evidence);
+//   2. routes each event to the systems that subscribed to it as bounded REACTION INTENTS
+//      (budgets per root event, depth limits, cooldowns, cycle suppression);
+//   3. keeps a bounded consequence graph, strategic windows and decaying pressure signals.
+// It never decides what a receiving system does and never mutates unrelated state: Rival AI, Team OS,
+// GI3, Background AI, Diplomacy, Markets, Contracts, Stability, Crises and AI Memory consume intents
+// through their OWN entry points. No Math.random — the same snapshot sequence yields the same events.
+// ============================================================================
+
+export type SWRKind =
+  | 'cash_threshold_crossed' | 'liquidity_improved' | 'liquidity_deteriorated'
+  | 'region_reinforced' | 'region_weakened' | 'region_became_contested' | 'region_became_safe' | 'region_lost' | 'region_secured'
+  | 'rival_pressure_increased' | 'rival_pressure_decreased'
+  | 'project_started' | 'project_completed' | 'project_stalled'
+  | 'contract_became_available' | 'contract_completed' | 'contract_failed' | 'contract_expiring'
+  | 'market_shift_major' | 'resource_liquidation' | 'debt_pressure_changed'
+  | 'team_resource_shortage' | 'team_resource_surplus'
+  | 'strategy_phase_changed'
+  | 'diplomatic_pact_started' | 'diplomatic_pact_expiring' | 'diplomatic_pact_ended' | 'diplomatic_pact_broken'
+  | 'stability_shift_major' | 'crisis_escalated' | 'crisis_resolved'
+  | 'actor_recovered' | 'actor_became_constrained'
+  | 'objective_unblocked' | 'objective_blocked' | 'objective_completed'
+  | 'victory_pressure_changed'
+  | 'rival_target_reassessed';
+
+export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
+export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
+export type SWRLayer = 'immediate' | 'tactical' | 'strategic' | 'world';
+export type SWRDomain = 'economy' | 'regions' | 'market' | 'projects' | 'contracts' | 'team' | 'strategy' | 'diplomacy' | 'stability' | 'crisis' | 'objectives' | 'rivals';
+export type SWRClaimKind = 'fact' | 'calculated' | 'inference' | 'projection';
+
+export const SWR_SIG_RANK: Record<SWRSignificance, number> = { ignore: 0, minor: 1, meaningful: 2, major: 3, critical: 4 };
+const SWR_SIG_BY_RANK: SWRSignificance[] = ['ignore', 'minor', 'meaningful', 'major', 'critical'];
+export const SWR_LIMITS = { events: 60, intents: 60, deferred: 20, windows: 12, signals: 24, cooldowns: 80, patterns: 30, bands: 160, graphEdges: 120 };
+
+export interface StrategicWorldEvent {
+  id: string;
+  turn: number;
+  day: number;
+  sourceSystem: string;
+  sourceEventId: string | null;
+  actorId: string | null;
+  teamId: string | null;
+  kind: SWRKind;
+  subjectType: 'region' | 'actor' | 'team' | 'project' | 'contract' | 'market' | 'deal' | 'crisis' | 'objective' | 'nation' | 'strategy';
+  subjectId: string;
+  magnitude: number;
+  significance: SWRSignificance;
+  visibility: SWRVisibility;
+  /** Actors allowed to know about this event (resolved from visibility at detection time). */
+  observers: string[];
+  /** Compact canonical evidence (provenance) — never a state dump. */
+  evidence: string[];
+  before: Record<string, number | string | null>;
+  after: Record<string, number | string | null>;
+  delta: Record<string, number>;
+  /** Player-facing sentence (plain language, no internal identifiers). */
+  strategicMeaning: string;
+  affectedDomains: SWRDomain[];
+  tags: string[];
+  layer: SWRLayer;
+  confidence: 'high' | 'moderate' | 'low';
+  claimKind: SWRClaimKind;
+  causedByEventId: string | null;
+  contributingCauses: string[];
+  rootEventId: string;
+  reactionDepth: number;
+  expiresTurn: number | null;
+  dedupeKey: string;
+}
+
+// ---- Canonical inputs → compact snapshot ---------------------------------------------------------
+
+export interface SWRInputs {
+  turn: number;
+  day: number;
+  totalDays: number;
+  fogOfWar: boolean;
+  actors: Array<{ id: string; name: string; teamId: string | null; isHuman: boolean; money: number; debt: number; inRecovery: boolean; inventory?: Record<string, number> }>;
+  /** Region control keys may be actor ids (solo) or team ids (team modes). */
+  regions: Array<{ code: string; name: string; controller: string | null; deposits: Record<string, number> }>;
+  ownerNames: Record<string, string>;
+  ownerTeams: Record<string, string | null>;
+  prices: Record<string, number>;
+  basePrices: Record<string, number>;
+  projects: Array<{ id: string; title: string; regionId: string | null; status: string; progress: number }>;
+  contracts: Array<{ id: string; title: string; regionId: string | null; status: string; rewardMoney: number; turnsRemaining: number | null; assignedActorId: string | null }>;
+  teams: Array<{ teamId: string; name: string; freeCash: number; reserve: number; blockedTasks: number }>;
+  gi3: { actorId: string; phaseIndex: number; phaseLabel: string | null; cashTarget: number | null; protectRegions: string[]; futureRegions: string[]; goals: Array<{ id: string; label: string; status: string; regionId: string | null }> } | null;
+  deals: Array<{ id: string; participants: string[]; status: string; expirationTurn: number | null; regions: string[]; restrictedActors: Record<string, string[]>; visibility: 'participants' | 'public'; violatedBy: string | null; summary: string }>;
+  stability: { national: number; regional: Record<string, number> } | null;
+  crises: Array<{ id: string; name: string; status: string; stageIndex: number }>;
+  win: { metric: string; target: number | null; byOwner: Record<string, number> } | null;
+}
+
+export type SWRSnapshot = SWRInputs & { hashes: Record<SWRDomain, string> };
+
+function swrHash(v: unknown): string {
+  const raw = JSON.stringify(v);
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+/** Compact domain hashes: only domains whose hash changed are inspected. */
+export function buildStrategicSnapshot(inputs: SWRInputs): SWRSnapshot {
+  const r = (n: number) => Math.round(Number(n) || 0);
+  const hashes: Record<SWRDomain, string> = {
+    economy: swrHash(inputs.actors.map(a => [a.id, r(a.money / 100), r(a.debt / 100), a.inRecovery, a.inventory ? Object.entries(a.inventory).sort().map(([k, v]) => `${k}:${v}`).join(',') : ''])),
+    regions: swrHash(inputs.regions.map(x => [x.code, x.controller, Object.entries(x.deposits).sort().map(([k, v]) => `${k}:${r(v)}`)])),
+    market: swrHash(Object.entries(inputs.prices).sort().map(([k, v]) => `${k}:${r(v)}`)),
+    projects: swrHash(inputs.projects.map(p => [p.id, p.status, Math.round(p.progress * 100)])),
+    contracts: swrHash(inputs.contracts.map(c => [c.id, c.status, c.turnsRemaining, c.assignedActorId])),
+    team: swrHash(inputs.teams.map(t => [t.teamId, r(t.freeCash / 100), r(t.reserve / 100), t.blockedTasks])),
+    strategy: swrHash(inputs.gi3 ? [inputs.gi3.phaseIndex, inputs.gi3.cashTarget, inputs.gi3.protectRegions, inputs.gi3.futureRegions] : null),
+    diplomacy: swrHash(inputs.deals.map(d => [d.id, d.status, d.expirationTurn, d.violatedBy]).concat([[inputs.turn]] as any)),
+    stability: swrHash(inputs.stability ? [r(inputs.stability.national), Object.entries(inputs.stability.regional).sort().map(([k, v]) => `${k}:${r(v)}`)] : null),
+    crisis: swrHash(inputs.crises.map(c => [c.id, c.status, c.stageIndex])),
+    objectives: swrHash(inputs.gi3 ? inputs.gi3.goals.map(g => [g.id, g.status]) : null),
+    rivals: swrHash(inputs.win ? Object.entries(inputs.win.byOwner).sort() : null)
+  };
+  return { ...inputs, hashes };
+}
+
+// ---- State ----------------------------------------------------------------------------------------
+
+export type SWRTargetSystem = 'rival_strategy' | 'team_os' | 'gi3' | 'background_ai' | 'diplomacy' | 'market' | 'contracts' | 'stability' | 'crisis' | 'national_events' | 'ai_memory' | 'objectives' | 'contextual_actions';
+export type SWRTiming = 'immediate' | 'actor_boundary' | 'turn_end' | 'day_end' | 'next_match';
+
+export interface WorldReactionIntent {
+  id: string;
+  sourceEventId: string;
+  rootEventId: string;
+  targetSystem: SWRTargetSystem;
+  /** The actor / team whose system should re-evaluate (always an observer of the event). */
+  targetActorId: string | null;
+  targetTeamId: string | null;
+  priority: number;
+  reason: string;
+  requestedEvaluation: string;
+  subjectId: string;
+  context: Record<string, string | number | boolean | null>;
+  timing: SWRTiming;
+  expiresTurn: number | null;
+  dedupeKey: string;
+  depth: number;
+}
+
+export interface WorldReactionHistoryEntry { turn: number; eventId: string | null; intentId: string | null; text: string; kind: 'event' | 'intent' | 'suppressed' | 'window' | 'derived' }
+
+export type SWRWindowType = 'diplomatic_safety' | 'expansion_opportunity' | 'commodity_sell' | 'contract_completion' | 'rival_vulnerability' | 'liquidity_window';
+export interface StrategicWindow {
+  id: string;
+  type: SWRWindowType;
+  subject: string;
+  ownerActorId: string;
+  openedTurn: number;
+  expiresTurn: number | null;
+  confidence: 'high' | 'moderate' | 'low';
+  reason: string;
+  sourceEvents: string[];
+  status: 'open' | 'expired' | 'closed';
+  observers: string[];
+}
+
+export interface SWRSignal { key: string; kind: 'regional_competition_pressure' | 'economic_liquidity_pressure' | 'infrastructure_demand' | 'diplomatic_tension' | 'public_instability' | 'rival_expansion_pressure' | 'market_supply_pressure' | 'market_demand_pressure' | 'contract_relevance'; subject: string; value: number; updatedTurn: number; source: string }
+
+export interface SWRDiagnostics { detected: number; ignored: number; deduped: number; routed: number; suppressed: number; cyclesBlocked: number; maxDepth: number; evaluations: number; lastMs: number; budgetExhausted: number; lastChangedDomains: string[]; lastSuppressions: string[] }
+
+export interface WorldReactionState {
+  version: 1;
+  revision: number;
+  bands: Record<string, { band: string; value: number; turn: number }>;
+  events: StrategicWorldEvent[];
+  intents: Array<WorldReactionIntent & { status: 'delivered' | 'deferred' | 'suppressed'; turn: number; note: string | null }>;
+  deferred: WorldReactionIntent[];
+  windows: StrategicWindow[];
+  signals: SWRSignal[];
+  cooldowns: Record<string, number>;
+  patterns: Record<string, { count: number; lastTurn: number }>;
+  history: WorldReactionHistoryEntry[];
+  diagnostics: SWRDiagnostics;
+  lastProcessedSignature: string | null;
+}
+
+export function createEmptyWorldReactionState(): WorldReactionState {
+  return { version: 1, revision: 0, bands: {}, events: [], intents: [], deferred: [], windows: [], signals: [], cooldowns: {}, patterns: {}, history: [],
+    diagnostics: { detected: 0, ignored: 0, deduped: 0, routed: 0, suppressed: 0, cyclesBlocked: 0, maxDepth: 0, evaluations: 0, lastMs: 0, budgetExhausted: 0, lastChangedDomains: [], lastSuppressions: [] }, lastProcessedSignature: null };
+}
+
+// ---- Detection helpers ------------------------------------------------------------------------------
+
+export interface SWRActionRef { id: string | null; actorId: string; actionType: string; regionId?: string | null; amount?: number | null; summary?: string }
+export interface SWRDetectContext { action?: SWRActionRef | null; ownerToActor?: (ownerKey: string) => string }
+
+const swrMoney = (n: number) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
+const swrBump = (s: SWRSignificance, by = 1): SWRSignificance => SWR_SIG_BY_RANK[Math.min(4, SWR_SIG_RANK[s] + by)];
+
+function swrRegionMetrics(r: SWRInputs['regions'][number]) {
+  const holder = r.controller;
+  const holderDep = holder ? r.deposits[holder] || 0 : 0;
+  let challenger: string | null = null; let chDep = 0;
+  Object.entries(r.deposits).forEach(([k, v]) => { if (k !== holder && (v > chDep || (v === chDep && challenger !== null && k < challenger))) { challenger = k; chDep = v; } });
+  const margin = holder ? holderDep - chDep : 0;
+  const ratio = holderDep > 0 ? chDep / holderDep : chDep > 0 ? 1 : 0;
+  return { holder, holderDep, challenger: challenger as string | null, chDep, margin, ratio, costToContest: holder ? Math.max(1, margin + 1) : 0 };
+}
+
+/** Region safety with hysteresis: entering a band needs a clear margin, leaving it needs a clear reversal. */
+function swrRegionBand(m: ReturnType<typeof swrRegionMetrics>, prevBand: string | undefined): 'uncontrolled' | 'contested' | 'at_risk' | 'safe' {
+  if (!m.holder) return 'uncontrolled';
+  // "Contested" needs an actual challenger; a thin, unchallenged hold is merely cheap to take (at risk).
+  const raw = m.ratio > 0 && (m.margin < 1000 || m.ratio >= 0.75) ? 'contested' : m.margin < 3500 || m.ratio >= 0.4 ? 'at_risk' : 'safe';
+  if (prevBand === 'safe' && raw === 'at_risk' && m.margin >= 2800 && m.ratio < 0.5) return 'safe';
+  if (prevBand === 'at_risk' && raw === 'safe' && (m.margin < 4200 || m.ratio >= 0.33)) return 'at_risk';
+  if (prevBand === 'contested' && raw === 'at_risk' && (m.margin < 1500 || m.ratio >= 0.65)) return 'contested';
+  if (prevBand === 'at_risk' && raw === 'contested' && m.margin >= 800 && m.ratio < 0.8) return 'at_risk';
+  return raw;
+}
+
+function swrCashBand(money: number, prevBand: string | undefined): 'critical' | 'low' | 'ok' | 'strong' {
+  const raw = money < 500 ? 'critical' : money < 2000 ? 'low' : money < 8000 ? 'ok' : 'strong';
+  // 10% hysteresis around each boundary.
+  if (prevBand === 'strong' && raw === 'ok' && money >= 7200) return 'strong';
+  if (prevBand === 'ok' && raw === 'strong' && money < 8800) return 'ok';
+  if (prevBand === 'ok' && raw === 'low' && money >= 1800) return 'ok';
+  if (prevBand === 'low' && raw === 'ok' && money < 2200) return 'low';
+  if (prevBand === 'low' && raw === 'critical' && money >= 450) return 'low';
+  if (prevBand === 'critical' && raw === 'low' && money < 550) return 'critical';
+  return raw;
+}
+const SWR_CASH_RANK: Record<string, number> = { critical: 0, low: 1, ok: 2, strong: 3 };
+
+function swrStabilityBand(v: number, prev: string | undefined): 'stable' | 'uneasy' | 'unrest' | 'crisis' {
+  const raw = v >= 70 ? 'stable' : v >= 50 ? 'uneasy' : v >= 30 ? 'unrest' : 'crisis';
+  if (prev === 'stable' && raw === 'uneasy' && v >= 67) return 'stable';
+  if (prev === 'uneasy' && raw === 'stable' && v < 73) return 'uneasy';
+  if (prev === 'uneasy' && raw === 'unrest' && v >= 47) return 'uneasy';
+  if (prev === 'unrest' && raw === 'uneasy' && v < 53) return 'unrest';
+  return raw;
+}
+
+function swrPriceBand(price: number, base: number, prev: string | undefined): 'low' | 'normal' | 'high' {
+  const r = base > 0 ? price / base : 1;
+  const raw = r >= 1.25 ? 'high' : r <= 0.8 ? 'low' : 'normal';
+  if (prev === 'high' && raw === 'normal' && r >= 1.18) return 'high';
+  if (prev === 'low' && raw === 'normal' && r <= 0.86) return 'low';
+  return raw;
+}
+
+function swrActorTeam(s: SWRInputs, actorId: string | null): string | null {
+  if (!actorId) return null;
+  return s.actors.find(a => a.id === actorId)?.teamId ?? s.ownerTeams[actorId] ?? null;
+}
+
+/** Resolve who may know about an event (fog of war / team scope / participants). */
+export function resolveSWRObservers(s: SWRInputs, visibility: SWRVisibility, actorId: string | null, teamId: string | null, explicit: string[] = []): string[] {
+  const all = s.actors.map(a => a.id);
+  switch (visibility) {
+    case 'public': return all;
+    case 'team_only': return all.filter(id => (teamId && swrActorTeam(s, id) === teamId) || id === actorId);
+    case 'actor_only': return actorId ? [actorId] : [];
+    case 'observed_by': return Array.from(new Set(explicit.filter(id => all.includes(id))));
+    default: return [];
+  }
+}
+
+export function canObserveSWREvent(e: Pick<StrategicWorldEvent, 'observers' | 'visibility'>, viewerId: string): boolean {
+  return e.visibility !== 'hidden' && e.observers.includes(viewerId);
+}
+
+// ---- The detector -------------------------------------------------------------------------------------
+
+/**
+ * Compare two compact snapshots and emit ONLY meaningful strategic events. With no previous snapshot
+ * (first run / after load) the bands are seeded silently — nothing is emitted (rehydration).
+ */
+export function detectStrategicConsequences(prev: SWRSnapshot | null, next: SWRSnapshot, state: WorldReactionState, ctx: SWRDetectContext = {}): { events: StrategicWorldEvent[]; bands: WorldReactionState['bands']; ignored: number; deduped: number; changedDomains: SWRDomain[] } {
+  const bands: WorldReactionState['bands'] = { ...state.bands };
+  const events: StrategicWorldEvent[] = [];
+  let ignored = 0; let deduped = 0;
+  const turn = next.turn;
+  const changed = prev ? (Object.keys(next.hashes) as SWRDomain[]).filter(d => prev.hashes[d] !== next.hashes[d]) : (Object.keys(next.hashes) as SWRDomain[]);
+  const seed = !prev;
+  const setBand = (key: string, band: string, value: number) => { bands[key] = { band, value, turn }; };
+  const ownerName = (k: string | null) => (k ? next.ownerNames[k] || k : 'nobody');
+  const toActor = (k: string | null) => (k ? (ctx.ownerToActor ? ctx.ownerToActor(k) : k) : null);
+  const gi3 = next.gi3;
+  const gi3Regions = new Set([...(gi3?.protectRegions || []), ...(gi3?.futureRegions || [])]);
+  const push = (p: Omit<StrategicWorldEvent, 'id' | 'turn' | 'day' | 'rootEventId' | 'reactionDepth' | 'causedByEventId' | 'contributingCauses' | 'observers' | 'sourceSystem' | 'sourceEventId' | 'expiresTurn' | 'tags' | 'layer' | 'confidence' | 'claimKind'> & Partial<Pick<StrategicWorldEvent, 'tags' | 'layer' | 'confidence' | 'claimKind' | 'expiresTurn' | 'sourceSystem'>> & { explicitObservers?: string[] }) => {
+    if (p.significance === 'ignore') { ignored += 1; return; }
+    // Dedupe: an identical interpretation already recorded stays single.
+    if (state.events.some(e => e.dedupeKey === p.dedupeKey && turn - e.turn <= 3) || events.some(e => e.dedupeKey === p.dedupeKey)) { deduped += 1; return; }
+    let significance: SWRSignificance = p.significance;
+    const tags = [...(p.tags || [])];
+    // Player intent weights RELEVANCE only (never the facts).
+    if (gi3 && p.subjectType === 'region' && gi3Regions.has(p.subjectId) && SWR_SIG_RANK[significance] < 4) { significance = swrBump(significance); tags.push('gi3_relevant'); }
+    const observers = resolveSWRObservers(next, p.visibility, p.actorId, p.teamId, p.explicitObservers || []);
+    const actionHit = ctx.action && ctx.action.actorId && (ctx.action.actorId === p.actorId || ctx.action.actorId === toActor(p.actorId)) && (!ctx.action.regionId || !p.subjectId || ctx.action.regionId === p.subjectId || p.subjectType !== 'region');
+    const id = `swe_${turn}_${swrHash([p.kind, p.subjectId, p.actorId, p.dedupeKey, state.revision, events.length])}`;
+    const { explicitObservers, ...rest } = p;
+    events.push({
+      ...rest, id, turn, day: next.day, sourceSystem: p.sourceSystem || (actionHit ? 'canonical_action' : 'state_delta'), sourceEventId: actionHit ? ctx.action!.id : null,
+      observers, tags, layer: p.layer || 'strategic', confidence: p.confidence || 'high', claimKind: p.claimKind || 'calculated', significance,
+      causedByEventId: null, contributingCauses: [], rootEventId: id, reactionDepth: 0, expiresTurn: p.expiresTurn ?? null
+    });
+  };
+
+  // ---- Regions (safety bands, reinforcement, pressure, control) ----
+  if (seed || changed.includes('regions') || changed.includes('strategy')) {
+    next.regions.forEach(r => {
+      const m = swrRegionMetrics(r);
+      const key = `region:${r.code}`;
+      const prevBand = bands[key]?.band;
+      const band = swrRegionBand(m, prevBand);
+      const pr = prev?.regions.find(x => x.code === r.code) || null;
+      setBand(key, band, m.margin);
+      if (seed || !pr) return;
+      const pm = swrRegionMetrics(pr);
+      const name = r.name || r.code;
+      const regionEvidence = [`${ownerName(m.holder)} deposit ${swrMoney(pm.holder === m.holder ? pm.holderDep : pr.deposits[m.holder || ''] || 0)} → ${swrMoney(m.holderDep)}`, m.challenger ? `cost for ${ownerName(m.challenger)} to contest ${swrMoney(pm.holder === m.holder ? pm.costToContest : 0)} → ${swrMoney(m.costToContest)}` : 'no current challenger'];
+      if (pm.holder !== m.holder) {
+        if (pm.holder) push({ kind: 'region_lost', subjectType: 'region', subjectId: r.code, actorId: m.holder, teamId: next.ownerTeams[m.holder || ''] ?? null, magnitude: m.holderDep, significance: 'critical', visibility: 'public', evidence: [`control ${ownerName(pm.holder)} → ${ownerName(m.holder)}`, ...regionEvidence], before: { controller: pm.holder, band: prevBand || null }, after: { controller: m.holder, band }, delta: { holderDeposit: m.holderDep - pm.holderDep }, strategicMeaning: `${ownerName(pm.holder)} lost ${name} to ${ownerName(m.holder)}.`, affectedDomains: ['regions', 'rivals', 'strategy'], dedupeKey: `lost:${r.code}:${pm.holder}:${m.holder}:${turn}`, layer: 'strategic', claimKind: 'fact', tags: [`loser:${pm.holder}`] });
+        if (m.holder) push({ kind: 'region_secured', subjectType: 'region', subjectId: r.code, actorId: m.holder, teamId: next.ownerTeams[m.holder] ?? null, magnitude: m.holderDep, significance: 'major', visibility: 'public', evidence: regionEvidence, before: { controller: pm.holder }, after: { controller: m.holder, band }, delta: {}, strategicMeaning: `${ownerName(m.holder)} now controls ${name}.`, affectedDomains: ['regions', 'rivals'], dedupeKey: `secured:${r.code}:${m.holder}:${turn}`, claimKind: 'fact' });
+        return;
+      }
+      const reinforced = m.holder && m.holderDep - pm.holderDep >= Math.max(2000, pm.holderDep * 0.25);
+      const bandImproved = prevBand && prevBand !== band && ['contested', 'at_risk'].includes(prevBand) && band === 'safe';
+      const bandWorsened = prevBand && prevBand !== band && (band === 'contested' || (band === 'at_risk' && prevBand === 'safe'));
+      if (reinforced) {
+        push({ kind: 'region_reinforced', subjectType: 'region', subjectId: r.code, actorId: m.holder, teamId: next.ownerTeams[m.holder!] ?? null, magnitude: m.holderDep - pm.holderDep, significance: bandImproved || (m.costToContest >= pm.costToContest * 2 && m.challenger) ? 'major' : 'meaningful', visibility: 'public', evidence: regionEvidence, before: { deposit: pm.holderDep, costToContest: pm.costToContest, band: prevBand || null }, after: { deposit: m.holderDep, costToContest: m.costToContest, band }, delta: { deposit: m.holderDep - pm.holderDep, costToContest: m.costToContest - pm.costToContest }, strategicMeaning: `${name} became ${bandImproved ? 'much safer' : 'harder to contest'} after ${ownerName(m.holder)} reinforced it.`, affectedDomains: ['regions', 'rivals'], dedupeKey: `reinforced:${r.code}:${m.holder}:${Math.round(m.holderDep / 500)}`, tags: m.challenger ? [`challenger:${m.challenger}`] : [] });
+      } else if (bandImproved) {
+        push({ kind: 'region_became_safe', subjectType: 'region', subjectId: r.code, actorId: m.holder, teamId: next.ownerTeams[m.holder!] ?? null, magnitude: m.margin, significance: prevBand === 'contested' ? 'major' : 'meaningful', visibility: 'public', evidence: regionEvidence, before: { band: prevBand || null }, after: { band }, delta: { margin: m.margin - pm.margin }, strategicMeaning: `${name} is now safe for ${ownerName(m.holder)}.`, affectedDomains: ['regions'], dedupeKey: `safe:${r.code}:${m.holder}:${turn}` });
+      }
+      const pressured = m.challenger && m.chDep - (pr.deposits[m.challenger] || 0) >= Math.max(1000, m.holderDep * 0.2);
+      if (pressured) {
+        push({ kind: 'rival_pressure_increased', subjectType: 'region', subjectId: r.code, actorId: m.challenger, teamId: next.ownerTeams[m.challenger!] ?? null, magnitude: m.chDep - (pr.deposits[m.challenger!] || 0), significance: bandWorsened ? 'major' : 'meaningful', visibility: 'public', evidence: [`${ownerName(m.challenger)} deposit in ${r.code} ${swrMoney(pr.deposits[m.challenger!] || 0)} → ${swrMoney(m.chDep)}`, `${ownerName(m.holder)} holds ${swrMoney(m.holderDep)}`], before: { challengerDeposit: pr.deposits[m.challenger!] || 0, band: prevBand || null }, after: { challengerDeposit: m.chDep, band }, delta: { challengerDeposit: m.chDep - (pr.deposits[m.challenger!] || 0) }, strategicMeaning: `${ownerName(m.challenger)} increased pressure on ${name}.`, affectedDomains: ['regions', 'rivals'], dedupeKey: `pressure_up:${r.code}:${m.challenger}:${Math.round(m.chDep / 500)}`, tags: [`holder:${m.holder}`] });
+      } else if (bandWorsened) {
+        push({ kind: 'region_became_contested', subjectType: 'region', subjectId: r.code, actorId: m.holder, teamId: next.ownerTeams[m.holder!] ?? null, magnitude: m.margin, significance: band === 'contested' ? 'major' : 'meaningful', visibility: 'public', evidence: regionEvidence, before: { band: prevBand || null }, after: { band }, delta: { margin: m.margin - pm.margin }, strategicMeaning: `${name} is now ${band === 'contested' ? 'contested' : 'at risk'} for ${ownerName(m.holder)}.`, affectedDomains: ['regions'], dedupeKey: `contested:${r.code}:${band}:${turn}` });
+      }
+      if (m.challenger && (pr.deposits[m.challenger] || 0) - m.chDep >= Math.max(1000, (pr.deposits[m.challenger] || 0) * 0.3)) {
+        push({ kind: 'rival_pressure_decreased', subjectType: 'region', subjectId: r.code, actorId: m.challenger, teamId: next.ownerTeams[m.challenger] ?? null, magnitude: (pr.deposits[m.challenger] || 0) - m.chDep, significance: 'meaningful', visibility: 'public', evidence: [`${ownerName(m.challenger)} deposit ${swrMoney(pr.deposits[m.challenger] || 0)} → ${swrMoney(m.chDep)}`], before: { challengerDeposit: pr.deposits[m.challenger] || 0 }, after: { challengerDeposit: m.chDep }, delta: {}, strategicMeaning: `${ownerName(m.challenger)} eased pressure on ${name}.`, affectedDomains: ['regions', 'rivals'], dedupeKey: `pressure_down:${r.code}:${m.challenger}:${Math.round(m.chDep / 500)}` });
+      }
+    });
+  }
+
+  // ---- Economy (cash bands, GI3 cash milestone, debt, recovery, liquidation) ----
+  if (seed || changed.includes('economy') || changed.includes('strategy')) {
+    next.actors.forEach(a => {
+      const pa = prev?.actors.find(x => x.id === a.id) || null;
+      const key = `cash:${a.id}`;
+      const prevBand = bands[key]?.band;
+      const band = swrCashBand(a.money, prevBand);
+      setBand(key, band, a.money);
+      const vis: SWRVisibility = next.fogOfWar ? 'team_only' : 'public';
+      const teamId = a.teamId;
+      if (gi3 && gi3.actorId === a.id && gi3.cashTarget) {
+        const tk = `cash_target:${a.id}:${gi3.cashTarget}`;
+        const was = bands[tk]?.band;
+        const above = was === 'above' ? a.money >= gi3.cashTarget * 0.95 : a.money >= gi3.cashTarget;
+        setBand(tk, above ? 'above' : 'below', a.money);
+        if (!seed && pa && was && (was === 'above') !== above) push({ kind: 'cash_threshold_crossed', subjectType: 'actor', subjectId: a.id, actorId: a.id, teamId, magnitude: Math.abs(a.money - pa.money), significance: 'meaningful', visibility: 'actor_only', evidence: [`cash ${swrMoney(pa.money)} → ${swrMoney(a.money)}`, `strategy cash milestone ${swrMoney(gi3.cashTarget)}`], before: { cash: pa.money }, after: { cash: a.money, target: gi3.cashTarget }, delta: { cash: a.money - pa.money }, strategicMeaning: above ? `You now have enough cash for your ${swrMoney(gi3.cashTarget)} strategy milestone.` : `Your cash fell below your ${swrMoney(gi3.cashTarget)} strategy milestone.`, affectedDomains: ['economy', 'strategy'], dedupeKey: `cash_target:${a.id}:${above ? 'up' : 'down'}:${gi3.cashTarget}:${turn}`, tags: [above ? 'milestone_reached' : 'milestone_lost'] });
+      }
+      if (seed || !pa) return;
+      const diff = a.money - pa.money;
+      if (prevBand && prevBand !== band) {
+        const up = SWR_CASH_RANK[band] > SWR_CASH_RANK[prevBand];
+        push({ kind: up ? 'liquidity_improved' : 'liquidity_deteriorated', subjectType: 'actor', subjectId: a.id, actorId: a.id, teamId, magnitude: Math.abs(diff), significance: band === 'critical' ? 'major' : (band === 'strong' || prevBand === 'critical') ? 'meaningful' : 'minor', visibility: vis, evidence: [`cash ${swrMoney(pa.money)} → ${swrMoney(a.money)}`], before: { cash: pa.money, band: prevBand }, after: { cash: a.money, band }, delta: { cash: diff }, strategicMeaning: up ? `${a.isHuman ? 'Your' : `${a.name}'s`} free cash rose to ${({ critical: 'a critical', low: 'a low', ok: 'a workable', strong: 'a strong' } as Record<string, string>)[band]} level.` : `${a.isHuman ? 'Your' : `${a.name}'s`} free cash fell to ${({ critical: 'a critical', low: 'a low', ok: 'a workable', strong: 'a strong' } as Record<string, string>)[band]} level.`, affectedDomains: ['economy'], dedupeKey: `cashband:${a.id}:${band}:${turn}` });
+      } else if (Math.abs(diff) < Math.max(500, pa.money * 0.1)) ignored += 1;
+      const dk = `debt:${a.id}`; const debtBand = a.debt < 1 ? 'none' : a.debt < 5000 ? 'moderate' : 'heavy';
+      const prevDebt = bands[dk]?.band; setBand(dk, debtBand, a.debt);
+      if (prevDebt && prevDebt !== debtBand) push({ kind: 'debt_pressure_changed', subjectType: 'actor', subjectId: a.id, actorId: a.id, teamId, magnitude: Math.abs(a.debt - pa.debt), significance: debtBand === 'heavy' ? 'meaningful' : 'minor', visibility: vis, evidence: [`debt ${swrMoney(pa.debt)} → ${swrMoney(a.debt)}`], before: { debt: pa.debt }, after: { debt: a.debt }, delta: { debt: a.debt - pa.debt }, strategicMeaning: `${a.isHuman ? 'Your' : `${a.name}'s`} debt pressure is now ${debtBand}.`, affectedDomains: ['economy'], dedupeKey: `debt:${a.id}:${debtBand}:${turn}` });
+      if (pa.inRecovery !== a.inRecovery) push({ kind: a.inRecovery ? 'actor_became_constrained' : 'actor_recovered', subjectType: 'actor', subjectId: a.id, actorId: a.id, teamId, magnitude: a.money, significance: 'meaningful', visibility: vis, evidence: [a.inRecovery ? 'entered economic recovery' : 'left economic recovery'], before: { inRecovery: String(pa.inRecovery) }, after: { inRecovery: String(a.inRecovery) }, delta: {}, strategicMeaning: a.inRecovery ? `${a.name} is financially constrained (economic recovery).` : `${a.name} has recovered financially.`, affectedDomains: ['economy', 'team'], dedupeKey: `recovery:${a.id}:${a.inRecovery}:${turn}` });
+      if (pa.inventory && a.inventory) Object.entries(pa.inventory).forEach(([res, q]) => {
+        const now = a.inventory![res] || 0;
+        if (q - now >= 3 && diff > 0) push({ kind: 'resource_liquidation', subjectType: 'market', subjectId: res, actorId: a.id, teamId, magnitude: q - now, significance: 'minor', visibility: 'public', evidence: [`${a.name} sold ${q - now} ${res}`], before: { held: q }, after: { held: now }, delta: { held: now - q }, strategicMeaning: `${a.name} sold a large amount of ${res}.`, affectedDomains: ['market', 'economy'], dedupeKey: `liquidate:${a.id}:${res}:${turn}`, claimKind: 'fact' });
+      });
+    });
+  }
+
+  // ---- Team resources ----
+  if (!seed && changed.includes('team')) next.teams.forEach(t => {
+    const pt = prev!.teams.find(x => x.teamId === t.teamId); if (!pt) return;
+    const key = `team:${t.teamId}`; const prevBand = bands[key]?.band;
+    const band = t.freeCash < t.reserve ? 'shortage' : t.freeCash >= t.reserve + 5000 ? 'surplus' : 'normal';
+    setBand(key, band, t.freeCash);
+    if (prevBand && prevBand !== band && band !== 'normal') push({ kind: band === 'shortage' ? 'team_resource_shortage' : 'team_resource_surplus', subjectType: 'team', subjectId: t.teamId, actorId: null, teamId: t.teamId, magnitude: Math.abs(t.freeCash - pt.freeCash), significance: 'meaningful', visibility: 'team_only', evidence: [`team free cash ${swrMoney(pt.freeCash)} → ${swrMoney(t.freeCash)}`, `reserve ${swrMoney(t.reserve)}`], before: { freeCash: pt.freeCash }, after: { freeCash: t.freeCash }, delta: { freeCash: t.freeCash - pt.freeCash }, strategicMeaning: band === 'shortage' ? `${t.name} dropped below its cash reserve.` : `${t.name} now has cash above its needs — blocked tasks may be fundable.`, affectedDomains: ['team', 'economy'], dedupeKey: `team:${t.teamId}:${band}:${turn}` });
+  });
+  else if (seed) next.teams.forEach(t => setBand(`team:${t.teamId}`, t.freeCash < t.reserve ? 'shortage' : t.freeCash >= t.reserve + 5000 ? 'surplus' : 'normal', t.freeCash));
+
+  // ---- Projects ----
+  next.projects.forEach(p => {
+    const key = `project:${p.id}`; const pb = bands[key];
+    const prog = Math.round(p.progress * 100);
+    const lastChange = !pb || pb.value !== prog ? turn : pb.turn;
+    bands[key] = { band: p.status, value: prog, turn: lastChange };
+    if (seed || !pb) return;
+    if (pb.band !== p.status && /progress|active|funding|construct/.test(p.status) && !/progress|active|funding|construct/.test(pb.band)) push({ kind: 'project_started', subjectType: 'project', subjectId: p.id, actorId: null, teamId: null, magnitude: prog, significance: 'meaningful', visibility: 'public', evidence: [`${p.title}: ${pb.band} → ${p.status}`], before: { status: pb.band }, after: { status: p.status }, delta: {}, strategicMeaning: `${p.title} started.`, affectedDomains: ['projects', 'market'], dedupeKey: `proj_start:${p.id}`, tags: p.regionId ? [`region:${p.regionId}`] : [] });
+    if (pb.band !== p.status && /complet/.test(p.status)) push({ kind: 'project_completed', subjectType: 'project', subjectId: p.id, actorId: null, teamId: null, magnitude: 100, significance: 'major', visibility: 'public', evidence: [`${p.title} completed`], before: { status: pb.band }, after: { status: p.status }, delta: {}, strategicMeaning: `${p.title} was completed${p.regionId ? ` in ${p.regionId}` : ''}.`, affectedDomains: ['projects', 'stability', 'objectives'], dedupeKey: `proj_done:${p.id}`, tags: p.regionId ? [`region:${p.regionId}`] : [] });
+    if (/progress|active|funding|construct/.test(p.status) && prog > 0 && prog < 100 && turn - lastChange >= 3 && !(state.events.some(e => e.dedupeKey === `proj_stall:${p.id}:${lastChange}`))) push({ kind: 'project_stalled', subjectType: 'project', subjectId: p.id, actorId: null, teamId: null, magnitude: prog, significance: 'minor', visibility: 'public', evidence: [`${p.title} stuck at ${prog}% since turn ${lastChange}`], before: {}, after: { progress: prog }, delta: {}, strategicMeaning: `${p.title} has stalled at ${prog}%.`, affectedDomains: ['projects'], dedupeKey: `proj_stall:${p.id}:${lastChange}` });
+  });
+
+  // ---- Contracts ----
+  if (!seed && changed.includes('contracts')) next.contracts.forEach(c => {
+    const pc = prev!.contracts.find(x => x.id === c.id) || null;
+    const assigned = c.assignedActorId;
+    if ((!pc || pc.status !== c.status) && /avail|open/.test(c.status)) push({ kind: 'contract_became_available', subjectType: 'contract', subjectId: c.id, actorId: null, teamId: null, magnitude: c.rewardMoney, significance: c.rewardMoney >= 5000 ? 'meaningful' : 'minor', visibility: 'public', evidence: [`${c.title} (reward ${swrMoney(c.rewardMoney)})`], before: { status: pc?.status || null }, after: { status: c.status }, delta: {}, strategicMeaning: `${c.title} is available (${swrMoney(c.rewardMoney)}).`, affectedDomains: ['contracts'], dedupeKey: `contract_avail:${c.id}`, tags: c.regionId ? [`region:${c.regionId}`] : [] });
+    if (pc && pc.status !== c.status && /complet|fulfil/.test(c.status)) push({ kind: 'contract_completed', subjectType: 'contract', subjectId: c.id, actorId: assigned || pc.assignedActorId, teamId: swrActorTeam(next, assigned || pc.assignedActorId), magnitude: c.rewardMoney, significance: c.rewardMoney >= 10000 ? 'major' : 'meaningful', visibility: 'public', evidence: [`${c.title} completed (reward ${swrMoney(c.rewardMoney)})`], before: { status: pc.status }, after: { status: c.status }, delta: { reward: c.rewardMoney }, strategicMeaning: `${c.title} was completed for ${swrMoney(c.rewardMoney)}.`, affectedDomains: ['contracts', 'economy'], dedupeKey: `contract_done:${c.id}`, claimKind: 'fact' });
+    if (pc && pc.status !== c.status && /fail|expir|cancel/.test(c.status)) push({ kind: 'contract_failed', subjectType: 'contract', subjectId: c.id, actorId: pc.assignedActorId, teamId: swrActorTeam(next, pc.assignedActorId), magnitude: c.rewardMoney, significance: pc.assignedActorId ? 'meaningful' : 'minor', visibility: 'public', evidence: [`${c.title}: ${pc.status} → ${c.status}`], before: { status: pc.status }, after: { status: c.status }, delta: {}, strategicMeaning: `${c.title} ${/expir/.test(c.status) ? 'expired' : 'failed'}.`, affectedDomains: ['contracts'], dedupeKey: `contract_fail:${c.id}` });
+    if (assigned && c.turnsRemaining !== null && c.turnsRemaining <= 1 && !/complet|fail|expir/.test(c.status)) push({ kind: 'contract_expiring', subjectType: 'contract', subjectId: c.id, actorId: assigned, teamId: swrActorTeam(next, assigned), magnitude: c.rewardMoney, significance: 'meaningful', visibility: 'team_only', evidence: [`${c.title}: ${c.turnsRemaining} turn(s) left`], before: {}, after: { turnsRemaining: c.turnsRemaining }, delta: {}, strategicMeaning: `${c.title} is about to expire.`, affectedDomains: ['contracts'], dedupeKey: `contract_expiring:${c.id}` });
+  });
+
+  // ---- Market ----
+  Object.entries(next.prices).forEach(([res, price]) => {
+    const base = next.basePrices[res] || price;
+    const key = `price:${res}`; const prevBand = bands[key]?.band;
+    const band = swrPriceBand(price, base, prevBand);
+    setBand(key, band, price);
+    if (!seed && prevBand && prevBand !== band && changed.includes('market')) {
+      const pp = prev!.prices[res] ?? price;
+      push({ kind: 'market_shift_major', subjectType: 'market', subjectId: res, actorId: null, teamId: null, magnitude: Math.abs(price - pp), significance: 'meaningful', visibility: 'public', evidence: [`${res} ${swrMoney(pp)} → ${swrMoney(price)} (base ${swrMoney(base)})`], before: { price: pp, band: prevBand }, after: { price, band }, delta: { price: price - pp }, strategicMeaning: band === 'high' ? `${res} prices are unusually high.` : band === 'low' ? `${res} prices are unusually low.` : `${res} prices returned to normal.`, affectedDomains: ['market'], dedupeKey: `price:${res}:${band}:${turn}`, claimKind: 'fact' });
+    }
+  });
+
+  // ---- Strategy + objectives (the player's GI3) ----
+  if (gi3) {
+    const key = `gi3phase:${gi3.actorId}`; const pb = bands[key];
+    setBand(key, String(gi3.phaseIndex), gi3.phaseIndex);
+    if (!seed && pb && Number(pb.band) !== gi3.phaseIndex) push({ kind: 'strategy_phase_changed', subjectType: 'strategy', subjectId: gi3.actorId, actorId: gi3.actorId, teamId: swrActorTeam(next, gi3.actorId), magnitude: gi3.phaseIndex, significance: 'meaningful', visibility: 'actor_only', evidence: [`strategy phase ${Number(pb.band) + 1} → ${gi3.phaseIndex + 1}${gi3.phaseLabel ? ` (${gi3.phaseLabel})` : ''}`], before: { phase: Number(pb.band) }, after: { phase: gi3.phaseIndex }, delta: {}, strategicMeaning: `Your strategy moved to the next phase${gi3.phaseLabel ? `: ${gi3.phaseLabel}` : ''}.`, affectedDomains: ['strategy'], dedupeKey: `phase:${gi3.actorId}:${gi3.phaseIndex}` });
+    gi3.goals.forEach(g => {
+      const gk = `goal:${g.id}`; const was = bands[gk]?.band; setBand(gk, g.status, 0);
+      if (seed || !was || was === g.status) return;
+      const kind: SWRKind | null = /complet|maintain/.test(g.status) && !/complet|maintain/.test(was) ? 'objective_completed' : g.status === 'blocked' ? 'objective_blocked' : was === 'blocked' ? 'objective_unblocked' : null;
+      if (kind) push({ kind, subjectType: 'objective', subjectId: g.id, actorId: gi3.actorId, teamId: swrActorTeam(next, gi3.actorId), magnitude: 0, significance: kind === 'objective_blocked' ? 'meaningful' : 'meaningful', visibility: 'actor_only', evidence: [`${g.label}: ${was} → ${g.status}`], before: { status: was }, after: { status: g.status }, delta: {}, strategicMeaning: kind === 'objective_completed' ? `Goal complete: ${g.label}.` : kind === 'objective_blocked' ? `Goal blocked: ${g.label}.` : `Goal unblocked: ${g.label}.`, affectedDomains: ['objectives', 'strategy'], dedupeKey: `goal:${g.id}:${g.status}`, tags: g.regionId ? [`region:${g.regionId}`] : [] });
+    });
+  }
+
+  // ---- Diplomacy ----
+  next.deals.forEach(d => {
+    const key = `deal:${d.id}`; const was = bands[key]?.band; setBand(key, d.status, d.expirationTurn ?? -1);
+    if (seed) return;
+    const vis: SWRVisibility = d.visibility === 'public' ? 'public' : 'observed_by';
+    const base = { subjectType: 'deal' as const, subjectId: d.id, actorId: d.participants[0] || null, teamId: null, visibility: vis, explicitObservers: d.participants, affectedDomains: ['diplomacy', 'regions'] as SWRDomain[], tags: d.regions.map(r => `region:${r}`) };
+    if (d.status === 'active' && was !== 'active') push({ ...base, kind: 'diplomatic_pact_started', magnitude: d.regions.length, significance: d.regions.length ? 'major' : 'meaningful', evidence: [d.summary], before: { status: was || null }, after: { status: d.status, expires: d.expirationTurn }, delta: {}, strategicMeaning: `Agreement active: ${d.summary}.`, dedupeKey: `pact_start:${d.id}` });
+    if (d.status === 'active' && d.expirationTurn !== null && d.expirationTurn - turn <= 1 && d.expirationTurn - turn >= 0) push({ ...base, kind: 'diplomatic_pact_expiring', magnitude: d.expirationTurn - turn, significance: 'meaningful', evidence: [`${d.summary} — expires after round ${d.expirationTurn}`], before: {}, after: { expires: d.expirationTurn }, delta: {}, strategicMeaning: `${d.summary} expires ${d.expirationTurn - turn === 0 ? 'this round' : 'next round'}.`, dedupeKey: `pact_expiring:${d.id}` });
+    if (was === 'active' && d.status === 'violated') push({ ...base, kind: 'diplomatic_pact_broken', actorId: d.violatedBy, magnitude: 1, significance: 'major', evidence: [`${d.summary} broken by ${ownerName(d.violatedBy)}`], before: { status: 'active' }, after: { status: 'violated' }, delta: {}, strategicMeaning: `${ownerName(d.violatedBy)} broke ${d.summary}.`, dedupeKey: `pact_broken:${d.id}` });
+    else if (was === 'active' && d.status !== 'active') push({ ...base, kind: 'diplomatic_pact_ended', magnitude: 0, significance: 'minor', evidence: [`${d.summary}: ${d.status}`], before: { status: 'active' }, after: { status: d.status }, delta: {}, strategicMeaning: `${d.summary} ended (${d.status}).`, dedupeKey: `pact_end:${d.id}` });
+  });
+
+  // ---- Stability + crises ----
+  if (next.stability) {
+    const key = 'stability:national'; const pb = bands[key]?.band;
+    const band = swrStabilityBand(next.stability.national, pb); setBand(key, band, next.stability.national);
+    if (!seed && pb && pb !== band) {
+      const worse = ['stable', 'uneasy', 'unrest', 'crisis'].indexOf(band) > ['stable', 'uneasy', 'unrest', 'crisis'].indexOf(pb);
+      push({ kind: 'stability_shift_major', subjectType: 'nation', subjectId: 'national', actorId: null, teamId: null, magnitude: Math.abs(next.stability.national - (prev?.stability?.national ?? next.stability.national)), significance: band === 'crisis' ? 'critical' : worse ? 'major' : 'meaningful', visibility: 'public', evidence: [`national stability ${Math.round(prev?.stability?.national ?? 0)} → ${Math.round(next.stability.national)}`], before: { band: pb }, after: { band }, delta: { stability: next.stability.national - (prev?.stability?.national ?? 0) }, strategicMeaning: worse ? `Public stability fell to ${band}.` : `Public stability improved to ${band}.`, affectedDomains: ['stability', 'crisis'], dedupeKey: `stability:${band}:${turn}`, layer: 'world', tags: [worse ? 'worse' : 'better'] });
+    }
+  }
+  next.crises.forEach(c => {
+    const key = `crisis:${c.id}`; const pb = bands[key];
+    setBand(key, c.status, c.stageIndex);
+    if (seed || !pb) return;
+    if ((pb.band !== 'active' && c.status === 'active') || (c.status === 'active' && c.stageIndex > pb.value)) push({ kind: 'crisis_escalated', subjectType: 'crisis', subjectId: c.id, actorId: null, teamId: null, magnitude: c.stageIndex + 1, significance: c.stageIndex >= 2 ? 'critical' : 'major', visibility: 'public', evidence: [`${c.name}: ${pb.band} stage ${pb.value + 1} → ${c.status} stage ${c.stageIndex + 1}`], before: { status: pb.band, stage: pb.value }, after: { status: c.status, stage: c.stageIndex }, delta: {}, strategicMeaning: `${c.name} escalated.`, affectedDomains: ['crisis', 'stability', 'market'], dedupeKey: `crisis_up:${c.id}:${c.stageIndex}:${c.status}`, layer: 'world' });
+    if (pb.band === 'active' && c.status !== 'active') push({ kind: 'crisis_resolved', subjectType: 'crisis', subjectId: c.id, actorId: null, teamId: null, magnitude: 0, significance: 'meaningful', visibility: 'public', evidence: [`${c.name}: ${c.status}`], before: { status: 'active' }, after: { status: c.status }, delta: {}, strategicMeaning: `${c.name} ${/fail/.test(c.status) ? 'ended badly' : 'was resolved'}.`, affectedDomains: ['crisis', 'stability'], dedupeKey: `crisis_end:${c.id}:${c.status}`, layer: 'world', tags: [/fail/.test(c.status) ? 'failed' : 'resolved'] });
+  });
+
+  // ---- Victory pressure ----
+  if (next.win && next.win.target) {
+    const entries = Object.entries(next.win.byOwner).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const leader = entries[0]?.[0] || null; const near = entries.filter(([, v]) => v >= next.win!.target! - 1).map(([k]) => k);
+    const key = 'victory'; const pb = bands[key]?.band;
+    const band = `${leader}|${near.join('+')}`; setBand(key, band, entries[0]?.[1] || 0);
+    if (!seed && pb && pb !== band && near.length) push({ kind: 'victory_pressure_changed', subjectType: 'nation', subjectId: 'victory', actorId: near[0], teamId: next.ownerTeams[near[0]] ?? null, magnitude: entries[0]?.[1] || 0, significance: 'critical', visibility: 'public', evidence: entries.slice(0, 3).map(([k, v]) => `${ownerName(k)}: ${v} of ${next.win!.target}`), before: { state: pb }, after: { state: band }, delta: {}, strategicMeaning: `${near.map(ownerName).join(' and ')} ${near.length === 1 ? 'is' : 'are'} one step from winning.`, affectedDomains: ['rivals', 'strategy'], dedupeKey: `victory:${band}`, layer: 'world' });
+  }
+
+  // ---- Same-pass causality (a spend explains the cash drop, a contract explains the cash rise, …) ----
+  events.forEach(e => {
+    if (e.kind === 'liquidity_deteriorated' || (e.kind === 'cash_threshold_crossed' && e.tags.includes('milestone_lost'))) {
+      const spend = events.find(x => x !== e && (x.kind === 'region_reinforced' || x.kind === 'region_secured') && (x.actorId === e.actorId || toActor(x.actorId) === e.actorId));
+      if (spend) { e.causedByEventId = spend.id; e.rootEventId = spend.rootEventId; e.reactionDepth = spend.reactionDepth + 1; }
+    }
+    if (e.kind === 'liquidity_improved' || (e.kind === 'cash_threshold_crossed' && e.tags.includes('milestone_reached'))) {
+      const earn = events.find(x => x !== e && (x.kind === 'contract_completed' || x.kind === 'resource_liquidation') && x.actorId === e.actorId);
+      if (earn) { e.causedByEventId = earn.id; e.rootEventId = earn.rootEventId; e.reactionDepth = earn.reactionDepth + 1; }
+    }
+    if (e.kind === 'objective_blocked') {
+      const region = (e.tags.find(t => t.startsWith('region:')) || '').slice(7);
+      const pressure = events.find(x => x.kind === 'rival_pressure_increased' && x.subjectId === region);
+      if (pressure) { e.causedByEventId = pressure.id; e.rootEventId = pressure.rootEventId; e.reactionDepth = pressure.reactionDepth + 1; e.claimKind = 'inference'; e.confidence = 'moderate'; }
+    }
+  });
+  // ---- Cross-pass causality: a rival's new pressure after it was asked to reconsider its target ----
+  events.filter(e => e.kind === 'rival_pressure_increased' && !e.causedByEventId).forEach(e => {
+    const rivalActor = toActor(e.actorId) || e.actorId;
+    const trigger = state.intents.slice().reverse().find(i => i.targetSystem === 'rival_strategy' && (i.targetActorId === rivalActor || i.targetActorId === e.actorId) && i.subjectId !== e.subjectId && turn - i.turn <= 3 && i.status !== 'suppressed');
+    if (trigger) {
+      const cause = state.events.find(x => x.id === trigger.sourceEventId);
+      if (cause) {
+        e.causedByEventId = cause.id; e.rootEventId = cause.rootEventId; e.reactionDepth = Math.min(6, cause.reactionDepth + 2);
+        e.claimKind = 'inference'; e.confidence = 'moderate';
+        e.contributingCauses = state.events.filter(x => x.id !== cause.id && (x.kind === 'liquidity_improved' || x.kind === 'actor_recovered') && (x.actorId === rivalActor) && turn - x.turn <= 3).map(x => x.id).slice(0, 3);
+      }
+    }
+  });
+  return { events, bands: Object.fromEntries(Object.entries(bands).slice(-SWR_LIMITS.bands)), ignored, deduped, changedDomains: changed };
+}
+
+
+// ---- Subscriptions (each system declares what it cares about) ---------------------------------------
+
+export type SWRAudience = 'observing_ai' | 'observing_teams' | 'gi3_owner' | 'human_observers' | 'global';
+export interface SWRSubscription {
+  system: SWRTargetSystem;
+  label: string;
+  kinds: SWRKind[] | '*';
+  minSignificance: SWRSignificance;
+  evaluation: (e: StrategicWorldEvent, s: SWRInputs) => string;
+  timing: SWRTiming;
+  cooldownTurns: number;
+  audience: SWRAudience;
+  relevant?: (e: StrategicWorldEvent, s: SWRInputs, targetActorId: string | null) => boolean;
+}
+
+const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 'region_became_contested', 'region_secured', 'region_lost', 'region_weakened'];
+const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
+
+export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: [...SWR_REGION_KINDS, 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+    // A rival reconsiders only when the change concerns someone else (never its own move).
+    relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => ((e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+    timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
+    relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
+  { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
+    relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'market', label: 'Markets', kinds: ['project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
+  { system: 'contracts', label: 'Contracts', kinds: ['liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed'], minSignificance: 'meaningful', evaluation: e => (e.kind === 'crisis_resolved' && e.tags.includes('failed') ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
+  { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
+  { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
+  { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
+    relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
+  { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' }
+];
+
+export const SWR_SYSTEM_LABELS: Record<SWRTargetSystem, string> = Object.fromEntries(SWR_SUBSCRIPTIONS.map(s => [s.system, s.label])) as Record<SWRTargetSystem, string>;
+
+/** Reaction budgets per ROOT event (by the root's significance). What-If uses a smaller budget. */
+export const SWR_BUDGETS: Record<SWRSignificance, { maxDepth: number; maxReactions: number; maxNewEvents: number }> = {
+  ignore: { maxDepth: 0, maxReactions: 0, maxNewEvents: 0 }, minor: { maxDepth: 1, maxReactions: 2, maxNewEvents: 1 }, meaningful: { maxDepth: 2, maxReactions: 5, maxNewEvents: 2 }, major: { maxDepth: 3, maxReactions: 8, maxNewEvents: 4 }, critical: { maxDepth: 3, maxReactions: 10, maxNewEvents: 6 }
+};
+
+/** event → matching subscriptions → reaction intents (addressed only to systems/actors allowed to know). */
+export function routeStrategicWorldEvent(e: StrategicWorldEvent, s: SWRInputs): WorldReactionIntent[] {
+  const out: WorldReactionIntent[] = [];
+  const humans = s.actors.filter(a => a.isHuman).map(a => a.id);
+  SWR_SUBSCRIPTIONS.forEach(sub => {
+    if (SWR_SIG_RANK[e.significance] < SWR_SIG_RANK[sub.minSignificance]) return;
+    if (sub.kinds !== '*' && !sub.kinds.includes(e.kind)) return;
+    const evaluation = sub.evaluation(e, s);
+    const make = (targetActorId: string | null, targetTeamId: string | null): WorldReactionIntent => ({
+      id: `swi_${swrHash([e.id, sub.system, targetActorId, targetTeamId, evaluation])}`, sourceEventId: e.id, rootEventId: e.rootEventId, targetSystem: sub.system, targetActorId, targetTeamId,
+      priority: SWR_SIG_RANK[e.significance] * 10 + (sub.timing === 'immediate' ? 1 : 0), reason: e.strategicMeaning, requestedEvaluation: evaluation, subjectId: e.subjectId,
+      context: { kind: e.kind, significance: e.significance, actorId: e.actorId, subjectType: e.subjectType }, timing: sub.timing, expiresTurn: e.turn + 3,
+      dedupeKey: `${sub.system}:${targetActorId || targetTeamId || '*'}:${evaluation}:${e.subjectId}`, depth: e.reactionDepth
+    });
+    const targets: Array<[string | null, string | null]> = [];
+    if (sub.audience === 'global') targets.push([null, null]);
+    if (sub.audience === 'observing_ai') e.observers.filter(id => !humans.includes(id)).forEach(id => targets.push([id, swrActorTeam(s, id)]));
+    if (sub.audience === 'human_observers') e.observers.filter(id => humans.includes(id)).forEach(id => targets.push([id, swrActorTeam(s, id)]));
+    if (sub.audience === 'gi3_owner' && s.gi3 && e.observers.includes(s.gi3.actorId)) targets.push([s.gi3.actorId, swrActorTeam(s, s.gi3.actorId)]);
+    if (sub.audience === 'observing_teams') Array.from(new Set(e.observers.map(id => swrActorTeam(s, id)).filter(Boolean) as string[])).forEach(t => targets.push([null, t]));
+    targets.forEach(([a, t]) => { if (!sub.relevant || sub.relevant(e, s, a)) out.push(make(a, t)); });
+  });
+  return out;
+}
+
+/** Built-in interpretation for intents that imply an observable follow-up (never an action). */
+function swrDerivedEvent(intent: WorldReactionIntent, e: StrategicWorldEvent, s: SWRInputs): Omit<StrategicWorldEvent, 'id'> | null {
+  if (intent.targetSystem !== 'rival_strategy' || !intent.targetActorId) return null;
+  if (!['region_reinforced', 'region_became_safe', 'diplomatic_pact_started', 'region_secured', 'region_lost'].includes(e.kind)) return null;
+  const rival = s.actors.find(a => a.id === intent.targetActorId);
+  const region = s.regions.find(r => r.code === e.subjectId);
+  if (!rival) return null;
+  // Only a rival that was actually involved there is "reconsidering" it.
+  const involved = e.subjectType === 'region' ? Boolean(region && Object.entries(region.deposits).some(([k, v]) => v > 0 && (k === rival.id || s.ownerTeams[k] === rival.teamId))) : e.observers.includes(rival.id);
+  if (!involved) return null;
+  const who = s.ownerNames[e.actorId || ''] || e.actorId || 'someone';
+  return {
+    turn: e.turn, day: e.day, sourceSystem: 'world_reaction', sourceEventId: null, actorId: rival.id, teamId: rival.teamId, kind: 'rival_target_reassessed', subjectType: 'region', subjectId: e.subjectId, magnitude: 0, significance: 'meaningful',
+    visibility: 'public', observers: s.actors.map(a => a.id), evidence: [`${e.strategicMeaning}`, `${rival.name} has an interest in ${e.subjectId}`], before: {}, after: {}, delta: {},
+    strategicMeaning: e.kind === 'diplomatic_pact_started' ? `${rival.name} is bound by an agreement and must look elsewhere.` : `${rival.name} appears to be reconsidering ${region?.name || e.subjectId} after ${who === rival.name ? 'the change' : `${who}'s move`}.`,
+    affectedDomains: ['rivals'], tags: [`rival:${rival.id}`], layer: 'world', confidence: 'moderate', claimKind: 'inference', causedByEventId: e.id, contributingCauses: [], rootEventId: e.rootEventId, reactionDepth: e.reactionDepth + 1, expiresTurn: e.turn + 3, dedupeKey: `reassess:${rival.id}:${e.subjectId}:${e.turn}`
+  };
+}
+
+export interface SWRProcessResult {
+  state: WorldReactionState;
+  delivered: WorldReactionIntent[];
+  deferred: WorldReactionIntent[];
+  events: StrategicWorldEvent[];
+  suppressed: Array<{ intent: WorldReactionIntent | null; eventId: string; reason: string }>;
+}
+
+/**
+ * The reaction queue: highest significance first, per-root budgets, depth limit, cooldowns and cycle
+ * suppression. Immediate intents are delivered to `handlers` (each system's own entry point); others wait
+ * for their timing boundary. Handlers may NOT return actions — at most an observable derived event.
+ */
+export function processWorldReactions(stateIn: WorldReactionState, roots: StrategicWorldEvent[], s: SWRInputs, opts: { handlers?: Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => void>>; budgets?: typeof SWR_BUDGETS; persist?: boolean } = {}): SWRProcessResult {
+  const budgets = opts.budgets || SWR_BUDGETS;
+  const turn = s.turn;
+  const state: WorldReactionState = { ...stateIn, cooldowns: { ...stateIn.cooldowns }, patterns: { ...stateIn.patterns }, diagnostics: { ...stateIn.diagnostics, lastSuppressions: [] } };
+  const queue = roots.slice().sort((a, b) => SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance] || a.id.localeCompare(b.id));
+  const all: StrategicWorldEvent[] = [];
+  const delivered: WorldReactionIntent[] = []; const deferred: WorldReactionIntent[] = [];
+  const suppressed: SWRProcessResult['suppressed'] = [];
+  const rootStats = new Map<string, { reactions: number; newEvents: number; sig: SWRSignificance }>();
+  const cycleSeen = new Set<string>();
+  const history: WorldReactionHistoryEntry[] = [];
+  const suppress = (intent: WorldReactionIntent | null, eventId: string, reason: string) => { suppressed.push({ intent, eventId, reason }); state.diagnostics.suppressed += 1; state.diagnostics.lastSuppressions = [...state.diagnostics.lastSuppressions, reason].slice(-8); };
+  let guard = 0;
+  while (queue.length && guard++ < 200) {
+    const e = queue.shift()!;
+    all.push(e);
+    history.push({ turn, eventId: e.id, intentId: null, text: e.strategicMeaning, kind: e.reactionDepth ? 'derived' : 'event' });
+    const rootSig = rootStats.get(e.rootEventId)?.sig || (roots.find(r => r.id === e.rootEventId)?.significance ?? e.significance);
+    const stats = rootStats.get(e.rootEventId) || { reactions: 0, newEvents: 0, sig: rootSig };
+    rootStats.set(e.rootEventId, stats);
+    const budget = budgets[stats.sig] || budgets.meaningful;
+    state.diagnostics.maxDepth = Math.max(state.diagnostics.maxDepth, e.reactionDepth);
+    if (e.reactionDepth > budget.maxDepth) { suppress(null, e.id, `depth limit ${budget.maxDepth} reached`); state.diagnostics.budgetExhausted += 1; continue; }
+    routeStrategicWorldEvent(e, s).forEach(intent => {
+      if (stats.reactions >= budget.maxReactions) { suppress(intent, e.id, `reaction budget ${budget.maxReactions} exhausted`); state.diagnostics.budgetExhausted += 1; return; }
+      const cycleKey = `${e.rootEventId}|${intent.targetSystem}|${intent.subjectId}|${intent.requestedEvaluation}|${intent.targetActorId || intent.targetTeamId || '*'}`;
+      if (cycleSeen.has(cycleKey)) { suppress(intent, e.id, `cycle: ${intent.targetSystem} already reacted to this chain`); state.diagnostics.cyclesBlocked += 1; return; }
+      cycleSeen.add(cycleKey);
+      const sub = SWR_SUBSCRIPTIONS.find(x => x.system === intent.targetSystem)!;
+      const last = state.cooldowns[intent.dedupeKey];
+      if (sub.cooldownTurns > 0 && last !== undefined && turn - last < sub.cooldownTurns && last !== turn) { suppress(intent, e.id, `cooldown: ${intent.targetSystem} re-evaluated recently`); return; }
+      if (sub.cooldownTurns > 0 && last === turn && state.intents.some(x => x.dedupeKey === intent.dedupeKey && x.turn === turn && x.sourceEventId !== e.id && x.rootEventId === e.rootEventId)) { suppress(intent, e.id, 'already requested this turn'); return; }
+      stats.reactions += 1;
+      state.cooldowns[intent.dedupeKey] = turn;
+      if (intent.targetSystem === 'ai_memory') {
+        const pk = `${intent.targetActorId}:${e.actorId}:${e.subjectId}`;
+        const p = state.patterns[pk] || { count: 0, lastTurn: -99 };
+        const count = turn - p.lastTurn <= 6 ? p.count + 1 : 1;
+        state.patterns[pk] = { count, lastTurn: turn };
+        if (count < 2) { suppress(intent, e.id, 'memory: not yet a repeated pattern'); return; }
+        intent.context = { ...intent.context, pattern: `protects:${e.subjectId}`, count };
+      }
+      if (intent.timing === 'immediate') {
+        delivered.push(intent);
+        try { opts.handlers?.[intent.targetSystem]?.(intent, e); } catch (err) { suppress(intent, e.id, `handler error: ${err instanceof Error ? err.message : String(err)}`); }
+        const derived = swrDerivedEvent(intent, e, s);
+        if (derived) {
+          if (stats.newEvents >= budget.maxNewEvents) { suppress(intent, e.id, `new-event budget ${budget.maxNewEvents} exhausted`); return; }
+          if ([...all, ...queue, ...state.events].some(x => x.dedupeKey === derived.dedupeKey)) { state.diagnostics.deduped += 1; return; }
+          stats.newEvents += 1;
+          queue.push({ ...derived, id: `swe_${turn}_${swrHash([derived.kind, derived.subjectId, derived.actorId, derived.dedupeKey, e.id])}` });
+          queue.sort((a, b) => SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance]);
+        }
+      } else deferred.push(intent);
+      history.push({ turn, eventId: e.id, intentId: intent.id, text: `${SWR_SYSTEM_LABELS[intent.targetSystem]} → ${intent.requestedEvaluation.replace(/_/g, ' ')}${intent.timing !== 'immediate' ? ` (${intent.timing.replace('_', ' ')})` : ''}`, kind: 'intent' });
+    });
+  }
+  state.diagnostics.routed += delivered.length + deferred.length;
+  state.diagnostics.detected += roots.length;
+  if (opts.persist !== false) {
+    state.events = [...state.events, ...all].slice(-SWR_LIMITS.events);
+    state.intents = [...state.intents, ...delivered.map(i => ({ ...i, status: 'delivered' as const, turn, note: null })), ...deferred.map(i => ({ ...i, status: 'deferred' as const, turn, note: null })), ...suppressed.filter(x => x.intent).map(x => ({ ...x.intent!, status: 'suppressed' as const, turn, note: x.reason }))].slice(-SWR_LIMITS.intents);
+    state.deferred = [...state.deferred.filter(d => !deferred.some(n => n.dedupeKey === d.dedupeKey)), ...deferred].slice(-SWR_LIMITS.deferred);
+    state.history = [...state.history, ...history].slice(-80);
+    const cd = Object.entries(state.cooldowns).sort((a, b) => b[1] - a[1]).slice(0, SWR_LIMITS.cooldowns);
+    state.cooldowns = Object.fromEntries(cd);
+    state.patterns = Object.fromEntries(Object.entries(state.patterns).sort((a, b) => b[1].lastTurn - a[1].lastTurn).slice(0, SWR_LIMITS.patterns));
+    state.revision += 1;
+  }
+  return { state, delivered, deferred, events: all, suppressed };
+}
+
+/** Deferred reactions whose timing boundary has arrived (turn end / day end …); expired ones are dropped. */
+export function releaseDeferredReactions(state: WorldReactionState, boundary: SWRTiming, turn: number): { state: WorldReactionState; released: WorldReactionIntent[] } {
+  const order: SWRTiming[] = ['immediate', 'actor_boundary', 'turn_end', 'day_end', 'next_match'];
+  const released = state.deferred.filter(d => order.indexOf(d.timing) <= order.indexOf(boundary) && (d.expiresTurn === null || d.expiresTurn >= turn));
+  const keep = state.deferred.filter(d => !released.includes(d) && (d.expiresTurn === null || d.expiresTurn >= turn));
+  return { state: { ...state, deferred: keep, intents: state.intents.map(i => released.some(r => r.id === i.id) ? { ...i, status: 'delivered' as const, note: `released at ${boundary.replace('_', ' ')}` } : i) }, released };
+}
+
+// ---- Strategic windows + decaying world signals -----------------------------------------------------
+
+export function updateStrategicWindows(state: WorldReactionState, s: SWRInputs, events: StrategicWorldEvent[]): WorldReactionState {
+  const turn = s.turn;
+  const humans = s.actors.filter(a => a.isHuman);
+  const windows = state.windows.map(w => ({ ...w }));
+  const upsert = (w: Omit<StrategicWindow, 'status' | 'openedTurn'> & { openedTurn?: number }) => {
+    const existing = windows.find(x => x.id === w.id);
+    if (existing) { Object.assign(existing, { ...w, openedTurn: existing.openedTurn, status: 'open' }); return; }
+    windows.push({ ...w, openedTurn: w.openedTurn ?? turn, status: 'open' });
+  };
+  const valid = new Set<string>();
+  humans.forEach(h => {
+    // Diplomatic safety: an opponent promised not to pressure a region.
+    s.deals.filter(d => d.status === 'active' && d.participants.includes(h.id)).forEach(d => Object.entries(d.restrictedActors).forEach(([actor, regions]) => {
+      if (actor === h.id) return;
+      regions.forEach(r => { const id = `win_dip_${d.id}_${r}`; valid.add(id); upsert({ id, type: 'diplomatic_safety', subject: r, ownerActorId: h.id, expiresTurn: d.expirationTurn, confidence: 'high', reason: `${s.ownerNames[actor] || actor} promised not to pressure ${r}${d.expirationTurn !== null ? ` until round ${d.expirationTurn}` : ''}.`, sourceEvents: events.filter(e => e.subjectId === d.id).map(e => e.id), observers: d.participants }); });
+    }));
+    // Rival vulnerability: only when the player can actually see the rival's cash (no fog).
+    if (!s.fogOfWar) s.actors.filter(a => !a.isHuman && a.teamId !== h.teamId && (a.inRecovery || a.money < 1500)).forEach(a => { const id = `win_vuln_${a.id}`; valid.add(id); upsert({ id, type: 'rival_vulnerability', subject: a.id, ownerActorId: h.id, expiresTurn: turn + 1, confidence: 'moderate', reason: `${a.name} is short on cash — contesting their regions or offering cash deals has extra leverage right now.`, sourceEvents: [], observers: [h.id] }); });
+    // Commodity sell window: prices unusually high for something the player holds.
+    Object.entries(h.inventory || {}).forEach(([res, q]) => { const p = s.prices[res]; const b = s.basePrices[res]; if (q > 0 && p && b && p / b >= 1.25) { const id = `win_sell_${h.id}_${res}`; valid.add(id); upsert({ id, type: 'commodity_sell', subject: res, ownerActorId: h.id, expiresTurn: turn + 1, confidence: 'moderate', reason: `${res} sells ${Math.round((p / b - 1) * 100)}% above normal and you hold ${q}.`, sourceEvents: events.filter(e => e.subjectId === res).map(e => e.id), observers: [h.id] }); } });
+    // Contract completion window.
+    s.contracts.filter(c => c.assignedActorId === h.id && c.turnsRemaining !== null && c.turnsRemaining <= 2 && !/complet|fail|expir/.test(c.status)).forEach(c => { const id = `win_contract_${c.id}`; valid.add(id); upsert({ id, type: 'contract_completion', subject: c.id, ownerActorId: h.id, expiresTurn: turn + (c.turnsRemaining || 0), confidence: 'high', reason: `${c.title} can still pay ${swrMoney(c.rewardMoney)} if completed in the next ${c.turnsRemaining} turn(s).`, sourceEvents: [], observers: [h.id] }); });
+    // Expansion opportunity: a region held by someone else that the player can afford to contest now.
+    s.regions.forEach(r => {
+      const m = swrRegionMetrics(r);
+      const mine = r.deposits[h.id] || r.deposits[h.teamId || ''] || 0;
+      if (!m.holder || m.holder === h.id || m.holder === h.teamId) return;
+      const cost = Math.max(1, m.holderDep + 1 - mine);
+      const band = state.bands[`region:${r.code}`]?.band;
+      if (h.money >= cost * 1.3 && (band === 'contested' || band === 'at_risk' || cost <= 1500)) { const id = `win_expand_${h.id}_${r.code}`; valid.add(id); upsert({ id, type: 'expansion_opportunity', subject: r.code, ownerActorId: h.id, expiresTurn: turn + 1, confidence: 'moderate', reason: `${r.name} would cost about ${swrMoney(cost)} to take — within your cash.`, sourceEvents: events.filter(e => e.subjectId === r.code).map(e => e.id), observers: [h.id] }); }
+    });
+  });
+  // Revalidate: conditions that no longer hold close; passed deadlines expire (nothing stale survives).
+  windows.forEach(w => { if (w.status !== 'open') return; if (w.expiresTurn !== null && w.expiresTurn < turn) w.status = 'expired'; else if (!valid.has(w.id)) w.status = 'closed'; });
+  const kept = windows.filter(w => w.status === 'open' || turn - (w.expiresTurn ?? w.openedTurn) <= 2).slice(-SWR_LIMITS.windows);
+  return { ...state, windows: kept };
+}
+
+const SWR_CONSTRUCTION = ['Timber', 'Iron Ore', 'Coal'];
+
+/** Derived world-pressure signals (never currencies): bounded, and they decay once their causes fade. */
+export function updateWorldSignals(state: WorldReactionState, s: SWRInputs, events: StrategicWorldEvent[]): WorldReactionState {
+  const turn = s.turn;
+  const map = new Map<string, SWRSignal>();
+  state.signals.forEach(sig => {
+    const steps = Math.max(0, turn - sig.updatedTurn);
+    const decay = sig.kind === 'public_instability' ? 1 : Math.pow(sig.kind === 'regional_competition_pressure' ? 0.7 : 0.8, steps);
+    const value = Math.round(sig.value * decay * 100) / 100;
+    if (Math.abs(value) >= 0.05) map.set(sig.key, { ...sig, value, updatedTurn: steps ? turn : sig.updatedTurn });
+  });
+  const add = (kind: SWRSignal['kind'], subject: string, delta: number, source: string) => {
+    const key = `${kind}:${subject}`;
+    const cur = map.get(key);
+    const value = Math.max(-1, Math.min(1, Math.round(((cur?.value || 0) + delta) * 100) / 100));
+    map.set(key, { key, kind, subject, value, updatedTurn: turn, source });
+  };
+  events.forEach(e => {
+    const w = SWR_SIG_RANK[e.significance] >= 3 ? 0.6 : 0.4;
+    if (e.kind === 'rival_pressure_increased') add('regional_competition_pressure', e.subjectId, w, e.id);
+    if (e.kind === 'region_became_safe' || (e.kind === 'region_reinforced' && e.after.band === 'safe')) add('regional_competition_pressure', e.subjectId, -0.3, e.id);
+    if (e.kind === 'liquidity_deteriorated') add('economic_liquidity_pressure', e.subjectId, 0.5, e.id);
+    if (e.kind === 'project_started') { add('infrastructure_demand', 'national', 0.3, e.id); SWR_CONSTRUCTION.forEach(r => add('market_demand_pressure', r, 0.4, e.id)); }
+    if (e.kind === 'project_completed') add('infrastructure_demand', 'national', -0.2, e.id);
+    if (e.kind === 'resource_liquidation') add('market_supply_pressure', e.subjectId, 0.5, e.id);
+    if (e.kind === 'diplomatic_pact_broken') add('diplomatic_tension', 'national', 0.6, e.id);
+    if (e.kind === 'rival_target_reassessed' && e.actorId) add('rival_expansion_pressure', e.actorId, 0.4, e.id);
+    if (e.kind === 'contract_expiring') add('contract_relevance', e.subjectId, 0.6, e.id);
+  });
+  if (s.stability) { const v = s.stability.national; const inst = v < 30 ? 0.9 : v < 50 ? 0.5 : v < 60 ? 0.2 : 0; if (inst) map.set('public_instability:national', { key: 'public_instability:national', kind: 'public_instability', subject: 'national', value: inst, updatedTurn: turn, source: 'stability' }); else map.delete('public_instability:national'); }
+  // Regional pressure cannot outlive a region that became safe.
+  map.forEach((sig, key) => { if (sig.kind === 'regional_competition_pressure' && state.bands[`region:${sig.subject}`]?.band === 'safe' && sig.value < 0.3) map.delete(key); });
+  return { ...state, signals: Array.from(map.values()).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, SWR_LIMITS.signals) };
+}
+
+/** Market: a bounded pressure INPUT (fraction of base price, ±6%) for the canonical daily market update. */
+export function worldMarketPressure(state: WorldReactionState | null | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  (state?.signals || []).forEach(sig => {
+    if (sig.kind === 'market_demand_pressure') out[sig.subject] = (out[sig.subject] || 0) + 0.06 * sig.value;
+    if (sig.kind === 'market_supply_pressure') out[sig.subject] = (out[sig.subject] || 0) - 0.06 * sig.value;
+  });
+  Object.keys(out).forEach(k => { out[k] = Math.max(-0.06, Math.min(0.06, Math.round(out[k] * 1000) / 1000)); if (!out[k]) delete out[k]; });
+  return out;
+}
+
+/** Crisis / national-event CONTEXT (eligibility weighting only — never a crisis generator). */
+export function worldCrisisContext(state: WorldReactionState | null | undefined): { instability: number; shortage: number; chanceMultiplier: number } {
+  const sig = (k: SWRSignal['kind']) => Math.max(0, ...(state?.signals || []).filter(x => x.kind === k).map(x => x.value));
+  const instability = sig('public_instability'); const shortage = Math.max(sig('economic_liquidity_pressure'), sig('market_demand_pressure') * 0.5);
+  return { instability, shortage, chanceMultiplier: Math.round(Math.min(1.5, 1 + 0.5 * Math.max(instability, shortage)) * 100) / 100 };
+}
+
+/** Compact temporary strategic conditions (interpretations, not mechanics). */
+export function deriveStrategicConditions(state: WorldReactionState, viewerId: string): string[] {
+  const out: string[] = [];
+  Object.entries(state.bands).forEach(([k, v]) => { if (k.startsWith('region:') && v.band === 'contested') out.push(`${k.slice(7)}_PRESSURE_HIGH`); if (k === `cash:${viewerId}` && v.band === 'strong') out.push('PLAYER_LIQUIDITY_STRONG'); if (k.startsWith('team:') && v.band === 'shortage') out.push('TEAM_RESOURCE_CONSTRAINED'); });
+  state.windows.filter(w => w.status === 'open' && w.observers.includes(viewerId)).forEach(w => { if (w.type === 'diplomatic_safety') out.push(`${w.subject}_WINDOW_SAFE${w.expiresTurn !== null ? ` (until round ${w.expiresTurn})` : ''}`); });
+  return out.slice(0, 8);
+}
+
+/** Plain-language form of a condition code. */
+export function describeStrategicCondition(code: string): string {
+  let m = /^([A-Z]+)_PRESSURE_HIGH$/.exec(code); if (m) return `${m[1]} under heavy pressure`;
+  m = /^([A-Z]+)_WINDOW_SAFE(.*)$/.exec(code); if (m) return `${m[1]} protected by an agreement${m[2] ? ` ${m[2].trim()}` : ''}`;
+  if (code === 'PLAYER_LIQUIDITY_STRONG') return 'your cash position is strong';
+  if (code === 'TEAM_RESOURCE_CONSTRAINED') return 'team resources are constrained';
+  return code.replace(/_/g, ' ').toLowerCase();
+}
+
+/** Speak to the viewer: their own name becomes "you" / "your". */
+export function personalizeWorldText(text: string, viewerName: string | null | undefined, viewerTeamName?: string | null): string {
+  if (viewerTeamName && viewerTeamName !== viewerName) {
+    // The viewer's own team reads as "your team" (third person, so verbs stay as they are).
+    const t = viewerTeamName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`^${t}(?:'s)?\\b`), m => (m.endsWith("'s") ? "Your team's" : 'Your team')).replace(new RegExp(`\\b${t}\\b`, 'g'), 'your team');
+  }
+  if (!viewerName) return text;
+  const n = viewerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`\\b${n}'s\\b`, 'g'), 'your').replace(new RegExp(`^${n}\\b`), 'You').replace(new RegExp(`\\b${n}\\b`, 'g'), 'you')
+    // Subject-verb agreement after the swap ("You now controls" -> "You now control").
+    .replace(/\b([Yy]ou)((?: now| still| no longer)?) (has|is|was|does|[a-z]+[^s\s]s)\b/g, (_m: string, y: string, adv: string, v: string) => `${y}${adv} ${SWR_IRREGULAR_VERBS[v] || v.replace(/(ch|sh|[sxz])es$/, '$1').replace(/s$/, '')}`);
+}
+const SWR_IRREGULAR_VERBS: Record<string, string> = { has: 'have', is: 'are', was: 'were', does: 'do' };
+
+// ---- Consequence graph + explanations ------------------------------------------------------------------
+
+export interface StrategicConsequenceGraph { nodes: StrategicWorldEvent[]; edges: Array<{ from: string; to: string; kind: 'caused' | 'contributed' }> }
+
+export function buildStrategicConsequenceGraph(state: WorldReactionState, viewerId: string | null): StrategicConsequenceGraph {
+  const nodes = state.events.filter(e => !viewerId || canObserveSWREvent(e, viewerId));
+  const ids = new Set(nodes.map(n => n.id));
+  const edges: StrategicConsequenceGraph['edges'] = [];
+  nodes.forEach(n => { if (n.causedByEventId && ids.has(n.causedByEventId)) edges.push({ from: n.causedByEventId, to: n.id, kind: 'caused' }); n.contributingCauses.forEach(c => { if (ids.has(c)) edges.push({ from: c, to: n.id, kind: 'contributed' }); }); });
+  return { nodes, edges: edges.slice(-SWR_LIMITS.graphEdges) };
+}
+
+export interface WorldConsequenceExplanation {
+  event: StrategicWorldEvent;
+  what: string;
+  directCause: { text: string; claimKind: SWRClaimKind; eventId: string | null } | null;
+  contributingCauses: string[];
+  systemsAffected: string[];
+  afterward: Array<{ text: string; claimKind: SWRClaimKind; confidence: string }>;
+  confidence: 'high' | 'moderate' | 'low';
+  chain: StrategicWorldEvent[];
+}
+
+/** Why did this happen? Only events the viewer could observe are used; hidden causes are named as unknown. */
+export function explainWorldConsequence(eventId: string, state: WorldReactionState, viewerId: string): WorldConsequenceExplanation | null {
+  const e = state.events.find(x => x.id === eventId);
+  if (!e || !canObserveSWREvent(e, viewerId)) return null;
+  const visible = (id: string | null) => (id ? state.events.find(x => x.id === id && canObserveSWREvent(x, viewerId)) || null : null);
+  const cause = visible(e.causedByEventId);
+  const chain: StrategicWorldEvent[] = [];
+  let cur: StrategicWorldEvent | null = e; let guard = 0;
+  while (cur && guard++ < 8) { chain.unshift(cur); cur = visible(cur.causedByEventId); }
+  const children = state.events.filter(x => x.causedByEventId === e.id && canObserveSWREvent(x, viewerId));
+  const systems = Array.from(new Set(state.intents.filter(i => i.sourceEventId === e.id && i.status !== 'suppressed' && (!i.targetActorId || i.targetActorId === viewerId || i.targetSystem === 'rival_strategy')).map(i => SWR_SYSTEM_LABELS[i.targetSystem])));
+  return {
+    event: e, what: e.strategicMeaning,
+    directCause: cause ? { text: cause.strategicMeaning, claimKind: cause.claimKind, eventId: cause.id } : e.causedByEventId ? { text: 'A change you could not observe (hidden by fog of war).', claimKind: 'inference', eventId: null } : e.sourceEventId ? { text: `Direct result of a recorded action (${e.evidence[0] || 'see the ledger'}).`, claimKind: 'fact', eventId: null } : null,
+    contributingCauses: e.contributingCauses.map(id => visible(id)?.strategicMeaning).filter(Boolean) as string[],
+    systemsAffected: systems, afterward: children.map(c => ({ text: c.strategicMeaning, claimKind: c.claimKind, confidence: c.confidence })), confidence: cause ? (cause.confidence === 'high' && e.confidence === 'high' ? 'high' : 'moderate') : e.confidence, chain
+  };
+}
+
+/** What changed? Only meaningful, observable changes, highest significance first, one per subject. */
+export function summarizeWorldChanges(state: WorldReactionState, viewerId: string, sinceTurn: number, limit = 5): StrategicWorldEvent[] {
+  const seen = new Set<string>();
+  return state.events.filter(e => e.turn >= sinceTurn && canObserveSWREvent(e, viewerId) && SWR_SIG_RANK[e.significance] >= 2)
+    .sort((a, b) => SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance] || b.turn - a.turn || a.id.localeCompare(b.id))
+    .filter(e => { const k = `${e.subjectId}:${e.kind}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, limit);
+}
+
+/** What did my action cause? The viewer's root event(s) and everything that descended from them. */
+export function traceActionConsequences(state: WorldReactionState, viewerId: string, match: { regionId?: string | null; sinceTurn?: number; teamId?: string | null } = {}): { root: StrategicWorldEvent; direct: StrategicWorldEvent[]; economic: StrategicWorldEvent[]; strategic: StrategicWorldEvent[]; plan: StrategicWorldEvent[] } | null {
+  const mine = state.events.filter(e => canObserveSWREvent(e, viewerId) && (e.actorId === viewerId || (match.teamId && e.actorId === match.teamId) || e.tags.includes(`owner:${viewerId}`)) && e.reactionDepth === 0 && (!match.regionId || e.subjectId === match.regionId) && e.turn >= (match.sinceTurn ?? -Infinity) && ['region_reinforced', 'region_secured', 'region_became_safe', 'contract_completed', 'resource_liquidation', 'diplomatic_pact_started', 'project_started'].includes(e.kind));
+  const root = mine.sort((a, b) => b.turn - a.turn || SWR_SIG_RANK[b.significance] - SWR_SIG_RANK[a.significance])[0];
+  if (!root) return null;
+  const desc = state.events.filter(e => e.rootEventId === root.rootEventId && e.id !== root.id && canObserveSWREvent(e, viewerId));
+  return { root, direct: [root], economic: desc.filter(e => e.affectedDomains.includes('economy')), strategic: desc.filter(e => e.affectedDomains.includes('rivals') || e.affectedDomains.includes('regions')).filter(e => !e.affectedDomains.includes('economy')), plan: desc.filter(e => (e.affectedDomains.includes('strategy') || e.affectedDomains.includes('objectives')) && !e.affectedDomains.includes('economy')) };
+}
+
+/** Turning points for the debrief: the most consequential roots per category (by significance × reach). */
+export function findStrategicTurningPoints(state: WorldReactionState, viewerId: string | null): Array<{ category: string; root: StrategicWorldEvent; descendants: StrategicWorldEvent[] }> {
+  const roots = state.events.filter(e => e.reactionDepth === 0 && (!viewerId || canObserveSWREvent(e, viewerId)));
+  const cat = (e: StrategicWorldEvent) => (e.affectedDomains.includes('diplomacy') ? 'diplomatic' : e.affectedDomains.includes('team') ? 'team plan' : e.affectedDomains.includes('economy') || e.affectedDomains.includes('market') ? 'economic' : 'strategic');
+  const scored = roots.map(r => { const d = state.events.filter(e => e.rootEventId === r.id && e.id !== r.id && (!viewerId || canObserveSWREvent(e, viewerId))); return { r, d, score: SWR_SIG_RANK[r.significance] * 3 + d.length * 2 + d.reduce((s, x) => s + SWR_SIG_RANK[x.significance], 0) }; });
+  const out: Array<{ category: string; root: StrategicWorldEvent; descendants: StrategicWorldEvent[] }> = [];
+  ['strategic', 'economic', 'diplomatic', 'team plan'].forEach(c => { const best = scored.filter(x => cat(x.r) === c).sort((a, b) => b.score - a.score || a.r.id.localeCompare(b.r.id))[0]; if (best && best.score >= 9) out.push({ category: c, root: best.r, descendants: best.d }); });
+  return out;
+}
+
+// ---- What-If (bounded, never touches live history) ----------------------------------------------
+
+export function applyCandidateToSWRInputs(s: SWRInputs, c: { actorId: string; kind: 'deposit' | 'spend' | 'earn'; regionId?: string | null; amount: number }): SWRInputs {
+  const next: SWRInputs = JSON.parse(JSON.stringify(s));
+  const a = next.actors.find(x => x.id === c.actorId);
+  if (a) a.money = Math.max(0, a.money + (c.kind === 'earn' ? c.amount : -c.amount));
+  if (c.kind === 'deposit' && c.regionId) {
+    const r = next.regions.find(x => x.code === c.regionId);
+    const key = r && (Object.keys(r.deposits).includes(c.actorId) || !a?.teamId || !next.ownerTeams[a.teamId] ? c.actorId : a.teamId);
+    if (r && key) { r.deposits[key] = (r.deposits[key] || 0) + c.amount; const m = swrRegionMetrics({ ...r, controller: r.controller }); if (!r.controller || r.deposits[key] > (r.deposits[r.controller] || 0)) r.controller = key; void m; }
+  }
+  next.turn = s.turn;
+  return next;
+}
+
+/** Likely ripple effects of a candidate action — projections only, lower budget (depth 2), no persistence. */
+export function previewStrategicConsequences(current: SWRInputs, candidate: Parameters<typeof applyCandidateToSWRInputs>[1], state: WorldReactionState): { events: StrategicWorldEvent[]; systems: string[]; exposed: string | null } {
+  const prev = buildStrategicSnapshot(current);
+  const next = buildStrategicSnapshot(applyCandidateToSWRInputs(current, candidate));
+  const det = detectStrategicConsequences(prev, next, { ...state, events: [] }, { action: { id: 'whatif', actorId: candidate.actorId, actionType: candidate.kind, regionId: candidate.regionId || null, amount: candidate.amount } });
+  const budgets = { ...SWR_BUDGETS, critical: { maxDepth: 2, maxReactions: 6, maxNewEvents: 3 }, major: { maxDepth: 2, maxReactions: 5, maxNewEvents: 2 } };
+  const out = processWorldReactions({ ...state, bands: det.bands, cooldowns: {}, events: [], intents: [] }, det.events, next, { budgets, persist: false });
+  const events = out.events.map(e => ({ ...e, claimKind: (e.reactionDepth ? 'projection' : 'calculated') as SWRClaimKind, confidence: (e.reactionDepth ? 'low' : 'moderate') as 'low' | 'moderate' }));
+  // Most exposed alternative: the rival's next-most-contested region it could turn to.
+  const rival = events.find(e => e.kind === 'rival_target_reassessed')?.actorId || null;
+  let exposed: string | null = null;
+  if (rival) {
+    const rt = swrActorTeam(next, rival);
+    const opts = next.regions.filter(r => r.code !== candidate.regionId && r.controller && r.controller !== rival && r.controller !== rt).map(r => ({ code: r.code, m: swrRegionMetrics(r) })).sort((a, b) => a.m.costToContest - b.m.costToContest || a.code.localeCompare(b.code));
+    exposed = opts[0]?.code || null;
+  }
+  return { events, systems: Array.from(new Set(out.delivered.concat(out.deferred).map(i => SWR_SYSTEM_LABELS[i.targetSystem]))), exposed };
+}
+
+// ---- Save / load ----------------------------------------------------------------------------------------
+
+export function sanitizeWorldReactionState(raw: unknown): WorldReactionState {
+  const out = createEmptyWorldReactionState();
+  if (!raw || typeof raw !== 'object') return out;
+  const r: any = raw;
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const str = (v: any, d: string | null = null) => (typeof v === 'string' ? v.slice(0, 240) : d);
+  const sigs: SWRSignificance[] = ['ignore', 'minor', 'meaningful', 'major', 'critical'];
+  out.revision = Math.max(0, num(r.revision));
+  if (r.bands && typeof r.bands === 'object') Object.entries(r.bands).slice(-SWR_LIMITS.bands).forEach(([k, v]: [string, any]) => { if (v && typeof v === 'object' && typeof v.band === 'string') out.bands[k.slice(0, 80)] = { band: v.band.slice(0, 40), value: num(v.value), turn: num(v.turn) }; });
+  out.events = (Array.isArray(r.events) ? r.events : []).filter((e: any) => e && typeof e === 'object' && typeof e.id === 'string' && typeof e.kind === 'string').slice(-SWR_LIMITS.events).map((e: any): StrategicWorldEvent => ({
+    id: e.id.slice(0, 80), turn: num(e.turn), day: num(e.day), sourceSystem: str(e.sourceSystem, 'state_delta')!, sourceEventId: str(e.sourceEventId), actorId: str(e.actorId), teamId: str(e.teamId), kind: e.kind, subjectType: e.subjectType || 'region', subjectId: str(e.subjectId, '')!, magnitude: num(e.magnitude),
+    significance: sigs.includes(e.significance) ? e.significance : 'minor', visibility: ['public', 'team_only', 'actor_only', 'observed_by', 'hidden'].includes(e.visibility) ? e.visibility : 'hidden', observers: (Array.isArray(e.observers) ? e.observers : []).map(String).slice(0, 12),
+    evidence: (Array.isArray(e.evidence) ? e.evidence : []).map((x: any) => String(x).slice(0, 160)).slice(0, 5), before: e.before && typeof e.before === 'object' ? e.before : {}, after: e.after && typeof e.after === 'object' ? e.after : {}, delta: e.delta && typeof e.delta === 'object' ? e.delta : {},
+    strategicMeaning: str(e.strategicMeaning, '')!, affectedDomains: (Array.isArray(e.affectedDomains) ? e.affectedDomains : []).slice(0, 6), tags: (Array.isArray(e.tags) ? e.tags : []).map(String).slice(0, 6), layer: e.layer || 'strategic', confidence: ['high', 'moderate', 'low'].includes(e.confidence) ? e.confidence : 'moderate', claimKind: ['fact', 'calculated', 'inference', 'projection'].includes(e.claimKind) ? e.claimKind : 'calculated',
+    causedByEventId: str(e.causedByEventId), contributingCauses: (Array.isArray(e.contributingCauses) ? e.contributingCauses : []).map(String).slice(0, 4), rootEventId: str(e.rootEventId, e.id)!, reactionDepth: Math.max(0, Math.min(6, num(e.reactionDepth))), expiresTurn: typeof e.expiresTurn === 'number' ? e.expiresTurn : null, dedupeKey: str(e.dedupeKey, e.id)!
+  }));
+  const intent = (i: any): WorldReactionIntent | null => (i && typeof i === 'object' && typeof i.id === 'string' && typeof i.targetSystem === 'string' ? { id: i.id.slice(0, 80), sourceEventId: str(i.sourceEventId, '')!, rootEventId: str(i.rootEventId, '')!, targetSystem: i.targetSystem, targetActorId: str(i.targetActorId), targetTeamId: str(i.targetTeamId), priority: num(i.priority), reason: str(i.reason, '')!, requestedEvaluation: str(i.requestedEvaluation, '')!, subjectId: str(i.subjectId, '')!, context: i.context && typeof i.context === 'object' ? i.context : {}, timing: i.timing || 'immediate', expiresTurn: typeof i.expiresTurn === 'number' ? i.expiresTurn : null, dedupeKey: str(i.dedupeKey, i.id)!, depth: num(i.depth) } : null);
+  out.intents = (Array.isArray(r.intents) ? r.intents : []).map((i: any) => { const x = intent(i); return x ? { ...x, status: ['delivered', 'deferred', 'suppressed'].includes(i.status) ? i.status : 'delivered', turn: num(i.turn), note: str(i.note) } : null; }).filter(Boolean).slice(-SWR_LIMITS.intents) as WorldReactionState['intents'];
+  out.deferred = (Array.isArray(r.deferred) ? r.deferred : []).map(intent).filter(Boolean).slice(-SWR_LIMITS.deferred) as WorldReactionIntent[];
+  out.windows = (Array.isArray(r.windows) ? r.windows : []).filter((w: any) => w && typeof w === 'object' && typeof w.id === 'string').slice(-SWR_LIMITS.windows).map((w: any): StrategicWindow => ({ id: w.id.slice(0, 80), type: w.type, subject: str(w.subject, '')!, ownerActorId: str(w.ownerActorId, '')!, openedTurn: num(w.openedTurn), expiresTurn: typeof w.expiresTurn === 'number' ? w.expiresTurn : null, confidence: ['high', 'moderate', 'low'].includes(w.confidence) ? w.confidence : 'moderate', reason: str(w.reason, '')!, sourceEvents: (Array.isArray(w.sourceEvents) ? w.sourceEvents : []).map(String).slice(0, 4), status: ['open', 'expired', 'closed'].includes(w.status) ? w.status : 'closed', observers: (Array.isArray(w.observers) ? w.observers : []).map(String).slice(0, 12) }));
+  out.signals = (Array.isArray(r.signals) ? r.signals : []).filter((x: any) => x && typeof x.key === 'string').slice(0, SWR_LIMITS.signals).map((x: any) => ({ key: x.key.slice(0, 80), kind: x.kind, subject: str(x.subject, '')!, value: Math.max(-1, Math.min(1, num(x.value))), updatedTurn: num(x.updatedTurn), source: str(x.source, '')! }));
+  if (r.cooldowns && typeof r.cooldowns === 'object') Object.entries(r.cooldowns).slice(0, SWR_LIMITS.cooldowns).forEach(([k, v]) => { if (typeof v === 'number') out.cooldowns[k.slice(0, 120)] = v; });
+  if (r.patterns && typeof r.patterns === 'object') Object.entries(r.patterns).slice(0, SWR_LIMITS.patterns).forEach(([k, v]: [string, any]) => { if (v && typeof v === 'object') out.patterns[k.slice(0, 120)] = { count: num(v.count), lastTurn: num(v.lastTurn) }; });
+  if (r.diagnostics && typeof r.diagnostics === 'object') {
+    const d: any = r.diagnostics;
+    (['detected', 'ignored', 'deduped', 'routed', 'suppressed', 'cyclesBlocked', 'maxDepth', 'evaluations', 'lastMs', 'budgetExhausted'] as const).forEach(k => { out.diagnostics[k] = Math.max(0, num(d[k])); });
+    out.diagnostics.lastChangedDomains = (Array.isArray(d.lastChangedDomains) ? d.lastChangedDomains : []).map(String).slice(0, 16);
+    out.diagnostics.lastSuppressions = (Array.isArray(d.lastSuppressions) ? d.lastSuppressions : []).map((x: any) => String(x).slice(0, 160)).slice(-8);
+  }
+  out.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h === 'object').slice(-80).map((h: any) => ({ turn: num(h.turn), eventId: str(h.eventId), intentId: str(h.intentId), text: str(h.text, '')!, kind: ['event', 'intent', 'suppressed', 'window', 'derived'].includes(h.kind) ? h.kind : 'event' }));
+  return out;
+}
+
+/** After load: windows/deferred revalidated against the CURRENT world; stale derived conditions are discarded. */
+export function rehydrateWorldReactionState(state: WorldReactionState, s: SWRInputs): WorldReactionState {
+  const turn = s.turn;
+  let next: WorldReactionState = { ...state, deferred: state.deferred.filter(d => d.expiresTurn === null || d.expiresTurn >= turn) };
+  next = updateStrategicWindows(next, s, []);
+  next = updateWorldSignals(next, s, []);
+  return next;
+}
+
+export function buildWorldReactionDebrief(state: WorldReactionState, viewerId: string | null, names: Record<string, string> = {}): string[] {
+  const tps = findStrategicTurningPoints(state, viewerId);
+  const lines: string[] = [];
+  const main = tps.slice().sort((a, b) => SWR_SIG_RANK[b.root.significance] + b.descendants.length - (SWR_SIG_RANK[a.root.significance] + a.descendants.length))[0];
+  if (main) {
+    lines.push(`Most consequential moment (round ${main.root.turn}): ${main.root.strategicMeaning}`);
+    main.descendants.slice(0, 2).forEach((d, i) => lines.push(`${i === 0 ? 'Result' : 'Secondary effect'}: ${d.strategicMeaning}`));
+  }
+  tps.filter(t => t !== main).forEach(t => lines.push(`Largest ${t.category} shift (round ${t.root.turn}): ${t.root.strategicMeaning}`));
+  void names;
+  return lines.slice(0, 6);
+}
+
+
+// ---- Receiving-system entry points (each system decides its own response) -------------------------
+
+/** Team OS: world intents become ordinary replan TRIGGERS; Team OS's own cooldown/significance rules decide. */
+export function worldReactionTeamTriggers(state: WorldReactionState | null | undefined, teamId: string, turn: number): TeamReplanTrigger[] {
+  if (!state) return [];
+  const out: TeamReplanTrigger[] = [];
+  state.intents.filter(i => i.targetSystem === 'team_os' && i.status === 'delivered' && i.targetTeamId === teamId && turn - i.turn <= 1).forEach(i => {
+    const e = state.events.find(x => x.id === i.sourceEventId);
+    if (!e) return;
+    const key = `world:${e.kind}:${e.subjectId}:${e.turn}`;
+    if (out.some(t => t.key === key)) return;
+    // Capped below the critical bypass: a world signal never overrides Team OS's own replan cooldown.
+    out.push({ key, label: `World change: ${e.strategicMeaning.replace(/\.$/, '')}`, severity: Math.min(4, SWR_SIG_RANK[e.significance]) });
+  });
+  return out.slice(0, 4);
+}
+
+/** Rival strategy (enemy Team OS): the same trigger path, addressed to the rival's own team plan. */
+export function worldReactionRivalTriggers(state: WorldReactionState | null | undefined, teamId: string, actorIds: string[], turn: number): TeamReplanTrigger[] {
+  if (!state) return [];
+  return state.intents.filter(i => i.targetSystem === 'rival_strategy' && i.status === 'delivered' && ((i.targetTeamId && i.targetTeamId === teamId) || (i.targetActorId && actorIds.includes(i.targetActorId))) && turn - i.turn <= 1)
+    .map(i => { const e = state.events.find(x => x.id === i.sourceEventId); return e ? { key: `world_rival:${e.kind}:${e.subjectId}:${e.turn}`, label: `Reconsider targets: ${e.strategicMeaning.replace(/\.$/, '')}`, severity: Math.min(4, SWR_SIG_RANK[e.significance] + 1) } : null; })
+    .filter((t, idx, arr): t is TeamReplanTrigger => Boolean(t) && arr.findIndex(x => x && x.key === t!.key) === idx).slice(0, 3);
+}
+
+/** AI Memory: a rival's planning assumption about a region is marked stale (the AI replans on its own). */
+export function noteAiPlanReassessment(memories: AiMemoriesByActor, ownerId: string, regionId: string, reason: string, turn: number): AiMemoriesByActor {
+  const key = resolveAiMemoryActorId(ownerId);
+  const m = memories[key];
+  if (!m || !m.adaptivePlan) return memories;
+  if (!m.adaptivePlan.objectiveId.includes(regionId) && m.adaptivePlan.status === 'revised' && m.adaptivePlan.revisionReason === reason) return memories;
+  return { ...memories, [key]: { ...m, adaptivePlan: { ...m.adaptivePlan, status: 'revised', revisionReason: reason.slice(0, 160) }, lastDecayTurn: m.lastDecayTurn } };
+}
+
+/** GI3 (owner decides): a replan-worthy world change becomes a strategy notice — explicit goals never change. */
+export function gi3ConsiderWorldReaction(state: GI3StrategyState, intent: WorldReactionIntent, e: StrategicWorldEvent): GI3StrategyState {
+  const active = state.active;
+  if (!active || active.status !== 'active' || intent.requestedEvaluation !== 'evaluate_replan') return state;
+  const goal = active.goals.find(g => g.regionId === e.subjectId && g.status !== 'completed' && g.status !== 'removed');
+  if (!goal) return state;
+  const id = `wr_${e.kind}_${e.subjectId}_${e.turn}`.slice(0, 80);
+  if (state.notices.some(n => n.id === id)) return state;
+  const text = e.kind === 'region_lost' ? `${e.strategicMeaning} Your “${goal.label}” goal needs a decision — retake it or re-plan.` : `${e.strategicMeaning} Your “${goal.label}” phase is now riskier.`;
+  return { ...state, notices: [...state.notices, { id, kind: 'recommend_change' as const, text: text.slice(0, 240), revision: active.revision, turn: e.turn, dismissed: false }].slice(-GI3_LIMITS.notices), events: [...state.events, { id: `g3e_${id}`, turn: e.turn, kind: (e.kind === 'region_lost' ? 'region_lost' : 'region_at_risk') as GI3EventKind, significance: (SWR_SIG_RANK[e.significance] >= 4 ? 'critical' : 'major') as GI3StrategyEvent['significance'], summary: text.slice(0, 200), goalId: goal.id }].slice(-GI3_LIMITS.events) };
+}
+
+/** Background AI (owner decides ranking): recent observable world events + open windows as attention/opportunities. */
+export function backgroundWorldReactionInputs(world: GIWorld): { attention: BackgroundAttentionItem[]; opportunities: BackgroundOpportunity[] } {
+  const v = world.worldReaction;
+  if (!v) return { attention: [], opportunities: [] };
+  const viewer = world.player.id;
+  const recent = v.state.events.filter(e => canObserveSWREvent(e, viewer) && world.turn - e.turn <= 1 && (SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant')));
+  const attention: BackgroundAttentionItem[] = recent.slice(-4).map(e => ({
+    id: `wr_${e.id}`.slice(0, 80), domain: (e.affectedDomains.includes('diplomacy') ? 'world' : e.affectedDomains.includes('economy') ? 'economy' : e.affectedDomains.includes('strategy') ? 'strategy' : 'regions') as BGDomain, subject: e.subjectId,
+    importance: (SWR_SIG_RANK[e.significance] >= 4 ? 'critical' : SWR_SIG_RANK[e.significance] >= 3 ? 'high' : 'medium') as BGSeverity, urgency: (SWR_SIG_RANK[e.significance] >= 4 ? 'now' : 'soon') as BGUrgency, confidence: (e.confidence === 'high' ? 'high' : e.confidence === 'moderate' ? 'moderate' : 'low') as BGBand,
+    reversibility: e.kind === 'region_lost' ? 'hard_to_reverse' : 'reversible', deadline: e.expiresTurn, trend: 'new', reason: e.strategicMeaning, evidence: e.evidence.slice(0, 2), lastUpdated: world.turn, status: 'active'
+  }));
+  const opportunities: BackgroundOpportunity[] = v.state.windows.filter(w => w.status === 'open' && w.observers.includes(viewer)).slice(0, 3).map(w => ({
+    id: `wr_${w.id}`.slice(0, 80), type: 'strategic_window', subject: w.subject, value: null, urgency: (w.expiresTurn !== null && w.expiresTurn - world.turn <= 1 ? 'now' : 'soon') as BGUrgency, confidence: (w.confidence === 'high' ? 'high' : w.confidence === 'moderate' ? 'moderate' : 'low') as BGBand,
+    expiresTurn: w.expiresTurn, strategicAlignment: 'neutral', resourceRequirement: 0, reason: `${w.reason}${w.expiresTurn !== null ? ` Window until round ${w.expiresTurn}; no outcome is guaranteed.` : ''}`, actionIds: []
+  }));
+  return { attention, opportunities };
+}
+
+/** Contextual Actions: open windows raise the relevance of matching LEGAL actions (never invent actions). */
+export function annotateContextualActionsWithWorld(set: ContextualActionSet, state: WorldReactionState | null | undefined, viewerId: string): ContextualActionSet {
+  if (!state || !state.windows.some(w => w.status === 'open' && w.observers.includes(viewerId))) return set;
+  const wins = state.windows.filter(w => w.status === 'open' && w.observers.includes(viewerId));
+  const touch = (c: ContextualActionCandidate): ContextualActionCandidate => {
+    if (!c.legal) return c;
+    const text = `${c.label} ${c.description}`.toUpperCase();
+    const w = wins.find(x => (x.type === 'commodity_sell' && /SELL/.test(text) && text.includes(x.subject.toUpperCase())) || (x.type === 'expansion_opportunity' && /DEPOSIT|CONTROL|CLAIM|INVEST/.test(text) && text.includes(x.subject)) || (x.type === 'contract_completion' && /CONTRACT/.test(text)));
+    return w ? { ...c, relevance: c.relevance + 8, reasons: [...c.reasons, `World: ${w.reason}`].slice(0, 6) } : c;
+  };
+  const boosted = (c: ContextualActionCandidate) => c.reasons.some(r => r.startsWith('World: '));
+  const available = set.available.map(touch);
+  // A legal action matching an open window is promoted from "available" into "useful" (ranking only).
+  const promoted = available.filter(boosted);
+  return { ...set, recommended: set.recommended ? touch(set.recommended) : null, useful: [...promoted, ...set.useful.map(touch)].slice(0, Math.max(set.useful.length, promoted.length + set.useful.length)), available: available.filter(c => !boosted(c)), ranked: set.ranked.map(touch) };
+}
+
+
+// ---- Game Intelligence: causal questions ------------------------------------------------------------
+
+export interface WorldReactionWorldView {
+  state: WorldReactionState;
+  viewerId: string;
+  viewerTeamId: string | null;
+  names: Record<string, string>;
+  inputs: SWRInputs | null;
+}
+
+export type SWRQueryTopic = 'what_changed' | 'why' | 'my_action' | 'windows' | 'preview';
+export interface SWRQuery { topic: SWRQueryTopic; regionId: string | null; actorId: string | null; eventId: string | null }
+
+function swrRegionInText(q: string, gw: GIWorld): string | null {
+  return Object.keys(gw.regions || {}).find(c => new RegExp(`\\b(${c.toLowerCase()}|${(gw.regions[c].name || '').toLowerCase()})\\b`).test(q)) || null;
+}
+
+export function detectWorldReactionQuery(raw: string, gw: GIWorld): SWRQuery | null {
+  const v = gw.worldReaction;
+  if (!v || (!v.state.events.length && !v.state.windows.length)) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim()} `;
+  const regionId = swrRegionInText(q, gw);
+  const actor = gw.actors.find(a => a.relation !== 'self' && new RegExp(`\\b${a.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)) || null;
+  const actorKey = actor ? actor.id : null;
+  const visible = v.state.events.filter(e => canObserveSWREvent(e, v.viewerId));
+  if (/\bwhat (has |'s |have )?changed\b|\bwhat happened (this|last|since|over)\b|\bsince (my|the) last turn\b|\bany (big |major )?changes\b|\bwhat's new in the world\b/.test(q)) return { topic: 'what_changed', regionId, actorId: actorKey, eventId: null };
+  if (/\bwhat did (my|that|the|this) .{0,40}\b(change|cause|do|lead to)\b|\bwhat did i (just )?(change|cause)\b|\bconsequences? of my\b|\bwhat has my .{0,40}(changed|caused)\b/.test(q)) return { topic: 'my_action', regionId, actorId: actorKey, eventId: null };
+  if (/\b(strategic )?windows?\b|\bwhat opportunities (are|do i have) (open|right now)\b/.test(q) && !/\bwindows? (of|to) (the|a) region\b/.test(q)) return { topic: 'windows', regionId, actorId: actorKey, eventId: null };
+  if (/\bwhat would .{0,60}\b(cause|change|lead to|ripple)\b|\bsecond[- ]order\b|\bknock[- ]on\b|\bripple effects?\b/.test(q)) return { topic: 'preview', regionId, actorId: actorKey, eventId: null };
+  if (/\bwhy (did|has|is|was|are|were|does)\b/.test(q) || /\bwhy did this happen\b/.test(q)) {
+    const recent = visible.filter(e => gw.turn - e.turn <= 3);
+    const match = recent.slice().reverse().find(e => (regionId ? e.subjectId === regionId : true) && (actorKey ? (e.actorId === actorKey || e.tags.includes(`rival:${actorKey}`) || gw.actors.find(a => a.id === actorKey)?.name === v.names[e.actorId || '']) : true) && (regionId || actorKey || /\bthis\b/.test(q)) && SWR_SIG_RANK[e.significance] >= 2);
+    if (match) return { topic: 'why', regionId, actorId: actorKey, eventId: match.id };
+  }
+  return null;
+}
+
+const swrClaimKind = (k: SWRClaimKind): GIClaim['kind'] => (k === 'fact' || k === 'calculated' ? 'fact' : k === 'projection' ? 'projection' : 'inference');
+const swrCertainty = (c: 'high' | 'moderate' | 'low', k: SWRClaimKind): GICertainty => (k === 'fact' ? 'confirmed' : k === 'calculated' ? 'high' : c === 'high' ? 'high' : c === 'moderate' ? 'moderate' : 'low');
+const swClaim = (text: string, kind: GIClaim['kind'] = 'fact', certainty: GICertainty = 'confirmed') => claim(text, kind, certainty, ['swr.state'], { derived: giNumbersIn(text).map(n => n.value) });
+let swViewerName: string | null = null;
+let swViewerTeamName: string | null = null;
+const swText = (t: string) => personalizeWorldText(t, swViewerName, swViewerTeamName);
+const swEventClaim = (e: StrategicWorldEvent, prefix = '') => swClaim(`${prefix}${swText(e.strategicMeaning)}`, swrClaimKind(e.claimKind), swrCertainty(e.confidence, e.claimKind));
+
+export function composeWorldReactionAnswer(query: SWRQuery, gw: GIWorld, raw: string): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.worldReaction!;
+  const sections: GIAnswerSection[] = [];
+  const buttons: GameIntelligenceButton[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const st = v.state; const viewer = v.viewerId;
+  swViewerName = v.names[viewer] || gw.player.name || null;
+  swViewerTeamName = v.viewerTeamId ? v.names[v.viewerTeamId] || null : null;
+  let title = 'World reactions'; let shape: GIAnswerShape = 'explanation';
+  switch (query.topic) {
+    case 'what_changed': {
+      title = 'What changed'; shape = 'status';
+      const changes = summarizeWorldChanges(st, viewer, gw.turn - 1, 5);
+      if (!changes.length) say('none', null, [swClaim('Nothing strategically meaningful changed since your last turn.')]);
+      else say('changes', null, changes.map((e, i) => swEventClaim(e, `${i + 1}. `)));
+      const conds = deriveStrategicConditions(st, viewer);
+      if (conds.length) say('conditions', 'Current conditions', [swClaim(conds.map(describeStrategicCondition).join(' · ') + '.', 'inference', 'high')]);
+      break;
+    }
+    case 'why': {
+      const ex = query.eventId ? explainWorldConsequence(query.eventId, st, viewer) : null;
+      title = 'Why this happened'; shape = 'explanation';
+      if (!ex) { say('none', null, [swClaim('I could not find a recorded cause you can see for that.', 'caveat')]); break; }
+      say('what', 'What happened', [swEventClaim(ex.event), ...ex.event.evidence.slice(0, 2).map(x => swClaim(`Evidence: ${swText(x)}.`))]);
+      if (ex.directCause) say('cause', 'Direct cause', [swClaim(swText(ex.directCause.text), swrClaimKind(ex.directCause.claimKind), swrCertainty(ex.confidence, ex.directCause.claimKind))]);
+      if (ex.contributingCauses.length) say('contrib', 'Contributing causes', ex.contributingCauses.map(c => swClaim(swText(c), 'inference', 'moderate')));
+      if (ex.chain.length > 1) say('chain', 'Chain', [swClaim(swText(ex.chain.map(x => x.strategicMeaning.replace(/\.$/, '')).join(' → ') + '.'), ex.chain.some(x => x.claimKind === 'inference') ? 'inference' : 'fact', ex.confidence === 'high' ? 'high' : 'moderate')]);
+      if (ex.systemsAffected.length) say('systems', 'Systems that reacted', [swClaim(ex.systemsAffected.join(', ') + '.', 'fact', 'high')]);
+      if (ex.afterward.length) say('after', 'Since then', ex.afterward.slice(0, 3).map(a => swClaim(swText(a.text), swrClaimKind(a.claimKind), a.confidence === 'high' ? 'high' : 'moderate')));
+      say('note', null, [swClaim('Rival intentions are inferred from what you can see; hidden information is never used in this explanation.', 'caveat')]);
+      break;
+    }
+    case 'my_action': {
+      title = 'What your move changed'; shape = 'explanation';
+      const t = traceActionConsequences(st, viewer, { regionId: query.regionId, teamId: v.viewerTeamId });
+      if (!t) { say('none', null, [swClaim('I have no recorded strategic consequence of a recent move of yours yet.', 'caveat')]); break; }
+      say('direct', 'Directly', [swEventClaim(t.root)]);
+      if (t.economic.length) say('economy', 'Economically', t.economic.slice(0, 2).map(e => swEventClaim(e)));
+      if (t.strategic.length) say('strategic', 'Strategically', t.strategic.slice(0, 3).map(e => swEventClaim(e)));
+      if (t.plan.length) say('plan', 'For your plan', t.plan.slice(0, 2).map(e => swEventClaim(e)));
+      if (!t.economic.length && !t.strategic.length && !t.plan.length) say('none', null, [swClaim('No further consequences have followed yet.', 'inference', 'high')]);
+      break;
+    }
+    case 'windows': {
+      title = 'Strategic windows'; shape = 'status';
+      const wins = st.windows.filter(w => w.status === 'open' && w.observers.includes(viewer));
+      if (!wins.length) say('none', null, [swClaim('No strategic windows are open right now.')]);
+      else say('open', null, wins.map(w => swClaim(`${w.reason}${w.expiresTurn !== null ? ` Open until round ${w.expiresTurn}.` : ''}`, w.type === 'diplomatic_safety' || w.type === 'contract_completion' ? 'fact' : 'inference', w.confidence === 'high' ? 'high' : 'moderate')));
+      say('note', null, [swClaim('A window is an opportunity, not a guarantee of any outcome.', 'caveat')]);
+      break;
+    }
+    case 'preview': {
+      title = 'Likely ripple effects'; shape = 'simulation';
+      const money = (raw.match(/\$\s*[\d.,]+\s*k?/i) || [])[0];
+      const amount = money ? (dnParseMoney(money) || 0) : 0;
+      if (!v.inputs || !amount) { say('none', null, [swClaim('Tell me the move, e.g. “What would putting $20K into NSW cause?”.', 'caveat')]); break; }
+      const candidate = query.regionId ? { actorId: viewer, kind: 'deposit' as const, regionId: query.regionId, amount } : { actorId: viewer, kind: 'spend' as const, amount };
+      const p = previewStrategicConsequences(v.inputs, candidate, st);
+      const direct = p.events.filter(e => e.reactionDepth === 0 && canObserveSWREvent(e, viewer));
+      const second = p.events.filter(e => e.reactionDepth > 0 && canObserveSWREvent(e, viewer));
+      say('direct', 'Likely immediate effect', direct.length ? direct.slice(0, 3).map(e => swClaim(swText(e.strategicMeaning).replace(/ became /, ' would become ').replace(/ after you reinforced it/, ' if you reinforce it').replace(/ fell to /, ' would fall to ').replace(/ rose to /, ' would rise to '), 'projection', 'moderate')) : [swClaim('No strategically meaningful change expected.', 'projection', 'moderate')]);
+      if (second.length) say('second', 'Possible second-order effect', second.slice(0, 2).map(e => swClaim(swText(e.strategicMeaning).replace(/appears to be/, 'may start').replace(/ fell to /, ' would fall to ').replace(/ rose to /, ' would rise to '), 'projection', 'low')));
+      if (p.exposed) say('exposed', 'Most exposed alternative region', [swClaim(`${gw.regions[p.exposed]?.name || p.exposed} — the next-cheapest target for the rival to turn to.`, 'projection', 'low')]);
+      if (p.systems.length) say('systems', 'Systems that would re-evaluate', [swClaim(p.systems.join(', ') + '.', 'projection', 'moderate')]);
+      say('note', null, [swClaim('Projection from the current visible state (2 steps deep) — nothing was changed.', 'caveat')]);
+      break;
+    }
+  }
+  return { title, sections, buttons, shape };
+}
+
+/** A compact GI answer for the PLAY chain's “Why?” button. */
+export function buildWorldExplanationAnswer(eventId: string, v: WorldReactionWorldView): GameIntelligenceAnswer | null {
+  const ex = explainWorldConsequence(eventId, v.state, v.viewerId);
+  if (!ex) return null;
+  const lines = [ex.what, ex.directCause ? `Cause: ${ex.directCause.text}` : '', ...ex.contributingCauses.map(c => `Also: ${c}`), ex.chain.length > 1 ? `Chain: ${ex.chain.map(x => x.strategicMeaning.replace(/\.$/, '')).join(' → ')}` : '', ex.systemsAffected.length ? `Systems that reacted: ${ex.systemsAffected.join(', ')}` : '', ...ex.afterward.slice(0, 2).map(a => `Since then: ${a.text}`)].filter(Boolean);
+  return { id: nextIntelligenceAnswerId('swr'), query: 'Why did this happen?', kind: 'why', title: 'Why this happened', lines, evidence: ex.event.evidence.map(d => ({ source: 'World Reaction', detail: d })), buttons: [], sourceSystems: ['World Reaction'], grounded: true };
+}
+
+
+// ---- World Reaction UI ------------------------------------------------------------------------------
+
+/** The chain PLAY shows: one recent major/critical chain that concerns the viewer (never a flood). */
+export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: string, viewerTeamId: string | null, turn: number, dismissed: string[] = []): StrategicWorldEvent[] | null {
+  const mine = (e: StrategicWorldEvent) => e.actorId === viewerId || (viewerTeamId !== null && e.actorId === viewerTeamId) || e.tags.includes('gi3_relevant') || e.tags.includes(`holder:${viewerId}`) || (viewerTeamId !== null && e.tags.includes(`holder:${viewerTeamId}`));
+  const roots = state.events.filter(e => e.reactionDepth === 0 && canObserveSWREvent(e, viewerId) && turn - e.turn <= 2 && !dismissed.includes(e.id) && SWR_SIG_RANK[e.significance] >= 3 && mine(e));
+  const scored = roots.map(r => ({ r, d: state.events.filter(e => e.rootEventId === r.id && e.id !== r.id && canObserveSWREvent(e, viewerId)) })).filter(x => x.d.length || x.r.significance === 'critical');
+  const best = scored.sort((a, b) => b.r.turn - a.r.turn || SWR_SIG_RANK[b.r.significance] - SWR_SIG_RANK[a.r.significance] || b.d.length - a.d.length)[0];
+  if (!best) return null;
+  return [best.r, ...best.d.sort((a, b) => a.reactionDepth - b.reactionDepth || a.turn - b.turn).slice(0, 4)];
+}
+
+const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  region_reinforced: 'Reinforced', region_became_safe: 'Threat ↓', region_became_contested: 'Pressure ↑', region_lost: 'Lost', region_secured: 'Secured', rival_pressure_increased: 'Pressure ↑', rival_pressure_decreased: 'Pressure ↓',
+  rival_target_reassessed: 'Target reconsidered', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
+};
+
+export const WorldConsequenceChainStrip: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId: string | null; turn: number; names: Record<string, string>; onWhy: (eventId: string) => void }> = ({ state, viewerId, viewerTeamId, turn, names, onWhy }) => {
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  if (!state) return null;
+  const chain = pickPlayConsequenceChain(state, viewerId, viewerTeamId, turn, dismissed);
+  if (!chain) return null;
+  const head = (e: StrategicWorldEvent, i: number) => (i === 0 && (e.actorId === viewerId || e.actorId === viewerTeamId) ? 'YOUR ACTION' : e.subjectType === 'region' ? e.subjectId : e.kind === 'rival_target_reassessed' ? (names[e.actorId || ''] || 'RIVAL').toUpperCase() : e.affectedDomains.includes('strategy') ? 'YOUR STRATEGY' : e.affectedDomains.includes('economy') ? 'ECONOMY' : 'WORLD');
+  return (
+    <div className="rounded-xl border border-amber-500/50 bg-amber-500/5 p-2 text-xs space-y-1" data-testid="swr-chain" aria-label="World consequence chain">
+      <div className="flex items-center justify-between"><span className="font-bold">🌏 What your world did in response</span><button type="button" className="opacity-60 hover:opacity-100" aria-label="Dismiss chain" onClick={() => setDismissed(d => [...d, chain[0].id])}>✕</button></div>
+      <ol className="space-y-0.5">
+        {chain.map((e, i) => (
+          <li key={e.id}>
+            {i > 0 && <div className="opacity-50 pl-2" aria-hidden="true">↓</div>}
+            <span className="font-semibold">{head(e, i)}</span> — {SWR_NODE_LABEL[e.kind] ? `${SWR_NODE_LABEL[e.kind]}: ` : ''}{personalizeWorldText(e.strategicMeaning, names[viewerId], viewerTeamId ? names[viewerTeamId] : null)}{e.claimKind === 'inference' ? ' (likely)' : ''}
+          </li>
+        ))}
+      </ol>
+      <button type="button" className="underline" onClick={() => onWhy(chain[chain.length - 1].id)}>Why?</button>
+    </div>
+  );
+};
+
+export const WorldChangesPanel: React.FC<{ state: WorldReactionState | null; viewerId: string; viewerTeamId?: string | null; turn: number; names?: Record<string, string>; onWhy: (eventId: string) => void; onAsk: (q: string) => void }> = ({ state, viewerId, viewerTeamId = null, turn, names = {}, onWhy, onAsk }) => {
+  const you = (t: string) => personalizeWorldText(t, names[viewerId], viewerTeamId ? names[viewerTeamId] : null);
+  if (!state) return null;
+  const changes = summarizeWorldChanges(state, viewerId, turn - 1, 5);
+  const wins = state.windows.filter(w => w.status === 'open' && w.observers.includes(viewerId));
+  if (!changes.length && !wins.length) return null;
+  return (
+    <section aria-labelledby="swr-changes-heading" className="rounded-xl border border-slate-600/50 p-3 text-xs space-y-2" data-testid="swr-changes">
+      <h3 id="swr-changes-heading" className="font-bold text-sm">🌏 What changed since your last turn</h3>
+      {changes.map((e, i) => <div key={e.id} className="flex gap-2"><span className="flex-1">{i + 1}. {you(e.strategicMeaning)}{e.claimKind === 'inference' ? ' (inferred)' : ''}</span><button type="button" className="underline opacity-80" onClick={() => onWhy(e.id)}>Why?</button></div>)}
+      {wins.length > 0 && <div data-testid="swr-windows"><div className="font-semibold uppercase opacity-70">Open windows</div>{wins.map(w => <div key={w.id}>⏳ {you(w.reason)}{w.expiresTurn !== null ? ` (until round ${w.expiresTurn})` : ''}</div>)}</div>}
+      <button type="button" className="underline" onClick={() => onAsk('What did my last move change?')}>What did my last move change?</button>
+    </section>
+  );
+};
+
+/** LAB: structured records only (events, intents, windows, graph, subscriptions, suppression, hashes, timing). */
+export const WorldReactionInspector: React.FC<{ state: WorldReactionState | null; theme: any; hashes: Record<string, string> | null; viewerId: string }> = ({ state, theme, hashes, viewerId }) => {
+  const [tab, setTab] = useState<'events' | 'queue' | 'windows' | 'graph' | 'subs' | 'diag'>('events');
+  if (!state) return null;
+  const graph = buildStrategicConsequenceGraph(state, null);
+  const d = state.diagnostics;
+  const tabs: Array<[typeof tab, string]> = [['events', 'Events'], ['queue', 'Reactions'], ['windows', 'Windows & signals'], ['graph', 'Root-cause chains'], ['subs', 'Subscriptions'], ['diag', 'Diagnostics']];
+  return (
+    <section aria-labelledby="swr-lab-heading" data-testid="swr-lab-inspector" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs space-y-2`}>
+      <h3 id="swr-lab-heading" className="font-bold text-sm">🌏 World Reaction Inspector</h3>
+      <div role="tablist" className="flex flex-wrap gap-1">{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} type="button" className={`px-2 py-0.5 rounded border ${tab === k ? 'bg-slate-600 text-white' : 'border-slate-500/40'}`} onClick={() => setTab(k)}>{l}</button>)}</div>
+      {tab === 'events' && <div>{state.events.slice(-12).reverse().map(e => <div key={e.id} className="border-b border-slate-700/40 py-0.5">R{e.turn} · {e.significance} · {e.kind} · {e.subjectId} · depth {e.reactionDepth} · {e.visibility}{e.visibility !== 'public' ? ` (${e.observers.join(',')})` : ''} · {e.claimKind}/{e.confidence}<div className="opacity-80">{e.evidence.join(' | ')}</div></div>)}</div>}
+      {tab === 'queue' && <div><div>Deferred: {state.deferred.length ? state.deferred.map(i => `${i.targetSystem}:${i.requestedEvaluation} (${i.timing})`).join(', ') : 'none'}</div>{state.intents.slice(-14).reverse().map(i => <div key={`${i.id}_${i.turn}_${i.status}`}>R{i.turn} · {i.status} · {SWR_SYSTEM_LABELS[i.targetSystem]} → {i.requestedEvaluation}{i.targetActorId ? ` [${i.targetActorId}]` : i.targetTeamId ? ` [${i.targetTeamId}]` : ''}{i.note ? ` — ${i.note}` : ''}</div>)}</div>}
+      {tab === 'windows' && <div>{state.windows.map(w => <div key={w.id}>{w.status} · {w.type} · {w.subject} · owner {w.ownerActorId} · until {w.expiresTurn ?? '—'} — {w.reason}</div>)}<div className="mt-1 font-semibold">Signals</div>{state.signals.map(sg => <div key={sg.key}>{sg.kind} · {sg.subject}: {sg.value} (R{sg.updatedTurn})</div>)}<div className="mt-1">Conditions: {deriveStrategicConditions(state, viewerId).join(', ') || 'none'}</div></div>}
+      {tab === 'graph' && <div>{graph.nodes.filter(n => n.reactionDepth === 0).slice(-6).reverse().map(root => { const kids = graph.nodes.filter(n => n.rootEventId === root.id && n.id !== root.id); return <div key={root.id} className="border-b border-slate-700/40 py-0.5">{root.strategicMeaning}{kids.map(k => <div key={k.id} className="pl-3">↳ {k.strategicMeaning} <span className="opacity-60">({k.claimKind})</span></div>)}</div>; })}<div className="opacity-70">{graph.edges.length} causal edge(s)</div></div>}
+      {tab === 'subs' && <div>{SWR_SUBSCRIPTIONS.map(sub => <div key={sub.system}>{sub.label}: {sub.kinds === '*' ? 'all (major+ or plan-relevant)' : sub.kinds.join(', ')} · ≥{sub.minSignificance} · {sub.timing} · cooldown {sub.cooldownTurns}</div>)}</div>}
+      {tab === 'diag' && <div data-testid="swr-lab-diag"><div>Detected {d.detected} · ignored {d.ignored} · deduped {d.deduped} · routed {d.routed} · suppressed {d.suppressed} · cycles blocked {d.cyclesBlocked} · budget exhausted {d.budgetExhausted} · max depth {d.maxDepth} · evaluations {d.evaluations} · last {d.lastMs} ms</div><div>Changed domains (last pass): {d.lastChangedDomains.join(', ') || 'none'}</div><div>Recent suppressions: {d.lastSuppressions.join(' | ') || 'none'}</div>{hashes && <div>Domain hashes: {Object.entries(hashes).map(([k, v]) => `${k}:${v}`).join(' ')}</div>}</div>}
+    </section>
+  );
+};
+
+
+// ---- Fixtures + self-tests ----------------------------------------------------------------------------
+
+export function createSWRFixtureInputs(o: Partial<SWRInputs> = {}): SWRInputs {
+  const regions = Object.keys(REGIONS).map(code => ({ code, name: REGIONS[code]?.name || code, controller: code === 'NSW' || code === 'VIC' ? 'player' : code === 'SA' ? 'ai' : null, deposits: code === 'NSW' ? { player: 8000, ai: 6500 } : code === 'VIC' ? { player: 5000 } : code === 'SA' ? { ai: 4000 } : {} as Record<string, number> }));
+  return {
+    turn: 12, day: 6, totalDays: 30, fogOfWar: false,
+    actors: [
+      { id: 'player', name: 'Adam', teamId: 'team_player', isHuman: true, money: 34000, debt: 0, inRecovery: false, inventory: { Gold: 6 } },
+      { id: 'ai', name: 'Riley', teamId: 'team_opponent', isHuman: false, money: 15000, debt: 0, inRecovery: false, inventory: {} }
+    ],
+    regions, ownerNames: { player: 'Adam', ai: 'Riley', team_player: 'Your team', team_opponent: 'Rival team' }, ownerTeams: { player: 'team_player', ai: 'team_opponent', team_player: 'team_player', team_opponent: 'team_opponent' },
+    prices: { Gold: 500, Timber: 100, 'Iron Ore': 120, Coal: 90 }, basePrices: { Gold: 500, Timber: 100, 'Iron Ore': 120, Coal: 90 },
+    projects: [{ id: 'rail', title: 'Rail Link', regionId: 'QLD', status: 'planned', progress: 0 }],
+    contracts: [{ id: 'c1', title: 'Logistics Contract', regionId: 'NSW', status: 'active', rewardMoney: 12000, turnsRemaining: 3, assignedActorId: 'player' }],
+    teams: [{ teamId: 'team_player', name: 'Your team', freeCash: 34000, reserve: 5000, blockedTasks: 0 }],
+    gi3: { actorId: 'player', phaseIndex: 0, phaseLabel: 'Protect NSW', cashTarget: 15000, protectRegions: ['NSW'], futureRegions: ['VIC'], goals: [{ id: 'g1', label: 'Protect NSW', status: 'active', regionId: 'NSW' }, { id: 'g2', label: 'Reach $15K', status: 'pending', regionId: null }, { id: 'g3', label: 'Expand into VIC', status: 'pending', regionId: 'VIC' }] },
+    deals: [], stability: { national: 75, regional: {} }, crises: [{ id: 'drought', name: 'Drought', status: 'inactive', stageIndex: 0 }], win: { metric: 'regions', target: 5, byOwner: { player: 2, ai: 1 } },
+    ...o
+  };
+}
+
+export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+  const seed = (i: SWRInputs, st: WorldReactionState = createEmptyWorldReactionState()): WorldReactionState => ({ ...st, bands: detectStrategicConsequences(null, buildStrategicSnapshot(i), st).bands });
+  type Handlers = Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => void>>;
+  const step = (state: WorldReactionState, prevI: SWRInputs, nextI: SWRInputs, handlers?: Handlers, action?: SWRActionRef) => {
+    const det = detectStrategicConsequences(buildStrategicSnapshot(prevI), buildStrategicSnapshot(nextI), state, { action: action || null });
+    const out = processWorldReactions({ ...state, bands: det.bands }, det.events, nextI, { handlers });
+    let st = updateStrategicWindows(out.state, nextI, out.events);
+    st = updateWorldSignals(st, nextI, out.events);
+    return { state: st, det, out };
+  };
+  const mut = (i: SWRInputs, f: (x: SWRInputs) => void) => { const n = clone(i); f(n); return n; };
+  const cash = (i: SWRInputs, id: string, v: number) => { i.actors.find(a => a.id === id)!.money = v; };
+  const dep = (i: SWRInputs, code: string, key: string, v: number) => { const r = i.regions.find(x => x.code === code)!; r.deposits[key] = v; const top = Object.entries(r.deposits).sort((a, b) => b[1] - a[1])[0]; if (!r.controller || (top && top[1] > (r.deposits[r.controller] || 0))) r.controller = top[0]; };
+  const base = createSWRFixtureInputs();
+
+  check('swr_small_change_ignored', 'Small change: +$50 cash emits no world event', () => {
+    const r = step(seed(base), base, mut(base, x => cash(x, 'player', 34050)));
+    return (r.det.events.length === 0 && r.out.delivered.length === 0) || canon(r.det.events.map(e => e.kind));
+  });
+  check('swr_cash_threshold', 'Cash threshold: $14K → $16K crosses the $15K GI3 milestone → GI3 refresh, nothing unrelated', () => {
+    const a = mut(base, x => { cash(x, 'player', 14000); x.teams[0].freeCash = 14000; });
+    const r = step(seed(a), a, mut(a, x => { cash(x, 'player', 16000); x.teams[0].freeCash = 16000; }));
+    const ev = r.det.events.find(e => e.kind === 'cash_threshold_crossed');
+    const systems = r.out.delivered.concat(r.out.deferred).map(i => i.targetSystem);
+    return (ev && ev.significance === 'meaningful' && systems.includes('gi3') && !systems.includes('market') && !systems.includes('crisis') && ev.visibility === 'actor_only') || canon({ ev: r.det.events.map(e => [e.kind, e.significance]), systems });
+  });
+  check('swr_region_reinforcement', 'Region reinforcement: NSW much harder to contest → rival, Background AI and GI3 notified', () => {
+    const next = mut(base, x => { dep(x, 'NSW', 'player', 28000); cash(x, 'player', 14000); });
+    const r = step(seed(base), base, next);
+    const ev = r.det.events.find(e => e.kind === 'region_reinforced' && e.subjectId === 'NSW');
+    const targets = r.out.delivered.map(i => `${i.targetSystem}:${i.targetActorId || i.targetTeamId || ''}`);
+    return (ev && SWR_SIG_RANK[ev.significance] >= 3 && ev.evidence.some(x => /cost for Riley to contest/.test(x)) && targets.includes('rival_strategy:ai') && targets.includes('background_ai:player') && targets.some(t => t.startsWith('gi3:'))) || canon({ ev: r.det.events.map(e => [e.kind, e.significance]), targets });
+  });
+  check('swr_rival_boundary', 'Rival boundary: the router only REQUESTS re-evaluation — no target/state is set by it', () => {
+    const next = mut(base, x => dep(x, 'NSW', 'player', 28000));
+    const frozen = canon(next);
+    const got: WorldReactionIntent[] = [];
+    const r = step(seed(base), base, next, { rival_strategy: i => { got.push(i); } });
+    const reassess = r.out.events.find(e => e.kind === 'rival_target_reassessed');
+    return (got.length > 0 && got.every(i => i.requestedEvaluation === 'reconsider_region_target') && canon(next) === frozen && reassess?.claimKind === 'inference' && !('targetRegion' in (next.actors[1] as any))) || canon({ got: got.map(i => i.requestedEvaluation), reassess: reassess?.claimKind });
+  });
+  check('swr_team_os_boundary', 'Team OS boundary: a safer region becomes a replan TRIGGER; Team OS (not the router) decides', () => {
+    const next = mut(base, x => dep(x, 'NSW', 'player', 28000));
+    const r = step(seed(base), base, next);
+    const triggers = worldReactionTeamTriggers(r.state, 'team_player', 12);
+    const inputs = createTeamOSFixtureInputs();
+    const first = evaluateTeamOperatingSystem(null, inputs).state;
+    const withTriggers = evaluateTeamOperatingSystem(first, { ...inputs, turn: inputs.turn + 3, worldReactionTriggers: triggers });
+    const again = evaluateTeamOperatingSystem(withTriggers.state, { ...inputs, turn: inputs.turn + 3, worldReactionTriggers: triggers });
+    return (triggers.length > 0 && triggers.every(t => t.severity <= 4) && r.out.delivered.some(i => i.targetSystem === 'team_os' && i.requestedEvaluation === 'reassess_task_priority') && withTriggers.state.revisions.some(rv => /World change/.test(rv.trigger)) && again.state.revisions.length === withTriggers.state.revisions.length) || canon({ triggers, rev: withTriggers.state.revisions.map(x => x.trigger) });
+  });
+  const pact = (exp: number, status = 'active') => ({ id: 'd1', participants: ['player', 'ai'], status, expirationTurn: exp, regions: ['NSW'], restrictedActors: { ai: ['NSW'] }, visibility: 'participants' as const, violatedBy: null, summary: 'NSW ceasefire with Riley' });
+  check('swr_diplomatic_window', 'Diplomatic window: a ceasefire opens a safety window and reaches GI3 + Background AI the same turn', () => {
+    const r = step(seed(base), base, mut(base, x => { x.deals = [pact(15)]; }));
+    const ev = r.det.events.find(e => e.kind === 'diplomatic_pact_started');
+    const win = r.state.windows.find(w => w.type === 'diplomatic_safety' && w.subject === 'NSW' && w.status === 'open');
+    const imm = r.out.delivered.map(i => i.targetSystem);
+    return (ev && win && win.expiresTurn === 15 && imm.includes('gi3') && imm.includes('background_ai') && ev.observers.includes('ai') && ev.observers.includes('player')) || canon({ ev: ev?.kind, win, imm });
+  });
+  check('swr_pact_expiry', 'Pact expiry: expiring → ended; the temporary window stops being open', () => {
+    let st = seed(base, createEmptyWorldReactionState());
+    const a = mut(base, x => { x.deals = [pact(14)]; });
+    st = step(st, base, a).state;
+    const b = mut(a, x => { x.turn = 13; });
+    const r1 = step(st, a, b);
+    const c = mut(b, x => { x.turn = 15; x.deals = [pact(14, 'completed')]; });
+    const r2 = step(r1.state, b, c);
+    const win = r2.state.windows.find(w => w.type === 'diplomatic_safety');
+    return (r1.det.events.some(e => e.kind === 'diplomatic_pact_expiring') && r2.det.events.some(e => e.kind === 'diplomatic_pact_ended') && (!win || win.status !== 'open')) || canon({ r1: r1.det.events.map(e => e.kind), r2: r2.det.events.map(e => e.kind), win });
+  });
+  check('swr_contract', 'Contract: completion → liquidity improves (caused by it) → team resources unblock (Team OS refresh)', () => {
+    const a = mut(base, x => { cash(x, 'player', 4000); x.teams[0].freeCash = 4000; });
+    const b = mut(a, x => { cash(x, 'player', 16000); x.teams[0].freeCash = 16000; x.contracts[0].status = 'completed'; });
+    const r = step(seed(a), a, b);
+    const done = r.det.events.find(e => e.kind === 'contract_completed');
+    const liq = r.det.events.find(e => e.kind === 'liquidity_improved' || e.kind === 'cash_threshold_crossed');
+    const surplus = r.det.events.find(e => e.kind === 'team_resource_surplus');
+    return (done && liq && liq.causedByEventId === done.id && surplus && r.out.delivered.some(i => i.targetSystem === 'team_os')) || canon(r.det.events.map(e => [e.kind, e.causedByEventId]));
+  });
+  check('swr_crisis', 'Crisis: escalation notifies relevant systems (market deferred to day end) and never creates another crisis', () => {
+    const r = step(seed(base), base, mut(base, x => { x.crises[0].status = 'active'; }));
+    const ev = r.det.events.find(e => e.kind === 'crisis_escalated');
+    const rel = releaseDeferredReactions(r.state, 'day_end', 12);
+    return (ev && !r.out.delivered.concat(r.out.deferred).some(i => i.targetSystem === 'crisis' && i.sourceEventId === ev.id) && r.out.deferred.some(i => i.targetSystem === 'market') && rel.released.some(i => i.targetSystem === 'market') && rel.state.deferred.every(d => d.targetSystem !== 'market')) || canon({ ev: ev?.kind, def: r.out.deferred.map(i => i.targetSystem) });
+  });
+  check('swr_fog', 'Fog of war: a hidden rival cash change is never shown to (or explained for) the player', () => {
+    const a = mut(base, x => { x.fogOfWar = true; });
+    const r = step(seed(a), a, mut(a, x => cash(x, 'ai', 300)));
+    const ev = r.det.events.find(e => e.kind === 'liquidity_deteriorated' && e.actorId === 'ai');
+    const shown = summarizeWorldChanges(r.state, 'player', 11, 10).some(e => e.actorId === 'ai' && e.kind.startsWith('liquidity'));
+    return (ev && !ev.observers.includes('player') && !shown && explainWorldConsequence(ev.id, r.state, 'player') === null && !r.state.windows.some(w => w.type === 'rival_vulnerability') && !r.out.delivered.some(i => i.targetActorId === 'player' && i.sourceEventId === ev.id)) || canon({ ev: ev?.observers, shown });
+  });
+  check('swr_dedupe', 'Dedupe: a region that stays in the same band emits nothing on repeated evaluations', () => {
+    let st = seed(base); let prev = base; let count = 0;
+    [6600, 6700, 6800, 6900].forEach(v => { const n = mut(prev, x => dep(x, 'NSW', 'ai', v)); const r = step(st, prev, n); count += r.det.events.filter(e => e.subjectId === 'NSW').length; st = r.state; prev = n; });
+    return count === 0 || `emitted ${count}`;
+  });
+  check('swr_hysteresis', 'Hysteresis: a margin wobbling around the threshold does not flip safe/risk', () => {
+    const safe = mut(base, x => { dep(x, 'NSW', 'player', 12000); dep(x, 'NSW', 'ai', 8000); });
+    let st = seed(safe); let prev = safe; const bands: string[] = [];
+    [8600, 8400, 8600, 8400].forEach(v => { const n = mut(prev, x => dep(x, 'NSW', 'ai', v)); const r = step(st, prev, n); st = r.state; prev = n; bands.push(st.bands['region:NSW'].band); });
+    return new Set(bands).size === 1 || canon(bands);
+  });
+  check('swr_cascade_depth', 'Cascade: hard depth and reaction budgets are respected', () => {
+    const r = step(seed(base), base, mut(base, x => dep(x, 'NSW', 'player', 28000)));
+    const root = r.det.events[0];
+    const deep = { ...root, id: 'deep', reactionDepth: 5, dedupeKey: 'deep' };
+    const tight = { ...SWR_BUDGETS, critical: { maxDepth: 3, maxReactions: 2, maxNewEvents: 1 }, major: { maxDepth: 3, maxReactions: 2, maxNewEvents: 1 } };
+    const out = processWorldReactions(createEmptyWorldReactionState(), [root], base, { budgets: tight });
+    const out2 = processWorldReactions(createEmptyWorldReactionState(), [deep], base);
+    return (out.delivered.length + out.deferred.length <= 2 && out.suppressed.some(s => /budget/.test(s.reason)) && out2.delivered.length === 0 && out2.suppressed.some(s => /depth/.test(s.reason))) || canon({ d: out.delivered.length, s: out.suppressed.map(s => s.reason), s2: out2.suppressed.map(s => s.reason) });
+  });
+  check('swr_cycle', 'Cycles: an equivalent reaction in the same causal chain is suppressed', () => {
+    const r = step(seed(base), base, mut(base, x => dep(x, 'NSW', 'player', 28000)));
+    const root = r.det.events.find(e => e.kind === 'region_reinforced')!;
+    const echo: StrategicWorldEvent = { ...root, id: 'echo', kind: 'region_became_contested', reactionDepth: 1, causedByEventId: root.id, dedupeKey: 'echo' };
+    const out = processWorldReactions(createEmptyWorldReactionState(), [root, echo], base);
+    return (out.state.diagnostics.cyclesBlocked > 0 && out.suppressed.some(s => /cycle/.test(s.reason))) || canon(out.suppressed.map(s => s.reason));
+  });
+  check('swr_same_turn', 'Same turn: signing a pact updates Background AI + GI3 immediately (no waiting for next turn)', () => {
+    const seen: string[] = [];
+    step(seed(base), base, mut(base, x => { x.deals = [pact(15)]; }), { background_ai: () => { seen.push('bg'); }, gi3: () => { seen.push('gi3'); } });
+    return (seen.includes('bg') && seen.includes('gi3')) || canon(seen);
+  });
+  check('swr_replay', 'Replay: the same canonical state sequence reproduces the same event chain', () => {
+    const seq = [base, mut(base, x => { dep(x, 'NSW', 'player', 28000); cash(x, 'player', 14000); }), mut(base, x => { dep(x, 'NSW', 'player', 28000); cash(x, 'player', 14000); dep(x, 'VIC', 'ai', 4500); x.turn = 13; cash(x, 'ai', 10500); })];
+    const run = () => { let st = seed(seq[0]); const kinds: string[] = []; for (let i = 1; i < seq.length; i++) { const r = step(st, seq[i - 1], seq[i]); st = r.state; kinds.push(...r.out.events.map(e => `${e.id}:${e.kind}:${e.rootEventId}:${e.causedByEventId}`)); } return canon(kinds); };
+    return run() === run() || 'differs';
+  });
+  check('swr_save_load', 'Save/load: an active window survives a round trip and is revalidated against the current world', () => {
+    const a = mut(base, x => { x.deals = [pact(15)]; });
+    const r = step(seed(base), base, a);
+    const loaded = sanitizeWorldReactionState(JSON.parse(JSON.stringify(r.state)));
+    const still = rehydrateWorldReactionState(loaded, a);
+    const gone = rehydrateWorldReactionState(loaded, mut(a, x => { x.deals = []; }));
+    const empty = sanitizeWorldReactionState(undefined);
+    const junk = sanitizeWorldReactionState({ events: [null, 3, { id: 'x' }], windows: 'no' });
+    return (still.windows.some(w => w.type === 'diplomatic_safety' && w.status === 'open') && !gone.windows.some(w => w.status === 'open' && w.type === 'diplomatic_safety') && empty.events.length === 0 && empty.windows.length === 0 && junk.events.length === 0) || canon({ still: still.windows.map(w => w.status), gone: gone.windows.map(w => w.status) });
+  });
+  check('swr_personal_grammar', 'Personalised text keeps subject-verb agreement ("You now control", "you are")', () => {
+    const out = [personalizeWorldText('Player now controls Queensland.', 'Player'), personalizeWorldText('Player has fallen below $5,000 and Player is exposed.', 'Player'), personalizeWorldText("Riley is pressuring Player's VIC.", 'Player')];
+    out.push(personalizeWorldText("Player's Team now controls Queensland.", 'Player', "Player's Team"));
+    return canon(out) === canon(['You now control Queensland.', 'You have fallen below $5,000 and you are exposed.', 'Riley is pressuring your VIC.', 'Your team now controls Queensland.']) || canon(out);
+  });
+  check('swr_unchallenged_not_contested', 'A thin hold with no challenger is at risk, never "contested" (no false pressure condition)', () => {
+    const i = createSWRFixtureInputs();
+    const lone = { ...i, regions: i.regions.map(r => (r.code === 'QLD' ? { ...r, controller: 'player', deposits: { player: 1 } } : r)) };
+    const st = seed(lone);
+    return (st.bands['region:QLD']?.band === 'at_risk' && !deriveStrategicConditions(st, 'player').includes('QLD_PRESSURE_HIGH')) || canon(st.bands['region:QLD']);
+  });
+  check('swr_diag_roundtrip', 'LAB diagnostics survive sanitize (save/load and every persist)', () => {
+    const st = createEmptyWorldReactionState();
+    const back = sanitizeWorldReactionState(clone({ ...st, diagnostics: { ...st.diagnostics, detected: 4, routed: 7, evaluations: 3, lastChangedDomains: ['regions'] } }));
+    return (back.diagnostics.detected === 4 && back.diagnostics.routed === 7 && back.diagnostics.evaluations === 3 && back.diagnostics.lastChangedDomains[0] === 'regions') || canon(back.diagnostics);
+  });
+  check('swr_ai_vs_ai', 'AI vs AI: one AI reinforcing makes the other AI re-evaluate — no human needed', () => {
+    const i = createSWRFixtureInputs({ actors: [{ id: 'ai', name: 'Riley', teamId: 'team_a', isHuman: false, money: 20000, debt: 0, inRecovery: false }, { id: 'ai2', name: 'Jordan', teamId: 'team_b', isHuman: false, money: 20000, debt: 0, inRecovery: false }], ownerNames: { ai: 'Riley', ai2: 'Jordan' }, ownerTeams: { ai: 'team_a', ai2: 'team_b' }, gi3: null, teams: [], regions: Object.keys(REGIONS).map(code => ({ code, name: code, controller: code === 'NSW' ? 'ai' : null, deposits: (code === 'NSW' ? { ai: 5000, ai2: 4000 } : {}) as Record<string, number> })) });
+    const r = step(seed(i), i, mut(i, x => dep(x, 'NSW', 'ai', 15000)));
+    return (r.out.delivered.some(x => x.targetSystem === 'rival_strategy' && x.targetActorId === 'ai2') && !r.out.delivered.some(x => x.targetActorId === 'ai' && x.targetSystem === 'rival_strategy') && r.out.events.some(e => e.kind === 'rival_target_reassessed' && e.actorId === 'ai2')) || canon(r.out.delivered.map(x => `${x.targetSystem}:${x.targetActorId}`));
+  });
+  check('swr_no_anti_player', 'No anti-player director: a strong player triggers only re-evaluations, never bonuses or state changes', () => {
+    const next = mut(base, x => { cash(x, 'player', 90000); dep(x, 'NSW', 'player', 40000); x.teams[0].freeCash = 90000; });
+    const before = canon(next);
+    const r = step(seed(base), base, next);
+    const allowed = new Set(['reconsider_region_target', 'reassess_task_priority', 'refresh_progress', 'evaluate_replan', 'update_attention', 'reassess_leverage', 'contract_relevance', 'refresh_objective', 'relevance_update', 'record_pattern', 'demand_pressure', 'supply_pressure', 'volatility_pressure', 'stability_positive', 'stability_negative', 'crisis_context', 'event_context']);
+    return (canon(next) === before && r.out.delivered.concat(r.out.deferred).every(i => allowed.has(i.requestedEvaluation)) && !r.out.events.some(e => /bonus|catch/.test(e.kind))) || canon(r.out.delivered.map(i => i.requestedEvaluation));
+  });
+  const chainRun = () => {
+    let st = seed(base);
+    const t12 = mut(base, x => { dep(x, 'NSW', 'player', 28000); cash(x, 'player', 14000); x.teams[0].freeCash = 14000; });
+    const r1 = step(st, base, t12, undefined, { id: 'led_1', actorId: 'player', actionType: 'region_deposit', regionId: 'NSW', amount: 20000 });
+    st = r1.state;
+    const t13 = mut(t12, x => { x.turn = 13; dep(x, 'VIC', 'ai', 4500); cash(x, 'ai', 10500); });
+    const r2 = step(st, t12, t13, undefined, { id: 'led_2', actorId: 'ai', actionType: 'region_deposit', regionId: 'VIC', amount: 4500 });
+    return { r1, r2, state: r2.state, t13 };
+  };
+  check('swr_causal_explanation', 'Causal chain: reinforce NSW → Riley reconsiders → VIC pressure rises; the explanation reconstructs it', () => {
+    const { r1, state } = chainRun();
+    const vic = state.events.find(e => e.kind === 'rival_pressure_increased' && e.subjectId === 'VIC');
+    const nsw = r1.out.events.find(e => e.kind === 'region_reinforced');
+    const ex = vic ? explainWorldConsequence(vic.id, state, 'player') : null;
+    return (vic && nsw && vic.rootEventId === nsw.rootEventId && vic.claimKind === 'inference' && ex && ex.chain.some(c => c.kind === 'region_reinforced') && /NSW|New South Wales/.test(ex.directCause?.text || '')) || canon({ vic: vic && [vic.causedByEventId, vic.rootEventId], nsw: nsw?.id, ex: ex?.directCause });
+  });
+  check('swr_gi3_replan', 'GI3: rising pressure on a future-phase region asks GI3 to evaluate; GI3 adds a notice, goals untouched', () => {
+    const { state, r2 } = chainRun();
+    const intent = r2.out.delivered.find(i => i.targetSystem === 'gi3' && i.requestedEvaluation === 'evaluate_replan');
+    const f = createGIFixtureWorld();
+    const ctx = createGIConversationContext();
+    const contract = compileGI3StrategyIntent(parseGILanguage('Protect NSW, then reach $15K, then expand into VIC', f.world, ctx), f.world, ctx, null).contract;
+    const gi3: GI3StrategyState = { ...createEmptyGI3StrategyState(), active: { ...contract, status: 'active' } };
+    const ev = intent ? state.events.find(e => e.id === intent.sourceEventId)! : null;
+    const next = intent && ev ? gi3ConsiderWorldReaction(gi3, intent, ev) : gi3;
+    return (intent && next.notices.some(n => n.kind === 'recommend_change' && /VIC|Victoria/.test(n.text)) && canon(next.active!.goals) === canon(gi3.active!.goals)) || canon({ intents: r2.out.delivered.map(i => `${i.targetSystem}:${i.requestedEvaluation}`), notices: next.notices });
+  });
+  check('swr_market_signal', 'Markets: a started project produces a bounded, decaying demand SIGNAL — prices are never set here', () => {
+    const r = step(seed(base), base, mut(base, x => { x.projects[0].status = 'in_progress'; x.projects[0].progress = 0.1; }));
+    const p = worldMarketPressure(r.state);
+    const later = updateWorldSignals(r.state, mut(base, x => { x.turn = 16; }), []);
+    const p2 = worldMarketPressure(later);
+    return (r.out.deferred.some(i => i.targetSystem === 'market' && i.timing === 'day_end') && Object.values(p).every(v => Math.abs(v) <= 0.06) && (p.Timber || 0) > 0 && (p2.Timber || 0) < (p.Timber || 0)) || canon({ p, p2 });
+  });
+  check('swr_signal_decay', 'Signals: regional pressure decays and disappears once its cause fades', () => {
+    const { state } = chainRun();
+    const sig = state.signals.find(s => s.kind === 'regional_competition_pressure' && s.subject === 'VIC');
+    const later = updateWorldSignals(state, mut(createSWRFixtureInputs(), x => { x.turn = 22; }), []);
+    return (sig && sig.value > 0 && !later.signals.some(s => s.key === sig.key)) || canon({ sig, later: later.signals });
+  });
+  check('swr_stability_input', 'Stability: a completed project routes a (deferred) positive stability input; Stability stays canonical', () => {
+    const a = mut(base, x => { x.projects[0].status = 'in_progress'; x.projects[0].progress = 0.8; });
+    const r = step(seed(a), a, mut(a, x => { x.projects[0].status = 'completed'; x.projects[0].progress = 1; }));
+    return r.out.deferred.some(i => i.targetSystem === 'stability' && i.requestedEvaluation === 'stability_positive' && i.timing === 'turn_end') || canon(r.out.deferred.map(i => i.targetSystem));
+  });
+  check('swr_ai_memory_pattern', 'AI Memory: only a REPEATED reinforcement becomes a remembered pattern', () => {
+    let st = seed(base);
+    const a = mut(base, x => dep(x, 'NSW', 'player', 28000));
+    const r1 = step(st, base, a); st = r1.state;
+    const b = mut(a, x => { x.turn = 14; dep(x, 'NSW', 'player', 48000); });
+    const r2 = step(st, a, b);
+    return (!r1.out.delivered.some(i => i.targetSystem === 'ai_memory') && r2.out.delivered.some(i => i.targetSystem === 'ai_memory' && i.targetActorId === 'ai')) || canon({ r1: r1.out.suppressed.map(s => s.reason), r2: r2.out.delivered.map(i => i.targetSystem) });
+  });
+  const giWorld = (state: WorldReactionState, inputs: SWRInputs) => { const f = createGIFixtureWorld(); return { ...f.world, turn: inputs.turn, worldReaction: { state, viewerId: 'player', viewerTeamId: 'team_player', names: inputs.ownerNames, inputs } } as GIWorld; };
+  check('swr_gi_routing', 'Game Intelligence: “What changed?”, “Why did Riley go to Victoria?”, “What did my NSW move change?” route here', () => {
+    const { state, t13 } = chainRun();
+    const w = giWorld(state, t13);
+    const qs = ['What changed this turn?', 'Why did Riley go to Victoria?', 'What did my NSW investment change?', 'What windows do I have?'];
+    const bad = qs.filter(q => runGameIntelligenceCore(q, w, createGIConversationContext()).understanding.primary !== 'world_reaction');
+    const other = runGameIntelligenceCore('Should I sell Gold?', w, createGIConversationContext()).understanding.primary;
+    return (!bad.length && other !== 'world_reaction') || `not routed: ${bad.join(' | ')} / other=${other}`;
+  });
+  check('swr_gi_answers', 'Answers: the Riley/Victoria chain and the NSW move’s consequences, with facts vs inferences separated', () => {
+    const { state, t13 } = chainRun();
+    const w = giWorld(state, t13);
+    const why = runGameIntelligenceCore('Why did Riley suddenly move to Victoria?', w, createGIConversationContext()).answer;
+    const mine = runGameIntelligenceCore('What did my NSW move change overall?', w, createGIConversationContext()).answer;
+    const t = (a: GameIntelligenceAnswer) => (a.sections || []).flatMap(s => s.claims.map(c => `${c.kind}:${c.text}`)).join(' | ');
+    const wt = t(why); const mt = t(mine);
+    return (/NSW|New South Wales/.test(wt) && /Victoria|VIC/.test(wt) && /inference:/.test(wt) && /Directly|fact:/.test(mt) && /cash|milestone/i.test(mt) && /Victoria|VIC/.test(mt)) || `${wt.slice(0, 400)} ### ${mt.slice(0, 400)}`;
+  });
+  check('swr_preview', 'What-If: a bounded (depth 2) preview of ripple effects, labelled as projections, live history untouched', () => {
+    const st = seed(base);
+    const before = canon(st);
+    const p = previewStrategicConsequences(base, { actorId: 'player', kind: 'deposit', regionId: 'NSW', amount: 20000 }, st);
+    return (p.events.some(e => e.kind === 'region_reinforced') && p.events.filter(e => e.reactionDepth > 0).every(e => e.claimKind === 'projection') && p.events.every(e => e.reactionDepth <= 2) && canon(st) === before) || canon({ ev: p.events.map(e => [e.kind, e.reactionDepth, e.claimKind]) });
+  });
+  check('swr_what_changed_limit', 'What changed: only meaningful, observable changes — at most five, one per subject', () => {
+    const { state } = chainRun();
+    const list = summarizeWorldChanges(state, 'player', 12, 5);
+    return (list.length > 0 && list.length <= 5 && list.every(e => SWR_SIG_RANK[e.significance] >= 2) && new Set(list.map(e => `${e.subjectId}:${e.kind}`)).size === list.length) || canon(list.map(e => e.kind));
+  });
+  check('swr_bg_inputs', 'Background AI: receives major world events as attention items and windows as opportunities (it ranks them)', () => {
+    const r = step(seed(base), base, mut(base, x => { x.deals = [pact(15)]; }));
+    const w = giWorld(r.state, base);
+    const inp = backgroundWorldReactionInputs(w);
+    return (inp.attention.length > 0 && inp.opportunities.some(o => o.type === 'strategic_window' && /no outcome is guaranteed/.test(o.reason))) || canon(inp);
+  });
+  check('swr_contextual', 'Contextual Actions: an open window promotes a matching LEGAL action; nothing new is invented', () => {
+    const { world: f } = createGIFixtureWorld();
+    const st = { ...createEmptyWorldReactionState(), windows: [{ id: 'w', type: 'commodity_sell' as const, subject: 'Gold', ownerActorId: 'player', openedTurn: 12, expiresTurn: 13, confidence: 'moderate' as const, reason: 'Gold sells 30% above normal.', sourceEvents: [], status: 'open' as const, observers: ['player'] }] };
+    const set = f.actionSet!;
+    const out = annotateContextualActionsWithWorld(set, st, 'player');
+    const ids = (s: ContextualActionSet) => [s.recommended, ...s.useful, ...s.available].filter(Boolean).map(c => c!.id).sort();
+    return (canon(ids(out)) === canon(ids(set)) && out.ranked.some(c => c.reasons.some(r => r.startsWith('World: '))) && out.blocked.length === set.blocked.length) || canon({ a: ids(set), b: ids(out) });
+  });
+  check('swr_determinism', 'Determinism: identical inputs → identical event ids, routing and windows', () => {
+    const run = () => { const r = step(seed(base), base, mut(base, x => { dep(x, 'NSW', 'player', 28000); x.deals = [pact(15)]; })); return canon({ e: r.out.events.map(e => e.id), i: r.out.delivered.map(i => i.id), w: r.state.windows }); };
+    return run() === run() || 'differs';
+  });
+  check('swr_debrief', 'Debrief: the most consequential decision and its effects come from the causal graph', () => {
+    const { state } = chainRun();
+    const lines = buildWorldReactionDebrief(state, 'player');
+    return (lines.length > 0 && /Most consequential/.test(lines[0])) || canon(lines);
+  });
+  check('swr_e2e', 'End-to-end: $20K into NSW → rival re-evaluates → VIC pressure → GI3 notice, BG attention, Team OS trigger, answers', () => {
+    const { state, r1, r2, t13 } = chainRun();
+    const w = giWorld(state, t13);
+    const teamTrig = worldReactionTeamTriggers(r1.state, 'team_player', 12);
+    const bg = backgroundWorldReactionInputs(w);
+    const cashEv = r1.out.events.find(e => e.kind === 'cash_threshold_crossed' || e.kind === 'liquidity_deteriorated');
+    return (r1.out.events.some(e => e.kind === 'region_reinforced') && r1.out.events.some(e => e.kind === 'rival_target_reassessed') && r2.out.events.some(e => e.kind === 'rival_pressure_increased' && e.subjectId === 'VIC') && Boolean(cashEv?.causedByEventId) && teamTrig.length > 0 && bg.attention.length > 0 && r2.out.delivered.some(i => i.targetSystem === 'gi3')) || canon({ r1: r1.out.events.map(e => e.kind), r2: r2.out.events.map(e => e.kind), cash: cashEv?.causedByEventId, teamTrig });
+  });
+  return results;
+}
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -122295,6 +123934,11 @@ function AustraliaGame() {
   aiMemoriesRef.current = gameState.aiMemoriesByActor || {};
   // Diplomacy 2.0 (wired further below): the canonical commit hook, AI decision scoring and the player's
   // action entry points consult these refs, so agreements are monitored on every committed action.
+  // World Reaction (wired further below): the day/turn boundary consumers read its bounded signals from here.
+  const swrStateRef = useRef<WorldReactionState | null>(null);
+  swrStateRef.current = ((gameState as any).worldReaction as WorldReactionState | undefined) || null;
+  /** The most recent committed canonical action (provenance for the next detection pass). */
+  const swrActionRef = useRef<SWRActionRef | null>(null);
   const dnStateRef = useRef<DiplomacyState | null>(null);
   dnStateRef.current = ((gameState as any).diplomacyState as DiplomacyState | undefined) || null;
   /** Region controllers (as diplomatic leads) from the last render — i.e. BEFORE the action being checked. */
@@ -122360,6 +124004,7 @@ function AustraliaGame() {
     // Diplomacy 2.0: every committed canonical action is checked against active agreements (violations,
     // AI compliance, conditional triggers) — independent of whether AI Memory learning is enabled.
     try { dnObserveRef.current?.(action); } catch (err) { console.warn('[Diplomacy] compliance check skipped:', err); }
+    swrActionRef.current = { id: action.stableKey ? String(action.stableKey) : null, actorId: String(action.actorId), actionType: String(action.actionType), regionId: action.regionId ? String(action.regionId) : null, amount: typeof action.amount === 'number' ? action.amount : (typeof (action as any).magnitude === 'number' ? (action as any).magnitude : null), summary: String(action.summary || '').slice(0, 160) };
     if (gameSettings.aiMemoryEnabled === false) return;
     const skipTypes = new Set(['think', 'wait', 'end_turn', 'loan']);
     if (skipTypes.has(String(action.actionType))) return;
@@ -122517,6 +124162,7 @@ function AustraliaGame() {
   // Settings Intelligence 2.0: read-only configuration view handed to Game Intelligence (set below).
   const siWorldViewRef = useRef<SettingsIntelligenceWorldView | null>(null);
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
+  const swrViewRef = useRef<WorldReactionWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
   const teamOsDiagRef = useRef<TeamOsRuntimeDiagnostics>(createTeamOsRuntimeDiagnostics());
@@ -124411,6 +126057,7 @@ function dispatchGameSettingsChange(
         backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
         settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
         diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
+        worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135943,7 +137590,7 @@ function dispatchGameSettingsChange(
 
   const handleTurnTransition = useCallback((_sourcePlayer: 'player' | 'ai') => {
     const activeRegs = Object.keys(REGIONS || {});
-    const dynamicEvt = generateDynamicEvent(gameState, gameState.day || 1, activeRegs);
+    const dynamicEvt = generateDynamicEvent(gameState, gameState.day || 1, activeRegs, worldCrisisContext(swrStateRef.current));
     if (dynamicEvt && dynamicEvt.name) {
       dispatchGameState({ type: 'SET_DYNAMIC_EVENT', payload: dynamicEvt });
     }
@@ -140478,7 +142125,7 @@ function dispatchGameSettingsChange(
     let nextState: GameStateSnapshot = gameState;
 
     if (gameSettings?.dynamicCrisisChainsEnabled) {
-      nextState = evaluateTurnCrisisChains(nextState, gameSettings);
+      nextState = evaluateTurnCrisisChains(nextState, gameSettings, worldCrisisContext(swrStateRef.current));
     }
     if (gameSettings?.narrativeEngineEnabled) {
       nextState = evaluateNarrativeDecisions(nextState);
@@ -140583,7 +142230,7 @@ function dispatchGameSettingsChange(
       const newWeather = drawGameplayRandomChoice('RandomEvents', weatherOptions);
       dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
-      const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend);
+      const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
       dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
       dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
@@ -141976,7 +143623,7 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
     // Market trend & price updates
-    const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend);
+    const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
     dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
@@ -152537,7 +154184,7 @@ function dispatchGameSettingsChange(
         cp?.spendingCaps?.minimumCashReserve ?? null, gameSettings.fogOfWarEnabled, gameSettings.negotiationMode, regionDepositInput
       ],
       actors: (Object.values(actorsById || {}) as any[]).filter(a => a && String(a.id) !== String(player?.id || 'player')).map(a => [a.id, a.money, a.currentRegion]),
-      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length],
+      history: [ledgerEvents.length, ledgerEvents[ledgerEvents.length - 1]?.id || null, (notifications || []).length, (() => { const w: any = (gameState as any).worldReaction; return w ? `${(w.events || []).length}:${w.events?.[w.events.length - 1]?.id || ''}:${(w.intents || []).length}:${(w.windows || []).filter((x: any) => x.status === 'open').length}` : null; })()],
       // Team systems (compact, stable slices — never the whole team state).
       team_strategy: (() => {
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -152740,6 +154387,7 @@ function dispatchGameSettingsChange(
       backgroundAI: bgStateRef.current,
       settingsIntel: siWorldViewRef.current,
       diplomacy: dnViewRef.current,
+      worldReaction: swrViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -152889,6 +154537,10 @@ function dispatchGameSettingsChange(
       planningDepth: aiTeam ? teamOsPlanningDepthFor(difficulty) : 'standard',
       // Diplomacy 2.0: promises made by this team's diplomatic lead are strategic constraints for the whole team.
       diplomaticRestrictions: diplomaticRestrictionsFor(dnStateRef.current, actors.map(a => a.id).concat(teamId === TEAM_PLAYER_ID ? ['player'] : []), Number(gameState.turnCounter || 0), dnControllersRef.current).map(r => ({ ...r })),
+      // World Reaction: meaningful world changes arrive as ordinary replan triggers (Team OS keeps its own cooldowns).
+      worldReactionTriggers: aiTeam
+        ? worldReactionRivalTriggers(swrStateRef.current, teamId, actors.map(a => a.id), Math.max(1, Number(gameState.roundNumber || 1)))
+        : worldReactionTeamTriggers(swrStateRef.current, teamId, Math.max(1, Number(gameState.roundNumber || 1))),
       governorCheck: (actorId, category, cost) => {
         const a = rawActor(actorId);
         if (!a) return { approved: true, reason: 'Unknown actor.' };
@@ -153296,7 +154948,7 @@ function dispatchGameSettingsChange(
     persistBackgroundAI(dismissBackgroundIntervention(sanitizeBackgroundAIState(bgStateRef.current), key), null, 'player');
   }, [persistBackgroundAI]);
   /** Contextual Actions shown to the player carry Background AI metadata; the canonical set is unchanged. */
-  const v9ActionSetView = useMemo(() => annotateContextualActionsWithBackground(v9ActionSet, bgLive), [v9ActionSet, bgLive]);
+  const v9ActionSetView = useMemo(() => annotateContextualActionsWithWorld(annotateContextualActionsWithBackground(v9ActionSet, bgLive), (gameState as any).worldReaction, String(player?.id || 'player')), [v9ActionSet, bgLive, (gameState as any).worldReaction, player?.id]);
 
   // ---- Settings Intelligence 2.0: live wiring --------------------------------------------------------
   // Reads settings + read-only gameplay evidence; every change it proposes becomes a SmartSettingsPlan the
@@ -153901,6 +155553,165 @@ function dispatchGameSettingsChange(
   };
   const dnBindingRef = useRef(dnBinding);
   dnBindingRef.current = dnBinding;
+
+
+  // ---- Strategic Consequence / World Reaction: live wiring ---------------------------------------------
+  // Canonical state → compact snapshot (per-domain hashes) → meaningful events → subscribed systems.
+  // Detection runs only when a domain hash changes; every consumer below is the receiving system's OWN path.
+  const swrStoredRaw = (gameState as any).worldReaction as WorldReactionState | undefined;
+  const swrState = useMemo(() => sanitizeWorldReactionState(swrStoredRaw), [swrStoredRaw]);
+  const swrEnabled = Boolean(isLiveIntentMatch && !(gameState as any).isolatedReplayRuntime);
+  const swrInputs = useMemo<SWRInputs>(() => {
+    const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    const ownerNames: Record<string, string> = {}; const ownerTeams: Record<string, string | null> = {};
+    dnAllActors.forEach(a => { const id = String(a.id); ownerNames[id] = dnNames[id] || id; ownerTeams[id] = a.teamId ? String(a.teamId) : null; });
+    Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { ownerNames[tid] = String(t?.name || (tid === TEAM_PLAYER_ID ? 'Your team' : 'Rival team')); ownerTeams[tid] = tid; });
+    const inv = (a: any) => { const out: Record<string, number> = {}; (Array.isArray(a?.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); if (k) out[k] = (out[k] || 0) + 1; }); return out; };
+    const rawProjects = gameState.infrastructureProjects || {};
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
+    let contracts: SWRInputs['contracts'] = [];
+    try { contracts = listRegionalContracts(gameState).slice(0, 16).map((c: any) => ({ id: String(c.id), title: String(c.title || c.name || c.id), regionId: c.regionId ? String(c.regionId) : null, status: String(c.status || 'available'), rewardMoney: Number(c.rewardMoney ?? c.reward ?? c.payout ?? 0), turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null, assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null })); } catch { contracts = []; }
+    const teams: SWRInputs['teams'] = isTeamMode ? Object.entries(teamsById || {}).map(([tid, t]: [string, any]) => {
+      const members = dnAllActors.filter(a => String(a.teamId) === tid);
+      const contract = tid === teamOsTeamId ? teamOsView?.state.contract : teamOsEnemyView && String(teamOsEnemyView.inputs.teamId) === tid ? teamOsEnemyView.state.contract : null;
+      return { teamId: tid, name: ownerNames[tid], freeCash: members.reduce((s2, a) => s2 + Math.max(0, Number(a.money) || 0), 0), reserve: Number(contract?.constraints.reserveFloor ?? t?.treasury?.reserve ?? 0), blockedTasks: (contract?.taskGraph || []).filter(x => x.status === 'blocked').length };
+    }) : [];
+    const g3 = gi3Live.active && gi3Live.active.status === 'active' ? gi3Live.active : null;
+    const gi3In: SWRInputs['gi3'] = g3 ? {
+      actorId: String(player?.id || 'player'), phaseIndex: g3.phaseIndex, phaseLabel: g3.goals.filter(g => g.status !== 'removed').sort((a, b) => a.order - b.order)[g3.phaseIndex]?.label || null,
+      cashTarget: g3.goals.find(g => g.type === 'reach_cash' && g.status !== 'completed' && g.amount)?.amount || null,
+      protectRegions: g3.goals.filter(g => g.type === 'protect_region' && g.regionId && g.status !== 'removed').map(g => g.regionId!),
+      futureRegions: g3.goals.filter(g => g.type === 'control_region' && g.regionId && g.status !== 'completed' && g.status !== 'removed').map(g => g.regionId!),
+      goals: g3.goals.filter(g => g.status !== 'removed').map(g => ({ id: g.id, label: g.label, status: String((gi3Live.progress?.goalProgress?.[g.id]?.status) || g.status), regionId: g.regionId || null }))
+    } : null;
+    const deals = [...dnState.deals, ...dnState.history.slice(-6)].map(d => ({
+      id: d.id, participants: d.participants, status: d.status, expirationTurn: d.expirationTurn, regions: Array.from(new Set(d.terms.map(t => t.regionId).filter(Boolean))) as string[],
+      restrictedActors: d.terms.reduce((acc, t) => { if ((t.kind === 'avoid_region' || t.kind === 'do_not_challenge_region') && t.regionId) acc[t.actorId] = [...(acc[t.actorId] || []), t.regionId]; return acc; }, {} as Record<string, string[]>),
+      visibility: d.visibility, violatedBy: d.violatedBy, summary: describeDealShort(d, dnNames)
+    }));
+    const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? { national: Number(gameState.publicStabilityState.nationalStability) || 0, regional: { ...(gameState.publicStabilityState.regionalStability || {}) } } : null;
+    const crises = gameSettings.dynamicCrisisChainsEnabled ? ((gameState as any).crisisChainState?.activeCrisisChains || []).slice(0, 8).map((c: any) => ({ id: String(c.id), name: String(c.title || c.name || c.id), status: String(c.status || 'inactive'), stageIndex: Number(c.currentStageIndex || 0) })) : [];
+    const byOwner: Record<string, number> = {};
+    Object.keys(REGIONS).forEach(code => { const k = getRegionControlSnapshot(deposits[code] || {}).controllerId; if (k) byOwner[k] = (byOwner[k] || 0) + 1; });
+    const prices = (gameState.resourcePrices || {}) as Record<string, number>;
+    const basePrices: Record<string, number> = {};
+    Object.keys(prices).forEach(r => { try { basePrices[r] = getResourceMarketPrice(r); } catch { basePrices[r] = prices[r]; } });
+    return {
+      turn: dnRound, day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 30), fogOfWar: Boolean(gameSettings.fogOfWarEnabled),
+      actors: dnAllActors.map(a => ({ id: String(a.id), name: dnNames[String(a.id)] || String(a.id), teamId: a.teamId ? String(a.teamId) : null, isHuman: a.kind === 'human' || String(a.id) === 'player', money: Math.max(0, Math.floor(Number(a.money) || 0)), debt: (Array.isArray(a.advancedLoans) ? a.advancedLoans : []).reduce((s2: number, l: any) => s2 + (Number(l?.remainingBalance ?? l?.amount) || 0), 0) + (Number(a.debt) || 0), inRecovery: Boolean(a.inEconomicRecovery), inventory: inv(a) })),
+      regions: Object.keys(REGIONS).map(code => ({ code, name: REGIONS[code]?.name || code, controller: getRegionControlSnapshot(deposits[code] || {}).controllerId || null, deposits: Object.fromEntries(Object.entries(deposits[code] || {}).map(([k, v]) => [k, Math.floor(Number(v) || 0)])) })),
+      ownerNames, ownerTeams, prices, basePrices, projects, contracts, teams, gi3: gi3In, deals, stability: stab, crises,
+      win: String(gameSettings.winCondition) === 'regions' ? { metric: 'regions', target: REGION_CONTROL_MAJORITY, byOwner } : null
+    };
+  }, [dnAllActors, dnNames, teamsById, gameState.regionDeposits, gameState.infrastructureProjects, (gameState as any).regionalContracts, gameState.resourcePrices, gameState.publicStabilityState, (gameState as any).crisisChainState, gameState.day, dnRound, gameSettings.fogOfWarEnabled, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.winCondition, gameSettings.totalDays, gi3Live, dnState, isTeamMode, teamOsView?.state.contract?.revision, teamOsEnemyView?.state.contract?.revision, player?.id]);
+  const swrSnapshot = useMemo(() => buildStrategicSnapshot(swrInputs), [swrInputs]);
+  const swrPrevSnapRef = useRef<SWRSnapshot | null>(null);
+  const swrOwnerToActor = useCallback((k: string) => (isTeamMode ? (dnLeadOfTeam(k) || k) : k), [isTeamMode, dnLeadOfTeam]);
+  swrViewRef.current = swrEnabled ? { state: swrState, viewerId: String(player?.id || 'player'), viewerTeamId: player?.teamId ? String(player.teamId) : null, names: swrInputs.ownerNames, inputs: swrInputs } : null;
+
+  const persistWorldReaction = useCallback((next: WorldReactionState) => {
+    const clean = sanitizeWorldReactionState(next);
+    swrStateRef.current = clean;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { worldReaction: clean } as any });
+  }, []);
+
+  /** Each receiving system's own entry point. None of these pick actions or set targets. */
+  const swrHandlers = useMemo<Partial<Record<SWRTargetSystem, (i: WorldReactionIntent, e: StrategicWorldEvent) => void>>>(() => ({
+    // Rival AI: its planning assumption about the region is marked stale; its own pipeline re-scores from
+    // live costs (and the enemy Team OS receives the same request as a replan trigger via its inputs).
+    rival_strategy: (i, e) => {
+      if (!i.targetActorId || e.subjectType !== 'region' || gameSettings.aiMemoryEnabled === false) return;
+      const next = noteAiPlanReassessment(aiMemoriesRef.current || {}, i.targetActorId, e.subjectId, `${e.strategicMeaning} Reconsider ${e.subjectId}.`, Number(gameState.turnCounter || 0));
+      if (next !== aiMemoriesRef.current) { aiMemoriesRef.current = next; dispatchGameState({ type: 'LOAD_STATE', payload: { aiMemoriesByActor: next } }); }
+    },
+    // GI3 owns the decision: a replan-worthy change becomes a notice; explicit goals never change here.
+    gi3: (i, e) => {
+      if (i.requestedEvaluation !== 'evaluate_replan') return;
+      const base = sanitizeGI3StrategyState(gi3StateRef.current);
+      const next = gi3ConsiderWorldReaction(base, i, e);
+      if (next !== base) persistGI3State(next, 'live evaluation');
+    },
+    // Diplomacy: leverage changed — cached deal valuations are stale (no deal is ever created here).
+    diplomacy: () => { DN_EVAL_CACHE.clear(); },
+    // AI Memory: a repeated, observed pattern becomes a memory for the observing AI only.
+    ai_memory: (i, e) => {
+      if (!i.targetActorId || gameSettings.aiMemoryEnabled === false) return;
+      const who = swrInputs.ownerNames[e.actorId || ''] || e.actorId || 'Someone';
+      const observer = dnAllActors.find(a => String(a.id) === i.targetActorId);
+      if (!observer) return;
+      const next = applyCommittedActionToAiMemories(aiMemoriesRef.current || {}, { actionType: 'world_pattern_protects_region', actorId: swrOwnerToActor(e.actorId || ''), regionId: e.subjectId, turn: Number(gameState.turnCounter || 0), success: true, summary: `${who} strongly protects ${e.subjectId}.`, stableKey: `pattern:${e.actorId}:${e.subjectId}:${i.context.count || 2}` }, [{ id: String(observer.id), teamId: observer.teamId, kind: observer.kind, isAi: true, isHuman: false }], {});
+      if (next !== aiMemoriesRef.current) { aiMemoriesRef.current = next; dispatchGameState({ type: 'LOAD_STATE', payload: { aiMemoriesByActor: next } }); }
+    }
+  }), [gameSettings.aiMemoryEnabled, gameState.turnCounter, persistGI3State, swrInputs.ownerNames, dnAllActors, swrOwnerToActor]);
+
+  /** Deferred consumers (timing boundaries): Public Stability input through its canonical modifier list. */
+  const deliverDeferredWorldReactions = useCallback((released: WorldReactionIntent[]) => {
+    released.forEach(i => {
+      if (i.targetSystem === 'stability' && gameSettings.publicStabilityEnabled) {
+        const positive = i.requestedEvaluation === 'stability_positive';
+        const mod: StabilityModifier = { id: `swr_${i.sourceEventId}`.slice(0, 60), source: 'world_reaction', description: positive ? 'World reaction: public confidence after a positive development' : 'World reaction: public concern after a setback', deltaPerTurn: positive ? 1 : -1, remainingTurns: 2, isGlobal: true };
+        dispatchGameState({ type: 'SET_PUBLIC_STABILITY_STATE', payload: (prev: PublicStabilityState) => (prev?.modifiers?.some(m => m.id === mod.id) ? prev : { ...(prev || createDefaultPublicStabilityState()), modifiers: [...((prev?.modifiers) || []), mod].slice(-20) }) });
+      }
+    });
+  }, [gameSettings.publicStabilityEnabled]);
+
+  // Detection + routing: runs only when a canonical domain hash actually changed (never every render).
+  useEffect(() => {
+    if (!swrEnabled) { swrPrevSnapRef.current = null; return; }
+    const prev = swrPrevSnapRef.current;
+    swrPrevSnapRef.current = swrSnapshot;
+    const changed = prev ? (Object.keys(swrSnapshot.hashes) as SWRDomain[]).filter(d => prev.hashes[d] !== swrSnapshot.hashes[d]) : null;
+    if (changed && !changed.length) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    let st = swrStateRef.current ? sanitizeWorldReactionState(swrStateRef.current) : createEmptyWorldReactionState();
+    if (!prev) {
+      // First pass after mount / load: seed bands silently and revalidate windows (rehydration).
+      const det = detectStrategicConsequences(null, swrSnapshot, st);
+      persistWorldReaction(rehydrateWorldReactionState({ ...st, bands: det.bands }, swrInputs));
+      return;
+    }
+    const det = detectStrategicConsequences(prev, swrSnapshot, st, { action: swrActionRef.current, ownerToActor: swrOwnerToActor });
+    swrActionRef.current = null;
+    st = { ...st, bands: det.bands, diagnostics: { ...st.diagnostics, ignored: st.diagnostics.ignored + det.ignored, deduped: st.diagnostics.deduped + det.deduped, lastChangedDomains: det.changedDomains } };
+    const out = processWorldReactions(st, det.events, swrInputs, { handlers: swrHandlers });
+    st = updateWorldSignals(updateStrategicWindows(out.state, swrInputs, out.events), swrInputs, out.events);
+    const ms = typeof performance !== 'undefined' ? Math.round((performance.now() - t0) * 10) / 10 : 0;
+    st = { ...st, diagnostics: { ...st.diagnostics, evaluations: st.diagnostics.evaluations + 1, lastMs: ms } };
+    // Activity Ledger: only major world-level consequences and newly opened windows (never every event).
+    out.events.filter(e => (e.reactionDepth === 0 && SWR_SIG_RANK[e.significance] >= 3) || e.kind === 'rival_target_reassessed').slice(0, 3).forEach(e => {
+      appendGameActivityLedgerEvent('decision', { actorId: e.actorId || 'system', eventType: `world_reaction_${e.kind}`, summary: e.strategicMeaning.slice(0, 240) } as any);
+      if (e.significance === 'critical') appendReplayCheckpoint(`World change: ${e.strategicMeaning}`.slice(0, 120), { kind: 'major_action', relatedId: e.id });
+    });
+    const prevOpen = new Set((swrStateRef.current?.windows || []).filter(w => w.status === 'open').map(w => w.id));
+    st.windows.filter(w => w.status === 'open' && !prevOpen.has(w.id) && w.observers.includes(String(player?.id || 'player'))).slice(0, 2).forEach(w => appendGameActivityLedgerEvent('decision', { actorId: String(player?.id || 'player'), eventType: 'world_reaction_window_opened', summary: `Strategic window: ${w.reason}`.slice(0, 240) } as any));
+    persistWorldReaction(st);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swrSnapshot, swrEnabled]);
+
+  // Timing boundaries: turn-end and day-end reactions are released when the boundary is actually crossed.
+  const swrBoundaryRef = useRef<{ round: number; day: number }>({ round: dnRound, day: Number(gameState.day || 1) });
+  useEffect(() => {
+    if (!swrEnabled) return;
+    const b = swrBoundaryRef.current;
+    const day = Number(gameState.day || 1);
+    let boundary: SWRTiming | null = null;
+    if (day !== b.day) boundary = 'day_end'; else if (dnRound !== b.round) boundary = 'turn_end';
+    swrBoundaryRef.current = { round: dnRound, day };
+    if (!boundary || !swrStateRef.current?.deferred.length) return;
+    const rel = releaseDeferredReactions(sanitizeWorldReactionState(swrStateRef.current), boundary, dnRound);
+    if (!rel.released.length) return;
+    deliverDeferredWorldReactions(rel.released);
+    persistWorldReaction(rel.state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dnRound, gameState.day, swrEnabled]);
+
+  const swrViewerId = String(player?.id || 'player');
+  const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
+  const showWorldExplanation = useCallback((eventId: string) => {
+    const v = swrViewRef.current;
+    const ans = v ? buildWorldExplanationAnswer(eventId, v) : null;
+    if (ans) { pushIntelAnswer(ans); setExperienceLayer('intelligence'); }
+  }, [pushIntelAnswer, setExperienceLayer]);
 
   const submitIntelligenceQuery = useCallback(async (raw: string) => {
     const query = String(raw || '').trim();
@@ -169731,6 +171542,10 @@ function dispatchGameSettingsChange(
             diplomacyObservation={dnObservations[0]?.text || null}
           />
 
+          {swrEnabled && (
+            <WorldConsequenceChainStrip state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} />
+          )}
+
           <GI3PlayStrip
             state={gi3Live}
             theme={themeStyles}
@@ -169835,6 +171650,10 @@ function dispatchGameSettingsChange(
               onButton={handleV9Button}
               onToggle={toggleBackgroundAI}
             />
+
+            {swrEnabled && (
+              <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
+            )}
 
             <section aria-label="Recommended">
               <div className="text-[11px] font-semibold uppercase tracking-wider opacity-70 mb-1">Recommended · with reasons</div>
@@ -169961,6 +171780,7 @@ function dispatchGameSettingsChange(
         <ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} />
         <SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} />
         <DiplomacyInspector binding={dnBinding} theme={themeStyles} />
+        <WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} />
       </div>
     );
 
@@ -180103,6 +181923,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-violet-700/40 text-xs leading-relaxed" data-testid="dn-debrief">
 	              <span className="font-bold text-violet-300">Diplomacy: </span>
 	              {buildDiplomacyDebrief(dnStateRef.current || createEmptyDiplomacyState(), dnNames).join(' · ')}
+	            </div>
+	          )}
+	          {(swrStateRef.current?.events.length || 0) > 0 && buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="swr-debrief">
+	              <span className="font-bold text-amber-300">Turning points: </span>
+	              {buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).join(' · ')}
 	            </div>
 	          )}
 
