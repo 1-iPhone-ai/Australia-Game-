@@ -101729,7 +101729,8 @@ export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProp
     return null;
   };
   return (
-    <article className={`${theme.card} ${theme.border} border rounded-xl p-3 space-y-2`} aria-label={answer.title} data-testid="v9-intel-answer">
+    <article className={`${theme.card} ${/what[\s-]?if|simulat/i.test(`${answer.query} ${answer.title}`) ? 'border-2 border-dashed border-violet-400/80' : `${theme.border} border`} rounded-xl p-3 space-y-2 v94-enter`} aria-label={answer.title} data-testid="v9-intel-answer">
+      {/what[\s-]?if|simulat/i.test(`${answer.query} ${answer.title}`) && <div className="text-[11px] font-extrabold tracking-wider text-violet-300" data-testid="v94-sim-banner">🧪 SIMULATION PREVIEW — nothing has changed in your game</div>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs opacity-70">You asked: “{answer.query}”</div>
         <div className="flex flex-wrap items-center gap-2 text-[10px] opacity-80">
@@ -101747,7 +101748,7 @@ export const GameIntelligenceAnswerCard: React.FC<GameIntelligenceAnswerCardProp
       {answer.gi?.freshnessNote && !stale && <div className="text-xs opacity-80">{answer.gi.freshnessNote}</div>}
       {!answer.grounded && !answer.clarification && <div className="text-xs text-amber-500 font-semibold">Limited evidence — treat this as incomplete.</div>}
       {answer.sections && answer.sections.length > 0 ? (
-        <div className="text-sm space-y-2">
+        <div className="text-sm space-y-2 v94-stagger">
           {answer.sections.map(sec => (
             <section key={sec.id} aria-label={sec.heading || undefined}>
               {sec.heading && <div className="text-[11px] font-bold uppercase tracking-wider opacity-70">{sec.heading}</div>}
@@ -127188,18 +127189,18 @@ export function buildV9RegionContext(code: string, lr: LivingRegionsWorldView | 
 const V9_TONE: Record<'good' | 'warn' | 'bad' | 'info', string> = { good: 'border-emerald-500/60', warn: 'border-amber-500/70', bad: 'border-red-500/70', info: 'border-slate-500/50' };
 const V9_CONTROL_TONE: Record<V9Cohesion['header']['controlTone'], string> = { you: 'bg-emerald-600 text-white', copilot: 'bg-sky-600 text-white', rescue: 'bg-red-600 text-white', waiting: 'bg-slate-600 text-white' };
 
-export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null }) => {
+export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (() => void) | null; endTurnExtra?: React.ReactNode; onStanding: () => void; coachNode?: React.ReactNode; cashDelta?: UiFeedbackEvent | null; apDelta?: UiFeedbackEvent | null; apZero?: boolean; endgame?: boolean }> = ({ c, theme, onEndTurn, endTurnExtra, onStanding, coachNode = null, cashDelta = null, apDelta = null, apZero = false, endgame = false }) => {
   const h = c.header;
   const w = c.endTurnWarnings;
   return (
     <header className={`${theme.card} ${theme.border} border rounded-xl px-3 py-2 ${theme.shadow}`} data-testid="v9-match-header" aria-label="Match status">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className="font-semibold">{h.dayLabel}</span>
-        <span className="font-extrabold" data-testid="v9-turn-owner">{h.turnLabel}</span>
-        <span className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
-        {h.apLabel && <span>{h.apLabel}</span>}
-        <span className="font-bold">{h.cashLabel}</span>
-        <button type="button" className="underline decoration-dotted" onClick={onStanding} title="Match standing">{h.winLabel}</button>
+        <span key={h.dayLabel} className="font-semibold v94-fade" data-testid="v94-day">{h.dayLabel}</span>
+        <span key={h.turnLabel} className="font-extrabold v94-enter" data-testid="v9-turn-owner">{h.turnLabel}</span>
+        <span key={h.controlLabel} className={`v94-pop px-2 py-0.5 rounded-full text-xs font-extrabold ${V9_CONTROL_TONE[h.controlTone]}`} data-testid="v9-control-owner" role="status">{h.controlLabel}</span>
+        {h.apLabel && <FeelValue value={apZero ? <span className="font-bold text-amber-300">⚡ 0 actions left</span> : h.apLabel} valueKey={h.apLabel} delta={apDelta} testId="v94-ap" />}
+        <FeelValue value={<span className="font-bold">{h.cashLabel}</span>} valueKey={h.cashLabel} delta={cashDelta} testId="v94-cash" />
+        <button type="button" className={`underline decoration-dotted ${endgame ? 'font-bold rounded px-1 border border-amber-500/60' : ''}`} onClick={onStanding} title="Match standing" data-testid="v94-win">{endgame ? '⏳ ' : ''}{h.winLabel}</button>
         {h.transitLabel && <span className="text-cyan-300" data-testid="v9-transit">{h.transitLabel}</span>}
         {h.critical && <span className="px-2 py-0.5 rounded bg-red-700 text-white text-xs font-bold" role="alert">⚠ {h.critical}</span>}
         {onEndTurn && (
@@ -127207,7 +127208,7 @@ export const V9MatchHeader: React.FC<{ c: V9Cohesion; theme: any; onEndTurn: (()
             {endTurnExtra}
             {/* End-turn context is informative, never a forced block; the game's own End Turn confirmation (with "Don't ask again") still applies. */}
             {w.length > 0 && <span className="text-xs text-amber-300" role="note" title={w.join('\n')} data-testid="v9-end-turn-context">Before ending: {w[0]}{w.length > 1 ? ` (+${w.length - 1})` : ''}</span>}
-            <button type="button" className={`${theme.buttonSecondary} px-3 py-1 rounded-lg text-xs font-bold`} data-testid="v9-header-end-turn" aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn</button>
+            <button type="button" className={`${apZero ? `${theme.button} v94-ring px-4 py-1.5 text-sm` : `${theme.buttonSecondary} px-3 py-1 text-xs`} rounded-lg font-bold`} data-testid="v9-header-end-turn" data-emphasis={apZero ? 'primary' : 'secondary'} aria-describedby={w.length ? 'v9-end-turn-context-sr' : undefined} onClick={onEndTurn}>⏭ End Turn{apZero ? ' — no actions left' : ''}</button>
             {w.length > 0 && <span id="v9-end-turn-context-sr" className="sr-only">{w.join('. ')}</span>}
           </span>
         )}
@@ -127277,7 +127278,7 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
           {c.focus.returnTo && <div className="text-xs opacity-70 mt-2">Afterwards you return to: {c.focus.returnTo}</div>}
         </section>
       ) : (
-        <section className={`${card} p-4 ${c.focus.temporary ? 'border-2 border-red-500/60' : ''}`} aria-labelledby="v9-focus-h" data-testid="v9-current-focus">
+        <section key={c.focus.title} className={`${card} p-4 v94-enter ${c.focus.temporary ? 'border-2 border-red-500/60' : ''}`} aria-labelledby="v9-focus-h" data-testid="v9-current-focus">
           <div className={label}>Current focus</div>
           <h2 id="v9-focus-h" className="text-xl font-extrabold">{c.focus.title}</h2>
           {!simple && c.focus.breadcrumb.length > 1 && <div className="text-xs mt-0.5" data-testid="v9-breadcrumb">{c.focus.breadcrumb.map((b, k) => <span key={k}>{k > 0 && ' → '}<span className={b.current ? 'font-bold underline' : 'opacity-70'}>{b.label}</span></span>)}</div>}
@@ -127326,7 +127327,7 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
             {!simple && <div className="text-[11px] opacity-70">{c.recommended.strength}{c.recommended.provenance.length ? ` — ${c.recommended.provenance.join(', ')}` : ''}</div>}
             {c.recommended.alternativeNote && <div className="text-xs mt-1 rounded border border-amber-500/50 px-2 py-1" data-testid="v9-alt-note">{c.recommended.alternativeNote}</div>}
             <div className="flex flex-wrap gap-2 mt-2">
-              <button type="button" disabled={!humanCanAct} className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold disabled:opacity-50`} data-testid="v9-rec-do" onClick={() => h.onDo(c.recommended!.candidateId)}>Do It</button>
+              <button type="button" disabled={!humanCanAct} className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold disabled:opacity-50`} data-testid="v9-rec-do" title={!humanCanAct ? 'Not available: it is not your turn (or the Co-Pilot is in control)' : undefined} onClick={() => h.onDo(c.recommended!.candidateId)}>Do It</button>
               <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} onClick={() => h.onWhyAction(c.recommended!.candidateId)}>Why?</button>
               <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} data-testid="v9-rec-whatif" onClick={() => h.onWhatIf(c.recommended!.label)}>What If?</button>
             </div>
@@ -131714,6 +131715,540 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
   check('v93_no_random', 'Selection is seeded — no Math.random in the content layer', () => {
     const src = [planContentDay, deriveContentOpportunities, instantiateContractTemplate, buildMatchContentProfile, runContentVarietySimulation, planContentMatchStart].map(f => String(f)).join('\n');
     return !/Math\.random|drawGameplayRandom/.test(src) || 'uncontrolled randomness found';
+  });
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
+// ============================================================================
+// Presentation only. One motion language (tokens + a bounded set of CSS classes), a bounded UI feedback
+// queue derived from canonical state deltas, and a few shared visual components. Nothing here changes a
+// rule, delays an action, or is persisted: canonical state is always authoritative and animation
+// completion never controls gameplay. No sound, no external assets, no libraries.
+
+/** Motion tokens (ms). Appearance eases out; state changes ease in-out. */
+export const UI_MOTION = {
+  instant: 100, fast: 160, normal: 240, slow: 400,
+  easeOut: 'cubic-bezier(0.2, 0.8, 0.2, 1)', easeInOut: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  /** How long feedback stays emphasised (presentation only). */
+  emphasisMs: { critical: 12000, major: 6500, normal: 4000, minor: 2600 } as Record<UiFeedbackImportance, number>
+};
+
+export type UiMotionMode = 'full' | 'reduced' | 'system';
+/** The existing accessibility setting is authoritative; unset follows the OS preference via CSS. */
+export function resolveUiMotionMode(settings: any): UiMotionMode {
+  const a = settings?.accessibilitySettings || {};
+  if (a.reduceMotion === true || a.reducedMotion === true) return 'reduced';
+  return 'system';
+}
+
+/**
+ * One bounded stylesheet for the whole app (injected once by the root). Every effect has a reduced-motion
+ * equivalent: [data-motion="reduced"] (explicit setting) or the OS preference when the setting is not on.
+ * `--v94-speed` exists only for the LAB motion-debug view (slows presentation, never gameplay).
+ */
+export const V94_STYLESHEET = `
+:root { --v94-speed: 1; }
+@keyframes v94-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes v94-enter { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+@keyframes v94-pop { from { opacity: 0; transform: scale(0.98) } to { opacity: 1; transform: none } }
+@keyframes v94-tint { 0% { background-color: rgba(250, 204, 21, 0.28) } 100% { background-color: transparent } }
+@keyframes v94-ring { 0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.75) } 70% { box-shadow: 0 0 0 7px rgba(56, 189, 248, 0) } 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0) } }
+@keyframes v94-rise { 0% { opacity: 0; transform: translateY(3px) } 15% { opacity: 1; transform: none } 80% { opacity: 1 } 100% { opacity: 0 } }
+[data-v94] .v94-fade { animation: v94-fade calc(${UI_MOTION.fast}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .v94-enter { animation: v94-enter calc(${UI_MOTION.normal}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .v94-pop { animation: v94-pop calc(${UI_MOTION.fast}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .v94-tint { animation: v94-tint calc(1200ms * var(--v94-speed)) ${UI_MOTION.easeInOut} 1 both; border-radius: 4px }
+[data-v94] .v94-ring { animation: v94-ring calc(900ms * var(--v94-speed)) ${UI_MOTION.easeOut} 2 }
+[data-v94] .v94-rise { animation: v94-rise calc(${UI_MOTION.emphasisMs.minor}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .v94-progress { transition: width calc(${UI_MOTION.slow}ms * var(--v94-speed)) ${UI_MOTION.easeInOut} }
+[data-v94] .v94-stagger > * { animation: v94-enter calc(${UI_MOTION.normal}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .v94-stagger > *:nth-child(2) { animation-delay: calc(60ms * var(--v94-speed)) }
+[data-v94] .v94-stagger > *:nth-child(3) { animation-delay: calc(120ms * var(--v94-speed)) }
+[data-v94] .v94-stagger > *:nth-child(4) { animation-delay: calc(180ms * var(--v94-speed)) }
+[data-v94] .v94-stagger > *:nth-child(n+5) { animation-delay: calc(240ms * var(--v94-speed)) }
+/* Endless decoration is capped: pulses/bounces/pings emphasise briefly, then settle (spinners = real work, untouched). */
+[data-v94] .animate-pulse { animation-iteration-count: 3 }
+[data-v94] .animate-bounce, [data-v94] .animate-ping { animation-iteration-count: 2 }
+/* Modals & backdrops: one entrance language (small fade + subtle scale). Exits are instant. */
+[data-v94] .fixed.inset-0.flex.items-center.justify-center { animation: v94-fade calc(${UI_MOTION.fast}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+[data-v94] .fixed.inset-0.flex.items-center.justify-center > div:first-child { animation: v94-pop calc(${UI_MOTION.fast}ms * var(--v94-speed)) ${UI_MOTION.easeOut} both }
+/* Buttons: immediate press acknowledgement, clear disabled state. */
+[data-v94] button:not(:disabled):active:not([class*="translate"]) { transform: scale(0.98) }
+[data-v94] button { transition-property: color, background-color, border-color, box-shadow, opacity, transform; transition-duration: calc(${UI_MOTION.instant}ms * var(--v94-speed)) }
+[data-v94] button:disabled { cursor: not-allowed }
+/* Focus: never removed without replacement; the high-contrast setting strengthens it. */
+[data-v94] button:focus-visible, [data-v94] a:focus-visible, [data-v94] [role="button"]:focus-visible, [data-v94] [role="tab"]:focus-visible, [data-v94] summary:focus-visible, [data-v94] select:focus-visible, [data-v94] input:focus-visible { outline: 2px solid rgba(56, 189, 248, 0.95); outline-offset: 2px }
+[data-v94][data-focus="strong"] :focus-visible { outline: 3px solid #facc15 !important; outline-offset: 3px !important; box-shadow: 0 0 0 5px rgba(0, 0, 0, 0.65) !important }
+/* Reduced motion (explicit setting): instant states, short fades, static emphasis. */
+[data-v94][data-motion="reduced"] *, [data-v94][data-motion="reduced"] *::before, [data-v94][data-motion="reduced"] *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important }
+[data-v94][data-motion="reduced"] *:hover, [data-v94][data-motion="reduced"] *:active { --tw-scale-x: 1; --tw-scale-y: 1 }
+[data-v94][data-motion="reduced"] button:active { transform: none !important }
+[data-v94][data-motion="reduced"] .v94-tint { animation: none !important; background-color: rgba(250, 204, 21, 0.18) }
+[data-v94][data-motion="reduced"] .v94-ring { animation: none !important; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.8) }
+[data-v94][data-motion="reduced"] .v94-rise { animation: none !important; opacity: 1 }
+@media (prefers-reduced-motion: reduce) {
+  [data-v94][data-motion="system"] *, [data-v94][data-motion="system"] *::before, [data-v94][data-motion="system"] *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 1ms !important }
+  [data-v94][data-motion="system"] *:hover, [data-v94][data-motion="system"] *:active { --tw-scale-x: 1; --tw-scale-y: 1 }
+  [data-v94][data-motion="system"] button:active { transform: none !important }
+  [data-v94][data-motion="system"] .v94-rise { opacity: 1 }
+}
+`;
+
+// ---- Shared visual semantics (color is never the only channel: icon + sign + label) ------------------------
+
+export type UiTone = 'positive' | 'negative' | 'warning' | 'critical' | 'neutral' | 'selected' | 'completed' | 'inactive';
+export const UI_TONE: Record<UiTone, { icon: string; cls: string; label: string }> = {
+  positive: { icon: '▲', cls: 'text-emerald-400', label: 'up' },
+  negative: { icon: '▼', cls: 'text-rose-400', label: 'down' },
+  warning: { icon: '⚠', cls: 'text-amber-400', label: 'warning' },
+  critical: { icon: '⛔', cls: 'text-red-400', label: 'critical' },
+  neutral: { icon: '•', cls: 'opacity-80', label: '' },
+  selected: { icon: '◎', cls: 'text-sky-300', label: 'selected' },
+  completed: { icon: '✓', cls: 'text-emerald-400', label: 'complete' },
+  inactive: { icon: '○', cls: 'opacity-60', label: 'inactive' }
+};
+/** One icon per concept across PLAY surfaces. */
+export const UI_ICON = { money: '💰', actions: '⚡', warning: '⚠', travel: '🧭', region: '📍', contract: '📜', infrastructure: '🏗', strategy: '🎯', diplomacy: '🤝', crisis: '🌪', faction: '🏛', rival: '◆', you: '▲', complete: '✓', decision: '⚖️', event: '📰' };
+
+/** Compact money for PLAY ($950 · $15K · $1.2M); detailed views keep exact values. */
+export function fmtMoneyCompact(n: number): string {
+  const v = Math.round(Number(n) || 0); const a = Math.abs(v); const s = v < 0 ? '-' : '';
+  if (a >= 1_000_000) return `${s}$${(a / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')}M`;
+  if (a >= 10_000) return `${s}$${Math.round(a / 1000)}K`;
+  if (a >= 1000) return `${s}$${(a / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  return `${s}$${a.toLocaleString()}`;
+}
+/** Signed delta text with sign always present (never color-only). */
+export function fmtDelta(n: number, unit: 'money' | 'actions' | 'standing' | 'points' = 'money'): string {
+  const v = Math.round(Number(n) || 0); const sign = v > 0 ? '+' : v < 0 ? '−' : '±';
+  const a = Math.abs(v);
+  if (unit === 'money') return `${sign}${fmtMoneyCompact(a)}`;
+  if (unit === 'actions') return `${sign}${a} Action${a === 1 ? '' : 's'}`;
+  if (unit === 'standing') return `${sign}${a} Standing`;
+  return `${sign}${a}`;
+}
+
+// ---- UI feedback events (presentation state — NOT the Activity Ledger, never persisted) ---------------------
+
+export type UiFeedbackImportance = 'critical' | 'major' | 'normal' | 'minor';
+export type UiFeedbackKind =
+  | 'cash_change' | 'ap_change' | 'ap_exhausted' | 'travel_arrival' | 'rival_moved' | 'region_control_changed' | 'region_state_changed'
+  | 'objective_progress' | 'objective_completed' | 'focus_changed' | 'strategy_phase'
+  | 'contract_completed' | 'contract_failed' | 'infrastructure_completed' | 'crisis_resolved' | 'crisis_escalated'
+  | 'relationship_shift' | 'standing_change' | 'agreement_state' | 'level_up' | 'turn_start' | 'ai_turn' | 'control_changed' | 'day_change';
+export interface UiFeedbackEvent {
+  id: string; kind: UiFeedbackKind; importance: UiFeedbackImportance;
+  /** What it concerns (region code, 'cash', 'ap', contract id …) — the coalescing/stale key with kind. */
+  subject: string;
+  before: string | number | null; after: string | number | null;
+  title: string; lines: string[]; icon: string; tone: UiTone;
+  createdTurn: number; createdAt: number; expiresAt: number;
+  /** Map regions that should briefly light up with this event. */
+  regions: string[];
+}
+export const UI_FEEDBACK_LIMITS = { queue: 8, visibleMinor: 3, visibleMajor: 1 };
+const V94_RANK: Record<UiFeedbackImportance, number> = { critical: 0, major: 1, normal: 2, minor: 3 };
+
+/** Compact canonical view the feedback layer diffs (cheap; never a deep compare of game state). */
+export interface FeelSnapshot {
+  matchKey: string; day: number; turnKey: string; humanTurn: boolean; controlOwner: string;
+  cash: number; ap: number | null; region: string; standingHere: number; level: number;
+  focusId: string; focusTitle: string; focusDone: number; focusTotal: number; focusCompleted: boolean; strategyPhase: string | null;
+  controllers: Record<string, 'you' | 'rival' | null>; rivalRegion: string | null; rivalName: string;
+  contracts: Record<string, { status: string; title: string; reward: number; standing: number; region: string }>;
+  projects: Record<string, { status: string; title: string; region: string }>;
+  crises: Record<string, { status: string; title: string; stage: string; regions: string[] }>;
+  momentum: Record<string, string>;
+  factionBands: Record<string, string>;
+  deals: Record<string, { status: string; title: string }>;
+}
+
+let V94_SEQ = 0;
+function v94Event(kind: UiFeedbackKind, importance: UiFeedbackImportance, subject: string, title: string, lines: string[], o: Partial<UiFeedbackEvent> & { now: number; turn: number }): UiFeedbackEvent {
+  V94_SEQ += 1;
+  return { id: `fb${V94_SEQ}_${kind}_${subject}`, kind, importance, subject, before: o.before ?? null, after: o.after ?? null, title, lines: lines.filter(Boolean), icon: o.icon || '•', tone: o.tone || 'neutral', createdTurn: o.turn, createdAt: o.now, expiresAt: o.now + UI_MOTION.emphasisMs[importance], regions: o.regions || [] };
+}
+const REGION_NAME = (c: string) => REGIONS[c]?.name || c;
+const MOMENTUM_NOTABLE = new Set(['booming', 'rapid_growth', 'declining']);
+
+/**
+ * Derive presentation events from two canonical snapshots. One action → one coherent group:
+ * a contract completion absorbs its own cash and standing deltas; an objective completion carries the
+ * next focus. Returns nothing across a match boundary or a load (no "phantom" animations).
+ */
+export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapshot, now: number): UiFeedbackEvent[] {
+  if (!prev || prev.matchKey !== next.matchKey || next.day < prev.day) return [];
+  const turn = next.day; const out: UiFeedbackEvent[] = [];
+  let absorbedCash = 0; let absorbedStanding = 0;
+  // Completions first (they absorb their own deltas).
+  Object.entries(next.contracts).forEach(([id, c]) => {
+    const p = prev.contracts[id];
+    if (!p || p.status === c.status) return;
+    if (c.status === 'completed') {
+      absorbedCash += c.reward; absorbedStanding += c.standing;
+      out.push(v94Event('contract_completed', 'major', id, `CONTRACT COMPLETE`, [c.title, c.reward ? `${fmtDelta(c.reward)} reward` : '', c.standing ? `${fmtDelta(c.standing, 'standing')} in ${REGION_NAME(c.region)}` : ''], { now, turn, icon: UI_ICON.contract, tone: 'completed', regions: [c.region] }));
+    } else if (c.status === 'failed' || c.status === 'expired') {
+      if (p.status === 'active') out.push(v94Event('contract_failed', 'normal', id, c.status === 'failed' ? 'Contract failed' : 'Contract expired', [c.title], { now, turn, icon: UI_ICON.contract, tone: 'negative', regions: [c.region] }));
+    }
+  });
+  Object.entries(next.projects).forEach(([id, pj]) => {
+    const p = prev.projects[id];
+    if (p && p.status !== pj.status && (pj.status === 'active' || pj.status === 'completed') && p.status !== 'active' && p.status !== 'completed') out.push(v94Event('infrastructure_completed', 'major', id, 'INFRASTRUCTURE COMPLETE', [pj.title, `${REGION_NAME(pj.region)} gains a permanent bonus`], { now, turn, icon: UI_ICON.infrastructure, tone: 'completed', regions: [pj.region] }));
+  });
+  Object.entries(next.crises).forEach(([id, cr]) => {
+    const p = prev.crises[id];
+    if (!p) return;
+    if (p.status === 'active' && cr.status === 'resolved') out.push(v94Event('crisis_resolved', 'major', id, 'CRISIS RESOLVED', [cr.title, 'Critical → Resolved'], { now, turn, icon: UI_ICON.complete, tone: 'completed', regions: cr.regions }));
+    else if (p.status === 'active' && cr.status === 'active' && p.stage !== cr.stage) out.push(v94Event('crisis_escalated', 'normal', id, `${cr.title}: ${cr.stage}`, [`Stage changed: ${p.stage} → ${cr.stage}`], { now, turn, icon: UI_ICON.crisis, tone: 'warning', regions: cr.regions }));
+    else if (p.status === 'active' && cr.status === 'failed') out.push(v94Event('crisis_escalated', 'major', id, `${cr.title} ended badly`, ['The crisis ran its course without a successful response'], { now, turn, icon: UI_ICON.crisis, tone: 'critical', regions: cr.regions }));
+  });
+  // Objective / focus.
+  if (prev.focusId && prev.focusId !== next.focusId && (prev.focusCompleted || (prev.focusTotal > 0 && prev.focusDone >= prev.focusTotal - 1))) {
+    out.push(v94Event('objective_completed', 'major', 'focus', `✓ ${prev.focusTitle}`, ['Complete', next.focusTitle ? `Next focus: ${next.focusTitle}` : ''], { now, turn, icon: UI_ICON.strategy, tone: 'completed', before: prev.focusTitle, after: next.focusTitle }));
+  } else if (prev.focusId && prev.focusId !== next.focusId && next.focusTitle) {
+    out.push(v94Event('focus_changed', 'minor', 'focus', `New focus: ${next.focusTitle}`, [], { now, turn, icon: UI_ICON.strategy, before: prev.focusTitle, after: next.focusTitle }));
+  } else if (prev.focusId === next.focusId && next.focusDone > prev.focusDone && next.focusTotal > 0) {
+    out.push(v94Event(next.focusCompleted || next.focusDone >= next.focusTotal ? 'objective_completed' : 'objective_progress', next.focusDone >= next.focusTotal ? 'major' : 'normal', 'focus', next.focusDone >= next.focusTotal ? `✓ ${next.focusTitle}` : next.focusTitle, [`${prev.focusDone} / ${prev.focusTotal} → ${next.focusDone} / ${next.focusTotal}`], { now, turn, icon: UI_ICON.strategy, tone: next.focusDone >= next.focusTotal ? 'completed' : 'positive', before: prev.focusDone, after: next.focusDone }));
+  }
+  if (prev.strategyPhase && next.strategyPhase && prev.strategyPhase !== next.strategyPhase) out.push(v94Event('strategy_phase', 'major', 'strategy', `✓ ${prev.strategyPhase}`, ['Phase complete', `Next: ${next.strategyPhase}`], { now, turn, icon: UI_ICON.strategy, tone: 'completed' }));
+  // Region control (map + What Changed reinforce each other).
+  Object.keys(next.controllers).forEach(code => {
+    const a = prev.controllers[code] ?? null; const b = next.controllers[code] ?? null;
+    if (a === b) return;
+    const from = a === 'you' ? 'You' : a === 'rival' ? next.rivalName : 'Neutral';
+    const to = b === 'you' ? 'You' : b === 'rival' ? next.rivalName : 'Neutral';
+    if (b === 'you') out.push(v94Event('region_control_changed', 'major', code, `${REGION_NAME(code)} secured`, [`${from} → ${to}`], { now, turn, icon: UI_ICON.region, tone: 'positive', regions: [code], before: from, after: to }));
+    else if (a === 'you') out.push(v94Event('region_control_changed', 'critical', code, `${REGION_NAME(code)} lost`, [`${from} → ${to}`], { now, turn, icon: UI_ICON.warning, tone: 'critical', regions: [code], before: from, after: to }));
+    else out.push(v94Event('region_control_changed', 'normal', code, `${to} now controls ${REGION_NAME(code)}`, [`${from} → ${to}`], { now, turn, icon: UI_ICON.rival, tone: 'warning', regions: [code], before: from, after: to }));
+  });
+  // Movement.
+  if (prev.region && next.region && prev.region !== next.region) out.push(v94Event('travel_arrival', 'normal', 'you_location', `Arrived in ${REGION_NAME(next.region)}`, [`${REGION_NAME(prev.region)} → ${REGION_NAME(next.region)}`], { now, turn, icon: UI_ICON.travel, tone: 'selected', regions: [prev.region, next.region], before: prev.region, after: next.region }));
+  if (prev.rivalRegion && next.rivalRegion && prev.rivalRegion !== next.rivalRegion) out.push(v94Event('rival_moved', 'minor', 'rival_location', `${next.rivalName} traveled to ${REGION_NAME(next.rivalRegion)}`, [], { now, turn, icon: UI_ICON.rival, tone: 'warning', regions: [next.rivalRegion], before: prev.rivalRegion, after: next.rivalRegion }));
+  // Living Regions / factions / diplomacy (only meaningful transitions).
+  let lrCount = 0;
+  Object.entries(next.momentum).forEach(([code, band]) => {
+    const pb = prev.momentum[code];
+    if (!pb || pb === band || lrCount >= 2 || !(MOMENTUM_NOTABLE.has(band) || MOMENTUM_NOTABLE.has(pb))) return;
+    lrCount += 1;
+    out.push(v94Event('region_state_changed', 'minor', `lr_${code}`, `${REGION_NAME(code)}: ${pb.replace(/_/g, ' ')} → ${band.replace(/_/g, ' ')}`, [], { now, turn, icon: UI_ICON.region, tone: band === 'declining' ? 'negative' : 'positive', regions: [code] }));
+  });
+  Object.entries(next.factionBands).forEach(([fid, band]) => {
+    const pb = prev.factionBands[fid];
+    if (pb && pb !== band) out.push(v94Event('relationship_shift', 'minor', `rf_${fid}`, `${RF_DEF_BY_ID[fid]?.name || fid}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.faction, tone: ['positive', 'strong', 'trusted'].includes(band) ? 'positive' : ['unfriendly', 'hostile', 'wary'].includes(band) ? 'negative' : 'neutral' }));
+  });
+  Object.entries(next.deals).forEach(([id, d]) => {
+    const pd = prev.deals[id];
+    if (!pd || pd.status === d.status) return;
+    const big = d.status === 'active' || d.status === 'violated';
+    out.push(v94Event('agreement_state', big ? 'major' : 'normal', `dn_${id}`, d.status === 'active' ? '✓ AGREEMENT ACTIVE' : `Agreement ${d.status.replace(/_/g, ' ')}`, [d.title, `${pd.status.replace(/_/g, ' ')} → ${d.status.replace(/_/g, ' ')}`], { now, turn, icon: UI_ICON.diplomacy, tone: d.status === 'active' ? 'completed' : d.status === 'violated' || d.status === 'rejected' ? 'negative' : 'neutral' }));
+  });
+  if (next.level > prev.level && prev.level > 0) out.push(v94Event('level_up', 'major', 'level', `LEVEL UP — Level ${next.level}`, ['Your character grows stronger'], { now, turn, icon: '⭐', tone: 'completed', before: prev.level, after: next.level }));
+  // Turn / control ownership.
+  if (!prev.humanTurn && next.humanTurn) out.push(v94Event('turn_start', 'normal', 'turn', 'YOUR TURN', [`Day ${next.day}`, next.ap !== null ? `${next.ap} Action${next.ap === 1 ? '' : 's'}` : ''], { now, turn, icon: '▶', tone: 'selected' }));
+  if (prev.humanTurn && !next.humanTurn && next.controlOwner === 'rival') out.push(v94Event('ai_turn', 'minor', 'turn', `${next.rivalName.toUpperCase()}'S TURN`, [], { now, turn, icon: UI_ICON.rival, tone: 'neutral' }));
+  if (prev.controlOwner !== next.controlOwner && (prev.controlOwner === 'copilot' || next.controlOwner === 'copilot')) out.push(v94Event('control_changed', 'normal', 'control', next.controlOwner === 'copilot' ? 'CO-PILOT CONTROLLING' : 'YOU TOOK CONTROL', [], { now, turn, icon: next.controlOwner === 'copilot' ? '🤖' : '▲', tone: 'selected' }));
+  // Residual deltas (only what completions did not already explain).
+  const cashDelta = next.cash - prev.cash - absorbedCash;
+  if (Math.abs(cashDelta) >= 1) {
+    const big = Math.abs(cashDelta) >= Math.max(2000, Math.abs(prev.cash) * 0.15);
+    out.push(v94Event('cash_change', big ? 'normal' : 'minor', 'cash', fmtDelta(cashDelta), [`${fmtMoneyCompact(prev.cash)} → ${fmtMoneyCompact(next.cash)}`], { now, turn, icon: UI_ICON.money, tone: cashDelta > 0 ? 'positive' : 'negative', before: prev.cash, after: next.cash }));
+  }
+  if (prev.ap !== null && next.ap !== null && next.ap !== prev.ap && prev.turnKey === next.turnKey) {
+    if (next.ap === 0 && prev.ap > 0) out.push(v94Event('ap_exhausted', 'normal', 'ap', 'No actions left', ['End your turn when you are ready'], { now, turn, icon: UI_ICON.actions, tone: 'warning', before: prev.ap, after: 0 }));
+    else out.push(v94Event('ap_change', 'minor', 'ap', fmtDelta(next.ap - prev.ap, 'actions'), [`${prev.ap} → ${next.ap}`], { now, turn, icon: UI_ICON.actions, tone: next.ap < prev.ap ? 'negative' : 'positive', before: prev.ap, after: next.ap }));
+  }
+  const standingDelta = next.region === prev.region ? next.standingHere - prev.standingHere - absorbedStanding : 0;
+  if (Math.abs(standingDelta) >= 5) out.push(v94Event('standing_change', 'minor', 'standing', fmtDelta(standingDelta, 'standing'), [`${REGION_NAME(next.region)}: ${prev.standingHere} → ${next.standingHere}`], { now, turn, icon: UI_ICON.faction, tone: standingDelta > 0 ? 'positive' : 'negative', before: prev.standingHere, after: next.standingHere }));
+  return out;
+}
+
+/**
+ * Bounded queue: same kind+subject replaces the older entry (canonical state wins — never animate a stale
+ * value), expired entries drop, and at most UI_FEEDBACK_LIMITS.queue survive by priority then recency.
+ */
+export function applyFeedbackEvents(queue: UiFeedbackEvent[], incoming: UiFeedbackEvent[], now: number): { queue: UiFeedbackEvent[]; dropped: Array<{ id: string; reason: string }> } {
+  const dropped: Array<{ id: string; reason: string }> = [];
+  let q = queue.filter(e => { if (e.expiresAt <= now) { dropped.push({ id: e.id, reason: 'expired' }); return false; } return true; });
+  incoming.forEach(e => {
+    const stale = q.filter(x => x.kind === e.kind && x.subject === e.subject);
+    stale.forEach(x => dropped.push({ id: x.id, reason: 'superseded by newer state' }));
+    q = [...q.filter(x => !(x.kind === e.kind && x.subject === e.subject)), e];
+  });
+  q.sort((a, b) => V94_RANK[a.importance] - V94_RANK[b.importance] || b.createdAt - a.createdAt);
+  if (q.length > UI_FEEDBACK_LIMITS.queue) { q.slice(UI_FEEDBACK_LIMITS.queue).forEach(x => dropped.push({ id: x.id, reason: 'queue budget' })); q = q.slice(0, UI_FEEDBACK_LIMITS.queue); }
+  return { queue: q, dropped };
+}
+/** Attention budget: one major emphasis + up to three minor chips at once. */
+export function selectVisibleFeedback(queue: UiFeedbackEvent[], now: number): { major: UiFeedbackEvent | null; minor: UiFeedbackEvent[]; regions: Record<string, UiFeedbackEvent> } {
+  const live = queue.filter(e => e.expiresAt > now);
+  const major = live.find(e => e.importance === 'critical' || e.importance === 'major') || null;
+  const minor = live.filter(e => e !== major && (e.importance === 'normal' || e.importance === 'minor') && e.kind !== 'cash_change' && e.kind !== 'ap_change').slice(0, UI_FEEDBACK_LIMITS.visibleMinor);
+  const regions: Record<string, UiFeedbackEvent> = {};
+  live.forEach(e => e.regions.forEach(r => { if (!regions[r] || V94_RANK[e.importance] < V94_RANK[regions[r].importance]) regions[r] = e; }));
+  return { major, minor, regions };
+}
+/** The header delta for a value is shown only while it still matches canonical state. */
+export function currentDeltaFor(queue: UiFeedbackEvent[], subject: 'cash' | 'ap', canonical: number | null, now: number): UiFeedbackEvent | null {
+  const e = queue.find(x => x.subject === subject && (x.kind === 'cash_change' || x.kind === 'ap_change' || x.kind === 'ap_exhausted') && x.expiresAt > now);
+  return e && e.after === canonical ? e : null;
+}
+
+// ---- Shared components -------------------------------------------------------------------------------
+
+/** Completion / consequence card: one grouped moment, then it collapses into ordinary history. */
+export const FeedbackStrip: React.FC<{ theme: any; major: UiFeedbackEvent | null; minor: UiFeedbackEvent[]; onDismiss: (id: string) => void; onWhy?: (e: UiFeedbackEvent) => void }> = ({ theme, major, minor, onDismiss, onWhy }) => {
+  if (!major && !minor.length) return null;
+  const toneBorder: Record<UiTone, string> = { positive: 'border-emerald-500/60', completed: 'border-emerald-500/70', negative: 'border-rose-500/60', critical: 'border-red-500/80', warning: 'border-amber-500/70', selected: 'border-sky-500/60', neutral: 'border-slate-500/50', inactive: 'border-slate-600/40' };
+  return (
+    <div className="space-y-2" data-testid="v94-feedback">
+      {major && (
+        <section key={major.id} role={major.importance === 'critical' ? 'alert' : 'status'} aria-live={major.importance === 'critical' ? 'assertive' : 'polite'} className={`v94-pop ${theme.card} border-2 ${toneBorder[major.tone]} rounded-xl px-3 py-2 text-sm flex items-start gap-3`} data-testid="v94-major" data-kind={major.kind}>
+          <span className="text-xl leading-none mt-0.5" aria-hidden="true">{major.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-extrabold tracking-wide">{major.tone === 'completed' && !major.title.startsWith('✓') ? '✓ ' : ''}{major.title}</div>
+            <div className="v94-stagger">{major.lines.map(l => <div key={l} className="text-xs opacity-90">{l}</div>)}</div>
+          </div>
+          <div className="flex flex-col items-end gap-1 text-xs">
+            <button type="button" className="underline opacity-80" onClick={() => onDismiss(major.id)}>Dismiss</button>
+            {onWhy && (major.kind === 'region_control_changed' || major.kind === 'crisis_resolved' || major.kind === 'objective_completed') && <button type="button" className="underline opacity-80" onClick={() => onWhy(major)}>Why?</button>}
+          </div>
+        </section>
+      )}
+      {minor.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Recent changes" data-testid="v94-minor">
+          {minor.map(e => (
+            <li key={e.id} className={`v94-fade px-2 py-0.5 rounded-full border ${toneBorder[e.tone]} ${theme.card}`} data-kind={e.kind}>
+              <span aria-hidden="true">{e.icon} </span><span className={`sr-only`}>{UI_TONE[e.tone].label} </span>{e.title}{e.lines[0] ? <span className="opacity-75"> · {e.lines[0]}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+/** A value in the Match Header that acknowledges its own change (tint once + signed delta), then settles. */
+export const FeelValue: React.FC<{ value: React.ReactNode; valueKey: string | number; delta?: UiFeedbackEvent | null; className?: string; testId?: string }> = ({ value, valueKey, delta, className = '', testId }) => (
+  <span className={`relative inline-flex items-baseline gap-1 ${className}`} data-testid={testId}>
+    <span key={String(valueKey)} className={delta ? 'v94-tint px-0.5' : ''}>{value}</span>
+    {delta && <span key={delta.id} className={`v94-rise text-[11px] font-bold ${UI_TONE[delta.tone].cls}`} data-testid={testId ? `${testId}-delta` : undefined} aria-label={`${delta.title} (${delta.lines[0] || ''})`}>{UI_TONE[delta.tone].icon} {delta.title}</span>}
+  </span>
+);
+
+/** Honest progress: real numbers only; the bar eases between known values. */
+export const V94ProgressBar: React.FC<{ value: number; max: number; label: string; tone?: 'build' | 'good' | 'warn' }> = ({ value, max, label, tone = 'build' }) => {
+  const pct = Math.max(0, Math.min(100, Math.round((value / Math.max(1, max)) * 100)));
+  const color = tone === 'good' ? 'bg-emerald-500' : tone === 'warn' ? 'bg-amber-500' : 'bg-amber-500';
+  return (
+    <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label} className="w-full bg-gray-950 rounded-full h-2 overflow-hidden border border-gray-800">
+      <div className={`${color} h-full v94-progress`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+};
+
+/** Contract state chip (Available / Active / Expiring / Completed / Failed) — icon + label, not color alone. */
+export function contractStateChip(c: any): { label: string; icon: string; cls: string } {
+  const st = String(c?.status || 'available');
+  if (st === 'completed') return { label: 'Completed', icon: '✓', cls: 'border-emerald-500/60 text-emerald-300' };
+  if (st === 'failed' || st === 'expired' || st === 'cancelled') return { label: st === 'failed' ? 'Failed' : st === 'expired' ? 'Expired' : 'Cancelled', icon: '✕', cls: 'border-rose-500/60 text-rose-300' };
+  if (st === 'active') {
+    const t = Number(c?.turnsRemaining ?? 99);
+    if (t <= 1) return { label: `${t} turn left`, icon: '⏳', cls: 'border-red-500/70 text-red-300 font-bold' };
+    if (t <= 3) return { label: `Expiring · ${t} turns`, icon: '⏳', cls: 'border-amber-500/70 text-amber-300' };
+    return { label: `Active · ${t} turns`, icon: '▶', cls: 'border-sky-500/60 text-sky-300' };
+  }
+  return { label: 'Available', icon: '○', cls: 'border-slate-500/60 opacity-90' };
+}
+
+/** Victory / defeat hero: clear winner, win condition, key final metric, and (on a loss) a lesson — no shaming. */
+export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null }> = ({ won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson }) => (
+  <section className={`v94-stagger rounded-2xl border-2 ${won ? 'border-emerald-400/70' : 'border-slate-400/60'} p-5 text-center space-y-2`} data-testid="v94-outcome-hero" aria-label={won ? 'Victory' : 'Match result'}>
+    <div className="text-5xl" aria-hidden="true">{won ? '🏆' : '🏁'}</div>
+    <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won ? 'text-emerald-400' : ''}`}>{won ? 'VICTORY' : 'MATCH OVER'}</h2>
+    <div className="text-sm opacity-85">{winLabel} · decided by {metricLabel}</div>
+    <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>
+    <div className="text-xs opacity-80">{reason}</div>
+    {turningPoints.length > 0 && <div className="text-xs"><span className="font-semibold">Turning points: </span>{turningPoints.slice(0, 3).join(' · ')}</div>}
+    {!won && lesson && <div className="text-xs rounded-lg border border-sky-500/40 px-3 py-2 inline-block"><span className="font-semibold">Next time: </span>{lesson}</div>}
+  </section>
+);
+
+
+
+/** LAB: Game Feel & Polish Inspector — local, in-memory diagnostics only (no telemetry). */
+export const GameFeelInspector: React.FC<{ theme: any; mode: UiMotionMode; focusStrong: boolean; queue: UiFeedbackEvent[]; visible: ReturnType<typeof selectVisibleFeedback>; diag: { derivations: number; events: number; dropped: Array<{ id: string; reason: string }>; lastMs: number; maxMs: number; lastDeltas: string[] }; slow: boolean; onSlow: (v: boolean) => void; notificationLane: string }> = ({ theme, mode, focusStrong, queue, visible, diag, slow, onSlow, notificationLane }) => {
+  const [open, setOpen] = useState(false);
+  const osReduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
+  const H = ({ children }: { children: React.ReactNode }) => <div className="font-bold uppercase tracking-wider opacity-70 mt-2">{children}</div>;
+  return (
+    <section aria-labelledby="v94-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v94-feel-inspector">
+      <div className="flex items-center justify-between"><h3 id="v94-lab-h" className="font-bold text-sm">✨ Game Feel & Polish Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">motion {mode === 'reduced' ? 'REDUCED (setting)' : osReduced ? 'reduced (OS preference)' : 'full'} · focus {focusStrong ? 'high-contrast' : 'standard'} · queue {queue.length}/{UI_FEEDBACK_LIMITS.queue}</div>
+      {open && (
+        <div className="space-y-1" data-testid="v94-inspector-body">
+          <H>Motion tokens</H>
+          <div>instant {UI_MOTION.instant}ms · fast {UI_MOTION.fast}ms · normal {UI_MOTION.normal}ms · slow {UI_MOTION.slow}ms · emphasis {Object.entries(UI_MOTION.emphasisMs).map(([k, v]) => `${k} ${v}ms`).join(' / ')}</div>
+          <H>Current major emphasis</H>
+          <div>{visible.major ? `${visible.major.importance}: ${visible.major.title}` : 'none'}</div>
+          <H>Animation budget</H>
+          <div>major {visible.major ? 1 : 0}/{UI_FEEDBACK_LIMITS.visibleMajor} · minor {visible.minor.length}/{UI_FEEDBACK_LIMITS.visibleMinor} · map regions emphasised {Object.keys(visible.regions).length}</div>
+          <H>Feedback queue</H>
+          {queue.length ? queue.map(e => <div key={e.id}>{e.importance} · {e.kind} · {e.title}{e.lines[0] ? ` (${e.lines[0]})` : ''} · expires in {Math.max(0, Math.round((e.expiresAt - Date.now()) / 100) / 10)}s</div>) : <div className="opacity-70">empty</div>}
+          <H>Suppressed / superseded feedback</H>
+          {diag.dropped.length ? diag.dropped.slice(0, 8).map((d, i) => <div key={i}>{d.id} — {d.reason}</div>) : <div className="opacity-70">none</div>}
+          <H>Recent state deltas</H>
+          {diag.lastDeltas.length ? diag.lastDeltas.map((d, i) => <div key={i}>{d}</div>) : <div className="opacity-70">none yet</div>}
+          <H>Notification lane</H>
+          <div>{notificationLane} (UI Surface Manager remains authoritative for stacking and safe areas)</div>
+          <H>Render / derivation diagnostics</H>
+          <div>{diag.derivations} snapshot diffs · {diag.events} events · last {diag.lastMs}ms · max {diag.maxMs}ms</div>
+          <label className="flex items-center gap-2 mt-2"><input type="checkbox" checked={slow} onChange={e => onSlow(e.target.checked)} data-testid="v94-debug-slow" /> Motion debug: slow presentation ×6 (LAB only — gameplay timing unaffected)</label>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V9.4 self-tests -----------------------------------------------------------------------------------
+
+export function createFeelSnapshotFixture(o: Partial<FeelSnapshot> = {}): FeelSnapshot {
+  return {
+    matchKey: 'ai|x|1', day: 5, turnKey: '5|9|player', humanTurn: true, controlOwner: 'you', cash: 20000, ap: 3, region: 'NSW', standingHere: 10, level: 2,
+    focusId: 'obj_a', focusTitle: 'Protect NSW', focusDone: 2, focusTotal: 3, focusCompleted: false, strategyPhase: null,
+    controllers: { NSW: null, VIC: 'rival', QLD: null, WA: null, SA: null, TAS: null, NT: null, ACT: null }, rivalRegion: 'VIC', rivalName: 'Riley',
+    contracts: {}, projects: {}, crises: {}, momentum: {}, factionBands: {}, deals: {}, ...o
+  };
+}
+
+export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  const fx = createFeelSnapshotFixture;
+  const kinds = (evs: UiFeedbackEvent[]) => evs.map(e => e.kind);
+  const now = 1_000_000;
+
+  check('v94_reduced_motion', 'Reduced Motion reuses the existing setting and disables movement/scaling globally (OS preference honoured when unset)', () => {
+    const r = resolveUiMotionMode({ accessibilitySettings: { reduceMotion: true } }); const sys = resolveUiMotionMode({ accessibilitySettings: {} });
+    const css = V94_STYLESHEET;
+    return (r === 'reduced' && sys === 'system' && /\[data-motion="reduced"\] \*/.test(css) && /animation-iteration-count: 1 !important/.test(css) && /--tw-scale-x: 1/.test(css) && /prefers-reduced-motion: reduce/.test(css) && /\[data-motion="reduced"\] button:active \{ transform: none/.test(css)) || J({ r, sys });
+  });
+  check('v94_offline_bounded_css', 'Motion is self-contained and bounded: no remote assets/imports, a fixed set of keyframes, endless pulses capped', () => {
+    const css = V94_STYLESHEET;
+    const frames = (css.match(/@keyframes/g) || []).length;
+    return (!/url\(|https?:|@import|@font-face/.test(css) && frames <= 8 && /\.animate-pulse \{ animation-iteration-count: 3 \}/.test(css) && !/animate-spin/.test(css)) || J({ frames });
+  });
+  check('v94_money_grouped', 'Contract completion is ONE grouped event; its reward is not repeated as a separate cash animation', () => {
+    const prev = fx({ contracts: { c1: { status: 'active', title: 'Agricultural Logistics', reward: 35000, standing: 15, region: 'NSW' } } });
+    const next = fx({ cash: 55000, standingHere: 25, contracts: { c1: { status: 'completed', title: 'Agricultural Logistics', reward: 35000, standing: 15, region: 'NSW' } } });
+    const evs = deriveFeedbackEvents(prev, next, now);
+    const done = evs.filter(e => e.kind === 'contract_completed');
+    return (done.length === 1 && !evs.some(e => e.kind === 'cash_change' || e.kind === 'standing_change') && done[0].lines.some(l => l.includes('+$35K')) && done[0].lines.some(l => l.includes('+15 Standing')) && done[0].regions.includes('NSW')) || J(evs.map(e => [e.kind, e.lines]));
+  });
+  check('v94_money_delta', 'Visual cash delta matches the canonical delta exactly (sign + label, not color only)', () => {
+    const evs = deriveFeedbackEvents(fx(), fx({ cash: 10000 }), now);
+    const c = evs.find(e => e.kind === 'cash_change');
+    return (Boolean(c) && c!.before === 20000 && c!.after === 10000 && c!.title === '−$10K' && c!.tone === 'negative' && UI_TONE[c!.tone].icon === '▼') || J(c);
+  });
+  check('v94_ap_delta', 'AP change emits once with before/after; spending the last action raises the End Turn cue (never auto-ends)', () => {
+    const a = deriveFeedbackEvents(fx({ ap: 3 }), fx({ ap: 2 }), now);
+    const b = deriveFeedbackEvents(fx({ ap: 1 }), fx({ ap: 0 }), now);
+    const newTurn = deriveFeedbackEvents(fx({ ap: 0, turnKey: 'a' }), fx({ ap: 3, turnKey: 'b' }), now);
+    return (a.filter(e => e.kind === 'ap_change').length === 1 && a[0].before === 3 && a[0].after === 2 && kinds(b).includes('ap_exhausted') && !kinds(newTurn).includes('ap_change')) || J({ a: kinds(a), b: kinds(b), n: kinds(newTurn) });
+  });
+  check('v94_region_control', 'Region control changes are immediately understandable (secured / lost / rival gained) and light the map', () => {
+    const won = deriveFeedbackEvents(fx(), fx({ controllers: { ...fx().controllers, NSW: 'you' } }), now)[0];
+    const lost = deriveFeedbackEvents(fx({ controllers: { ...fx().controllers, NSW: 'you' } }), fx(), now)[0];
+    const riv = deriveFeedbackEvents(fx(), fx({ controllers: { ...fx().controllers, QLD: 'rival' } }), now)[0];
+    return (won.kind === 'region_control_changed' && won.importance === 'major' && won.lines[0] === 'Neutral → You' && lost.importance === 'critical' && riv.title.includes('Riley') && riv.regions[0] === 'QLD') || J([won, lost, riv].map(e => [e?.importance, e?.title]));
+  });
+  check('v94_travel', 'Travel feedback connects origin → destination; canonical location changes exactly once', () => {
+    const evs = deriveFeedbackEvents(fx({ region: 'NSW' }), fx({ region: 'VIC' }), now);
+    const t = evs.filter(e => e.kind === 'travel_arrival');
+    return (t.length === 1 && t[0].regions.includes('NSW') && t[0].regions.includes('VIC') && t[0].title === 'Arrived in Victoria') || J(evs);
+  });
+  check('v94_objective_complete', 'Completing the Current Focus shows ✓ completion and names the next focus; progress shows x / y → x / y', () => {
+    const done = deriveFeedbackEvents(fx({ focusDone: 2, focusTotal: 3 }), fx({ focusId: 'obj_b', focusTitle: 'Reach $15K', focusDone: 0, focusTotal: 1 }), now).find(e => e.kind === 'objective_completed');
+    const prog = deriveFeedbackEvents(fx({ focusDone: 1 }), fx({ focusDone: 2 }), now).find(e => e.kind === 'objective_progress');
+    return (Boolean(done) && done!.title === '✓ Protect NSW' && done!.lines.includes('Next focus: Reach $15K') && Boolean(prog) && prog!.lines[0] === '1 / 3 → 2 / 3') || J({ done, prog });
+  });
+  check('v94_infra_crisis', 'Infrastructure completion and crisis resolution are clear, grouped completions', () => {
+    const inf = deriveFeedbackEvents(fx({ projects: { p: { status: 'under_construction', title: 'Rail Hub', region: 'QLD' } } }), fx({ projects: { p: { status: 'active', title: 'Rail Hub', region: 'QLD' } } }), now);
+    const cr = deriveFeedbackEvents(fx({ crises: { k: { status: 'active', title: 'Cyclone', stage: 'Landfall', regions: ['QLD'] } } }), fx({ crises: { k: { status: 'resolved', title: 'Cyclone', stage: 'Landfall', regions: ['QLD'] } } }), now);
+    return (inf[0]?.kind === 'infrastructure_completed' && inf[0].regions[0] === 'QLD' && cr[0]?.kind === 'crisis_resolved' && cr[0].lines.includes('Critical → Resolved')) || J({ inf: kinds(inf), cr: kinds(cr) });
+  });
+  check('v94_turn_control', 'Turn start, AI turn and Co-Pilot control changes each get a clear transition (authority untouched)', () => {
+    const start = deriveFeedbackEvents(fx({ humanTurn: false, controlOwner: 'rival' }), fx(), now);
+    const ai = deriveFeedbackEvents(fx(), fx({ humanTurn: false, controlOwner: 'rival' }), now);
+    const cp = deriveFeedbackEvents(fx(), fx({ controlOwner: 'copilot' }), now);
+    return (start.some(e => e.kind === 'turn_start' && e.title === 'YOUR TURN' && e.lines.includes('Day 5')) && ai.some(e => e.kind === 'ai_turn' && e.title === "RILEY'S TURN") && cp.some(e => e.kind === 'control_changed' && e.title === 'CO-PILOT CONTROLLING')) || J({ s: kinds(start), a: kinds(ai), c: kinds(cp) });
+  });
+  check('v94_diplomacy_faction', 'Agreement activation and faction band shifts are visible; tiny internal adjustments are not', () => {
+    const d = deriveFeedbackEvents(fx({ deals: { d1: { status: 'accepted', title: 'NSW pact' } } }), fx({ deals: { d1: { status: 'active', title: 'NSW pact' } } }), now)[0];
+    const f = deriveFeedbackEvents(fx({ factionBands: { qld_port_authority: 'neutral' } }), fx({ factionBands: { qld_port_authority: 'positive' } }), now)[0];
+    const same = deriveFeedbackEvents(fx({ factionBands: { qld_port_authority: 'neutral' } }), fx({ factionBands: { qld_port_authority: 'neutral' } }), now);
+    return (d?.title === '✓ AGREEMENT ACTIVE' && d.importance === 'major' && f?.kind === 'relationship_shift' && same.length === 0) || J({ d, f });
+  });
+  check('v94_rapid_bounded', 'Rapid actions: the queue stays bounded and only the newest value of a subject survives (no stale deltas)', () => {
+    let q: UiFeedbackEvent[] = []; let cash = 20000;
+    for (let k = 0; k < 20; k++) { const prev = fx({ cash }); cash -= 500; q = applyFeedbackEvents(q, deriveFeedbackEvents(prev, fx({ cash }), now + k), now + k).queue; }
+    const cashEvs = q.filter(e => e.subject === 'cash');
+    const live = currentDeltaFor(q, 'cash', cash, now + 30); const stale = currentDeltaFor(q, 'cash', cash + 500, now + 30);
+    return (q.length <= UI_FEEDBACK_LIMITS.queue && cashEvs.length === 1 && cashEvs[0].after === cash && Boolean(live) && stale === null) || J({ len: q.length, cash: cashEvs.length });
+  });
+  check('v94_attention_budget', 'Attention budget: at most one major emphasis and three minor chips at once', () => {
+    const many = [
+      ...deriveFeedbackEvents(fx(), fx({ controllers: { ...fx().controllers, NSW: 'you', QLD: 'rival', WA: 'rival' }, region: 'VIC', rivalRegion: 'SA', focusDone: 3 }), now),
+      ...deriveFeedbackEvents(fx({ projects: { p: { status: 'under_construction', title: 'X', region: 'SA' } } }), fx({ projects: { p: { status: 'active', title: 'X', region: 'SA' } } }), now)
+    ];
+    const q = applyFeedbackEvents([], many, now).queue; const v = selectVisibleFeedback(q, now);
+    return (Boolean(v.major) && v.minor.length <= UI_FEEDBACK_LIMITS.visibleMinor && q.length <= UI_FEEDBACK_LIMITS.queue) || J({ n: many.length, minor: v.minor.length });
+  });
+  check('v94_expiry', 'Temporary emphasis always expires (no permanent glow)', () => {
+    const q = applyFeedbackEvents([], deriveFeedbackEvents(fx(), fx({ controllers: { ...fx().controllers, NSW: 'you' } }), now), now).queue;
+    const later = applyFeedbackEvents(q, [], now + UI_MOTION.emphasisMs.critical + 1).queue;
+    return (q.length > 0 && later.length === 0 && q.every(e => Number.isFinite(e.expiresAt))) || J(later);
+  });
+  check('v94_no_phantoms', 'No feedback across a match boundary, on load (no previous snapshot) or when a replay rewinds', () => {
+    const a = deriveFeedbackEvents(null, fx(), now);
+    const b = deriveFeedbackEvents(fx({ matchKey: 'old' }), fx({ cash: 1 }), now);
+    const c = deriveFeedbackEvents(fx({ day: 9 }), fx({ day: 3, cash: 1 }), now);
+    return (a.length === 0 && b.length === 0 && c.length === 0) || J({ a: a.length, b: b.length, c: c.length });
+  });
+  check('v94_deterministic', 'Same canonical change → same presentation (no randomness; gameplay state untouched)', () => {
+    const prev = fx(); const next = fx({ cash: 5000, region: 'QLD', ap: 2 });
+    const before = J(prev) + J(next);
+    const a = deriveFeedbackEvents(prev, next, now).map(e => [e.kind, e.title, e.lines]);
+    const b = deriveFeedbackEvents(prev, next, now).map(e => [e.kind, e.title, e.lines]);
+    const src = [deriveFeedbackEvents, applyFeedbackEvents, selectVisibleFeedback].map(String).join('');
+    return (J(a) === J(b) && J(prev) + J(next) === before && !/Math\.random|drawGameplayRandom/.test(src)) || 'nondeterministic';
+  });
+  check('v94_not_persisted', 'Ephemeral animation state is never persisted (not in game state, settings or saves)', () => {
+    const settingsKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /v94|uiFeedback|motionDebug/i.test(k));
+    const stateKeys = Object.keys(initialGameState).filter(k => /v94|uiFeedback/i.test(k));
+    return (settingsKeys.length === 0 && stateKeys.length === 0) || J({ settingsKeys, stateKeys });
+  });
+  check('v94_formatting', 'Number formatting is consistent: $950 · $1.2K · $15K · $1.2M, signed deltas always carry + or −', () => {
+    const f = [fmtMoneyCompact(950), fmtMoneyCompact(1200), fmtMoneyCompact(15000), fmtMoneyCompact(1_200_000), fmtDelta(35000), fmtDelta(-3000), fmtDelta(-1, 'actions'), fmtDelta(15, 'standing')];
+    return J(f) === J(['$950', '$1.2K', '$15K', '$1.2M', '+$35K', '−$3K', '−1 Action', '+15 Standing']) || J(f);
+  });
+  check('v94_contract_states', 'Contract states are visually distinct with icon + label (available / active / expiring / completed / failed)', () => {
+    const labels = [{ status: 'available' }, { status: 'active', turnsRemaining: 5 }, { status: 'active', turnsRemaining: 2 }, { status: 'active', turnsRemaining: 1 }, { status: 'completed' }, { status: 'failed' }].map(c => contractStateChip(c));
+    return (new Set(labels.map(l => l.label)).size === 6 && labels.every(l => l.icon && l.label) && labels[3].label === '1 turn left') || J(labels);
+  });
+  check('v94_theme_tones', 'Feedback semantics pair colour with an icon and a label in every tone (theme-safe)', () => {
+    return (Object.values(UI_TONE).every(t => t.icon && t.cls) && Object.keys(UI_TONE).length === 8) || 'missing tone channel';
+  });
+  check('v94_perf', 'Deriving feedback is cheap (bounded snapshot diff, < 2ms per change)', () => {
+    const big = fx({ contracts: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`c${i}`, { status: 'active', title: `C${i}`, reward: 100, standing: 1, region: 'NSW' }])), projects: Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`p${i}`, { status: 'unlocked', title: `P${i}`, region: 'QLD' }])) });
+    const t0 = Date.now(); for (let k = 0; k < 200; k++) deriveFeedbackEvents(big, { ...big, cash: big.cash + k }, now); const ms = (Date.now() - t0) / 200;
+    return ms < 2 || `${ms}ms`;
   });
   return results;
 }
@@ -164925,6 +165460,78 @@ function dispatchGameSettingsChange(
   }, [dispatchGameState]);
   const contentLiveCtx = useMemo(() => (contentState && isLiveIntentMatch ? buildLiveContentContext(gameStateLiveRef.current || gameState, Number(gameState.day || 1)) : null), [contentState?.revision, isLiveIntentMatch, gameState.day]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- V9.4 Game feel: presentation-only feedback derived from canonical deltas (never persisted) ----
+  const v94MotionMode = resolveUiMotionMode(gameSettings);
+  const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
+  const [v94DebugSlow, setV94DebugSlow] = useState(false); // LAB-only; slows presentation, never gameplay
+  const [v94Queue, setV94Queue] = useState<UiFeedbackEvent[]>([]);
+  const [v94Now, setV94Now] = useState(() => Date.now());
+  const v94DiagRef = useRef<{ derivations: number; events: number; dropped: Array<{ id: string; reason: string }>; lastMs: number; maxMs: number; lastDeltas: string[] }>({ derivations: 0, events: 0, dropped: [], lastMs: 0, maxMs: 0, lastDeltas: [] });
+  const v94Objective: any = (intentLayerComputed as any)?.objective || null;
+  const feelSnapshot = useMemo<FeelSnapshot | null>(() => {
+    if (!isLiveIntentMatch) return null;
+    const pk = isTeamMode ? TEAM_PLAYER_ID : 'player';
+    const rk = isTeamMode ? TEAM_OPPONENT_ID : 'ai';
+    const pid = String(player?.id || 'player');
+    const deps = sanitizeRegionDeposits(gameState.regionDeposits);
+    const controllers: Record<string, 'you' | 'rival' | null> = {};
+    CONTENT_CORE_REGIONS.forEach(code => { const c = getRegionControlSnapshot(deps[code] || {}).controllerId; controllers[code] = c === pk ? 'you' : c === rk ? 'rival' : null; });
+    const contracts: FeelSnapshot['contracts'] = {};
+    listRegionalContracts(gameState).forEach((c: any) => { if (c && String(c.assignedActorId) === pid) contracts[c.id] = { status: String(c.status), title: String(c.title || c.id), reward: Number(c.rewards?.money || 0), standing: Number(c.rewards?.regionalStandingBoost || 0), region: String(c.issuingRegionId || '') }; });
+    const projects: FeelSnapshot['projects'] = {};
+    Object.values(gameState.infrastructureProjects || {}).forEach((p: any) => { if (p?.id) projects[p.id] = { status: String(p.status), title: String(p.title || p.id), region: String(p.regionId || '') }; });
+    const crises: FeelSnapshot['crises'] = {};
+    (((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[]).forEach(c => { if (c && c.status !== 'inactive') crises[c.id] = { status: c.status, title: c.title, stage: c.stages[c.currentStageIndex]?.title || '', regions: c.affectedRegions || [] }; });
+    const momentum: Record<string, string> = {};
+    Object.entries(lrState?.regions || {}).forEach(([code, r]: [string, any]) => { momentum[code] = String(r?.momentum?.band || ''); });
+    const factionBands: Record<string, string> = {};
+    Object.values(rfState?.factions || {}).forEach((f: any) => { const rel = f?.relationshipsByActor?.[pid]; if (rel) factionBands[f.id] = rfRelationshipBand(Number(rel.value) || 0); });
+    const deals: FeelSnapshot['deals'] = {};
+    ((dnState?.deals || []) as any[]).forEach(d => { if (d && (d.participants || []).map(String).includes(pid)) deals[d.id] = { status: String(d.status), title: String(d.title || String(d.type || 'Agreement').replace(/_/g, ' ')) }; });
+    const prog = v94Objective?.progress || { completed: 0, total: 0 };
+    return {
+      matchKey: `${gameState.selectedMode}|${gameSettings.selectedScenarioId || ''}|${(gameState as any).contentState?.seed ?? ''}`,
+      day: Number(gameState.day || 1), turnKey: `${gameState.day}|${gameState.turnCounter}|${gameState.currentActorId}`,
+      humanTurn: Boolean(isPlayerTurnForCoPilot), controlOwner: playerControlState.copilotHoldsControl ? 'copilot' : isPlayerTurnForCoPilot ? 'you' : 'rival',
+      cash: Math.round(Number(player?.money || 0)), ap: v9ApFinite ? Number(v9ApRemaining) : null,
+      region: String(player?.currentRegion || ''), standingHere: getActorRegionalStanding(gameState, pid, String(player?.currentRegion || '')), level: Number(player?.level || 1),
+      focusId: String(v94Objective?.id || ''), focusTitle: String(v94Objective?.title || ''), focusDone: Number(prog.completed || 0), focusTotal: Number(prog.total || 0), focusCompleted: v94Objective?.completionState === 'completed',
+      strategyPhase: v9Cohesion.focus.source === 'strategy' ? (v9Cohesion.focus.breadcrumb.find((b: any) => b.current)?.label || null) : null,
+      controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
+      contracts, projects, crises, momentum, factionBands, deals
+    };
+  }, [isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  const v94PrevRef = useRef<FeelSnapshot | null>(null);
+  useEffect(() => {
+    const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
+    if (!feelSnapshot) { if (prev) setV94Queue([]); return; }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0; const now = Date.now();
+    const evs = deriveFeedbackEvents(prev, feelSnapshot, now);
+    const d = v94DiagRef.current; d.derivations += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 100) / 100; d.maxMs = Math.max(d.maxMs, d.lastMs);
+    if (!evs.length) return;
+    d.events += evs.length; d.lastDeltas = [...evs.map(e => `${e.kind}: ${e.title}${e.lines[0] ? ` (${e.lines[0]})` : ''}`), ...d.lastDeltas].slice(0, 10);
+    setV94Queue(q => { const r = applyFeedbackEvents(q, evs, now); d.dropped = [...r.dropped, ...d.dropped].slice(0, 12); return r.queue; });
+  }, [feelSnapshot]);
+  // Emphasis expiry: a single timer to the next expiry; cleaned up on change/unmount (no leaks).
+  useEffect(() => {
+    if (!v94Queue.length) return;
+    const next = Math.min(...v94Queue.map(e => e.expiresAt));
+    const id = setTimeout(() => { const now = Date.now(); setV94Now(now); setV94Queue(q => q.filter(e => e.expiresAt > now)); }, Math.max(50, next - Date.now() + 25));
+    return () => clearTimeout(id);
+  }, [v94Queue]);
+  const v94Visible = useMemo(() => selectVisibleFeedback(v94Queue, Date.now()), [v94Queue, v94Now]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dismissV94 = useCallback((id: string) => setV94Queue(q => q.filter(e => e.id !== id)), []);
+  const v94CashDelta = currentDeltaFor(v94Queue, 'cash', feelSnapshot?.cash ?? null, v94Now);
+  const v94ApDelta = currentDeltaFor(v94Queue, 'ap', feelSnapshot?.ap ?? null, v94Now);
+  /** Re-entrancy guard for singular primary actions (a fast double click can never execute twice). */
+  const v94InFlightRef = useRef<Record<string, boolean>>({});
+  const v94Once = useCallback((key: string, fn: () => void) => {
+    if (v94InFlightRef.current[key]) return false;
+    v94InFlightRef.current[key] = true;
+    try { fn(); } finally { setTimeout(() => { v94InFlightRef.current[key] = false; }, 350); } // ignores an accidental repeat press only
+    return true;
+  }, []);
+
   // ---- V9.2 Guided Learning: learn by playing (reads visible state; never acts; never changes authority) ----
   const glLearning = useMemo(() => sanitizeLearningState(gameSettings.guidedLearning), [gameSettings.guidedLearning]);
   const glPresentation = getIntentPresentationLevel(gameSettings);
@@ -177956,15 +178563,19 @@ function dispatchGameSettingsChange(
       <div className={`fixed ${positionClass} space-y-2 max-w-sm pointer-events-none`} data-testid="notification-toast-container">
         {visibleNotifications.map(notification => {
           const notifType = NOTIFICATION_TYPES[notification.type];
-          const animationStyle = settings.animation === 'none'
+          // V9.4: configured animation + speed are honoured; routine items only fade, critical is static emphasis,
+          // reduced motion is enforced globally. Speed is capped so feedback never feels sluggish.
+          const v94Cls = v9NotificationClass(notification as any);
+          const v94Speed = Math.min(0.45, Number(settings.animationSpeed || 0.3));
+          const animationStyle = settings.animation === 'none' || v94Cls === 'critical_warning' || v94Cls === 'decision_required'
             ? {}
-            : settings.animation === 'fade'
-              ? { animation: `notificationFadeIn ${settings.animationSpeed || 0.5}s ease-out` }
-              : { animation: `notificationSlideIn ${settings.animationSpeed || 0.5}s ease-out` };
+            : settings.animation === 'fade' || v94Cls === 'information'
+              ? { animation: `notificationFadeIn ${v94Speed}s ease-out` }
+              : { animation: `notificationSlideIn ${v94Speed}s ease-out` };
           return (
             <div
               key={notification.id}
-              className={`${themeStyles.card} border-l-4 rounded-lg p-2.5 ${borderClass} ${shadowClass} transform transition-all duration-300 hover:scale-105 pointer-events-none select-none`}
+              className={`${themeStyles.card} ${['critical_warning', 'decision_required'].includes(v9NotificationClass(notification as any)) ? 'border-l-8 font-semibold' : 'border-l-4'} rounded-lg p-2.5 ${borderClass} ${shadowClass} pointer-events-none select-none`}
               data-testid="notification-toast"
               data-v9-class={v9NotificationClass(notification as any)}
               aria-label={`${v9NotificationClass(notification as any).replace(/_/g, ' ')}: ${String((notification as any).message || '')}`}
@@ -180724,15 +181335,15 @@ function dispatchGameSettingsChange(
 
     const v9HumanCanAct = playerControlState.isHumanTurn && !playerControlState.copilotHoldsControl && playerControlState.owner !== 'ai_only';
     const v9Simple = getIntentPresentationLevel(gameSettings) === 'simple' || getIntentPresentationLevel(gameSettings) === 'guided';
-    const v9EndTurn = () => handleV9Button({ id: 'v9_header_end_turn', label: 'End Turn', kind: 'end_turn' });
+    const v9EndTurn = () => { v94Once('end_turn', () => handleV9Button({ id: 'v9_header_end_turn', label: 'End Turn', kind: 'end_turn' })); };
     const v9PlayHandlers: V9PlayHandlers = {
-      onDo: id => {
+      onDo: id => v94Once(`do_${id}`, () => {
         const cand = (v9ActionSetView?.ranked || []).find(x => x.id === id);
         if (!cand) return;
         const buttons = buildContextualCandidateButtons(cand, playerControlState, { includeWhy: false });
         const primary = buttons.find(b => b.kind === 'do' || b.kind === 'end_turn') || buttons.find(b => b.kind === 'open');
         if (primary) handleV9Button(primary);
-      },
+      }),
       onWhyAction: id => handleV9Button({ id: `why_${id}`, label: 'Why?', kind: 'why', candidateId: id }),
       onWhatIf: label => void submitIntelligenceQuery(`What if I ${label.charAt(0).toLowerCase()}${label.slice(1)}?`),
       onAsk: q => void submitIntelligenceQuery(q),
@@ -180801,7 +181412,7 @@ function dispatchGameSettingsChange(
       const glInPlay = glCoachNode && (glCoachTarget === 'focus' || glCoachTarget === 'recommended' || glCoachTarget === 'useful');
       const glAtTop = glCoachNode && !glInHeader && !glInPlay;
       return (
-        <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3" data-testid="v9-play-hud">
+        <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3 v94-fade" data-testid="v9-play-hud">
           <V9MatchHeader
             c={v9Cohesion}
             theme={themeStyles}
@@ -180809,7 +181420,13 @@ function dispatchGameSettingsChange(
             endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
             onStanding={() => void submitIntelligenceQuery('Who is winning and why?')}
             coachNode={glInHeader ? glCoachNode : null}
+            cashDelta={v94CashDelta}
+            apDelta={v94ApDelta}
+            apZero={Boolean(v9HumanCanAct && feelSnapshot?.ap === 0)}
+            endgame={Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) <= 3}
           />
+
+          <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={e => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?')} />
 
           {glShowWelcome && (
             <GuidedWelcomeCard
@@ -180895,7 +181512,7 @@ function dispatchGameSettingsChange(
       const activity = buildActivityIntelligenceAnswer({ query: 'recent activity', control: playerControlState, session: takeoverSession, ledgerEvents: gameState.gameActivityLedger?.events || [] });
       const compactPanel = renderCompactCoPilotPanel();
       return (
-        <div role="tabpanel" id="v9-layer-panel-intelligence" aria-labelledby="v9-layer-tab-intelligence" className="mb-4 grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="v9-intelligence">
+        <div role="tabpanel" id="v9-layer-panel-intelligence" aria-labelledby="v9-layer-tab-intelligence" className="mb-4 grid grid-cols-1 xl:grid-cols-3 gap-4 v94-fade" data-testid="v9-intelligence">
           <div className="xl:col-span-3 space-y-2 min-w-0">
             <V9StrategicBrief
               c={v9Cohesion}
@@ -181108,14 +181725,14 @@ function dispatchGameSettingsChange(
     };
 
     const renderV9Lab = () => (
-      <div role="tabpanel" id="v9-layer-panel-lab" aria-labelledby="v9-layer-tab-lab" className="mb-4">
+      <div role="tabpanel" id="v9-layer-panel-lab" aria-labelledby="v9-layer-tab-lab" className="mb-4 v94-fade">
         <LabWorkspace
           entries={buildV9LabEntries()}
           theme={themeStyles}
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests()];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -181155,6 +181772,7 @@ function dispatchGameSettingsChange(
         <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
         <GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} />
         <ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} />
+        <GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} />
         <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
       </div>
     );
@@ -182493,39 +183111,40 @@ function dispatchGameSettingsChange(
                     const travelAllowed = !isPlayerHere && canAfford && !travelBlocked;
                     const isSelectedPreview = interactiveMapActive && selectedPreviewRegionCode === code;
 
+                  const v94Recent = v94Visible.regions[code];
+                  const v94Activate = () => {
+                    if (interactiveMapActive) {
+                      updateUiState({ selectedInteractiveRegion: code });
+                      if (uiState.selectedInteractiveRegion === code && isPlayerTurn && travelAllowed) travelToRegion(code);
+                      return;
+                    }
+                    if (isPlayerTurn && !isPlayerHere && canAfford) travelToRegion(code);
+                  };
                   return (
                     <div
                       key={code}
-                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all hover:scale-110 group ${
-                        isPlayerTeamHere || isAiHere ? 'z-20' : 'z-10'
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelectedPreview || undefined}
+                      aria-label={`${region.name}${isPlayerHere ? ', you are here' : ''}${isAiHere ? ', rival is here' : ''}${isPlayerControlled ? ', controlled by you' : isAiControlled ? ', controlled by rival' : ', neutral'}${!isPlayerHere ? (travelAllowed ? `, travel $${travelCost}` : canAfford ? ', travel blocked' : `, need $${travelCost - player.money} more to travel`) : ''}`}
+                      data-testid={`map-region-${code}`}
+                      data-selected={isSelectedPreview ? 'true' : undefined}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); v94Activate(); } }}
+                      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform duration-150 hover:scale-105 focus-visible:scale-105 group ${
+                        isPlayerTeamHere || isAiHere || isSelectedPreview ? 'z-20' : 'z-10'
                       } ${isAdjacent && !isPlayerHere ? 'hover:z-30' : ''}`}
                       style={{
                         left: `${region.position.x}%`,
                         top: `${region.position.y}%`,
                       }}
-                      onClick={() => {
-                        if (interactiveMapActive) {
-                          updateUiState({ selectedInteractiveRegion: code });
-                          if (uiState.selectedInteractiveRegion === code && isPlayerTurn && travelAllowed) {
-                            travelToRegion(code);
-                          }
-                          return;
-                        }
-                        if (isPlayerTurn && !isPlayerHere && canAfford) {
-                          travelToRegion(code);
-                        }
-                      }}
+                      onClick={v94Activate}
                       title={interactiveMapActive
                         ? `${region.name} • ${isPlayerHere ? 'You are here' : travelAllowed ? `Travel $${travelCost}` : canAfford ? 'Travel blocked' : `Need $${travelCost - player.money} more`}${currentObjective.sourceId === code ? ' • Tracked destination' : ''}`
                         : undefined}
                     >
 	                      <div
 	                        className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-sm border-4 ${
-	                          isPlayerTeamHere
-	                            ? 'border-green-500 bg-green-500 text-white animate-pulse'
-	                            : isAiHere
-	                            ? 'border-pink-500 bg-pink-500 text-white animate-pulse'
-	                            : isPlayerControlled
+	                          isPlayerControlled
 	                            ? 'border-blue-400 bg-blue-600 text-white'
 	                            : isAiControlled
 	                            ? 'border-pink-400 bg-pink-600 text-white'
@@ -182536,7 +183155,7 @@ function dispatchGameSettingsChange(
 	                            : isPlayerVisited
 	                            ? 'border-blue-500 bg-blue-500 text-white'
 	                            : 'border-gray-500 bg-gray-700 text-gray-300'
-	                        } ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''} ${isSelectedPreview ? 'ring-4 ring-white ring-opacity-80' : ''} ${
+	                        } ${themeStyles.shadow} ${hasEvent ? 'ring-2 ring-yellow-400 ring-opacity-75' : ''} ${isPlayerTeamHere ? 'ring-4 ring-green-400 ring-offset-2 ring-offset-gray-800' : ''} ${isAiHere && !isPlayerTeamHere ? 'outline outline-2 outline-dashed outline-pink-300 outline-offset-4' : ''} ${isSelectedPreview ? 'ring-4 ring-white ring-opacity-90 ring-offset-2 ring-offset-sky-500' : ''} ${v94Recent ? 'v94-ring' : ''} ${
 	                          WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'regions' && isPlayerControlled ? 'ring-2 ring-blue-300' : ''
 	                        }`}
 	                      >
@@ -182554,13 +183173,21 @@ function dispatchGameSettingsChange(
                           )}
 	                      </div>
                       {isPlayerHere && (
-                        <div className="absolute top-full mt-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-green-500 text-white px-2 py-1 rounded font-bold">
-                          You
+                        <div key={`you_${player.currentRegion}`} className="v94-pop absolute top-full mt-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-green-600 text-white px-2 py-1 rounded font-bold" data-testid="map-you-marker">
+                          ▲ You
                         </div>
                       )}
                       {isAiHere && (
-                        <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-pink-500 text-white px-2 py-1 rounded font-bold">
-                          AI
+                        <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap bg-gray-900 border-2 border-dashed border-pink-400 text-pink-200 px-2 py-0.5 rounded font-bold" data-testid="map-rival-marker">
+                          ◆ {aiPlayer?.name ? String(aiPlayer.name).split(' ')[0] : 'Rival'}
+                        </div>
+                      )}
+                      {isSelectedPreview && !isPlayerHere && (
+                        <div className="absolute -top-3 -left-3 text-[10px] bg-white text-gray-900 px-1 rounded font-bold" aria-hidden="true">◎</div>
+                      )}
+                      {v94Recent && (
+                        <div key={v94Recent.id} className="v94-rise absolute top-1/2 left-full ml-2 -translate-y-1/2 text-[10px] whitespace-nowrap bg-black/80 text-white px-1.5 py-0.5 rounded" data-testid="map-recent-change">
+                          {v94Recent.kind === 'travel_arrival' ? (code === player.currentRegion ? '✓ Arrived' : '↗ Departed') : v94Recent.kind === 'region_control_changed' ? (v94Recent.tone === 'positive' ? '✓ Secured' : v94Recent.tone === 'critical' ? '✕ Lost' : '◆ Rival took') : v94Recent.kind === 'infrastructure_completed' ? '🏗 Built' : v94Recent.kind === 'contract_completed' ? '📜 Done' : v94Recent.kind === 'rival_moved' ? '◆ Rival arrived' : v94Recent.icon}
                         </div>
                       )}
                       {/* Event indicator */}
@@ -190703,15 +191330,19 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                   <div key={c.id} className="p-4 bg-gray-800/80 border border-emerald-500/30 rounded-lg space-y-2">
                     <div className="flex justify-between items-start">
                       <h4 className="font-bold text-sm text-emerald-200">{c.title || c.id}</h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 font-mono uppercase">{c.targetRegion || 'Global'}</span>
+                      <span className="flex items-center gap-1">
+                        {(() => { const chip = contractStateChip(c); return <span className={`text-[10px] px-2 py-0.5 rounded-full border ${chip.cls}`} data-testid="v94-contract-state">{chip.icon} {chip.label}</span>; })()}
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 font-mono uppercase">{c.targetRegion || c.issuingRegionId || 'Global'}</span>
+                      </span>
                     </div>
                     <p className="text-xs text-gray-300">{c.description || 'Fulfill target requirements before turn deadline.'}</p>
                     <div className="text-xs text-emerald-400 font-semibold">
                       Reward: +${Number(c.rewardCash ?? c.rewards?.money ?? 0).toLocaleString()} | +{Number(c.rewardPrestige ?? c.rewards?.regionalStandingBoost ?? 0)} Standing
                     </div>
                     {c.turnsRemaining != null && (
-                      <div className="text-[11px] text-amber-400">Turns Remaining: {c.turnsRemaining}</div>
+                      <div className={`text-[11px] ${Number(c.turnsRemaining) <= 1 ? 'text-red-300 font-bold' : Number(c.turnsRemaining) <= 3 ? 'text-amber-300 font-semibold' : 'text-gray-300'}`}>⏳ {Number(c.turnsRemaining) <= 1 ? `${c.turnsRemaining} turn remaining` : `${c.turnsRemaining} turns remaining`}</div>
                     )}
+                    {(c.objectives || []).length > 0 && (() => { const tot = (c.objectives || []).reduce((a: number, o: any) => a + Number(o.targetValue || 0), 0); const done = (c.objectives || []).reduce((a: number, o: any) => a + Math.min(Number(o.targetValue || 0), Number(o.currentProgress || 0)), 0); return <V94ProgressBar value={done} max={tot} label={`${c.title} progress`} tone="good" />; })()}
                     {(c.objectives || []).length > 0 && (
                       <ul className="text-[11px] text-gray-300 space-y-0.5" data-testid="contract-objectives">
                         {(c.objectives || []).map((o: any) => (
@@ -190886,9 +191517,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                         <span>Funding: ${projFunding.toLocaleString()}</span>
                         <span>Target: ${projCost.toLocaleString()}</span>
                       </div>
-                      <div className="w-full bg-gray-950 rounded-full h-2 overflow-hidden border border-gray-800">
-                        <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${fundedPct}%` }}></div>
-                      </div>
+                      <V94ProgressBar value={projFunding} max={projCost} label={`${projName} funding`} tone={isCompleted ? 'good' : 'build'} />
+                      {!isCompleted && !isLocked && <div className="text-[11px] text-gray-400" data-testid="v94-infra-remaining">{fundedPct}% funded · ${Math.max(0, projCost - projFunding).toLocaleString()} to go{Number(proj.laborTurnsRequired || 0) > 0 ? ` · ${Math.max(0, Number(proj.laborTurnsRequired || 0) - Number(proj.currentLaborTurnsCompleted || 0))} build turns once funded` : ''}</div>}
                     </div>
 
                     {(isLocked || rivals.length > 0) && (
@@ -191344,7 +191974,18 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} p-6 flex flex-col items-center justify-center`}>
-	        <div className={`max-w-5xl w-full ${themeStyles.card} ${themeStyles.border} border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6`}>
+	        <div className={`max-w-5xl w-full ${themeStyles.card} ${themeStyles.border} border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 v94-stagger`}>
+	          <V94OutcomeHero
+	            won={Boolean(debrief.playerWon)}
+	            winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
+	            metricLabel={(WIN_METRIC_LABELS as Record<string, string>)[outcome?.decidingMetric] || String(outcome?.decidingMetric || gameSettings.winCondition)}
+	            you={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
+	            rival={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
+	            rivalName={String(aiPlayer?.name || 'Rival')}
+	            reason={String(outcome?.reason || debrief.summary || '')}
+	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Turn ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
+	            lesson={debrief.playerWon ? null : ((debrief.blunders?.blunderEvents || [])[0]?.recommendation || 'Protect your cash reserve before the final days and pick one win lever to push early.')}
+	          />
 	          
 	          {/* Header Banner */}
 	          <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-gray-700/50 pb-6">
@@ -191864,9 +192505,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
-	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow}`}>
-	          <div className="text-6xl mb-4">{won ? '🏆' : '😔'}</div>
-	          <h2 className="text-3xl font-bold mb-4">{won ? 'Victory!' : 'Defeat'}</h2>
+	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow} v94-stagger`}>
+	          <V94OutcomeHero won={won} winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} />
 	          
 	          <div className="space-y-2 mb-6">
 	            <div className="text-sm opacity-75 mb-2">
@@ -191974,7 +192614,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   }
 
   return (
-    <div className="font-sans">
+    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
+      <style>{V94_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
           from { opacity: 0; transform: translateY(-10px); }
