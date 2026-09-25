@@ -14055,6 +14055,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   guidedLearning: null as any,
   // V9.3 content & replayability (all optional/defaulted — old saves and custom scenarios need none of these)
   v93ContentEnabled: true,
+  nationalSystemsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26394,6 +26395,8 @@ export type GameSettingsState = {
   playerIntentOnboardingDismissed: string[];
   guidedLearning?: any;
   v93ContentEnabled?: boolean;
+  /** V10.0 National Systems & Interregional Networks (core feature; off = exact V9 behaviour). */
+  nationalSystemsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36128,6 +36131,8 @@ export const initialGameState = {
   worldReaction: createEmptyWorldReactionState(),
   // Living Regions initialises from canonical state on the first live pass (history starts then).
   livingRegions: null as LivingRegionsState | null,
+  /** V10: only non-derivable national memory (bands, history); the network snapshot is always recomputed. */
+  nationalSystems: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80081,6 +80086,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.regionalFactions = sanitizeRegionalFactionsState(migrated.gameState.regionalFactions || migrated.regionalFactions);
   // V9.3 content: old saves carry none — the match gets a fresh profile on load; active contracts/scenario/campaign are untouched.
   if (migrated.gameState) migrated.gameState.contentState = sanitizeMatchContentState(migrated.gameState.contentState || migrated.contentState);
+  // V10 National Systems: pre-V10 saves carry none — networks are derived on load; history starts there (no fake past).
+  if (migrated.gameState) migrated.gameState.nationalSystems = sanitizeNationalSystemsPersisted(migrated.gameState.nationalSystems);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -102445,6 +102452,8 @@ export interface GIWorld {
   livingRegions?: LivingRegionsWorldView | null;
   /** Regional Factions 2.0 view (fog-aware stakeholder state). */
   factions?: RegionalFactionsWorldView | null;
+  /** V10.0 National Systems view (public interregional network state). */
+  national?: NationalSystemsWorldView | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -122029,7 +122038,10 @@ export type SWRKind =
   // Living Regions 2.0 (derived, emitted back through World Reaction; Living Regions never consumes these).
   | 'region_entered_boom' | 'regional_growth_accelerated' | 'regional_decline_started' | 'regional_need_became_critical' | 'specialization_established' | 'core_region_emerged'
   // Regional Factions 2.0 (derived; factions never consume these).
-  | 'faction_influence_shift' | 'faction_relationship_changed_major' | 'faction_coalition_formed' | 'faction_request_issued' | 'faction_conflict_escalated';
+  | 'faction_influence_shift' | 'faction_relationship_changed_major' | 'faction_coalition_formed' | 'faction_request_issued' | 'faction_conflict_escalated'
+  // V10 National Systems (derived band transitions; National Systems never consumes these).
+  | 'national_bottleneck_formed' | 'national_bottleneck_resolved' | 'national_dependency_became_critical' | 'national_dependency_reduced'
+  | 'national_resilience_improved' | 'national_resilience_deteriorated' | 'national_capacity_expanded';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122532,35 +122544,36 @@ export interface SWRSubscription {
 const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 'region_became_contested', 'region_secured', 'region_lost', 'region_weakened'];
 /** Regional shifts Living Regions emits (consumed by other systems; never by Living Regions itself). */
 const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed', 'faction_request_issued', 'faction_conflict_escalated'];
+const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: [...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: ['cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
-  { system: 'contracts', label: 'Contracts', kinds: ['liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'contracts', label: 'Contracts', kinds: ['national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
   { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
   { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: [...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: [...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123229,6 +123242,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  national_bottleneck_formed: 'Bottleneck', national_bottleneck_resolved: 'Bottleneck eased', national_dependency_became_critical: 'Critical dependency', national_dependency_reduced: 'Dependency eased',
+  national_resilience_improved: 'Resilience ↑', national_resilience_deteriorated: 'Resilience ↓', national_capacity_expanded: 'Capacity ↑',
   region_reinforced: 'Reinforced', region_became_safe: 'Threat ↓', region_became_contested: 'Pressure ↑', region_lost: 'Lost', region_secured: 'Secured', rival_pressure_increased: 'Pressure ↑', rival_pressure_decreased: 'Pressure ↓',
   rival_target_reassessed: 'Target reconsidered', regional_growth_accelerated: 'Region growing', region_entered_boom: 'Boom', regional_decline_started: 'Region weakening', regional_need_became_critical: 'Critical need', specialization_established: 'Specialization', core_region_emerged: 'Core region', faction_request_issued: 'Faction request', faction_coalition_formed: 'Coalition', faction_relationship_changed_major: 'Stakeholders', faction_influence_shift: 'Influence', faction_conflict_escalated: 'Conflict', liquidity_deteriorated: 'Cash ↓', liquidity_improved: 'Cash ↑', cash_threshold_crossed: 'Milestone', objective_blocked: 'Goal at risk', objective_completed: 'Goal done', diplomatic_pact_started: 'Pact active', contract_completed: 'Contract paid'
 };
@@ -124122,7 +124137,8 @@ export function lrRecompute(regIn: DynamicRegionalState, s: LRInputs, ctx: LRRec
   reg.needs = lrComputeNeeds(reg, s, turn, ctx.sourceEventId || null);
   reg.risks = lrComputeRisks(reg, s, turn);
   if (reg.risks.some(x => x.kind === 'infrastructure_bottleneck')) lrSetCondition(reg, 'infrastructure_bottleneck', turn, { severity: 'high' });
-  else reg.conditions = reg.conditions.filter(c => c.kind !== 'infrastructure_bottleneck');
+  // V10: a bottleneck reported by National Systems stays until its resolved/eased event clears it.
+  else reg.conditions = reg.conditions.filter(c => c.kind !== 'infrastructure_bottleneck' || c.source === 'national systems');
   reg.opportunities = lrComputeOpportunities(reg, s, turn);
   if (reg.opportunities.some(o => o.kind === 'commodity_boom' && o.strength === 'high')) lrSetCondition(reg, 'commodity_boom', turn, { expires: turn + 2, severity: 'moderate' });
   if ((reg.sectors.technology || 0) >= 30 && reg.momentum.value >= 0.18) lrSetCondition(reg, 'technology_expansion', turn, { expires: turn + 2, severity: 'low' });
@@ -124247,6 +124263,21 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
         lrSetCondition(reg, 'crisis_active', turn, { severity: 'high', source: 'crisis chains', sourceEventId: e.id, label: `Crisis: ${s.crises.find(x => x.id === e.subjectId)?.name || 'active crisis'}` });
         lrPushHistory(reg, { turn, kind: 'crisis', text: `${s.crises.find(x => x.id === e.subjectId)?.name || 'A crisis'} escalated here.`, sourceEventId: e.id, significance: 'critical' });
         lrPushEvidence(reg, turn, `${s.crises.find(x => x.id === e.subjectId)?.name || 'Crisis'} escalated`, 'crisis', e.id);
+        break;
+      }
+      // V10: National Systems reports a network constraint; Living Regions decides what it means for the region.
+      case 'national_bottleneck_formed':
+      case 'national_dependency_became_critical': {
+        lrSetCondition(reg, 'infrastructure_bottleneck', turn, { severity: e.significance === 'major' || e.significance === 'critical' ? 'high' : 'moderate', source: 'national systems', sourceEventId: e.id,
+          label: e.kind === 'national_dependency_became_critical' ? 'Critical national dependency' : 'National network bottleneck' });
+        lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national network', e.id);
+        break;
+      }
+      case 'national_bottleneck_resolved':
+      case 'national_dependency_reduced':
+      case 'national_capacity_expanded': {
+        reg.conditions = reg.conditions.filter(c => !(c.kind === 'infrastructure_bottleneck' && c.source === 'national systems'));
+        lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national network', e.id);
         break;
       }
       case 'crisis_resolved': {
@@ -124684,8 +124715,8 @@ export interface LivingRegionsWorldView {
   names: Record<string, string>;
 }
 
-export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null }
+export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124702,6 +124733,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   const actor = gw.actors.find(a => a.relation !== 'self' && new RegExp(`\\b${a.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(q)) || null;
   const actorKey = actor ? actor.id : null;
   const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
+  // V10.0: interregional network questions (only when a National Systems view exists).
+  const nq = detectNationalSystemsQuery(raw, gw);
+  if (nq) return mk('national', { national: nq, regionId: nq.regionId });
   // What-if on an existing infrastructure project.
   if (/\bwhat (happens|would happen|if)\b.{0,30}\b(build|complete|finish|fund)\b|\bif i (build|complete|finish|fund)\b/.test(q) && v.inputs) {
     const words = q.replace(/\b(the|a|an|what|happens|would|happen|if|i|build|complete|finish|fund|project|in)\b/g, ' ').split(/\s+/).filter(w => w.length > 2);
@@ -124733,6 +124767,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.national && gw.national) return composeNationalSystemsAnswer(query.national, gw);
   const v = gw.livingRegions!;
   const sections: GIAnswerSection[] = [];
   const buttons: GameIntelligenceButton[] = [];
@@ -128698,6 +128733,8 @@ export interface LearningContext {
   lostRegion: string | null; overrideOfAdvice: boolean; blocked: { kind: string; text: string } | null;
   /** V9.3 content (visible only): a waiting strategic decision, a live opportunity, a national/rare event. */
   contentDilemma?: string | null; contentOpportunity?: string | null; contentEvent?: string | null;
+  /** V10.0 national networks (public): a visible bottleneck or critical dependency, as one sentence. */
+  nationalConstraint?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128780,6 +128817,9 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'regional_development', title: 'Regions develop', category: 'regions', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: "What's happening in this region?", related: ['infrastructure'],
     relevant: c => (c.regionShift ? 'a region changed meaningfully' : null),
     lesson: c => ({ headline: 'Regions change over time', lines: [c.regionShift || '', 'Investment, infrastructure, contracts and events shape what a region is good at — and exposed to.'], surface: 'inline' }) },
+  { id: 'national_networks', title: 'National networks', category: 'regions', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'infrastructure', askPrompt: 'Where are the national bottlenecks?', related: ['infrastructure', 'regional_development'],
+    relevant: c => (c.nationalConstraint ? 'a national network is constrained' : null),
+    lesson: c => ({ headline: 'Regions share national networks', lines: [c.nationalConstraint || '', 'Freight, energy, water, trade and digital capacity flow between neighbours — a bottleneck in one region can hold others back, and infrastructure you fund may help rivals too.'], asks: ['Where are the national bottlenecks?'], surface: 'inline' }) },
   { id: 'factions', title: 'Stakeholders', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'factions', askPrompt: 'Who matters in this region?', related: ['contracts'],
     relevant: c => (c.stakeholder ? 'a regional group has asked for something' : null),
     lesson: c => ({ headline: 'Regional stakeholders', lines: [c.stakeholder || '', 'Groups support or oppose moves based on what they want for their region — helping one can worry another.'], asks: ['Who matters in this region?'], surface: 'card' }) },
@@ -129452,6 +129492,9 @@ export interface ContentContext {
   infraEnabled: boolean;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   windows: Array<{ id: string; type: string; subject: string; expiresTurn: number | null; reason: string }>;
+  /** V10: region → network condition (optional; absent when National Systems is off). */
+  national?: Record<string, Partial<Record<NationalNetworkKind, NationalNetworkCondition>>> | null;
+  nationalDeps?: Array<{ consumer: string; provider: string; network: NationalNetworkKind; importance: string }>;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -129478,6 +129521,9 @@ export type ContentReq =
   | { k: 'flag'; key: string; value: string | number | boolean } | { k: 'no_flag'; key: string }
   | { k: 'campaign_var'; key: string; value: string | number | boolean }
   | { k: 'stability_max'; value: number }
+  // V10 National Systems (read-only network context; the content engine still decides eligibility).
+  | { k: 'network'; network: NationalNetworkKind; conditions: NationalNetworkCondition[] }
+  | { k: 'dependency'; network?: NationalNetworkKind; critical?: boolean }
   | { k: 'project'; projectId: string; status: string[] }
   | { k: 'window'; type: string }
   | { k: 'contracts_on' } | { k: 'infra_on' }
@@ -129529,6 +129575,14 @@ export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionI
     case 'no_flag': return res(state?.flags[req.key] === undefined, `no earlier ${ctLabel(req.key)} decision`, `already decided ${ctLabel(req.key)}`);
     case 'campaign_var': { const v = ctx.campaignVars[req.key]; return res(v === req.value, `campaign: ${ctLabel(req.key)} = ${String(v)}`, `campaign variable ${req.key} not ${String(req.value)}`); }
     case 'stability_max': return res(r?.stability !== null && r?.stability !== undefined && r.stability <= req.value, `${name} stability ${r?.stability}`, `${name} stability above ${req.value}`);
+    case 'network': {
+      const c = regionId ? ctx.national?.[regionId]?.[req.network] : undefined;
+      return res(Boolean(c && req.conditions.includes(c)), `${name} ${NATIONAL_NETWORK_LABEL[req.network].toLowerCase()} is ${c ? NATIONAL_CONDITION_LABEL[c].toLowerCase() : 'unknown'}`, `${name} ${NATIONAL_NETWORK_LABEL[req.network].toLowerCase()} is not ${req.conditions.join('/')}`);
+    }
+    case 'dependency': {
+      const d = (ctx.nationalDeps || []).find(x => x.consumer === regionId && (!req.network || x.network === req.network) && (req.critical ? x.importance === 'critical' : x.importance === 'critical' || x.importance === 'high'));
+      return res(Boolean(d), d ? `${name} depends on ${d.provider} for ${d.network}` : '', `${name} has no ${req.critical ? 'critical ' : ''}network dependency`);
+    }
     case 'project': { const p = ctx.projects.find(x => x.id === req.projectId); return res(Boolean(p) && req.status.includes(p!.status), `${p?.id || req.projectId} is ${p?.status}`, `${req.projectId} is ${p?.status || 'missing'}`); }
     case 'window': { const w = ctx.windows.find(x => x.type === req.type && (!regionId || x.subject === regionId)); return res(Boolean(w), w?.reason || 'window open', `no ${ctLabel(req.type)} window`); }
     case 'contracts_on': return res(ctx.contractsEnabled, 'contracts enabled', 'regional contracts are off');
@@ -129789,6 +129843,8 @@ function contentReqSig(reqs: ContentReq[], ctx: ContentContext, regionId: string
       case 'flag': case 'no_flag': parts.push(`g${String(state?.flags[q.key])}`); break;
       case 'campaign_var': parts.push(`cv${String(ctx.campaignVars[q.key])}`); break;
       case 'stability_max': parts.push(`st${r?.stability}`); break;
+      case 'network': parts.push(`n${q.network}${r ? ctx.national?.[r.code]?.[q.network] : ''}`); break;
+      case 'dependency': parts.push(`dp${(ctx.nationalDeps || []).filter(x => !r || x.consumer === r.code).map(x => x.importance).join('')}`); break;
       case 'project': parts.push(`pj${ctx.projects.find(x => x.id === q.projectId)?.status}`); break;
       case 'window': parts.push(`w${ctx.windows.map(w => w.id).join()}`); break;
       case 'any': q.of.forEach(walk); break;
@@ -130211,6 +130267,15 @@ export const CONTRACT_TEMPLATE_REGISTRY: ContractTemplate[] = [
     objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1000 }, duration: 10,
     requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'risk', kind: 'overdependence' }, { k: 'risk', kind: 'market_exposure' }, { k: 'flag', key: 'commodity_crash', value: true }, { k: 'flag', key: 'wa_path', value: 'diversified' }] }] }),
   // ---- SA: renewables, hydrogen, water, grid ---------------------------------------------------------------
+  // V10: network-driven content — relevance comes from National Systems, execution from the existing contract engine.
+  ctpl({ id: 'nat_freight_capacity', title: 'Freight Capacity Expansion', archetype: 'infrastructure', contractType: 'freight_capacity', issuingFactionId: 'federal_infrastructure_office', regions: ['QLD', 'NSW', 'WA', 'NT', 'SA', 'VIC'], themes: ['logistics', 'trade'], roles: ['infrastructure', 'economic_growth'],
+    text: { '*': { title: '{region} Freight Capacity Expansion', description: 'Growth in {region} is outrunning its freight network. Get new transport capacity operating and the freight authority pays.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 2000 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'network', network: 'freight', conditions: ['bottlenecked', 'critical'] }] }),
+  ctpl({ id: 'nat_energy_security', title: 'Energy Security Program', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: null, regions: ['VIC', 'NSW', 'QLD', 'SA', 'WA', 'TAS'], themes: ['energy', 'renewables'], roles: ['stability', 'long_term_investment'],
+    text: { '*': { title: '{region} Energy Security Program', description: '{region} leans heavily on energy from another region. Co-fund local generation to cut that dependency.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'dependency', network: 'energy' }, { k: 'network', network: 'energy', conditions: ['bottlenecked', 'critical'] }] }] }),
   ctpl({ id: 'sa_hydrogen_pilot', title: 'Hydrogen Pilot Plant', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: 'sa_clean_energy_council', regions: ['SA'], themes: ['renewables', 'energy'], roles: ['long_term_investment', 'development'],
     text: { SA: { title: 'Whyalla Hydrogen Pilot', description: 'Co-fund a green hydrogen pilot in {region}. Capital is tied up for the program.' } },
     objective: { type: 'invest_capital', base: 3500 }, requirement: { cashOnHand: 1500 }, duration: 10,
@@ -130948,6 +131013,8 @@ function satisfyReq(q: ContentReq, ctx: ContentContext, st: MatchContentState, r
     case 'no_flag': break;
     case 'campaign_var': ctx.campaignVars[q.key] = q.value; break;
     case 'stability_max': if (r) r.stability = q.value; break;
+    case 'network': { const code = region || 'NSW'; ctx.national = { ...(ctx.national || {}), [code]: { ...((ctx.national || {})[code] || {}), [q.network]: q.conditions[0] } }; break; }
+    case 'dependency': ctx.nationalDeps = [...(ctx.nationalDeps || []), { consumer: region || 'NSW', provider: 'SA', network: q.network || 'energy', importance: 'critical' }]; break;
     case 'project': ctx.projects = [...ctx.projects, { id: q.projectId, regionId: region || 'NSW', projectType: 'x', status: q.status[0] }]; break;
     case 'window': ctx.windows = [...ctx.windows, { id: 'probe', type: q.type, subject: region || 'NSW', expiresTurn: ctx.day + 2, reason: 'probe' }]; break;
     case 'contracts_on': ctx.contractsEnabled = true; break;
@@ -131165,6 +131232,8 @@ export interface ContentLiveInputs {
   diplomacy: { enabled: boolean; pactExpiring: boolean; tension: number };
   strategyRegion: string | null; campaignVars: Record<string, string | number | boolean>;
   contractsEnabled: boolean; infraEnabled: boolean;
+  /** V10 national network snapshot (optional). */
+  national?: NationalSystemsState | null;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   regionalStability: Record<string, number>;
 }
@@ -131212,6 +131281,8 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     rival: { name: i.rivalName, profile: i.rivalProfile, focusRegion: CONTENT_CORE_REGIONS.slice().sort((a, b) => regions[b].rivalDeposit - regions[a].rivalDeposit)[0] || null },
     player: { money: i.player.money, debt: (i.player.loans || []).reduce((s, l: any) => s + Number(l?.amount || 0) + Number(l?.accrued || 0), 0), region: i.player.currentRegion },
     strategyRegion: i.strategyRegion, campaignVars: i.campaignVars || {}, contractsEnabled: i.contractsEnabled, infraEnabled: i.infraEnabled,
+    national: i.national ? Object.fromEntries(Object.values(i.national.regions).map(g => [g.regionId, Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, g.networks[n].condition]))])) : null,
+    nationalDeps: i.national ? i.national.dependencies.map(d => ({ consumer: d.consumerRegionId, provider: d.providerRegionId, network: d.network, importance: d.importance })) : [],
     projects: i.projects || [],
     windows: (i.windows || []).filter(w => w.status === 'open' && (!w.observers || w.observers.includes(i.player.id) || w.observers.includes(i.playerKey))).map(w => ({ id: w.id, type: w.type, subject: w.subject, expiresTurn: w.expiresTurn, reason: w.reason }))
   };
@@ -132352,7 +132423,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled'
 ] as const;
 
 /**
@@ -132703,6 +132774,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
+        nationalSystems: sanitizeNationalSystemsPersisted(stateData.nationalSystems || raw.gameState?.nationalSystems),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -134748,6 +134820,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 }
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
+  { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -136153,6 +136226,1216 @@ export const HumanVsAiTurnFlowInspector: React.FC<{
 
 
 // ============================================================================
+// SECTION 20S: V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS
+// ============================================================================
+// Owns ONLY the relationships between regions: interregional network capacity, sharing, bottlenecks,
+// dependencies and national resilience. It reads Living Regions (regional condition), canonical
+// infrastructure (projects + status), crises and optional scenario modifiers; it never writes them.
+// Consumers (Living Regions, Contracts/Content, Factions, Rival AI, GI3, Background AI, Team OS, Diplomacy)
+// receive meaningful band transitions as World Reaction events and decide their own response.
+// All values are strategic game-capacity points — abstractions, not real-world units. Deterministic, bounded.
+
+export type NationalNetworkKind = 'freight' | 'energy' | 'water' | 'trade' | 'digital';
+export type NationalNetworkCondition = 'surplus' | 'healthy' | 'strained' | 'bottlenecked' | 'critical';
+export type NationalResilienceBand = 'fragile' | 'exposed' | 'stable' | 'resilient' | 'highly_resilient';
+export type NationalBottleneckSeverity = 'minor' | 'meaningful' | 'major' | 'critical';
+
+export const NATIONAL_NETWORKS: NationalNetworkKind[] = ['freight', 'energy', 'water', 'trade', 'digital'];
+export const NATIONAL_NETWORK_LABEL: Record<NationalNetworkKind, string> = { freight: 'Freight', energy: 'Energy', water: 'Water', trade: 'Trade', digital: 'Digital' };
+export const NATIONAL_NETWORK_ICON: Record<NationalNetworkKind, string> = { freight: '🚆', energy: '⚡', water: '💧', trade: '🚢', digital: '🛰' };
+export const NATIONAL_CONDITION_LABEL: Record<NationalNetworkCondition, string> = { surplus: 'Surplus', healthy: 'Healthy', strained: 'Strained', bottlenecked: 'Bottlenecked', critical: 'Critical' };
+/** Non-colour channel for every condition (icon + label + line style on the map). */
+export const NATIONAL_CONDITION_ICON: Record<NationalNetworkCondition, string> = { surplus: '✚', healthy: '✓', strained: '●', bottlenecked: '⚠', critical: '⛔' };
+export const NATIONAL_RESILIENCE_LABEL: Record<NationalResilienceBand, string> = { fragile: 'Fragile', exposed: 'Exposed', stable: 'Stable', resilient: 'Resilient', highly_resilient: 'Highly resilient' };
+const NS_COND_RANK: Record<NationalNetworkCondition, number> = { surplus: 0, healthy: 1, strained: 2, bottlenecked: 3, critical: 4 };
+const NS_RES_RANK: Record<NationalResilienceBand, number> = { fragile: 0, exposed: 1, stable: 2, resilient: 3, highly_resilient: 4 };
+
+/** Living Regions capacity key that each national network reads (single source of project capacity numbers). */
+export const NATIONAL_NETWORK_LR_CAPACITY: Record<NationalNetworkKind, keyof LRCapacity> = { freight: 'transport', energy: 'energy', water: 'water', trade: 'trade', digital: 'technology' };
+
+export const NATIONAL_LIMITS = { history: 30, cooldowns: 60, maxPasses: 3, maxHops: 2, evidence: 6, eventCooldownTurns: 2, flows: 80 } as const;
+/** Providers keep a reserve before exporting; a region can import at most this share of its demand. */
+export const NATIONAL_SHARING = { providerReserve: 1.12, maxImportShare: 0.4 } as const;
+
+// ---- Corridor graph (strategic connectivity — NOT travel routes; travel is untouched) -----------------------
+export interface NationalCorridorDef { a: string; b: string; base: Partial<Record<NationalNetworkKind, number>>; label: string }
+const NS_LAND_BASE: Partial<Record<NationalNetworkKind, number>> = { freight: 8, energy: 8, water: 3, trade: 6, digital: 10 };
+/** Land corridors reuse the canonical ADJACENT_REGIONS graph; Bass Strait adds the sea / subsea link to Tasmania. */
+export function buildNationalCorridors(): NationalCorridorDef[] {
+  const out: NationalCorridorDef[] = [];
+  const seen = new Set<string>();
+  Object.entries(ADJACENT_REGIONS as Record<string, string[]>).forEach(([a, list]) => (list || []).forEach(b => {
+    const [x, y] = [a, b].sort();
+    const k = `${x}-${y}`;
+    if (x === y || seen.has(k) || !REGIONS[x] || !REGIONS[y]) return;
+    seen.add(k);
+    out.push({ a: x, b: y, base: { ...NS_LAND_BASE }, label: `${x}–${y} corridor` });
+  }));
+  if (!seen.has('TAS-VIC')) out.push({ a: 'TAS', b: 'VIC', base: { freight: 4, energy: 6, water: 0, trade: 4, digital: 6 }, label: 'Bass Strait link' });
+  return out.sort((p, q) => `${p.a}-${p.b}`.localeCompare(`${q.a}-${q.b}`));
+}
+
+// ---- Infrastructure → network sidecar (derived from LR_PROJECT_PROFILE; InfrastructureProject untouched) ------
+export interface NationalProjectNetworkEffect { network: NationalNetworkKind; capacity: number; corridorShare: number }
+/** How much of a project's capacity also strengthens its region's national corridors (national reach). */
+const NS_CORRIDOR_SHARE: Record<NationalNetworkKind, number> = { freight: 0.35, energy: 0.35, water: 0.15, trade: 0.25, digital: 0.3 };
+export function nationalProjectNetworkEffects(projectType: string): NationalProjectNetworkEffect[] {
+  const prof = LR_PROJECT_PROFILE[projectType];
+  if (!prof) return [];
+  return NATIONAL_NETWORKS.map(n => ({ network: n, capacity: Number(prof.capacity[NATIONAL_NETWORK_LR_CAPACITY[n]] || 0), corridorShare: NS_CORRIDOR_SHARE[n] })).filter(e => e.capacity > 0);
+}
+/** Canonical status → share of the project's capacity that is actually available. */
+export const NATIONAL_STATUS_FACTOR: Record<string, number> = { locked: 0, unlocked: 0, under_construction: 0, active: 1, upgraded: 1.25, damaged: 0.25 };
+
+// ---- Inputs / state types ------------------------------------------------------------------------------
+export interface NationalSystemEvidence { label: string; value: number; source: string }
+export interface NationalSystemsInputs {
+  turn: number;
+  regions: Array<{ code: string; name: string; devScore: number; econScore: number; momentum: number; sectors: Partial<Record<LRSector, number>>; needs: Array<{ category: string; severity: LRSeverity }> }>;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; contributions?: Record<string, number> }>;
+  crises: Array<{ id: string; name: string; category: string; status: string; affectedRegions: string[] }>;
+  /** Optional scenario capacity modifiers (region → network → ± capacity points). */
+  modifiers?: Record<string, Partial<Record<NationalNetworkKind, number>>>;
+  /** Test-only topology override (e.g. isolate a region). Live play always uses the canonical corridors. */
+  corridors?: NationalCorridorDef[];
+}
+
+export interface NationalNetworkRegionState {
+  demand: number; localCapacity: number; importedCapacity: number; exportedCapacity: number; effectiveCapacity: number;
+  utilization: number; unmetDemand: number; surplus: number; condition: NationalNetworkCondition; trend: 'improving' | 'stable' | 'worsening';
+  sources: NationalSystemEvidence[]; demandFactors: NationalSystemEvidence[];
+  providers: Array<{ regionId: string; amount: number }>;
+}
+export interface NationalRegionSystemsState {
+  regionId: string; name: string;
+  networks: Record<NationalNetworkKind, NationalNetworkRegionState>;
+  criticalDependencies: string[]; primaryConstraint: NationalNetworkKind | null; primaryStrength: NationalNetworkKind | null;
+  resilience: number; resilienceBand: NationalResilienceBand;
+}
+export interface NationalNetworkLink {
+  id: string; network: NationalNetworkKind; fromRegionId: string; toRegionId: string;
+  baseCapacity: number; infrastructureCapacity: number; effectiveCapacity: number; used: number; utilization: number;
+  condition: NationalNetworkCondition; supportingProjectIds: string[]; activeConstraints: string[]; visibility: 'public';
+}
+export interface NationalBottleneck {
+  id: string; network: NationalNetworkKind; regionId?: string; linkId?: string; severity: NationalBottleneckSeverity;
+  demand: number; capacity: number; reason: string; affectedRegionIds: string[]; supportingEvidence: NationalSystemEvidence[]; openedTurn: number;
+}
+export interface NationalDependency {
+  id: string; consumerRegionId: string; providerRegionId: string; network: NationalNetworkKind;
+  importance: 'low' | 'moderate' | 'high' | 'critical'; shareBand: 'minor' | 'meaningful' | 'major' | 'dominant'; share: number;
+  alternativeProviders: string[]; fragile: boolean; reason: string;
+}
+export interface NationalNetworkNationalSummary {
+  demand: number; capacity: number; utilization: number; condition: NationalNetworkCondition; bottlenecks: number;
+  strongestRegion: string | null; weakestRegion: string | null; sharedCapacity: number;
+}
+export interface NationalSystemsSummary extends Record<NationalNetworkKind, NationalNetworkNationalSummary> {
+  resilienceScore: number; resilienceBand: NationalResilienceBand;
+  criticalBottlenecks: string[]; criticalDependencies: string[];
+  strongestSystem: NationalNetworkKind | null; weakestSystem: NationalNetworkKind | null;
+}
+export interface NationalFlow { network: NationalNetworkKind; fromRegionId: string; toRegionId: string; amount: number; path: string[] }
+export type NationalDerivedKind = 'national_bottleneck_formed' | 'national_bottleneck_resolved' | 'national_dependency_became_critical' | 'national_dependency_reduced'
+  | 'national_resilience_improved' | 'national_resilience_deteriorated' | 'national_capacity_expanded';
+export interface NationalDerivedEvent { id: string; turn: number; kind: NationalDerivedKind; network: NationalNetworkKind | null; subjectId: string; regionIds: string[]; text: string; significance: 'meaningful' | 'major'; evidence: string[] }
+export interface NationalSystemHistoryEntry { id: string; turn: number; network: NationalNetworkKind | null; kind: 'bottleneck_formed' | 'bottleneck_resolved' | 'dependency_changed' | 'capacity_expanded' | 'resilience_changed'; subjectId: string; summary: string; sourceEventIds: string[] }
+
+/** The ONLY persisted part: band memory (hysteresis continuity), bottleneck open turns, meaningful history. */
+export interface NationalSystemsPersisted {
+  schemaVersion: '10.0';
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  bands: Record<string, NationalNetworkCondition>;
+  criticalDeps: string[];
+  nationalBand: NationalResilienceBand | null;
+  capacity: Record<string, number>;
+  bottleneckOpened: Record<string, number>;
+  cooldowns: Record<string, number>;
+  history: NationalSystemHistoryEntry[];
+  inputHash: string;
+}
+export interface NationalSystemsState {
+  schemaVersion: '10.0';
+  revision: number;
+  regions: Record<string, NationalRegionSystemsState>;
+  links: Record<string, NationalNetworkLink>;
+  flows: NationalFlow[];
+  bottlenecks: NationalBottleneck[];
+  dependencies: NationalDependency[];
+  national: NationalSystemsSummary;
+  history: NationalSystemHistoryEntry[];
+  lastUpdatedTurn: number;
+  inputHash: string;
+  computeMs: number;
+}
+
+export function createEmptyNationalSystemsPersisted(): NationalSystemsPersisted {
+  return { schemaVersion: '10.0', revision: 0, initializedTurn: null, lastUpdatedTurn: 0, bands: {}, criticalDeps: [], nationalBand: null, capacity: {}, bottleneckOpened: {}, cooldowns: {}, history: [], inputHash: '' };
+}
+
+const nsR = (v: number, d = 1) => { const p = Math.pow(10, d); return Math.round((Number.isFinite(v) ? v : 0) * p) / p; };
+const nsClamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
+const nsSec = (s: Partial<Record<LRSector, number>>, k: LRSector) => nsClamp(Number(s[k]) || 0, 0, 100);
+
+/** Compact deterministic input signature: identical inputs → identical snapshot (reused, never recomputed). */
+export function nationalSystemsInputHash(i: NationalSystemsInputs): string {
+  const raw = JSON.stringify([
+    i.regions.map(r => [r.code, Math.round(r.devScore), Math.round(r.econScore), Math.round(r.momentum * 20), Object.entries(r.sectors).filter(([, v]) => (v || 0) >= 1).map(([k, v]) => `${k}${Math.round(Number(v) / 4)}`).sort().join(','), r.needs.filter(n => n.category === 'water').map(n => n.severity).join('')]),
+    i.projects.filter(p => (NATIONAL_STATUS_FACTOR[p.status] || 0) > 0 && p.regionId).map(p => `${p.id}:${p.status}`).sort(),
+    i.crises.filter(c => c.status === 'active' || c.status === 'triggered').map(c => `${c.id}:${c.category}:${c.affectedRegions.join('')}`).sort(),
+    i.modifiers || null, i.corridors ? i.corridors.length : 0
+  ]);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+// ---- Demand (derived from Living Regions condition — never invented population figures) --------------------
+function nsDemand(r: NationalSystemsInputs['regions'][number], crisisWater: number): Record<NationalNetworkKind, { value: number; factors: NationalSystemEvidence[] }> {
+  const s = r.sectors;
+  const dev = nsClamp(r.devScore, 0, 100), econ = nsClamp(r.econScore, 0, 100), mom = nsClamp(r.momentum, -1, 1);
+  const f = (label: string, value: number, source: string): NationalSystemEvidence => ({ label, value: nsR(value), source });
+  const base = (w: number) => [f('Regional development', dev * 0.28 * w, 'living_regions'), f('Economic activity', econ * 0.18 * w, 'living_regions'), f('Growth momentum', Math.max(0, mom) * 12 * w, 'living_regions')];
+  const sector = (label: string, v: number, cap: number) => f(label, Math.min(cap, v), 'living_regions');
+  const out: Record<NationalNetworkKind, NationalSystemEvidence[]> = {
+    freight: [f('Baseline logistics', 12, 'baseline'), ...base(1), sector('Mining, farming & manufacturing output', 0.3 * nsSec(s, 'mining') + 0.22 * nsSec(s, 'agriculture') + 0.22 * nsSec(s, 'manufacturing'), 30), sector('Trade & logistics activity', 0.2 * nsSec(s, 'trade') + 0.15 * nsSec(s, 'logistics'), 16)],
+    energy: [f('Baseline energy use', 12, 'baseline'), ...base(0.9), sector('Industry & technology load', 0.3 * nsSec(s, 'manufacturing') + 0.28 * nsSec(s, 'technology') + 0.15 * nsSec(s, 'mining') + 0.12 * nsSec(s, 'research') + 0.1 * nsSec(s, 'finance'), 34)],
+    water: [f('Baseline water security', 10, 'baseline'), f('Regional development', dev * 0.22, 'living_regions'), sector('Agriculture & industry water use', 0.35 * nsSec(s, 'agriculture') + 0.15 * nsSec(s, 'manufacturing') + 0.12 * nsSec(s, 'mining'), 30), f('Drought / water pressure', crisisWater, 'crises + regional needs')],
+    trade: [f('Baseline export access', 10, 'baseline'), ...base(0.8), sector('Export-oriented sectors', 0.3 * nsSec(s, 'trade') + 0.22 * nsSec(s, 'mining') + 0.15 * nsSec(s, 'agriculture') + 0.15 * nsSec(s, 'manufacturing') + 0.1 * nsSec(s, 'tourism'), 32)],
+    digital: [f('Baseline connectivity', 10, 'baseline'), f('Regional development', dev * 0.3, 'living_regions'), f('Economic activity', econ * 0.12, 'living_regions'), sector('Technology, research & finance', 0.35 * nsSec(s, 'technology') + 0.25 * nsSec(s, 'research') + 0.2 * nsSec(s, 'finance') + 0.1 * nsSec(s, 'manufacturing'), 40)]
+  };
+  return Object.fromEntries(NATIONAL_NETWORKS.map(n => {
+    const factors = out[n].filter(x => Math.abs(x.value) >= 0.5);
+    return [n, { value: nsR(nsClamp(factors.reduce((a, x) => a + x.value, 0), 0, 999)), factors }];
+  })) as Record<NationalNetworkKind, { value: number; factors: NationalSystemEvidence[] }>;
+}
+
+/** Crisis → network constraint (existing crisis state only; the crisis engine stays canonical). */
+function nsCrisisFactor(c: NationalSystemsInputs['crises'][number], n: NationalNetworkKind): number {
+  const t = `${c.name} ${c.category}`.toLowerCase();
+  if (/cyclone|flood|storm/.test(t)) return n === 'freight' || n === 'trade' ? 0.22 : n === 'energy' ? 0.1 : 0;
+  if (/drought|heat/.test(t)) return n === 'water' ? 0.25 : n === 'energy' ? 0.08 : 0;
+  if (/grid|blackout|energy|power|fuel/.test(t)) return n === 'energy' ? 0.25 : 0;
+  if (/cyber|outage|data|tech/.test(t) || c.category === 'technological') return n === 'digital' ? 0.25 : 0;
+  if (/port|strike|supply|freight|rail/.test(t) || c.category === 'infrastructure') return n === 'freight' ? 0.18 : n === 'trade' ? 0.12 : 0;
+  if (c.category === 'environmental') return n === 'water' ? 0.12 : 0;
+  return 0;
+}
+
+function nsConditionFor(util: number, prev?: NationalNetworkCondition): NationalNetworkCondition {
+  const bounds: Array<[NationalNetworkCondition, number]> = [['surplus', 0], ['healthy', 0.72], ['strained', 0.92], ['bottlenecked', 1.06], ['critical', 1.25]];
+  let raw: NationalNetworkCondition = 'surplus';
+  bounds.forEach(([c, lo]) => { if (util >= lo) raw = c; });
+  if (!prev || prev === raw) return raw;
+  const idx = (c: NationalNetworkCondition) => bounds.findIndex(x => x[0] === c);
+  const jump = Math.abs(idx(raw) - idx(prev));
+  if (jump >= 2) return raw; // large genuine moves are never delayed
+  // Hysteresis: leaving a band needs a clear margin in either direction (no 99% ↔ 101% flicker).
+  if (idx(raw) > idx(prev)) return util >= bounds[idx(raw)][1] + 0.03 ? raw : prev;
+  return util < bounds[idx(prev)][1] - 0.04 ? raw : prev;
+}
+
+/** Deterministic path search over corridors with remaining capacity (≤ maxHops; shortest, then widest, then id). */
+function nsFindPaths(from: string, links: NationalNetworkLink[], remaining: Record<string, number>): Array<{ to: string; hops: number; cap: number; linkIds: string[]; path: string[] }> {
+  const out: Array<{ to: string; hops: number; cap: number; linkIds: string[]; path: string[] }> = [];
+  const walk = (at: string, hops: number, cap: number, ids: string[], path: string[]) => {
+    if (hops >= NATIONAL_LIMITS.maxHops) return;
+    links.filter(l => l.fromRegionId === at || l.toRegionId === at).sort((a, b) => a.id.localeCompare(b.id)).forEach(l => {
+      const next = l.fromRegionId === at ? l.toRegionId : l.fromRegionId;
+      const rem = remaining[l.id] || 0;
+      if (rem <= 0.01 || path.includes(next)) return;
+      const c = Math.min(cap, rem);
+      out.push({ to: next, hops: hops + 1, cap: c, linkIds: [...ids, l.id], path: [...path, next] });
+      walk(next, hops + 1, c, [...ids, l.id], [...path, next]);
+    });
+  };
+  walk(from, 0, Infinity, [], [from]);
+  return out;
+}
+
+export interface NationalComputeResult { state: NationalSystemsState; persisted: NationalSystemsPersisted; derived: NationalDerivedEvent[] }
+
+/**
+ * Pure national recompute. `prev` supplies band memory (hysteresis) and history; nothing else is read from it.
+ * Terminates by construction: ≤ NATIONAL_LIMITS.maxPasses sharing passes over ≤ 8 regions × bounded paths.
+ */
+export function computeNationalSystems(i: NationalSystemsInputs, prevIn?: NationalSystemsPersisted | null, opts: { emit?: boolean } = {}): NationalComputeResult {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || null;
+  const turn = Number(i.turn) || 0;
+  const regionCodes = i.regions.map(r => r.code).filter(c => REGIONS[c]).sort();
+  const corridors = (i.corridors || buildNationalCorridors()).filter(c => regionCodes.includes(c.a) && regionCodes.includes(c.b) && c.a !== c.b);
+  const activeCrises = (i.crises || []).filter(c => c.status === 'active' || c.status === 'triggered');
+  const regions: Record<string, NationalRegionSystemsState> = {};
+  const links: Record<string, NationalNetworkLink> = {};
+  const flows: NationalFlow[] = [];
+
+  // 1) Local demand + local capacity per region/network (every contribution documented as evidence).
+  const local: Record<string, Record<NationalNetworkKind, { demand: number; cap: number; sources: NationalSystemEvidence[]; factors: NationalSystemEvidence[]; constraints: string[] }>> = {};
+  i.regions.filter(r => REGIONS[r.code]).forEach(r => {
+    const waterNeed = r.needs.find(n => n.category === 'water');
+    const droughtCrisis = activeCrises.some(c => c.affectedRegions.includes(r.code) && /drought|heat/.test(`${c.name} ${c.category}`.toLowerCase()));
+    const crisisWater = (droughtCrisis ? 14 : 0) + (waterNeed ? LR_SEV_RANK[waterNeed.severity] * 3 : 0);
+    const dem = nsDemand(r, crisisWater);
+    local[r.code] = {} as any;
+    NATIONAL_NETWORKS.forEach(n => {
+      const dev = nsClamp(r.devScore, 0, 100);
+      const sources: NationalSystemEvidence[] = [{ label: 'Base regional capacity', value: nsR(30 + dev * 0.45), source: 'regional development' }];
+      const spec = n === 'energy' ? 0.22 * (nsSec(r.sectors, 'energy') + nsSec(r.sectors, 'renewables')) : n === 'freight' ? 0.18 * nsSec(r.sectors, 'logistics') : n === 'trade' ? 0.12 * nsSec(r.sectors, 'trade') : n === 'digital' ? 0.12 * nsSec(r.sectors, 'technology') : 0;
+      if (spec >= 0.5) sources.push({ label: 'Established specialization', value: nsR(Math.min(18, spec)), source: 'living_regions' });
+      i.projects.filter(p => p.regionId === r.code).sort((a, b) => a.id.localeCompare(b.id)).forEach(p => {
+        const eff = nationalProjectNetworkEffects(p.projectType).find(e => e.network === n);
+        const fac = NATIONAL_STATUS_FACTOR[p.status] ?? 0;
+        if (eff && fac > 0) sources.push({ label: `${p.title}${p.status === 'damaged' ? ' (damaged)' : p.status === 'upgraded' ? ' (upgraded)' : ''}`, value: nsR(eff.capacity * fac), source: `project:${p.id}` });
+      });
+      const mod = Number(i.modifiers?.[r.code]?.[n]) || 0;
+      if (mod) sources.push({ label: 'Scenario setting', value: nsR(mod), source: 'scenario' });
+      let cap = sources.reduce((a, x) => a + x.value, 0);
+      const constraints: string[] = [];
+      activeCrises.filter(c => c.affectedRegions.includes(r.code)).sort((a, b) => a.id.localeCompare(b.id)).forEach(c => {
+        const k = nsCrisisFactor(c, n);
+        if (k > 0) { const cut = nsR(cap * k); cap -= cut; sources.push({ label: `${c.name} (crisis)`, value: -cut, source: `crisis:${c.id}` }); constraints.push(c.name); }
+      });
+      local[r.code][n] = { demand: dem[n].value, cap: nsR(Math.max(0, cap)), sources: sources.slice(0, 10), factors: dem[n].factors, constraints };
+    });
+  });
+
+  // 2) Links (per network) with infrastructure-strengthened capacity.
+  NATIONAL_NETWORKS.forEach(n => corridors.forEach(c => {
+    const base = Number(c.base[n]) || 0;
+    if (base <= 0) return;
+    const supporting: string[] = [];
+    let infra = 0;
+    i.projects.filter(p => p.regionId === c.a || p.regionId === c.b).sort((a, b) => a.id.localeCompare(b.id)).forEach(p => {
+      const eff = nationalProjectNetworkEffects(p.projectType).find(e => e.network === n);
+      const fac = NATIONAL_STATUS_FACTOR[p.status] ?? 0;
+      if (eff && fac > 0) { infra += eff.capacity * eff.corridorShare * fac; supporting.push(p.id); }
+    });
+    const constraints = activeCrises.filter(x => (x.affectedRegions.includes(c.a) || x.affectedRegions.includes(c.b)) && nsCrisisFactor(x, n) > 0).map(x => x.name);
+    const eff = nsR(Math.max(0, (base + infra) * (constraints.length ? 0.8 : 1)));
+    const id = `${n}:${c.a}-${c.b}`;
+    links[id] = { id, network: n, fromRegionId: c.a, toRegionId: c.b, baseCapacity: base, infrastructureCapacity: nsR(infra), effectiveCapacity: eff, used: 0, utilization: 0, condition: 'healthy', supportingProjectIds: supporting, activeConstraints: constraints, visibility: 'public' };
+  }));
+
+  // 3) Bounded deterministic sharing per network: surplus → deficits, shortest/widest/stable paths, link caps.
+  const imported: Record<string, Record<NationalNetworkKind, number>> = {};
+  const exported: Record<string, Record<NationalNetworkKind, number>> = {};
+  const providers: Record<string, Record<NationalNetworkKind, Record<string, number>>> = {};
+  regionCodes.forEach(c => { imported[c] = {} as any; exported[c] = {} as any; providers[c] = {} as any; NATIONAL_NETWORKS.forEach(n => { imported[c][n] = 0; exported[c][n] = 0; providers[c][n] = {}; }); });
+  NATIONAL_NETWORKS.forEach(n => {
+    const netLinks = Object.values(links).filter(l => l.network === n);
+    const remaining: Record<string, number> = Object.fromEntries(netLinks.map(l => [l.id, l.effectiveCapacity]));
+    const exportable: Record<string, number> = Object.fromEntries(regionCodes.map(c => [c, Math.max(0, (local[c]?.[n]?.cap || 0) - (local[c]?.[n]?.demand || 0) * NATIONAL_SHARING.providerReserve)]));
+    for (let pass = 0; pass < NATIONAL_LIMITS.maxPasses; pass++) {
+      let moved = 0;
+      const deficits = regionCodes
+        .map(c => ({ c, d: Math.max(0, Math.min((local[c]?.[n]?.demand || 0) - (local[c]?.[n]?.cap || 0), (local[c]?.[n]?.demand || 0) * NATIONAL_SHARING.maxImportShare) - imported[c][n]) }))
+        .filter(x => x.d > 0.05).sort((a, b) => b.d - a.d || a.c.localeCompare(b.c));
+      deficits.forEach(({ c, d }) => {
+        let need = d;
+        const paths = nsFindPaths(c, netLinks, remaining).filter(p => exportable[p.to] > 0.05)
+          .sort((a, b) => a.hops - b.hops || Math.min(b.cap, exportable[b.to]) - Math.min(a.cap, exportable[a.to]) || a.to.localeCompare(b.to));
+        for (const p of paths) {
+          if (need <= 0.05) break;
+          const liveCap = Math.min(...p.linkIds.map(id => remaining[id] || 0));
+          const amt = nsR(Math.min(need, exportable[p.to], liveCap));
+          if (amt <= 0.05) continue;
+          p.linkIds.forEach(id => { remaining[id] = nsR(remaining[id] - amt); links[id].used = nsR(links[id].used + amt); });
+          exportable[p.to] = nsR(exportable[p.to] - amt);
+          imported[c][n] = nsR(imported[c][n] + amt); exported[p.to][n] = nsR(exported[p.to][n] + amt);
+          providers[c][n][p.to] = nsR((providers[c][n][p.to] || 0) + amt);
+          if (flows.length < NATIONAL_LIMITS.flows) flows.push({ network: n, fromRegionId: p.to, toRegionId: c, amount: amt, path: [...p.path].reverse() });
+          need = nsR(need - amt); moved += amt;
+        }
+      });
+      if (moved <= 0.05) break;
+    }
+    netLinks.forEach(l => { l.utilization = l.effectiveCapacity > 0 ? nsR(l.used / l.effectiveCapacity, 2) : 0; l.condition = l.utilization >= 0.98 ? 'bottlenecked' : l.utilization >= 0.8 ? 'strained' : l.utilization > 0.05 ? 'healthy' : 'surplus'; });
+  });
+
+  // 4) Region network states + conditions (with band memory).
+  const bands: Record<string, NationalNetworkCondition> = {};
+  const capacityMemory: Record<string, number> = {};
+  regionCodes.forEach(c => {
+    const r = i.regions.find(x => x.code === c)!;
+    const nets = {} as Record<NationalNetworkKind, NationalNetworkRegionState>;
+    NATIONAL_NETWORKS.forEach(n => {
+      const L = local[c][n];
+      const eff = nsR(Math.max(0, L.cap + imported[c][n] - exported[c][n]));
+      const util = eff > 0 ? nsR(L.demand / eff, 2) : (L.demand > 0 ? 9.99 : 0);
+      const key = `${c}:${n}`;
+      const condition = nsConditionFor(util, prev?.bands[key]);
+      bands[key] = condition;
+      capacityMemory[key] = nsR(L.cap + imported[c][n]);
+      const prevCap = prev?.capacity[key];
+      const trend: NationalNetworkRegionState['trend'] = prevCap === undefined ? 'stable' : L.cap + imported[c][n] > prevCap + 2 ? 'improving' : L.cap + imported[c][n] < prevCap - 2 ? 'worsening' : 'stable';
+      nets[n] = {
+        demand: L.demand, localCapacity: L.cap, importedCapacity: imported[c][n], exportedCapacity: exported[c][n], effectiveCapacity: eff,
+        utilization: util, unmetDemand: nsR(Math.max(0, L.demand - eff)), surplus: nsR(Math.max(0, eff - L.demand)), condition, trend,
+        sources: L.sources, demandFactors: L.factors.slice(0, NATIONAL_LIMITS.evidence),
+        providers: Object.entries(providers[c][n]).map(([regionId, amount]) => ({ regionId, amount })).sort((a, b) => b.amount - a.amount || a.regionId.localeCompare(b.regionId))
+      };
+    });
+    const ranked = [...NATIONAL_NETWORKS].sort((a, b) => nets[b].utilization - nets[a].utilization || a.localeCompare(b));
+    const primaryConstraint = NS_COND_RANK[nets[ranked[0]].condition] >= 2 ? ranked[0] : null;
+    const strongest = [...NATIONAL_NETWORKS].sort((a, b) => nets[a].utilization - nets[b].utilization || a.localeCompare(b))[0];
+    regions[c] = { regionId: c, name: r.name || REGIONS[c]?.name || c, networks: nets, criticalDependencies: [], primaryConstraint, primaryStrength: nets[strongest].condition === 'surplus' ? strongest : null, resilience: 0, resilienceBand: 'stable' };
+  });
+
+  // 5) Dependencies (share of effective capacity supplied by another region) + redundancy.
+  const dependencies: NationalDependency[] = [];
+  regionCodes.forEach(c => NATIONAL_NETWORKS.forEach(n => {
+    const st = regions[c].networks[n];
+    st.providers.forEach(pv => {
+      const share = st.effectiveCapacity > 0 ? pv.amount / st.effectiveCapacity : 0;
+      if (share < 0.06) return;
+      const alternatives = st.providers.filter(o => o.regionId !== pv.regionId && o.amount / Math.max(1, st.effectiveCapacity) >= 0.05).map(o => o.regionId);
+      const shareBand: NationalDependency['shareBand'] = share >= 0.4 ? 'dominant' : share >= 0.25 ? 'major' : share >= 0.15 ? 'meaningful' : 'minor';
+      const demandHigh = st.utilization >= 0.85;
+      const importance: NationalDependency['importance'] = share >= 0.28 && alternatives.length === 0 && demandHigh ? 'critical' : share >= 0.22 ? 'high' : share >= 0.12 ? 'moderate' : 'low';
+      const fragile = (importance === 'critical' || importance === 'high') && alternatives.length === 0;
+      const id = `dep:${n}:${c}<-${pv.regionId}`;
+      dependencies.push({ id, consumerRegionId: c, providerRegionId: pv.regionId, network: n, importance, shareBand, share: nsR(share, 2), alternativeProviders: alternatives, fragile,
+        reason: `${REGIONS[pv.regionId]?.name || pv.regionId} supplies about ${Math.round(share * 100)}% of ${regions[c].name}'s effective ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity${alternatives.length ? `; alternatives: ${alternatives.join(', ')}` : '; no meaningful alternative provider'}.` });
+      if (importance === 'critical') regions[c].criticalDependencies.push(id);
+    });
+  }));
+  dependencies.sort((a, b) => ({ critical: 3, high: 2, moderate: 1, low: 0 }[b.importance] - { critical: 3, high: 2, moderate: 1, low: 0 }[a.importance]) || b.share - a.share || a.id.localeCompare(b.id));
+
+  // 6) Resilience (spare capacity, alternatives, concentration, damage, crises) — observable, never a hidden handicap.
+  regionCodes.forEach(c => {
+    const rg = regions[c];
+    let score = 0;
+    NATIONAL_NETWORKS.forEach(n => {
+      const st = rg.networks[n];
+      const spare = st.demand > 0 ? nsClamp((st.effectiveCapacity - st.demand) / st.demand, -1, 1) : 1;
+      const maxShare = st.providers.length ? Math.max(...st.providers.map(p => p.amount / Math.max(1, st.effectiveCapacity))) : 0;
+      const damaged = st.sources.filter(s => s.label.endsWith('(damaged)')).length;
+      const crisis = st.sources.filter(s => s.source.startsWith('crisis:')).length;
+      score += 55 + spare * 35 + Math.min(2, st.providers.length) * 4 - maxShare * 25 - damaged * 8 - crisis * 8;
+    });
+    rg.resilience = Math.round(nsClamp(score / NATIONAL_NETWORKS.length, 0, 100));
+    rg.resilienceBand = rg.resilience >= 78 ? 'highly_resilient' : rg.resilience >= 64 ? 'resilient' : rg.resilience >= 48 ? 'stable' : rg.resilience >= 32 ? 'exposed' : 'fragile';
+  });
+
+  // 7) Bottlenecks (regional + link), with open turns carried across recomputes.
+  const bottlenecks: NationalBottleneck[] = [];
+  const opened: Record<string, number> = {};
+  regionCodes.forEach(c => NATIONAL_NETWORKS.forEach(n => {
+    const st = regions[c].networks[n];
+    if (NS_COND_RANK[st.condition] < 3) return;
+    const id = `bn:${n}:${c}`;
+    opened[id] = prev?.bottleneckOpened[id] ?? turn;
+    const topDemand = [...st.demandFactors].sort((a, b) => b.value - a.value)[0];
+    const reason = st.sources.some(s => s.source.startsWith('crisis:')) ? `${st.sources.find(s => s.source.startsWith('crisis:'))!.label} cut available capacity.`
+      : st.sources.some(s => s.label.endsWith('(damaged)')) ? 'Damaged infrastructure reduced available capacity.'
+      : `${topDemand ? topDemand.label : 'Demand'} pushed demand past the capacity available (local ${Math.round(st.localCapacity)} + imported ${Math.round(st.importedCapacity)}).`;
+    bottlenecks.push({ id, network: n, regionId: c, severity: st.condition === 'critical' ? 'critical' : st.utilization >= 1.15 ? 'major' : 'meaningful', demand: st.demand, capacity: st.effectiveCapacity, reason,
+      affectedRegionIds: [c, ...dependencies.filter(d => d.providerRegionId === c && d.network === n).map(d => d.consumerRegionId)], supportingEvidence: [...st.demandFactors.slice(0, 3), ...st.sources.slice(0, 3)], openedTurn: opened[id] });
+  }));
+  Object.values(links).filter(l => l.condition === 'bottlenecked').forEach(l => {
+    const dest = [l.fromRegionId, l.toRegionId].find(c => regions[c].networks[l.network].unmetDemand > 0.5);
+    if (!dest) return;
+    const id = `bn:${l.id}`;
+    opened[id] = prev?.bottleneckOpened[id] ?? turn;
+    bottlenecks.push({ id, network: l.network, linkId: l.id, severity: 'meaningful', demand: nsR(l.used + regions[dest].networks[l.network].unmetDemand), capacity: l.effectiveCapacity,
+      reason: `The ${l.fromRegionId}–${l.toRegionId} ${NATIONAL_NETWORK_LABEL[l.network].toLowerCase()} corridor is full; more support cannot reach ${REGIONS[dest]?.name || dest}.`, affectedRegionIds: [dest], supportingEvidence: [], openedTurn: opened[id] });
+  });
+  const sevRank = { minor: 0, meaningful: 1, major: 2, critical: 3 };
+  bottlenecks.sort((a, b) => sevRank[b.severity] - sevRank[a.severity] || a.id.localeCompare(b.id));
+
+  // 8) National summary (system-specific; no single "country power" number).
+  const national = {} as NationalSystemsSummary;
+  NATIONAL_NETWORKS.forEach(n => {
+    const demand = nsR(regionCodes.reduce((a, c) => a + regions[c].networks[n].demand, 0));
+    const capacity = nsR(regionCodes.reduce((a, c) => a + regions[c].networks[n].localCapacity, 0));
+    const util = capacity > 0 ? nsR(demand / capacity, 2) : 0;
+    const byUtil = [...regionCodes].sort((a, b) => regions[a].networks[n].utilization - regions[b].networks[n].utilization || a.localeCompare(b));
+    (national as any)[n] = { demand, capacity, utilization: util, condition: nsConditionFor(Math.max(util, ...regionCodes.map(c => regions[c].networks[n].utilization * 0.85))), bottlenecks: bottlenecks.filter(b => b.network === n).length,
+      strongestRegion: byUtil[0] || null, weakestRegion: byUtil[byUtil.length - 1] || null, sharedCapacity: nsR(regionCodes.reduce((a, c) => a + regions[c].networks[n].importedCapacity, 0)) } as NationalNetworkNationalSummary;
+  });
+  const totalDemand = regionCodes.reduce((a, c) => a + NATIONAL_NETWORKS.reduce((x, n) => x + regions[c].networks[n].demand, 0), 0) || 1;
+  const resScore = Math.round(regionCodes.reduce((a, c) => a + regions[c].resilience * NATIONAL_NETWORKS.reduce((x, n) => x + regions[c].networks[n].demand, 0), 0) / totalDemand);
+  const resRaw: NationalResilienceBand = resScore >= 78 ? 'highly_resilient' : resScore >= 64 ? 'resilient' : resScore >= 48 ? 'stable' : resScore >= 32 ? 'exposed' : 'fragile';
+  const resBand = prev?.nationalBand && Math.abs(NS_RES_RANK[resRaw] - NS_RES_RANK[prev.nationalBand]) === 1 && Math.abs(resScore - ({ fragile: 32, exposed: 48, stable: 64, resilient: 78, highly_resilient: 78 }[NS_RES_RANK[resRaw] > NS_RES_RANK[prev.nationalBand] ? prev.nationalBand : resRaw])) < 2 ? prev.nationalBand : resRaw;
+  national.resilienceScore = resScore;
+  national.resilienceBand = resBand;
+  national.criticalBottlenecks = bottlenecks.filter(b => b.severity === 'critical' || b.severity === 'major').map(b => b.id);
+  national.criticalDependencies = dependencies.filter(d => d.importance === 'critical').map(d => d.id);
+  const sysRank = [...NATIONAL_NETWORKS].sort((a, b) => (national[a].bottlenecks - national[b].bottlenecks) || (national[a].utilization - national[b].utilization) || a.localeCompare(b));
+  national.strongestSystem = sysRank[0];
+  national.weakestSystem = national[sysRank[sysRank.length - 1]].bottlenecks > 0 || national[sysRank[sysRank.length - 1]].utilization >= 0.92 ? sysRank[sysRank.length - 1] : null;
+
+  // 9) Meaningful band transitions → derived events (cooldown + hysteresis; tiny changes stay silent).
+  const derived: NationalDerivedEvent[] = [];
+  const cooldowns: Record<string, number> = { ...(prev?.cooldowns || {}) };
+  const history: NationalSystemHistoryEntry[] = [...(prev?.history || [])];
+  const emit = (kind: NationalDerivedKind, network: NationalNetworkKind | null, subjectId: string, regionIds: string[], text: string, significance: 'meaningful' | 'major', evidence: string[], histKind: NationalSystemHistoryEntry['kind']) => {
+    const ck = `${kind}:${subjectId}`;
+    if (cooldowns[ck] !== undefined && turn - cooldowns[ck] < NATIONAL_LIMITS.eventCooldownTurns) return;
+    cooldowns[ck] = turn;
+    const id = `ns_${kind}_${subjectId}_${turn}`.replace(/[^a-zA-Z0-9_:-]/g, '_');
+    derived.push({ id, turn, kind, network, subjectId, regionIds, text, significance, evidence: evidence.slice(0, 3) });
+    history.push({ id: `h_${id}`, turn, network, kind: histKind, subjectId, summary: text, sourceEventIds: [id] });
+  };
+  if (prev && prev.initializedTurn !== null && opts.emit !== false) {
+    regionCodes.forEach(c => NATIONAL_NETWORKS.forEach(n => {
+      const key = `${c}:${n}`;
+      const before = prev.bands[key], after = bands[key];
+      if (!before || before === after) return;
+      const st = regions[c].networks[n];
+      const name = regions[c].name, net = NATIONAL_NETWORK_LABEL[n];
+      if (NS_COND_RANK[after] >= 3 && NS_COND_RANK[before] <= 2) emit('national_bottleneck_formed', n, c, [c], `${name} ${net.toLowerCase()} became ${NATIONAL_CONDITION_LABEL[after].toLowerCase()}.`, after === 'critical' ? 'major' : 'meaningful', [bottlenecks.find(b => b.id === `bn:${n}:${c}`)?.reason || '', `Demand ${Math.round(st.demand)} vs capacity ${Math.round(st.effectiveCapacity)}`], 'bottleneck_formed');
+      else if (NS_COND_RANK[before] >= 3 && NS_COND_RANK[after] <= 2) emit('national_bottleneck_resolved', n, c, [c], `${name} ${net.toLowerCase()} recovered (${NATIONAL_CONDITION_LABEL[before]} → ${NATIONAL_CONDITION_LABEL[after]}).`, 'meaningful', [`Capacity ${Math.round(st.effectiveCapacity)} now covers demand ${Math.round(st.demand)}`], 'bottleneck_resolved');
+      else if (NS_COND_RANK[after] < NS_COND_RANK[before] && (capacityMemory[key] - (prev.capacity[key] ?? capacityMemory[key])) >= 12) emit('national_capacity_expanded', n, c, [c], `${name} ${net.toLowerCase()} capacity expanded (${NATIONAL_CONDITION_LABEL[before]} → ${NATIONAL_CONDITION_LABEL[after]}).`, 'meaningful', [], 'capacity_expanded');
+    }));
+    const nowCritical = dependencies.filter(d => d.importance === 'critical').map(d => d.id);
+    nowCritical.filter(id => !prev.criticalDeps.includes(id)).forEach(id => {
+      const d = dependencies.find(x => x.id === id)!;
+      emit('national_dependency_became_critical', d.network, id, [d.consumerRegionId, d.providerRegionId], `${regions[d.consumerRegionId].name} now depends critically on ${regions[d.providerRegionId].name} for ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}.`, 'major', [d.reason], 'dependency_changed');
+    });
+    prev.criticalDeps.filter(id => !nowCritical.includes(id)).forEach(id => {
+      const [, net, pair] = id.split(':');
+      const [consumer, provider] = (pair || '').split('<-');
+      if (!regions[consumer]) return;
+      emit('national_dependency_reduced', (net as NationalNetworkKind) || null, id, [consumer, provider].filter(Boolean), `${regions[consumer].name}'s critical ${net} dependency on ${REGIONS[provider]?.name || provider} eased.`, 'meaningful', [], 'dependency_changed');
+    });
+    if (prev.nationalBand && prev.nationalBand !== resBand) {
+      const up = NS_RES_RANK[resBand] > NS_RES_RANK[prev.nationalBand];
+      emit(up ? 'national_resilience_improved' : 'national_resilience_deteriorated', null, 'AUS', [], `National network resilience ${up ? 'improved' : 'deteriorated'} (${NATIONAL_RESILIENCE_LABEL[prev.nationalBand]} → ${NATIONAL_RESILIENCE_LABEL[resBand]}).`, up ? 'meaningful' : 'major', [], 'resilience_changed');
+    }
+  }
+  const boundedHistory = history.slice(-NATIONAL_LIMITS.history);
+  const boundedCooldowns = Object.fromEntries(Object.entries(cooldowns).sort((a, b) => b[1] - a[1]).slice(0, NATIONAL_LIMITS.cooldowns));
+  const inputHash = nationalSystemsInputHash(i);
+  const persisted: NationalSystemsPersisted = {
+    schemaVersion: '10.0', revision: (prev?.revision || 0) + (derived.length || !prev || prev.inputHash !== inputHash ? 1 : 0),
+    initializedTurn: prev?.initializedTurn ?? turn, lastUpdatedTurn: turn, bands, criticalDeps: dependencies.filter(d => d.importance === 'critical').map(d => d.id), nationalBand: resBand,
+    capacity: capacityMemory, bottleneckOpened: opened, cooldowns: boundedCooldowns, history: boundedHistory, inputHash
+  };
+  const state: NationalSystemsState = {
+    schemaVersion: '10.0', revision: persisted.revision, regions, links, flows, bottlenecks, dependencies, national, history: boundedHistory, lastUpdatedTurn: turn, inputHash,
+    computeMs: typeof performance !== 'undefined' ? nsR(performance.now() - t0, 2) : 0
+  };
+  return { state, persisted, derived };
+}
+
+// ---- Inputs builder (from canonical systems; read-only) --------------------------------------------------
+export function buildNationalSystemsInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; crises: any[] | null | undefined; modifiers?: NationalSystemsInputs['modifiers'] }): NationalSystemsInputs {
+  const codes = Object.keys(REGIONS).sort();
+  const projectsRaw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 0,
+    regions: codes.map(code => {
+      const reg = src.lr?.regions?.[code];
+      return { code, name: REGIONS[code]?.name || code, devScore: Number(reg?.development.score) || 0, econScore: Number(reg?.economy.score) || 40, momentum: Number(reg?.momentum.value) || 0,
+        sectors: { ...(reg?.sectors || {}) }, needs: (reg?.needs || []).filter(n => (n as any).status === undefined || (n as any).status === 'open').map(n => ({ category: n.category, severity: n.severity })) };
+    }),
+    projects: projectsRaw.filter((p: any) => p && typeof p.id === 'string').map((p: any) => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), contributions: p.contributions })),
+    crises: (src.crises || []).filter((c: any) => c && c.id).map((c: any) => ({ id: String(c.id), name: String(c.title || c.name || c.id), category: String(c.category || ''), status: String(c.status || ''), affectedRegions: Array.isArray(c.affectedRegions) ? c.affectedRegions.map(String) : [] })),
+    modifiers: src.modifiers
+  };
+}
+
+// ---- Persistence (only non-derivable memory is saved; the snapshot is always recomputed) -------------------
+export function sanitizeNationalSystemsPersisted(raw: unknown): NationalSystemsPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw;
+  const out = createEmptyNationalSystemsPersisted();
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const conds: NationalNetworkCondition[] = ['surplus', 'healthy', 'strained', 'bottlenecked', 'critical'];
+  const resBands: NationalResilienceBand[] = ['fragile', 'exposed', 'stable', 'resilient', 'highly_resilient'];
+  out.revision = Math.max(0, Math.floor(num(r.revision)));
+  out.initializedTurn = r.initializedTurn === null || r.initializedTurn === undefined ? null : Math.max(0, Math.floor(num(r.initializedTurn)));
+  out.lastUpdatedTurn = Math.max(0, Math.floor(num(r.lastUpdatedTurn)));
+  Object.entries(r.bands && typeof r.bands === 'object' ? r.bands : {}).slice(0, 80).forEach(([k, v]) => { const [c, n] = k.split(':'); if (REGIONS[c] && NATIONAL_NETWORKS.includes(n as NationalNetworkKind) && conds.includes(v as NationalNetworkCondition)) out.bands[k] = v as NationalNetworkCondition; });
+  Object.entries(r.capacity && typeof r.capacity === 'object' ? r.capacity : {}).slice(0, 80).forEach(([k, v]) => { if (out.bands[k] !== undefined || /^[A-Z]{2,3}:[a-z]+$/.test(k)) out.capacity[k] = Math.max(0, num(v)); });
+  Object.entries(r.bottleneckOpened && typeof r.bottleneckOpened === 'object' ? r.bottleneckOpened : {}).slice(0, 60).forEach(([k, v]) => { if (typeof k === 'string' && k.startsWith('bn:')) out.bottleneckOpened[k.slice(0, 60)] = Math.max(0, Math.floor(num(v))); });
+  Object.entries(r.cooldowns && typeof r.cooldowns === 'object' ? r.cooldowns : {}).slice(0, NATIONAL_LIMITS.cooldowns).forEach(([k, v]) => { out.cooldowns[String(k).slice(0, 80)] = Math.floor(num(v)); });
+  out.criticalDeps = (Array.isArray(r.criticalDeps) ? r.criticalDeps : []).filter((x: any) => typeof x === 'string' && x.startsWith('dep:')).slice(0, 40);
+  out.nationalBand = resBands.includes(r.nationalBand) ? r.nationalBand : null;
+  out.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.id === 'string' && typeof h.summary === 'string').slice(-NATIONAL_LIMITS.history).map((h: any) => ({
+    id: h.id.slice(0, 100), turn: Math.floor(num(h.turn)), network: NATIONAL_NETWORKS.includes(h.network) ? h.network : null,
+    kind: ['bottleneck_formed', 'bottleneck_resolved', 'dependency_changed', 'capacity_expanded', 'resilience_changed'].includes(h.kind) ? h.kind : 'resilience_changed',
+    subjectId: String(h.subjectId || '').slice(0, 60), summary: h.summary.slice(0, 200), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4)
+  }));
+  out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  return out;
+}
+
+/** Structural validation of a computed snapshot (LAB + self-tests). */
+export function validateNationalSystemsState(s: NationalSystemsState): string[] {
+  const errs: string[] = [];
+  const fin = (v: number, what: string) => { if (!Number.isFinite(v)) errs.push(`${what} is not finite`); else if (v < 0) errs.push(`${what} is negative`); };
+  Object.values(s.regions).forEach(r => {
+    if (!REGIONS[r.regionId]) errs.push(`unknown region ${r.regionId}`);
+    NATIONAL_NETWORKS.forEach(n => {
+      const st = r.networks[n];
+      if (!st) { errs.push(`${r.regionId} missing ${n}`); return; }
+      fin(st.demand, `${r.regionId}.${n}.demand`); fin(st.localCapacity, `${r.regionId}.${n}.localCapacity`); fin(st.effectiveCapacity, `${r.regionId}.${n}.effectiveCapacity`); fin(st.utilization, `${r.regionId}.${n}.utilization`);
+      if (st.exportedCapacity > Math.max(0, st.localCapacity - st.demand) + 0.2) errs.push(`${r.regionId}.${n} exported beyond its surplus`);
+      st.sources.forEach(src => { if (!src.source) errs.push(`${r.regionId}.${n} capacity source undocumented`); if (src.source.startsWith('project:') && !src.label) errs.push('project source without label'); });
+    });
+  });
+  const ids = new Set<string>();
+  Object.values(s.links).forEach(l => {
+    if (ids.has(l.id)) errs.push(`duplicate link ${l.id}`); ids.add(l.id);
+    if (l.fromRegionId === l.toRegionId) errs.push(`self link ${l.id}`);
+    if (!REGIONS[l.fromRegionId] || !REGIONS[l.toRegionId]) errs.push(`link ${l.id} has an unknown region`);
+    if (!NATIONAL_NETWORKS.includes(l.network)) errs.push(`link ${l.id} has an unknown network`);
+    fin(l.effectiveCapacity, `${l.id}.capacity`);
+    if (l.used > l.effectiveCapacity + 0.2) errs.push(`link ${l.id} carries ${l.used} > capacity ${l.effectiveCapacity}`);
+  });
+  const depIds = new Set<string>();
+  s.dependencies.forEach(d => { if (depIds.has(d.id)) errs.push(`duplicate dependency ${d.id}`); depIds.add(d.id); if (d.consumerRegionId === d.providerRegionId) errs.push(`self dependency ${d.id}`); });
+  if (s.history.length > NATIONAL_LIMITS.history) errs.push('history exceeds its bound');
+  return errs;
+}
+
+// ---- Consumers' read-only adapters -------------------------------------------------------------------
+/** V9.3 content tags (e.g. network:freight:bottleneck, dependency:critical) for a region. */
+export function nationalContentTags(s: NationalSystemsState | null, regionId: string | null): string[] {
+  if (!s) return [];
+  const tags: string[] = [];
+  const reg = regionId ? s.regions[regionId] : null;
+  if (reg) NATIONAL_NETWORKS.forEach(n => {
+    const c = reg.networks[n].condition;
+    tags.push(`network:${n}:${c}`);
+    if (c === 'bottlenecked' || c === 'critical') tags.push(`network:${n}:bottleneck`);
+    if (c === 'surplus' && reg.networks[n].exportedCapacity > 2) tags.push(`network:${n}:exporter`);
+  });
+  if (reg?.criticalDependencies.length) tags.push('dependency:critical');
+  if (s.national.criticalDependencies.length) tags.push('national:dependency:critical');
+  return tags;
+}
+
+/**
+ * Small, bounded strategic outlook for AI candidate scoring in a region (−0.1 … +0.06). Constrained regions are
+ * less attractive to expand into, well-supplied ones slightly more. Never grants or removes legal actions.
+ */
+export function nationalRegionOutlook(s: NationalSystemsState | null, regionId: string): { factor: number; reason: string | null } {
+  const reg = s?.regions[regionId];
+  if (!reg) return { factor: 0, reason: null };
+  const worst = NATIONAL_NETWORKS.map(n => reg.networks[n]).reduce((a, b) => (b.utilization > a.utilization ? b : a));
+  const worstKind = NATIONAL_NETWORKS.find(n => reg.networks[n] === worst)!;
+  if (worst.condition === 'critical') return { factor: -0.1, reason: `${NATIONAL_NETWORK_LABEL[worstKind]} capacity is critical here` };
+  if (worst.condition === 'bottlenecked') return { factor: -0.06, reason: `${NATIONAL_NETWORK_LABEL[worstKind]} bottleneck limits upside` };
+  if (reg.criticalDependencies.length) return { factor: -0.03, reason: 'Critically dependent on another region' };
+  if (NATIONAL_NETWORKS.filter(n => reg.networks[n].condition === 'surplus').length >= 3) return { factor: 0.06, reason: 'Well-supplied national networks' };
+  return { factor: 0, reason: null };
+}
+
+/** Which regions a project would help, and how (cross-regional benefit / public good) — projection only. */
+export function projectNationalImpact(inputs: NationalSystemsInputs, prev: NationalSystemsPersisted | null, change: { projectId?: string; projectType: string; regionId: string; status?: 'active' | 'damaged' | 'upgraded' }): {
+  before: NationalSystemsState; after: NationalSystemsState; changes: Array<{ regionId: string; network: NationalNetworkKind; from: NationalNetworkCondition; to: NationalNetworkCondition; unmetBefore: number; unmetAfter: number }>;
+  beneficiaries: string[]; nationalResilience: { from: NationalResilienceBand; to: NationalResilienceBand };
+} {
+  const before = computeNationalSystems(inputs, prev, { emit: false }).state;
+  const status = change.status || 'active';
+  const exists = change.projectId && inputs.projects.some(p => p.id === change.projectId);
+  const projects = exists
+    ? inputs.projects.map(p => (p.id === change.projectId ? { ...p, status } : p))
+    : [...inputs.projects, { id: change.projectId || `whatif_${change.projectType}_${change.regionId}`, title: `${REGIONS[change.regionId]?.name || change.regionId} ${change.projectType.replace(/_/g, ' ')}`, regionId: change.regionId, projectType: change.projectType, status }];
+  const after = computeNationalSystems({ ...inputs, projects }, prev, { emit: false }).state;
+  const changes: ReturnType<typeof projectNationalImpact>['changes'] = [];
+  Object.keys(after.regions).sort().forEach(c => NATIONAL_NETWORKS.forEach(n => {
+    const a = before.regions[c].networks[n], b = after.regions[c].networks[n];
+    if (a.condition !== b.condition || Math.abs(a.unmetDemand - b.unmetDemand) >= 1) changes.push({ regionId: c, network: n, from: a.condition, to: b.condition, unmetBefore: Math.round(a.unmetDemand), unmetAfter: Math.round(b.unmetDemand) });
+  }));
+  return { before, after, changes, beneficiaries: Array.from(new Set(changes.filter(x => x.unmetAfter < x.unmetBefore || NS_COND_RANK[x.to] < NS_COND_RANK[x.from]).map(x => x.regionId))),
+    nationalResilience: { from: before.national.resilienceBand, to: after.national.resilienceBand } };
+}
+
+/** Short PLAY lines: at most 3 relevant national conditions (bottlenecks / critical dependencies / surplus). */
+export function nationalPlayStrip(s: NationalSystemsState | null, focusRegions: string[] = []): Array<{ network: NationalNetworkKind; text: string; tone: 'warning' | 'critical' | 'positive' | 'neutral' }> {
+  if (!s) return [];
+  const out: ReturnType<typeof nationalPlayStrip> = [];
+  const focus = new Set(focusRegions);
+  const bns = [...s.bottlenecks].filter(b => b.regionId).sort((a, b) => (focus.has(b.regionId!) ? 1 : 0) - (focus.has(a.regionId!) ? 1 : 0));
+  bns.slice(0, 2).forEach(b => out.push({ network: b.network, text: `${NATIONAL_NETWORK_LABEL[b.network]} ${NATIONAL_CONDITION_ICON[b.severity === 'critical' ? 'critical' : 'bottlenecked']} ${b.regionId} ${b.severity === 'critical' ? 'Critical' : 'Bottleneck'}`, tone: b.severity === 'critical' ? 'critical' : 'warning' }));
+  const dep = s.dependencies.find(d => d.importance === 'critical');
+  if (dep && out.length < 3) out.push({ network: dep.network, text: `${NATIONAL_NETWORK_LABEL[dep.network]} ⛓ ${dep.consumerRegionId} relies on ${dep.providerRegionId}`, tone: 'warning' });
+  if (out.length && out.length < 3) {
+    const strong = s.national.strongestSystem;
+    if (strong && s.national[strong].bottlenecks === 0) out.push({ network: strong, text: `${NATIONAL_NETWORK_LABEL[strong]} ✓ ${NATIONAL_CONDITION_LABEL[s.national[strong].condition]}`, tone: 'positive' });
+  }
+  return out.slice(0, 3);
+}
+
+
+/** National band transition → World Reaction root event (public structural information; root/depth/dedupe apply). */
+export function nsToWorldEvent(d: NationalDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  const region = d.regionIds[0] && REGIONS[d.regionIds[0]] ? d.regionIds[0] : null;
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'national_systems', sourceEventId: null, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: region ? 'region' : 'nation', subjectId: region || 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: d.evidence.filter(Boolean).slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'economy', 'projects'],
+    tags: ['national_systems', ...(d.network ? [`network:${d.network}`] : []), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: d.kind.startsWith('national_dependency') ? 'inference' : 'calculated', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0,
+    expiresTurn: d.turn + 3, dedupeKey: `ns:${d.kind}:${d.subjectId}:${d.turn}`
+  };
+}
+
+
+// ---- National Systems: Game Intelligence (Fact / Calculated / Inference / Projection) ----------------
+
+export interface NationalSystemsWorldView {
+  state: NationalSystemsState;
+  inputs: NationalSystemsInputs;
+  persisted: NationalSystemsPersisted | null;
+  /** Region → 'you' | 'rival' | 'neutral' (public control only; never hidden deposits). */
+  regionOwners: Record<string, 'you' | 'rival' | 'neutral'>;
+}
+export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
+export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
+
+const NS_NETWORK_WORDS: Array<[NationalNetworkKind, RegExp]> = [
+  ['freight', /\b(freight|rail|logistics|transport)\b/], ['energy', /\b(energy|power|grid|electricity)\b/], ['water', /\b(water|desal\w*|pipeline)\b/],
+  ['trade', /\b(trade|port|export network)\b/], ['digital', /\b(digital|data|broadband|cable|internet)\b/]
+];
+export function nationalNetworkInText(q: string): NationalNetworkKind | null {
+  return NS_NETWORK_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+}
+function nsRegionInText(q: string): string | null {
+  const codes = Object.keys(REGIONS);
+  const byName = codes.find(c => new RegExp(`\\b${String(REGIONS[c].name).toLowerCase()}\\b`).test(q));
+  return byName || codes.find(c => new RegExp(`\\b${c.toLowerCase()}\\b`).test(q)) || null;
+}
+function nsProjectTypeInText(q: string, network: NationalNetworkKind | null): string | null {
+  const direct = Object.keys(LR_PROJECT_PROFILE).find(k => q.includes(k.replace(/_/g, ' ')) || q.includes(LR_PROJECT_PROFILE[k].label));
+  if (direct) return direct;
+  const fallback: Record<NationalNetworkKind, string> = { freight: 'freight_rail_upgrade', energy: 'renewable_grid', water: 'water_pipeline', trade: 'port_expansion', digital: 'data_center' };
+  return network ? fallback[network] : null;
+}
+
+/** Detects national-network questions only when a National Systems view exists (never hijacks other phrasings). */
+export function detectNationalSystemsQuery(raw: string, gw: GIWorld): NationalQuery | null {
+  if (!gw.national) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const network = nationalNetworkInText(q);
+  const regionId = nsRegionInText(q);
+  const nationalWord = /\b(national (systems?|networks?|grid)|interregional|inter-regional|bottlenecks?|dependen(cy|cies|t|ce)|relies? on|resilien(ce|t)|networks?)\b/.test(q);
+  if (!nationalWord && !network) return null;
+  const mk = (topic: NationalQueryTopic, extra: Partial<NationalQuery> = {}): NationalQuery => ({ topic, regionId, network, projectType: null, ...extra });
+  if (/\b(what (happens|would happen)|what if|if i (build|fund|complete))\b/.test(q) && /\b(build|fund|complete|add)\b/.test(q) && (network || nationalWord) && regionId) {
+    const projectType = nsProjectTypeInText(q, network);
+    if (projectType) return mk('what_if', { projectType });
+  }
+  if (/\bresilien(ce|t)\b/.test(q)) return mk('resilience');
+  if (/\b(depend|dependen\w*|relies? on|rely on|reliant)\b/.test(q)) return mk('dependency');
+  if (/\bbottlenecks?\b/.test(q) && !/\binfrastructure (problems?|issues?|gaps?)\b/.test(q)) return mk('bottlenecks');
+  if (network && regionId) return mk('region_network');
+  if (/\b(national (systems?|networks?)|interregional|inter-regional)\b/.test(q) || (network && /\b(how is|how are|state of|status|overview|nationally|across australia)\b/.test(q))) return mk('overview');
+  return null;
+}
+
+const nsClaim = (text: string, kind: LRClaim, certainty?: GICertainty) => claim(text, kind === 'fact' || kind === 'calculated' ? 'fact' : kind === 'projection' ? 'projection' : 'inference', certainty || (kind === 'fact' ? 'confirmed' : kind === 'calculated' ? 'high' : kind === 'inference' ? 'moderate' : 'low'), ['national.systems'], { derived: giNumbersIn(text).map(n => n.value) });
+const nsName = (c: string) => REGIONS[c]?.name || c;
+const nsPct = (x: number) => `${Math.round(x * 100)}%`;
+
+export function composeNationalSystemsAnswer(query: NationalQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!;
+  const s = v.state;
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  let title = 'National Systems'; let shape: GIAnswerShape = 'status';
+  const netLine = (n: NationalNetworkKind) => { const x = s.national[n]; return `${NATIONAL_NETWORK_ICON[n]} ${NATIONAL_NETWORK_LABEL[n]}: ${NATIONAL_CONDITION_LABEL[x.condition]} (${nsPct(x.utilization)} used nationally, ${x.bottlenecks} bottleneck${x.bottlenecks === 1 ? '' : 's'}).`; };
+  switch (query.topic) {
+    case 'overview': {
+      title = query.network ? `${NATIONAL_NETWORK_LABEL[query.network]} network` : 'National Systems overview';
+      const nets = query.network ? [query.network] : NATIONAL_NETWORKS;
+      say('fact', 'Fact', [nsClaim(`${s.bottlenecks.length} active bottleneck${s.bottlenecks.length === 1 ? '' : 's'} and ${s.national.criticalDependencies.length} critical dependenc${s.national.criticalDependencies.length === 1 ? 'y' : 'ies'} across Australia.`, 'fact')]);
+      say('calc', 'Calculated', nets.map(n => nsClaim(netLine(n), 'calculated')));
+      say('infer', 'Inference', [nsClaim(`National resilience is ${NATIONAL_RESILIENCE_LABEL[s.national.resilienceBand].toLowerCase()}${s.national.weakestSystem ? `; the weakest system is ${NATIONAL_NETWORK_LABEL[s.national.weakestSystem].toLowerCase()}` : ''}${s.national.strongestSystem ? ` and the strongest is ${NATIONAL_NETWORK_LABEL[s.national.strongestSystem].toLowerCase()}` : ''}.`, 'inference')]);
+      break;
+    }
+    case 'bottlenecks': {
+      title = query.network ? `${NATIONAL_NETWORK_LABEL[query.network]} bottlenecks` : 'National bottlenecks'; shape = 'diagnosis';
+      const list = s.bottlenecks.filter(b => (!query.network || b.network === query.network) && (!query.regionId || b.regionId === query.regionId || b.affectedRegionIds.includes(query.regionId)));
+      if (!list.length) { say('fact', 'Fact', [nsClaim(`No ${query.network ? NATIONAL_NETWORK_LABEL[query.network].toLowerCase() + ' ' : ''}bottlenecks are active${query.regionId ? ` in ${nsName(query.regionId)}` : ''}.`, 'fact')]); break; }
+      say('fact', 'Fact', list.slice(0, 4).map(b => nsClaim(`${NATIONAL_NETWORK_ICON[b.network]} ${b.regionId ? nsName(b.regionId) : b.linkId} — ${NATIONAL_NETWORK_LABEL[b.network]} ${b.severity} bottleneck since round ${b.openedTurn}.`, 'fact')));
+      say('calc', 'Calculated', list.slice(0, 4).map(b => nsClaim(`${b.regionId ? nsName(b.regionId) : b.linkId}: demand ${Math.round(b.demand)} vs capacity ${Math.round(b.capacity)} — ${b.reason}.`, 'calculated')));
+      say('infer', 'Inference', [nsClaim('Bottlenecks slow regional growth and raise the value of matching infrastructure; fixing them is optional and may also help rivals.', 'inference')]);
+      break;
+    }
+    case 'region_network': {
+      const code = query.regionId!, n = query.network!; const reg = s.regions[code]; if (!reg) break;
+      const x = reg.networks[n];
+      title = `${nsName(code)} ${NATIONAL_NETWORK_LABEL[n].toLowerCase()}`;
+      say('fact', 'Fact', [nsClaim(`${NATIONAL_NETWORK_ICON[n]} ${nsName(code)} ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} is ${NATIONAL_CONDITION_LABEL[x.condition].toLowerCase()} ${NATIONAL_CONDITION_ICON[x.condition]}.`, 'fact')]);
+      say('calc', 'Calculated', [
+        nsClaim(`Demand ${Math.round(x.demand)} · local capacity ${Math.round(x.localCapacity)} · imported ${Math.round(x.importedCapacity)} · exported ${Math.round(x.exportedCapacity)} · utilisation ${nsPct(x.utilization)}.`, 'calculated'),
+        x.sources.length ? nsClaim(`Capacity sources: ${x.sources.slice(0, 3).map(e => `${e.label} ${Math.round(e.value)}`).join(', ')}.`, 'calculated') : null,
+        x.providers.length ? nsClaim(`Supplied by: ${x.providers.map(p => `${nsName(p.regionId)} ${Math.round(p.amount)}`).join(', ')}.`, 'calculated') : null
+      ]);
+      if (x.trend !== 'stable') say('infer', 'Inference', [nsClaim(`Trend is ${x.trend}.`, 'inference')]);
+      break;
+    }
+    case 'dependency': {
+      title = query.regionId ? `${nsName(query.regionId)} dependencies` : 'National dependencies'; shape = 'explanation';
+      const deps = s.dependencies.filter(d => (!query.regionId || d.consumerRegionId === query.regionId || d.providerRegionId === query.regionId) && (!query.network || d.network === query.network));
+      if (!deps.length) { say('fact', 'Fact', [nsClaim(`No meaningful interregional dependencies${query.regionId ? ` involve ${nsName(query.regionId)}` : ''} right now.`, 'fact')]); break; }
+      say('calc', 'Calculated', deps.slice(0, 4).map(d => nsClaim(`${nsName(d.consumerRegionId)} relies on ${nsName(d.providerRegionId)} for ${nsPct(d.share)} of its ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} (${d.importance}, ${d.shareBand}).`, 'calculated')));
+      say('infer', 'Inference', deps.slice(0, 2).map(d => nsClaim(d.alternativeProviders.length ? `${nsName(d.consumerRegionId)} has alternatives (${d.alternativeProviders.map(nsName).join(', ')}), so a disruption in ${nsName(d.providerRegionId)} would be absorbed partly.` : `${nsName(d.consumerRegionId)} has no alternative ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} provider — a disruption in ${nsName(d.providerRegionId)} would spread.`, 'inference')));
+      break;
+    }
+    case 'resilience': {
+      title = query.regionId ? `${nsName(query.regionId)} resilience` : 'National resilience'; shape = 'explanation';
+      if (query.regionId && s.regions[query.regionId]) {
+        const r = s.regions[query.regionId];
+        say('calc', 'Calculated', [nsClaim(`${nsName(r.regionId)} resilience is ${NATIONAL_RESILIENCE_LABEL[r.resilienceBand].toLowerCase()} (${Math.round(r.resilience)}/100).`, 'calculated'), r.primaryConstraint ? nsClaim(`Primary constraint: ${NATIONAL_NETWORK_LABEL[r.primaryConstraint].toLowerCase()}.`, 'calculated') : null]);
+        if (r.criticalDependencies.length) say('infer', 'Inference', [nsClaim(`Critical dependencies (${r.criticalDependencies.length}) are the main fragility.`, 'inference')]);
+      } else {
+        say('calc', 'Calculated', [nsClaim(`National resilience: ${NATIONAL_RESILIENCE_LABEL[s.national.resilienceBand].toLowerCase()} (${Math.round(s.national.resilienceScore)}/100).`, 'calculated')]);
+        const weak = Object.values(s.regions).sort((a, b) => a.resilience - b.resilience || a.regionId.localeCompare(b.regionId))[0];
+        if (weak) say('infer', 'Inference', [nsClaim(`Most exposed region: ${weak.name} (${NATIONAL_RESILIENCE_LABEL[weak.resilienceBand].toLowerCase()}).`, 'inference')]);
+      }
+      break;
+    }
+    case 'what_if': {
+      const code = query.regionId!, type = query.projectType!;
+      title = `What if: ${LR_PROJECT_PROFILE[type]?.label || type.replace(/_/g, ' ')} in ${nsName(code)}`; shape = 'simulation';
+      const imp = projectNationalImpact(v.inputs, v.persisted, { projectType: type, regionId: code });
+      say('fact', 'Fact', [nsClaim('This is an isolated projection — nothing in the match changes.', 'fact')]);
+      say('proj', 'Projection', imp.changes.length
+        ? imp.changes.slice(0, 5).map(c => nsClaim(`${nsName(c.regionId)} ${NATIONAL_NETWORK_LABEL[c.network].toLowerCase()}: ${NATIONAL_CONDITION_LABEL[c.from]} → ${NATIONAL_CONDITION_LABEL[c.to]} (unmet ${c.unmetBefore} → ${c.unmetAfter}).`, 'projection'))
+        : [nsClaim('No network condition would change measurably.', 'projection')]);
+      if (imp.nationalResilience.from !== imp.nationalResilience.to) say('proj2', null, [nsClaim(`National resilience: ${NATIONAL_RESILIENCE_LABEL[imp.nationalResilience.from]} → ${NATIONAL_RESILIENCE_LABEL[imp.nationalResilience.to]}.`, 'projection')]);
+      const others = imp.beneficiaries.filter(r => r !== code);
+      const rivals = others.filter(r => v.regionOwners[r] === 'rival');
+      say('infer', 'Inference', [
+        nsClaim(others.length ? `National value: also helps ${others.map(nsName).join(', ')}.` : `National value: benefit stays mostly in ${nsName(code)}.`, 'inference'),
+        nsClaim(`Value to your strategy: ${v.regionOwners[code] === 'you' ? 'high — you control the host region' : v.regionOwners[code] === 'rival' ? 'mixed — the host region is rival-controlled' : 'moderate — the host region is uncontrolled'}.`, 'inference'),
+        rivals.length ? nsClaim(`Public good: rival-controlled ${rivals.map(nsName).join(', ')} would benefit too.`, 'inference') : null
+      ]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [nsClaim('No national-network data matches that question yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+
+// ---- National Systems: UI helpers (read-only; every surface renders the derived snapshot) --------------
+
+export type NationalMapNetwork = NationalNetworkKind | null;
+/** Capacity band → stroke width in px (width carries capacity; condition is carried by dash, icon and label). */
+export function nationalLinkWidth(capacity: number): number { return capacity >= 30 ? 6 : capacity >= 16 ? 4.5 : capacity >= 8 ? 3 : 1.5; }
+export const NATIONAL_CONDITION_DASH: Record<NationalNetworkCondition, string | undefined> = { surplus: undefined, healthy: undefined, strained: '6 3', bottlenecked: '3 3', critical: '1.5 2.5' };
+export const NATIONAL_CONDITION_STROKE: Record<NationalNetworkCondition, string> = { surplus: '#34d399', healthy: '#5eead4', strained: '#fbbf24', bottlenecked: '#fb923c', critical: '#f87171' };
+export function nationalMapBadge(s: NationalSystemsState | null, regionId: string, network: NationalNetworkKind): { text: string; title: string; condition: NationalNetworkCondition } | null {
+  const x = s?.regions[regionId]?.networks[network];
+  if (!x) return null;
+  const flow = x.importedCapacity >= 1 ? ` ⇠${Math.round(x.importedCapacity)}` : x.exportedCapacity >= 1 ? ` ⇢${Math.round(x.exportedCapacity)}` : '';
+  return { condition: x.condition, text: `${NATIONAL_CONDITION_ICON[x.condition]} ${NATIONAL_CONDITION_LABEL[x.condition]}${flow}`,
+    title: `${NATIONAL_NETWORK_LABEL[network]} in ${s!.regions[regionId].name}: ${NATIONAL_CONDITION_LABEL[x.condition]} — demand ${Math.round(x.demand)}, capacity ${Math.round(x.effectiveCapacity)} (local ${Math.round(x.localCapacity)}, imported ${Math.round(x.importedCapacity)}, exported ${Math.round(x.exportedCapacity)})` };
+}
+
+/** SVG corridor overlay for one network (drawn under the region markers; pointer-events off). */
+export const NationalNetworkMapLinks: React.FC<{ state: NationalSystemsState; network: NationalNetworkKind }> = ({ state, network }) => {
+  const links = Object.values(state.links).filter(l => l.network === network && l.effectiveCapacity > 0 && REGIONS[l.fromRegionId] && REGIONS[l.toRegionId]).sort((a, b) => a.id.localeCompare(b.id));
+  return (
+    <>
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="ns-map-links">
+        {links.map(l => {
+          const a = REGIONS[l.fromRegionId].position, b = REGIONS[l.toRegionId].position;
+          return <line key={l.id} data-testid={`ns-link-${l.fromRegionId}-${l.toRegionId}`} data-condition={l.condition} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={NATIONAL_CONDITION_STROKE[l.condition]} strokeOpacity={0.85} strokeWidth={nationalLinkWidth(l.effectiveCapacity)} strokeDasharray={NATIONAL_CONDITION_DASH[l.condition]} strokeLinecap="round" vectorEffect="non-scaling-stroke" />;
+        })}
+      </svg>
+      {links.filter(l => l.used >= 1 || l.condition !== 'healthy').map(l => {
+        const a = REGIONS[l.fromRegionId].position, b = REGIONS[l.toRegionId].position;
+        return (
+          <div key={`lbl_${l.id}`} className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 text-[9px] whitespace-nowrap bg-gray-900/85 text-gray-100 px-1 rounded z-[5]" style={{ left: `${(a.x + b.x) / 2}%`, top: `${(a.y + b.y) / 2}%` }}
+            title={`${l.fromRegionId}–${l.toRegionId} ${NATIONAL_NETWORK_LABEL[l.network]}: ${NATIONAL_CONDITION_LABEL[l.condition]}`} data-testid="ns-link-label">
+            {NATIONAL_CONDITION_ICON[l.condition]} {Math.round(l.used)}/{Math.round(l.effectiveCapacity)}
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+type NationalImpact = ReturnType<typeof projectNationalImpact>;
+export const NATIONAL_WHATIF_PROJECT: Record<NationalNetworkKind, string> = { freight: 'freight_rail_upgrade', energy: 'renewable_grid', water: 'water_pipeline', trade: 'port_expansion', digital: 'data_center' };
+
+/** Selected-region network panel: condition, flows, dependencies and an isolated What-If per network. */
+export const NationalRegionNetworkPanel: React.FC<{ state: NationalSystemsState; regionId: string; theme: any; whatIf: (network: NationalNetworkKind) => NationalImpact | null; owners: Record<string, 'you' | 'rival' | 'neutral'>; onAsk?: (q: string) => void }> = ({ state, regionId, theme, whatIf, owners, onAsk }) => {
+  const [result, setResult] = useState<{ network: NationalNetworkKind; impact: NationalImpact } | null>(null);
+  useEffect(() => { setResult(null); }, [regionId]);
+  const reg = state.regions[regionId];
+  if (!reg) return null;
+  const deps = state.dependencies.filter(d => d.consumerRegionId === regionId || d.providerRegionId === regionId).slice(0, 4);
+  return (
+    <section aria-label={`${reg.name} national networks`} className={`${theme.card} ${theme.border} border rounded-lg p-3 mt-3 text-xs`} data-testid="ns-region-panel">
+      <div className="flex justify-between items-center"><div className="font-bold text-sm">🔗 {reg.name} · national networks</div><div className="opacity-80">Resilience: {NATIONAL_RESILIENCE_LABEL[reg.resilienceBand]}</div></div>
+      <table className="w-full mt-1"><tbody>
+        {NATIONAL_NETWORKS.map(n => {
+          const x = reg.networks[n];
+          return (
+            <tr key={n} data-testid={`ns-region-row-${n}`}>
+              <td className="pr-1">{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</td>
+              <td className="pr-1 font-semibold">{NATIONAL_CONDITION_ICON[x.condition]} {NATIONAL_CONDITION_LABEL[x.condition]}</td>
+              <td className="pr-1 font-mono">{Math.round(x.demand)}/{Math.round(x.effectiveCapacity)}</td>
+              <td className="pr-1 opacity-80">{x.importedCapacity >= 1 ? `imports ${Math.round(x.importedCapacity)}` : x.exportedCapacity >= 1 ? `exports ${Math.round(x.exportedCapacity)}` : ''}</td>
+              <td className="text-right"><button type="button" className="underline" data-testid={`ns-whatif-${n}`} onClick={() => { const impact = whatIf(n); if (impact) setResult({ network: n, impact }); }}>What if?</button></td>
+            </tr>
+          );
+        })}
+      </tbody></table>
+      {deps.length > 0 && <div className="mt-1">{deps.map(d => <div key={d.id}>⛓ {REGIONS[d.consumerRegionId]?.name || d.consumerRegionId} relies on {REGIONS[d.providerRegionId]?.name || d.providerRegionId} for {Math.round(d.share * 100)}% of {NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} ({d.importance}{d.alternativeProviders.length ? '' : ', no alternative'})</div>)}</div>}
+      {result && (
+        <div className="mt-2 p-2 rounded border border-sky-600/50" data-testid="ns-whatif-result">
+          <div className="font-semibold">Projection · {LR_PROJECT_PROFILE[NATIONAL_WHATIF_PROJECT[result.network]]?.label || result.network} in {reg.name} (nothing changes in the match)</div>
+          {result.impact.changes.length ? result.impact.changes.slice(0, 5).map(c => <div key={`${c.regionId}_${c.network}`}>{REGIONS[c.regionId]?.name || c.regionId} {NATIONAL_NETWORK_LABEL[c.network].toLowerCase()}: {NATIONAL_CONDITION_LABEL[c.from]} → {NATIONAL_CONDITION_LABEL[c.to]} (unmet {c.unmetBefore} → {c.unmetAfter})</div>) : <div>No measurable network change.</div>}
+          {(() => { const others = result.impact.beneficiaries.filter(r => r !== regionId); const rivals = others.filter(r => owners[r] === 'rival'); return (<>
+            <div className="mt-1">National value: {others.length ? `also helps ${others.map(r => REGIONS[r]?.name || r).join(', ')}` : `mostly local to ${reg.name}`}.</div>
+            <div>Value to your strategy: {owners[regionId] === 'you' ? 'high — you control this region' : owners[regionId] === 'rival' ? 'mixed — rival-controlled region' : 'moderate — uncontrolled region'}.</div>
+            {rivals.length > 0 && <div className="text-amber-300">Public good: rival-controlled {rivals.map(r => REGIONS[r]?.name || r).join(', ')} would benefit too.</div>}
+          </>); })()}
+          {onAsk && <button type="button" className="underline mt-1" onClick={() => onAsk(`What if I build ${NATIONAL_NETWORK_LABEL[result.network].toLowerCase()} infrastructure in ${reg.name}?`)}>Ask the Game</button>}
+        </div>
+      )}
+    </section>
+  );
+};
+
+/** PLAY: 1–3 relevant national conditions (nothing when all is healthy). */
+export const NationalConditionsStrip: React.FC<{ state: NationalSystemsState | null; focusRegions: string[]; theme: any; onAsk: (q: string) => void; onMap: (n: NationalNetworkKind) => void }> = ({ state, focusRegions, theme, onAsk, onMap }) => {
+  const items = nationalPlayStrip(state, focusRegions);
+  if (!items.length) return null;
+  return (
+    <section aria-label="National conditions" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="ns-play-strip">
+      <span className="font-bold uppercase tracking-wide opacity-70">National</span>
+      {items.map(it => (
+        <button key={it.text} type="button" onClick={() => onMap(it.network)} className={`px-2 py-0.5 rounded border ${it.tone === 'critical' ? 'border-red-500' : it.tone === 'warning' ? 'border-amber-500' : 'border-emerald-500'}`} data-testid="ns-play-item" title="Show on the map">{NATIONAL_NETWORK_ICON[it.network]} {it.text}</button>
+      ))}
+      <button type="button" className="underline opacity-80" onClick={() => onAsk('Where are the national bottlenecks?')}>Why?</button>
+    </section>
+  );
+};
+
+/** INTELLIGENCE: national summary, bottlenecks, dependencies, resilience and recent turning points. */
+export const NationalSystemsIntelPanel: React.FC<{ state: NationalSystemsState; theme: any; onAsk: (q: string) => void; onMap: (n: NationalNetworkKind) => void }> = ({ state, theme, onAsk, onMap }) => (
+  <section aria-labelledby="ns-intel-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="ns-intel-panel">
+    <div className="flex justify-between items-center"><h3 id="ns-intel-h" className="font-bold">🔗 National Systems</h3><span className="text-xs opacity-80">Resilience: {NATIONAL_RESILIENCE_LABEL[state.national.resilienceBand]} ({state.national.resilienceScore}/100)</span></div>
+    <table className="w-full text-xs mt-2"><thead><tr className="opacity-70 text-left"><th>Network</th><th>Condition</th><th>Used</th><th>Bottlenecks</th><th>Shared</th><th /></tr></thead><tbody>
+      {NATIONAL_NETWORKS.map(n => { const x = state.national[n]; return (
+        <tr key={n}><td>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</td><td>{NATIONAL_CONDITION_ICON[x.condition]} {NATIONAL_CONDITION_LABEL[x.condition]}</td><td>{Math.round(x.utilization * 100)}%</td><td>{x.bottlenecks}</td><td>{Math.round(x.sharedCapacity)}</td><td><button type="button" className="underline" onClick={() => onMap(n)}>Map</button></td></tr>
+      ); })}
+    </tbody></table>
+    <div className="grid md:grid-cols-2 gap-3 mt-2 text-xs">
+      <div><div className="font-semibold">Bottlenecks</div>{state.bottlenecks.length ? state.bottlenecks.slice(0, 5).map(b => <div key={b.id}>{NATIONAL_CONDITION_ICON[b.severity === 'critical' ? 'critical' : 'bottlenecked']} {b.regionId ? REGIONS[b.regionId]?.name || b.regionId : b.linkId} · {NATIONAL_NETWORK_LABEL[b.network]} ({b.severity}) — {b.reason}</div>) : <div className="opacity-70">None active.</div>}</div>
+      <div><div className="font-semibold">Dependencies</div>{state.dependencies.length ? state.dependencies.slice(0, 5).map(d => <div key={d.id}>⛓ {d.consumerRegionId} ← {d.providerRegionId} {NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} {Math.round(d.share * 100)}% ({d.importance})</div>) : <div className="opacity-70">No meaningful dependencies.</div>}</div>
+    </div>
+    {state.history.length > 0 && <div className="mt-2 text-xs"><div className="font-semibold">Recent national changes</div>{state.history.slice(-4).reverse().map(h => <div key={h.id}>Round {h.turn}: {h.summary}</div>)}</div>}
+    <div className="flex flex-wrap gap-2 mt-2 text-xs">{['Where are the national bottlenecks?', 'How resilient is the national network?', 'Which regions depend on others for energy?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+  </section>
+);
+
+/** Debrief: national turning points from the bounded history (no invented events). */
+export function buildNationalDebrief(p: NationalSystemsPersisted | null): string[] {
+  if (!p || !p.history.length) return [];
+  const pick = p.history.filter(h => h.kind === 'bottleneck_formed' || h.kind === 'capacity_expanded' || h.kind === 'resilience_changed' || h.kind === 'dependency_changed');
+  return pick.slice(-5).map(h => `R${h.turn}: ${h.summary}`);
+}
+
+/** LAB › V10 National Systems Inspector. Observes only. */
+export const NationalSystemsInspector: React.FC<{ state: NationalSystemsState | null; persisted: NationalSystemsPersisted | null; inputs: NationalSystemsInputs; theme: any; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }; enabled: boolean }> = ({ state, persisted, inputs, theme, diag, enabled }) => {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<string>('overview');
+  const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const tabs = ['overview', 'nodes', 'links', 'capacity', 'demand', 'sharing', 'bottlenecks', 'dependencies', 'resilience', 'contributions', 'swr', 'history', 'performance', 'self-tests'];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV100NationalSystemsSelfTests()); } catch (err) { console.error('[V10 self-tests]', err); } finally { setBusy(false); } };
+  const issues = state ? validateNationalSystemsState(state) : [];
+  return (
+    <section aria-labelledby="ns-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="ns-inspector">
+      <div className="flex items-center justify-between"><h3 id="ns-lab-h" className="font-bold text-sm">🔗 V10 National Systems Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="ns-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (state ? `rev ${state.revision} · round ${state.lastUpdatedTurn} · ${state.bottlenecks.length} bottlenecks · ${state.dependencies.length} dependencies · ${NATIONAL_RESILIENCE_LABEL[state.national.resilienceBand]} · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'waiting for Living Regions') : 'National Systems is OFF (exact V9 behaviour)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-sky-400 font-bold' : theme.border}`} data-testid={`ns-tab-${t}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="ns-inspector-body">
+            {!state && tab !== 'self-tests' && <div>No snapshot.</div>}
+            {state && tab === 'overview' && <div>{NATIONAL_NETWORKS.map(n => <div key={n}>{n}: {state.national[n].condition} util {Math.round(state.national[n].utilization * 100)}% demand {state.national[n].demand} cap {state.national[n].capacity} shared {state.national[n].sharedCapacity} strongest {state.national[n].strongestRegion} weakest {state.national[n].weakestRegion}</div>)}<div>hash {state.inputHash} · persisted rev {persisted?.revision ?? '—'} · initialized {persisted?.initializedTurn ?? '—'}</div>{issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}</div>}
+            {state && tab === 'nodes' && Object.values(state.regions).map(r => <div key={r.regionId}>{r.regionId}: {NATIONAL_NETWORKS.map(n => `${n[0]}=${r.networks[n].condition}`).join(' ')} res {r.resilience} ({r.resilienceBand}) constraint {r.primaryConstraint || '—'} strength {r.primaryStrength || '—'}</div>)}
+            {state && tab === 'links' && Object.values(state.links).map(l => <div key={l.id}>{l.id}: base {l.baseCapacity} infra {l.infrastructureCapacity} eff {l.effectiveCapacity} used {l.used} {l.condition}{l.activeConstraints.length ? ` [${l.activeConstraints.join(', ')}]` : ''}</div>)}
+            {state && tab === 'capacity' && Object.values(state.regions).map(r => <div key={r.regionId}>{r.regionId}: {NATIONAL_NETWORKS.map(n => `${n}:${r.networks[n].localCapacity}+${r.networks[n].importedCapacity}-${r.networks[n].exportedCapacity}`).join(' ')}</div>)}
+            {state && tab === 'demand' && Object.values(state.regions).map(r => <div key={r.regionId}>{r.regionId}: {NATIONAL_NETWORKS.map(n => `${n}:${r.networks[n].demand}${r.networks[n].unmetDemand ? `(unmet ${r.networks[n].unmetDemand})` : ''}`).join(' ')}</div>)}
+            {state && tab === 'sharing' && (state.flows.length ? state.flows.map((f, k) => <div key={k}>{f.network}: {f.fromRegionId}→{f.toRegionId} {f.amount} via {f.path.join('→')}</div>) : <div>No flows.</div>)}
+            {state && tab === 'bottlenecks' && (state.bottlenecks.length ? state.bottlenecks.map(b => <div key={b.id}>{b.id} {b.severity} d{b.demand}/c{b.capacity} since R{b.openedTurn}: {b.reason}</div>) : <div>None.</div>)}
+            {state && tab === 'dependencies' && (state.dependencies.length ? state.dependencies.map(d => <div key={d.id}>{d.id} {d.importance} {d.shareBand} {Math.round(d.share * 100)}% alt [{d.alternativeProviders.join(',')}] {d.fragile ? 'fragile' : ''}</div>) : <div>None.</div>)}
+            {state && tab === 'resilience' && <div>national {state.national.resilienceScore} ({state.national.resilienceBand}){Object.values(state.regions).map(r => <div key={r.regionId}>{r.regionId} {r.resilience} {r.resilienceBand} critical deps [{r.criticalDependencies.join(', ')}]</div>)}</div>}
+            {tab === 'contributions' && inputs.projects.filter(p => p.regionId).map(p => <div key={p.id}>{p.id} {p.projectType} @{p.regionId} {p.status} ×{NATIONAL_STATUS_FACTOR[p.status] ?? 0}: {nationalProjectNetworkEffects(p.projectType).map(e => `${e.network}+${e.capacity}`).join(' ') || 'no network effect'}</div>)}
+            {tab === 'swr' && <div>events emitted {diag.eventsEmitted} · kinds: {SWR_NS_KINDS.join(', ')}{persisted && Object.entries(persisted.cooldowns).slice(-10).map(([k, v]) => <div key={k}>cooldown {k} → R{v}</div>)}</div>}
+            {tab === 'history' && ((persisted?.history || []).length ? persisted!.history.map(h => <div key={h.id}>R{h.turn} {h.kind} {h.subjectId}: {h.summary}</div>) : <div>No national history yet (none is invented for older saves).</div>)}
+            {tab === 'performance' && <div>recomputes {diag.recomputes} · last {diag.lastMs} ms · snapshot {state?.computeMs ?? '—'} ms · last reason: {diag.lastReason}</div>}
+            {tab === 'self-tests' && (
+              <div>
+                <button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="ns-run-tests">{busy ? 'Running…' : 'Run V10 self-tests'}</button>
+                {tests && <div data-testid="ns-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V10.0 National Systems self-tests (pure, deterministic, bounded) --------------------------------------
+type NsFxRegion = Partial<NationalSystemsInputs['regions'][number]>;
+export function createNationalSystemsFixtureInputs(o: { regions?: Record<string, NsFxRegion>; projects?: NationalSystemsInputs['projects']; crises?: NationalSystemsInputs['crises']; modifiers?: NationalSystemsInputs['modifiers']; corridors?: NationalCorridorDef[]; turn?: number } = {}): NationalSystemsInputs {
+  return {
+    turn: o.turn ?? 5,
+    regions: Object.keys(REGIONS).sort().map(code => ({ code, name: REGIONS[code].name, devScore: 20, econScore: 40, momentum: 0, sectors: {}, needs: [], ...(o.regions?.[code] || {}) })),
+    projects: o.projects || [], crises: o.crises || [], modifiers: o.modifiers, corridors: o.corridors
+  };
+}
+const nsStrip = (s: NationalSystemsState) => JSON.stringify({ ...s, computeMs: 0 });
+const nsProj = (id: string, regionId: string, projectType: string, status = 'active') => ({ id, title: id, regionId, projectType, status });
+
+export function runV100NationalSystemsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const fx = createNationalSystemsFixtureInputs;
+  const run = (i: NationalSystemsInputs, prev: NationalSystemsPersisted | null = null) => computeNationalSystems(i, prev);
+  const net = (s: NationalSystemsState, c: string, n: NationalNetworkKind) => s.regions[c].networks[n];
+  const vicDeficit = (extra: Partial<Parameters<typeof fx>[0]> = {}) => fx({ modifiers: { VIC: { energy: -30 }, ...(extra.modifiers || {}) }, ...extra });
+
+  check('ns01_determinism', 'Same inputs → identical snapshot, persisted memory and hash', () => {
+    const i = fx({ projects: [nsProj('p1', 'SA', 'renewable_grid')] });
+    const a = run(i), b = run(JSON.parse(JSON.stringify(i)));
+    return (nsStrip(a.state) === nsStrip(b.state) && JSON.stringify(a.persisted) === JSON.stringify(b.persisted) && a.state.inputHash === nationalSystemsInputHash(i)) || 'snapshots differ';
+  });
+  check('ns02_zero_infra', 'No infrastructure: every region/network has finite demand and base capacity; validation clean', () => {
+    const s = run(fx()).state;
+    const errs = validateNationalSystemsState(s);
+    const ok = Object.values(s.regions).every(r => NATIONAL_NETWORKS.every(n => r.networks[n].localCapacity > 0 && Number.isFinite(r.networks[n].demand)));
+    return (ok && !errs.length && Object.keys(s.regions).length === Object.keys(REGIONS).length) || errs.join('; ') || 'missing capacity';
+  });
+  check('ns03_project_contribution', 'An active project adds its LR-profile capacity (documented as project evidence)', () => {
+    const a = run(fx()).state, b = run(fx({ projects: [nsProj('rail', 'QLD', 'inland_rail_hub')] })).state;
+    const d = net(b, 'QLD', 'freight').localCapacity - net(a, 'QLD', 'freight').localCapacity;
+    return (Math.abs(d - (LR_PROJECT_PROFILE.inland_rail_hub.capacity.transport || 0)) < 0.6 && net(b, 'QLD', 'freight').sources.some(x => x.source === 'project:rail')) || `delta ${d}`;
+  });
+  check('ns04_damaged', 'Damaged infrastructure contributes reduced capacity (status factor), under construction contributes none', () => {
+    const act = run(fx({ projects: [nsProj('g', 'SA', 'renewable_grid')] })).state, dmg = run(fx({ projects: [nsProj('g', 'SA', 'renewable_grid', 'damaged')] })).state, uc = run(fx({ projects: [nsProj('g', 'SA', 'renewable_grid', 'under_construction')] })).state, none = run(fx()).state;
+    const e = (s: NationalSystemsState) => net(s, 'SA', 'energy').localCapacity;
+    return (e(dmg) < e(act) && e(dmg) > e(none) && Math.abs(e(uc) - e(none)) < 0.01) || `${e(none)} ${e(uc)} ${e(dmg)} ${e(act)}`;
+  });
+  check('ns05_water', 'Water: drought crisis and open water needs raise demand; a pipeline raises capacity', () => {
+    const base = run(fx()).state;
+    const dry = run(fx({ crises: [{ id: 'c1', name: 'Severe Drought', category: 'environmental', status: 'active', affectedRegions: ['SA'] }], regions: { SA: { needs: [{ category: 'water', severity: 'high' }] } } })).state;
+    const pipe = run(fx({ projects: [nsProj('w', 'SA', 'water_pipeline')] })).state;
+    return (net(dry, 'SA', 'water').demand > net(base, 'SA', 'water').demand && net(pipe, 'SA', 'water').localCapacity > net(base, 'SA', 'water').localCapacity) || 'water not responsive';
+  });
+  check('ns06_digital', 'Digital: a data centre raises capacity; technology sectors raise demand', () => {
+    const base = run(fx()).state, dc = run(fx({ projects: [nsProj('d', 'VIC', 'data_center')] })).state, tech = run(fx({ regions: { VIC: { sectors: { technology: 80, research: 50 } } } })).state;
+    return (net(dc, 'VIC', 'digital').localCapacity > net(base, 'VIC', 'digital').localCapacity && net(tech, 'VIC', 'digital').demand > net(base, 'VIC', 'digital').demand) || 'digital not responsive';
+  });
+  check('ns07_energy_sharing', 'Energy surplus flows to a neighbouring deficit (bounded, recorded as flow + provider)', () => {
+    const s = run(vicDeficit({ projects: [nsProj('g', 'SA', 'renewable_grid')] })).state;
+    const v = net(s, 'VIC', 'energy');
+    return (v.importedCapacity > 0 && v.providers.length > 0 && s.flows.some(f => f.network === 'energy' && f.toRegionId === 'VIC')) || JSON.stringify(v).slice(0, 200);
+  });
+  check('ns08_link_cap', 'Transfers never exceed corridor capacity', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'SA', b: 'VIC', base: { energy: 3 }, label: 'test' }];
+    const s = run(vicDeficit({ modifiers: { VIC: { energy: -30 }, SA: { energy: 40 } }, corridors })).state;
+    const l = Object.values(s.links).find(x => x.network === 'energy')!;
+    return (net(s, 'VIC', 'energy').importedCapacity <= 3.01 && net(s, 'VIC', 'energy').importedCapacity > 2.9 && l.used <= l.effectiveCapacity + 0.01 && Object.values(s.links).every(x => x.used <= x.effectiveCapacity + 0.01)) || `imported ${net(s, 'VIC', 'energy').importedCapacity}`;
+  });
+  check('ns09_export_limit', 'A provider never exports beyond its reserve-protected surplus', () => {
+    const s = run(fx({ modifiers: { VIC: { energy: -60 }, NSW: { energy: -60 } } })).state;
+    const errs = validateNationalSystemsState(s).filter(e => /exported beyond/.test(e));
+    const ok = Object.values(s.regions).every(r => NATIONAL_NETWORKS.every(n => r.networks[n].exportedCapacity <= Math.max(0, r.networks[n].localCapacity - r.networks[n].demand) + 0.2));
+    return (ok && !errs.length) || errs.join('; ');
+  });
+  check('ns10_multiple_demanders', 'Two deficits sharing one provider: total exported stays within its surplus; the larger deficit is served first', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'SA', b: 'VIC', base: { energy: 30 }, label: 't' }, { a: 'NSW', b: 'SA', base: { energy: 30 }, label: 't' }];
+    const s = run(fx({ modifiers: { VIC: { energy: -40 }, NSW: { energy: -20 }, SA: { energy: 12 } }, corridors })).state;
+    const sa = net(s, 'SA', 'energy');
+    const sur = Math.max(0, sa.localCapacity - sa.demand);
+    return (sa.exportedCapacity <= sur + 0.2 && net(s, 'VIC', 'energy').importedCapacity >= net(s, 'NSW', 'energy').importedCapacity) || `SA exp ${sa.exportedCapacity} sur ${sur} VIC ${net(s, 'VIC', 'energy').importedCapacity} NSW ${net(s, 'NSW', 'energy').importedCapacity}`;
+  });
+  check('ns11_tie_break', 'Equal providers resolve by stable code order, identically every time', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'NSW', b: 'VIC', base: { energy: 30 }, label: 't' }, { a: 'SA', b: 'VIC', base: { energy: 30 }, label: 't' }];
+    const i = fx({ modifiers: { VIC: { energy: -30 }, NSW: { energy: 40 }, SA: { energy: 40 } }, corridors });
+    const a = run(i).state, b = run(i).state;
+    const first = net(a, 'VIC', 'energy').providers.sort((x, y) => y.amount - x.amount || x.regionId.localeCompare(y.regionId))[0];
+    return (nsStrip(a) === nsStrip(b) && first?.regionId === 'NSW') || JSON.stringify(net(a, 'VIC', 'energy').providers);
+  });
+  check('ns12_bottleneck', 'Demand beyond capacity (after sharing) becomes a documented bottleneck', () => {
+    const s = run(fx({ modifiers: { WA: { freight: -45 } }, corridors: [] })).state;
+    const b = s.bottlenecks.find(x => x.id === 'bn:freight:WA');
+    return (Boolean(b) && b!.reason.length > 10 && NS_COND_RANK[net(s, 'WA', 'freight').condition] >= 3) || `${net(s, 'WA', 'freight').condition} ${s.bottlenecks.map(x => x.id)}`;
+  });
+  check('ns13_hysteresis', 'Utilisation hovering near a band edge does not flicker the condition', () => {
+    const i0 = fx({ corridors: [] });
+    const cap0 = net(run(i0).state, 'WA', 'freight').localCapacity, dem = net(run(i0).state, 'WA', 'freight').demand;
+    const at = (u: number) => fx({ corridors: [], modifiers: { WA: { freight: dem / u - cap0 } } });
+    let prev = run(at(1.1)).persisted;
+    const seen: string[] = [];
+    [1.05, 1.07, 1.045, 1.075].forEach(u => { const r = run(at(u), prev); prev = r.persisted; seen.push(net(r.state, 'WA', 'freight').condition); });
+    return seen.every(c => c === 'bottlenecked') || seen.join(',');
+  });
+  check('ns14_resolved_once', 'A resolved bottleneck emits exactly one resolved event (cooldown + band memory)', () => {
+    const bad = fx({ corridors: [], modifiers: { WA: { freight: -45 } } }), good = fx({ corridors: [], modifiers: { WA: { freight: 40 } } });
+    let p = run(bad).persisted;
+    const evs: NationalDerivedEvent[] = [];
+    [good, good, good].forEach((i, k) => { const r = run({ ...i, turn: 6 + k }, p); p = r.persisted; evs.push(...r.derived); });
+    return evs.filter(e => e.kind === 'national_bottleneck_resolved' && e.subjectId === 'WA').length === 1 || evs.map(e => e.kind).join(',');
+  });
+  check('ns15_dependency', 'A large single-provider import becomes a critical dependency', () => {
+    const s = run(fx({ corridors: [{ a: 'SA', b: 'VIC', base: { energy: 60 }, label: 't' }], modifiers: { VIC: { energy: -22 }, SA: { energy: 40 } } })).state;
+    const d = s.dependencies.find(x => x.consumerRegionId === 'VIC' && x.providerRegionId === 'SA' && x.network === 'energy');
+    return (Boolean(d) && (d!.importance === 'critical' || d!.importance === 'high') && d!.alternativeProviders.length === 0) || JSON.stringify(s.dependencies.slice(0, 3));
+  });
+  check('ns16_redundancy', 'A second provider (redundancy) lowers dependency importance', () => {
+    const one = run(fx({ corridors: [{ a: 'SA', b: 'VIC', base: { energy: 60 }, label: 't' }], modifiers: { VIC: { energy: -22 }, SA: { energy: 40 } } })).state;
+    const two = run(fx({ corridors: [{ a: 'SA', b: 'VIC', base: { energy: 4 }, label: 't' }, { a: 'NSW', b: 'VIC', base: { energy: 4 }, label: 't' }], modifiers: { VIC: { energy: -22 }, SA: { energy: 40 }, NSW: { energy: 40 } } })).state;
+    const fragile = (s: NationalSystemsState) => s.dependencies.filter(d => d.consumerRegionId === 'VIC' && d.fragile).length;
+    return (fragile(one) > 0 && fragile(two) === 0 && two.dependencies.some(d => d.consumerRegionId === 'VIC' && d.alternativeProviders.length > 0)) || `${fragile(one)} vs ${fragile(two)}`;
+  });
+  check('ns17_crisis', 'An active crisis cuts matching network capacity and constrains its corridors; inactive crises do nothing', () => {
+    const base = run(fx()).state;
+    const cy = run(fx({ crises: [{ id: 'cy', name: 'Cyclone Alfred', category: 'environmental', status: 'active', affectedRegions: ['QLD'] }] })).state;
+    const off = run(fx({ crises: [{ id: 'cy', name: 'Cyclone Alfred', category: 'environmental', status: 'resolved', affectedRegions: ['QLD'] }] })).state;
+    const lq = Object.values(cy.links).find(l => l.network === 'freight' && (l.fromRegionId === 'QLD' || l.toRegionId === 'QLD'))!;
+    return (net(cy, 'QLD', 'freight').localCapacity < net(base, 'QLD', 'freight').localCapacity && lq.activeConstraints.length > 0 && nsStrip(off) === nsStrip({ ...base, inputHash: off.inputHash, revision: off.revision })) || 'crisis effect wrong';
+  });
+  check('ns18_living_regions', 'Living Regions interprets a national bottleneck as its own condition, and clears it when resolved', () => {
+    const s = createLRFixtureInputs();
+    const lr = initializeLivingRegions(s);
+    const d: NationalDerivedEvent = { id: 'nsx', turn: s.turn, kind: 'national_bottleneck_formed', network: 'freight', subjectId: 'QLD', regionIds: ['QLD'], text: 'Queensland freight became bottlenecked.', significance: 'meaningful', evidence: [] };
+    const a = lrApplyWorldEvent(lr, nsToWorldEvent(d, ['player', 'ai']), s).state;
+    const has = a.regions.QLD.conditions.some(c => c.kind === 'infrastructure_bottleneck' && c.source === 'national systems');
+    const b = lrApplyWorldEvent(a, nsToWorldEvent({ ...d, id: 'nsy', kind: 'national_bottleneck_resolved' }, ['player', 'ai']), s).state;
+    return (has && !b.regions.QLD.conditions.some(c => c.kind === 'infrastructure_bottleneck' && c.source === 'national systems')) || 'LR did not interpret';
+  });
+  check('ns19_contracts', 'Contract content requires a real network condition (bottleneck/dependency) — never invented', () => {
+    const tpl = CONTRACT_TEMPLATE_REGISTRY.find(t => t.id === 'nat_freight_capacity');
+    const ctx = (cond: NationalNetworkCondition | null) => ({ regions: { QLD: { name: 'Queensland' } }, national: cond ? { QLD: { freight: cond } } : null, nationalDeps: [] }) as any;
+    const req: ContentReq = { k: 'network', network: 'freight', conditions: ['bottlenecked', 'critical'] };
+    const dep: ContentReq = { k: 'dependency', network: 'energy', critical: true };
+    const depCtx = { regions: { VIC: { name: 'Victoria' } }, national: {}, nationalDeps: [{ consumer: 'VIC', provider: 'SA', network: 'energy', importance: 'critical' }] } as any;
+    return (Boolean(tpl) && (tpl as any).requires.some((r: any) => r.k === 'network') && evaluateContentReq(req, ctx('bottlenecked'), 'QLD', null).ok && !evaluateContentReq(req, ctx('healthy'), 'QLD', null).ok && !evaluateContentReq(req, ctx(null), 'QLD', null).ok && evaluateContentReq(dep, depCtx, 'VIC', null).ok) || 'content gating wrong';
+  });
+  check('ns20_factions', 'World Reaction routes national bottlenecks to Factions, Living Regions and Contracts (they interpret; NS owns none)', () => {
+    const subs = (k: SWRKind) => SWR_SUBSCRIPTIONS.filter(x => x.kinds.includes(k)).map(x => x.system);
+    const f = subs('national_bottleneck_formed');
+    return (['factions', 'living_regions', 'contracts', 'rival_strategy', 'gi3', 'team_os'].every(x => f.includes(x as any)) && subs('national_dependency_became_critical').includes('diplomacy' as any)) || f.join(',');
+  });
+  check('ns21_swr_event', 'A band transition becomes one public World Reaction root event with region/network tags', () => {
+    let p = run(fx({ corridors: [] })).persisted;
+    const r = run({ ...fx({ corridors: [], modifiers: { WA: { freight: -45 } } }), turn: 6 }, p);
+    const d = r.derived.find(x => x.kind === 'national_bottleneck_formed' && x.subjectId === 'WA');
+    if (!d) return `no event: ${r.derived.map(x => x.kind)}`;
+    const e = nsToWorldEvent(d, ['player', 'ai']);
+    return (e.visibility === 'public' && e.reactionDepth === 0 && e.rootEventId === e.id && e.tags.includes('network:freight') && e.tags.includes('region:WA') && e.sourceSystem === 'national_systems') || JSON.stringify(e).slice(0, 200);
+  });
+  check('ns22_swr_cycle', 'NS → Living Regions → NS loop settles: no repeated events, bounded total', () => {
+    const s = createLRFixtureInputs();
+    let lr = initializeLivingRegions(s);
+    let p: NationalSystemsPersisted | null = null;
+    let total = 0; let last = -1;
+    for (let k = 0; k < 6; k++) {
+      const i = buildNationalSystemsInputs({ turn: s.turn + k, lr, projects: s.projects as any, crises: [], modifiers: { QLD: { freight: -80 } } });
+      const r = computeNationalSystems(i, p);
+      p = r.persisted; total += r.derived.length; last = r.derived.length;
+      r.derived.forEach(d => { lr = lrApplyWorldEvent(lr, nsToWorldEvent(d, ['player']), s).state; });
+    }
+    return (total <= 12 && last === 0) || `total ${total} last ${last}`;
+  });
+  check('ns23_whatif_isolation', 'What-If projection never mutates inputs or persisted memory', () => {
+    const i = fx({ modifiers: { QLD: { freight: -30 } } });
+    const p = run(i).persisted;
+    const bi = JSON.stringify(i), bp = JSON.stringify(p);
+    const imp = projectNationalImpact(i, p, { projectType: 'freight_rail_upgrade', regionId: 'QLD' });
+    return (JSON.stringify(i) === bi && JSON.stringify(p) === bp && imp.after.regions.QLD.networks.freight.localCapacity > imp.before.regions.QLD.networks.freight.localCapacity) || 'mutated or no effect';
+  });
+  check('ns24_save_load', 'Persisted memory survives JSON save/load and reproduces the same snapshot', () => {
+    const i = fx({ modifiers: { WA: { freight: -45 } } });
+    const a = run(i);
+    const loaded = sanitizeNationalSystemsPersisted(JSON.parse(JSON.stringify(a.persisted)))!;
+    return (JSON.stringify(loaded) === JSON.stringify(a.persisted) && nsStrip(run(i, loaded).state) === nsStrip(run(i, a.persisted).state)) || 'round trip differs';
+  });
+  check('ns25_old_save', 'Pre-V10 save: no national memory → initialised from state with no fake history or events', () => {
+    const none = sanitizeNationalSystemsPersisted(undefined);
+    const r = run(fx({ modifiers: { WA: { freight: -45 } } }), none);
+    return (none === null && r.derived.length === 0 && r.persisted.history.length === 0 && r.persisted.initializedTurn === 5 && sanitizeNationalSystemsPersisted({ junk: true, history: [{ bad: 1 }] })!.history.length === 0) || 'fake history';
+  });
+  check('ns26_replay', 'Replaying the same input sequence reproduces identical history and hashes', () => {
+    const seq = [fx({ turn: 1 }), fx({ turn: 2, modifiers: { WA: { freight: -45 } } }), fx({ turn: 3, modifiers: { WA: { freight: -45 }, VIC: { energy: -30 } } }), fx({ turn: 4 }), fx({ turn: 7 })];
+    const play = () => { let p: NationalSystemsPersisted | null = null; const log: string[] = []; seq.forEach(i => { const r = computeNationalSystems(i, p); p = r.persisted; log.push(r.state.inputHash, ...r.derived.map(d => d.id)); }); return JSON.stringify({ log, p }); };
+    return play() === play() || 'replay diverged';
+  });
+  check('ns27_disabled', 'Setting OFF: default ON, match-scoped, and every consumer is inert without a snapshot', () => {
+    return ((DEFAULT_GAME_SETTINGS as any).nationalSystemsEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('nationalSystemsEnabled') && nationalRegionOutlook(null, 'QLD').factor === 0 && nationalPlayStrip(null).length === 0 && nationalContentTags(null, 'QLD').length === 0 && detectNationalSystemsQuery('where are the bottlenecks', { national: null } as any) === null) || 'not inert';
+  });
+  check('ns28_ai', 'AI outlook is bounded (−0.1…+0.06) and lower for bottlenecked regions', () => {
+    const s = run(fx({ modifiers: { WA: { freight: -45 } }, corridors: [] })).state;
+    const all = Object.keys(s.regions).map(c => nationalRegionOutlook(s, c).factor);
+    return (all.every(f => f >= -0.1 && f <= 0.06) && nationalRegionOutlook(s, 'WA').factor < 0 && Boolean(nationalRegionOutlook(s, 'WA').reason)) || all.join(',');
+  });
+  check('ns29_human_vs_ai', 'Human VS AI safe: compute never mutates inputs; the AI nudge only rescales existing candidates', () => {
+    const i = fx({ modifiers: { WA: { freight: -45 } }, corridors: [] });
+    const frozen = JSON.parse(JSON.stringify(i));
+    const deep = (o: any) => { Object.freeze(o); Object.values(o).forEach(v => { if (v && typeof v === 'object' && !Object.isFrozen(v)) deep(v); }); return o; };
+    const s = computeNationalSystems(deep(frozen)).state;
+    const cands = [{ type: 'region_deposit', data: { region: 'WA' }, score: 10 }, { type: 'travel', data: { region: 'NSW' }, score: 10 }, { type: 'sell', data: {}, score: 10 }];
+    const before = cands.length;
+    cands.forEach(c => { if (c.type === 'region_deposit' || c.type === 'travel') c.score *= 1 + nationalRegionOutlook(s, c.data.region!).factor; });
+    return (cands.length === before && cands[0].score < 10 && cands[2].score === 10 && typeof isHumanLockedOutForSoloRival === 'function') || 'nudge changed the candidate set';
+  });
+  check('ns30_performance', 'Recompute is fast and bounded (50 recomputes)', () => {
+    const i = fx({ projects: [nsProj('a', 'QLD', 'inland_rail_hub'), nsProj('b', 'SA', 'renewable_grid'), nsProj('c', 'VIC', 'data_center')], modifiers: { VIC: { energy: -30 }, WA: { freight: -45 } } });
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let p: NationalSystemsPersisted | null = null;
+    for (let k = 0; k < 50; k++) { const r = computeNationalSystems({ ...i, turn: k }, p); p = r.persisted; if (r.state.flows.length > NATIONAL_LIMITS.flows || r.persisted.history.length > NATIONAL_LIMITS.history) return 'unbounded'; }
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return ms < 1500 || `${Math.round(ms)}ms`;
+  });
+  check('ns31_extreme_demand', 'Extreme demand / negative capacity stays finite and valid (critical, never NaN)', () => {
+    const hot = { devScore: 100, econScore: 100, momentum: 1, sectors: { mining: 100, manufacturing: 100, technology: 100, trade: 100, agriculture: 100 } as any };
+    const s = run(fx({ regions: Object.fromEntries(Object.keys(REGIONS).map(c => [c, hot])), modifiers: { NT: { energy: -9999 } } })).state;
+    return (validateNationalSystemsState(s).length === 0 && net(s, 'NT', 'energy').condition === 'critical' && Number.isFinite(s.national.resilienceScore)) || validateNationalSystemsState(s).join('; ');
+  });
+  check('ns32_no_links', 'No corridors: nothing is shared and no flows appear', () => {
+    const s = run(fx({ corridors: [], modifiers: { VIC: { energy: -30 } } })).state;
+    return (s.flows.length === 0 && Object.keys(s.links).length === 0 && Object.values(s.regions).every(r => NATIONAL_NETWORKS.every(n => r.networks[n].importedCapacity === 0))) || 'shared without links';
+  });
+  check('ns33_map_mode', 'Map network mode: badges carry icon + label (not colour alone); width follows capacity band; dash differs by condition', () => {
+    const s = run(fx({ modifiers: { WA: { freight: -45 } }, corridors: [] })).state;
+    const b = nationalMapBadge(s, 'WA', 'freight');
+    return (Boolean(b) && b!.text.includes(NATIONAL_CONDITION_ICON[b!.condition]) && b!.text.includes(NATIONAL_CONDITION_LABEL[b!.condition]) && nationalLinkWidth(40) > nationalLinkWidth(10) && nationalLinkWidth(10) > nationalLinkWidth(2) && NATIONAL_CONDITION_DASH.healthy !== NATIONAL_CONDITION_DASH.bottlenecked) || JSON.stringify(b);
+  });
+  check('ns34_fog', 'Fog: national state uses only public structural inputs (no deposits, controllers or hidden actor data)', () => {
+    const s = createLRFixtureInputs({ fogOfWar: true });
+    const lr = initializeLivingRegions(s);
+    const i = buildNationalSystemsInputs({ turn: s.turn, lr, projects: s.projects as any, crises: [] });
+    const txt = JSON.stringify(i) + JSON.stringify(computeNationalSystems(i).state);
+    return (!/deposit|controller|standing|ownerKey/i.test(txt)) || 'hidden data leaked';
+  });
+  check('ns35_public_good', 'Public good: a player-funded project can help neighbours (including rivals) — reported, not hidden', () => {
+    const tight = Object.fromEntries(Object.keys(REGIONS).map(c => [c, { energy: c === 'VIC' ? -20 : -13 }]));
+    const i = fx({ modifiers: tight });
+    const imp = projectNationalImpact(i, null, { projectType: 'renewable_grid', regionId: 'SA' });
+    const gw = { national: { state: imp.before, inputs: i, persisted: null, regionOwners: { SA: 'you', VIC: 'rival' } } } as any;
+    const q = detectNationalSystemsQuery('What if I build a renewable grid in South Australia?', gw);
+    const ans = q ? composeNationalSystemsAnswer(q, gw) : null;
+    const text = ans ? ans.sections.flatMap(x => x.claims.map(c => c.text)).join(' ') : '';
+    return (imp.beneficiaries.includes('VIC') && /Public good/.test(text) && /Value to your strategy/.test(text) && ans!.sections.some(x => x.claims.some(c => c.kind === 'projection'))) || `${imp.beneficiaries} :: ${text.slice(0, 200)}`;
+  });
+  return results;
+}
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -137424,6 +138707,7 @@ function AustraliaGame() {
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
   const swrViewRef = useRef<WorldReactionWorldView | null>(null);
   const lrViewRef = useRef<LivingRegionsWorldView | null>(null);
+  const nsViewRef = useRef<NationalSystemsWorldView | null>(null);
   const rfViewRef = useRef<RegionalFactionsWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
   // section below has been evaluated for this render).
@@ -143387,6 +144671,19 @@ function dispatchGameSettingsChange(
 	          if (decision.type === 'cashout_region') decision.score *= 0.5;
 	        }
 	      });
+
+	      // V10.0: bounded national-network awareness — regions whose networks are healthy/improving score slightly
+	      // higher, bottlenecked/dependent ones slightly lower (±10% max). Reads the derived snapshot; adds no actions.
+	      const v10Ns = nsStateRef.current;
+	      if (v10Ns) {
+	        decisions.forEach(decision => {
+	          if (decision.type !== 'region_deposit' && decision.type !== 'invest' && decision.type !== 'travel') return;
+	          const regionCode = String(decision.data?.region || '');
+	          if (!regionCode) return;
+	          const outlook = nationalRegionOutlook(v10Ns, regionCode);
+	          if (outlook.factor !== 0) decision.score *= 1 + outlook.factor;
+	        });
+	      }
 
 	      // V9.6: candidates that already failed this turn are dropped before ranking, so the next-best legal
 	      // action is chosen (or end_turn when nothing is left) instead of retrying the same failure.
@@ -166161,6 +167458,7 @@ function dispatchGameSettingsChange(
       worldReaction: swrViewRef.current,
       livingRegions: lrViewRef.current,
       factions: rfViewRef.current,
+      national: nsViewRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -167445,6 +168743,8 @@ function dispatchGameSettingsChange(
   const lrObservers = useMemo(() => swrInputs.actors.map(a => a.id), [swrInputs.actors]);
   const [lrMapMode, setLrMapMode] = useState<LRMapMode>('control');
   const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
+  const [nsMapNetwork, setNsMapNetwork] = useState<NationalMapNetwork>(null);
+  const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
   // Factions read Living Regions + World Reaction events (via the router's derive hook), advance once per round,
@@ -167670,6 +168970,64 @@ function dispatchGameSettingsChange(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lrHashKey, swrEnabled]);
 
+  // ---- V10.0 National Systems: live wiring ---------------------------------------------------------------
+  // Recomputed only when its compact input hash changes (infrastructure status, Living Regions structure, crises,
+  // scenario modifiers) — never per render. Meaningful band transitions become World Reaction ROOT events, so
+  // root/depth/budget/dedupe rules apply; Living Regions and Factions interpret them in the same pass.
+  const nsEnabled = Boolean(swrEnabled && gameSettings.nationalSystemsEnabled !== false);
+  const nsStoredRaw = (gameState as any).nationalSystems;
+  const nsPersisted = useMemo(() => sanitizeNationalSystemsPersisted(nsStoredRaw), [nsStoredRaw]);
+  const nsPersistedRef = useRef<NationalSystemsPersisted | null>(nsPersisted);
+  nsPersistedRef.current = nsPersisted;
+  const nsScenarioModifiers = useMemo(() => {
+    const sc: any = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
+    return sc && sc.nationalNetworks && typeof sc.nationalNetworks === 'object' ? sc.nationalNetworks as NationalSystemsInputs['modifiers'] : undefined;
+  }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
+  const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
+    turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any,
+    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsScenarioModifiers
+  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, (gameState as any).crisisChainState, nsScenarioModifiers]);
+  const nsHash = useMemo(() => nationalSystemsInputHash(nsInputs), [nsInputs]);
+  const nsState = useMemo<NationalSystemsState | null>(() => (nsEnabled ? computeNationalSystems(nsInputs, nsPersistedRef.current, { emit: false }).state : null),
+    [nsEnabled, nsHash, nsPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nsStateRef = useRef<NationalSystemsState | null>(nsState);
+  nsStateRef.current = nsState;
+  const nsRegionOwners = useMemo(() => {
+    const out: Record<string, 'you' | 'rival' | 'neutral'> = {};
+    lrInputs.regions.forEach(r => { out[r.code] = !r.controller ? 'neutral' : lrViewerKeys.includes(r.controller) ? 'you' : 'rival'; });
+    return out;
+  }, [lrInputs.regions, lrViewerKeys]);
+  nsViewRef.current = nsState ? { state: nsState, inputs: nsInputs, persisted: nsPersisted, regionOwners: nsRegionOwners } : null;
+  const nsDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!nsEnabled) return;
+    const prev = nsPersistedRef.current;
+    if (prev && prev.inputHash === nsHash && prev.initializedTurn !== null) return;
+    const res = computeNationalSystems(nsInputs, prev && prev.initializedTurn !== null ? prev : null);
+    const d = nsDiagRef.current;
+    d.recomputes += 1; d.lastMs = res.state.computeMs; d.lastReason = !prev || prev.initializedTurn === null ? 'initialised from canonical state (no history invented)' : 'canonical inputs changed';
+    if (res.derived.length) {
+      d.eventsEmitted += res.derived.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.derived.map(x => nsToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.derived.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: `national_${x.kind}`, summary: x.text } as any));
+    }
+    nsPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalSystems: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nsHash, nsEnabled]);
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -167687,7 +169045,7 @@ function dispatchGameSettingsChange(
     const regions: V9CohesionInputs['regions'] = {};
     (lrInputs.regions || []).forEach(r => {
       const reg = lrs?.regions[r.code];
-      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
+      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
     });
     const events: V9CohesionEvent[] = [];
     if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
@@ -167741,7 +169099,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [nsState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167788,6 +169146,7 @@ function dispatchGameSettingsChange(
       standing: gs.standingPerActor || {},
       diplomacy: { enabled: Boolean(dnView?.enabled), pactExpiring: deals.some(d => d?.status === 'active' && typeof d.expirationTurn === 'number' && d.expirationTurn - dnRound <= 2), tension },
       strategyRegion: goals.find(g => g?.regionId && g.status !== 'completed')?.regionId || null,
+      national: nsStateRef.current,
       campaignVars: gs.campaignState?.campaignVariables || {},
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
       projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
@@ -168063,9 +169422,17 @@ function dispatchGameSettingsChange(
       overrideOfAdvice: (bgLive?.overrides || []).length > 0, blocked: null,
       contentDilemma: contentState?.activeDilemma?.title || null,
       contentOpportunity: contentState?.opportunities[0]?.title || null,
-      contentEvent: ((gameState.activeEvents || []) as any[]).find(e => e?.v93 && (e.v93.kind === 'event' || e.v93.kind === 'rare'))?.name || null
+      contentEvent: ((gameState.activeEvents || []) as any[]).find(e => e?.v93 && (e.v93.kind === 'event' || e.v93.kind === 'rare'))?.name || null,
+      nationalConstraint: (() => {
+        const ns = nsState; if (!ns) return null;
+        const here = String(player.currentRegion || '');
+        const b = ns.bottlenecks.find(x => x.regionId === here) || ns.bottlenecks.find(x => x.regionId);
+        if (b) return `${NATIONAL_NETWORK_ICON[b.network]} ${REGIONS[b.regionId!]?.name || b.regionId} has a ${NATIONAL_NETWORK_LABEL[b.network].toLowerCase()} bottleneck: demand is outrunning capacity.`;
+        const d = ns.dependencies.find(x => x.importance === 'critical');
+        return d ? `${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId} relies heavily on ${REGIONS[d.providerRegionId]?.name || d.providerRegionId} for ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}.` : null;
+      })()
     };
-  }, [player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -172436,6 +173803,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center justify-between gap-2">
                     <span className="font-semibold">Dynamic situations (contracts, decisions, events, crises)</span>
                     <input type="checkbox" checked={gameSettings.v93ContentEnabled !== false} onChange={e => trackedSetGameSettings('direct_player_change', '🎲 Match Variety', prev => ({ ...prev, v93ContentEnabled: e.target.checked }))} />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v10-setting-national">
+                    <input type="checkbox" checked={gameSettings.nationalSystemsEnabled !== false} onChange={e => trackedSetGameSettings('direct_player_change', '🇦🇺 National Systems', prev => ({ ...prev, nationalSystemsEnabled: e.target.checked }))} />
+                    National Systems (V10): regions share freight, energy, water, trade and digital capacity — bottlenecks, dependencies and resilience
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -183983,6 +185354,8 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {nsState && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
+
           {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} />}
 
           <div className="text-xs">
@@ -184136,6 +185509,11 @@ function dispatchGameSettingsChange(
                 <LivingRegionsPlayStrip view={lrViewRef.current} turn={dnRound} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
                 <FactionsPlayStrip view={rfViewRef.current} turn={dnRound} onCommit={rfCommit} onView={code => { setLrFocusRegion(code); updateUiState({ showMap: true, experienceLayer: 'play' }); }} />
               </div>
+            )}
+            {nsState && (
+              <OptionalSurfaceBoundary surface="National Systems">
+                <NationalSystemsIntelPanel state={nsState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />
+              </OptionalSurfaceBoundary>
             )}
             {swrEnabled && (
               <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
@@ -184293,6 +185671,9 @@ function dispatchGameSettingsChange(
             lastProgressAt={lastActorActionTimeRef.current}
             currentActionLabel={currentAiAction?.description || null}
           />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10 National Systems Inspector">
+          <NationalSystemsInspector state={nsState} persisted={nsPersisted} inputs={nsInputs} theme={themeStyles} diag={nsDiagRef.current} enabled={nsEnabled} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Release Readiness Center">
           <ReleaseReadinessCenter
@@ -185611,8 +186992,9 @@ function dispatchGameSettingsChange(
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
-                    <select aria-label="Map layer" data-testid="lr-map-mode" value={lrMapMode} onChange={e => setLrMapMode(e.target.value as LRMapMode)} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; if (v.startsWith('net:')) setNsMapNetwork(v.slice(4) as NationalNetworkKind); else { setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
                     </select>
                   </label>
                 )}
@@ -185624,7 +187006,8 @@ function dispatchGameSettingsChange(
                 </button>
               </div>
               
-	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden">
+	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
+	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
 	                  const isPlayerTeamHere = isTeamMode ? playerTeamActors.some(actor => actor.currentRegion === code) : isPlayerHere;
@@ -185697,7 +187080,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {(() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -185793,6 +187176,12 @@ function dispatchGameSettingsChange(
                       onNegotiate={() => updateUiState({ showAiRivalryModal: true })}
                       more={<><LivingRegionCard view={lrViewRef.current} regionId={focus} onAsk={q => void submitIntelligenceQuery(q)} /><RegionStakeholdersPanel view={rfViewRef.current} regionId={focus} turn={dnRound} onCommit={rfCommit} onChoose={rfChoose} onFund={rfFund} onAsk={q => void submitIntelligenceQuery(q)} /></>}
                     />
+                    {nsState && (
+                      <OptionalSurfaceBoundary surface="National region networks">
+                        <NationalRegionNetworkPanel state={nsState} regionId={focus} theme={themeStyles} owners={nsRegionOwners} onAsk={q => void submitIntelligenceQuery(q)}
+                          whatIf={n => projectNationalImpact(nsInputs, nsPersistedRef.current, { projectType: NATIONAL_WHATIF_PROJECT[n], regionId: focus })} />
+                      </OptionalSurfaceBoundary>
+                    )}
                   </div>
                 );
               })()}
@@ -185857,6 +187246,12 @@ function dispatchGameSettingsChange(
                       </button>
                     </div>
                   </div>
+                  {nsState && (
+                    <OptionalSurfaceBoundary surface="National region networks">
+                      <NationalRegionNetworkPanel state={nsState} regionId={selectedPreviewRegionCode} theme={themeStyles} owners={nsRegionOwners} onAsk={q => void submitIntelligenceQuery(q)}
+                        whatIf={n => projectNationalImpact(nsInputs, nsPersistedRef.current, { projectType: NATIONAL_WHATIF_PROJECT[n], regionId: selectedPreviewRegionCode })} />
+                    </OptionalSurfaceBoundary>
+                  )}
                 </div>
               )}
 
@@ -194563,6 +195958,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="rf-debrief">
 	              <span className="font-bold text-indigo-300">Stakeholders: </span>
 	              {buildFactionDebrief(rfStateRef.current, rfPlayerId).join(' · ')}
+	            </div>
+	          )}
+	          {buildNationalDebrief(nsPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
+	              <span className="font-bold text-sky-300">National turning points: </span>
+	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildLivingRegionsDebrief(lrStateRef.current).length > 0 && (
