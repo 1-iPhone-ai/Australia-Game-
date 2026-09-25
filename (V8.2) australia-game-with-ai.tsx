@@ -131812,6 +131812,12 @@ export const V94_STYLESHEET = `
   [data-v94][data-motion="system"] button:active { transform: none !important }
   [data-v94][data-motion="system"] .v94-rise { opacity: 1 }
 }
+/* V9.6: the Human VS AI turn-owner pill keeps the familiar gentle V5 pulse — the one intentional persistent
+   pulse exception. Reduced motion (setting or OS) removes it; the pill itself stays fully visible. */
+@keyframes v96TurnOwnerPulse { 0%, 100% { opacity: 1 } 50% { opacity: .78 } }
+[data-v94] .v96-turn-owner-pulse { animation: v96TurnOwnerPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite }
+[data-v94][data-motion="reduced"] .v96-turn-owner-pulse { animation: none !important; opacity: 1 }
+@media (prefers-reduced-motion: reduce) { [data-v94] .v96-turn-owner-pulse { animation: none !important; opacity: 1 } }
 `;
 
 // ---- Shared visual semantics (color is never the only channel: icon + sign + label) ------------------------
@@ -135112,6 +135118,18 @@ export async function runV95ReleaseCheck(mode: 'quick' | 'full', onProgress?: (l
     checks.push(...v95WithIsolatedGlobals(() => runV95ExistingSuite(s)));
     done += 1;
   }
+  // V9.6 Human VS AI fidelity suite (async; isolated from the live match like every other suite).
+  onProgress?.('V9.6 Human VS AI turn flow', done, total);
+  await yieldToUi();
+  try {
+    const v96 = await v96WithIsolatedGlobalsAsync(() => runV96HumanVsAiFidelitySelfTests());
+    const failed = v96.filter(t => !t.passed);
+    checks.push({ id: 'v96:suite', name: 'V9.6 Human VS AI turn flow suite', section: 'AI Turn Reliability', severity: 'CRITICAL', passed: v96.length > 0 && failed.length === 0,
+      detail: `${v96.length - failed.length}/${v96.length} passed${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.id} (${f.detail.slice(0, 80)})`).join('; ')}` : ''}`,
+      expected: `${v96.length}/${v96.length}`, actual: `${v96.length - failed.length}/${v96.length}`, system: 'Human VS AI', reproduction: 'LAB › Human VS AI Turn Flow Inspector › Run Human VS AI Health' });
+  } catch (err) {
+    checks.push({ id: 'v96:threw', name: 'V9.6 Human VS AI turn flow suite', section: 'AI Turn Reliability', severity: 'BLOCKER', passed: false, detail: `Suite threw: ${err instanceof Error ? err.message : String(err)}` });
+  }
   onProgress?.('done', total, total);
   return { report: buildReleaseReadinessReport(checks, mode, Math.round(v95Now() - t0)), checks };
 }
@@ -135347,6 +135365,786 @@ export const ReleaseReadinessCenter: React.FC<{
           {V95_AUDIT_FINDINGS.map(f => (
             <div key={f.id} data-testid={`v95-finding-${f.id}`}><span className={V95_SEV_CLASS[f.severity]}>[{f.severity}]</span> {f.id} · {f.status === 'fixed' ? '✓ fixed' : f.status} · {f.system}: {f.title}</div>
           ))}
+        </div>
+      )}
+    </section>
+  );
+};
+
+
+// ============================================================================
+// SECTION 20R: V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN
+// ============================================================================
+// A small, pure, bounded controller for ONE solo rival-AI turn. It owns no game state: the component's
+// existing canonical executor (executeAiAction), decision engine (resolveSoloAiDecisionViaEngine), turn
+// transition, day advance and SET_TURN remain the only things that change the match. The controller only
+// decides whether the loop may continue and records what happened (ephemeral, never persisted).
+
+/** Solo modes whose rival AI takes its own turn through performAiTurn (team modes use their own engine). */
+export const isSoloRivalModeSelection = (mode: unknown): boolean => mode === 'ai' || mode === 'grand_tour' || mode === 'scenario';
+
+/** Named limits. A valid configuration never reaches the absolute ceilings; they are last-resort invariants. */
+export const V96_SOLO_AI_LIMITS = {
+  /** Same failure signature this many times in one turn → that candidate is rejected for the rest of the turn. */
+  MAX_SAME_SIGNATURE_FAILURES: 2,
+  /** Failed attempts in a row with no commit in between → the turn ends. */
+  MAX_CONSECUTIVE_FAILURES: 4,
+  /** Attempts allowed per unit of successful-action capacity (failures alternate / replans). */
+  RETRY_MULTIPLIER: 3,
+  /** Extra attempts on top of capacity × multiplier (lets a turn with budget 1 still recover twice). */
+  ATTEMPT_MARGIN: 3,
+  /** Commits in a row that leave the progress fingerprint unchanged → the turn ends (zero-AP / no-op loops). */
+  MAX_NO_PROGRESS_COMMITS: 3,
+  /** Absolute ceilings, far above any legal configuration (12 actions/day + 3 overrides). */
+  MAX_ACTION_COMMITS_PER_TURN: 40,
+  MAX_DECISION_ATTEMPTS_PER_TURN: 120,
+  /** A turn whose loop throws is retried at most this many times before it is safely ended. */
+  MAX_FATAL_RECOVERIES_PER_TURN: 2,
+  /** Canonical override grant — identical to the human USE_ACTION_OVERRIDE default (+1 action). */
+  OVERRIDE_ACTIONS_GRANTED: 1,
+  /** Diagnostic timeline bound. */
+  TIMELINE_CAP: 60
+} as const;
+
+export type SoloAiTurnPhase = 'idle' | 'thinking' | 'acting' | 'replanning' | 'ending' | 'finished';
+export type SoloAiEndReason =
+  | 'budget_exhausted' | 'end_turn_selected' | 'no_legal_action' | 'consecutive_failures' | 'attempt_limit'
+  | 'safety_ceiling' | 'no_progress' | 'game_over' | 'ownership_lost' | 'stale_session' | 'fatal_error' | 'watchdog_recovery';
+
+export interface SoloAiTimelineEntry { seq: number; kind: string; detail: string; at: number }
+
+export interface SoloAiTurnRuntime {
+  turnKey: string;
+  phase: SoloAiTurnPhase;
+  baseBudget: number;
+  effectiveBudget: number;
+  successfulActions: number;
+  failedAttempts: number;
+  consecutiveFailures: number;
+  totalDecisionAttempts: number;
+  overridesUsed: number;
+  rejectedSignatures: Record<string, number>;
+  noProgressCommits: number;
+  lastFingerprint: string | null;
+  currentActionLabel: string | null;
+  lastFailureLabel: string | null;
+  endReason: SoloAiEndReason | null;
+  endIssued: boolean;
+  startedAt: number;
+  lastAttemptAt: number;
+  lastCommitAt: number;
+  lastProgressAt: number;
+  committedTypes: string[];
+  timeline: SoloAiTimelineEntry[];
+  seq: number;
+}
+
+export function createSoloAiTurnRuntime(turnKey: string, baseBudget: number, now: number): SoloAiTurnRuntime {
+  const budget = Math.max(0, Math.min(V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN, Math.floor(Number(baseBudget) || 0)));
+  const rt: SoloAiTurnRuntime = {
+    turnKey, phase: 'thinking', baseBudget: budget, effectiveBudget: budget,
+    successfulActions: 0, failedAttempts: 0, consecutiveFailures: 0, totalDecisionAttempts: 0, overridesUsed: 0,
+    rejectedSignatures: {}, noProgressCommits: 0, lastFingerprint: null, currentActionLabel: null, lastFailureLabel: null,
+    endReason: null, endIssued: false, startedAt: now, lastAttemptAt: now, lastCommitAt: now, lastProgressAt: now,
+    committedTypes: [], timeline: [], seq: 0
+  };
+  soloAiLog(rt, 'AI_TURN_STARTED', `budget=${budget}`, now);
+  return rt;
+}
+
+export function soloAiLog(rt: SoloAiTurnRuntime, kind: string, detail: string, at: number): void {
+  rt.seq += 1;
+  rt.timeline.push({ seq: rt.seq, kind, detail, at });
+  if (rt.timeline.length > V96_SOLO_AI_LIMITS.TIMELINE_CAP) rt.timeline.splice(0, rt.timeline.length - V96_SOLO_AI_LIMITS.TIMELINE_CAP);
+}
+
+/** Deterministic turn key from canonical state (+ the match epoch so a load/restart never reuses a claim). */
+export function computeSoloAiTurnKey(gs: { turnCounter?: number; day?: number } | null | undefined, epoch = 0): string {
+  return `ai:e${epoch}:t${Number(gs?.turnCounter) || 0}:d${Number(gs?.day) || 0}`;
+}
+
+export function soloAiMaxAttempts(rt: SoloAiTurnRuntime): number {
+  return Math.min(V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN,
+    Math.max(1, rt.effectiveBudget) * V96_SOLO_AI_LIMITS.RETRY_MULTIPLIER + V96_SOLO_AI_LIMITS.ATTEMPT_MARGIN);
+}
+
+/** The decision signature used to suppress retry storms (type + target + important parameters). */
+export function soloAiActionSignature(action: any): string {
+  const d = action?.data || {};
+  const parts = [action?.type, d.region, d.resource, d.itemId, d.recipeId, d.targetActorId, d.tierId, d.loanId, d.contractId, d.projectId,
+    d.challenge?.name, typeof d.amount === 'number' ? Math.round(d.amount) : undefined, typeof d.wager === 'number' ? Math.round(d.wager) : undefined];
+  return parts.map(p => (p === undefined || p === null ? '' : String(p))).join(':');
+}
+
+export function soloAiIsRejected(rt: SoloAiTurnRuntime, action: any): boolean {
+  return (rt.rejectedSignatures[soloAiActionSignature(action)] || 0) >= V96_SOLO_AI_LIMITS.MAX_SAME_SIGNATURE_FAILURES;
+}
+
+/** Why the loop must stop before choosing another action (null = may continue). Checked before EVERY decision. */
+export function soloAiStopReason(rt: SoloAiTurnRuntime, ctx: { stale?: boolean; ownershipLost?: boolean; gameOver?: boolean } = {}): SoloAiEndReason | null {
+  if (ctx.stale) return 'stale_session';
+  if (ctx.ownershipLost) return 'ownership_lost';
+  if (ctx.gameOver) return 'game_over';
+  if (rt.successfulActions >= V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN) return 'safety_ceiling';
+  if (rt.totalDecisionAttempts >= V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN) return 'safety_ceiling';
+  if (rt.successfulActions >= rt.effectiveBudget) return 'budget_exhausted';
+  if (rt.consecutiveFailures >= V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES) return 'consecutive_failures';
+  if (rt.noProgressCommits >= V96_SOLO_AI_LIMITS.MAX_NO_PROGRESS_COMMITS) return 'no_progress';
+  if (rt.totalDecisionAttempts >= soloAiMaxAttempts(rt)) return 'attempt_limit';
+  return null;
+}
+
+export function soloAiRecordDecision(rt: SoloAiTurnRuntime, action: any, now: number): void {
+  rt.totalDecisionAttempts += 1;
+  rt.lastAttemptAt = now;
+  rt.phase = 'acting';
+  rt.currentActionLabel = String(action?.description || action?.type || 'action');
+  soloAiLog(rt, 'AI_ACTION_SELECTED', `${action?.type || '?'} (${rt.totalDecisionAttempts}/${soloAiMaxAttempts(rt)})`, now);
+}
+
+export function soloAiRecordFailure(rt: SoloAiTurnRuntime, action: any, reason: string, now: number): void {
+  rt.failedAttempts += 1;
+  rt.consecutiveFailures += 1;
+  const sig = soloAiActionSignature(action);
+  rt.rejectedSignatures[sig] = (rt.rejectedSignatures[sig] || 0) + 1;
+  rt.lastFailureLabel = String(action?.description || action?.type || 'action');
+  rt.currentActionLabel = null;
+  rt.phase = 'replanning';
+  soloAiLog(rt, 'AI_REPLAN', `${action?.type || '?'} failed (${reason}); consecutive=${rt.consecutiveFailures}`, now);
+}
+
+/** Counts a success only after the canonical executor committed it; tracks real progress via the fingerprint. */
+export function soloAiRecordCommit(rt: SoloAiTurnRuntime, action: any, fingerprint: string, now: number): void {
+  rt.successfulActions += 1;
+  rt.consecutiveFailures = 0;
+  rt.lastCommitAt = now;
+  rt.committedTypes.push(String(action?.type || '?'));
+  if (rt.committedTypes.length > V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN) rt.committedTypes.shift();
+  if (rt.lastFingerprint !== null && fingerprint === rt.lastFingerprint) rt.noProgressCommits += 1;
+  else { rt.noProgressCommits = 0; rt.lastProgressAt = now; }
+  rt.lastFingerprint = fingerprint;
+  soloAiLog(rt, 'AI_ACTION_COMMITTED', `${action?.type || '?'} actions=${rt.successfulActions}/${rt.effectiveBudget}`, now);
+}
+
+/** Override capacity uses the canonical grant and the canonical daily cap — never a whole extra day of actions. */
+export function soloAiGrantOverride(rt: SoloAiTurnRuntime, now: number): boolean {
+  if (rt.overridesUsed >= OVERRIDE_DAILY_CAP) return false;
+  rt.overridesUsed += 1;
+  rt.effectiveBudget = Math.min(V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN, rt.effectiveBudget + V96_SOLO_AI_LIMITS.OVERRIDE_ACTIONS_GRANTED);
+  soloAiLog(rt, 'AI_OVERRIDE', `+${V96_SOLO_AI_LIMITS.OVERRIDE_ACTIONS_GRANTED} → budget ${rt.effectiveBudget}`, now);
+  return true;
+}
+
+/** Exactly-once finalisation gate: returns false if this turn already issued its end. */
+export function soloAiBeginFinalize(rt: SoloAiTurnRuntime, reason: SoloAiEndReason, now: number): boolean {
+  if (rt.endIssued) { soloAiLog(rt, 'AI_DUPLICATE_END_BLOCKED', reason, now); return false; }
+  rt.endIssued = true;
+  rt.endReason = reason;
+  rt.phase = 'ending';
+  rt.currentActionLabel = null;
+  soloAiLog(rt, 'AI_TURN_FINALIZING', `reason=${reason}`, now);
+  return true;
+}
+
+/** Cheap progress fingerprint over everything an AI action can legitimately change. */
+export function soloAiProgressFingerprint(ai: any, gs: any): string {
+  const inv = Array.isArray(ai?.inventory) ? [...ai.inventory].sort().join(',') : '';
+  const deposits = gs?.regionDeposits && typeof gs.regionDeposits === 'object'
+    ? Object.entries(gs.regionDeposits).map(([r, o]: [string, any]) => `${r}=${Number(o?.ai) || 0}`).join(',') : '';
+  const contracts = gs?.regionalContracts && typeof gs.regionalContracts === 'object'
+    ? Object.values(gs.regionalContracts).filter((c: any) => c && String(c.assignedActorId) === String(ai?.id || 'ai')).map((c: any) => `${c.id}:${c.status}:${JSON.stringify(c.objectiveProgress ?? c.progress ?? '')}`).join('|') : '';
+  return [Math.round(Number(ai?.money) || 0), Number(ai?.actionsUsedThisTurn) || 0, ai?.currentRegion || '', inv,
+    (ai?.investments || []).join(','), (ai?.equipment || []).join(','), (ai?.advancedLoans || []).length, Number(ai?.xp) || 0,
+    Number(ai?.level) || 0, deposits, contracts].join('#');
+}
+
+/** Single-flight claim registry (ephemeral). One loop per turn key, ever. */
+export interface SoloAiClaimRegistry { active: string | null; finished: string[]; fatal: Record<string, number>; duplicateStarts: number }
+export function createSoloAiClaimRegistry(): SoloAiClaimRegistry { return { active: null, finished: [], fatal: {}, duplicateStarts: 0 }; }
+export function claimSoloAiTurn(reg: SoloAiClaimRegistry, turnKey: string): boolean {
+  if (reg.active === turnKey || reg.finished.includes(turnKey)) { reg.duplicateStarts += 1; return false; }
+  reg.active = turnKey;
+  return true;
+}
+export function isSoloAiTurnClaimed(reg: SoloAiClaimRegistry, turnKey: string): boolean {
+  return reg.active === turnKey || reg.finished.includes(turnKey);
+}
+export function finishSoloAiTurnClaim(reg: SoloAiClaimRegistry, turnKey: string): void {
+  if (reg.active === turnKey) reg.active = null;
+  if (!reg.finished.includes(turnKey)) reg.finished.push(turnKey);
+  if (reg.finished.length > 50) reg.finished.splice(0, reg.finished.length - 50);
+}
+/** A thrown turn may be retried a bounded number of times; afterwards it must be safely ended. */
+export function releaseSoloAiTurnAfterFatal(reg: SoloAiClaimRegistry, turnKey: string): 'retry' | 'end_turn' {
+  reg.fatal[turnKey] = (reg.fatal[turnKey] || 0) + 1;
+  if (reg.active === turnKey) reg.active = null;
+  return reg.fatal[turnKey] > V96_SOLO_AI_LIMITS.MAX_FATAL_RECOVERIES_PER_TURN ? 'end_turn' : 'retry';
+}
+
+export interface SoloAiLoopDeps {
+  runtime: SoloAiTurnRuntime;
+  /** Fresh decision from the freshest authoritative state (the caller must read refs, not a turn-start closure). */
+  decide: (rejected: (action: any) => boolean) => any;
+  /** Canonical execution; resolves true only when the action committed. May throw. */
+  execute: (action: any) => Promise<boolean>;
+  fingerprint: () => string;
+  isStale: () => boolean;
+  ownsTurn: () => boolean;
+  isGameOver: () => boolean;
+  /** Offered once the ordinary budget is used up; returns true only if a canonical override was paid. */
+  tryOverride?: () => boolean;
+  think?: () => Promise<void>;
+  settle?: () => Promise<void>;
+  onPhase?: (phase: SoloAiTurnPhase, label: string | null) => void;
+  now?: () => number;
+}
+
+/**
+ * The one solo rival-AI action loop (used by the live game and by the self-tests / stress harness).
+ * Every iteration: check stop conditions → think → decide from FRESH state → (end_turn? stop) → execute and
+ * AWAIT → commit/failure bookkeeping → settle → loop. Terminates by construction: every iteration increments
+ * totalDecisionAttempts, which is capped by soloAiMaxAttempts ≤ MAX_DECISION_ATTEMPTS_PER_TURN.
+ */
+export async function runSoloAiTurnLoop(deps: SoloAiLoopDeps): Promise<SoloAiEndReason> {
+  const rt = deps.runtime;
+  const now = deps.now || (() => Date.now());
+  const phase = (p: SoloAiTurnPhase, label: string | null) => { rt.phase = p; deps.onPhase?.(p, label); };
+  for (;;) {
+    let stop = soloAiStopReason(rt, { stale: deps.isStale(), ownershipLost: !deps.ownsTurn(), gameOver: deps.isGameOver() });
+    if (stop === 'budget_exhausted' && deps.tryOverride && deps.tryOverride()) {
+      soloAiGrantOverride(rt, now());
+      stop = soloAiStopReason(rt, { stale: deps.isStale(), ownershipLost: !deps.ownsTurn(), gameOver: deps.isGameOver() });
+    }
+    if (stop) return stop;
+    phase(rt.consecutiveFailures > 0 ? 'replanning' : 'thinking', null);
+    if (deps.think) await deps.think();
+    if (deps.isStale()) return 'stale_session';
+    if (!deps.ownsTurn()) return 'ownership_lost';
+    if (deps.isGameOver()) return 'game_over';
+    let decision: any = null;
+    try { decision = deps.decide(a => soloAiIsRejected(rt, a)); }
+    catch (err) {
+      rt.totalDecisionAttempts += 1;
+      soloAiRecordFailure(rt, { type: 'decision_error' }, err instanceof Error ? err.message : 'decision threw', now());
+      continue;
+    }
+    if (!decision || decision.type === 'end_turn') {
+      soloAiLog(rt, 'AI_END_TURN_SELECTED', rt.successfulActions === 0 ? 'no useful legal action' : `after ${rt.successfulActions} action(s)`, now());
+      return rt.successfulActions === 0 && !decision ? 'no_legal_action' : 'end_turn_selected';
+    }
+    if (soloAiIsRejected(rt, decision)) {
+      // The engine insisted on a candidate already rejected this turn: count it and move on (never retry it).
+      soloAiRecordDecision(rt, decision, now());
+      soloAiRecordFailure(rt, decision, 'rejected_this_turn', now());
+      continue;
+    }
+    soloAiRecordDecision(rt, decision, now());
+    phase('acting', rt.currentActionLabel);
+    let ok = false;
+    try { ok = await deps.execute(decision); }
+    catch (err) { ok = false; soloAiLog(rt, 'AI_EXECUTION_ERROR', err instanceof Error ? err.message : String(err), now()); }
+    if (deps.isStale()) return 'stale_session';
+    if (!ok) { soloAiRecordFailure(rt, decision, 'not_committed', now()); phase('replanning', null); continue; }
+    soloAiRecordCommit(rt, decision, deps.fingerprint(), now());
+    if (deps.settle) await deps.settle();
+  }
+}
+
+
+/** Async-safe isolation: restores the live RNG streams / flags / id counters only after the awaited work ends. */
+export async function v96WithIsolatedGlobalsAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const reg: any = globalRngRegistry as any;
+  const streams = globalRngRegistry.exportStreamStates();
+  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
+  const counters = { ...globalDeterministicCounters };
+  try { return await fn(); }
+  finally { globalRngRegistry.importStreamStates(streams); Object.assign(reg, flags); Object.assign(globalDeterministicCounters, counters); }
+}
+
+/** Pure human-lockout rule (the component guard uses exactly this): the rival owns the solo turn. */
+export function isHumanLockedOutForSoloRival(gs: any, actorKind: 'human' | 'ai' | undefined = 'human'): boolean {
+  return actorKind === 'human' && gs?.gameMode === 'game' && isSoloRivalModeSelection(gs?.selectedMode) && gs?.currentTurn === 'ai';
+}
+
+// ---- Human VS AI turn-flow stress harness (LAB / dev only, deterministic, bounded) -------------------------
+export interface HumanVsAiStressReport {
+  seed: number;
+  daysRequested: number;
+  daysCompleted: number;
+  aiTurnsStarted: number;
+  aiTurnsFinished: number;
+  aiSuccessfulActions: number;
+  aiFailedAttempts: number;
+  aiEarlyEndTurns: number;
+  watchdogRecoveries: number;
+  duplicateStartAttempts: number;
+  duplicateStartsBlocked: number;
+  duplicateEndAttempts: number;
+  duplicateEndsBlocked: number;
+  maxAttemptsInTurn: number;
+  maxSuccessfulInTurn: number;
+  ownershipViolations: string[];
+  humanActionsBlockedDuringAi: number;
+  endReasons: Record<string, number>;
+  finalHash: string;
+  trace: string[];
+}
+
+/**
+ * Plays `days` Human ↔ AI cycles with the REAL pieces: gameStateReducer for ownership (SET_TURN, SET_AI_THINKING,
+ * NEXT_DAY), the reference bots + reduceGameAction for canonical actions, and runSoloAiTurnLoop for the rival
+ * turn. Verifies invariants A–J on every cycle. Never touches the live match (callers isolate globals).
+ */
+export async function runHumanVsAiTurnFlowStressTest(opts: { days?: number; seed?: number; aiBudget?: number; humanBudget?: number; allowOverrides?: boolean; failEvery?: number } = {}): Promise<HumanVsAiStressReport> {
+  const days = Math.max(1, Math.min(200, opts.days ?? 30));
+  const seed = opts.seed ?? 9601;
+  const aiBudget = opts.aiBudget ?? 3;
+  const humanBudget = opts.humanBudget ?? 3;
+  const r: HumanVsAiStressReport = {
+    seed, daysRequested: days, daysCompleted: 0, aiTurnsStarted: 0, aiTurnsFinished: 0, aiSuccessfulActions: 0, aiFailedAttempts: 0,
+    aiEarlyEndTurns: 0, watchdogRecoveries: 0, duplicateStartAttempts: 0, duplicateStartsBlocked: 0, duplicateEndAttempts: 0, duplicateEndsBlocked: 0,
+    maxAttemptsInTurn: 0, maxSuccessfulInTurn: 0, ownershipViolations: [], humanActionsBlockedDuringAi: 0, endReasons: {}, finalHash: '', trace: []
+  };
+  const note = (s: string) => { if (r.trace.length < 400) r.trace.push(s); };
+  setRngMasterSeed(seed, true);
+  const rng = createSeededRng(seed);
+  const genome = createSeedGenome();
+  let world = createTuningMatchState(seed, false);
+  let gs: any = { ...JSON.parse(JSON.stringify(initialGameState)), selectedMode: 'ai', gameMode: 'game', currentTurn: 'player', currentActorId: 'player', turnCounter: 1, day: 1 };
+  const claims = createSoloAiClaimRegistry();
+  const actor = (id: string) => (world as any).actorsById?.[id] || (id === 'player' ? (world as any).player : (world as any).aiPlayer);
+  const resetAp = (id: string) => { const a = actor(id); if (a) a.actionsUsedThisTurn = 0; };
+  let failCounter = 0;
+  for (let d = 1; d <= days; d++) {
+    const dayBefore = gs.day;
+    // ---- Human turn
+    if (gs.currentTurn !== 'player' || gs.currentActorId !== 'player') r.ownershipViolations.push(`day ${d}: human turn not owned by player (${gs.currentTurn}/${gs.currentActorId})`);
+    note(`#PLAYER_TURN_ACTIVE d${gs.day}`);
+    resetAp('player');
+    for (let k = 0; k < humanBudget; k++) {
+      const a = chooseReferenceBotAction('classic', world, 'player', genome.weights, rng, gs.turnCounter);
+      if (!a || a.type === 'end_turn' || a.type === 'think') break;
+      if (isHumanLockedOutForSoloRival(gs, 'human')) r.ownershipViolations.push(`day ${d}: human locked out on own turn`);
+      const res = reduceGameAction(world, mapAiActionToGameAction('player', a, rng));
+      if (res?.nextState) world = res.nextState;
+    }
+    // ---- Handoff
+    note('#PLAYER_END_TURN');
+    gs = gameStateReducer(gs, { type: 'SET_TURN', payload: 'ai' });
+    if (gs.currentTurn !== 'ai' || gs.currentActorId !== 'ai') r.ownershipViolations.push(`day ${d}: SET_TURN ai left ${gs.currentTurn}/${gs.currentActorId}`);
+    note('#TURN_OWNER player → ai');
+    // Invariant B: a human gameplay action attempted now must be refused.
+    if (isHumanLockedOutForSoloRival(gs, 'human')) r.humanActionsBlockedDuringAi += 1; else r.ownershipViolations.push(`day ${d}: human not locked out during AI turn`);
+    // ---- Scheduler (duplicate schedule attempts must never start a second loop)
+    const key = computeSoloAiTurnKey(gs, 0);
+    const first = claimSoloAiTurn(claims, key);
+    r.duplicateStartAttempts += 1;
+    if (!claimSoloAiTurn(claims, key)) r.duplicateStartsBlocked += 1; else r.ownershipViolations.push(`day ${d}: second loop claimed ${key}`);
+    if (!first) { r.ownershipViolations.push(`day ${d}: AI turn could not be claimed`); break; }
+    r.aiTurnsStarted += 1;
+    note(`#AI_SCHEDULED ${key}`);
+    gs = gameStateReducer(gs, { type: 'SET_AI_THINKING', payload: true });
+    resetAp('ai');
+    const rt = createSoloAiTurnRuntime(key, aiBudget, d * 1000);
+    note(`#AI_TURN_STARTED budget=${aiBudget}`);
+    let clock = d * 1000;
+    const reason = await runSoloAiTurnLoop({
+      runtime: rt,
+      now: () => ++clock,
+      decide: (isRejected) => {
+        const a = chooseReferenceBotAction('classic', world, 'ai', genome.weights, rng, gs.turnCounter);
+        if (!a || a.type === 'think') return { type: 'end_turn' };
+        return isRejected(a) ? { type: 'end_turn' } : a;
+      },
+      execute: async (a) => {
+        if (gs.currentTurn !== 'ai') { r.ownershipViolations.push(`day ${d}: rival executed outside its turn`); return false; }
+        if (opts.failEvery && (++failCounter % opts.failEvery === 0)) return false;
+        const before = JSON.stringify([actor('ai')?.money, actor('ai')?.currentRegion, (actor('ai')?.inventory || []).length]);
+        const res = reduceGameAction(world, mapAiActionToGameAction('ai', a, rng));
+        if (!res?.nextState) return false;
+        world = res.nextState;
+        const after = JSON.stringify([actor('ai')?.money, actor('ai')?.currentRegion, (actor('ai')?.inventory || []).length]);
+        note(`#AI_ACTION_COMMITTED ${a.type}`);
+        return Boolean(res.success) || before !== after;
+      },
+      fingerprint: () => soloAiProgressFingerprint(actor('ai'), (world as any).gameState),
+      isStale: () => false,
+      ownsTurn: () => gs.currentTurn === 'ai',
+      isGameOver: () => gs.gameMode !== 'game',
+      tryOverride: opts.allowOverrides ? () => rt.overridesUsed < OVERRIDE_DAILY_CAP : undefined
+    });
+    r.aiSuccessfulActions += rt.successfulActions;
+    r.aiFailedAttempts += rt.failedAttempts;
+    r.maxAttemptsInTurn = Math.max(r.maxAttemptsInTurn, rt.totalDecisionAttempts);
+    r.maxSuccessfulInTurn = Math.max(r.maxSuccessfulInTurn, rt.successfulActions);
+    r.endReasons[reason] = (r.endReasons[reason] || 0) + 1;
+    if (reason !== 'budget_exhausted') r.aiEarlyEndTurns += 1;
+    if (rt.successfulActions > rt.effectiveBudget) r.ownershipViolations.push(`day ${d}: ${rt.successfulActions} actions > budget ${rt.effectiveBudget}`);
+    if (rt.totalDecisionAttempts > V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN) r.ownershipViolations.push(`day ${d}: attempts over ceiling`);
+    // ---- Exactly-once finalisation (a second end request must be refused)
+    const ok1 = soloAiBeginFinalize(rt, reason, ++clock);
+    r.duplicateEndAttempts += 1;
+    if (!soloAiBeginFinalize(rt, reason, ++clock)) r.duplicateEndsBlocked += 1; else r.ownershipViolations.push(`day ${d}: second end accepted`);
+    if (!ok1) { r.ownershipViolations.push(`day ${d}: finalize refused`); break; }
+    note(`#AI_TURN_FINALIZE reason=${reason} actions=${rt.successfulActions}/${rt.effectiveBudget}`);
+    gs = gameStateReducer(gs, { type: 'SET_AI_THINKING', payload: false });
+    // Invariant (relaunch race): the scheduler must not re-claim this turn while currentTurn is still 'ai'.
+    finishSoloAiTurnClaim(claims, key);
+    if (claimSoloAiTurn(claims, computeSoloAiTurnKey(gs, 0))) r.ownershipViolations.push(`day ${d}: finished turn relaunched`);
+    gs = gameStateReducer(gs, { type: 'NEXT_DAY' });
+    note('#DAY_ADVANCED');
+    gs = gameStateReducer(gs, { type: 'SET_TURN', payload: 'player' });
+    note('#TURN_OWNER ai → player');
+    resetAp('player');
+    note('#PLAYER_AP_RESET');
+    r.aiTurnsFinished += 1;
+    if (gs.day !== dayBefore + 1) r.ownershipViolations.push(`day ${d}: day ${dayBefore} → ${gs.day} (expected +1)`);
+    if (gs.currentTurn !== 'player' || gs.currentActorId !== 'player' || gs.isAiThinking) r.ownershipViolations.push(`day ${d}: control not returned (${gs.currentTurn}/${gs.currentActorId}/thinking=${gs.isAiThinking})`);
+    if ((Number(actor('player')?.actionsUsedThisTurn) || 0) !== 0) r.ownershipViolations.push(`day ${d}: human AP not reset`);
+    r.daysCompleted += 1;
+  }
+  r.finalHash = computeCanonicalStateHash({ w: world, day: gs.day, turn: gs.turnCounter });
+  return r;
+}
+
+// ---- V9.6 self-tests --------------------------------------------------------------------------------------
+type V96ScriptStep = { action: any; commits?: boolean; throws?: boolean; changesState?: boolean };
+
+/** Scripted loop driver: decisions come from `script` (repeating the last entry), execution from the step. */
+async function v96RunScripted(budget: number, script: Array<V96ScriptStep | 'end' | 'throw'>, extra: Partial<SoloAiLoopDeps> = {}) {
+  const rt = createSoloAiTurnRuntime('test', budget, 0);
+  let i = 0, clock = 0, state = 0;
+  const executed: string[] = [];
+  const reason = await runSoloAiTurnLoop({
+    runtime: rt,
+    now: () => ++clock,
+    decide: (isRejected) => {
+      const step = script[Math.min(i, script.length - 1)]; i += 1;
+      if (step === 'end') return { type: 'end_turn' };
+      if (step === 'throw') throw new Error('engine exploded');
+      return step.action;
+    },
+    execute: async (a) => {
+      const step = script[Math.min(i - 1, script.length - 1)] as V96ScriptStep;
+      executed.push(a.type);
+      if (step.throws) throw new Error('executor exploded');
+      if (step.commits === false) return false;
+      if (step.changesState !== false) state += 1;
+      return true;
+    },
+    fingerprint: () => String(state),
+    isStale: () => false,
+    ownsTurn: () => true,
+    isGameOver: () => false,
+    ...extra
+  });
+  return { rt, reason, executed, decisions: i };
+}
+
+export async function runV96HumanVsAiFidelitySelfTests(): Promise<V9SelfTestResult[]> {
+  const results: V9SelfTestResult[] = [];
+  const check = async (id: string, name: string, fn: () => Promise<true | string> | true | string) => {
+    try { const r = await fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const legal = (n: number) => ({ action: { type: 'travel', description: `Travel ${n}`, data: { region: ['VIC', 'QLD', 'SA', 'WA'][n % 4] } } });
+  const invalid = (tag = 'x') => ({ action: { type: 'buy_equipment', description: 'Buy Advanced Equipment', data: { itemId: `SolarArray${tag}`, region: 'QLD' } }, commits: false });
+
+  // Budget / multi-action
+  await check('t07_three_actions', 'AI with budget 3 and three legal actions performs 3 actions, then stops', async () => {
+    const x = await v96RunScripted(3, [legal(1), legal(2), legal(3), legal(4)]);
+    return (x.rt.successfulActions === 3 && x.reason === 'budget_exhausted' && x.executed.length === 3) || `${x.rt.successfulActions} ${x.reason} ${x.executed.join(',')}`;
+  });
+  await check('t08_not_one_action', 'Regression: never stops after one action while budget and legal actions remain', async () => {
+    const x = await v96RunScripted(3, [legal(1), legal(2), legal(3)]);
+    return x.rt.successfulActions !== 1 || 'stopped after one action';
+  });
+  await check('t08b_canonical_three', 'Three canonical deposits through reduceGameAction each commit and count once', async () => {
+    return v96WithIsolatedGlobalsAsync(async () => {
+      let world = createTuningMatchState(96, false);
+      const money0 = Number((world as any).actorsById.ai.money);
+      const rt = createSoloAiTurnRuntime('canon', 3, 0);
+      const regions = ['NSW', 'VIC', 'QLD', 'SA'];
+      let n = 0;
+      const reason = await runSoloAiTurnLoop({
+        runtime: rt,
+        decide: () => ({ type: 'region_deposit', description: `Invest in ${regions[n]}`, data: { region: regions[n++], amount: 10 } }),
+        execute: async (a) => { const res = reduceGameAction(world, { type: 'region_deposit', actorId: 'ai', targetRegion: a.data.region, investmentAmount: 10 } as unknown as GameAction); if (res?.success && res.nextState) { world = res.nextState; return true; } return false; },
+        fingerprint: () => soloAiProgressFingerprint((world as any).actorsById.ai, (world as any).gameState),
+        isStale: () => false, ownsTurn: () => true, isGameOver: () => false
+      });
+      const money1 = Number((world as any).actorsById.ai.money);
+      return (rt.successfulActions === 3 && reason === 'budget_exhausted' && money0 - money1 === 30) || `${rt.successfulActions} ${reason} Δ$${money0 - money1}`;
+    });
+  });
+  await check('t01_one_action_budget', 'Budget 1 performs exactly one action', async () => { const x = await v96RunScripted(1, [legal(1), legal(2)]); return (x.rt.successfulActions === 1 && x.executed.length === 1) || `${x.rt.successfulActions}`; });
+  await check('t09_zero_legal', 'No legal action: End Turn with 0 actions, turn completes', async () => { const x = await v96RunScripted(3, ['end']); return (x.rt.successfulActions === 0 && x.reason === 'end_turn_selected' && x.executed.length === 0) || `${x.reason}`; });
+  await check('t09b_null_decision', 'A null decision is treated as "no legal action"', async () => {
+    const rt = createSoloAiTurnRuntime('n', 3, 0);
+    const reason = await runSoloAiTurnLoop({ runtime: rt, decide: () => null, execute: async () => true, fingerprint: () => '', isStale: () => false, ownsTurn: () => true, isGameOver: () => false });
+    return reason === 'no_legal_action' || reason;
+  });
+  await check('t10_end_turn_not_executed', 'end_turn stops selection and is never executed as a gameplay action', async () => { const x = await v96RunScripted(3, [legal(1), 'end', legal(2)]); return (x.executed.join(',') === 'travel' && x.reason === 'end_turn_selected') || x.executed.join(','); });
+  await check('t11_fail_then_success', 'Failed action → replan → legal action commits; success counted once', async () => {
+    const x = await v96RunScripted(1, [invalid(), legal(1)]);
+    return (x.rt.failedAttempts === 1 && x.rt.successfulActions === 1 && x.rt.consecutiveFailures === 0 && x.reason === 'budget_exhausted') || JSON.stringify([x.rt.failedAttempts, x.rt.successfulActions, x.reason]);
+  });
+  await check('t12_repeated_invalid', 'Repeating the same invalid action terminates (bounded rejection, no retry storm)', async () => {
+    const x = await v96RunScripted(3, [invalid()]);
+    return (x.rt.successfulActions === 0 && x.executed.length <= V96_SOLO_AI_LIMITS.MAX_SAME_SIGNATURE_FAILURES && x.rt.totalDecisionAttempts <= V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES && x.reason === 'consecutive_failures') || JSON.stringify([x.executed.length, x.rt.totalDecisionAttempts, x.reason]);
+  });
+  await check('t12b_rejected_candidate_filtered', 'A rejected candidate is excluded from the next decision', async () => {
+    const rt = createSoloAiTurnRuntime('f', 2, 0);
+    const seen: string[] = [];
+    let ok = 0;
+    const reason = await runSoloAiTurnLoop({
+      runtime: rt,
+      decide: (isRejected) => { const bad = invalid().action; if (!isRejected(bad)) { seen.push('bad'); return bad; } seen.push('good'); return legal(ok).action; },
+      execute: async (a) => (a.type === 'travel' ? (ok += 1, true) : false),
+      fingerprint: () => String(ok), isStale: () => false, ownsTurn: () => true, isGameOver: () => false
+    });
+    return (seen.filter(s => s === 'bad').length === V96_SOLO_AI_LIMITS.MAX_SAME_SIGNATURE_FAILURES && rt.successfulActions === 2 && reason === 'budget_exhausted') || `${seen.join(',')} ${reason}`;
+  });
+  await check('t13_different_invalid', 'Different invalid actions still terminate (consecutive / total bounds)', async () => {
+    let n = 0;
+    const rt = createSoloAiTurnRuntime('d', 3, 0);
+    const reason = await runSoloAiTurnLoop({ runtime: rt, decide: () => invalid(String(n++)).action, execute: async () => false, fingerprint: () => '', isStale: () => false, ownsTurn: () => true, isGameOver: () => false });
+    return (reason === 'consecutive_failures' && rt.totalDecisionAttempts === V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES) || `${reason} ${rt.totalDecisionAttempts}`;
+  });
+  await check('t13b_alternating_fail_success', 'Failures alternating with commits hit the total-attempt bound', async () => {
+    let k = 0;
+    const rt = createSoloAiTurnRuntime('a', 5, 0);
+    const reason = await runSoloAiTurnLoop({ runtime: rt, decide: () => invalid(String(k)).action, execute: async () => (++k % 3 === 0), fingerprint: () => String(k), isStale: () => false, ownsTurn: () => true, isGameOver: () => false });
+    return (rt.totalDecisionAttempts <= soloAiMaxAttempts(rt) && ['attempt_limit', 'budget_exhausted'].includes(reason)) || `${reason} ${rt.totalDecisionAttempts}`;
+  });
+  await check('t14_zero_ap_loop', 'A repeatable zero-AP action that changes nothing cannot loop forever', async () => {
+    const x = await v96RunScripted(40, [{ action: { type: 'sell', data: { resource: 'Iron' } }, changesState: false }]);
+    return (x.reason === 'no_progress' && x.executed.length <= V96_SOLO_AI_LIMITS.MAX_NO_PROGRESS_COMMITS + 1) || `${x.reason} ${x.executed.length}`;
+  });
+  await check('t15_no_progress', 'Commits without meaningful state change stop the turn', async () => {
+    const x = await v96RunScripted(10, [{ action: { type: 'think_noop' }, changesState: false }]);
+    return x.reason === 'no_progress' || x.reason;
+  });
+  await check('t16_override_canonical', 'Overrides add only the canonical +1 action each, capped at the daily limit', async () => {
+    const x = await v96RunScripted(3, [legal(1)], { tryOverride: () => true });
+    return (x.rt.overridesUsed === OVERRIDE_DAILY_CAP && x.rt.successfulActions === 3 + OVERRIDE_DAILY_CAP * V96_SOLO_AI_LIMITS.OVERRIDE_ACTIONS_GRANTED && x.reason === 'budget_exhausted') || JSON.stringify([x.rt.overridesUsed, x.rt.successfulActions, x.reason]);
+  });
+  await check('t17_max_settings', 'Maximum settings (12 actions + overrides) stay bounded', async () => {
+    let n = 0;
+    const x = await v96RunScripted(12, [{ action: { type: 'travel' } }], { tryOverride: () => true, fingerprint: () => String(++n) });
+    return (x.rt.successfulActions === 12 + OVERRIDE_DAILY_CAP && x.reason === 'budget_exhausted') || `${x.rt.successfulActions} ${x.reason}`;
+  });
+  await check('t17b_absolute_ceiling', 'A broken configuration (budget 9999) hits the absolute safety ceiling', async () => {
+    let n = 0;
+    const x = await v96RunScripted(9999, [{ action: { type: 'travel' } }], { fingerprint: () => String(++n) });
+    return (x.rt.successfulActions <= V96_SOLO_AI_LIMITS.MAX_ACTION_COMMITS_PER_TURN && ['safety_ceiling', 'budget_exhausted'].includes(x.reason)) || `${x.rt.successfulActions} ${x.reason}`;
+  });
+  await check('t18_decision_engine_throws', 'A decision engine that always throws ends the turn safely', async () => { const x = await v96RunScripted(3, ['throw']); return (x.reason === 'consecutive_failures' && x.executed.length === 0) || x.reason; });
+  await check('t18b_fatal_retry_bounded', 'A turn whose loop throws is retried at most twice, then safely ended', () => {
+    const reg = createSoloAiClaimRegistry();
+    const v: string[] = [];
+    for (let i = 0; i < 4; i++) { claimSoloAiTurn(reg, 'k'); v.push(releaseSoloAiTurnAfterFatal(reg, 'k')); }
+    return v.join(',') === 'retry,retry,end_turn,end_turn' || v.join(',');
+  });
+  await check('t19_execution_throws', 'An executor that throws is bounded and never counted as success', async () => { const x = await v96RunScripted(3, [{ action: { type: 'travel' }, throws: true }]); return (x.rt.successfulActions === 0 && ['consecutive_failures'].includes(x.reason)) || x.reason; });
+  await check('t20_watchdog', 'Watchdog recovers a real hang but never a pending approval', () =>
+    (decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: V95_AI_TURN_WATCHDOG_MS + 1 }) === 'recover'
+      && decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: true, msSinceLastAction: 999999 }) === 'waiting_for_approval') || 'wrong watchdog decision');
+  await check('t21_failures_not_progress', 'Failed attempts never refresh last-commit / last-progress timestamps', async () => {
+    const x = await v96RunScripted(3, [invalid()]);
+    return (x.rt.lastCommitAt === 0 && x.rt.lastProgressAt === 0 && x.rt.lastAttemptAt > 0) || JSON.stringify([x.rt.lastCommitAt, x.rt.lastProgressAt, x.rt.lastAttemptAt]);
+  });
+  await check('t22_double_scheduler', 'Scheduling the same AI turn twice starts one loop', () => {
+    const reg = createSoloAiClaimRegistry(); const a = claimSoloAiTurn(reg, 'ai:e0:t2:d1'); const b = claimSoloAiTurn(reg, 'ai:e0:t2:d1');
+    return (a && !b && reg.duplicateStarts === 1) || JSON.stringify([a, b]);
+  });
+  await check('t23_strictmode_concurrent', 'Two concurrent starts (StrictMode double effect) yield one executor', async () => {
+    const reg = createSoloAiClaimRegistry(); let loops = 0;
+    const start = async () => { if (!claimSoloAiTurn(reg, 'k')) return; loops += 1; await v96RunScripted(2, [legal(1), legal(2)]); finishSoloAiTurnClaim(reg, 'k'); };
+    await Promise.all([start(), start()]);
+    const relaunch = claimSoloAiTurn(reg, 'k');
+    return (loops === 1 && !relaunch) || `${loops} loops, relaunch=${relaunch}`;
+  });
+  await check('t_finalize_once', 'AI turn end is issued exactly once', () => {
+    const rt = createSoloAiTurnRuntime('f', 3, 0); const a = soloAiBeginFinalize(rt, 'budget_exhausted', 1); const b = soloAiBeginFinalize(rt, 'watchdog_recovery', 2);
+    return (a && !b && rt.endReason === 'budget_exhausted' && rt.phase === 'ending' && rt.currentActionLabel === null) || JSON.stringify([a, b, rt.endReason]);
+  });
+  await check('t_turn_key', 'Turn key is deterministic and changes with turn, day and match epoch', () => {
+    const a = computeSoloAiTurnKey({ turnCounter: 4, day: 2 }, 0);
+    return (a === computeSoloAiTurnKey({ turnCounter: 4, day: 2 }, 0) && a !== computeSoloAiTurnKey({ turnCounter: 6, day: 3 }, 0) && a !== computeSoloAiTurnKey({ turnCounter: 4, day: 2 }, 1)) || a;
+  });
+  await check('t31_restart_stale', 'Restart / load mid-turn: the stale loop stops and commits nothing more', async () => {
+    let stale = false;
+    const x = await v96RunScripted(3, [legal(1), legal(2), legal(3)], { isStale: () => stale, settle: async () => { stale = true; } });
+    return (x.reason === 'stale_session' && x.executed.length === 1) || `${x.reason} ${x.executed.length}`;
+  });
+  await check('t32_game_over_mid_turn', 'Game over after action 2: action 3 never executes', async () => {
+    let commits = 0;
+    const x = await v96RunScripted(3, [legal(1), legal(2), legal(3)], { isGameOver: () => commits >= 2, settle: async () => { commits += 1; } });
+    return (x.reason === 'game_over' && x.executed.length === 2) || `${x.reason} ${x.executed.length}`;
+  });
+  await check('t_ownership_lost', 'If turn ownership moves mid-turn the loop stops immediately', async () => {
+    let owns = true;
+    const x = await v96RunScripted(3, [legal(1), legal(2)], { ownsTurn: () => owns, settle: async () => { owns = false; } });
+    return (x.reason === 'ownership_lost' && x.executed.length === 1) || x.reason;
+  });
+  await check('t_phases', 'Phases go thinking → acting → (replanning) and never show a failed attempt as acting', async () => {
+    const phases: string[] = [];
+    await v96RunScripted(1, [invalid(), legal(1)], { onPhase: (p) => phases.push(p) });
+    return (phases[0] === 'thinking' && phases.includes('acting') && phases.includes('replanning')) || phases.join(',');
+  });
+  await check('t_signature', 'Failure signatures include type, target and key parameters', () =>
+    (soloAiActionSignature({ type: 'buy_equipment', data: { itemId: 'SolarArray', region: 'QLD' } }) !== soloAiActionSignature({ type: 'buy_equipment', data: { itemId: 'SolarArray', region: 'NSW' } })) || 'region ignored');
+  await check('t27_human_lockout_rule', 'Human gameplay is locked only while the rival owns a solo turn', () => {
+    let gs: any = { ...JSON.parse(JSON.stringify(initialGameState)), selectedMode: 'ai', gameMode: 'game', currentTurn: 'player', currentActorId: 'player', turnCounter: 1, day: 1 };
+    const before = isHumanLockedOutForSoloRival(gs);
+    gs = gameStateReducer(gs, { type: 'SET_TURN', payload: 'ai' });
+    const during = isHumanLockedOutForSoloRival(gs); const aiActor = isHumanLockedOutForSoloRival(gs, 'ai');
+    const team = isHumanLockedOutForSoloRival({ ...gs, selectedMode: 'team_human_ai_vs_ai_ai' });
+    return (!before && during && !aiActor && !team) || JSON.stringify([before, during, aiActor, team]);
+  });
+  await check('t34_copilot_handoff', 'Co-Pilot claim is released for the rival turn and re-claimed on return (real reducer)', () => {
+    let gs: any = { ...JSON.parse(JSON.stringify(initialGameState)), selectedMode: 'ai', gameMode: 'game', currentTurn: 'player', currentActorId: 'player', turnCounter: 1, day: 1,
+      takeoverSession: { sessionToken: 't', status: 'active', targetActorId: 'player', executionGeneration: 1, claimHeld: true } };
+    // With the Co-Pilot holding the human claim, only its executor may end the human turn (a plain SET_TURN is refused).
+    const blocked = gameStateReducer(gs, { type: 'SET_TURN', payload: 'ai' });
+    if (blocked.currentTurn !== 'player') return 'a non-executor SET_TURN moved a Co-Pilot-claimed turn';
+    gs = gameStateReducer(gs, { type: 'SET_TURN', payload: { turn: 'ai', fromCoPilotExecutor: true } });
+    if (gs.currentTurn !== 'ai' || gs.currentActorId !== 'ai') return `executor handoff failed: ${gs.currentTurn}/${gs.currentActorId}`;
+    const waiting = gs.takeoverSession?.status;
+    gs = gameStateReducer(gs, { type: 'SET_TURN', payload: 'player' });
+    return (waiting === 'waiting_for_other_players' && gs.currentTurn === 'player' && gs.currentActorId === 'player' && gs.takeoverSession?.status !== 'waiting_for_other_players') || JSON.stringify([waiting, gs.takeoverSession?.status, gs.currentActorId]);
+  });
+
+  // End-to-end deterministic cycles with real reducer + canonical executor
+  const s1 = await v96WithIsolatedGlobalsAsync(() => runHumanVsAiTurnFlowStressTest({ days: 30, seed: 9601 }));
+  const s2 = await v96WithIsolatedGlobalsAsync(() => runHumanVsAiTurnFlowStressTest({ days: 30, seed: 9601 }));
+  await check('t40_many_days', '30 Human ↔ AI cycles: no skip, double turn, hang, loop, ownership or AP drift', () =>
+    (s1.daysCompleted === 30 && s1.aiTurnsStarted === 30 && s1.aiTurnsFinished === 30 && s1.ownershipViolations.length === 0) || `${s1.daysCompleted}d ${s1.ownershipViolations.slice(0, 3).join(' | ')}`);
+  await check('t40b_deterministic', 'The multi-day cycle is deterministic for a seed', () => (s1.finalHash === s2.finalHash && s1.aiSuccessfulActions === s2.aiSuccessfulActions) || `${s1.finalHash} vs ${s2.finalHash}`);
+  await check('t40c_ai_actually_plays', 'Across the run the rival really acts (multi-action turns occur)', () => (s1.aiSuccessfulActions >= 30 && s1.maxSuccessfulInTurn >= 2) || `${s1.aiSuccessfulActions} actions, max ${s1.maxSuccessfulInTurn}/turn`);
+  await check('t24_one_day_per_cycle', 'Each completed Human + AI cycle advances the day exactly once', () => !s1.ownershipViolations.some(v => /expected \+1/.test(v)) || 'day drift');
+  await check('t25_single_return', 'Control returns to the human exactly once per AI turn', () => (s1.duplicateEndsBlocked === s1.duplicateEndAttempts && s1.aiTurnsFinished === s1.daysCompleted) || 'duplicate return');
+  await check('t22b_dup_starts_blocked', 'Every duplicate start in the run was blocked', () => (s1.duplicateStartsBlocked === s1.duplicateStartAttempts) || `${s1.duplicateStartsBlocked}/${s1.duplicateStartAttempts}`);
+  await check('t39_turn_trace_order', 'Turn trace order: player end → AI start → actions → finalize → day → player', () => {
+    const t = s1.trace.map(x => x.split(' ')[0]);
+    const i1 = t.indexOf('#PLAYER_END_TURN'), i2 = t.indexOf('#AI_TURN_STARTED', i1), i3 = t.indexOf('#AI_TURN_FINALIZE', i2), i4 = t.indexOf('#DAY_ADVANCED', i3), i5 = t.indexOf('#TURN_OWNER', i4), i6 = t.indexOf('#PLAYER_TURN_ACTIVE', i5);
+    const actionsInside = t.slice(i2, i3).every(k => k === '#AI_TURN_STARTED' || k === '#AI_ACTION_COMMITTED');
+    return (i1 >= 0 && i1 < i2 && i2 < i3 && i3 < i4 && i4 < i5 && i5 < i6 && actionsInside) || t.slice(0, 14).join(' ');
+  });
+  const storm = await v96WithIsolatedGlobalsAsync(() => runHumanVsAiTurnFlowStressTest({ days: 10, seed: 9602, failEvery: 2 }));
+  await check('t_failure_storm_stress', 'Failure-storm stress (every 2nd action fails) completes, bounded', () =>
+    (storm.daysCompleted === 10 && storm.ownershipViolations.length === 0 && storm.maxAttemptsInTurn <= V96_SOLO_AI_LIMITS.MAX_DECISION_ATTEMPTS_PER_TURN) || `${storm.daysCompleted} ${storm.ownershipViolations.slice(0, 2).join('|')}`);
+  const maxb = await v96WithIsolatedGlobalsAsync(() => runHumanVsAiTurnFlowStressTest({ days: 8, seed: 9603, aiBudget: 12, allowOverrides: true }));
+  await check('t_max_budget_stress', 'Maximum-action stress (12 + overrides) completes within the effective budget', () =>
+    (maxb.daysCompleted === 8 && maxb.ownershipViolations.length === 0 && maxb.maxSuccessfulInTurn <= 12 + OVERRIDE_DAILY_CAP) || `${maxb.daysCompleted} max ${maxb.maxSuccessfulInTurn} ${maxb.ownershipViolations.slice(0, 2).join('|')}`);
+  return results;
+}
+
+/** LAB summary rows derived from the self-test results (Human VS AI Health). */
+export const V96_HEALTH_ROWS: Array<{ label: string; ids: string[] }> = [
+  { label: 'Turn Ownership', ids: ['t40_many_days', 't34_copilot_handoff', 't_ownership_lost'] },
+  { label: 'AI Auto Start', ids: ['t22_double_scheduler', 't23_strictmode_concurrent', 't22b_dup_starts_blocked'] },
+  { label: 'Multi-Action Execution', ids: ['t07_three_actions', 't08_not_one_action', 't08b_canonical_three', 't40c_ai_actually_plays'] },
+  { label: 'End-Turn Recognition', ids: ['t09_zero_legal', 't10_end_turn_not_executed', 't_finalize_once'] },
+  { label: 'Failure Bounds', ids: ['t11_fail_then_success', 't12_repeated_invalid', 't12b_rejected_candidate_filtered', 't13_different_invalid', 't18_decision_engine_throws', 't19_execution_throws', 't18b_fatal_retry_bounded'] },
+  { label: 'Infinite Loop Protection', ids: ['t14_zero_ap_loop', 't15_no_progress', 't17_max_settings', 't17b_absolute_ceiling', 't_failure_storm_stress', 't_max_budget_stress'] },
+  { label: 'Human Lockout', ids: ['t27_human_lockout_rule'] },
+  { label: 'Player Return', ids: ['t24_one_day_per_cycle', 't25_single_return'] },
+  { label: 'Watchdog & Recovery', ids: ['t20_watchdog', 't21_failures_not_progress', 't31_restart_stale', 't32_game_over_mid_turn'] },
+  { label: 'Replay / Trace Ordering', ids: ['t39_turn_trace_order', 't40b_deterministic'] }
+];
+
+
+/** LAB › Human VS AI Turn Flow Inspector. Observes only — it never decides who owns the turn. */
+export const HumanVsAiTurnFlowInspector: React.FC<{
+  theme: any;
+  live: { turnKey: string; currentTurn: string; currentActorId: string; isAiThinking: boolean; day: number; selectedMode: string };
+  phase: SoloAiTurnPhase;
+  runtime: SoloAiTurnRuntime | null;
+  claims: SoloAiClaimRegistry;
+  flow: SoloAiTimelineEntry[];
+  sessionActive: boolean;
+  aiActionsPerDay: number;
+  lastAttemptAt: number;
+  lastProgressAt: number;
+  currentActionLabel: string | null;
+}> = ({ theme, live, phase, runtime, claims, flow, sessionActive, aiActionsPerDay, lastAttemptAt, lastProgressAt, currentActionLabel }) => {
+  const [open, setOpen] = useState(false);
+  const [health, setHealth] = useState<V9SelfTestResult[] | null>(null);
+  const [stress, setStress] = useState<HumanVsAiStressReport | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const ago = (t: number) => (t ? `${Math.max(0, Math.round((Date.now() - t) / 100) / 10)}s ago` : '—');
+  const rt = runtime;
+  const stale = Boolean(rt && live.currentTurn === 'ai' && !sessionActive && !rt.endIssued);
+  const runHealth = async () => {
+    if (busy) return; setBusy('health');
+    try { setHealth(await v96WithIsolatedGlobalsAsync(() => runV96HumanVsAiFidelitySelfTests())); }
+    catch (err) { console.error('[V9.6 health]', err); }
+    finally { setBusy(null); }
+  };
+  const runStress = async () => {
+    if (busy) return; setBusy('stress');
+    try { setStress(await v96WithIsolatedGlobalsAsync(() => runHumanVsAiTurnFlowStressTest({ days: 50, seed: 9601 }))); }
+    catch (err) { console.error('[V9.6 stress]', err); }
+    finally { setBusy(null); }
+  };
+  const H = ({ children }: { children: React.ReactNode }) => <div className="font-bold uppercase tracking-wider opacity-70 mt-3">{children}</div>;
+  const Row = ({ k, v }: { k: string; v: React.ReactNode }) => <div className="flex justify-between gap-2"><span className="opacity-70">{k}</span><span className="font-mono text-right break-all">{v}</span></div>;
+  return (
+    <section aria-labelledby="v96-tfi-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v96-turnflow-inspector">
+      <div className="flex items-center justify-between"><h3 id="v96-tfi-h" className="font-bold text-sm">🔁 Human VS AI Turn Flow Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="v96-turnflow-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{live.currentTurn === 'ai' ? `🤖 AI'S TURN · ${phase}` : '👤 YOUR TURN'} · day {live.day} · {live.selectedMode}</div>
+      {open && (
+        <div className="space-y-0.5" data-testid="v96-turnflow-body">
+          <H>Runtime</H>
+          <Row k="Turn Key" v={rt?.turnKey || live.turnKey} />
+          <Row k="Current Turn Owner" v={live.currentTurn} />
+          <Row k="Current Actor" v={live.currentActorId} />
+          <Row k="AI Runtime Phase" v={phase} />
+          <Row k="AI Session Active" v={sessionActive ? 'yes' : 'no'} />
+          <Row k="Base Action Budget" v={rt ? rt.baseBudget : aiActionsPerDay} />
+          <Row k="Effective Action Budget" v={rt ? rt.effectiveBudget : '—'} />
+          <Row k="Successful Actions" v={rt ? rt.successfulActions : '—'} />
+          <Row k="Failed Attempts" v={rt ? rt.failedAttempts : '—'} />
+          <Row k="Consecutive Failures" v={rt ? `${rt.consecutiveFailures}/${V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES}` : '—'} />
+          <Row k="Total Decision Attempts" v={rt ? `${rt.totalDecisionAttempts}/${soloAiMaxAttempts(rt)}` : '—'} />
+          <Row k="Current Action" v={currentActionLabel || '—'} />
+          <Row k="Rejected Signatures" v={rt && Object.keys(rt.rejectedSignatures).length ? Object.entries(rt.rejectedSignatures).map(([s, n]) => `${s.replace(/:+$/, '')}×${n}`).join(' · ') : 'none'} />
+          <Row k="Override Count" v={rt ? rt.overridesUsed : '—'} />
+          <Row k="Turn End Issued" v={rt ? (rt.endIssued ? `yes (${rt.endReason})` : 'no') : '—'} />
+          <Row k="Last Attempt Time" v={ago(lastAttemptAt)} />
+          <Row k="Last Committed Action Time" v={rt && rt.successfulActions ? ago(rt.lastCommitAt) : '—'} />
+          <Row k="Last Progress Time (watchdog clock)" v={ago(lastProgressAt)} />
+          <Row k="Scheduler Claimed" v={claims.active || 'none'} />
+          <Row k="Duplicate Starts Blocked" v={claims.duplicateStarts} />
+          <Row k="Session Stale?" v={stale ? 'YES' : 'no'} />
+          <H>Turn timeline (bounded)</H>
+          <div className="max-h-48 overflow-auto font-mono" data-testid="v96-turnflow-timeline">
+            {flow.length ? flow.slice(-40).map(e => <div key={e.seq}>#{String(e.seq).padStart(2, '0')} {e.kind}{e.detail ? ` ${e.detail}` : ''}</div>) : <div className="opacity-60">No turn activity yet.</div>}
+          </div>
+          <H>Human VS AI Health</H>
+          <div className="flex gap-2 flex-wrap">
+            <button type="button" className={`${theme.buttonSecondary || ''} px-2 py-1 rounded border ${theme.border}`} onClick={() => { void runHealth(); }} disabled={Boolean(busy)} data-testid="v96-run-health">{busy === 'health' ? 'Running…' : 'Run Human VS AI Health'}</button>
+            <button type="button" className={`${theme.buttonSecondary || ''} px-2 py-1 rounded border ${theme.border}`} onClick={() => { void runStress(); }} disabled={Boolean(busy)} data-testid="v96-run-stress">{busy === 'stress' ? 'Running…' : 'Run 50-day turn-flow stress'}</button>
+          </div>
+          {health && (
+            <div data-testid="v96-health">
+              {V96_HEALTH_ROWS.map(row => {
+                const rows = health.filter(t => row.ids.includes(t.id));
+                const pass = rows.length > 0 && rows.every(t => t.passed);
+                return <div key={row.label} className="flex justify-between"><span>{row.label}</span><span className={pass ? 'text-emerald-400' : 'text-rose-400'}>{pass ? 'PASS' : `FAIL (${rows.filter(t => !t.passed).map(t => t.id).join(', ') || 'no tests'})`}</span></div>;
+              })}
+              <div className="opacity-70">{health.filter(t => t.passed).length}/{health.length} checks passed</div>
+              {health.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}
+            </div>
+          )}
+          {stress && (
+            <div data-testid="v96-stress">
+              {stress.daysCompleted}/{stress.daysRequested} days · AI turns {stress.aiTurnsStarted} started / {stress.aiTurnsFinished} finished · {stress.aiSuccessfulActions} actions · {stress.aiFailedAttempts} failed · early End Turns {stress.aiEarlyEndTurns} · max {stress.maxSuccessfulInTurn} actions / {stress.maxAttemptsInTurn} attempts in one turn · duplicate starts blocked {stress.duplicateStartsBlocked}/{stress.duplicateStartAttempts} · duplicate ends blocked {stress.duplicateEndsBlocked}/{stress.duplicateEndAttempts} · ownership violations {stress.ownershipViolations.length}
+              {stress.ownershipViolations.slice(0, 3).map((v, i) => <div key={i} className="text-rose-300">{v}</div>)}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -136038,6 +136836,22 @@ function AustraliaGame() {
   takeoverSessionLiveRef.current = Boolean(takeoverSession && !isCoPilotManuallyStopped(takeoverSession));
   const gameStateLiveRef = useRef(gameState);
   gameStateLiveRef.current = gameState;
+  // V9.6 human lockout: while the solo rival owns the turn, human-actor gameplay handlers do nothing (AI actors,
+  // team modes, inspection and settings are unaffected). Reads the live canonical turn, never a stale closure.
+  const v96HumanLockedOut = (actorId: string = 'player'): boolean => {
+    const actor = getActorState(actorId);
+    return isHumanLockedOutForSoloRival(gameStateLiveRef.current, actor ? (actor.kind === 'human' ? 'human' : 'ai') : (actorId === 'player' ? 'human' : 'ai'));
+  };
+  const v96LockoutNoticeAtRef = useRef(0);
+  const v96BlockHumanAction = (label: string, actorId: string = 'player', silent = false): boolean => {
+    if (!v96HumanLockedOut(actorId)) return false;
+    v96FlowRef.current = [...v96FlowRef.current, { seq: ++v96FlowSeqRef.current, kind: 'HUMAN_ACTION_BLOCKED', detail: label, at: Date.now() }].slice(-80);
+    if (!silent && Date.now() - v96LockoutNoticeAtRef.current > 1500) {
+      v96LockoutNoticeAtRef.current = Date.now();
+      addNotification(`⏳ ${label} is unavailable — it's the rival's turn. Your actions unlock when your turn starts.`, 'info', false, 'system');
+    }
+    return true;
+  };
   const teamAiStartRetryRef = useRef(false);
   const coPilotForcedAiActorIdRef = useRef<string | null>(null);
   // Resume-hang diagnostics: set right before COPILOT_RESUME_AFTER_OPPONENTS is dispatched and
@@ -136198,6 +137012,17 @@ function AustraliaGame() {
   // V9.5: bumped whenever a match is replaced (load / new game / restart); deferred gameplay callbacks
   // capture it and do nothing if a different match is live by the time they fire.
   const v95MatchEpochRef = useRef(0);
+  // V9.6 solo rival-AI turn runtime (ephemeral; never persisted, never decides ownership).
+  const soloAiClaimsRef = useRef<SoloAiClaimRegistry>(createSoloAiClaimRegistry());
+  const soloAiRuntimeRef = useRef<SoloAiTurnRuntime | null>(null);
+  const [soloAiPhase, setSoloAiPhase] = useState<SoloAiTurnPhase>('idle');
+  const v96LastAttemptAtRef = useRef<number>(0);
+  const v96FlowRef = useRef<SoloAiTimelineEntry[]>([]);
+  const v96FlowSeqRef = useRef(0);
+  const v96Flow = useCallback((kind: string, detail = '') => {
+    v96FlowSeqRef.current += 1;
+    v96FlowRef.current = [...v96FlowRef.current, { seq: v96FlowSeqRef.current, kind, detail, at: Date.now() }].slice(-80);
+  }, []);
   const teamAiTurnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const coPilotTeamAiReleasedRef = useRef(true);
   const startReleasedTeamAiTurnRef = useRef<() => void>(() => {});
@@ -142177,7 +143002,7 @@ function dispatchGameSettingsChange(
 
 
   // Main AI decision engine
-  const makeAiDecision = useCallback((aiState: any,gameState: any,playerState: any) => {
+  const makeAiDecision = useCallback((aiState: any,gameState: any,playerState: any, decisionOptions?: { isRejected?: (candidate: any) => boolean }) => {
     try {
       let difficultyKey = (String(gameState.aiDifficulty || 'medium').toLowerCase() || 'medium') as keyof typeof AI_DIFFICULTY_PROFILES;
       if (aiState?.teamId && gameSettings.teamDifficultyOverrides?.[aiState.teamId]) {
@@ -142563,6 +143388,12 @@ function dispatchGameSettingsChange(
 	        }
 	      });
 
+	      // V9.6: candidates that already failed this turn are dropped before ranking, so the next-best legal
+	      // action is chosen (or end_turn when nothing is left) instead of retrying the same failure.
+	      if (decisionOptions?.isRejected) {
+	        const v96Kept = decisions.filter(candidate => !decisionOptions?.isRejected?.(candidate));
+	        decisions.splice(0, decisions.length, ...v96Kept);
+	      }
 	      // If we have good options, choose the best one
 	      if (decisions.length > 0) {
         const tracedDecisions = applyStrategicDirectorScoring(
@@ -142760,7 +143591,9 @@ function dispatchGameSettingsChange(
   // CRITICAL FIX: Execute AI action with async/await for state consistency
   // Returns Promise<boolean> indicating success/failure
   const executeAiAction = useCallback(async (action: AIAction): Promise<boolean> => {
-    lastActorActionTimeRef.current = Date.now();
+    // V9.6: an attempt is not progress — the watchdog clock (lastActorActionTimeRef) now moves only on a
+    // committed action, so a storm of failing attempts can no longer look like a healthy turn.
+    v96LastAttemptAtRef.current = Date.now();
     setCurrentAiAction(action);
 
     // Get fresh AI state from ref to avoid stale closure
@@ -143555,6 +144388,7 @@ function dispatchGameSettingsChange(
     // Wait for React state to settle before returning
     await new Promise(resolve => setTimeout(resolve, 10));
 
+    lastActorActionTimeRef.current = Date.now(); // V9.6: committed → real progress
     return true; // Action completed successfully
   }, [
     addNotification,
@@ -143596,7 +144430,7 @@ function dispatchGameSettingsChange(
   // This function only ever returns ONE decision object — it never executes/tokens/approves/
   // advances a turn itself — so the "never double-X" guarantees are provided by construction: the
   // existing single call to executeAiAction downstream never runs more than once per decision here.
-  const resolveSoloAiDecisionViaEngine = useCallback((aiState: any,currentGameState: any,playerState: any) => {
+  const resolveSoloAiDecisionViaEngine = useCallback((aiState: any,currentGameState: any,playerState: any, decisionOptions?: { isRejected?: (candidate: any) => boolean }) => {
     const engineId = resolveAiDecisionEngineForActor('ai');
     const runSelectedEngine = () => {
       switch (engineId) {
@@ -143609,7 +144443,7 @@ function dispatchGameSettingsChange(
           return plannerResult?.selectedAction || makeAiDecision(aiState, currentGameState, playerState);
         }
         case 'classic_layered':
-          return makeAiDecision(aiState, currentGameState, playerState);
+          return makeAiDecision(aiState, currentGameState, playerState, decisionOptions);
         default: {
           // AB-Exec: any engineId that isn't one of the two built-in engines is a custom
           // AiAlgorithmConfig id (per AE1's own forward-looking comment — a config's own configId
@@ -143627,10 +144461,14 @@ function dispatchGameSettingsChange(
     } catch (error) {
       console.error(`Solo AI decision engine '${engineId}' threw`, error);
     }
+    // V9.6: a planner/custom choice that already failed this turn falls back to Classic with the rejection filter.
+    if (decision && decisionOptions?.isRejected?.(decision)) {
+      try { decision = makeAiDecision(aiState, currentGameState, playerState, decisionOptions); } catch (error) { decision = null; }
+    }
     if (validateAiEngineDecision(decision).valid) return decision as AIAction;
     if (engineId !== 'classic_layered') {
       try {
-        const classicDecision = makeAiDecision(aiState, currentGameState, playerState);
+        const classicDecision = makeAiDecision(aiState, currentGameState, playerState, decisionOptions);
         if (validateAiEngineDecision(classicDecision).valid) return classicDecision;
       } catch (classicError) {
         console.error('Classic Layered AI fallback itself threw (solo mode)', classicError);
@@ -143640,93 +144478,134 @@ function dispatchGameSettingsChange(
   }, [resolveAiDecisionEngineForActor, makeAiDecision]);
 
   // AI Turn Management
-  const performAiTurn = useCallback(async () => {
-    if (gameState.currentTurn !== 'ai' || gameState.isAiThinking) return;
+  // V9.6: latest-callback refs — every iteration of the rival turn decides and executes with the functions of
+  // the CURRENT render (fresh gameState / player / deposits / prices), never the closure captured at turn start.
+  const executeAiActionRef = useRef(executeAiAction);
+  executeAiActionRef.current = executeAiAction;
+  const resolveSoloAiDecisionViaEngineRef = useRef(resolveSoloAiDecisionViaEngine);
+  resolveSoloAiDecisionViaEngineRef.current = resolveSoloAiDecisionViaEngine;
+  const soloAiOverrideRef = useRef<() => boolean>(() => false);
+  soloAiOverrideRef.current = () => {
+    // Canonical Action Override: same eligibility as before (behind + can pay + daily cap), now granting the
+    // canonical +1 action per override (V9.6) instead of a whole extra day of actions.
+    if (!gameSettings.allowActionOverride) return false;
+    if (getActorOverridesRemaining('ai') <= 0 || !getUnderdogBonus('ai', 'behavior').isUnderdog) return false;
+    if ((aiPlayerRef.current?.money || 0) < calculateActorOverrideCost('ai') || aiRandom() >= 0.6) return false;
+    return applyActorActionOverride('ai');
+  };
 
+  /**
+   * V9.6 exactly-once solo AI turn finalisation. Order: finishing → turn-transition systems → AI thinking off →
+   * day advances once → human actions reset → SET_TURN player → current action cleared → claim released.
+   * Aborts (without touching state) if the match was replaced (load / new game) while it waited.
+   */
+  const finalizeSoloAiTurn = useCallback(async (rt: SoloAiTurnRuntime, reason: SoloAiEndReason, epochAtStart: number) => {
+    if (!soloAiBeginFinalize(rt, reason, Date.now())) { v96Flow('AI_DUPLICATE_END_BLOCKED', rt.turnKey); return false; }
+    v96Flow('AI_TURN_FINALIZING', `reason=${reason} actions=${rt.successfulActions}/${rt.effectiveBudget} attempts=${rt.totalDecisionAttempts}`);
+    setSoloAiPhase('ending');
+    setCurrentAiAction(null);
+    await new Promise(resolve => setTimeout(resolve, reason === 'watchdog_recovery' || reason === 'fatal_error' ? 50 : 700));
+    if (v95MatchEpochRef.current !== epochAtStart) { v96Flow('AI_FINALIZE_ABORTED', 'match replaced'); return false; }
+    const live = gameStateLiveRef.current;
+    const aiName = aiPlayerRef.current?.name || 'AI';
+    if (live.gameMode !== 'game') {
+      // Game over during the AI turn: no hand-back as if the match continued; just release the AI.
+      isAiThinkingRef.current = false;
+      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+      finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
+      rt.phase = 'finished'; setSoloAiPhase('idle');
+      v96Flow('AI_TURN_ENDED_GAME_OVER', rt.turnKey);
+      return true;
+    }
+    const reasonText = reason === 'budget_exhausted' ? '' : reason === 'end_turn_selected' || reason === 'no_legal_action' ? ' — no more useful moves'
+      : reason === 'watchdog_recovery' || reason === 'fatal_error' ? ' — turn recovered safely' : ' — stopped retrying';
+    addNotification(`🤖 ${aiName} ended their turn${reasonText}`, 'ai', true);
+    dispatchAuthoritativeGameActivityLedgerEvent('action', { actorId: 'ai', actionType: 'end_turn', summary: `${aiName} ended their turn (${rt.successfulActions} action${rt.successfulActions === 1 ? '' : 's'}).`, payload: { reason, successfulActions: rt.successfulActions, attempts: rt.totalDecisionAttempts } });
+    handleTurnTransitionRef.current?.('ai');
+    isAiThinkingRef.current = false;
+    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    const dayBefore = Number(live.day) || 0;
+    if (advanceDayRef.current) advanceDayRef.current(); else console.error('[V9.6] advanceDayRef missing at AI turn end');
+    v96Flow('DAY_ADVANCED', `from day ${dayBefore}`);
+    dispatchPlayer({ type: 'RESET_ACTIONS' });
+    v96Flow('PLAYER_AP_RESET', '');
+    dispatchGameState({ type: 'SET_TURN', payload: 'player' });
+    v96Flow('TURN_OWNER', 'ai → player');
+    setCurrentAiAction(null);
+    finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
+    if (soloAiTurnSessionTokenRef.current && reason !== 'watchdog_recovery') soloAiTurnSessionTokenRef.current = null;
+    rt.phase = 'finished';
+    setSoloAiPhase('idle');
+    v96Flow('PLAYER_TURN_STARTED', '');
+    return true;
+  }, [addNotification, dispatchAuthoritativeGameActivityLedgerEvent, v96Flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  const finalizeSoloAiTurnRef = useRef(finalizeSoloAiTurn);
+  finalizeSoloAiTurnRef.current = finalizeSoloAiTurn;
+
+  const performAiTurn = useCallback(async () => {
+    const liveAtStart = gameStateLiveRef.current;
+    if (liveAtStart.currentTurn !== 'ai' || liveAtStart.isAiThinking || liveAtStart.gameMode !== 'game') return;
+    // V9.6 single-flight: exactly one loop may own this AI turn (StrictMode / rerender / double schedule safe).
+    const epochAtStart = v95MatchEpochRef.current;
+    const turnKey = computeSoloAiTurnKey(liveAtStart, epochAtStart);
+    if (!claimSoloAiTurn(soloAiClaimsRef.current, turnKey)) { v96Flow('AI_DUPLICATE_START_BLOCKED', turnKey); return; }
+
+    isAiThinkingRef.current = true;
     dispatchGameState({ type: 'SET_AI_THINKING', payload: true });
-    // Action limit override capacity granted without resetting turn usage
 
     // AUDIT-BUG-008: Session token to detect stale async continuations after game reset/load
     const turnSessionToken = Symbol('aiTurnSession');
     soloAiTurnSessionTokenRef.current = turnSessionToken;
-    const isSessionStale = () => soloAiTurnSessionTokenRef.current !== turnSessionToken;
+    const isSessionStale = () => soloAiTurnSessionTokenRef.current !== turnSessionToken || v95MatchEpochRef.current !== epochAtStart;
 
-    const profile = AI_DIFFICULTY_PROFILES[gameState.aiDifficulty];
-    let actionBudget = gameSettings.aiActionsPerDay;
-    let actionsTaken = 0;
-
+    const profile = AI_DIFFICULTY_PROFILES[liveAtStart.aiDifficulty] || AI_DIFFICULTY_PROFILES.medium;
+    const rt = createSoloAiTurnRuntime(turnKey, gameSettings.aiActionsPerDay, Date.now());
+    soloAiRuntimeRef.current = rt;
+    lastActorActionTimeRef.current = Date.now();
+    setSoloAiPhase('thinking');
+    setCurrentAiAction(null);
+    v96Flow('AI_TURN_STARTED', `${turnKey} budget=${rt.baseBudget}`);
     addNotification(`🤖 ${aiPlayerRef.current.name}'s turn begins`, 'ai', true);
 
-    // AI takes multiple actions per turn
-    while (actionsTaken < actionBudget) {
-      // Thinking delay
-      const thinkingTime = profile.thinkingTimeMin +
-        aiRandom() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
-
-      await new Promise(resolve => setTimeout(resolve, thinkingTime));
-      if (isSessionStale()) { return; }
-
-      // Use ref to get latest AI state (fixes stale closure issue)
-      const currentAiState = aiPlayerRef.current;
-
-      // Make decision with fresh state
-      const decision = resolveSoloAiDecisionViaEngine(currentAiState, gameState, player);
-
-      if (decision.type === 'end_turn') {
-        addNotification(`🤖 ${currentAiState.name} has no more actions to take`, 'ai', false);
-        break;
+    const reason = await runSoloAiTurnLoop({
+      runtime: rt,
+      decide: (isRejected) => resolveSoloAiDecisionViaEngineRef.current(aiPlayerRef.current, gameStateLiveRef.current, playerRef.current, { isRejected }),
+      execute: async (action) => {
+        v96Flow('AI_ACTION_ATTEMPT', String(action?.type));
+        const ok = await executeAiActionRef.current(action as AIAction);
+        v96Flow(ok ? 'AI_ACTION_COMMITTED' : 'AI_ACTION_FAILED', `${action?.type} ${ok ? `actions=${rt.successfulActions + 1}/${rt.effectiveBudget}` : ''}`.trim());
+        return ok;
+      },
+      fingerprint: () => soloAiProgressFingerprint(aiPlayerRef.current, gameStateLiveRef.current),
+      isStale: isSessionStale,
+      ownsTurn: () => gameStateLiveRef.current.currentTurn === 'ai',
+      isGameOver: () => gameStateLiveRef.current.gameMode !== 'game',
+      tryOverride: () => soloAiOverrideRef.current(),
+      think: async () => {
+        const thinkingTime = profile.thinkingTimeMin + aiRandom() * (profile.thinkingTimeMax - profile.thinkingTimeMin);
+        await new Promise(resolve => setTimeout(resolve, thinkingTime));
+      },
+      // Small delay between actions for visibility — also lets World Reaction / Living Regions settle before the next decision.
+      settle: async () => { await new Promise(resolve => setTimeout(resolve, 800)); },
+      onPhase: (phase) => {
+        setSoloAiPhase(phase);
+        if (phase === 'thinking' || phase === 'replanning') setCurrentAiAction(null); // an attempt is never shown as committed
       }
-
-      // CRITICAL FIX: Await action completion before proceeding
-      const actionSuccess = await executeAiAction(decision as AIAction);
-
-      if (!actionSuccess) {
-        console.warn('AI action failed, continuing to next action');
-        // Don't count failed actions toward budget
-        continue;
-      }
-
-      // Small delay between actions for visibility
-      await new Promise(resolve => setTimeout(resolve, 800));
-      if (isSessionStale()) { return; }
-
-      actionsTaken += 1;
-
-      // Consider action override if AI is behind
-      const aiOverrideRemaining = getActorOverridesRemaining('ai');
-      const aiUnderdog = getUnderdogBonus('ai', 'behavior').isUnderdog;
-      if (actionsTaken >= actionBudget && aiOverrideRemaining > 0 && aiUnderdog) {
-        const currentAi = aiPlayerRef.current;
-        const overrideCost = calculateActorOverrideCost('ai');
-        if (gameSettings.allowActionOverride && currentAi.money >= overrideCost && aiRandom() < 0.6) {
-          if (applyActorActionOverride('ai')) {
-            actionBudget += gameSettings.aiActionsPerDay;
-          }
-        }
-      }
+    });
+    if (reason === 'stale_session') { v96Flow('AI_TURN_ABANDONED_STALE', turnKey); return; } // a newer match/session owns the game
+    if (reason === 'ownership_lost') {
+      // Someone else already moved the turn on: release the AI without a second hand-back / day advance.
+      soloAiBeginFinalize(rt, reason, Date.now());
+      finishSoloAiTurnClaim(soloAiClaimsRef.current, turnKey);
+      isAiThinkingRef.current = false;
+      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+      setCurrentAiAction(null); setSoloAiPhase('idle'); rt.phase = 'finished';
+      v96Flow('AI_TURN_RELEASED', 'ownership already moved');
+      return;
     }
-
-    // End AI turn
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    if (isSessionStale()) { return; }
-
-    addNotification(`🤖 ${aiPlayerRef.current.name} ended their turn`, 'ai', true);
-    // Turn-transition subsystems run after main AI actions complete.
-    handleTurnTransition('ai');
-    dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
-
-    // In AI mode, advance the day after AI completes their turn
-    // This happens BEFORE switching back to player
-    advanceDay();
-
-    // Now switch to player turn for the new day
-    // CPFIX6: Reset human player actions deterministically on turn switch
-    dispatchPlayer({ type: 'RESET_ACTIONS' });
-    dispatchGameState({ type: 'SET_TURN', payload: 'player' });
-    setCurrentAiAction(null);
-
+    await finalizeSoloAiTurnRef.current(rt, reason, epochAtStart);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, aiPlayer, player, makeAiDecision, resolveSoloAiDecisionViaEngine, executeAiAction, addNotification, aiRandom, gameSettings, getUnderdogBonus, getActorOverridesRemaining, calculateActorOverrideCost, applyActorActionOverride]);
+  }, [gameSettings.aiActionsPerDay, addNotification, aiRandom, v96Flow]);
 
   // Always call the freshest performAiTurn without making the scheduler below
   // depend on its identity.
@@ -143740,9 +144619,24 @@ function dispatchGameSettingsChange(
         gameState.currentTurn === 'ai' && 
         !gameState.isAiThinking) {
       
+      // V9.6: never schedule a turn that is already claimed or finished (end-of-turn relaunch race).
+      const v96Key = computeSoloAiTurnKey(gameState, v95MatchEpochRef.current);
+      if (isSoloAiTurnClaimed(soloAiClaimsRef.current, v96Key)) return;
+      v96Flow('AI_SCHEDULED', v96Key);
       soloAiTurnTimeoutRef.current = setTimeout(() => {
         performAiTurnRef.current().catch(err => {
           console.error('[performAiTurn error]', err);
+          // V9.6: bounded fatal recovery — retry the same turn at most MAX_FATAL_RECOVERIES_PER_TURN times,
+          // then end it safely (never an endless scheduler retry storm).
+          const verdict = releaseSoloAiTurnAfterFatal(soloAiClaimsRef.current, v96Key);
+          v96Flow('AI_FATAL_ERROR', `${v96Key} → ${verdict}: ${err instanceof Error ? err.message : String(err)}`);
+          if (verdict === 'end_turn') {
+            const rt = soloAiRuntimeRef.current && soloAiRuntimeRef.current.turnKey === v96Key ? soloAiRuntimeRef.current : createSoloAiTurnRuntime(v96Key, 0, Date.now());
+            soloAiRuntimeRef.current = rt;
+            void finalizeSoloAiTurnRef.current?.(rt, 'fatal_error', v95MatchEpochRef.current);
+            return;
+          }
+          soloAiTurnSessionTokenRef.current = null;
           isAiThinkingRef.current = false;
           dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
         });
@@ -143777,6 +144671,16 @@ function dispatchGameSettingsChange(
       if (decideAiTurnWatchdog({ isThinking, hasPendingApprovals, msSinceLastAction: Date.now() - lastActorActionTimeRef.current }) === 'recover') {
         if (isDev) {
           console.warn('[Watchdog] isAiThinking has remained true for >15 seconds with no actor action recorded.');
+        }
+        const liveGs = gameStateLiveRef.current;
+        const soloRt = soloAiRuntimeRef.current;
+        if (isSoloRivalModeSelection(liveGs.selectedMode) && liveGs.currentTurn === 'ai' && soloRt && !soloRt.endIssued) {
+          // V9.6: a real solo hang is recovered by invalidating the stale loop and handing the turn back
+          // exactly once — merely clearing isAiThinking would let the scheduler relaunch the same stuck turn.
+          soloAiTurnSessionTokenRef.current = null;
+          v96Flow('AI_WATCHDOG_RECOVERY', soloRt.turnKey);
+          void finalizeSoloAiTurnRef.current?.(soloRt, 'watchdog_recovery', v95MatchEpochRef.current);
+          return;
         }
         isAiThinkingRef.current = false;
         startedTeamAiTurnKeysRef.current.clear();
@@ -144342,6 +145246,7 @@ function dispatchGameSettingsChange(
       }
       skipPersistentAbandonPromptRef.current = false;
       v95MatchEpochRef.current += 1;
+      soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
       if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
         flushDeferredTransactionsOnBoundary(gameSettings, 'next_match', (newSet) => {
           setGameSettings(newSet);
@@ -144734,6 +145639,7 @@ function dispatchGameSettingsChange(
 
   const handleRestartGame = useCallback(() => {
     v95MatchEpochRef.current += 1;
+    soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
       soloAiTurnTimeoutRef.current = null;
@@ -144877,6 +145783,7 @@ function dispatchGameSettingsChange(
       return false;
     }
     v95MatchEpochRef.current += 1; // invalidates deferred callbacks scheduled by the previous match
+    soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle'); v96Flow('MATCH_LOADED', '');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
       soloAiTurnTimeoutRef.current = null;
@@ -149012,6 +149919,7 @@ function dispatchGameSettingsChange(
     options?: { consumeAction?: boolean; reason?: string; silent?: boolean }
   ) => {
     if (!REGIONS[regionCode]) return false;
+    if (v96BlockHumanAction('Regional deposit', actorId, Boolean(options?.silent))) return false;
     if (gameSettings.negotiationMode) {
       if (actorId === 'player' && !options?.silent) {
         addNotification('Negotiation mode is enabled. Region deposits are disabled; use Negotiations instead.', 'warning', false, 'system');
@@ -149172,6 +150080,7 @@ function dispatchGameSettingsChange(
     actorId: string,
     options?: { consumeAction?: boolean; reason?: string; silent?: boolean }
   ) => {
+    if (v96BlockHumanAction('Cash-out', actorId, Boolean(options?.silent))) return false;
     if (gameSettings.negotiationMode) {
       if (actorId === 'player' && !options?.silent) {
         addNotification('Negotiation mode is enabled. Cash-out is disabled while diplomatic control is active.', 'warning', false, 'system');
@@ -151559,10 +152468,12 @@ function dispatchGameSettingsChange(
   }, [addNotification, gameSettings.creditScoreEnabled, gameSettings.earlyRepaymentEnabled, gameState, getActorDisplayName, getActorState, isAdvancedLoansEnabledForActor, updateActorState, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   const takeAdvancedLoan = useCallback((tierId: string, isEvent: boolean = false, eventId?: string) => {
+    if (!isEvent && v96BlockHumanAction('Taking a loan')) return;
     takeAdvancedLoanForActor('player', tierId, isEvent, eventId, { closeModal: true });
   }, [takeAdvancedLoanForActor]);
 
   const repayAdvancedLoan = useCallback((loanId: string, isEarlyRepayment: boolean = false) => {
+    if (v96BlockHumanAction('Loan repayment')) return;
     repayAdvancedLoanForActor('player', loanId, isEarlyRepayment);
   }, [repayAdvancedLoanForActor]);
 
@@ -151658,6 +152569,7 @@ function dispatchGameSettingsChange(
   }, [player, gameSettings, showConfirmation, addNotification]);
 
   const travelToRegion = useCallback((region: any) => {
+    if (v96BlockHumanAction('Travel')) return;
     if (isActorInTransit(player)) {
       addNotification('Travel blocked: You are currently en route in transit.', 'warning', true);
       return;
@@ -151798,6 +152710,7 @@ function dispatchGameSettingsChange(
 
   // Handle double or nothing
   const handleDoubleOrNothing = useCallback(() => {
+    if (v96BlockHumanAction('Double or Nothing')) return;
     if (!gameState.doubleOrNothingAvailable || gameState.lastChallengeReward <= 0) return;
 
     executeUniversalActionPipeline(
@@ -151839,6 +152752,7 @@ function dispatchGameSettingsChange(
   }, [gameState.doubleOrNothingAvailable, gameState.lastChallengeReward, addNotification, updatePersonalRecords, player, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
     const takeChallenge = useCallback((challengeInput: any, wager: any) => {
+      if (v96BlockHumanAction('Challenge')) return;
     const challengeName = typeof challengeInput === 'object' ? challengeInput.name : challengeInput;
     const challenge = typeof challengeInput === 'object' ? challengeInput : (REGIONS[player.currentRegion]?.challenges || []).find((c: any) => c.name === challengeName) || { name: challengeName, difficulty: 1, reward: 1.5 };
 
@@ -152085,6 +152999,7 @@ function dispatchGameSettingsChange(
   }, [gameState.supplyDemand]);
 
     const sellResource = useCallback((resource: any, price: any) => {
+      if (v96BlockHumanAction('Selling')) return;
     const apValidation = validateActionPointRequest(player, 'sell_resources', gameSettings);
     const sellApCost = apValidation.cost;
 
@@ -152217,6 +153132,7 @@ function dispatchGameSettingsChange(
     options?: { consumeAction?: boolean; reason?: string; silent?: boolean }
   ) => {
     if (!RESOURCE_CATEGORIES[resource]) return false;
+    if (v96BlockHumanAction('Buying resources', actorId, Boolean(options?.silent))) return false;
 
     const quantity = Math.max(1, Math.floor(Number(rawQuantity) || 0));
     const actorState = getActorState(actorId);
@@ -152679,6 +153595,8 @@ function dispatchGameSettingsChange(
         }
       } else if (gameState.selectedMode === 'ai' || gameState.selectedMode === 'grand_tour' || gameState.selectedMode === 'scenario') {
         // Switch to AI turn
+        v96Flow('PLAYER_END_TURN', `day ${gameState.day}`);
+        v96Flow('TURN_OWNER', 'player → ai');
         dispatchGameState({ type: 'SET_TURN', payload: 'ai' });
       } else {
         // Single player mode - advance day
@@ -163928,6 +164846,7 @@ function dispatchGameSettingsChange(
   // MILESTONE 3 REMEDIATION: ACTION DISPATCH HANDLERS
 
   const handleAcceptContract = useCallback((contractId: string) => {
+    if (v96BlockHumanAction('Accepting a contract')) return;
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const execCtx: ActionExecutionContext = {
@@ -163959,6 +164878,7 @@ function dispatchGameSettingsChange(
 
   /** V9.1: hand over whatever the active contract needs right now (resources here, capital, infrastructure). */
   const handleDeliverContract = useCallback((contractId: string) => {
+    if (v96BlockHumanAction('Contract delivery')) return;
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const before = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
@@ -163975,6 +164895,7 @@ function dispatchGameSettingsChange(
   }, [gameState, player, addNotification]);
 
   const handleFulfillContract = useCallback((contractId: string) => {
+    if (v96BlockHumanAction('Contract fulfilment')) return;
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const execCtx: ActionExecutionContext = {
@@ -164003,6 +164924,7 @@ function dispatchGameSettingsChange(
   }, [gameState, player.id, player.teamId, addNotification]);
 
   const handleFundInfrastructure = useCallback((projectId: string, amount: number) => {
+    if (v96BlockHumanAction('Infrastructure funding')) return;
     const target: any = (gameState.infrastructureProjects as any)?.[projectId];
     if (target?.status === 'locked') {
       // V9.3: competing projects share a site — the canonical action refuses a locked project; say why.
@@ -164034,6 +164956,7 @@ function dispatchGameSettingsChange(
   }, [gameState, player.id, player.teamId, addNotification]);
 
   const handleLaunchExpedition = useCallback((targetId: string, riskChoice: ExpeditionRiskChoice = 'balanced') => {
+    if (v96BlockHumanAction('Launching an expedition')) return;
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const target = gameState.expeditionTargets?.[targetId];
@@ -166788,7 +167711,12 @@ function dispatchGameSettingsChange(
     const control = playerControlState;
     return {
       turn: dnRound, day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 0), teamMode: isTeamMode,
-      isHumanTurn: isPlayerTurnForCoPilot, currentActorName: v9CurrentActorName, actorStatus: isPlayerTurnForCoPilot ? null : gameState.isAiThinking ? 'Thinking about their move…' : String((currentActor as any)?.aiPlan?.summary || 'Planning next move'),
+      isHumanTurn: isPlayerTurnForCoPilot, currentActorName: v9CurrentActorName, actorStatus: isPlayerTurnForCoPilot ? null
+        // V9.6: solo rival turns show the same real phase as the turn pill (action while acting, never masked).
+        : (isSoloRivalModeSelection(gameState.selectedMode) && !isTeamMode && gameState.currentTurn === 'ai')
+          ? (soloAiPhase === 'acting' && currentAiAction?.description ? currentAiAction.description
+            : soloAiPhase === 'replanning' ? 'Replanning…' : soloAiPhase === 'ending' ? 'Ending turn…' : 'Thinking…')
+        : gameState.isAiThinking ? 'Thinking about their move…' : String((currentActor as any)?.aiPlan?.summary || 'Planning next move'),
       control: { owner: control.owner, headline: control.headline, copilotHoldsControl: control.copilotHoldsControl, rescue: control.phase === 'rescue_active', actionProgress: control.actionProgress, currentActionLabel: control.currentActionLabel },
       ap: { finite: v9ApFinite, remaining: v9ApFinite ? v9ApRemaining : null }, cash: Number(player?.money || 0),
       win: { label: WIN_METRIC_PROFILES[metric]?.label || 'Win condition', value: winValue, target: null, opponent: null },
@@ -180319,7 +181247,17 @@ function dispatchGameSettingsChange(
       : activeActorRestrictionLevel === 'severely_restricted' ? 'Severely restricted — evaluating economy'
       : activeActorRestrictionLevel === 'governor_deadlock' ? 'Governor deadlock — no permitted action'
       : null;
-    const turnSummary = isAiTurn
+    // V9.6: in solo rival modes the pill reflects the real AI turn phase — the committed/executing action is
+    // shown instead of being masked by the turn-long isAiThinking flag. Status labels only, never reasoning.
+    const isSoloRival = isSoloRivalModeSelection(gameState.selectedMode) && !isTeamMode;
+    const soloRt = soloAiRuntimeRef.current;
+    const soloAiSummary = !isSoloRival || !isAiTurn ? null
+      : soloAiPhase === 'acting' && currentAiAction?.description ? currentAiAction.description
+      : soloAiPhase === 'replanning' ? (soloRt?.lastFailureLabel ? `Couldn't complete ${soloRt.lastFailureLabel} — replanning` : 'Replanning...')
+      : soloAiPhase === 'ending' ? 'Ending turn...'
+      : (soloAiPhase === 'thinking' || gameState.isAiThinking) ? 'Thinking...'
+      : (pendingApprovalRequests.some(r => r.actorId === activeActor?.id) ? null : 'Thinking...'); // AI owns the turn and is about to start
+    const turnSummary = soloAiSummary ? soloAiSummary : isAiTurn
       ? (gameState.isAiThinking ? 'Thinking...'
         : activeActorTreasuryRequest ? 'Awaiting funding approval'
         : activeActorHasApprovalPending ? 'Awaiting your approval'
@@ -180327,9 +181265,9 @@ function dispatchGameSettingsChange(
       : (isTeamMode ? `${activeActor?.displayName || activeActor?.name}'s turn` : 'Awaiting your action');
     
     return (
-      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40">
-        <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />
-        <div className={`${isPlayerTurn ? themeStyles.success : themeStyles.ai} ${themeStyles.shadow} rounded-full px-6 py-3 flex items-center space-x-3 animate-pulse`}>
+      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 flex flex-col items-center gap-1" style={{ marginTop: 'env(safe-area-inset-top, 0px)' }} data-testid="v96-turn-indicator">
+        {!isSoloRival && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
+        <div role="status" aria-live="polite" data-testid="v96-turn-pill" data-turn-owner={isPlayerTurn ? 'human' : 'ai'} data-ai-phase={isAiTurn ? soloAiPhase : 'idle'} className={`${isPlayerTurn ? themeStyles.success : themeStyles.ai} ${themeStyles.shadow} rounded-full px-6 py-3 flex items-center space-x-3 ${isSoloRival ? 'v96-turn-owner-pulse' : 'animate-pulse'}`}>
           <span className="text-2xl">{isPlayerTurn ? '👤' : '🤖'}</span>
           <div>
             <div className="font-bold text-white">
@@ -180337,11 +181275,12 @@ function dispatchGameSettingsChange(
                 ? (isTeamMode ? `${activeActor?.displayName || activeActor?.name} • ${activeTeam?.name || 'Your Team'}` : 'YOUR TURN')
                 : (isTeamMode ? `${activeActor?.displayName || activeActor?.name} • ${activeTeam?.name || 'AI Team'}` : "AI'S TURN")}
             </div>
-            <div className="text-xs text-white opacity-75">
+            <div className="text-xs text-white opacity-75" data-testid="v96-turn-status">
               {turnSummary}
             </div>
           </div>
         </div>
+        {isSoloRival && isPlayerTurn && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
       </div>
     );
   };
@@ -183340,6 +184279,21 @@ function dispatchGameSettingsChange(
         <OptionalSurfaceBoundary surface="GuidedLearningInspector"><GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Content & Replayability Inspector"><ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Game Feel Inspector"><GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="Human VS AI Turn Flow Inspector">
+          <HumanVsAiTurnFlowInspector
+            theme={themeStyles}
+            live={{ turnKey: computeSoloAiTurnKey(gameState, v95MatchEpochRef.current), currentTurn: String(gameState.currentTurn), currentActorId: String(gameState.currentActorId), isAiThinking: Boolean(gameState.isAiThinking), day: Number(gameState.day || 1), selectedMode: String(gameState.selectedMode || '') }}
+            phase={soloAiPhase}
+            runtime={soloAiRuntimeRef.current}
+            claims={soloAiClaimsRef.current}
+            flow={v96FlowRef.current}
+            sessionActive={Boolean(soloAiTurnSessionTokenRef.current)}
+            aiActionsPerDay={Number(gameSettings.aiActionsPerDay || 3)}
+            lastAttemptAt={v96LastAttemptAtRef.current}
+            lastProgressAt={lastActorActionTimeRef.current}
+            currentActionLabel={currentAiAction?.description || null}
+          />
+        </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Release Readiness Center">
           <ReleaseReadinessCenter
             theme={themeStyles}
@@ -183390,7 +184344,7 @@ function dispatchGameSettingsChange(
         {renderNotificationBar()}
         
         {/* Turn Indicator / Transit banner — in PLAY the unified Match Header carries both (no duplicate floating pill). */}
-        {experienceLayer !== 'play' && renderTurnIndicator()}
+        {(experienceLayer !== 'play' || (gameState.gameMode === 'game' && gameState.selectedMode === 'ai')) && renderTurnIndicator()}
 
         {experienceLayer !== 'play' && renderHudTransitBanner()}
 
