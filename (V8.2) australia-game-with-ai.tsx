@@ -14056,6 +14056,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   // V9.3 content & replayability (all optional/defaulted — old saves and custom scenarios need none of these)
   v93ContentEnabled: true,
   nationalSystemsEnabled: true,
+  industriesEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26397,6 +26398,8 @@ export type GameSettingsState = {
   v93ContentEnabled?: boolean;
   /** V10.0 National Systems & Interregional Networks (core feature; off = exact V9 behaviour). */
   nationalSystemsEnabled?: boolean;
+  /** V10.1 Industries & Supply Chains (requires National Systems; off = V10.0 without industry effects). */
+  industriesEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36133,6 +36136,8 @@ export const initialGameState = {
   livingRegions: null as LivingRegionsState | null,
   /** V10: only non-derivable national memory (bands, history); the network snapshot is always recomputed. */
   nationalSystems: null as any,
+  /** V10.1: only non-derivable industry memory (bands, bounded history); the supply-chain snapshot is recomputed. */
+  industries: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80088,6 +80093,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.contentState = sanitizeMatchContentState(migrated.gameState.contentState || migrated.contentState);
   // V10 National Systems: pre-V10 saves carry none — networks are derived on load; history starts there (no fake past).
   if (migrated.gameState) migrated.gameState.nationalSystems = sanitizeNationalSystemsPersisted(migrated.gameState.nationalSystems);
+  // V10.1: pre-V10.1 saves carry no industry memory — derived on load; no fake supply-chain history.
+  if (migrated.gameState) migrated.gameState.industries = sanitizeIndustriesPersisted(migrated.gameState.industries);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -122041,7 +122048,10 @@ export type SWRKind =
   | 'faction_influence_shift' | 'faction_relationship_changed_major' | 'faction_coalition_formed' | 'faction_request_issued' | 'faction_conflict_escalated'
   // V10 National Systems (derived band transitions; National Systems never consumes these).
   | 'national_bottleneck_formed' | 'national_bottleneck_resolved' | 'national_dependency_became_critical' | 'national_dependency_reduced'
-  | 'national_resilience_improved' | 'national_resilience_deteriorated' | 'national_capacity_expanded';
+  | 'national_resilience_improved' | 'national_resilience_deteriorated' | 'national_capacity_expanded'
+  // V10.1 Industries & Supply Chains (derived band transitions; the industry layer never consumes these).
+  | 'industry_became_constrained' | 'industry_recovered' | 'supply_shortage_formed' | 'supply_shortage_resolved' | 'supply_surplus_formed'
+  | 'critical_supply_dependency_formed' | 'critical_supply_dependency_reduced' | 'industrial_output_accelerated' | 'industrial_output_declined';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122545,35 +122555,36 @@ const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 
 /** Regional shifts Living Regions emits (consumed by other systems; never by Living Regions itself). */
 const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed', 'faction_request_issued', 'faction_conflict_escalated'];
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
+const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
-  { system: 'market', label: 'Markets', kinds: ['project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
-  { system: 'contracts', label: 'Contracts', kinds: ['national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
+  { system: 'contracts', label: 'Contracts', kinds: ['industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
   { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
   { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -122804,6 +122815,11 @@ export function updateWorldSignals(state: WorldReactionState, s: SWRInputs, even
     if (e.kind === 'diplomatic_pact_broken') add('diplomatic_tension', 'national', 0.6, e.id);
     if (e.kind === 'rival_target_reassessed' && e.actorId) add('rival_expansion_pressure', e.actorId, 0.4, e.id);
     if (e.kind === 'contract_expiring') add('contract_relevance', e.subjectId, 0.6, e.id);
+    // V10.1: national supply conditions → bounded market pressure on the matching canonical goods.
+    if (e.kind === 'supply_shortage_formed' || e.kind === 'supply_surplus_formed') {
+      const sup = (e.tags.find(t => t.startsWith('supply:')) || '').slice(7) as StrategicSupplyKind;
+      (SUPPLY_MARKET_RESOURCES[sup] || []).forEach(r => add(e.kind === 'supply_shortage_formed' ? 'market_demand_pressure' : 'market_supply_pressure', r, 0.3, e.id));
+    }
   });
   if (s.stability) { const v = s.stability.national; const inst = v < 30 ? 0.9 : v < 50 ? 0.5 : v < 60 ? 0.2 : 0; if (inst) map.set('public_instability:national', { key: 'public_instability:national', kind: 'public_instability', subject: 'national', value: inst, updatedTurn: turn, source: 'stability' }); else map.delete('public_instability:national'); }
   // Regional pressure cannot outlive a region that became safe.
@@ -123242,6 +123258,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  industry_became_constrained: 'Industry constrained', industry_recovered: 'Industry recovered', supply_shortage_formed: 'Supply shortage', supply_shortage_resolved: 'Shortage eased',
+  supply_surplus_formed: 'Supply surplus', critical_supply_dependency_formed: 'Critical supplier', critical_supply_dependency_reduced: 'Supplier risk eased', industrial_output_accelerated: 'Output ↑', industrial_output_declined: 'Output ↓',
   national_bottleneck_formed: 'Bottleneck', national_bottleneck_resolved: 'Bottleneck eased', national_dependency_became_critical: 'Critical dependency', national_dependency_reduced: 'Dependency eased',
   national_resilience_improved: 'Resilience ↑', national_resilience_deteriorated: 'Resilience ↓', national_capacity_expanded: 'Capacity ↑',
   region_reinforced: 'Reinforced', region_became_safe: 'Threat ↓', region_became_contested: 'Pressure ↑', region_lost: 'Lost', region_secured: 'Secured', rival_pressure_increased: 'Pressure ↑', rival_pressure_decreased: 'Pressure ↓',
@@ -124273,6 +124291,11 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
         lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national network', e.id);
         break;
       }
+      // V10.1: industry signals — Living Regions decides the (bounded) regional meaning.
+      case 'industry_became_constrained': { pulse(e.significance === 'major' || e.significance === 'critical' ? -0.08 : -0.04); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'supply chain', e.id); break; }
+      case 'industry_recovered': { pulse(0.04); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'supply chain', e.id); break; }
+      case 'supply_shortage_formed': case 'supply_shortage_resolved': case 'supply_surplus_formed':
+      case 'critical_supply_dependency_formed': case 'critical_supply_dependency_reduced': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'supply chain', e.id); break; }
       case 'national_bottleneck_resolved':
       case 'national_dependency_reduced':
       case 'national_capacity_expanded': {
@@ -124716,7 +124739,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124734,6 +124757,8 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   const actorKey = actor ? actor.id : null;
   const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
   // V10.0: interregional network questions (only when a National Systems view exists).
+  const iq = detectIndustryQuery(raw, gw);
+  if (iq) return mk('national', { industry: iq, regionId: iq.regionId });
   const nq = detectNationalSystemsQuery(raw, gw);
   if (nq) return mk('national', { national: nq, regionId: nq.regionId });
   // What-if on an existing infrastructure project.
@@ -124767,6 +124792,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.industry && gw.national?.industries) return composeIndustryAnswer(query.industry, gw);
   if (query.topic === 'national' && query.national && gw.national) return composeNationalSystemsAnswer(query.national, gw);
   const v = gw.livingRegions!;
   const sections: GIAnswerSection[] = [];
@@ -128735,6 +128761,9 @@ export interface LearningContext {
   contentDilemma?: string | null; contentOpportunity?: string | null; contentEvent?: string | null;
   /** V10.0 national networks (public): a visible bottleneck or critical dependency, as one sentence. */
   nationalConstraint?: string | null;
+  /** V10.1 supply chains (public): a constrained industry, and a dominant single supplier, as one sentence each. */
+  supplyConstraint?: string | null;
+  supplyDependency?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128820,6 +128849,12 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'national_networks', title: 'National networks', category: 'regions', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'infrastructure', askPrompt: 'Where are the national bottlenecks?', related: ['infrastructure', 'regional_development'],
     relevant: c => (c.nationalConstraint ? 'a national network is constrained' : null),
     lesson: c => ({ headline: 'Regions share national networks', lines: [c.nationalConstraint || '', 'Freight, energy, water, trade and digital capacity flow between neighbours — a bottleneck in one region can hold others back, and infrastructure you fund may help rivals too.'], asks: ['Where are the national bottlenecks?'], surface: 'inline' }) },
+  { id: 'supply_chains', title: 'Supply chains', category: 'regions', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'Why is this industry constrained?', related: ['national_networks'],
+    relevant: c => (c.supplyConstraint ? 'an industry is short of inputs from other regions' : null),
+    lesson: c => ({ headline: 'Supply chains', lines: ['Industries can depend on goods produced in other regions.', c.supplyConstraint || ''], asks: ['Why is this industry constrained?'], surface: 'inline' }) },
+  { id: 'supply_dependency', title: 'Supply dependency', category: 'regions', tier: 'interaction', priority: 6, minLevel: 3, requires: ['supply_chains'], directoryId: 'regions', askPrompt: 'Is Australia too dependent on one region?', related: ['supply_chains'],
+    relevant: c => (c.supplyDependency ? 'one supplier dominates an input' : null),
+    lesson: c => ({ headline: 'Dependency', lines: [c.supplyDependency || '', 'That makes the buyer vulnerable to a disruption in the supplier — an alternative source reduces the risk.'], asks: ['Is Australia too dependent on one region?'], surface: 'inline' }) },
   { id: 'factions', title: 'Stakeholders', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'factions', askPrompt: 'Who matters in this region?', related: ['contracts'],
     relevant: c => (c.stakeholder ? 'a regional group has asked for something' : null),
     lesson: c => ({ headline: 'Regional stakeholders', lines: [c.stakeholder || '', 'Groups support or oppose moves based on what they want for their region — helping one can worry another.'], asks: ['Who matters in this region?'], surface: 'card' }) },
@@ -129495,6 +129530,9 @@ export interface ContentContext {
   /** V10: region → network condition (optional; absent when National Systems is off). */
   national?: Record<string, Partial<Record<NationalNetworkKind, NationalNetworkCondition>>> | null;
   nationalDeps?: Array<{ consumer: string; provider: string; network: NationalNetworkKind; importance: string }>;
+  /** V10.1: region → industry / supply condition (optional; absent when Industries is off). */
+  industries?: Record<string, Partial<Record<StrategicIndustryKind, IndustryCondition>>> | null;
+  supplies?: Record<string, Partial<Record<StrategicSupplyKind, SupplyCondition>>> | null;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -129523,6 +129561,9 @@ export type ContentReq =
   | { k: 'stability_max'; value: number }
   // V10 National Systems (read-only network context; the content engine still decides eligibility).
   | { k: 'network'; network: NationalNetworkKind; conditions: NationalNetworkCondition[] }
+  /** V10.1: a region's industry band, or a supply band (regional, or anywhere nationally with scope 'national'). */
+  | { k: 'industry'; industry: StrategicIndustryKind; conditions: IndustryCondition[] }
+  | { k: 'supply'; supply: StrategicSupplyKind; conditions: SupplyCondition[]; scope?: 'national' }
   | { k: 'dependency'; network?: NationalNetworkKind; critical?: boolean }
   | { k: 'project'; projectId: string; status: string[] }
   | { k: 'window'; type: string }
@@ -129578,6 +129619,16 @@ export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionI
     case 'network': {
       const c = regionId ? ctx.national?.[regionId]?.[req.network] : undefined;
       return res(Boolean(c && req.conditions.includes(c)), `${name} ${NATIONAL_NETWORK_LABEL[req.network].toLowerCase()} is ${c ? NATIONAL_CONDITION_LABEL[c].toLowerCase() : 'unknown'}`, `${name} ${NATIONAL_NETWORK_LABEL[req.network].toLowerCase()} is not ${req.conditions.join('/')}`);
+    }
+    case 'industry': {
+      const c = regionId ? ctx.industries?.[regionId]?.[req.industry] : undefined;
+      return res(Boolean(c && req.conditions.includes(c)), `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is ${c ? INDUSTRY_CONDITION_LABEL[c].toLowerCase() : 'absent'}`, `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is not ${req.conditions.join('/')}`);
+    }
+    case 'supply': {
+      const where = req.scope === 'national' ? Object.entries(ctx.supplies || {}).filter(([, m]) => m[req.supply] && req.conditions.includes(m[req.supply]!)).map(([c]) => c) : [];
+      const c = regionId ? ctx.supplies?.[regionId]?.[req.supply] : undefined;
+      const ok = req.scope === 'national' ? where.length > 0 : Boolean(c && req.conditions.includes(c));
+      return res(ok, req.scope === 'national' ? `${SUPPLY_LABEL[req.supply].toLowerCase()} is ${req.conditions.join('/')} in ${where.join(', ')}` : `${name} ${SUPPLY_LABEL[req.supply].toLowerCase()} is ${c}`, `${SUPPLY_LABEL[req.supply].toLowerCase()} is not ${req.conditions.join('/')}${req.scope === 'national' ? ' anywhere' : ` in ${name}`}`);
     }
     case 'dependency': {
       const d = (ctx.nationalDeps || []).find(x => x.consumer === regionId && (!req.network || x.network === req.network) && (req.critical ? x.importance === 'critical' : x.importance === 'critical' || x.importance === 'high'));
@@ -129845,6 +129896,8 @@ function contentReqSig(reqs: ContentReq[], ctx: ContentContext, regionId: string
       case 'stability_max': parts.push(`st${r?.stability}`); break;
       case 'network': parts.push(`n${q.network}${r ? ctx.national?.[r.code]?.[q.network] : ''}`); break;
       case 'dependency': parts.push(`dp${(ctx.nationalDeps || []).filter(x => !r || x.consumer === r.code).map(x => x.importance).join('')}`); break;
+      case 'industry': parts.push(`i${q.industry}${r ? ctx.industries?.[r.code]?.[q.industry] : ''}`); break;
+      case 'supply': parts.push(`s${q.supply}${q.scope === 'national' ? Object.values(ctx.supplies || {}).map(m => m[q.supply] || '').join('') : r ? ctx.supplies?.[r.code]?.[q.supply] : ''}`); break;
       case 'project': parts.push(`pj${ctx.projects.find(x => x.id === q.projectId)?.status}`); break;
       case 'window': parts.push(`w${ctx.windows.map(w => w.id).join()}`); break;
       case 'any': q.of.forEach(walk); break;
@@ -130276,6 +130329,18 @@ export const CONTRACT_TEMPLATE_REGISTRY: ContractTemplate[] = [
     text: { '*': { title: '{region} Energy Security Program', description: '{region} leans heavily on energy from another region. Co-fund local generation to cut that dependency.' } },
     objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 9,
     requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'dependency', network: 'energy' }, { k: 'network', network: 'energy', conditions: ['bottlenecked', 'critical'] }] }] }),
+  ctpl({ id: 'ind_manufacturing_inputs', title: 'Manufacturing Input Security', archetype: 'capital', contractType: 'manufacturing_modernization', issuingFactionId: null, regions: ['VIC', 'NSW', 'SA', 'QLD'], themes: ['manufacturing', 'logistics'], roles: ['economic_growth', 'long_term_investment'],
+    text: { '*': { title: '{region} Manufacturing Input Security', description: '{region} factories are running below capacity because their inputs are tight. Co-fund supply and logistics upgrades to restore output.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'industry', industry: 'manufacturing', conditions: ['constrained', 'disrupted'] }] }),
+  ctpl({ id: 'ind_mineral_supply', title: 'National Mineral Supply', archetype: 'infrastructure', contractType: 'mining_tech_initiative', issuingFactionId: 'pilbara_mining_consortium', regions: ['WA', 'QLD', 'SA', 'NSW', 'NT'], themes: ['mining', 'logistics'], roles: ['economic_growth', 'infrastructure'],
+    text: { '*': { title: '{region} Mineral Supply Expansion', description: 'Manufacturers elsewhere are short of minerals. Get new extraction or freight capacity operating in {region} and the miners pay.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 2000 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'industry', industry: 'mining', conditions: ['developing', 'healthy', 'strong', 'booming'] }, { k: 'supply', supply: 'minerals', conditions: ['shortage', 'tight'], scope: 'national' }] }),
+  ctpl({ id: 'ind_agri_export', title: 'Agricultural Export Push', archetype: 'capital', contractType: 'agricultural_logistics', issuingFactionId: null, regions: ['QLD', 'VIC', 'TAS', 'NSW', 'SA', 'WA'], themes: ['agriculture', 'trade'], roles: ['trade', 'economic_growth'],
+    text: { '*': { title: '{region} Agricultural Export Push', description: '{region} is producing more farm goods than it uses. Fund the logistics to turn that surplus into export income.' } },
+    objective: { type: 'invest_capital', base: 2000 }, requirement: { cashOnHand: 1200 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'industry', industry: 'agriculture', conditions: ['healthy', 'strong', 'booming'] }, { k: 'supply', supply: 'agricultural_goods', conditions: ['surplus', 'abundant'] }] }),
   ctpl({ id: 'sa_hydrogen_pilot', title: 'Hydrogen Pilot Plant', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: 'sa_clean_energy_council', regions: ['SA'], themes: ['renewables', 'energy'], roles: ['long_term_investment', 'development'],
     text: { SA: { title: 'Whyalla Hydrogen Pilot', description: 'Co-fund a green hydrogen pilot in {region}. Capital is tied up for the program.' } },
     objective: { type: 'invest_capital', base: 3500 }, requirement: { cashOnHand: 1500 }, duration: 10,
@@ -130430,6 +130495,14 @@ export const DILEMMA_TEMPLATE_REGISTRY: DilemmaTemplate[] = [
       { id: 'automated', label: 'Automated Port Expansion', pros: ['High productivity', 'Export capacity'], cons: ['Labour relationship suffers', 'Capital outlay'], scores: { economy: 2, control: 0, stability: -1, longTerm: 1 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: -4 }, { k: 'flag', key: 'qld_port_path', value: 'automated' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_partnership' }, { k: 'offer_contract', templateId: 'qld_freight_capacity' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority'], losers: ['regional_labor_coalition'] } },
       { id: 'partnership', label: 'Labour Partnership Expansion', pros: ['Regional stability', 'Labour relationship', 'Moderate capacity'], cons: ['Higher cost', 'Slower'], scores: { economy: 1, control: 1, stability: 2, longTerm: 0 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'standing', delta: 8 }, { k: 'stability', delta: 2, turns: 3 }, { k: 'flag', key: 'qld_port_path', value: 'partnership' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_automated' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority', 'regional_labor_coalition'], losers: [] } },
       { id: 'delay', label: 'Delay', pros: ['Preserve capital'], cons: ['Regional momentum at risk', 'A rival may build first'], scores: { economy: 0, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'qld_port_path', value: 'delayed' }] }
+    ] }),
+  dtpl({ id: 'ind_input_crunch', title: '{region} Manufacturing Input Crunch', summary: 'Factories are running below capacity because inputs are tight.', regions: ['VIC', 'NSW', 'SA', 'QLD'], themes: ['manufacturing', 'logistics'], roles: ['economic_growth', 'infrastructure'], conflictType: 'growth_vs_capacity', factionIds: ['pilbara_mining_consortium', 'regional_labor_coalition'],
+    prompt: "{region}'s factories are operating below capacity because mineral inputs are tight. How should you respond?",
+    requires: [{ k: 'industry', industry: 'manufacturing', conditions: ['constrained', 'disrupted'] }],
+    choices: [
+      { id: 'alternative', label: 'Fund an alternative freight corridor', pros: ['Alternative mineral supply', 'National resilience'], cons: ['Capital', 'Takes time'], scores: { economy: 1, control: 0, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -2000 }, { k: 'flag', key: 'input_crunch_path', value: 'alternative' }, { k: 'offer_contract', templateId: 'nat_freight_capacity' }], nav: 'infrastructure', factions: { winners: ['regional_labor_coalition'], losers: [] } },
+      { id: 'main_corridor', label: 'Prioritise the main supplier corridor', pros: ['Faster improvement', 'Strong throughput'], cons: ['Deepens dependence on one supplier'], scores: { economy: 2, control: 0, stability: 0, longTerm: 0 }, effects: [{ k: 'cash', amount: -1200 }, { k: 'flag', key: 'input_crunch_path', value: 'main_corridor' }], nav: 'infrastructure', factions: { winners: ['pilbara_mining_consortium'], losers: [] } },
+      { id: 'slow', label: 'Slow manufacturing expansion', pros: ['Preserve cash', 'Lower input pressure'], cons: ['Growth slows'], scores: { economy: -1, control: 0, stability: 1, longTerm: -1 }, effects: [{ k: 'flag', key: 'input_crunch_path', value: 'slow' }] }
     ] }),
   dtpl({ id: 'wa_diversify', title: 'Diversify {region}?', summary: 'The WA economy is heavily exposed to one commodity.', regions: ['WA'], themes: ['mining', 'renewables'], roles: ['long_term_investment', 'recovery'], conflictType: 'specialize_vs_diversify', factionIds: ['pilbara_mining_consortium', 'sa_clean_energy_council'],
     prompt: '{region} depends on mining. Double down, or buy resilience?',
@@ -131015,6 +131088,8 @@ function satisfyReq(q: ContentReq, ctx: ContentContext, st: MatchContentState, r
     case 'stability_max': if (r) r.stability = q.value; break;
     case 'network': { const code = region || 'NSW'; ctx.national = { ...(ctx.national || {}), [code]: { ...((ctx.national || {})[code] || {}), [q.network]: q.conditions[0] } }; break; }
     case 'dependency': ctx.nationalDeps = [...(ctx.nationalDeps || []), { consumer: region || 'NSW', provider: 'SA', network: q.network || 'energy', importance: 'critical' }]; break;
+    case 'industry': { const code = region || 'NSW'; ctx.industries = { ...(ctx.industries || {}), [code]: { ...((ctx.industries || {})[code] || {}), [q.industry]: q.conditions[0] } }; break; }
+    case 'supply': { const code = region || 'NSW'; ctx.supplies = { ...(ctx.supplies || {}), [code]: { ...((ctx.supplies || {})[code] || {}), [q.supply]: q.conditions[0] } }; break; }
     case 'project': ctx.projects = [...ctx.projects, { id: q.projectId, regionId: region || 'NSW', projectType: 'x', status: q.status[0] }]; break;
     case 'window': ctx.windows = [...ctx.windows, { id: 'probe', type: q.type, subject: region || 'NSW', expiresTurn: ctx.day + 2, reason: 'probe' }]; break;
     case 'contracts_on': ctx.contractsEnabled = true; break;
@@ -131159,7 +131234,8 @@ function contentSyntheticWorld(seed: number, opening: RegionalOpening, day: numb
 /** Content that only exists after a specific event/decision/rival move — absence in a short simulation is expected. */
 export function contentIsConditionalByDesign(t: ContentTemplateBase): boolean {
   const conditional = (q: ContentReq): boolean => q.k === 'any' ? q.of.every(conditional)
-    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window'].includes(q.k)
+    // V10/V10.1 structural requirements (network, dependency, industry, supply) only hold when that emergent state exists.
+    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window', 'network', 'dependency', 'industry', 'supply'].includes(q.k)
       || (q.k === 'condition' && (q.kind === 'post_crisis_recovery' || q.kind === 'commodity_boom')) || (q.k === 'opportunity' && q.kind === 'recovery_investment');
   return t.rarity === 'rare' || t.rarity === 'exceptional' || t.kind === 'crisis' || t.requires.some(conditional);
 }
@@ -131234,6 +131310,8 @@ export interface ContentLiveInputs {
   contractsEnabled: boolean; infraEnabled: boolean;
   /** V10 national network snapshot (optional). */
   national?: NationalSystemsState | null;
+  /** V10.1 industries snapshot (optional). */
+  industries?: IndustriesSupplyChainsState | null;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   regionalStability: Record<string, number>;
 }
@@ -131283,6 +131361,8 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     strategyRegion: i.strategyRegion, campaignVars: i.campaignVars || {}, contractsEnabled: i.contractsEnabled, infraEnabled: i.infraEnabled,
     national: i.national ? Object.fromEntries(Object.values(i.national.regions).map(g => [g.regionId, Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, g.networks[n].condition]))])) : null,
     nationalDeps: i.national ? i.national.dependencies.map(d => ({ consumer: d.consumerRegionId, provider: d.providerRegionId, network: d.network, importance: d.importance })) : [],
+    industries: i.industries ? Object.fromEntries(Object.values(i.industries.regions).map(g => [g.regionId, Object.fromEntries(Object.values(g.industries).map(x => [x!.industry, x!.condition]))])) : null,
+    supplies: i.industries ? Object.fromEntries(Object.entries(i.industries.supplies).map(([c, l]) => [c, Object.fromEntries(l.map(x => [x.supply, x.condition]))])) : null,
     projects: i.projects || [],
     windows: (i.windows || []).filter(w => w.status === 'open' && (!w.observers || w.observers.includes(i.player.id) || w.observers.includes(i.playerKey))).map(w => ({ id: w.id, type: w.type, subject: w.subject, expiresTurn: w.expiresTurn, reason: w.reason }))
   };
@@ -131958,6 +132038,8 @@ export interface FeelSnapshot {
   momentum: Record<string, string>;
   factionBands: Record<string, string>;
   deals: Record<string, { status: string; title: string }>;
+  /** V10.1: 'REGION:industry' → condition (significant industries only; optional). */
+  industries?: Record<string, string>;
 }
 
 let V94_SEQ = 0;
@@ -132028,6 +132110,15 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     if (!pb || pb === band || lrCount >= 2 || !(MOMENTUM_NOTABLE.has(band) || MOMENTUM_NOTABLE.has(pb))) return;
     lrCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `lr_${code}`, `${REGION_NAME(code)}: ${pb.replace(/_/g, ' ')} → ${band.replace(/_/g, ' ')}`, [], { now, turn, icon: UI_ICON.region, tone: band === 'declining' ? 'negative' : 'positive', regions: [code] }));
+  });
+  // V10.1: an important industry entering or leaving a constrained band (structural, capped at one per update).
+  let icCount = 0;
+  Object.entries(next.industries || {}).forEach(([key, band]) => {
+    const pb = prev.industries?.[key]; const [code, ind] = key.split(':');
+    const bad = (b: string) => b === 'constrained' || b === 'disrupted';
+    if (!pb || pb === band || icCount >= 1 || bad(pb) === bad(band)) return;
+    icCount += 1;
+    out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
   });
   Object.entries(next.factionBands).forEach(([fid, band]) => {
     const pb = prev.factionBands[fid];
@@ -132423,7 +132514,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled'
 ] as const;
 
 /**
@@ -132775,6 +132866,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
         nationalSystems: sanitizeNationalSystemsPersisted(stateData.nationalSystems || raw.gameState?.nationalSystems),
+        industries: sanitizeIndustriesPersisted(stateData.industries || raw.gameState?.industries),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -134820,6 +134912,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 }
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
+  { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
@@ -136887,6 +136980,8 @@ export interface NationalSystemsWorldView {
   persisted: NationalSystemsPersisted | null;
   /** Region → 'you' | 'rival' | 'neutral' (public control only; never hidden deposits). */
   regionOwners: Record<string, 'you' | 'rival' | 'neutral'>;
+  /** V10.1 Industries & Supply Chains (null when off). */
+  industries?: IndustriesWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -137431,6 +137526,1267 @@ export function runV100NationalSystemsSelfTests(): V9SelfTestResult[] {
     const ans = q ? composeNationalSystemsAnswer(q, gw) : null;
     const text = ans ? ans.sections.flatMap(x => x.claims.map(c => c.text)).join(' ') : '';
     return (imp.beneficiaries.includes('VIC') && /Public good/.test(text) && /Value to your strategy/.test(text) && ans!.sections.some(x => x.claims.some(c => c.kind === 'projection'))) || `${imp.beneficiaries} :: ${text.slice(0, 200)}`;
+  });
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20T: V10.1 INDUSTRIES & SUPPLY CHAINS
+// A strategic industrial DEPENDENCY layer (derived). It owns only: industrial supply/demand points, input
+// dependencies, output capacity, shortages, surpluses and value-chain relationships. It never owns inventory,
+// prices, contracts, infrastructure, regional condition (Living Regions) or routes (V10.0 National Systems).
+// Values are game-abstraction points — never claims about real production volumes.
+// ============================================================================
+
+export type StrategicIndustryKind = 'mining' | 'agriculture' | 'energy' | 'manufacturing' | 'technology' | 'research' | 'tourism' | 'trade';
+export type StrategicSupplyKind = 'minerals' | 'agricultural_goods' | 'energy' | 'manufactured_goods' | 'technology_capability' | 'research_capability' | 'tourism_capacity';
+export type IndustryCondition = 'weak' | 'developing' | 'healthy' | 'strong' | 'booming' | 'constrained' | 'disrupted';
+export type SupplyCondition = 'shortage' | 'tight' | 'balanced' | 'surplus' | 'abundant';
+export type IndustryDiversityBand = 'highly_specialized' | 'specialized' | 'mixed' | 'diversified';
+export type IndustrialResilience = 'exposed' | 'moderate' | 'robust';
+
+export const STRATEGIC_INDUSTRIES: StrategicIndustryKind[] = ['energy', 'mining', 'agriculture', 'manufacturing', 'research', 'technology', 'tourism', 'trade'];
+export const STRATEGIC_SUPPLIES: StrategicSupplyKind[] = ['energy', 'minerals', 'agricultural_goods', 'manufactured_goods', 'research_capability', 'technology_capability', 'tourism_capacity'];
+export const INDUSTRY_LABEL: Record<StrategicIndustryKind, string> = { mining: 'Mining', agriculture: 'Agriculture', energy: 'Energy', manufacturing: 'Manufacturing', technology: 'Technology', research: 'Research', tourism: 'Tourism', trade: 'Trade' };
+export const INDUSTRY_ICON: Record<StrategicIndustryKind, string> = { mining: '⛏', agriculture: '🌾', energy: '⚡', manufacturing: '🏭', technology: '💻', research: '🔬', tourism: '🏖', trade: '🚢' };
+export const SUPPLY_LABEL: Record<StrategicSupplyKind, string> = { minerals: 'Minerals', agricultural_goods: 'Agricultural goods', energy: 'Energy', manufactured_goods: 'Manufactured goods', technology_capability: 'Technology capability', research_capability: 'Research capability', tourism_capacity: 'Tourism capacity' };
+export const INDUSTRY_CONDITION_LABEL: Record<IndustryCondition, string> = { weak: 'Weak', developing: 'Developing', healthy: 'Healthy', strong: 'Strong', booming: 'Booming', constrained: 'Constrained', disrupted: 'Disrupted' };
+export const INDUSTRY_CONDITION_ICON: Record<IndustryCondition, string> = { weak: '▫', developing: '▹', healthy: '✓', strong: '▲', booming: '⬆', constrained: '⚠', disrupted: '⛔' };
+export const SUPPLY_CONDITION_LABEL: Record<SupplyCondition, string> = { shortage: 'Shortage', tight: 'Tight', balanced: 'Balanced', surplus: 'Surplus', abundant: 'Abundant' };
+export const SUPPLY_CONDITION_ICON: Record<SupplyCondition, string> = { shortage: '⛔', tight: '⚠', balanced: '✓', surplus: '✚', abundant: '⬆' };
+export const DIVERSITY_LABEL: Record<IndustryDiversityBand, string> = { highly_specialized: 'Highly specialized', specialized: 'Specialized', mixed: 'Mixed', diversified: 'Diversified' };
+
+/** Hard bounds (termination + readability). */
+export const V101_LIMITS = { history: 30, cooldowns: 80, maxPasses: 2, evidence: 6, eventCooldownTurns: 2, flows: 90, mapEdges: 12 } as const;
+/** V10.0 corridor headroom (capacity points) → deliverable strategic supply points. */
+export const V101_SUPPLY_PER_CAPACITY = 2;
+
+export interface IndustryInputRequirement { supply: StrategicSupplyKind; importance: 'supporting' | 'important' | 'critical'; demandWeight: number }
+export interface StrategicIndustryDefinition {
+  id: StrategicIndustryKind; label: string; tier: 0 | 1 | 2 | 3;
+  livingRegionSectors: LRSector[]; outputs: StrategicSupplyKind[]; inputRequirements: IndustryInputRequirement[];
+  networkDependencies: Partial<Record<NationalNetworkKind, number>>; relevantInfrastructureTypes: string[]; relevantCanonicalResources: string[];
+  regionalStrengthFactors: string[]; service?: boolean;
+}
+
+/**
+ * Sidecar registry. Logistics / infrastructure / finance are ENABLERS (network access, capital relevance),
+ * never consumed inputs. Chains stay short: source → transformation → advanced use.
+ */
+export const STRATEGIC_INDUSTRY_DEFINITIONS: Record<StrategicIndustryKind, StrategicIndustryDefinition> = {
+  energy: { id: 'energy', label: 'Energy', tier: 0, livingRegionSectors: ['energy', 'renewables'], outputs: ['energy'], inputRequirements: [], networkDependencies: { energy: 1 },
+    relevantInfrastructureTypes: ['renewable_grid', 'offshore_wind_farm', 'hydro_expansion', 'green_hydrogen_terminal'], relevantCanonicalResources: ['Natural Gas', 'Coal', 'Uranium', 'Hydropower'], regionalStrengthFactors: ['energy & renewables specialization', 'generation projects'] },
+  mining: { id: 'mining', label: 'Mining', tier: 1, livingRegionSectors: ['mining'], outputs: ['minerals'], inputRequirements: [{ supply: 'energy', importance: 'supporting', demandWeight: 0.15 }], networkDependencies: { freight: 0.6, trade: 0.4 },
+    relevantInfrastructureTypes: ['inland_rail_hub', 'freight_rail_upgrade', 'remote_logistics_base'], relevantCanonicalResources: ['Iron Ore', 'Gold', 'Coal', 'Opals', 'Uranium'], regionalStrengthFactors: ['mining specialization', 'mineral resource base', 'freight links'] },
+  agriculture: { id: 'agriculture', label: 'Agriculture', tier: 1, livingRegionSectors: ['agriculture'], outputs: ['agricultural_goods'], inputRequirements: [], networkDependencies: { water: 0.55, freight: 0.45 },
+    relevantInfrastructureTypes: ['water_pipeline', 'desalination_plant'], relevantCanonicalResources: ['Wheat', 'Dairy', 'Wool', 'Sugar Cane', 'Tropical Fruit', 'Wine', 'Seafood', 'Timber', 'Crocodile Leather'], regionalStrengthFactors: ['agriculture specialization', 'farm resource base', 'water security'] },
+  manufacturing: { id: 'manufacturing', label: 'Manufacturing', tier: 2, livingRegionSectors: ['manufacturing'], outputs: ['manufactured_goods'],
+    inputRequirements: [{ supply: 'minerals', importance: 'critical', demandWeight: 0.5 }, { supply: 'energy', importance: 'important', demandWeight: 0.3 }], networkDependencies: { freight: 0.4, energy: 0.35, trade: 0.25 },
+    relevantInfrastructureTypes: ['advanced_manufacturing'], relevantCanonicalResources: [], regionalStrengthFactors: ['manufacturing specialization', 'industrial projects', 'development'] },
+  research: { id: 'research', label: 'Research', tier: 2, livingRegionSectors: ['research'], outputs: ['research_capability'], inputRequirements: [{ supply: 'energy', importance: 'supporting', demandWeight: 0.15 }], networkDependencies: { digital: 0.7, energy: 0.3 },
+    relevantInfrastructureTypes: ['research_campus', 'tech_innovation_park'], relevantCanonicalResources: ['Research Funds', 'Education'], regionalStrengthFactors: ['research specialization', 'research institutions', 'digital access'] },
+  technology: { id: 'technology', label: 'Technology', tier: 3, livingRegionSectors: ['technology'], outputs: ['technology_capability'],
+    inputRequirements: [{ supply: 'energy', importance: 'important', demandWeight: 0.3 }, { supply: 'research_capability', importance: 'important', demandWeight: 0.3 }], networkDependencies: { digital: 0.6, energy: 0.4 },
+    relevantInfrastructureTypes: ['data_center', 'tech_innovation_park', 'subsea_cable_hub'], relevantCanonicalResources: [], regionalStrengthFactors: ['technology specialization', 'data & cable projects', 'research ecosystem'] },
+  tourism: { id: 'tourism', label: 'Tourism', tier: 3, livingRegionSectors: ['tourism'], outputs: ['tourism_capacity'], inputRequirements: [], networkDependencies: { water: 0.35, energy: 0.25, freight: 0.4 },
+    relevantInfrastructureTypes: ['tourism_precinct'], relevantCanonicalResources: ['Coral', 'Aboriginal Art', 'Wine'], regionalStrengthFactors: ['tourism identity', 'stability', 'travel accessibility'], service: true },
+  trade: { id: 'trade', label: 'Trade', tier: 3, livingRegionSectors: ['trade', 'logistics'], outputs: [], inputRequirements: [], networkDependencies: { trade: 0.55, freight: 0.45 },
+    relevantInfrastructureTypes: ['automated_port', 'port_expansion', 'freight_rail_upgrade'], relevantCanonicalResources: [], regionalStrengthFactors: ['trade & logistics specialization', 'ports', 'tradable output'], service: true }
+};
+
+/** Which V10.0 network carries each strategic supply between regions (services are not shipped). */
+export const SUPPLY_TRANSPORT_NETWORK: Record<StrategicSupplyKind, NationalNetworkKind | null> = {
+  minerals: 'freight', agricultural_goods: 'freight', energy: 'energy', manufactured_goods: 'freight', research_capability: 'digital', technology_capability: 'digital', tourism_capacity: null
+};
+
+/**
+ * Canonical resource → strategic supply EVIDENCE (audited against BASE_MARKET_RESOURCES). These resources stay
+ * inventory / market / contract items; the categories are never sellable and never enter an inventory.
+ */
+export const CANONICAL_RESOURCE_SUPPLY_MAP: Record<string, StrategicSupplyKind[]> = {
+  'Iron Ore': ['minerals'], Gold: ['minerals'], Opals: ['minerals'], Coal: ['minerals', 'energy'], Uranium: ['minerals', 'energy'], 'Natural Gas': ['energy'], Hydropower: ['energy'],
+  Wheat: ['agricultural_goods'], Dairy: ['agricultural_goods'], Wool: ['agricultural_goods'], 'Sugar Cane': ['agricultural_goods'], 'Tropical Fruit': ['agricultural_goods'], Wine: ['agricultural_goods', 'tourism_capacity'],
+  Seafood: ['agricultural_goods'], Timber: ['agricultural_goods'], 'Crocodile Leather': ['agricultural_goods'], 'Research Funds': ['research_capability'], Education: ['research_capability'],
+  Coral: ['tourism_capacity'], 'Aboriginal Art': ['tourism_capacity']
+};
+/** Market bridge: which canonical market goods a national supply signal is about (pressure only, never a price). */
+export const SUPPLY_MARKET_RESOURCES: Partial<Record<StrategicSupplyKind, string[]>> = {
+  minerals: ['Iron Ore', 'Coal', 'Gold'], agricultural_goods: ['Wheat', 'Dairy', 'Wool'], energy: ['Natural Gas', 'Coal']
+};
+
+/** Infrastructure → industry capability (documented; NOT an income bonus — canonical project income is untouched). */
+export const INDUSTRY_PROJECT_CAPABILITY: Record<string, Partial<Record<StrategicIndustryKind, number>>> = {
+  advanced_manufacturing: { manufacturing: 16 }, research_campus: { research: 14 }, tech_innovation_park: { technology: 10, research: 6 }, data_center: { technology: 12 },
+  subsea_cable_hub: { technology: 6 }, renewable_grid: { energy: 14 }, offshore_wind_farm: { energy: 12 }, hydro_expansion: { energy: 12 }, green_hydrogen_terminal: { energy: 8 },
+  inland_rail_hub: { mining: 6 }, freight_rail_upgrade: { mining: 5, trade: 4 }, remote_logistics_base: { mining: 5 }, automated_port: { trade: 10 }, port_expansion: { trade: 8 },
+  water_pipeline: { agriculture: 6 }, desalination_plant: { agriculture: 5 }, tourism_precinct: { tourism: 10 }
+};
+
+export interface IndustryEvidence { label: string; value: number; source: string }
+export interface IndustryInputStatus { supply: StrategicSupplyKind; importance: IndustryInputRequirement['importance']; demand: number; supplied: number; availability: number }
+export interface IndustryOutputStatus { supply: StrategicSupplyKind; amount: number }
+export interface IndustryConstraint { kind: 'input_shortage' | 'freight_constraint' | 'energy_constraint' | 'water_constraint' | 'trade_constraint' | 'digital_constraint' | 'production_constraint'; input?: StrategicSupplyKind; network?: NationalNetworkKind; loss: number; text: string }
+export interface IndustryState {
+  industry: StrategicIndustryKind; strength: number; potentialOutput: number; inputAvailability: number; networkAccess: number; effectiveOutput: number; utilization: number;
+  constraint: IndustryConstraint | null; condition: IndustryCondition; trend: 'declining' | 'weakening' | 'stable' | 'growing';
+  inputs: IndustryInputStatus[]; outputs: IndustryOutputStatus[]; evidence: IndustryEvidence[]; potentialFactors: IndustryEvidence[];
+}
+export interface RegionalSupplyState { supply: StrategicSupplyKind; production: number; localDemand: number; localUse: number; availableSurplus: number; imported: number; exported: number; unmetDemand: number; condition: SupplyCondition }
+export interface SupplyDependency {
+  id: string; consumerRegionId: string; consumerIndustry: StrategicIndustryKind; providerRegionId: string; supply: StrategicSupplyKind; amount: number; share: number;
+  importance: 'low' | 'moderate' | 'high' | 'critical'; shareBand: 'minor' | 'meaningful' | 'major' | 'dominant'; alternatives: string[]; fragile: boolean; path: string[]; network: NationalNetworkKind; reason: string;
+}
+export interface SupplyChainBottleneck {
+  id: string; regionId: string; industry: StrategicIndustryKind; kind: IndustryConstraint['kind']; severity: 'minor' | 'meaningful' | 'major' | 'critical';
+  input?: StrategicSupplyKind; reason: string; affectedOutputs: StrategicSupplyKind[]; affectedRegions: string[]; evidence: IndustryEvidence[];
+}
+export interface RegionalIndustryState {
+  regionId: string; name: string; industries: Partial<Record<StrategicIndustryKind, IndustryState>>; suppliedBy: SupplyDependency[]; suppliesTo: SupplyDependency[];
+  primaryIndustry: StrategicIndustryKind | null; primaryIndustrialConstraint: string | null; industrialDiversity: number; diversityBand: IndustryDiversityBand; resilience: IndustrialResilience; revision: number;
+}
+export interface SupplyFlow { supply: StrategicSupplyKind; fromRegionId: string; toRegionId: string; amount: number; path: string[]; network: NationalNetworkKind; strainedCorridor: boolean }
+export interface NationalIndustrySummary {
+  strongestIndustries: StrategicIndustryKind[]; constrainedIndustries: StrategicIndustryKind[]; shortages: StrategicSupplyKind[]; surpluses: StrategicSupplyKind[];
+  criticalDependencies: string[]; diversityBand: IndustryDiversityBand; primaryIndustrialRisk: string | null; primaryIndustrialOpportunity: string | null;
+  output: Partial<Record<StrategicIndustryKind, number>>; topProducer: Partial<Record<StrategicSupplyKind, string>>;
+}
+export type IndustryDerivedKind = 'industry_became_constrained' | 'industry_recovered' | 'supply_shortage_formed' | 'supply_shortage_resolved' | 'supply_surplus_formed'
+  | 'critical_supply_dependency_formed' | 'critical_supply_dependency_reduced' | 'industrial_output_accelerated' | 'industrial_output_declined';
+export interface IndustryDerivedEvent { id: string; turn: number; kind: IndustryDerivedKind; regionIds: string[]; industry: StrategicIndustryKind | null; supply: StrategicSupplyKind | null; subjectId: string; text: string; significance: 'meaningful' | 'major'; evidence: string[] }
+export interface IndustryHistoryEntry {
+  id: string; turn: number; kind: 'shortage_formed' | 'shortage_resolved' | 'dependency_became_critical' | 'dependency_reduced' | 'industry_became_constrained' | 'industry_recovered' | 'industry_became_dominant' | 'diversification_improved';
+  regionId?: string; industry?: StrategicIndustryKind; supply?: StrategicSupplyKind; summary: string; sourceEventIds: string[];
+}
+export interface IndustriesPersisted {
+  schemaVersion: '10.1'; revision: number; initializedTurn: number | null; lastUpdatedTurn: number;
+  industryBands: Record<string, IndustryCondition>; supplyBands: Record<string, SupplyCondition>; criticalDeps: string[]; nationalOutput: Record<string, number>;
+  cooldowns: Record<string, number>; history: IndustryHistoryEntry[]; inputHash: string;
+}
+export interface IndustriesSupplyChainsState {
+  schemaVersion: '10.1'; revision: number; regions: Record<string, RegionalIndustryState>; supplies: Record<string, RegionalSupplyState[]>;
+  flows: SupplyFlow[]; dependencies: SupplyDependency[]; bottlenecks: SupplyChainBottleneck[]; national: NationalIndustrySummary; history: IndustryHistoryEntry[];
+  hashes: Record<string, string>; lastUpdatedTurn: number; computeMs: number;
+}
+export interface IndustriesInputs {
+  turn: number;
+  regions: Array<{ code: string; name: string; devScore: number; momentum: number; stability: number | null; sectors: Partial<Record<LRSector, number>> }>;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string }>;
+  /** V10.0 snapshot — the ONLY transport layer. Null ⇒ no interregional delivery (V10.1 never invents routes). */
+  national: NationalSystemsState | null;
+  modifiers?: Record<string, Partial<Record<StrategicIndustryKind, number>>>;
+}
+
+const scR = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const scClamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : a));
+const SC_IND_RANK: Record<IndustryCondition, number> = { disrupted: 0, constrained: 1, weak: 2, developing: 3, healthy: 4, strong: 5, booming: 6 };
+const SC_SUP_RANK: Record<SupplyCondition, number> = { shortage: 0, tight: 1, balanced: 2, surplus: 3, abundant: 4 };
+const SC_NET_ACCESS: Record<NationalNetworkCondition, number> = { surplus: 1, healthy: 1, strained: 0.92, bottlenecked: 0.78, critical: 0.6 };
+const SC_EXPORT_FACTOR: Record<NationalNetworkCondition, number> = { surplus: 1, healthy: 1, strained: 0.85, bottlenecked: 0.6, critical: 0.35 };
+
+export function createEmptyIndustriesPersisted(): IndustriesPersisted {
+  return { schemaVersion: '10.1', revision: 0, initializedTurn: null, lastUpdatedTurn: 0, industryBands: {}, supplyBands: {}, criticalDeps: [], nationalOutput: {}, cooldowns: {}, history: [], inputHash: '' };
+}
+
+/** V10.0 transport API: routes over National Systems corridors with the headroom V10.0 leaves unused. */
+export function nationalTransportRoutes(ns: NationalSystemsState, network: NationalNetworkKind, from: string, congestedFloor = 0.35): Array<{ to: string; hops: number; linkIds: string[]; path: string[] }> {
+  const links = Object.values(ns.links).filter(l => l.network === network).sort((a, b) => a.id.localeCompare(b.id));
+  const headroom: Record<string, number> = Object.fromEntries(links.map(l => [l.id, Math.max(0, l.effectiveCapacity - l.used, l.effectiveCapacity * congestedFloor)]));
+  return nsFindPaths(from, links, headroom).map(p => ({ to: p.to, hops: p.hops, linkIds: p.linkIds, path: p.path }));
+}
+
+/** Compact, order-stable digest of everything V10.1 reads (own inputs + the V10.0 structure it rides on). */
+export function industriesInputHash(i: IndustriesInputs): string {
+  const ns = i.national;
+  const nsDigest = ns ? [ns.inputHash, Object.values(ns.regions).map(r => NATIONAL_NETWORKS.map(n => r.networks[n].condition[0]).join('')).join(','), Object.values(ns.links).map(l => Math.round(Math.max(0, l.effectiveCapacity - l.used))).join(',')].join('|') : 'none';
+  const raw = JSON.stringify([i.turn, i.regions.map(r => [r.code, Math.round(r.devScore), Math.round(r.momentum * 20), r.stability === null ? null : Math.round(r.stability / 5), Object.keys(r.sectors).sort().map(k => `${k}${Math.round((r.sectors as any)[k] / 2)}`)]),
+    i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}`).sort(), i.modifiers || null, nsDigest]);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+function scIndustryConditionFor(strength: number, ratio: number, prev?: IndustryCondition): IndustryCondition {
+  const constrainedBy = (r: number) => (r < 0.55 ? 'disrupted' : r < 0.85 ? 'constrained' : null);
+  const byStrength = (s: number): IndustryCondition => (s >= 80 ? 'booming' : s >= 60 ? 'strong' : s >= 40 ? 'healthy' : s >= 20 ? 'developing' : 'weak');
+  let raw: IndustryCondition = constrainedBy(ratio) || byStrength(strength);
+  if (!prev || prev === raw) return raw;
+  // Hysteresis: entering/leaving a constrained band needs a clear margin (no 84% ↔ 86% flicker).
+  const prevConstrained = prev === 'constrained' || prev === 'disrupted';
+  if (prevConstrained && !constrainedBy(ratio)) return ratio >= 0.89 ? raw : prev;
+  if (!prevConstrained && constrainedBy(ratio) && raw === 'constrained' && ratio >= 0.81) return prev;
+  if (prev === 'disrupted' && raw === 'constrained' && ratio < 0.59) return prev;
+  if (!prevConstrained && !constrainedBy(ratio)) { const alt = byStrength(strength + (SC_IND_RANK[prev] > SC_IND_RANK[raw] ? 3 : -3)); if (alt === prev) return prev; }
+  return raw;
+}
+function scSupplyConditionFor(demand: number, supplied: number, leftover: number, production: number, prev?: SupplyCondition): SupplyCondition {
+  const at = (m: number): SupplyCondition => {
+    if (demand <= 0.5) return production >= 3 ? 'surplus' : 'balanced'; // no local consumer: an opportunity, not abundance
+    const cov = supplied / demand;
+    if (cov < 0.7 + m) return 'shortage';
+    if (cov < 0.92 + m) return 'tight';
+    if (leftover >= Math.max(8, demand * 0.5) * (1 + m)) return 'abundant';
+    if (leftover >= Math.max(3, demand * 0.15) * (1 + m)) return 'surplus';
+    return 'balanced';
+  };
+  const raw = at(0);
+  if (!prev || prev === raw) return raw;
+  // Move only if the band still holds with a margin in the direction of travel.
+  const worse = SC_SUP_RANK[raw] < SC_SUP_RANK[prev];
+  const confirm = at(worse ? -0.04 : 0.04);
+  return Math.abs(SC_SUP_RANK[raw] - SC_SUP_RANK[prev]) >= 2 || confirm === raw ? raw : prev;
+}
+
+/**
+ * Pure staged computation (terminates by construction): potentials & demands → energy → primary supply →
+ * transformation → advanced/services. Each stage allocates local supply first, then deliverable imports over
+ * V10.0 routes (headroom-limited, stable tie-breaks, ≤ V101_LIMITS.maxPasses passes).
+ */
+export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: IndustriesPersisted | null, opts: { emit?: boolean } = {}): { state: IndustriesSupplyChainsState; persisted: IndustriesPersisted; derived: IndustryDerivedEvent[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || null;
+  const turn = Number(i.turn) || 0;
+  const regionsIn = i.regions.filter(r => REGIONS[r.code]).sort((a, b) => a.code.localeCompare(b.code));
+  const codes = regionsIn.map(r => r.code);
+  const ns = i.national;
+  // ---- 1) Industry strength & potential (derived from actual regional state; nothing hardcoded per region) ----
+  type Work = { def: StrategicIndustryDefinition; strength: number; potential: number; factors: IndustryEvidence[]; access: number; accessWorst: { network: NationalNetworkKind; factor: number } | null; inputs: IndustryInputStatus[]; effective: number };
+  const work: Record<string, Partial<Record<StrategicIndustryKind, Work>>> = {};
+  regionsIn.forEach(r => {
+    work[r.code] = {};
+    const dev = scClamp(r.devScore, 0, 100), mom = scClamp(r.momentum, -1, 1);
+    const resources = (REGIONAL_RESOURCES[r.code] || []);
+    STRATEGIC_INDUSTRIES.forEach(k => {
+      const def = STRATEGIC_INDUSTRY_DEFINITIONS[k];
+      const sector = Math.max(0, ...def.livingRegionSectors.map(sc => scClamp(Number(r.sectors[sc]) || 0, 0, 100)));
+      const factors: IndustryEvidence[] = [];
+      const add = (label: string, value: number, source: string) => { if (Math.abs(value) >= 0.5) factors.push({ label, value: scR(value), source }); };
+      add(`${def.label} specialization`, sector * 0.75, 'living_regions');
+      const resBase = resources.filter(x => def.relevantCanonicalResources.includes(x)).length;
+      add('Regional resource base', Math.min(12, resBase * 6), 'regional resources');
+      if (sector > 0 || resBase > 0) add('Regional development', dev * 0.12, 'living_regions');
+      if (sector > 0 && mom > 0) add('Growth momentum', mom * 8, 'living_regions');
+      let infra = 0;
+      i.projects.filter(p => p.regionId === r.code).sort((a, b) => a.id.localeCompare(b.id)).forEach(p => {
+        const cap = INDUSTRY_PROJECT_CAPABILITY[p.projectType]?.[k]; const fac = NATIONAL_STATUS_FACTOR[p.status] ?? 0;
+        if (cap && fac > 0 && infra < 28) { const v = Math.min(28 - infra, cap * fac); infra += v; add(`${p.title}${p.status === 'damaged' ? ' (damaged)' : ''}`, v, `project:${p.id}`); }
+      });
+      if (k === 'research') { const tech = scClamp(Number(r.sectors.technology) || 0, 0, 100); if (tech > 0 && sector > 0) add('Technology ecosystem (bounded)', Math.min(4, tech * 0.05), 'living_regions'); }
+      if (def.service && r.stability !== null) add('Regional stability', (scClamp(r.stability, 0, 100) - 50) * 0.08, 'stability');
+      if (k === 'energy') add('Base regional generation', 8 + dev * 0.1, 'baseline');
+      const mod = Number(i.modifiers?.[r.code]?.[k]) || 0;
+      if (mod) add('Scenario setting', mod, 'scenario');
+      const strength = scR(scClamp(factors.reduce((a, x) => a + x.value, 0), 0, 100));
+      if (strength < 5) return;
+      const potential = scR(scClamp(strength * (0.85 + dev / 400), 0, 120));
+      // Network access from the region's V10.0 conditions (weighted; bounded 0.6–1).
+      let access = 1; let accessWorst: Work['accessWorst'] = null;
+      const deps = Object.entries(def.networkDependencies) as Array<[NationalNetworkKind, number]>;
+      if (ns?.regions[r.code] && deps.length) {
+        const tot = deps.reduce((a, [, w]) => a + w, 0);
+        access = scR(deps.reduce((a, [n, w]) => a + w * SC_NET_ACCESS[ns.regions[r.code].networks[n].condition], 0) / tot, 3);
+        access = scR(1 - (1 - access) * 0.7, 3); // networks shape output; they rarely halt it
+        deps.forEach(([n]) => { const f = SC_NET_ACCESS[ns.regions[r.code].networks[n].condition]; if (f < 1 && (!accessWorst || f < accessWorst.factor)) accessWorst = { network: n, factor: f }; });
+      }
+      work[r.code][k] = { def, strength, potential, factors: factors.slice(0, 10), access, accessWorst, inputs: def.inputRequirements.map(q => ({ supply: q.supply, importance: q.importance, demand: scR(potential * q.demandWeight * 0.6), supplied: 0, availability: 1 })), effective: 0 };
+    });
+  });
+
+  // ---- 2) Supply ledger (abstract points; never inventory) ----
+  type Ledger = { production: number; localDemand: number; localUse: number; imported: number; exported: number; exportable: number };
+  const ledger: Record<string, Record<StrategicSupplyKind, Ledger>> = {};
+  codes.forEach(c => { ledger[c] = {} as any; STRATEGIC_SUPPLIES.forEach(s => { ledger[c][s] = { production: 0, localDemand: 0, localUse: 0, imported: 0, exported: 0, exportable: 0 }; }); });
+  codes.forEach(c => Object.values(work[c]).forEach(w => w!.inputs.forEach(inp => { ledger[c][inp.supply].localDemand = scR(ledger[c][inp.supply].localDemand + inp.demand); })));
+  const headroom: Partial<Record<NationalNetworkKind, Record<string, number>>> = {};
+  // Corridor capacity comes only from V10.0: its unused headroom, but never below a congested floor (35%) — V10.0's own
+  // sharing describes network capacity lent to neighbours, not the goods moving on it.
+  if (ns) NATIONAL_NETWORKS.forEach(n => { headroom[n] = Object.fromEntries(Object.values(ns.links).filter(l => l.network === n).map(l => [l.id, scR(Math.max(l.effectiveCapacity - l.used, l.effectiveCapacity * 0.35) * V101_SUPPLY_PER_CAPACITY)])); });
+  const flows: SupplyFlow[] = [];
+  const received: Record<string, Record<string, Record<string, number>>> = {}; // consumer → supply → provider → amount
+  const flowPaths: Record<string, string[]> = {};
+
+  const produce = (tierIndustries: StrategicIndustryKind[]) => codes.forEach(c => tierIndustries.forEach(k => {
+    const w = work[c][k]; if (!w) return;
+    // Input availability: weighted by importance weight (critical inputs bite hardest).
+    const reqs = w.def.inputRequirements;
+    let factor = 1;
+    if (reqs.length) {
+      const tot = reqs.reduce((a, q) => a + q.demandWeight * (q.importance === 'critical' ? 1.4 : q.importance === 'important' ? 1 : 0.6), 0);
+      factor = 1 - reqs.reduce((a, q) => { const st = w.inputs.find(x => x.supply === q.supply)!; return a + q.demandWeight * (q.importance === 'critical' ? 1.4 : q.importance === 'important' ? 1 : 0.6) * (1 - st.availability); }, 0) / tot;
+    }
+    w.effective = scR(Math.min(w.potential, w.potential * scClamp(factor, 0, 1) * w.access));
+    w.def.outputs.forEach(s => { ledger[c][s].production = scR(ledger[c][s].production + w.effective); });
+  }));
+
+  const allocate = (supply: StrategicSupplyKind) => {
+    const L = (c: string) => ledger[c][supply];
+    // Local satisfaction first.
+    codes.forEach(c => { const l = L(c); l.localUse = scR(Math.min(l.production, l.localDemand)); });
+    const net = SUPPLY_TRANSPORT_NETWORK[supply];
+    codes.forEach(c => {
+      const l = L(c);
+      const cond = ns?.regions[c]?.networks[net || 'freight']?.condition;
+      l.exportable = scR(Math.max(0, l.production - l.localDemand * 1.05) * (net && cond ? SC_EXPORT_FACTOR[cond] : 1));
+    });
+    if (net && ns && headroom[net]) {
+      const hr = headroom[net]!;
+      for (let pass = 0; pass < V101_LIMITS.maxPasses; pass++) {
+        let moved = 0;
+        const deficits = codes.map(c => ({ c, d: scR(L(c).localDemand - L(c).localUse - L(c).imported) })).filter(x => x.d > 0.1).sort((a, b) => b.d - a.d || a.c.localeCompare(b.c));
+        deficits.forEach(({ c, d }) => {
+          let need = d;
+          const routes = nationalTransportRoutes(ns, net, c).filter(p => L(p.to).exportable > 0.1)
+            .sort((a, b) => a.hops - b.hops || L(b.to).exportable - L(a.to).exportable || a.to.localeCompare(b.to));
+          for (const p of routes) {
+            if (need <= 0.1) break;
+            const cap = Math.min(...p.linkIds.map(id => hr[id] || 0));
+            const amt = scR(Math.min(need, L(p.to).exportable, cap));
+            if (amt <= 0.1) continue;
+            p.linkIds.forEach(id => { hr[id] = scR((hr[id] || 0) - amt); });
+            L(p.to).exportable = scR(L(p.to).exportable - amt); L(p.to).exported = scR(L(p.to).exported + amt); L(c).imported = scR(L(c).imported + amt);
+            received[c] = received[c] || {}; received[c][supply] = received[c][supply] || {}; received[c][supply][p.to] = scR((received[c][supply][p.to] || 0) + amt);
+            flowPaths[`${supply}:${c}<-${p.to}`] = flowPaths[`${supply}:${c}<-${p.to}`] || [...p.path].reverse();
+            if (flows.length < V101_LIMITS.flows) flows.push({ supply, fromRegionId: p.to, toRegionId: c, amount: amt, path: [...p.path].reverse(), network: net,
+              strainedCorridor: p.linkIds.some(id => NS_COND_RANK[ns.links[id]?.condition || 'healthy'] >= 2) });
+            need = scR(need - amt); moved += amt;
+          }
+        });
+        if (moved <= 0.1) break;
+      }
+    }
+    // Availability per consuming industry = supplied share of its demand (proportional within the region).
+    codes.forEach(c => {
+      const l = L(c); const supplied = l.localUse + l.imported; const ratio = l.localDemand > 0 ? scClamp(supplied / l.localDemand, 0, 1) : 1;
+      Object.values(work[c]).forEach(w => w!.inputs.filter(x => x.supply === supply).forEach(x => { x.supplied = scR(x.demand * ratio); x.availability = scR(ratio, 3); }));
+    });
+  };
+
+  // ---- 3) Staged calculation (no equilibrium iteration) ----
+  produce(['energy']); allocate('energy');
+  produce(['mining', 'agriculture']); allocate('minerals'); allocate('agricultural_goods');
+  produce(['manufacturing', 'research']); allocate('research_capability'); allocate('manufactured_goods');
+  // Trade turns available tradable output into export usefulness (throughput — it consumes nothing).
+  codes.forEach(c => { const w = work[c].trade; if (!w) return; const tradable = (['minerals', 'agricultural_goods', 'manufactured_goods'] as StrategicSupplyKind[]).reduce((a, s) => a + ledger[c][s].production + ledger[c][s].imported, 0);
+    const need = Math.max(1, w.potential * 0.6); w.inputs = [{ supply: 'manufactured_goods', importance: 'supporting', demand: scR(need), supplied: scR(Math.min(need, tradable)), availability: scR(scClamp(tradable / need, 0, 1), 3) }]; });
+  produce(['technology', 'tourism', 'trade']); allocate('technology_capability'); allocate('tourism_capacity');
+
+  // ---- 4) Regional supply states + conditions (band memory) ----
+  const supplies: Record<string, RegionalSupplyState[]> = {};
+  const supplyBands: Record<string, SupplyCondition> = {};
+  codes.forEach(c => {
+    supplies[c] = STRATEGIC_SUPPLIES.map(s => {
+      const l = ledger[c][s];
+      const supplied = l.localUse + l.imported;
+      const leftover = Math.max(0, l.production - l.localUse - l.exported);
+      const key = `${c}:${s}`;
+      const condition = scSupplyConditionFor(l.localDemand, supplied, leftover, l.production, prev?.supplyBands[key]);
+      supplyBands[key] = condition;
+      return { supply: s, production: l.production, localDemand: l.localDemand, localUse: l.localUse, availableSurplus: scR(Math.max(0, l.production - l.localUse)), imported: l.imported, exported: l.exported, unmetDemand: scR(Math.max(0, l.localDemand - supplied)), condition };
+    }).filter(x => x.production > 0.1 || x.localDemand > 0.1);
+  });
+
+  // ---- 5) Industry states, constraints ----
+  const industryBands: Record<string, IndustryCondition> = {};
+  const regions: Record<string, RegionalIndustryState> = {};
+  codes.forEach(c => {
+    const r = regionsIn.find(x => x.code === c)!;
+    const inds: Partial<Record<StrategicIndustryKind, IndustryState>> = {};
+    (Object.keys(work[c]) as StrategicIndustryKind[]).sort((a, b) => STRATEGIC_INDUSTRIES.indexOf(a) - STRATEGIC_INDUSTRIES.indexOf(b)).forEach(k => {
+      const w = work[c][k]!;
+      const ratio = w.potential > 0 ? w.effective / w.potential : 1;
+      const key = `${c}:${k}`;
+      const condition = scIndustryConditionFor(w.strength, ratio, prev?.industryBands[key]);
+      industryBands[key] = condition;
+      // Largest loss explains the constraint (input vs network), from the structured calculation.
+      const worstInput = [...w.inputs].filter(x => x.availability < 0.97).sort((a, b) => a.availability - b.availability || a.supply.localeCompare(b.supply))[0];
+      const netLoss = 1 - w.access; const inLoss = worstInput ? 1 - worstInput.availability : 0;
+      let constraint: IndustryConstraint | null = null;
+      if (inLoss > 0.03 && inLoss >= netLoss) {
+        const prov = received[c]?.[worstInput.supply] ? Object.entries(received[c][worstInput.supply]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] : null;
+        constraint = { kind: 'input_shortage', input: worstInput.supply, loss: scR(inLoss, 2), text: `${SUPPLY_LABEL[worstInput.supply]} inputs cover ${Math.round(worstInput.availability * 100)}% of need${prov ? ` (largest external supplier: ${REGIONS[prov]?.name || prov})` : ' (no deliverable external supplier)'}` };
+      } else if (netLoss > 0.03 && w.accessWorst) {
+        const wn = (w.accessWorst as { network: NationalNetworkKind; factor: number }).network;
+        constraint = { kind: `${wn}_constraint` as IndustryConstraint['kind'], network: wn, loss: scR(netLoss, 2), text: `${NATIONAL_NETWORK_LABEL[wn]} network is ${NATIONAL_CONDITION_LABEL[ns!.regions[c].networks[wn].condition].toLowerCase()} here` };
+      }
+      const prevOut = prev?.nationalOutput[`${c}:${k}`];
+      const trend: IndustryState['trend'] = prevOut === undefined ? 'stable' : w.effective > prevOut * 1.08 + 1 ? 'growing' : w.effective < prevOut * 0.8 - 1 ? 'declining' : w.effective < prevOut * 0.93 - 0.5 ? 'weakening' : 'stable';
+      inds[k] = { industry: k, strength: w.strength, potentialOutput: w.potential, inputAvailability: scR(w.inputs.length ? Math.min(...w.inputs.map(x => x.availability)) : 1, 3), networkAccess: w.access,
+        effectiveOutput: w.effective, utilization: scR(ratio, 3), constraint, condition, trend, inputs: w.inputs, outputs: w.def.outputs.map(s => ({ supply: s, amount: w.effective })),
+        evidence: [...w.factors].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, V101_LIMITS.evidence), potentialFactors: w.factors };
+    });
+    // Diversity (HHI over effective output; services included).
+    const outs = Object.values(inds).map(x => x!.effectiveOutput); const tot = outs.reduce((a, b) => a + b, 0) || 1;
+    const hhi = outs.reduce((a, b) => a + (b / tot) * (b / tot), 0);
+    const diversityBand: IndustryDiversityBand = hhi > 0.55 ? 'highly_specialized' : hhi > 0.38 ? 'specialized' : hhi > 0.25 ? 'mixed' : 'diversified';
+    const primary = (Object.values(inds) as IndustryState[]).sort((a, b) => b.effectiveOutput - a.effectiveOutput || a.industry.localeCompare(b.industry))[0];
+    const constrained = (Object.values(inds) as IndustryState[]).filter(x => x.constraint && x.strength >= 20).sort((a, b) => (b.constraint!.loss * b.potentialOutput) - (a.constraint!.loss * a.potentialOutput) || a.industry.localeCompare(b.industry))[0];
+    regions[c] = { regionId: c, name: r.name || REGIONS[c]?.name || c, industries: inds, suppliedBy: [], suppliesTo: [], primaryIndustry: primary && primary.effectiveOutput >= 5 ? primary.industry : null,
+      primaryIndustrialConstraint: constrained ? `${INDUSTRY_LABEL[constrained.industry]}: ${constrained.constraint!.text}` : null, industrialDiversity: Math.round((1 - hhi) * 100), diversityBand, resilience: 'moderate', revision: 0 };
+  });
+
+  // ---- 6) Dependencies (every one has a real calculated V10.0 path) ----
+  const dependencies: SupplyDependency[] = [];
+  Object.keys(received).sort().forEach(c => (Object.keys(received[c]) as StrategicSupplyKind[]).sort().forEach(s => {
+    const l = ledger[c][s]; const total = l.localUse + l.imported; if (total <= 0) return;
+    const provs = Object.entries(received[c][s]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const consumer = (Object.values(work[c]) as Work[]).filter(w => w.inputs.some(x => x.supply === s && x.demand > 0)).sort((a, b) => b.inputs.find(x => x.supply === s)!.demand - a.inputs.find(x => x.supply === s)!.demand || a.def.id.localeCompare(b.def.id))[0];
+    if (!consumer) return;
+    const req = consumer.def.inputRequirements.find(q => q.supply === s);
+    provs.forEach(([p, amt]) => {
+      const share = amt / total; if (share < 0.06) return;
+      const alternatives = provs.filter(([o, a]) => o !== p && a / total >= 0.05).map(([o]) => o);
+      const localShare = l.localUse / total;
+      const shareBand: SupplyDependency['shareBand'] = share >= 0.5 ? 'dominant' : share >= 0.3 ? 'major' : share >= 0.15 ? 'meaningful' : 'minor';
+      const importance: SupplyDependency['importance'] = share >= 0.4 && alternatives.length === 0 && localShare < 0.4 && req?.importance !== 'supporting' ? 'critical' : share >= 0.3 ? 'high' : share >= 0.15 ? 'moderate' : 'low';
+      const fragile = (importance === 'critical' || importance === 'high') && alternatives.length === 0;
+      const path = flowPaths[`${s}:${c}<-${p}`] || [p, c];
+      dependencies.push({ id: `sdep:${s}:${c}<-${p}`, consumerRegionId: c, consumerIndustry: consumer.def.id, providerRegionId: p, supply: s, amount: scR(amt), share: scR(share, 2), importance, shareBand, alternatives, fragile, path, network: SUPPLY_TRANSPORT_NETWORK[s]!,
+        reason: `${REGIONS[p]?.name || p} provides about ${Math.round(share * 100)}% of the ${SUPPLY_LABEL[s].toLowerCase()} available to ${regions[c].name} ${INDUSTRY_LABEL[consumer.def.id].toLowerCase()} (via ${path.join('→')})${alternatives.length ? `; alternatives: ${alternatives.join(', ')}` : '; no alternative external supplier'}.` });
+    });
+  }));
+  const impRank = { critical: 3, high: 2, moderate: 1, low: 0 } as const;
+  dependencies.sort((a, b) => impRank[b.importance] - impRank[a.importance] || b.share - a.share || a.id.localeCompare(b.id));
+  dependencies.forEach(d => { regions[d.consumerRegionId].suppliedBy.push(d); regions[d.providerRegionId].suppliesTo.push(d); });
+  codes.forEach(c => {
+    const rg = regions[c];
+    rg.resilience = rg.suppliedBy.some(d => d.fragile) || rg.diversityBand === 'highly_specialized' ? 'exposed' : rg.diversityBand === 'diversified' || rg.diversityBand === 'mixed' ? 'robust' : 'moderate';
+  });
+
+  // ---- 7) Bottlenecks (industry-level, explainable; downstream regions only via real dependencies) ----
+  const bottlenecks: SupplyChainBottleneck[] = [];
+  codes.forEach(c => (Object.values(regions[c].industries) as IndustryState[]).forEach(st => {
+    if (!st.constraint || st.strength < 20 || st.utilization >= 0.85) return;
+    const sev: SupplyChainBottleneck['severity'] = st.utilization < 0.45 ? 'critical' : st.utilization < 0.6 ? 'major' : st.utilization < 0.75 ? 'meaningful' : 'minor';
+    const outs = STRATEGIC_INDUSTRY_DEFINITIONS[st.industry].outputs;
+    const downstream = Array.from(new Set(dependencies.filter(d => d.providerRegionId === c && outs.includes(d.supply)).map(d => d.consumerRegionId)));
+    bottlenecks.push({ id: `sbn:${st.industry}:${c}`, regionId: c, industry: st.industry, kind: st.constraint.kind, severity: sev, input: st.constraint.input,
+      reason: `${regions[c].name} ${INDUSTRY_LABEL[st.industry].toLowerCase()} runs at ${Math.round(st.utilization * 100)}% of potential (${Math.round(st.effectiveOutput)}/${Math.round(st.potentialOutput)}): ${st.constraint.text}.`,
+      affectedOutputs: outs, affectedRegions: [c, ...downstream], evidence: st.evidence.slice(0, 3) });
+  }));
+  const sevRank = { minor: 0, meaningful: 1, major: 2, critical: 3 } as const;
+  bottlenecks.sort((a, b) => sevRank[b.severity] - sevRank[a.severity] || a.id.localeCompare(b.id));
+
+  // ---- 8) National summary (what is strong / weak / dependent — never one GDP score) ----
+  const output: Partial<Record<StrategicIndustryKind, number>> = {};
+  STRATEGIC_INDUSTRIES.forEach(k => { const v = codes.reduce((a, c) => a + (regions[c].industries[k]?.effectiveOutput || 0), 0); if (v > 0) output[k] = scR(v); });
+  const topProducer: Partial<Record<StrategicSupplyKind, string>> = {};
+  STRATEGIC_SUPPLIES.forEach(s => { const best = codes.map(c => ({ c, p: ledger[c][s].production })).filter(x => x.p > 0.5).sort((a, b) => b.p - a.p || a.c.localeCompare(b.c))[0]; if (best) topProducer[s] = best.c; });
+  const natShort = STRATEGIC_SUPPLIES.filter(s => supplies && codes.some(c => supplyBands[`${c}:${s}`] === 'shortage' && ledger[c][s].localDemand >= 4));
+  const natSurplus = STRATEGIC_SUPPLIES.filter(s => { const dem = codes.reduce((a, c) => a + ledger[c][s].localDemand, 0); const left = codes.reduce((a, c) => a + Math.max(0, ledger[c][s].production - ledger[c][s].localUse - ledger[c][s].exported), 0); return dem >= 4 && left >= Math.max(12, dem * 0.5); });
+  const constrainedInds = STRATEGIC_INDUSTRIES.filter(k => codes.some(c => { const st = regions[c].industries[k]; return st && st.strength >= 20 && (st.condition === 'constrained' || st.condition === 'disrupted'); }));
+  const natOut = Object.values(output).map(Number); const natTot = natOut.reduce((a, b) => a + b, 0) || 1; const natHhi = natOut.reduce((a, b) => a + (b / natTot) ** 2, 0);
+  const critical = dependencies.filter(d => d.importance === 'critical');
+  const national: NationalIndustrySummary = {
+    strongestIndustries: (Object.keys(output) as StrategicIndustryKind[]).sort((a, b) => (output[b] || 0) - (output[a] || 0) || a.localeCompare(b)).slice(0, 3),
+    constrainedIndustries: constrainedInds, shortages: natShort, surpluses: natSurplus, criticalDependencies: critical.map(d => d.id),
+    diversityBand: natHhi > 0.55 ? 'highly_specialized' : natHhi > 0.38 ? 'specialized' : natHhi > 0.25 ? 'mixed' : 'diversified',
+    primaryIndustrialRisk: critical[0] ? `${regions[critical[0].consumerRegionId].name} ${INDUSTRY_LABEL[critical[0].consumerIndustry].toLowerCase()} depends critically on ${regions[critical[0].providerRegionId].name} for ${SUPPLY_LABEL[critical[0].supply].toLowerCase()}.` : bottlenecks[0] ? bottlenecks[0].reason : null,
+    primaryIndustrialOpportunity: natSurplus[0] ? `${SUPPLY_LABEL[natSurplus[0]]} is abundant${topProducer[natSurplus[0]] ? ` (led by ${REGIONS[topProducer[natSurplus[0]]!]?.name})` : ''} — export and contract opportunities, not free cash.` : null,
+    output, topProducer
+  };
+
+  // ---- 9) Meaningful transitions → derived events (hysteresis + cooldown; tiny changes stay silent) ----
+  const derived: IndustryDerivedEvent[] = [];
+  const cooldowns: Record<string, number> = { ...(prev?.cooldowns || {}) };
+  const history: IndustryHistoryEntry[] = [...(prev?.history || [])];
+  const nationalOutput: Record<string, number> = {};
+  codes.forEach(c => Object.values(regions[c].industries).forEach(st => { nationalOutput[`${c}:${st!.industry}`] = st!.effectiveOutput; }));
+  STRATEGIC_INDUSTRIES.forEach(k => { if (output[k] !== undefined) nationalOutput[`AUS:${k}`] = output[k]!; });
+  const emit = (kind: IndustryDerivedKind, subjectId: string, regionIds: string[], industry: StrategicIndustryKind | null, supply: StrategicSupplyKind | null, text: string, significance: 'meaningful' | 'major', evidence: string[], hist: IndustryHistoryEntry['kind'] | null) => {
+    const ck = `${kind}:${subjectId}`;
+    if (cooldowns[ck] !== undefined && turn - cooldowns[ck] < V101_LIMITS.eventCooldownTurns) return;
+    cooldowns[ck] = turn;
+    const id = `sc_${kind}_${subjectId}_${turn}`.replace(/[^a-zA-Z0-9_:-]/g, '_');
+    derived.push({ id, turn, kind, regionIds, industry, supply, subjectId, text, significance, evidence: evidence.filter(Boolean).slice(0, 3) });
+    if (hist) history.push({ id: `h_${id}`, turn, kind: hist, regionId: regionIds[0], industry: industry || undefined, supply: supply || undefined, summary: text, sourceEventIds: [id] });
+  };
+  if (prev && prev.initializedTurn !== null && opts.emit !== false) {
+    codes.forEach(c => (Object.values(regions[c].industries) as IndustryState[]).forEach(st => {
+      const key = `${c}:${st.industry}`; const before = prev.industryBands[key]; const after = st.condition;
+      if (!before || before === after || st.strength < 20) return;
+      const wasC = before === 'constrained' || before === 'disrupted', isC = after === 'constrained' || after === 'disrupted';
+      const nm = `${regions[c].name} ${INDUSTRY_LABEL[st.industry].toLowerCase()}`;
+      if (isC && !wasC) emit('industry_became_constrained', key, [c], st.industry, st.constraint?.input || null, `${nm} became ${INDUSTRY_CONDITION_LABEL[after].toLowerCase()}${st.constraint ? ` — ${st.constraint.text}` : ''}.`, after === 'disrupted' ? 'major' : 'meaningful', [`Potential ${Math.round(st.potentialOutput)} → effective ${Math.round(st.effectiveOutput)}`], 'industry_became_constrained');
+      else if (wasC && !isC) emit('industry_recovered', key, [c], st.industry, null, `${nm} recovered (${INDUSTRY_CONDITION_LABEL[before]} → ${INDUSTRY_CONDITION_LABEL[after]}).`, 'meaningful', [`Running at ${Math.round(st.utilization * 100)}% of potential`], 'industry_recovered');
+    }));
+    codes.forEach(c => supplies[c].forEach(sp => {
+      const key = `${c}:${sp.supply}`; const before = prev.supplyBands[key]; const after = sp.condition;
+      if (!before || before === after) return;
+      const nm = `${regions[c].name} ${SUPPLY_LABEL[sp.supply].toLowerCase()}`;
+      if (after === 'shortage' && sp.localDemand >= 4) emit('supply_shortage_formed', key, [c], null, sp.supply, `${nm} fell into shortage (${Math.round(sp.localUse + sp.imported)} of ${Math.round(sp.localDemand)} needed).`, 'meaningful', [], 'shortage_formed');
+      else if (before === 'shortage' && SC_SUP_RANK[after] >= 2) emit('supply_shortage_resolved', key, [c], null, sp.supply, `${nm} shortage resolved (${SUPPLY_CONDITION_LABEL[after].toLowerCase()} now).`, 'meaningful', [], 'shortage_resolved');
+      else if (after === 'abundant' && SC_SUP_RANK[before] <= 2 && sp.production >= 12) emit('supply_surplus_formed', key, [c], null, sp.supply, `${nm} is now abundant — an export and contract opportunity.`, 'meaningful', [], null);
+    }));
+    const nowCrit = critical.map(d => d.id);
+    nowCrit.filter(id => !prev.criticalDeps.includes(id)).forEach(id => { const d = critical.find(x => x.id === id)!;
+      emit('critical_supply_dependency_formed', id, [d.consumerRegionId, d.providerRegionId], d.consumerIndustry, d.supply, `${regions[d.consumerRegionId].name} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} now depends critically on ${regions[d.providerRegionId].name} for ${SUPPLY_LABEL[d.supply].toLowerCase()}.`, 'major', [d.reason], 'dependency_became_critical'); });
+    prev.criticalDeps.filter(id => !nowCrit.includes(id)).forEach(id => {
+      const m = id.match(/^sdep:([a-z_]+):([A-Z]+)<-([A-Z]+)$/); if (!m || !regions[m[2]]) return;
+      emit('critical_supply_dependency_reduced', id, [m[2], m[3]], null, m[1] as StrategicSupplyKind, `${regions[m[2]].name}'s critical ${SUPPLY_LABEL[m[1] as StrategicSupplyKind]?.toLowerCase() || m[1]} dependency on ${REGIONS[m[3]]?.name || m[3]} eased.`, 'meaningful', [], 'dependency_reduced');
+    });
+    STRATEGIC_INDUSTRIES.forEach(k => {
+      const before = prev.nationalOutput[`AUS:${k}`]; const now = output[k] || 0;
+      if (before === undefined || before < 10) return;
+      if (now >= before * 1.2 && now - before >= 10) emit('industrial_output_accelerated', `AUS:${k}`, [], k, null, `National ${INDUSTRY_LABEL[k].toLowerCase()} output accelerated (${Math.round(before)} → ${Math.round(now)}).`, 'meaningful', [], null);
+      else if (now <= before * 0.8 && before - now >= 10) emit('industrial_output_declined', `AUS:${k}`, [], k, null, `National ${INDUSTRY_LABEL[k].toLowerCase()} output declined (${Math.round(before)} → ${Math.round(now)}).`, 'major', [], null);
+    });
+    // Structural milestones (history only): a newly dominant supplier; diversification improvement.
+    STRATEGIC_SUPPLIES.forEach(s => {
+      const top = topProducer[s]; if (!top) return;
+      const tot = codes.reduce((a, c) => a + ledger[c][s].production, 0); const share = tot > 0 ? ledger[top][s].production / tot : 0;
+      const hk = `dominant:${s}`;
+      if (share >= 0.5 && tot >= 20 && prev.nationalOutput[hk] !== undefined && prev.nationalOutput[hk] < 0.5 && (cooldowns[hk] === undefined || turn - cooldowns[hk] >= 6)) { cooldowns[hk] = turn; history.push({ id: `h_dom_${s}_${top}_${turn}`, turn, kind: 'industry_became_dominant', regionId: top, supply: s, summary: `${REGIONS[top]?.name || top} became Australia's dominant ${SUPPLY_LABEL[s].toLowerCase()} supplier.`, sourceEventIds: [] }); }
+    });
+  }
+  STRATEGIC_SUPPLIES.forEach(s => { const top = topProducer[s]; const tot = codes.reduce((a, c) => a + ledger[c][s].production, 0); nationalOutput[`dominant:${s}`] = top && tot > 0 ? scR(ledger[top][s].production / tot, 2) : 0; });
+  const boundedHistory = history.slice(-V101_LIMITS.history);
+  const boundedCooldowns = Object.fromEntries(Object.entries(cooldowns).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, V101_LIMITS.cooldowns));
+  const inputHash = industriesInputHash(i);
+  const persisted: IndustriesPersisted = {
+    schemaVersion: '10.1', revision: (prev?.revision || 0) + (derived.length || !prev || prev.inputHash !== inputHash ? 1 : 0), initializedTurn: prev?.initializedTurn ?? turn, lastUpdatedTurn: turn,
+    industryBands, supplyBands, criticalDeps: critical.map(d => d.id), nationalOutput, cooldowns: boundedCooldowns, history: boundedHistory, inputHash
+  };
+  codes.forEach(c => { regions[c].revision = persisted.revision; });
+  const state: IndustriesSupplyChainsState = {
+    schemaVersion: '10.1', revision: persisted.revision, regions, supplies, flows, dependencies, bottlenecks, national, history: boundedHistory,
+    hashes: { inputs: inputHash, national: ns?.inputHash || 'none' }, lastUpdatedTurn: turn, computeMs: typeof performance !== 'undefined' ? scR(performance.now() - t0, 2) : 0
+  };
+  return { state, persisted, derived };
+}
+
+/** Inputs from canonical systems (read-only): Living Regions + infrastructure + the V10.0 snapshot. */
+export function buildIndustriesInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; modifiers?: IndustriesInputs['modifiers'] }): IndustriesInputs {
+  const codes = Object.keys(REGIONS).filter(c => (REGIONAL_RESOURCES[c] || []).length && ['QLD', 'NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'ACT'].includes(c)).sort();
+  const projectsRaw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 0,
+    regions: codes.map(code => { const reg = src.lr?.regions?.[code]; return { code, name: REGIONS[code]?.name || code, devScore: Number(reg?.development.score) || 0, momentum: Number(reg?.momentum.value) || 0, stability: reg && typeof reg.stability.value === 'number' ? reg.stability.value : null, sectors: { ...(reg?.sectors || {}) } }; }),
+    projects: projectsRaw.filter((p: any) => p && typeof p.id === 'string').map((p: any) => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked') })),
+    national: src.national, modifiers: src.modifiers
+  };
+}
+
+export function sanitizeIndustriesPersisted(raw: unknown): IndustriesPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const out = createEmptyIndustriesPersisted();
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const iconds = Object.keys(SC_IND_RANK); const sconds = Object.keys(SC_SUP_RANK);
+  out.revision = Math.max(0, Math.floor(num(r.revision)));
+  out.initializedTurn = r.initializedTurn === null || r.initializedTurn === undefined ? null : Math.max(0, Math.floor(num(r.initializedTurn)));
+  out.lastUpdatedTurn = Math.max(0, Math.floor(num(r.lastUpdatedTurn)));
+  Object.entries(r.industryBands && typeof r.industryBands === 'object' ? r.industryBands : {}).slice(0, 80).forEach(([k, v]) => { const [c, ind] = k.split(':'); if (REGIONS[c] && STRATEGIC_INDUSTRIES.includes(ind as StrategicIndustryKind) && iconds.includes(String(v))) out.industryBands[k] = v as IndustryCondition; });
+  Object.entries(r.supplyBands && typeof r.supplyBands === 'object' ? r.supplyBands : {}).slice(0, 80).forEach(([k, v]) => { const [c, s] = k.split(':'); if (REGIONS[c] && STRATEGIC_SUPPLIES.includes(s as StrategicSupplyKind) && sconds.includes(String(v))) out.supplyBands[k] = v as SupplyCondition; });
+  Object.entries(r.nationalOutput && typeof r.nationalOutput === 'object' ? r.nationalOutput : {}).slice(0, 120).forEach(([k, v]) => { if (/^[A-Za-z]+:[a-z_]+$/.test(k)) out.nationalOutput[k] = Math.max(0, num(v)); });
+  Object.entries(r.cooldowns && typeof r.cooldowns === 'object' ? r.cooldowns : {}).slice(0, V101_LIMITS.cooldowns).forEach(([k, v]) => { out.cooldowns[String(k).slice(0, 90)] = Math.floor(num(v)); });
+  out.criticalDeps = (Array.isArray(r.criticalDeps) ? r.criticalDeps : []).filter((x: any) => typeof x === 'string' && x.startsWith('sdep:')).slice(0, 40);
+  const hk = ['shortage_formed', 'shortage_resolved', 'dependency_became_critical', 'dependency_reduced', 'industry_became_constrained', 'industry_recovered', 'industry_became_dominant', 'diversification_improved'];
+  out.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.id === 'string' && typeof h.summary === 'string' && hk.includes(h.kind)).slice(-V101_LIMITS.history).map((h: any) => ({
+    id: h.id.slice(0, 100), turn: Math.floor(num(h.turn)), kind: h.kind, regionId: REGIONS[h.regionId] ? h.regionId : undefined, industry: STRATEGIC_INDUSTRIES.includes(h.industry) ? h.industry : undefined,
+    supply: STRATEGIC_SUPPLIES.includes(h.supply) ? h.supply : undefined, summary: h.summary.slice(0, 200), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4)
+  }));
+  out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  return out;
+}
+
+/** Structural validation (LAB + self-tests) — includes the core invariants E–H. */
+export function validateIndustriesSupplyChainsState(s: IndustriesSupplyChainsState): string[] {
+  const errs: string[] = [];
+  const fin = (v: number, what: string) => { if (!Number.isFinite(v)) errs.push(`${what} is not finite`); else if (v < 0) errs.push(`${what} is negative`); };
+  Object.values(s.regions).forEach(r => {
+    if (!REGIONS[r.regionId]) errs.push(`unknown region ${r.regionId}`);
+    Object.entries(r.industries).forEach(([k, st]) => {
+      if (!STRATEGIC_INDUSTRIES.includes(k as StrategicIndustryKind)) errs.push(`unknown industry ${k}`);
+      fin(st!.potentialOutput, `${r.regionId}.${k}.potential`); fin(st!.effectiveOutput, `${r.regionId}.${k}.effective`); fin(st!.strength, `${r.regionId}.${k}.strength`);
+      if (st!.effectiveOutput > st!.potentialOutput + 0.05) errs.push(`${r.regionId}.${k} effective exceeds potential`);
+      st!.inputs.forEach(x => fin(x.demand, `${r.regionId}.${k}.${x.supply}.demand`));
+    });
+  });
+  Object.entries(s.supplies).forEach(([c, list]) => list.forEach(sp => {
+    if (!STRATEGIC_SUPPLIES.includes(sp.supply)) errs.push(`unknown supply ${sp.supply}`);
+    fin(sp.production, `${c}.${sp.supply}.production`); fin(sp.localDemand, `${c}.${sp.supply}.demand`); fin(sp.imported, `${c}.${sp.supply}.imported`); fin(sp.exported, `${c}.${sp.supply}.exported`);
+    if (sp.exported > Math.max(0, sp.production - sp.localUse) + 0.3) errs.push(`${c}.${sp.supply} exported more than it had available`);
+  }));
+  const ids = new Set<string>();
+  s.dependencies.forEach(d => {
+    if (ids.has(d.id)) errs.push(`duplicate dependency ${d.id}`); ids.add(d.id);
+    if (d.consumerRegionId === d.providerRegionId) errs.push(`self dependency ${d.id}`);
+    if (!REGIONS[d.consumerRegionId] || !REGIONS[d.providerRegionId]) errs.push(`dependency ${d.id} has an unknown region`);
+    if (!s.flows.some(f => f.supply === d.supply && f.fromRegionId === d.providerRegionId && f.toRegionId === d.consumerRegionId)) errs.push(`dependency ${d.id} has no calculated supply path`);
+  });
+  const bIds = new Set<string>(); s.bottlenecks.forEach(b => { if (bIds.has(b.id)) errs.push(`duplicate bottleneck ${b.id}`); bIds.add(b.id); });
+  if (s.history.length > V101_LIMITS.history) errs.push('history exceeds bound');
+  if (s.flows.length > V101_LIMITS.flows) errs.push('flows exceed bound');
+  return errs;
+}
+
+/** Industry event → World Reaction root event (public; root/depth/budget/dedupe apply; decays by dependency depth). */
+export function scToWorldEvent(d: IndustryDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  const region = d.regionIds[0] && REGIONS[d.regionIds[0]] ? d.regionIds[0] : null;
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'industries', sourceEventId: null, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: region ? 'region' : 'nation', subjectId: region || 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: d.evidence.filter(Boolean).slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'economy', 'market'],
+    tags: ['industries', ...(d.industry ? [`industry:${d.industry}`] : []), ...(d.supply ? [`supply:${d.supply}`] : []), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: d.kind.includes('dependency') ? 'inference' : 'calculated', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0,
+    expiresTurn: d.turn + 3, dedupeKey: `sc:${d.kind}:${d.subjectId}:${d.turn}`
+  };
+}
+
+// ---- Consumers (read-only helpers) -------------------------------------------------------------------
+
+/** V9.3 content tags (eligibility inputs only). */
+export function industryContentTags(s: IndustriesSupplyChainsState | null, regionId: string | null): string[] {
+  if (!s) return [];
+  const tags: string[] = [];
+  s.national.shortages.forEach(x => tags.push(`supply:${x}:shortage`));
+  s.national.surpluses.forEach(x => tags.push(`supply:${x}:abundant`));
+  const reg = regionId ? s.regions[regionId] : null;
+  if (reg) Object.values(reg.industries).forEach(st => { tags.push(`industry:${st!.industry}:${st!.condition}`); if (st!.constraint?.input) tags.push(`industry:${st!.industry}:needs:${st!.constraint.input}`); });
+  if (reg?.suppliedBy.some(d => d.importance === 'critical')) tags.push('supply_dependency:critical');
+  return tags;
+}
+
+/**
+ * Bounded AI outlook for a region (−0.06 … +0.06): regions whose industries are input-constrained are less
+ * attractive; regions that are critical suppliers of constrained national chains, or with abundant supply, a bit
+ * more. Public information only; never grants/removes actions.
+ */
+export function industryRegionOutlook(s: IndustriesSupplyChainsState | null, regionId: string, focusIndustry?: StrategicIndustryKind | null): { factor: number; reason: string | null } {
+  const reg = s?.regions[regionId];
+  if (!reg || !s) return { factor: 0, reason: null };
+  const constrainedHere = (Object.values(reg.industries) as IndustryState[]).filter(x => x.strength >= 30 && (x.condition === 'constrained' || x.condition === 'disrupted'));
+  const suppliesConstrained = reg.suppliesTo.some(d => (d.importance === 'critical' || d.importance === 'high') && (focusIndustry ? d.consumerIndustry === focusIndustry : true));
+  const abundant = (s.supplies[regionId] || []).some(x => x.condition === 'abundant' && x.production >= 12);
+  if (focusIndustry && reg.industries[focusIndustry]?.constraint?.input) return { factor: -0.05, reason: `${INDUSTRY_LABEL[focusIndustry]} here is short of ${SUPPLY_LABEL[reg.industries[focusIndustry]!.constraint!.input!].toLowerCase()}` };
+  if (suppliesConstrained) return { factor: 0.05, reason: `Key supplier for ${reg.suppliesTo.filter(d => d.importance === 'critical' || d.importance === 'high').map(d => REGIONS[d.consumerRegionId]?.name || d.consumerRegionId).slice(0, 2).join(', ')}` };
+  if (constrainedHere.length) return { factor: -0.04, reason: `${INDUSTRY_LABEL[constrainedHere[0].industry]} is ${constrainedHere[0].condition} here` };
+  if (abundant) return { factor: 0.03, reason: 'Abundant strategic supply (export opportunity)' };
+  return { factor: 0, reason: null };
+}
+
+/** What-If: isolated projection of a project (through V10.0 first, then V10.1) — never touches live state. */
+export function projectIndustryImpact(nsInputs: NationalSystemsInputs, nsPrev: NationalSystemsPersisted | null, indInputs: IndustriesInputs, indPrev: IndustriesPersisted | null,
+  change: { projectType?: string; regionId: string; sectorScale?: { sector: LRSector; factor: number }; freightFactor?: number }): {
+  before: IndustriesSupplyChainsState; after: IndustriesSupplyChainsState;
+  industries: Array<{ regionId: string; industry: StrategicIndustryKind; from: IndustryCondition; to: IndustryCondition; potentialBefore: number; potentialAfter: number; effectiveBefore: number; effectiveAfter: number }>;
+  supplies: Array<{ regionId: string; supply: StrategicSupplyKind; from: SupplyCondition; to: SupplyCondition; demandBefore: number; demandAfter: number }>;
+  dependencies: Array<{ id: string; from: string; to: string }>; beneficiaries: string[];
+} {
+  const nsBefore = computeNationalSystems(nsInputs, nsPrev, { emit: false }).state;
+  const before = computeIndustriesSupplyChains({ ...indInputs, national: nsBefore }, indPrev, { emit: false }).state;
+  let nsIn: NationalSystemsInputs = nsInputs; let ind: IndustriesInputs = indInputs;
+  if (change.projectType) {
+    const p = { id: `whatif_${change.projectType}_${change.regionId}`, title: `${REGIONS[change.regionId]?.name || change.regionId} ${change.projectType.replace(/_/g, ' ')}`, regionId: change.regionId, projectType: change.projectType, status: 'active' };
+    nsIn = { ...nsInputs, projects: [...nsInputs.projects, p] }; ind = { ...indInputs, projects: [...indInputs.projects, p] };
+  }
+  if (change.sectorScale) {
+    const { sector, factor } = change.sectorScale;
+    ind = { ...ind, regions: ind.regions.map(r => (r.code === change.regionId ? { ...r, sectors: { ...r.sectors, [sector]: scR((Number(r.sectors[sector]) || 0) * factor) } } : r)) };
+  }
+  if (change.freightFactor !== undefined) nsIn = { ...nsIn, modifiers: { ...(nsIn.modifiers || {}), [change.regionId]: { ...((nsIn.modifiers || {})[change.regionId] || {}), freight: -Math.round(60 * (1 - change.freightFactor)) } } };
+  const nsAfter = nsIn === nsInputs ? nsBefore : computeNationalSystems(nsIn, nsPrev, { emit: false }).state;
+  const after = computeIndustriesSupplyChains({ ...ind, national: nsAfter }, indPrev, { emit: false }).state;
+  const industries: ReturnType<typeof projectIndustryImpact>['industries'] = [];
+  Object.keys(after.regions).sort().forEach(c => STRATEGIC_INDUSTRIES.forEach(k => {
+    const a = before.regions[c]?.industries[k], b = after.regions[c]?.industries[k]; if (!a && !b) return;
+    const eb = a?.effectiveOutput || 0, ea = b?.effectiveOutput || 0, pb = a?.potentialOutput || 0, pa = b?.potentialOutput || 0;
+    if ((a?.condition || 'weak') !== (b?.condition || 'weak') || Math.abs(ea - eb) >= 1.5 || Math.abs(pa - pb) >= 1.5)
+      industries.push({ regionId: c, industry: k, from: a?.condition || 'weak', to: b?.condition || 'weak', potentialBefore: Math.round(pb), potentialAfter: Math.round(pa), effectiveBefore: Math.round(eb), effectiveAfter: Math.round(ea) });
+  }));
+  const supplies: ReturnType<typeof projectIndustryImpact>['supplies'] = [];
+  Object.keys(after.supplies).sort().forEach(c => STRATEGIC_SUPPLIES.forEach(s => {
+    const a = before.supplies[c]?.find(x => x.supply === s), b = after.supplies[c]?.find(x => x.supply === s); if (!a && !b) return;
+    if ((a?.condition || 'balanced') !== (b?.condition || 'balanced') || Math.abs((b?.localDemand || 0) - (a?.localDemand || 0)) >= 2)
+      supplies.push({ regionId: c, supply: s, from: a?.condition || 'balanced', to: b?.condition || 'balanced', demandBefore: Math.round(a?.localDemand || 0), demandAfter: Math.round(b?.localDemand || 0) });
+  }));
+  const depLabel = (d?: SupplyDependency) => (d ? `${d.shareBand} (${d.importance})` : 'none');
+  const depIds = Array.from(new Set([...before.dependencies.map(d => d.id), ...after.dependencies.map(d => d.id)])).sort();
+  const dependencies = depIds.map(id => ({ id, from: depLabel(before.dependencies.find(d => d.id === id)), to: depLabel(after.dependencies.find(d => d.id === id)) })).filter(x => x.from !== x.to).slice(0, 8);
+  const beneficiaries = Array.from(new Set(industries.filter(x => x.effectiveAfter > x.effectiveBefore + 1).map(x => x.regionId)));
+  return { before, after, industries: industries.slice(0, 12), supplies: supplies.slice(0, 12), dependencies, beneficiaries };
+}
+
+/** PLAY: at most 2 relevant industrial conditions (nothing when all is fine). */
+export function industryPlayStrip(s: IndustriesSupplyChainsState | null, focusRegions: string[] = []): Array<{ regionId: string; text: string; tone: 'warning' | 'critical' | 'positive' }> {
+  if (!s) return [];
+  const focus = new Set(focusRegions);
+  const out: ReturnType<typeof industryPlayStrip> = [];
+  [...s.bottlenecks].sort((a, b) => (focus.has(b.regionId) ? 1 : 0) - (focus.has(a.regionId) ? 1 : 0)).slice(0, 2).forEach(b => {
+    const st = s.regions[b.regionId].industries[b.industry]!;
+    out.push({ regionId: b.regionId, tone: b.severity === 'critical' || b.severity === 'major' ? 'critical' : 'warning', text: `${INDUSTRY_ICON[b.industry]} ${b.regionId} ${INDUSTRY_LABEL[b.industry]} ${INDUSTRY_CONDITION_ICON[st.condition]} ${INDUSTRY_CONDITION_LABEL[st.condition]}${b.input ? ` · ${SUPPLY_LABEL[b.input]} tight` : ''}` });
+  });
+  return out.slice(0, 2);
+}
+
+
+// ---- V10.1 Industries & Supply Chains: Game Intelligence (Fact / Calculated / Inference / Projection) ----------
+
+export interface IndustriesWorldView { state: IndustriesSupplyChainsState; inputs: IndustriesInputs; persisted: IndustriesPersisted | null }
+export type IndustryQueryTopic = 'why_industry' | 'supply_source' | 'dependents' | 'what_if_decline' | 'top_producer' | 'network_matters' | 'overdependence' | 'diversify' | 'what_if_build';
+export interface IndustryQuery { topic: IndustryQueryTopic; regionId: string | null; industry: StrategicIndustryKind | null; supply: StrategicSupplyKind | null; network: NationalNetworkKind | null; projectType: string | null }
+
+const SC_INDUSTRY_WORDS: Array<[StrategicIndustryKind, RegExp]> = [
+  ['manufacturing', /\b(manufactur\w*|factor(y|ies)|industrial output)\b/], ['mining', /\b(mining|mines?|miners?)\b/], ['agriculture', /\b(agricultur\w*|farm\w*)\b/],
+  ['technology', /\b(technology|tech sector|tech industry)\b/], ['research', /\bresearch\b(?! capability)/], ['tourism', /\btouris\w*\b/], ['trade', /\b(trade|exports?)\b(?! network)/], ['energy', /\benergy (industry|sector|production|generation)\b/]
+];
+const SC_SUPPLY_WORDS: Array<[StrategicSupplyKind, RegExp]> = [
+  ['minerals', /\b(minerals?|ore|mineral supply)\b/], ['agricultural_goods', /\b(agricultural (goods|supply|output)|food|grain|farm goods)\b/], ['energy', /\b(energy|power|electricity)\b/],
+  ['manufactured_goods', /\bmanufactured goods\b/], ['research_capability', /\bresearch capabilit\w*\b/], ['technology_capability', /\btechnology capabilit\w*\b/]
+];
+export function industryInText(q: string): StrategicIndustryKind | null { return SC_INDUSTRY_WORDS.find(([, re]) => re.test(q))?.[0] || null; }
+export function supplyInText(q: string): StrategicSupplyKind | null { return SC_SUPPLY_WORDS.find(([, re]) => re.test(q))?.[0] || null; }
+
+/** Detects industry / supply-chain questions only when an Industries view exists (never hijacks other phrasings). */
+export function detectIndustryQuery(raw: string, gw: GIWorld): IndustryQuery | null {
+  const v = gw.national?.industries; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const industry = industryInText(q); const supply = supplyInText(q); const regionId = nsRegionInText(q);
+  const network = nationalNetworkInText(q);
+  const chainWord = /\b(supply chains?|suppl(y|ies|ier|iers)|industr(y|ies)|inputs?|value chains?|diversif\w*)\b/.test(q);
+  const mk = (topic: IndustryQueryTopic, extra: Partial<IndustryQuery> = {}): IndustryQuery => ({ topic, regionId, industry, supply, network, projectType: null, ...extra });
+  // Economy-wide concentration and project What-Ifs are answered here whenever V10.1 is on (downstream effects).
+  if (/\b(too dependent|overly dependent|over-?dependen\w*|reliant on one|depend\w* on (one|a single) region)\b/.test(q)) return mk('overdependence');
+  if (/\b(what (happens|would happen)|what if)\b/.test(q) && /\b(build|fund|complete|add)\b/.test(q) && regionId) {
+    const projectType = nsProjectTypeInText(q, network) || (industry === 'manufacturing' ? 'advanced_manufacturing' : industry === 'research' ? 'research_campus' : industry === 'technology' ? 'data_center' : null);
+    if (projectType) return mk('what_if_build', { projectType });
+  }
+  if (!industry && !supply && !chainWord) return null;
+  if (/\b(what (happens|would happen)|what if)\b/.test(q) && /\b(declin\w*|falls?|drops?|collaps\w*|disrupt\w*|shrinks?|fails?|slumps?)\b/.test(q) && regionId && (industry || supply)) return mk('what_if_decline');
+  if (/\bdiversif\w*\b/.test(q) && regionId) return mk('diversify');
+  if (/\bwhich regions? (produces?|supplies|makes|leads?)\b|\b(largest|biggest|most) .{0,25}\b(producer|supplier|supply|production)\b/.test(q) && (supply || industry)) return mk('top_producer');
+  if (/\bwhy (does|do|is)\b.{0,40}\bmatter\b/.test(q) && network && (industry || chainWord)) return mk('network_matters');
+  if (/\bwho (depends|relies)\b|\bwhat industries (depend|rely)\b|\bwho needs\b|\bdepend(s|ent)? on\b.{0,20}\b(mining|energy|minerals|supply)\b/.test(q) && regionId) return mk('dependents');
+  if (/\bwhere does\b.{0,40}\b(get|source|buy)\b|\bwhere do\b.{0,40}\b(come from)\b|\bwho supplies\b|\bsupplier/.test(q) && regionId && (supply || industry)) return mk('supply_source');
+  if (/\bwhy (is|are|has)\b.{0,40}\b(constrain\w*|struggl\w*|slow\w*|weak\w*|disrupt\w*|short|below|strong|booming|thriving|healthy)\b/.test(q) && regionId && industry) return mk('why_industry');
+  if (regionId && industry && /\b(how is|how are|status|doing)\b/.test(q)) return mk('why_industry');
+  return null;
+}
+
+const scName = (c: string) => REGIONS[c]?.name || c;
+const scPct = (x: number) => `${Math.round(x * 100)}%`;
+
+export function composeIndustryAnswer(query: IndustryQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const nv = gw.national!; const v = nv.industries!; const s = v.state;
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  let title = 'Industries & Supply Chains'; let shape: GIAnswerShape = 'explanation';
+  const reg = query.regionId ? s.regions[query.regionId] : null;
+  const industryOf = (k: StrategicIndustryKind | null) => (reg && k ? reg.industries[k] : undefined);
+  switch (query.topic) {
+    case 'why_industry': {
+      const st = industryOf(query.industry); if (!reg || !st) { say('fact', 'Fact', [C(`${reg ? reg.name : 'That region'} has no meaningful ${query.industry ? INDUSTRY_LABEL[query.industry].toLowerCase() : ''} industry right now.`, 'fact')]); break; }
+      title = `${reg.name} ${INDUSTRY_LABEL[st.industry].toLowerCase()}: ${INDUSTRY_CONDITION_LABEL[st.condition]}`; shape = 'diagnosis';
+      say('fact', 'Fact', [C(`${reg.name} ${INDUSTRY_LABEL[st.industry].toLowerCase()} is ${INDUSTRY_CONDITION_LABEL[st.condition].toLowerCase()} ${INDUSTRY_CONDITION_ICON[st.condition]} (strength ${Math.round(st.strength)}).`, 'fact'),
+        st.evidence[0] ? C(`Largest strength factor: ${st.evidence[0].label} (+${Math.round(st.evidence[0].value)}).`, 'fact') : null]);
+      say('calc', 'Calculated', [C(`Potential ${Math.round(st.potentialOutput)} · effective ${Math.round(st.effectiveOutput)} (${scPct(st.utilization)} of potential) · network access ${scPct(st.networkAccess)}.`, 'calculated'),
+        ...st.inputs.map(x => C(`${SUPPLY_LABEL[x.supply]} inputs: ${Math.round(x.supplied)} of ${Math.round(x.demand)} needed (${scPct(x.availability)}).`, 'calculated'))]);
+      if (st.constraint) {
+        const deps = reg.suppliedBy.filter(d => d.supply === st.constraint!.input).sort((a, b) => b.amount - a.amount || a.providerRegionId.localeCompare(b.providerRegionId));
+        const stranded = st.constraint.input ? Object.entries(s.supplies).filter(([c]) => c !== reg.regionId).map(([c, l]) => ({ c, left: (() => { const x = l.find(y => y.supply === st.constraint!.input); return x ? x.production - x.localUse - x.exported : 0; })() })).filter(x => x.left >= 5).sort((a, b) => b.left - a.left || a.c.localeCompare(b.c)) : [];
+        say('infer', 'Inference', [C(`Main constraint — ${st.constraint.text}.`, 'inference'),
+          deps[0] ? C(`${scName(deps[0].providerRegionId)} is the largest external supplier; a disruption there would deepen this constraint.`, 'inference') : null,
+          stranded[0] ? C(`${scName(stranded[0].c)} has about ${Math.round(stranded[0].left)} spare ${SUPPLY_LABEL[st.constraint.input!].toLowerCase()}, but the corridor capacity to reach ${reg.name} is already used — freight links, not supply, are the limit.`, 'calculated') : null,
+          C('Options: improve the supplying corridor, develop an alternative supplier, add local capacity, or accept slower effective growth.', 'inference')]);
+      } else say('infer', 'Inference', [C('No input or network constraint is limiting it — output is near potential.', 'inference')]);
+      break;
+    }
+    case 'supply_source': {
+      const sup = query.supply || (query.industry ? STRATEGIC_INDUSTRY_DEFINITIONS[query.industry].inputRequirements[0]?.supply : null) || null;
+      if (!reg || !sup) break;
+      title = `Where ${reg.name} gets ${SUPPLY_LABEL[sup].toLowerCase()}`;
+      const sp = s.supplies[reg.regionId]?.find(x => x.supply === sup);
+      const deps = reg.suppliedBy.filter(d => d.supply === sup).sort((a, b) => b.amount - a.amount || a.providerRegionId.localeCompare(b.providerRegionId));
+      say('fact', 'Fact', [C(sp ? `${reg.name} ${SUPPLY_LABEL[sup].toLowerCase()}: ${SUPPLY_CONDITION_LABEL[sp.condition].toLowerCase()} ${SUPPLY_CONDITION_ICON[sp.condition]}.` : `${reg.name} has no ${SUPPLY_LABEL[sup].toLowerCase()} demand or production.`, 'fact')]);
+      if (sp) say('calc', 'Calculated', [C(`Needs ${Math.round(sp.localDemand)} · local ${Math.round(sp.localUse)} · imported ${Math.round(sp.imported)} · unmet ${Math.round(sp.unmetDemand)}.`, 'calculated'),
+        ...deps.slice(0, 3).map(d => C(`${scName(d.providerRegionId)}: ${scPct(d.share)} (${d.shareBand}) via ${d.path.join('→')} on the ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} network.`, 'calculated'))]);
+      if (deps.length) say('infer', 'Inference', [C(deps[0].fragile ? `${reg.name} is exposed: no alternative supplier matches ${scName(deps[0].providerRegionId)}.` : (deps.length > 1 ? `${reg.name} draws on several external suppliers, which limits exposure.` : `${reg.name} combines local production with one external supplier.`), 'inference')]);
+      break;
+    }
+    case 'dependents': {
+      if (!reg) break;
+      const outs = query.industry ? STRATEGIC_INDUSTRY_DEFINITIONS[query.industry].outputs : query.supply ? [query.supply] : STRATEGIC_SUPPLIES;
+      const deps = reg.suppliesTo.filter(d => outs.includes(d.supply));
+      title = `Who depends on ${reg.name}${query.industry ? ` ${INDUSTRY_LABEL[query.industry].toLowerCase()}` : query.supply ? ` ${SUPPLY_LABEL[query.supply].toLowerCase()}` : ''}`;
+      if (!deps.length) { say('fact', 'Fact', [C(`No region currently draws meaningful ${outs.map(o => SUPPLY_LABEL[o].toLowerCase()).join('/')} from ${reg.name}.`, 'fact')]); break; }
+      say('calc', 'Calculated', deps.slice(0, 5).map(d => C(`${scName(d.consumerRegionId)} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} takes ${Math.round(d.amount)} ${SUPPLY_LABEL[d.supply].toLowerCase()} (${scPct(d.share)} of its supply; ${d.importance}).`, 'calculated')));
+      say('infer', 'Inference', [C(`${reg.name} is strategically central for ${Array.from(new Set(deps.map(d => scName(d.consumerRegionId)))).join(', ')} — disruption here would spread along those chains.`, 'inference')]);
+      break;
+    }
+    case 'what_if_decline': case 'what_if_build': {
+      if (!reg || !nv.inputs) break;
+      const sector = query.industry ? STRATEGIC_INDUSTRY_DEFINITIONS[query.industry].livingRegionSectors[0] : query.supply === 'minerals' ? 'mining' : query.supply === 'energy' ? 'energy' : query.supply === 'agricultural_goods' ? 'agriculture' : null;
+      const imp = query.topic === 'what_if_build'
+        ? projectIndustryImpact(nv.inputs, nv.persisted, v.inputs, v.persisted, { projectType: query.projectType!, regionId: reg.regionId })
+        : projectIndustryImpact(nv.inputs, nv.persisted, v.inputs, v.persisted, { regionId: reg.regionId, sectorScale: sector ? { sector: sector as LRSector, factor: 0.5 } : undefined, freightFactor: sector ? undefined : 0.3 });
+      title = query.topic === 'what_if_build' ? `What if: ${LR_PROJECT_PROFILE[query.projectType!]?.label || query.projectType!.replace(/_/g, ' ')} in ${reg.name}` : `What if ${reg.name} ${query.industry ? INDUSTRY_LABEL[query.industry].toLowerCase() : 'supply'} declines`;
+      shape = 'simulation';
+      say('fact', 'Fact', [C('Isolated projection — nothing in the match changes.', 'fact')]);
+      const proj = [
+        ...imp.industries.slice(0, 5).map(x => C(`${scName(x.regionId)} ${INDUSTRY_LABEL[x.industry].toLowerCase()}: ${INDUSTRY_CONDITION_LABEL[x.from]} → ${INDUSTRY_CONDITION_LABEL[x.to]} (potential ${x.potentialBefore}→${x.potentialAfter}, effective ${x.effectiveBefore}→${x.effectiveAfter}).`, 'projection')),
+        ...imp.supplies.slice(0, 3).map(x => C(`${scName(x.regionId)} ${SUPPLY_LABEL[x.supply].toLowerCase()}: ${SUPPLY_CONDITION_LABEL[x.from]} → ${SUPPLY_CONDITION_LABEL[x.to]}${x.demandAfter !== x.demandBefore ? ` (demand ${x.demandBefore}→${x.demandAfter})` : ''}.`, 'projection')),
+        ...imp.dependencies.slice(0, 3).map(x => C(`Dependency ${x.id.replace(/^sdep:/, '')}: ${x.from} → ${x.to}.`, 'projection'))
+      ];
+      say('proj', 'Projection', proj.length ? proj : [C('No industry or supply condition would change measurably.', 'projection')]);
+      if (query.topic === 'what_if_build') { const nimp = projectNationalImpact(nv.inputs, nv.persisted, { projectType: query.projectType!, regionId: reg.regionId });
+        say('net', 'Projection · networks', nimp.changes.slice(0, 3).map(c => C(`${scName(c.regionId)} ${NATIONAL_NETWORK_LABEL[c.network].toLowerCase()}: ${NATIONAL_CONDITION_LABEL[c.from]} → ${NATIONAL_CONDITION_LABEL[c.to]}.`, 'projection'))); }
+      const others = imp.beneficiaries.filter(r => r !== reg.regionId); const rivals = others.filter(r => nv.regionOwners[r] === 'rival');
+      if (query.topic === 'what_if_build') say('infer', 'Inference', [
+        others.length ? C(`National value: downstream industries in ${others.map(scName).join(', ')} would benefit too.`, 'inference') : C(`National value: the benefit stays mostly in ${reg.name}.`, 'inference'),
+        rivals.length ? C(`Public good: rival-controlled ${rivals.map(scName).join(', ')} would gain through the supply chain.`, 'inference') : null,
+        imp.supplies.some(x => x.demandAfter > x.demandBefore) ? C('Tradeoff: higher output also raises input demand — watch the suppliers it deepens dependence on.', 'inference') : null]);
+      else say('infer', 'Inference', [C(imp.industries.filter(x => x.regionId !== reg.regionId).length ? 'The shock propagates only along real supply dependencies, weakening with distance.' : `The effect stays mostly inside ${reg.name}; other regions have alternatives or little exposure.`, 'inference')]);
+      break;
+    }
+    case 'top_producer': {
+      const sup = query.supply || (query.industry ? STRATEGIC_INDUSTRY_DEFINITIONS[query.industry].outputs[0] : null); if (!sup) break;
+      title = `Largest ${SUPPLY_LABEL[sup].toLowerCase()} producers`;
+      const ranked = Object.entries(s.supplies).map(([c, l]) => ({ c, p: l.find(x => x.supply === sup)?.production || 0 })).filter(x => x.p > 0.5).sort((a, b) => b.p - a.p || a.c.localeCompare(b.c));
+      const tot = ranked.reduce((a, x) => a + x.p, 0) || 1;
+      say('calc', 'Calculated', ranked.slice(0, 4).map(x => C(`${scName(x.c)}: ${Math.round(x.p)} (${scPct(x.p / tot)} of national ${SUPPLY_LABEL[sup].toLowerCase()}).`, 'calculated')));
+      if (ranked[0] && ranked[0].p / tot >= 0.5) say('infer', 'Inference', [C(`${scName(ranked[0].c)} dominates — Australia is concentrated on one supplier here.`, 'inference')]);
+      break;
+    }
+    case 'network_matters': {
+      const n = query.network!; const ind = query.industry;
+      title = `Why ${reg ? `${reg.name} ` : ''}${NATIONAL_NETWORK_LABEL[n].toLowerCase()} matters${ind ? ` to ${INDUSTRY_LABEL[ind].toLowerCase()}` : ''}`;
+      const flows = s.flows.filter(f => f.network === n && (!reg || f.path.includes(reg.regionId)));
+      say('fact', 'Fact', [C(`${INDUSTRY_LABEL[ind || 'manufacturing']} depends on the ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} network (weight ${Math.round(((STRATEGIC_INDUSTRY_DEFINITIONS[ind || 'manufacturing'].networkDependencies[n]) || 0) * 100)}%).`, 'fact')]);
+      say('calc', 'Calculated', flows.length ? flows.slice(0, 4).map(f => C(`${SUPPLY_LABEL[f.supply]} ${Math.round(f.amount)} moves ${f.path.join('→')}${f.strainedCorridor ? ' (strained corridor)' : ''}.`, 'calculated')) : [C(`No strategic supply currently moves through ${reg ? reg.name : 'this network'} on ${NATIONAL_NETWORK_LABEL[n].toLowerCase()}.`, 'calculated')]);
+      say('infer', 'Inference', [C('Corridor capacity limits how much supply can reach downstream industries; a constrained corridor turns a supplier\'s surplus into a customer\'s shortage.', 'inference')]);
+      break;
+    }
+    case 'overdependence': {
+      title = 'Is Australia too dependent on one region?';
+      const tops = STRATEGIC_SUPPLIES.map(sup => { const ranked = Object.entries(s.supplies).map(([c, l]) => ({ c, p: l.find(x => x.supply === sup)?.production || 0 })).sort((a, b) => b.p - a.p); const tot = ranked.reduce((a, x) => a + x.p, 0); return { sup, c: ranked[0]?.c, share: tot > 0 ? (ranked[0]?.p || 0) / tot : 0, tot }; }).filter(x => x.tot >= 10);
+      const conc = tops.filter(x => x.share >= 0.45);
+      say('calc', 'Calculated', [...conc.slice(0, 4).map(x => C(`${SUPPLY_LABEL[x.sup]}: ${scName(x.c!)} produces ${scPct(x.share)} nationally.`, 'calculated')),
+        C(`${s.national.criticalDependencies.length} critical supply dependenc${s.national.criticalDependencies.length === 1 ? 'y' : 'ies'}; national industrial mix: ${DIVERSITY_LABEL[s.national.diversityBand].toLowerCase()}.`, 'calculated')]);
+      say('infer', 'Inference', [C(conc.length || s.national.criticalDependencies.length ? `Yes, in places: ${conc.map(x => SUPPLY_LABEL[x.sup].toLowerCase()).join(', ') || 'critical supply chains'} rely heavily on one region. Developing an alternative supplier reduces national fragility.` : 'Not significantly — supply is spread across several regions right now.', 'inference')]);
+      break;
+    }
+    case 'diversify': {
+      if (!reg) break; title = `Diversifying ${reg.name}'s inputs`;
+      const fragile = reg.suppliedBy.filter(d => d.importance === 'critical' || d.importance === 'high');
+      say('calc', 'Calculated', [C(`${reg.name}: ${DIVERSITY_LABEL[reg.diversityBand].toLowerCase()} economy (diversity ${reg.industrialDiversity}/100), resilience ${reg.resilience}.`, 'calculated'),
+        ...fragile.slice(0, 3).map(d => C(`${SUPPLY_LABEL[d.supply]}: ${scName(d.providerRegionId)} supplies ${scPct(d.share)}${d.alternatives.length ? ` (alternatives: ${d.alternatives.map(scName).join(', ')})` : ' (no alternative)'}.`, 'calculated'))]);
+      const alt = fragile[0] ? Object.entries(s.supplies).filter(([c, l]) => c !== reg.regionId && c !== fragile[0].providerRegionId && (l.find(x => x.supply === fragile[0].supply)?.production || 0) >= 5).map(([c]) => c) : [];
+      say('infer', 'Inference', [fragile[0] ? C(`Options: strengthen corridors to ${alt.length ? alt.map(scName).join(' or ') : 'another producer'}, develop local ${SUPPLY_LABEL[fragile[0].supply].toLowerCase()} capacity, or accept the concentration for its efficiency. Diversifying costs capital and some specialization advantage.`, 'inference') : C(`${reg.name} has no high-importance single-supplier dependency right now.`, 'inference')]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [C('No industry or supply-chain data matches that question yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+
+// ---- V10.1 Industries & Supply Chains: UI (read-only renders of the derived snapshot) ---------------------
+
+/** Map layer keys: 'ind' (industry per region) or 'sc:<supply>' (one selected supply chain — never everything at once). */
+export type IndustryMapLayer = 'ind' | `sc:${StrategicSupplyKind}`;
+export const INDUSTRY_MAP_SUPPLIES: StrategicSupplyKind[] = ['minerals', 'energy', 'agricultural_goods', 'manufactured_goods', 'research_capability'];
+
+export function industryMapBadge(s: IndustriesSupplyChainsState | null, regionId: string, layer: IndustryMapLayer): { text: string; title: string; tone: 'bad' | 'warn' | 'ok' } | null {
+  const reg = s?.regions[regionId]; if (!reg || !s) return null;
+  if (layer === 'ind') {
+    const k = reg.primaryIndustry; if (!k) return null;
+    const st = reg.industries[k]!;
+    const worst = (Object.values(reg.industries) as IndustryState[]).filter(x => x.strength >= 20 && (x.condition === 'constrained' || x.condition === 'disrupted'))[0];
+    return { tone: worst ? (worst.condition === 'disrupted' ? 'bad' : 'warn') : 'ok', text: `${INDUSTRY_ICON[k]} ${INDUSTRY_LABEL[k]} ${INDUSTRY_CONDITION_ICON[st.condition]}${worst && worst.industry !== k ? ` · ${INDUSTRY_ICON[worst.industry]}${INDUSTRY_CONDITION_ICON[worst.condition]}` : ''}`,
+      title: `${reg.name}: primary ${INDUSTRY_LABEL[k]} (${INDUSTRY_CONDITION_LABEL[st.condition]}, ${Math.round(st.effectiveOutput)}/${Math.round(st.potentialOutput)})${reg.primaryIndustrialConstraint ? ` — constraint: ${reg.primaryIndustrialConstraint}` : ''}` };
+  }
+  const sup = layer.slice(3) as StrategicSupplyKind;
+  const sp = s.supplies[regionId]?.find(x => x.supply === sup); if (!sp) return null;
+  return { tone: sp.condition === 'shortage' ? 'bad' : sp.condition === 'tight' ? 'warn' : 'ok', text: `${SUPPLY_CONDITION_ICON[sp.condition]} ${SUPPLY_CONDITION_LABEL[sp.condition]}${sp.exported >= 1 ? ` ⇢${Math.round(sp.exported)}` : sp.imported >= 1 ? ` ⇠${Math.round(sp.imported)}` : ''}`,
+    title: `${reg.name} ${SUPPLY_LABEL[sup]}: produces ${Math.round(sp.production)}, needs ${Math.round(sp.localDemand)}, imports ${Math.round(sp.imported)}, exports ${Math.round(sp.exported)} (${SUPPLY_CONDITION_LABEL[sp.condition]})` };
+}
+
+/** Supply-chain overlay for ONE selected supply: provider → consumer lines (≤ V101_LIMITS.mapEdges), width = volume. */
+export const IndustrySupplyMapLinks: React.FC<{ state: IndustriesSupplyChainsState; supply: StrategicSupplyKind }> = ({ state, supply }) => {
+  const agg = new Map<string, { from: string; to: string; amount: number; strained: boolean }>();
+  state.flows.filter(f => f.supply === supply).forEach(f => { const k = `${f.fromRegionId}>${f.toRegionId}`; const cur = agg.get(k) || { from: f.fromRegionId, to: f.toRegionId, amount: 0, strained: false }; cur.amount += f.amount; cur.strained = cur.strained || f.strainedCorridor; agg.set(k, cur); });
+  const edges = Array.from(agg.values()).filter(e => REGIONS[e.from] && REGIONS[e.to]).sort((a, b) => b.amount - a.amount || `${a.from}${a.to}`.localeCompare(`${b.from}${b.to}`)).slice(0, V101_LIMITS.mapEdges);
+  const major = new Set<string>(); edges.forEach(e => { if (!Array.from(major).some(k => k.endsWith(`>${e.to}`))) major.add(`${e.from}>${e.to}`); });
+  return (
+    <>
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="sc-map-links">
+        {edges.map(e => { const a = REGIONS[e.from].position, b = REGIONS[e.to].position; const isMajor = major.has(`${e.from}>${e.to}`);
+          return <line key={`${e.from}>${e.to}`} data-testid={`sc-link-${e.from}-${e.to}`} data-role={isMajor ? 'major' : 'secondary'} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={e.strained ? '#fb923c' : '#a78bfa'} strokeOpacity={0.9} strokeWidth={Math.min(7, 1.5 + e.amount / 4)} strokeDasharray={e.strained ? '5 3' : isMajor ? undefined : '2 3'} strokeLinecap="round" vectorEffect="non-scaling-stroke" />; })}
+      </svg>
+      {edges.map(e => { const a = REGIONS[e.from].position, b = REGIONS[e.to].position; const isMajor = major.has(`${e.from}>${e.to}`);
+        return <div key={`l_${e.from}>${e.to}`} className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 text-[9px] whitespace-nowrap bg-violet-950/90 text-violet-100 px-1 rounded z-[5]" style={{ left: `${a.x * 0.4 + b.x * 0.6}%`, top: `${a.y * 0.4 + b.y * 0.6}%` }} data-testid="sc-link-label">
+          {e.from}→{e.to} {Math.round(e.amount)}{isMajor ? ' ★' : ''}{e.strained ? ' ⚠' : ''}</div>; })}
+    </>
+  );
+};
+
+type IndustryImpact = ReturnType<typeof projectIndustryImpact>;
+
+/** Selected-region industry summary (concise) with isolated What-If projections. */
+export const RegionIndustryPanel: React.FC<{ state: IndustriesSupplyChainsState; regionId: string; theme: any; owners: Record<string, 'you' | 'rival' | 'neutral'>; whatIf: (change: { projectType?: string; sectorScale?: { sector: LRSector; factor: number } }) => IndustryImpact | null; onAsk?: (q: string) => void }> = ({ state, regionId, theme, owners, whatIf, onAsk }) => {
+  const [result, setResult] = useState<{ label: string; impact: IndustryImpact } | null>(null);
+  useEffect(() => { setResult(null); }, [regionId]);
+  const reg = state.regions[regionId]; if (!reg) return null;
+  const inds = (Object.values(reg.industries) as IndustryState[]).filter(x => x.strength >= 10).sort((a, b) => b.effectiveOutput - a.effectiveOutput || a.industry.localeCompare(b.industry)).slice(0, 3);
+  const main = inds[0];
+  const mainInput = main?.inputs.slice().sort((a, b) => a.availability - b.availability || b.demand - a.demand)[0];
+  const supplier = mainInput ? reg.suppliedBy.filter(d => d.supply === mainInput.supply).sort((a, b) => b.amount - a.amount || a.providerRegionId.localeCompare(b.providerRegionId))[0] : undefined;
+  const proj = main ? STRATEGIC_INDUSTRY_DEFINITIONS[main.industry].relevantInfrastructureTypes[0] : null;
+  const run = (label: string, change: Parameters<typeof whatIf>[0]) => { const impact = whatIf(change); if (impact) setResult({ label, impact }); };
+  return (
+    <section aria-label={`${reg.name} industry`} className={`${theme.card} ${theme.border} border rounded-lg p-3 mt-3 text-xs`} data-testid="sc-region-panel">
+      <div className="flex justify-between items-center"><div className="font-bold text-sm">🏭 {reg.name} · industry</div><div className="opacity-80">{DIVERSITY_LABEL[reg.diversityBand]} · resilience {reg.resilience}</div></div>
+      {inds.length ? inds.map(st => (
+        <div key={st.industry} className="flex justify-between gap-2" data-testid={`sc-industry-${st.industry}`}>
+          <span>{INDUSTRY_ICON[st.industry]} {INDUSTRY_LABEL[st.industry]}</span>
+          <span className="font-semibold">{INDUSTRY_CONDITION_ICON[st.condition]} {INDUSTRY_CONDITION_LABEL[st.condition]}</span>
+          <span className="font-mono opacity-80">{Math.round(st.effectiveOutput)}/{Math.round(st.potentialOutput)}</span>
+        </div>
+      )) : <div className="opacity-70">No significant industry yet.</div>}
+      {mainInput && <div className="mt-1">Main input: <b>{SUPPLY_LABEL[mainInput.supply]}</b> ({Math.round(mainInput.availability * 100)}%){supplier ? <> · main supplier <b>{REGIONS[supplier.providerRegionId]?.name || supplier.providerRegionId}</b> ({supplier.shareBand})</> : null}</div>}
+      {reg.primaryIndustrialConstraint && <div className="text-amber-300">Main constraint: {reg.primaryIndustrialConstraint}</div>}
+      <div className="flex flex-wrap gap-2 mt-1">
+        {proj && <button type="button" className="underline" data-testid="sc-whatif-build" onClick={() => run(`${LR_PROJECT_PROFILE[proj]?.label || proj.replace(/_/g, ' ')} in ${reg.name}`, { projectType: proj })}>What if we build {LR_PROJECT_PROFILE[proj]?.label || proj.replace(/_/g, ' ')}?</button>}
+        {main && <button type="button" className="underline" data-testid="sc-whatif-decline" onClick={() => run(`${reg.name} ${INDUSTRY_LABEL[main.industry].toLowerCase()} declines`, { sectorScale: { sector: STRATEGIC_INDUSTRY_DEFINITIONS[main.industry].livingRegionSectors[0], factor: 0.5 } })}>What if {INDUSTRY_LABEL[main.industry].toLowerCase()} declines?</button>}
+      </div>
+      {result && (
+        <div className="mt-2 p-2 rounded border border-violet-600/50" data-testid="sc-whatif-result">
+          <div className="font-semibold">Projection · {result.label} (nothing changes in the match)</div>
+          {result.impact.industries.length ? result.impact.industries.slice(0, 5).map(x => <div key={`${x.regionId}_${x.industry}`}>{REGIONS[x.regionId]?.name || x.regionId} {INDUSTRY_LABEL[x.industry].toLowerCase()}: {INDUSTRY_CONDITION_LABEL[x.from]} → {INDUSTRY_CONDITION_LABEL[x.to]} (effective {x.effectiveBefore} → {x.effectiveAfter})</div>) : <div>No measurable industry change.</div>}
+          {result.impact.supplies.slice(0, 3).map(x => <div key={`${x.regionId}_${x.supply}`}>{REGIONS[x.regionId]?.name || x.regionId} {SUPPLY_LABEL[x.supply].toLowerCase()}: {SUPPLY_CONDITION_LABEL[x.from]} → {SUPPLY_CONDITION_LABEL[x.to]}{x.demandAfter !== x.demandBefore ? ` (demand ${x.demandBefore} → ${x.demandAfter})` : ''}</div>)}
+          {(() => { const others = result.impact.beneficiaries.filter(r => r !== regionId); const rivals = others.filter(r => owners[r] === 'rival'); return (<>
+            {others.length > 0 && <div className="mt-1">Downstream benefit: {others.map(r => REGIONS[r]?.name || r).join(', ')}.</div>}
+            {rivals.length > 0 && <div className="text-amber-300">Public good: rival-controlled {rivals.map(r => REGIONS[r]?.name || r).join(', ')} would gain too.</div>}
+          </>); })()}
+          {onAsk && <button type="button" className="underline mt-1" onClick={() => onAsk(`Why is ${reg.name} ${main ? INDUSTRY_LABEL[main.industry].toLowerCase() : 'industry'} ${main?.condition || 'doing'}?`)}>Ask the Game</button>}
+        </div>
+      )}
+    </section>
+  );
+};
+
+/** PLAY: ≤2 industrial conditions, only when something is actually constrained. */
+export const IndustryPlayStrip: React.FC<{ state: IndustriesSupplyChainsState | null; focusRegions: string[]; theme: any; onAsk: (q: string) => void; onMap: (layer: IndustryMapLayer) => void }> = ({ state, focusRegions, theme, onAsk, onMap }) => {
+  const items = industryPlayStrip(state, focusRegions);
+  if (!items.length || !state) return null;
+  const first = state.bottlenecks.find(b => b.regionId === items[0].regionId);
+  return (
+    <section aria-label="Industry conditions" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="sc-play-strip">
+      <span className="font-bold uppercase tracking-wide opacity-70">Industry</span>
+      {items.map(it => <button key={it.text} type="button" onClick={() => onMap(first?.input ? `sc:${first.input}` : 'ind')} className={`px-2 py-0.5 rounded border ${it.tone === 'critical' ? 'border-red-500' : 'border-amber-500'}`} data-testid="sc-play-item" title="Show on the map">{it.text}</button>)}
+      {first && <button type="button" className="underline opacity-80" onClick={() => onAsk(`Why is ${REGIONS[first.regionId]?.name || first.regionId} ${INDUSTRY_LABEL[first.industry].toLowerCase()} constrained?`)}>Why?</button>}
+    </section>
+  );
+};
+
+/** INTELLIGENCE › Industries & Supply Chains. */
+export const IndustriesIntelPanel: React.FC<{ state: IndustriesSupplyChainsState; theme: any; onAsk: (q: string) => void; onMap: (layer: IndustryMapLayer) => void }> = ({ state, theme, onAsk, onMap }) => {
+  const [tab, setTab] = useState<'overview' | 'industries' | 'supplies' | 'dependencies' | 'bottlenecks' | 'specialization' | 'resilience'>('overview');
+  const n = state.national; const regs = Object.values(state.regions);
+  return (
+    <section aria-labelledby="sc-intel-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="sc-intel-panel">
+      <div className="flex justify-between items-center"><h3 id="sc-intel-h" className="font-bold">🏭 Industries &amp; Supply Chains</h3><span className="text-xs opacity-80">Mix: {DIVERSITY_LABEL[n.diversityBand]}</span></div>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs">{(['overview', 'industries', 'supplies', 'dependencies', 'bottlenecks', 'specialization', 'resilience'] as const).map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-violet-400 font-bold' : theme.border}`} data-testid={`sc-intel-tab-${t}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-0.5" data-testid="sc-intel-body">
+        {tab === 'overview' && <>
+          <div>Strongest: {n.strongestIndustries.map(k => `${INDUSTRY_ICON[k]} ${INDUSTRY_LABEL[k]}`).join(', ') || '—'}</div>
+          <div>Constrained: {n.constrainedIndustries.map(k => INDUSTRY_LABEL[k]).join(', ') || 'none'}</div>
+          <div>Shortages: {n.shortages.map(s => SUPPLY_LABEL[s]).join(', ') || 'none'} · Surpluses: {n.surpluses.map(s => SUPPLY_LABEL[s]).join(', ') || 'none'}</div>
+          {n.primaryIndustrialRisk && <div className="text-amber-300">Risk: {n.primaryIndustrialRisk}</div>}
+          {n.primaryIndustrialOpportunity && <div className="text-emerald-300">Opportunity: {n.primaryIndustrialOpportunity}</div>}
+          {state.history.length > 0 && <div className="mt-1"><b>Recent structural changes</b>{state.history.slice(-4).reverse().map(h => <div key={h.id}>Round {h.turn}: {h.summary}</div>)}</div>}
+        </>}
+        {tab === 'industries' && STRATEGIC_INDUSTRIES.filter(k => n.output[k]).map(k => { const inRegions = regs.filter(r => r.industries[k] && r.industries[k]!.effectiveOutput >= 5).sort((a, b) => b.industries[k]!.effectiveOutput - a.industries[k]!.effectiveOutput);
+          return <div key={k}>{INDUSTRY_ICON[k]} {INDUSTRY_LABEL[k]} — national {Math.round(n.output[k]!)} · {inRegions.slice(0, 3).map(r => `${r.regionId} ${INDUSTRY_CONDITION_LABEL[r.industries[k]!.condition].toLowerCase()} ${Math.round(r.industries[k]!.effectiveOutput)}/${Math.round(r.industries[k]!.potentialOutput)}`).join(', ')}</div>; })}
+        {tab === 'supplies' && STRATEGIC_SUPPLIES.map(s => { const rows = Object.entries(state.supplies).map(([c, l]) => ({ c, x: l.find(y => y.supply === s) })).filter(r => r.x);
+          if (!rows.length) return null; const shortIn = rows.filter(r => r.x!.condition === 'shortage' || r.x!.condition === 'tight').map(r => r.c);
+          return <div key={s} className="flex justify-between gap-2"><span>{SUPPLY_LABEL[s]} — top producer {n.topProducer[s] || '—'}{shortIn.length ? ` · tight in ${shortIn.join(', ')}` : ''}</span>{SUPPLY_TRANSPORT_NETWORK[s] && <button type="button" className="underline" onClick={() => onMap(`sc:${s}`)}>Map</button>}</div>; })}
+        {tab === 'dependencies' && (state.dependencies.length ? state.dependencies.slice(0, 8).map(d => <div key={d.id}>{d.fragile ? '⚠' : '⛓'} {d.consumerRegionId} {INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} ← {d.providerRegionId} {SUPPLY_LABEL[d.supply].toLowerCase()} {Math.round(d.share * 100)}% ({d.importance}, {d.shareBand}){d.alternatives.length ? ` · alt ${d.alternatives.join(', ')}` : ' · no alternative'}</div>) : <div className="opacity-70">No meaningful supply dependencies.</div>)}
+        {tab === 'bottlenecks' && (state.bottlenecks.length ? state.bottlenecks.slice(0, 6).map(b => <div key={b.id}>{b.severity === 'critical' ? '⛔' : '⚠'} {b.reason}{b.affectedRegions.length > 1 ? ` Downstream: ${b.affectedRegions.slice(1).join(', ')}.` : ''}</div>) : <div className="opacity-70">No supply-chain bottlenecks.</div>)}
+        {tab === 'specialization' && regs.map(r => <div key={r.regionId}>{r.regionId}: {DIVERSITY_LABEL[r.diversityBand]} ({r.industrialDiversity}/100){r.primaryIndustry ? ` · led by ${INDUSTRY_LABEL[r.primaryIndustry]}` : ''}</div>)}
+        {tab === 'resilience' && regs.map(r => <div key={r.regionId}>{r.regionId}: {r.resilience}{r.suppliedBy.filter(d => d.fragile).length ? ` — fragile: ${r.suppliedBy.filter(d => d.fragile).map(d => `${SUPPLY_LABEL[d.supply].toLowerCase()} from ${d.providerRegionId}`).join(', ')}` : ''}</div>)}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{['Is Australia too dependent on one region?', 'Which region produces the most minerals?', 'Where are the supply chain bottlenecks?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** Debrief: structural supply-chain turning points from the bounded history (never invented). */
+export function buildIndustryDebrief(p: IndustriesPersisted | null): string[] {
+  if (!p || !p.history.length) return [];
+  return p.history.filter(h => h.kind !== 'industry_recovered' || true).slice(-6).map(h => `R${h.turn}: ${h.summary}`);
+}
+
+/** LAB › V10.1 Industries & Supply Chains Inspector. Observes only. */
+export const IndustriesInspector: React.FC<{ state: IndustriesSupplyChainsState | null; persisted: IndustriesPersisted | null; theme: any; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }; enabled: boolean }> = ({ state, persisted, theme, diag, enabled }) => {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState('overview');
+  const [focus, setFocus] = useState('VIC');
+  const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const tabs = ['overview', 'regional industries', 'supply production', 'local demand', 'interregional allocation', 'dependencies', 'bottlenecks', 'industry inputs', 'industry outputs', 'diversity', 'world reaction', 'history', 'recompute', 'performance', 'self-tests'];
+  const issues = state ? validateIndustriesSupplyChainsState(state) : [];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV101IndustriesSupplyChainsSelfTests()); } catch (err) { console.error('[V10.1 self-tests]', err); } finally { setBusy(false); } };
+  const reg = state?.regions[focus];
+  return (
+    <section aria-labelledby="sc-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="sc-inspector">
+      <div className="flex items-center justify-between"><h3 id="sc-lab-h" className="font-bold text-sm">🏭 V10.1 Industries &amp; Supply Chains Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="sc-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (state ? `rev ${state.revision} · round ${state.lastUpdatedTurn} · ${state.dependencies.length} dependencies · ${state.bottlenecks.length} bottlenecks · ${state.flows.length} flows · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'waiting for National Systems') : 'Industries & Supply Chains is OFF (V10.0 continues without industry effects)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-violet-400 font-bold' : theme.border}`} data-testid={`sc-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          {state && ['regional industries', 'industry inputs', 'industry outputs'].includes(tab) && <label className="block mt-1">Region <select value={focus} onChange={e => setFocus(e.target.value)} className="bg-transparent border rounded px-1">{Object.keys(state.regions).map(c => <option key={c} value={c}>{c}</option>)}</select></label>}
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="sc-inspector-body">
+            {!state && tab !== 'self-tests' && <div>No snapshot.</div>}
+            {state && tab === 'overview' && <div>{JSON.stringify({ ...state.national, output: undefined })}<div>hash {state.hashes.inputs} · V10.0 {state.hashes.national}</div>{issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}</div>}
+            {reg && tab === 'regional industries' && (Object.values(reg.industries) as IndustryState[]).map(st => <div key={st.industry} className="mb-1">
+              <div>{INDUSTRY_LABEL[st.industry]} potential {st.potentialOutput} (strength {st.strength}) · inputs {Math.round(st.inputAvailability * 100)}% · network {Math.round(st.networkAccess * 100)}% · effective {st.effectiveOutput} · {st.condition}{st.constraint ? ` · ${st.constraint.kind}` : ''}</div>
+              <div className="opacity-80">factors: {st.potentialFactors.map(f => `${f.value >= 0 ? '+' : ''}${Math.round(f.value)} ${f.label}`).join(', ')}</div></div>)}
+            {state && tab === 'supply production' && Object.entries(state.supplies).map(([c, l]) => <div key={c}>{c}: {l.map(x => `${x.supply} ${x.production}`).join(' · ')}</div>)}
+            {state && tab === 'local demand' && Object.entries(state.supplies).map(([c, l]) => <div key={c}>{c}: {l.filter(x => x.localDemand > 0).map(x => `${x.supply} d${x.localDemand} local ${x.localUse} unmet ${x.unmetDemand} (${x.condition})`).join(' · ') || '—'}</div>)}
+            {state && tab === 'interregional allocation' && (state.flows.length ? state.flows.map((f, k) => <div key={k}>{f.supply}: {f.fromRegionId}→{f.toRegionId} {f.amount} via {f.path.join('→')} on {f.network}{f.strainedCorridor ? ' (strained corridor)' : ''}</div>) : <div>No interregional supply.</div>)}
+            {state && tab === 'dependencies' && (state.dependencies.length ? state.dependencies.map(d => <div key={d.id}>{d.id} {d.importance}/{d.shareBand} {Math.round(d.share * 100)}% alt[{d.alternatives.join(',')}] {d.fragile ? 'fragile' : ''} path {d.path.join('→')}</div>) : <div>None.</div>)}
+            {state && tab === 'bottlenecks' && (state.bottlenecks.length ? state.bottlenecks.map(b => <div key={b.id}>{b.id} {b.kind} {b.severity}: {b.reason} → affects {b.affectedRegions.join(',')}</div>) : <div>None.</div>)}
+            {reg && tab === 'industry inputs' && (Object.values(reg.industries) as IndustryState[]).map(st => <div key={st.industry}>{st.industry}: {st.inputs.map(x => `${x.supply} ${x.supplied}/${x.demand} (${x.importance})`).join(' · ') || 'no inputs'}</div>)}
+            {reg && tab === 'industry outputs' && (Object.values(reg.industries) as IndustryState[]).map(st => <div key={st.industry}>{st.industry}: {st.outputs.map(x => `${x.supply} ${x.amount}`).join(' · ') || 'service / throughput'}</div>)}
+            {state && tab === 'diversity' && Object.values(state.regions).map(r => <div key={r.regionId}>{r.regionId}: {r.diversityBand} {r.industrialDiversity}/100 · resilience {r.resilience} · primary {r.primaryIndustry || '—'}</div>)}
+            {tab === 'world reaction' && <div>events emitted {diag.eventsEmitted} · kinds: {SWR_SC_KINDS.join(', ')}{persisted && Object.entries(persisted.cooldowns).slice(0, 10).map(([k, v]) => <div key={k}>cooldown {k} → R{v}</div>)}</div>}
+            {tab === 'history' && ((persisted?.history || []).length ? persisted!.history.map(h => <div key={h.id}>R{h.turn} {h.kind}: {h.summary}</div>) : <div>No supply-chain history yet (none is invented for older saves).</div>)}
+            {tab === 'recompute' && <div>last reason: {diag.lastReason} · recomputes {diag.recomputes} · persisted rev {persisted?.revision ?? '—'} · initialized {persisted?.initializedTurn ?? '—'}</div>}
+            {tab === 'performance' && <div>last {diag.lastMs} ms · snapshot {state?.computeMs ?? '—'} ms · bounds: passes {V101_LIMITS.maxPasses}, flows {V101_LIMITS.flows}, history {V101_LIMITS.history}, map edges {V101_LIMITS.mapEdges}</div>}
+            {tab === 'self-tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="sc-run-tests">{busy ? 'Running…' : 'Run V10.1 self-tests'}</button>
+              {tests && <div data-testid="sc-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V10.1 Industries & Supply Chains self-tests (pure, deterministic, bounded) ----------------------------
+export function industryConditionForTest(strength: number, ratio: number, prev?: IndustryCondition): IndustryCondition { return scIndustryConditionFor(strength, ratio, prev); }
+
+export function createIndustriesFixtureWorld(o: { sectors?: Record<string, Partial<Record<LRSector, number>>>; dev?: Record<string, number>; projects?: IndustriesInputs['projects']; nsModifiers?: NationalSystemsInputs['modifiers'];
+  corridors?: NationalCorridorDef[]; modifiers?: IndustriesInputs['modifiers']; turn?: number; crises?: NationalSystemsInputs['crises'] } = {}): { nsi: NationalSystemsInputs; ns: NationalSystemsState; ii: IndustriesInputs } {
+  const turn = o.turn ?? 5;
+  const nsi = createNationalSystemsFixtureInputs({ modifiers: o.nsModifiers, corridors: o.corridors, projects: o.projects, turn, crises: o.crises });
+  const ns = computeNationalSystems(nsi).state;
+  const ii: IndustriesInputs = { turn, regions: Object.keys(REGIONS).filter(c => ['QLD', 'NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'ACT'].includes(c)).sort().map(code => ({ code, name: REGIONS[code].name, devScore: o.dev?.[code] ?? 20, momentum: 0, stability: null, sectors: o.sectors?.[code] || {} })),
+    projects: o.projects || [], national: ns, modifiers: o.modifiers };
+  return { nsi, ns, ii };
+}
+
+export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const W = createIndustriesFixtureWorld;
+  const run = (ii: IndustriesInputs, prev: IndustriesPersisted | null = null) => computeIndustriesSupplyChains(ii, prev);
+  const strip = (s: IndustriesSupplyChainsState) => JSON.stringify({ ...s, computeMs: 0 });
+  const sup = (s: IndustriesSupplyChainsState, c: string, k: StrategicSupplyKind) => s.supplies[c]?.find(x => x.supply === k);
+  const ind = (s: IndustriesSupplyChainsState, c: string, k: StrategicIndustryKind) => s.regions[c]?.industries[k];
+  const proj = (id: string, regionId: string, projectType: string) => ({ id, title: id, regionId, projectType, status: 'active' });
+  // Canonical chain fixture: WA mines, VIC manufactures; other mining neutralised so WA is the provider.
+  const noOtherMining = { NSW: { mining: -40 }, SA: { mining: -40 }, NT: { mining: -40 }, QLD: { mining: -40 } } as IndustriesInputs['modifiers'];
+  const chainSectors = { WA: { mining: 90 }, VIC: { manufacturing: 80 } };
+  const directCorridors = (f = 10): NationalCorridorDef[] => [{ a: 'VIC', b: 'WA', base: { freight: f, energy: 10, digital: 10, trade: 6 }, label: 't' }, { a: 'NSW', b: 'VIC', base: { energy: 10, digital: 10 }, label: 't' }, { a: 'SA', b: 'VIC', base: { energy: 10 }, label: 't' }];
+
+  check('sc01_determinism', 'Same inputs → identical supply-chain state and persisted memory', () => {
+    const w = W({ sectors: chainSectors, modifiers: noOtherMining });
+    const a = run(w.ii), b = run(JSON.parse(JSON.stringify(w.ii)));
+    return (strip(a.state) === strip(b.state) && JSON.stringify(a.persisted) === JSON.stringify(b.persisted)) || 'differs';
+  });
+  check('sc02_mining_production', 'Strong WA mining produces more minerals than weak WA mining', () => {
+    const hi = run(W({ sectors: { WA: { mining: 90 } } }).ii).state, lo = run(W({ sectors: { WA: { mining: 5 } } }).ii).state;
+    return ((sup(hi, 'WA', 'minerals')?.production || 0) > (sup(lo, 'WA', 'minerals')?.production || 0) + 20) || `${sup(hi, 'WA', 'minerals')?.production} vs ${sup(lo, 'WA', 'minerals')?.production}`;
+  });
+  check('sc03_manufacturing_inputs', 'Strong VIC manufacturing with no mineral supply becomes input-constrained', () => {
+    const s = run(W({ sectors: { VIC: { manufacturing: 80 } }, corridors: [] }).ii).state;
+    const m = ind(s, 'VIC', 'manufacturing')!;
+    return (m.constraint?.kind === 'input_shortage' && m.constraint.input === 'minerals' && (m.condition === 'constrained' || m.condition === 'disrupted') && m.effectiveOutput < m.potentialOutput) || JSON.stringify({ c: m.condition, k: m.constraint });
+  });
+  check('sc04_energy_constraint', 'High manufacturing potential with low energy availability → effective below potential', () => {
+    const s = run(W({ sectors: { VIC: { manufacturing: 80 } }, corridors: [], modifiers: { VIC: { mining: 80, energy: -40 } } }).ii).state;
+    const m = ind(s, 'VIC', 'manufacturing')!; const e = m.inputs.find(x => x.supply === 'energy')!;
+    return (e.availability < 0.5 && m.effectiveOutput < m.potentialOutput * 0.9) || JSON.stringify(m.inputs);
+  });
+  check('sc05_local_supply', 'Enough local input → less import dependency', () => {
+    const imported = run(W({ sectors: chainSectors, modifiers: noOtherMining }).ii).state, local = run(W({ sectors: chainSectors, modifiers: { ...noOtherMining, VIC: { mining: 80 } } }).ii).state;
+    return ((sup(local, 'VIC', 'minerals')?.imported || 0) < (sup(imported, 'VIC', 'minerals')?.imported || 0) && !local.dependencies.some(d => d.consumerRegionId === 'VIC' && d.supply === 'minerals' && (d.importance === 'critical' || d.importance === 'high'))) || `${sup(local, 'VIC', 'minerals')?.imported} vs ${sup(imported, 'VIC', 'minerals')?.imported}`;
+  });
+  check('sc06_interregional', 'WA surplus reaches VIC demand over a healthy network (bounded by demand)', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors() }).ii).state;
+    const v = sup(s, 'VIC', 'minerals')!;
+    return (v.imported > 0 && v.imported <= v.localDemand + 0.05 && s.flows.some(f => f.supply === 'minerals' && f.fromRegionId === 'WA' && f.toRegionId === 'VIC')) || JSON.stringify(v);
+  });
+  check('sc07_freight_bottleneck', 'Constraining freight lowers deliverable mineral support', () => {
+    const ok = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(10) }).ii).state, tight = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(1) }).ii).state;
+    return (sup(tight, 'VIC', 'minerals')!.imported < sup(ok, 'VIC', 'minerals')!.imported) || `${sup(tight, 'VIC', 'minerals')!.imported} vs ${sup(ok, 'VIC', 'minerals')!.imported}`;
+  });
+  check('sc08_network_recovery', 'Completing freight infrastructure improves deliverable supply', () => {
+    const before = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(1) }).ii).state;
+    const after = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(1), projects: [proj('rail', 'WA', 'freight_rail_upgrade')] }).ii).state;
+    return (sup(after, 'VIC', 'minerals')!.imported > sup(before, 'VIC', 'minerals')!.imported) || `${sup(after, 'VIC', 'minerals')!.imported} vs ${sup(before, 'VIC', 'minerals')!.imported}`;
+  });
+  check('sc09_export_limit', 'No region exports more than its available surplus (Invariant E)', () => {
+    const s = run(W({ sectors: { WA: { mining: 40 }, VIC: { manufacturing: 100 }, NSW: { manufacturing: 100 } }, modifiers: noOtherMining }).ii).state;
+    const bad = Object.entries(s.supplies).flatMap(([c, l]) => l.filter(x => x.exported > x.availableSurplus + 0.3).map(x => `${c}.${x.supply}`));
+    return (!bad.length && !validateIndustriesSupplyChainsState(s).some(e => /exported more/.test(e))) || bad.join(',');
+  });
+  check('sc10_multiple_consumers', 'VIC + NSW both draw on WA minerals: bounded, deterministic allocation', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'VIC', b: 'WA', base: { freight: 20 }, label: 't' }, { a: 'NSW', b: 'WA', base: { freight: 20 }, label: 't' }];
+    const w = W({ sectors: { WA: { mining: 60 }, VIC: { manufacturing: 80 }, NSW: { manufacturing: 80 } }, modifiers: noOtherMining, corridors });
+    const a = run(w.ii).state, b = run(w.ii).state; const wa = sup(a, 'WA', 'minerals')!;
+    return (strip(a) === strip(b) && wa.exported <= wa.availableSurplus + 0.3 && (sup(a, 'VIC', 'minerals')!.imported > 0) && (sup(a, 'NSW', 'minerals')!.imported > 0)) || JSON.stringify({ wa, v: sup(a, 'VIC', 'minerals'), n: sup(a, 'NSW', 'minerals') });
+  });
+  const altCorr = (qld: boolean): NationalCorridorDef[] => [{ a: 'VIC', b: 'WA', base: { freight: 6 }, label: 't' }, ...(qld ? [{ a: 'QLD', b: 'VIC', base: { freight: 6 }, label: 't' } as NationalCorridorDef] : [])];
+  const altMods = (qld: boolean) => ({ ...noOtherMining, ...(qld ? { QLD: { mining: 70 } } : {}) }) as IndustriesInputs['modifiers'];
+  const vicWa = (s: IndustriesSupplyChainsState) => s.dependencies.find(d => d.id === 'sdep:minerals:VIC<-WA');
+  check('sc11_alternative_supplier', 'Introducing QLD mineral supply lowers VIC’s share from WA', () => {
+    const one = run(W({ sectors: chainSectors, modifiers: altMods(false), corridors: altCorr(false) }).ii).state, two = run(W({ sectors: chainSectors, modifiers: altMods(true), corridors: altCorr(true) }).ii).state;
+    return ((vicWa(two)?.share ?? 0) < (vicWa(one)?.share ?? 0) && two.dependencies.some(d => d.id === 'sdep:minerals:VIC<-QLD')) || `${vicWa(one)?.share} → ${vicWa(two)?.share}`;
+  });
+  check('sc12_critical_dependency', 'One dominant provider with no alternative → critical/high dependency', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: altMods(false), corridors: altCorr(false) }).ii).state; const d = vicWa(s);
+    return (Boolean(d) && (d!.importance === 'critical' || d!.importance === 'high') && d!.shareBand === 'dominant' && d!.alternatives.length === 0) || JSON.stringify(d);
+  });
+  check('sc13_diversification', 'An alternative supplier removes the fragility flag', () => {
+    const one = run(W({ sectors: chainSectors, modifiers: altMods(false), corridors: altCorr(false) }).ii).state, two = run(W({ sectors: chainSectors, modifiers: altMods(true), corridors: altCorr(true) }).ii).state;
+    return (vicWa(one)?.fragile === true && vicWa(two)?.fragile === false && (vicWa(two)?.alternatives || []).includes('QLD')) || `${vicWa(one)?.fragile} ${vicWa(two)?.fragile}`;
+  });
+  check('sc14_shortage', 'Mineral demand beyond deliverable supply → shortage detected', () => {
+    const s = run(W({ sectors: { VIC: { manufacturing: 100 } }, corridors: [] }).ii).state;
+    return (sup(s, 'VIC', 'minerals')?.condition === 'shortage' && s.national.shortages.includes('minerals')) || JSON.stringify(sup(s, 'VIC', 'minerals'));
+  });
+  check('sc15_surplus', 'Production far above demand → surplus detected; no cash anywhere in the state', () => {
+    const s = run(W({ sectors: { WA: { mining: 95 }, VIC: { manufacturing: 20 } }, modifiers: noOtherMining, corridors: directCorridors() }).ii).state;
+    const txt = JSON.stringify(s);
+    return (s.national.surpluses.includes('minerals') && !/"(money|cash|balance|income)"/.test(txt)) || JSON.stringify(s.national.surpluses);
+  });
+  check('sc16_market_boundary', 'A shortage only becomes bounded PRESSURE through the canonical market hook — never a price', () => {
+    const e = scToWorldEvent({ id: 'sx', turn: 5, kind: 'supply_shortage_formed', regionIds: ['VIC'], industry: null, supply: 'minerals', subjectId: 'VIC:minerals', text: 'x', significance: 'meaningful', evidence: [] }, ['player']);
+    const st = updateWorldSignals(createEmptyWorldReactionState(), createSWRFixtureInputs({ turn: 5 } as any), [e]);
+    const p = worldMarketPressure(st);
+    const s = run(W({ sectors: { VIC: { manufacturing: 100 } }, corridors: [] }).ii).state;
+    return (Object.keys(p).length > 0 && Object.keys(p).every(k => (SUPPLY_MARKET_RESOURCES.minerals || []).includes(k)) && Object.values(p).every(v => Math.abs(v) <= 0.06) && !/"prices?"/.test(JSON.stringify(s))) || JSON.stringify(p);
+  });
+  check('sc17_inventory_boundary', 'Strategic mineral flows never touch player inventory', () => {
+    const player = Object.freeze({ id: 'player', inventory: Object.freeze({ 'Iron Ore': 3 }) });
+    const w = W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors() }); const s = run(w.ii).state;
+    return (player.inventory['Iron Ore'] === 3 && !/Iron Ore|inventory/.test(JSON.stringify(w.ii) + JSON.stringify(s.supplies)) && s.flows.length > 0) || 'inventory leaked';
+  });
+  check('sc18_contract_delivery', 'Canonical resources stay deliverable items; strategic supplies are never market/inventory goods', () => {
+    const supplies = STRATEGIC_SUPPLIES.map(x => SUPPLY_LABEL[x]);
+    const newTemplates = CONTRACT_TEMPLATE_REGISTRY.filter(t => t.id.startsWith('ind_'));
+    return (!STRATEGIC_SUPPLIES.some(x => BASE_MARKET_RESOURCES.includes(x) || BASE_MARKET_RESOURCES.includes(SUPPLY_LABEL[x])) && Object.keys(CANONICAL_RESOURCE_SUPPLY_MAP).every(r => BASE_MARKET_RESOURCES.includes(r))
+      && newTemplates.length >= 3 && newTemplates.every(t => (t as any).objective?.type !== 'deliver_resource') && supplies.length === STRATEGIC_SUPPLIES.length) || 'boundary broken';
+  });
+  check('sc19_living_regions', 'An industry event is interpreted by Living Regions (its own evidence/momentum); V10.1 sets no LR field', () => {
+    const s = createLRFixtureInputs(); const lr = initializeLivingRegions(s);
+    const d: IndustryDerivedEvent = { id: 'scx', turn: s.turn, kind: 'industry_became_constrained', regionIds: ['VIC'], industry: 'manufacturing', supply: 'minerals', subjectId: 'VIC:manufacturing', text: 'Victoria manufacturing became constrained.', significance: 'meaningful', evidence: [] };
+    const after = lrApplyWorldEvent(lr, scToWorldEvent(d, ['player']), s).state;
+    const st = run(W({ sectors: { VIC: { manufacturing: 80 } }, corridors: [] }).ii).state;
+    return (after.regions.VIC.evidence.some(x => /constrained/.test(x.text)) && !/"momentum"|"economicCondition"|"identity"/.test(JSON.stringify(st))) || 'LR did not interpret';
+  });
+  const healthy = () => W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(10) });
+  const starved = (turn = 6) => W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(0.3), turn });
+  check('sc20_world_reaction', 'A new constraint emits ONE bounded public root event; Team OS / GI3 / Background AI subscribe', () => {
+    const p = run(healthy().ii).persisted; const r = run(starved().ii, p);
+    const evs = r.derived.filter(x => x.kind === 'industry_became_constrained' && x.subjectId === 'VIC:manufacturing');
+    const e = evs[0] ? scToWorldEvent(evs[0], ['player']) : null;
+    const subs = (k: SWRKind) => SWR_SUBSCRIPTIONS.filter(x => (x.kinds as any) === '*' || x.kinds.includes(k)).map(x => x.system);
+    return (evs.length === 1 && e!.visibility === 'public' && e!.reactionDepth === 0 && ['team_os', 'gi3', 'background_ai', 'living_regions', 'factions', 'contracts'].every(x => subs('industry_became_constrained').includes(x as any))) || `${r.derived.map(x => x.kind)}`;
+  });
+  check('sc21_hysteresis', 'Fluctuating around a threshold does not flicker bands or spam events', () => {
+    const seq = [0.84, 0.86, 0.83, 0.87, 0.845].map(x => industryConditionForTest(50, x, 'healthy'));
+    const back = [0.87, 0.88, 0.86].map(x => industryConditionForTest(50, x, 'constrained'));
+    let p = run(healthy().ii).persisted; let n = 0;
+    [starved(6), starved(7), starved(8)].forEach(w => { const r = run(w.ii, p); p = r.persisted; n += r.derived.filter(x => x.subjectId === 'VIC:manufacturing').length; });
+    return (seq.every(c => c === 'healthy') && back.every(c => c === 'constrained') && n === 1) || `${seq} | ${back} | ${n}`;
+  });
+  check('sc22_crisis_propagation', 'Damaging WA freight hurts VIC (real dependency) but not unrelated TAS', () => {
+    const base = W({ sectors: { ...chainSectors, TAS: { agriculture: 50 } }, modifiers: noOtherMining });
+    const hit = W({ sectors: { ...chainSectors, TAS: { agriculture: 50 } }, modifiers: noOtherMining, nsModifiers: { WA: { freight: -60 } } });
+    const a = run(base.ii).state, b = run(hit.ii).state;
+    const tasSame = JSON.stringify(a.regions.TAS.industries) === JSON.stringify(b.regions.TAS.industries);
+    return ((ind(b, 'VIC', 'manufacturing')!.effectiveOutput < ind(a, 'VIC', 'manufacturing')!.effectiveOutput || ind(b, 'WA', 'mining')!.effectiveOutput < ind(a, 'WA', 'mining')!.effectiveOutput) && tasSame) || `${ind(a, 'VIC', 'manufacturing')!.effectiveOutput}→${ind(b, 'VIC', 'manufacturing')!.effectiveOutput} tas ${tasSame}`;
+  });
+  check('sc23_infrastructure', 'Advanced Manufacturing raises VIC potential AND its mineral demand', () => {
+    const a = run(W({ sectors: chainSectors, modifiers: noOtherMining }).ii).state, b = run(W({ sectors: chainSectors, modifiers: noOtherMining, projects: [proj('am', 'VIC', 'advanced_manufacturing')] }).ii).state;
+    return (ind(b, 'VIC', 'manufacturing')!.potentialOutput > ind(a, 'VIC', 'manufacturing')!.potentialOutput && sup(b, 'VIC', 'minerals')!.localDemand > sup(a, 'VIC', 'minerals')!.localDemand) || 'no effect';
+  });
+  check('sc24_public_good', 'Player-funded QLD supply improves rival-important VIC manufacturing via the real chain', () => {
+    const corridors: NationalCorridorDef[] = [{ a: 'VIC', b: 'WA', base: { freight: 3 }, label: 't' }, { a: 'QLD', b: 'VIC', base: { freight: 20 }, label: 't' }];
+    const w = W({ sectors: { ...chainSectors, QLD: { mining: 5 } }, modifiers: { ...noOtherMining, QLD: { mining: 0 } }, corridors });
+    const imp = projectIndustryImpact(w.nsi, null, w.ii, null, { regionId: 'QLD', sectorScale: { sector: 'mining', factor: 12 } });
+    const v = imp.industries.find(x => x.regionId === 'VIC' && x.industry === 'manufacturing');
+    return (Boolean(v) && v!.effectiveAfter > v!.effectiveBefore && imp.beneficiaries.includes('VIC')) || JSON.stringify(imp.industries.slice(0, 4));
+  });
+  check('sc25_ai', 'AI outlook: key supplier regions gain, input-starved focus regions lose (bounded)', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: altMods(false), corridors: altCorr(false) }).ii).state;
+    const wa = industryRegionOutlook(s, 'WA'), vic = industryRegionOutlook(s, 'VIC', 'manufacturing');
+    const all = Object.keys(s.regions).map(c => industryRegionOutlook(s, c).factor);
+    return (wa.factor > 0 && vic.factor < 0 && all.every(f => f >= -0.06 && f <= 0.06)) || `${wa.factor} ${vic.factor}`;
+  });
+  check('sc26_human_vs_ai', 'Supply-chain scoring only rescales existing candidates (no extra actions / AP); compute never mutates inputs', () => {
+    const w = W({ sectors: chainSectors, modifiers: altMods(false), corridors: altCorr(false) });
+    const deep = (o: any) => { Object.freeze(o); Object.values(o).forEach(v => { if (v && typeof v === 'object' && !Object.isFrozen(v)) deep(v); }); return o; };
+    const s = computeIndustriesSupplyChains(deep(JSON.parse(JSON.stringify(w.ii)))).state;
+    const cands = [{ type: 'invest', data: { region: 'WA' }, score: 10 }, { type: 'region_deposit', data: { region: 'VIC' }, score: 10 }, { type: 'end_turn', data: {}, score: 1 }];
+    cands.forEach(c => { if (c.type !== 'end_turn') c.score *= 1 + Math.max(-0.12, Math.min(0.1, industryRegionOutlook(s, c.data.region!).factor)); });
+    return (cands.length === 3 && cands[2].score === 1 && cands[0].score !== 10 && V96_SOLO_AI_LIMITS.MAX_CONSECUTIVE_FAILURES > 0) || JSON.stringify(cands);
+  });
+  check('sc27_what_if', 'What-If freight project projects downstream supply impact; live inputs unchanged', () => {
+    const w = W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(1) });
+    const bi = JSON.stringify(w.ii), bn = JSON.stringify(w.nsi);
+    const imp = projectIndustryImpact(w.nsi, null, w.ii, null, { projectType: 'freight_rail_upgrade', regionId: 'WA' });
+    const vicAfter = imp.after.supplies.VIC.find(x => x.supply === 'minerals')!, vicBefore = imp.before.supplies.VIC.find(x => x.supply === 'minerals')!;
+    return (JSON.stringify(w.ii) === bi && JSON.stringify(w.nsi) === bn && vicAfter.imported > vicBefore.imported) || `${vicBefore.imported} → ${vicAfter.imported}`;
+  });
+  check('sc28_save_load', 'Persisted memory round-trips and reproduces the identical derived state', () => {
+    const w = starved(); const a = run(w.ii); const loaded = sanitizeIndustriesPersisted(JSON.parse(JSON.stringify(a.persisted)))!;
+    return (JSON.stringify(loaded) === JSON.stringify(a.persisted) && strip(run(w.ii, loaded).state) === strip(run(w.ii, a.persisted).state)) || 'round trip differs';
+  });
+  check('sc29_old_save', 'Pre-V10.1 save: state derived, no fake history or events', () => {
+    const none = sanitizeIndustriesPersisted(undefined); const r = run(starved().ii, none);
+    return (none === null && r.derived.length === 0 && r.persisted.history.length === 0 && sanitizeIndustriesPersisted({ history: [{ junk: 1 }] })!.history.length === 0) || 'fake history';
+  });
+  check('sc30_replay', 'Replaying the same input sequence yields identical structural events', () => {
+    const seq = [healthy(), starved(6), W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(10), turn: 9 }), starved(12)];
+    const play = () => { let p: IndustriesPersisted | null = null; const log: string[] = []; seq.forEach(w => { const r = computeIndustriesSupplyChains({ ...w.ii }, p); p = r.persisted; log.push(r.persisted.inputHash, ...r.derived.map(d => d.id)); }); return JSON.stringify({ log, p }); };
+    return play() === play() || 'replay diverged';
+  });
+  check('sc31_feature_off', 'OFF: default ON + match-scoped; every consumer inert; V10.0 unaffected', () => {
+    const w = healthy();
+    const nsA = computeNationalSystems(w.nsi).state; const nsB = computeNationalSystems(w.nsi).state;
+    return ((DEFAULT_GAME_SETTINGS as any).industriesEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('industriesEnabled') && industryRegionOutlook(null, 'VIC').factor === 0
+      && industryPlayStrip(null).length === 0 && industryContentTags(null, 'VIC').length === 0 && detectIndustryQuery('why is victoria manufacturing constrained', { national: { industries: null } } as any) === null
+      && JSON.stringify({ ...nsA, computeMs: 0 }) === JSON.stringify({ ...nsB, computeMs: 0 })) || 'leak';
+  });
+  check('sc32_circular', 'Research ↔ technology loop: staged, bounded, terminates with finite output', () => {
+    const s = run(W({ sectors: { VIC: { technology: 90, research: 90 }, ACT: { research: 90, technology: 90 } } }).ii).state;
+    const r = ind(s, 'VIC', 'research')!; const eco = r.potentialFactors.find(f => /ecosystem/.test(f.label));
+    return (validateIndustriesSupplyChainsState(s).length === 0 && (!eco || eco.value <= 4) && Number.isFinite(ind(s, 'VIC', 'technology')!.effectiveOutput)) || validateIndustriesSupplyChainsState(s).join(';');
+  });
+  check('sc33_extreme', 'Extreme strength/demand stays finite and valid (potential ≤ 120)', () => {
+    const all = Object.fromEntries(['QLD', 'NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'ACT'].map(c => [c, { mining: 100, agriculture: 100, manufacturing: 100, technology: 100, research: 100, energy: 100, tourism: 100, trade: 100 }]));
+    const mods = Object.fromEntries(Object.keys(all).map(c => [c, { manufacturing: 999, technology: 999 }]));
+    const s = run(W({ sectors: all, dev: Object.fromEntries(Object.keys(all).map(c => [c, 100])), modifiers: mods as any }).ii).state;
+    const pots = Object.values(s.regions).flatMap(r => Object.values(r.industries).map(x => x!.potentialOutput));
+    return (validateIndustriesSupplyChainsState(s).length === 0 && pots.every(p => p <= 120)) || validateIndustriesSupplyChainsState(s).join(';');
+  });
+  check('sc34_zero_network', 'Strong external supplier but no deliverable network → no interregional delivery', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: [] }).ii).state;
+    return (s.flows.length === 0 && s.dependencies.length === 0 && sup(s, 'VIC', 'minerals')!.imported === 0) || `${s.flows.length} flows`;
+  });
+  check('sc35_performance', 'Eight-region industry recompute stays cheap (50 recomputes)', () => {
+    const w = W({ sectors: { ...chainSectors, QLD: { mining: 40, agriculture: 60 }, SA: { energy: 60 }, ACT: { research: 60 }, NSW: { trade: 50, manufacturing: 30 } }, projects: [proj('a', 'VIC', 'advanced_manufacturing'), proj('b', 'SA', 'renewable_grid')] });
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now(); let p: IndustriesPersisted | null = null;
+    for (let k = 0; k < 50; k++) { const r = computeIndustriesSupplyChains({ ...w.ii, turn: k }, p); p = r.persisted; if (r.state.flows.length > V101_LIMITS.flows || r.persisted.history.length > V101_LIMITS.history) return 'unbounded'; }
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return ms < 1500 || `${Math.round(ms)}ms`;
   });
   return results;
 }
@@ -144681,7 +146037,10 @@ function dispatchGameSettingsChange(
 	          const regionCode = String(decision.data?.region || '');
 	          if (!regionCode) return;
 	          const outlook = nationalRegionOutlook(v10Ns, regionCode);
-	          if (outlook.factor !== 0) decision.score *= 1 + outlook.factor;
+	          // V10.1: public supply-chain position (key supplier / constrained industry), same bounded channel.
+	          const industryOutlook = industryRegionOutlook(scStateRef.current, regionCode);
+	          const combined = Math.max(-0.12, Math.min(0.1, outlook.factor + industryOutlook.factor));
+	          if (combined !== 0) decision.score *= 1 + combined;
 	        });
 	      }
 
@@ -168744,6 +170103,8 @@ function dispatchGameSettingsChange(
   const [lrMapMode, setLrMapMode] = useState<LRMapMode>('control');
   const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
   const [nsMapNetwork, setNsMapNetwork] = useState<NationalMapNetwork>(null);
+  const [scMapLayer, setScMapLayer] = useState<IndustryMapLayer | null>(null);
+  const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
@@ -168997,7 +170358,7 @@ function dispatchGameSettingsChange(
     lrInputs.regions.forEach(r => { out[r.code] = !r.controller ? 'neutral' : lrViewerKeys.includes(r.controller) ? 'you' : 'rival'; });
     return out;
   }, [lrInputs.regions, lrViewerKeys]);
-  nsViewRef.current = nsState ? { state: nsState, inputs: nsInputs, persisted: nsPersisted, regionOwners: nsRegionOwners } : null;
+  nsViewRef.current = nsState ? { state: nsState, inputs: nsInputs, persisted: nsPersisted, regionOwners: nsRegionOwners, industries: null } : null;
   const nsDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
     if (!nsEnabled) return;
@@ -169028,6 +170389,56 @@ function dispatchGameSettingsChange(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nsHash, nsEnabled]);
 
+  // ---- V10.1 Industries & Supply Chains: derived from Living Regions + infrastructure + the V10.0 snapshot ----
+  // Recomputed only when its compact input hash changes (never per render). Meaningful band transitions become World
+  // Reaction ROOT events; Living Regions, Factions, markets (pressure hook), contracts and AI interpret them.
+  const scEnabled = Boolean(nsEnabled && gameSettings.industriesEnabled !== false);
+  const scStoredRaw = (gameState as any).industries;
+  const scPersisted = useMemo(() => sanitizeIndustriesPersisted(scStoredRaw), [scStoredRaw]);
+  const scPersistedRef = useRef<IndustriesPersisted | null>(scPersisted);
+  scPersistedRef.current = scPersisted;
+  const scScenarioModifiers = useMemo(() => {
+    const sc: any = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
+    return sc && sc.industries && typeof sc.industries === 'object' ? sc.industries as IndustriesInputs['modifiers'] : undefined;
+  }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
+  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scScenarioModifiers }),
+    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scScenarioModifiers]);
+  const scHash = useMemo(() => industriesInputHash(scInputs), [scInputs]);
+  const scState = useMemo<IndustriesSupplyChainsState | null>(() => (scEnabled && nsState ? computeIndustriesSupplyChains(scInputs, scPersistedRef.current, { emit: false }).state : null),
+    [scEnabled, scHash, scPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scStateRef = useRef<IndustriesSupplyChainsState | null>(scState);
+  scStateRef.current = scState;
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, industries: scState ? { state: scState, inputs: scInputs, persisted: scPersisted } : null };
+  const scDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!scEnabled || !nsState) return;
+    const prev = scPersistedRef.current;
+    if (prev && prev.inputHash === scHash && prev.initializedTurn !== null) return;
+    const res = computeIndustriesSupplyChains(scInputs, prev && prev.initializedTurn !== null ? prev : null);
+    const d = scDiagRef.current;
+    d.recomputes += 1; d.lastMs = res.state.computeMs; d.lastReason = !prev || prev.initializedTurn === null ? 'initialised from canonical state (no history invented)' : 'Living Regions / infrastructure / V10.0 networks changed';
+    if (res.derived.length) {
+      d.eventsEmitted += res.derived.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.derived.map(x => scToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(updateWorldSignals(out.state, swrInputs, out.events));
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.derived.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: `industry_${x.kind}`, summary: x.text } as any));
+    }
+    scPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { industries: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scHash, scEnabled]);
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -169045,7 +170456,7 @@ function dispatchGameSettingsChange(
     const regions: V9CohesionInputs['regions'] = {};
     (lrInputs.regions || []).forEach(r => {
       const reg = lrs?.regions[r.code];
-      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
+      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
     });
     const events: V9CohesionEvent[] = [];
     if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
@@ -169099,7 +170510,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [nsState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [nsState, scState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169147,6 +170558,7 @@ function dispatchGameSettingsChange(
       diplomacy: { enabled: Boolean(dnView?.enabled), pactExpiring: deals.some(d => d?.status === 'active' && typeof d.expirationTurn === 'number' && d.expirationTurn - dnRound <= 2), tension },
       strategyRegion: goals.find(g => g?.regionId && g.status !== 'completed')?.regionId || null,
       national: nsStateRef.current,
+      industries: scStateRef.current,
       campaignVars: gs.campaignState?.campaignVariables || {},
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
       projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
@@ -169338,9 +170750,10 @@ function dispatchGameSettingsChange(
       focusId: String(v94Objective?.id || ''), focusTitle: String(v94Objective?.title || ''), focusDone: Number(prog.completed || 0), focusTotal: Number(prog.total || 0), focusCompleted: v94Objective?.completionState === 'completed',
       strategyPhase: v9Cohesion.focus.source === 'strategy' ? (v9Cohesion.focus.breadcrumb.find((b: any) => b.current)?.label || null) : null,
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
-      contracts, projects, crises, momentum, factionBands, deals
+      contracts, projects, crises, momentum, factionBands, deals,
+      industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -169430,9 +170843,18 @@ function dispatchGameSettingsChange(
         if (b) return `${NATIONAL_NETWORK_ICON[b.network]} ${REGIONS[b.regionId!]?.name || b.regionId} has a ${NATIONAL_NETWORK_LABEL[b.network].toLowerCase()} bottleneck: demand is outrunning capacity.`;
         const d = ns.dependencies.find(x => x.importance === 'critical');
         return d ? `${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId} relies heavily on ${REGIONS[d.providerRegionId]?.name || d.providerRegionId} for ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}.` : null;
+      })(),
+      supplyConstraint: (() => {
+        const sc = scState; if (!sc) return null;
+        const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
+        return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
+      })(),
+      supplyDependency: (() => {
+        const d = scState?.dependencies.find(x => x.shareBand === 'dominant' || x.importance === 'critical');
+        return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -173807,6 +175229,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v10-setting-national">
                     <input type="checkbox" checked={gameSettings.nationalSystemsEnabled !== false} onChange={e => trackedSetGameSettings('direct_player_change', '🇦🇺 National Systems', prev => ({ ...prev, nationalSystemsEnabled: e.target.checked }))} />
                     National Systems (V10): regions share freight, energy, water, trade and digital capacity — bottlenecks, dependencies and resilience
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v101-setting-industries">
+                    <input type="checkbox" checked={gameSettings.industriesEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏭 Industries & Supply Chains', prev => ({ ...prev, industriesEnabled: e.target.checked }))} />
+                    Industries &amp; Supply Chains (V10.1): which industries depend on which regions — shortages, surpluses and supply dependencies (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -185354,6 +186780,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {scState && <IndustryPlayStrip state={scState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />}
           {nsState && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
 
           {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} />}
@@ -185515,6 +186942,11 @@ function dispatchGameSettingsChange(
                 <NationalSystemsIntelPanel state={nsState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />
               </OptionalSurfaceBoundary>
             )}
+            {scState && (
+              <OptionalSurfaceBoundary surface="Industries & Supply Chains">
+                <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
             {swrEnabled && (
               <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
             )}
@@ -185674,6 +187106,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10 National Systems Inspector">
           <NationalSystemsInspector state={nsState} persisted={nsPersisted} inputs={nsInputs} theme={themeStyles} diag={nsDiagRef.current} enabled={nsEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
+          <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Release Readiness Center">
           <ReleaseReadinessCenter
@@ -186992,9 +188427,10 @@ function dispatchGameSettingsChange(
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
-                    <select aria-label="Map layer" data-testid="lr-map-mode" value={nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; if (v.startsWith('net:')) setNsMapNetwork(v.slice(4) as NationalNetworkKind); else { setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                       {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
+                      {scState && <optgroup label="Industries & supply chains"><option value="ind">🏭 Industry</option>{INDUSTRY_MAP_SUPPLIES.map(x => <option key={x} value={`sc:${x}`}>⛓ Supply chain: {SUPPLY_LABEL[x]}</option>)}</optgroup>}
                     </select>
                   </label>
                 )}
@@ -187008,6 +188444,7 @@ function dispatchGameSettingsChange(
               
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
+	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
 	                  const isPlayerTeamHere = isTeamMode ? playerTeamActors.some(actor => actor.currentRegion === code) : isPlayerHere;
@@ -187080,7 +188517,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -187182,6 +188619,12 @@ function dispatchGameSettingsChange(
                           whatIf={n => projectNationalImpact(nsInputs, nsPersistedRef.current, { projectType: NATIONAL_WHATIF_PROJECT[n], regionId: focus })} />
                       </OptionalSurfaceBoundary>
                     )}
+                    {scState && (
+                      <OptionalSurfaceBoundary surface="Region industry">
+                        <RegionIndustryPanel state={scState} regionId={focus} theme={themeStyles} owners={nsRegionOwners} onAsk={q => void submitIntelligenceQuery(q)}
+                          whatIf={ch => projectIndustryImpact(nsInputs, nsPersistedRef.current, scInputs, scPersistedRef.current, { ...ch, regionId: focus })} />
+                      </OptionalSurfaceBoundary>
+                    )}
                   </div>
                 );
               })()}
@@ -187250,6 +188693,12 @@ function dispatchGameSettingsChange(
                     <OptionalSurfaceBoundary surface="National region networks">
                       <NationalRegionNetworkPanel state={nsState} regionId={selectedPreviewRegionCode} theme={themeStyles} owners={nsRegionOwners} onAsk={q => void submitIntelligenceQuery(q)}
                         whatIf={n => projectNationalImpact(nsInputs, nsPersistedRef.current, { projectType: NATIONAL_WHATIF_PROJECT[n], regionId: selectedPreviewRegionCode })} />
+                    </OptionalSurfaceBoundary>
+                  )}
+                  {scState && (
+                    <OptionalSurfaceBoundary surface="Region industry">
+                      <RegionIndustryPanel state={scState} regionId={selectedPreviewRegionCode} theme={themeStyles} owners={nsRegionOwners} onAsk={q => void submitIntelligenceQuery(q)}
+                        whatIf={ch => projectIndustryImpact(nsInputs, nsPersistedRef.current, scInputs, scPersistedRef.current, { ...ch, regionId: selectedPreviewRegionCode })} />
                     </OptionalSurfaceBoundary>
                   )}
                 </div>
@@ -195964,6 +197413,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {buildIndustryDebrief(scPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-violet-700/40 text-xs leading-relaxed" data-testid="sc-debrief">
+	              <span className="font-bold text-violet-300">Supply-chain turning points: </span>
+	              {buildIndustryDebrief(scPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildLivingRegionsDebrief(lrStateRef.current).length > 0 && (
