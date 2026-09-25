@@ -3964,7 +3964,7 @@ const KEYBOARD_SHORTCUTS = {
 };
 
 export const VERSION_CONSTANTS = {
-  GAME_VERSION: "8.6.0",
+  GAME_VERSION: "9.5.0",
   SCHEMA_VERSION: "7.1",
   SAVE_SCHEMA_VERSION: "7.1",
   SETTINGS_SCHEMA_VERSION: "7.1",
@@ -10700,7 +10700,13 @@ export function canonicalStateFromLiveRuntime(
   }
 
   const teamsById = (isBundle && liveStateOrContext.teamsById) || rootState.teamsById || rootState.teamStateMap || (isBundle && liveStateOrContext.teamStateMap) || {};
-  const gameState = rootState || initialGameState;
+  // V9.5: an input that is ALREADY canonical (has a match header and its own gameState) must keep that
+  // gameState. Previously the canonical root became its own gameState, so every reduceGameAction call nested
+  // the whole state one level deeper (state.gameState.gameState…): quadratic memory growth in repeated
+  // simulations and gameState writes landing on the wrong level.
+  const isAlreadyCanonical = !isBundle && typeof rootState?.match === 'object' && rootState.match !== null
+    && rootState.gameState && typeof rootState.gameState === 'object' && rootState.gameState !== rootState;
+  const gameState = isAlreadyCanonical ? rootState.gameState : (rootState || initialGameState);
   const gameSettings = (isBundle && liveStateOrContext.gameSettings) || rootState.gameSettings || (isBundle && liveStateOrContext.settings) || rootState.settings || DEFAULT_GAME_SETTINGS || {};
 
   if (isBundle && liveStateOrContext.takeoverSession) {
@@ -11457,7 +11463,7 @@ export function reduceGameAction(
           const region = action.targetRegion || action.parameters?.regionCode || action.parameters?.region;
           const amount = action.investmentAmount || action.price || action.parameters?.amount || 0;
           const ownerKey = actorId;
-          if (actor && region && amount > 0 && actor.money >= amount) {
+          if (actor && region && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
             actor.money -= amount;
             if (!nextState.regions) nextState.regions = {};
             if (!nextState.regions[region]) nextState.regions[region] = {};
@@ -11475,7 +11481,8 @@ export function reduceGameAction(
           const targetId = action.targetActorId || action.parameters?.targetActorId;
           const amount = action.price || action.parameters?.amount || 50;
           const recipient = targetId ? nextState.actorsById[targetId] : null;
-          if (actor && actor.money >= amount) {
+          // V9.5: a negative / non-finite amount used to reverse the transfer (taking the recipient's cash).
+          if (actor && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
             actor.money -= amount;
             if (recipient) recipient.money += amount;
             if (team) {
@@ -15804,6 +15811,8 @@ export function drawGameRandom(
       try {
         resultVal = drawGameplayRandom(domain);
       } catch {
+        // V9.5: hybrid mode may fall back, but never silently claim a certified deterministic replay.
+        globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to Math.random for ${String(domain || 'World')}`);
         resultVal = Math.random();
       }
       break;
@@ -34678,8 +34687,8 @@ export function executeUniversalActionPipeline<T = unknown>(
 }
 
 const sanitizeGameActivityLedgerState = (value: unknown): GameActivityLedgerState => {
-  const defaults = createDefaultGameActivityLedgerState();
-  if (!value || typeof value !== 'object') return defaults;
+  // V9.5: defaults (which mint a match id from the live counters) are only built when actually needed.
+  if (!value || typeof value !== 'object') return createDefaultGameActivityLedgerState();
   const source = value as Partial<GameActivityLedgerState>;
   const events = Array.isArray(source.events)
     ? source.events.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING)
@@ -34688,13 +34697,13 @@ const sanitizeGameActivityLedgerState = (value: unknown): GameActivityLedgerStat
     ? source.collections.filter(c => c && typeof c === 'object' && typeof c.id === 'string' && typeof c.name === 'string')
     : [];
   const archivedEvents = Array.isArray(source.archivedEvents)
-    ? source.archivedEvents.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e))
+    ? source.archivedEvents.map(sanitizeGameActivityLedgerEvent).filter((e): e is GameActivityLedgerEvent => Boolean(e)).slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING)
     : [];
   const nextSeq = events.length > 0 ? Math.max(...events.map(e => e.sequenceId || 0)) + 1 : 1;
   const lastHash = events.length > 0 ? (events[events.length - 1].integrityHash || '00000000') : '00000000';
 
   return {
-    matchId: typeof source.matchId === 'string' ? source.matchId : defaults.matchId,
+    matchId: typeof source.matchId === 'string' ? source.matchId : createDefaultGameActivityLedgerState().matchId,
     events,
     collections,
     archivedEvents,
@@ -38327,6 +38336,9 @@ export function sanitizeAutoModeGlobalSettings(input: unknown): AutoModeGlobalSe
   return {
     enabled,
     autoModeEnabled: enabled,
+    // V9.5: primaryGoal was dropped here, so every save/load silently reset Auto Mode to the balanced goal.
+    // Consumers already fall back to 'balanced_strategy' for an unknown id.
+    primaryGoal: (typeof src['primaryGoal'] === 'string' && src['primaryGoal'] ? src['primaryGoal'] : defaults.primaryGoal) as AutoModeGlobalSettings['primaryGoal'],
     intensity,
     permission,
     permissionMode: permission,
@@ -53641,6 +53653,7 @@ export interface ReplayInvalidationReport {
 export interface LoadPreviewState {
   isOpen: boolean;
   data: SaveGameData | null;
+  health?: any; // V9.5 SaveHealthReport for the previewed file
   slotName?: string;
   filename?: string;
 }
@@ -59226,18 +59239,22 @@ export function runCoPilotCategory9SelfTests(
   // AA. End Turn on this human turn must not auto-resume until the turn key changes.
   tStart = Date.now();
   try {
+    // V9.5: the fixture hard-coded the legacy turn key ('player:1') after the key gained the day suffix, so the
+    // step (whose state carries a day) never matched it. Derive the key the same way the runtime does.
+    const aaDay = makeHumanState().day;
+    const sameTurnState = { currentActorId: 'player', currentTurn: 'player', turnCounter: 1, humanPlayerId: 'player', day: aaDay };
+    const nextTurnState = { currentActorId: 'player', currentTurn: 'player', turnCounter: 2, humanPlayerId: 'player', day: aaDay };
+    const aaKey = getCoPilotHumanTurnKey(sameTurnState, 'player');
     const waitingSameTurn: any = {
       sessionToken: 'cptoken_aa',
       status: 'waiting_for_other_players',
       targetActorId: 'player',
-      lastHumanTurnResumeKey: 'player:1',
-      endTurnIssuedForTurnKey: 'player:1',
+      lastHumanTurnResumeKey: aaKey,
+      endTurnIssuedForTurnKey: aaKey,
       executionGeneration: 1,
       manualStopLatched: false,
       isInterruptedByPlayer: false
     };
-    const sameTurnState = { currentActorId: 'player', currentTurn: 'player', turnCounter: 1, humanPlayerId: 'player' };
-    const nextTurnState = { currentActorId: 'player', currentTurn: 'player', turnCounter: 2, humanPlayerId: 'player' };
     const held = applyCoPilotHumanTurnResume(waitingSameTurn, sameTurnState, 'test_aa');
     const nextHuman = applyCoPilotHumanTurnResume(waitingSameTurn, nextTurnState, 'test_aa');
     const stepHeld = runCoPilotAutonomousStep({
@@ -109399,7 +109416,7 @@ export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
     return true;
   };
 
-  check('gi21_version', 'GAME_VERSION reports 8.6.0', () => GAME_VERSION === '8.6.0' || GAME_VERSION);
+  check('gi21_version', 'GAME_VERSION is a semantic version', () => /^\d+\.\d+\.\d+$/.test(GAME_VERSION) || GAME_VERSION);
 
   check('gi21_paraphrase_family', 'Part 34 paraphrases → equivalent frames (recommendation, NSW threat)', () => {
     const qs = [
@@ -112837,7 +112854,7 @@ export function runTeamOsScenarioSelfTests(): V9SelfTestResult[] {
     const text = r.answer.lines.join(' ');
     return (r.understanding.primary === 'team_explain' && /observe/.test(text) && !/envelope|task #|priority 1/i.test(text)) || text.slice(0, 300);
   });
-  check('tosl_version', 'GAME_VERSION reports 8.6.0', () => GAME_VERSION === '8.6.0' || GAME_VERSION);
+  check('tosl_version', 'GAME_VERSION is a semantic version', () => /^\d+\.\d+\.\d+$/.test(GAME_VERSION) || GAME_VERSION);
   return results;
 }
 
@@ -132255,6 +132272,3089 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
+// ============================================================================
+// Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
+// check reuses the canonical save builder / validator / migration / replay / reducer code paths.
+
+const v95IsFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+export function v95ResolveCharacter(name?: string) {
+  if (!name) return CHARACTERS[0];
+  return CHARACTERS.find(character => character.name === name) || CHARACTERS[0];
+}
+
+/** Keeps only structurally valid RNG stream entries (a corrupted stream must never reach importStreamStates). */
+export function sanitizeSavedRngRegistryState(raw: unknown): Record<string, RngStreamState> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, RngStreamState> = {};
+  Object.entries(raw as Record<string, any>).forEach(([key, s]) => {
+    if (!s || typeof s !== 'object') return;
+    const cur = v95IsFiniteNum(s.currentState) ? s.currentState : (v95IsFiniteNum(s.state) ? s.state : null);
+    if (!v95IsFiniteNum(s.streamSeed) || cur === null) return;
+    const xs = Array.isArray(s.xoshiroState) && s.xoshiroState.length === 4 && s.xoshiroState.every(v95IsFiniteNum)
+      ? [s.xoshiroState[0], s.xoshiroState[1], s.xoshiroState[2], s.xoshiroState[3]] as [number, number, number, number]
+      : undefined;
+    out[key] = {
+      domain: s.domain,
+      streamSeed: s.streamSeed,
+      drawCount: v95IsFiniteNum(s.drawCount) ? Math.max(0, Math.floor(s.drawCount)) : 0,
+      rollingHash: v95IsFiniteNum(s.rollingHash) ? s.rollingHash : 0,
+      currentState: cur,
+      state: cur,
+      ...(xs ? { xoshiroState: xs } : {})
+    };
+  });
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Counters are id sources: non-finite / negative values are repaired so ids can never be reused after load. */
+export function sanitizeSavedDeterministicCounters(raw: unknown): DeterministicCounters | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const base = createInitialDeterministicCounters();
+  const src = raw as Record<string, unknown>;
+  (Object.keys(base) as Array<keyof DeterministicCounters>).forEach(k => {
+    const v = src[k];
+    if (v95IsFiniteNum(v)) base[k] = Math.max(0, Math.floor(v));
+  });
+  return base;
+}
+
+
+/** Live + saved notification history bound (the list previously grew for the whole match and into every save). */
+export const V95_NOTIFICATION_HISTORY_CAP = 250;
+
+/**
+ * Bounded append: drops the oldest entries first, preferring read / non-critical ones so an unread critical
+ * warning is never evicted by routine chatter. Returns the same array when nothing needs trimming.
+ */
+export function capNotificationHistory<T extends { read?: boolean; type?: string; notificationType?: string }>(list: T[], cap: number = V95_NOTIFICATION_HISTORY_CAP): T[] {
+  if (!Array.isArray(list) || list.length <= cap) return list;
+  let excess = list.length - cap;
+  const isProtected = (n: T) => !n?.read && (n?.type === 'error' || n?.type === 'warning' || /critical|warning|decision/.test(String(n?.notificationType || '')));
+  const drop = new Set<number>();
+  for (let i = 0; i < list.length && excess > 0; i++) if (!isProtected(list[i])) { drop.add(i); excess--; }
+  for (let i = 0; i < list.length && excess > 0; i++) if (!drop.has(i)) { drop.add(i); excess--; }
+  return list.filter((_, i) => !drop.has(i));
+}
+
+/**
+ * Settings the explicit save sanitizer never listed, but which shape the MATCH (content profile, opponent
+ * genome). Everything else it omits is a profile / UI preference (accessibility, dock, Guardian placement…),
+ * which a save must NOT overwrite — loading merges into the current session, so those keep the player's
+ * current choice. Kept as an explicit allowlist so a new profile key can never be clobbered by accident.
+ */
+export const V95_MATCH_SCOPED_SETTING_KEYS = [
+  'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId'
+] as const;
+
+/**
+ * Profile / UI preferences the save sanitizer deliberately does not restore (they belong to the player, not
+ * the match; v93RecentRare is cross-match variety history). Loading keeps the current session's value.
+ */
+export const V95_PROFILE_SCOPED_SETTING_KEYS: readonly string[] = [
+  'allowSettingsCategoryCollapse',
+  'startSettingsCategoryCollapsed',
+  'settingsCategoryNavigationMode',
+  'rememberCategoryNavigationState',
+  'rememberCategoryNavigationMode',
+  'autoCollapseCategoriesOnNarrow',
+  'keepQuickActionsReopenHandleWhenClosed',
+  'fullyHideQuickActionsWhenClosed',
+  'uiRescueSettings',
+  'rescueSettings',
+  'safeAreaPreviewSettings',
+  'accessibilitySettings',
+  'diagnosticsSettings',
+  'aiCommandCenterUiEnabled',
+  'askGameAiUiEnabled',
+  'aiTuningLabUiEnabled',
+  'startScreenConflictProtection',
+  'showFloatingControlsOnStartScreen',
+  'startScreenFloatingLayout',
+  'restoreEligibleFloatingControlsAfterMatchStarts',
+  'hideGameplaySidePanelsOnStartScreen',
+  'v93RecentRare',
+  'defaultGuardianOpeningStyle',
+  'showGuardianFloatingButton',
+  'enableGuardianSidePanelAccess',
+  'hideGuardianFloatingButtonWhileCenterOpen',
+  'hideGuardianFloatingButtonWhileAnotherBlockingModalOpen',
+  'guardianFloatingPosition',
+  'allowGuardianFloatingButtonDragging',
+  'rememberGuardianFloatingPosition',
+  'conflictControlSettings',
+  'conflictControlEnabled',
+  'conflictAllowRelocation',
+  'conflictReturnToPreferred',
+  'conflictShowExplanations',
+  'floatingUiPriorityMatrix',
+  'launcherSettings',
+  'dockSettings',
+  'presetSettings',
+  'autoHideSettings',
+  'notificationLaneSettings',
+  'modalSizeSettings',
+];
+
+/** Type-compatible coercion against a default (finite numbers only; plain objects merged over the default). */
+export function v95CoerceLike(value: unknown, fallback: unknown, depth = 0): unknown {
+  if (value === undefined) return fallback;
+  if (fallback === null || fallback === undefined) {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean' || v95IsFiniteNum(value)) return value;
+    return fallback;
+  }
+  if (typeof fallback === 'boolean') return typeof value === 'boolean' ? value : fallback;
+  if (typeof fallback === 'number') return v95IsFiniteNum(value) ? value : fallback;
+  if (typeof fallback === 'string') return typeof value === 'string' ? value : fallback;
+  if (Array.isArray(fallback)) return Array.isArray(value) ? value.filter(v => v !== undefined) : fallback;
+  if (typeof fallback === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 3) return fallback;
+    const out: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+    Object.entries(fallback as Record<string, unknown>).forEach(([k, d]) => { out[k] = v95CoerceLike((value as Record<string, unknown>)[k], d, depth + 1); });
+    return out;
+  }
+  return fallback;
+}
+
+export function v95RestoreMatchScopedSettings(sanitized: GameSettingsState, source: any): GameSettingsState {
+  const out: Record<string, unknown> = { ...(sanitized as unknown as Record<string, unknown>) };
+  const defaults = DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>;
+  V95_MATCH_SCOPED_SETTING_KEYS.forEach(key => {
+    if (out[key] !== undefined) return;
+    out[key] = v95CoerceLike(source && typeof source === 'object' ? source[key] : undefined, defaults[key]);
+  });
+  return out as unknown as GameSettingsState;
+}
+
+/**
+ * Pre-apply migration (V9.5 ordering fix): the V6.9→V7.0 settings migration used to run AFTER the live state
+ * had been replaced, so its result was discarded. It now runs on the candidate before anything is replaced —
+ * but only keys the save actually carried (or match-scoped ones) are kept, so migration never resets a
+ * profile preference (e.g. reduce motion) to its default. Idempotent: migrate(migrate(x)) === migrate(x).
+ */
+export function v95MigrateSaveForLoad(data: SaveGameData): { data: SaveGameData; migrated: boolean; sourceVersion: string } {
+  const sourceVersion = String(data?.metadata?.gameVersion || '0.0.0');
+  if (compareSemVer(sourceVersion, VERSION_CONSTANTS.GAME_VERSION) >= 0) return { data, migrated: false, sourceVersion };
+  const migratedData = migrateV69ToV70SaveData(data);
+  const carried = new Set([...Object.keys(data.gameSettings || {}), ...V95_MATCH_SCOPED_SETTING_KEYS]);
+  const settings: Record<string, unknown> = {};
+  Object.entries(migratedData.gameSettings as unknown as Record<string, unknown>).forEach(([k, v]) => { if (carried.has(k)) settings[k] = v; });
+  return { data: { ...migratedData, gameSettings: settings as unknown as GameSettingsState }, migrated: true, sourceVersion };
+}
+
+export type V95Severity = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'COSMETIC';
+
+/**
+ * Cheap structural verification run BEFORE a load touches any live state (timers, sessions, reducers).
+ * Anything that would throw half-way through applying — or yield an unplayable match — is rejected here.
+ */
+export function verifySaveLoadCandidate(data: any): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!data || typeof data !== 'object') return { ok: false, errors: ['the save is empty'] };
+  const actorOk = (a: any, label: string) => {
+    if (!a || typeof a !== 'object') { errors.push(`${label} data is missing`); return; }
+    if (!a.character || typeof a.character !== 'object' || typeof a.character.name !== 'string') errors.push(`${label} character is missing`);
+    if (!v95IsFiniteNum(a.money)) errors.push(`${label} cash is not a valid number`);
+    if (typeof a.currentRegion !== 'string' || !REGIONS[a.currentRegion]) errors.push(`${label} location is not a real region`);
+  };
+  actorOk(data.player, 'Player');
+  actorOk(data.aiPlayer, 'Rival');
+  const gs = data.gameState;
+  if (!gs || typeof gs !== 'object') errors.push('match state is missing');
+  else {
+    if (!v95IsFiniteNum(gs.day) || gs.day < 1) errors.push('day is not a valid number');
+    if (gs.turnCounter !== undefined && !v95IsFiniteNum(gs.turnCounter)) errors.push('turn counter is not a valid number');
+  }
+  if (!data.gameSettings || typeof data.gameSettings !== 'object') errors.push('match settings are missing');
+  if (!data.metadata || typeof data.metadata !== 'object') errors.push('save metadata is missing');
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * V9.5: the canonical save validator/sanitizer, hoisted verbatim out of the component so the safe-load
+ * transaction, SaveHealthReport and release tests exercise the exact code the Load button runs.
+ * It never touches live state; callers should pass a clone (it fills defaults on the object it is given).
+ */
+export function validateSaveDataCore(raw: any): SaveGameData {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error('Save file is empty or corrupted.');
+    }
+
+    const metadata = raw.metadata || {};
+    if (typeof metadata.timestamp !== 'number') {
+      throw new Error('Save file missing timestamp.');
+    }
+    if (typeof metadata.gameVersion !== 'string') {
+      throw new Error('Save file missing version information.');
+    }
+
+    const playerData = raw.player;
+    const aiData = raw.aiPlayer;
+    const stateData = raw.gameState;
+    const settingsData = raw.gameSettings;
+    if (!playerData || !aiData || !stateData || !settingsData) {
+      throw new Error('Save file missing core state sections.');
+    }
+
+    const requiredPlayerFields = [
+      'money', 'currentRegion', 'inventory', 'visitedRegions', 'challengesCompleted',
+      'character', 'level', 'xp', 'stats', 'consecutiveWins', 'specialAbilityUses',
+      'masteryUnlocks', 'name', 'actionsUsedThisTurn'
+    ];
+    // AUDIT-BUG-013: Graceful default baseline assignments instead of strict throws
+    requiredPlayerFields.forEach(field => {
+      if (typeof playerData[field] === 'undefined') {
+        playerData[field] = (initialPlayerState as Record<string, unknown>)[field];
+      }
+      if (typeof aiData[field] === 'undefined') {
+        aiData[field] = (initialPlayerState as Record<string, unknown>)[field];
+      }
+    });
+
+    const requiredGameFields = [
+      'day', 'season', 'weather', 'resourcePrices', 'activeEvents', 'marketTrend',
+      'gameMode', 'selectedMode', 'currentTurn', 'isAiThinking', 'aiDifficulty',
+      'actionsThisTurn', 'maxActionsPerTurn', 'actionLimitsEnabled',
+      'playerActionsThisTurn', 'allChallengesCompleted'
+    ];
+    // AUDIT-BUG-013: Graceful default baseline assignments instead of strict throws
+    requiredGameFields.forEach(field => {
+      if (typeof stateData[field] === 'undefined') {
+        stateData[field] = (initialGameState as Record<string, unknown>)[field];
+      }
+    });
+
+    const sanitizeStats = (stats: any) => ({
+      strength: typeof stats?.strength === 'number' ? stats.strength : initialPlayerState.stats.strength,
+      charisma: typeof stats?.charisma === 'number' ? stats.charisma : initialPlayerState.stats.charisma,
+      luck: typeof stats?.luck === 'number' ? stats.luck : initialPlayerState.stats.luck,
+      intelligence: typeof stats?.intelligence === 'number' ? stats.intelligence : initialPlayerState.stats.intelligence
+    });
+
+    const sanitizePlayerState = (data: any, fallbackName: string): PlayerStateSnapshot => {
+      const character = v95ResolveCharacter(data?.character?.name);
+      const region = REGIONS[data?.currentRegion] ? data.currentRegion : initialPlayerState.currentRegion;
+      const visited = Array.isArray(data?.visitedRegions)
+        ? data.visitedRegions.filter((regionCode: any) => REGIONS[regionCode]).map(String)
+        : [];
+      if (!visited.includes(region)) {
+        visited.push(region);
+      }
+
+      const inventory = Array.isArray(data?.inventory) ? data.inventory.map(String) : [];
+      const challenges = Array.isArray(data?.challengesCompleted) ? data.challengesCompleted.map(String) : [];
+      const mastery = Array.isArray(data?.masteryUnlocks) ? data.masteryUnlocks.map(String) : [];
+      const completedThisSeason = Array.isArray(data?.completedThisSeason) ? data.completedThisSeason.map(String) : [];
+      const challengeMastery = typeof data?.challengeMastery === 'object' && data.challengeMastery !== null ? data.challengeMastery : {};
+      const challengeCategoryExpertise = typeof data?.challengeCategoryExpertise === 'object' && data.challengeCategoryExpertise !== null ? data.challengeCategoryExpertise : {};
+      const actionCalibrationMultipliers = (data?.actionCalibrationMultipliers && typeof data.actionCalibrationMultipliers === 'object')
+        ? {
+            profit: typeof data.actionCalibrationMultipliers.profit === 'number' && isFinite(data.actionCalibrationMultipliers.profit) ? data.actionCalibrationMultipliers.profit : 1.0,
+            risk: typeof data.actionCalibrationMultipliers.risk === 'number' && isFinite(data.actionCalibrationMultipliers.risk) ? data.actionCalibrationMultipliers.risk : 1.0,
+            momentum: typeof data.actionCalibrationMultipliers.momentum === 'number' && isFinite(data.actionCalibrationMultipliers.momentum) ? data.actionCalibrationMultipliers.momentum : 1.0,
+            ...Object.entries(data.actionCalibrationMultipliers as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, val]) => {
+              if (typeof val === 'number' && isFinite(val)) {
+                acc[key] = val;
+              }
+              return acc;
+            }, {})
+          }
+        : { profit: 1.0, risk: 1.0, momentum: 1.0 };
+      const opponentModels = (typeof data?.opponentModels === 'object' && data.opponentModels !== null) ? data.opponentModels : {};
+      const investments = Array.isArray(data?.investments)
+        ? data.investments.filter((regionCode: string) => REGIONAL_INVESTMENTS[regionCode]).map(String)
+        : [];
+      const equipment = Array.isArray(data?.equipment)
+        ? data.equipment.filter((itemId: string) => SHOP_ITEMS.some(item => item.id === itemId)).map(String)
+        : [];
+      const debuffs = Array.isArray(data?.debuffs)
+        ? data.debuffs
+            .filter((debuff: Debuff) => debuff && typeof debuff.type === 'string' && typeof debuff.remainingDays === 'number')
+            .map((debuff: Debuff) => ({
+              type: debuff.type,
+              remainingDays: Math.max(0, Math.floor(debuff.remainingDays))
+            }))
+        : [];
+      const loans = Array.isArray(data?.loans)
+        ? data.loans
+            .filter((l: any) => v95IsFiniteNum(l?.amount))
+            .map((l: any, loanIndex: number) => ({
+              // V9.5: deterministic legacy id — validating a preview must never advance live id counters.
+              id: typeof l?.id === 'string' ? l.id : `legacy_loan_${fallbackName.toLowerCase().replace(/\s+/g, '_')}_${loanIndex}`,
+              amount: typeof l?.amount === 'number' ? l.amount : 0,
+              accrued: v95IsFiniteNum(l?.accrued) ? l.accrued : 0
+            }))
+        : [];
+
+      return {
+        ...initialPlayerState,
+        ...data,
+        character,
+        currentRegion: region,
+        money: v95IsFiniteNum(data?.money) ? data.money : initialPlayerState.money,
+        visitedRegions: visited,
+        inventory,
+        challengesCompleted: challenges,
+        masteryUnlocks: mastery,
+        stats: sanitizeStats(data?.stats),
+        level: v95IsFiniteNum(data?.level) ? Math.max(1, Math.floor(data.level)) : initialPlayerState.level,
+        xp: v95IsFiniteNum(data?.xp) ? Math.max(0, data.xp) : initialPlayerState.xp,
+        consecutiveWins: typeof data?.consecutiveWins === 'number' ? data.consecutiveWins : 0,
+        specialAbilityUses: typeof data?.specialAbilityUses === 'number' ? data.specialAbilityUses : character.specialAbility.usesLeft,
+        name: typeof data?.name === 'string' && data.name.trim() ? data.name : fallbackName,
+        actionsUsedThisTurn: typeof data?.actionsUsedThisTurn === 'number' ? data.actionsUsedThisTurn : 0,
+        overridesUsedToday: typeof data?.overridesUsedToday === 'number' ? data.overridesUsedToday : 0,
+        overrideFatigue: typeof data?.overrideFatigue === 'number' ? data.overrideFatigue : 0,
+        lentActionsUsedToday: typeof data?.lentActionsUsedToday === 'number' ? data.lentActionsUsedToday : 0,
+        receivedActionsUsedToday: typeof data?.receivedActionsUsedToday === 'number' ? data.receivedActionsUsedToday : 0,
+        pendingLentActionCredits: (data?.pendingLentActionCredits && typeof data.pendingLentActionCredits === 'object')
+          ? Object.entries(data.pendingLentActionCredits as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, amount]) => {
+              if (typeof amount === 'number' && Number.isFinite(amount)) {
+                acc[key] = Math.max(0, Math.floor(amount));
+              }
+              return acc;
+            }, {})
+          : {},
+        pendingEmergencyActionCredits: (data?.pendingEmergencyActionCredits && typeof data.pendingEmergencyActionCredits === 'object')
+          ? Object.entries(data.pendingEmergencyActionCredits as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, amount]) => {
+              if (typeof amount === 'number' && Number.isFinite(amount)) {
+                acc[key] = Math.max(0, Math.floor(amount));
+              }
+              return acc;
+            }, {})
+          : {},
+        sabotageProtectionExpiresTurn: typeof data?.sabotageProtectionExpiresTurn === 'number' && isFinite(data.sabotageProtectionExpiresTurn)
+          ? Math.max(0, Math.floor(data.sabotageProtectionExpiresTurn))
+          : 0,
+        protectedCash: typeof data?.protectedCash === 'number' && isFinite(data.protectedCash)
+          ? Math.max(0, Math.floor(data.protectedCash))
+          : 0,
+        vaultBaselineMilestoneIndex: typeof data?.vaultBaselineMilestoneIndex === 'number' && isFinite(data.vaultBaselineMilestoneIndex)
+          ? Math.max(-1, Math.floor(data.vaultBaselineMilestoneIndex))
+          : -1,
+        inEconomicRecovery: typeof data?.inEconomicRecovery === 'boolean' ? data.inEconomicRecovery : false,
+        activeTreasuryFundingRequestId: typeof data?.activeTreasuryFundingRequestId === 'string' ? data.activeTreasuryFundingRequestId : null,
+        consecutiveRestrictedTurns: typeof data?.consecutiveRestrictedTurns === 'number' && isFinite(data.consecutiveRestrictedTurns)
+          ? Math.max(0, Math.floor(data.consecutiveRestrictedTurns))
+          : 0,
+        loans,
+        completedThisSeason,
+        challengeMastery,
+        challengeCategoryExpertise,
+        stipendCooldown: typeof data?.stipendCooldown === 'number' ? data.stipendCooldown : 0,
+        investments,
+        equipment,
+        debuffs,
+        activeSpecialAbility: typeof data?.activeSpecialAbility === 'string' && data.activeSpecialAbility.trim() ? data.activeSpecialAbility : null,
+        id: typeof data?.id === 'string' ? data.id : fallbackName.toLowerCase().replace(/\s+/g, '_'),
+        displayName: typeof data?.displayName === 'string' && data.displayName.trim() ? data.displayName : (typeof data?.name === 'string' ? data.name : fallbackName),
+        teamId: typeof data?.teamId === 'string' ? data.teamId : (fallbackName === 'AI Opponent' ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID),
+        kind: data?.kind === 'ai' ? 'ai' : 'human',
+        isHuman: data?.kind === 'ai' ? false : true, // CPFIX4: Ensure restored actor state aligns isHuman with kind
+        role: typeof data?.role === 'string' ? data.role : 'leader',
+        aiPlan: data?.aiPlan && typeof data.aiPlan.summary === 'string'
+          ? {
+              ...data.aiPlan,
+              decisionSummary: sanitizeAiDecisionCompactSummary(data.aiPlan.decisionSummary),
+              confidence: typeof data.aiPlan.confidence === 'number' ? data.aiPlan.confidence : 0.5,
+              priority: typeof data.aiPlan.priority === 'number' ? data.aiPlan.priority : 3,
+              updatedTurn: typeof data.aiPlan.updatedTurn === 'number' ? data.aiPlan.updatedTurn : 0
+            }
+          : null,
+        lastDirectiveStatus: typeof data?.lastDirectiveStatus === 'string' ? data.lastDirectiveStatus : null,
+        aiRoleMode: normalizeAiRoleMode(data?.aiRoleMode),
+        aiRoleModeSource: normalizeAiRoleModeSource(data?.aiRoleModeSource),
+        aiRoleModeReason: typeof data?.aiRoleModeReason === 'string' ? data.aiRoleModeReason : '',
+        aiRoleModeExpiresTurn: Math.max(0, Math.floor(Number(data?.aiRoleModeExpiresTurn) || 0)),
+        teamAiRole: normalizeTeamAiRole(data?.teamAiRole),
+        teamAiRoleReason: typeof data?.teamAiRoleReason === 'string' ? data.teamAiRoleReason : '',
+        teamObjectiveSummary: typeof data?.teamObjectiveSummary === 'string' ? data.teamObjectiveSummary : '',
+        supportRequests: sanitizeSupportRequests(data?.supportRequests),
+        contributionStats: {
+          ...createDefaultContributionStats(),
+          ...(data?.contributionStats || {})
+        },
+        actionCalibrationMultipliers,
+        opponentModels
+      };
+    };
+
+	    const sanitizedGameState: GameStateSnapshot = {
+	      ...initialGameState,
+	      ...stateData,
+        aiMemoriesByActor: migrateAiMemoriesFromSave(stateData.aiMemoriesByActor || raw.aiMemoriesByActor),
+        persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
+        aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
+        teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
+        teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
+        gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
+        backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
+        settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
+        diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
+        worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
+        livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
+        regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
+        contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
+	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
+      resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
+      activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
+      currentTurn: stateData.currentTurn === 'ai' ? 'ai' : 'player',
+      currentActorId: typeof stateData.currentActorId === 'string' ? stateData.currentActorId : initialGameState.currentActorId,
+      turnOrder: Array.isArray(stateData.turnOrder) ? stateData.turnOrder.map(String) : initialGameState.turnOrder,
+      turnCounter: v95IsFiniteNum(stateData.turnCounter) ? Math.max(0, Math.floor(stateData.turnCounter)) : initialGameState.turnCounter,
+      day: v95IsFiniteNum(stateData.day) && stateData.day >= 1 ? Math.floor(stateData.day) : 1,
+      roundNumber: v95IsFiniteNum(stateData.roundNumber) ? Math.max(0, Math.floor(stateData.roundNumber)) : initialGameState.roundNumber,
+      autoplay: stateData.autoplay
+        ? {
+            enabled: Boolean(stateData.autoplay.enabled),
+            paused: stateData.selectedMode === 'team_ai_vs_ai' ? Boolean(stateData.autoplay.paused) : false,
+            speed: TEAM_MODE_SPEEDS.includes(stateData.autoplay.speed) ? stateData.autoplay.speed : 1
+          }
+        : initialGameState.autoplay,
+      currentDirectiveStrength: normalizeDirectiveStrength(
+        stateData.currentDirectiveStrength ?? settingsData.directiveStrength ?? DEFAULT_GAME_SETTINGS.directiveStrength
+      ),
+      directiveStrengthSource: stateData.directiveStrengthSource === 'manual' ? 'manual' : 'default',
+      selectedMode: ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', 'scenario'].includes(stateData.selectedMode)
+        ? stateData.selectedMode
+        : null,
+      gameMode: ['menu', 'game', 'end'].includes(stateData.gameMode) ? stateData.gameMode : 'game',
+      aiDifficulty: typeof stateData.aiDifficulty === 'string' && AI_DIFFICULTY_PROFILES[stateData.aiDifficulty]
+        ? stateData.aiDifficulty
+        : initialGameState.aiDifficulty,
+      actionLimitsEnabled: Boolean(stateData.actionLimitsEnabled),
+      actionsThisTurn: typeof stateData.actionsThisTurn === 'number' ? stateData.actionsThisTurn : 0,
+      maxActionsPerTurn: typeof stateData.maxActionsPerTurn === 'number' ? stateData.maxActionsPerTurn : initialGameState.maxActionsPerTurn,
+      playerActionsThisTurn: typeof stateData.playerActionsThisTurn === 'number' ? stateData.playerActionsThisTurn : 0,
+      allChallengesCompleted: Boolean(stateData.allChallengesCompleted),
+      isAiThinking: false,
+	      bankruptcyTracker: typeof stateData.bankruptcyTracker === 'object' && stateData.bankruptcyTracker !== null
+	        ? { player: stateData.bankruptcyTracker.player || 0, ai: stateData.bankruptcyTracker.ai || 0 }
+	        : initialGameState.bankruptcyTracker,
+	      dominanceTracker: typeof stateData.dominanceTracker === 'object' && stateData.dominanceTracker !== null
+	        ? { player: stateData.dominanceTracker.player || 0, ai: stateData.dominanceTracker.ai || 0 }
+	        : initialGameState.dominanceTracker,
+	      regionDeposits: sanitizeRegionDeposits(stateData.regionDeposits),
+	      standingPerActor: sanitizeStandingPerActor(stateData.standingPerActor),
+	      regionControlStats: (() => {
+	        const rawStats = stateData.regionControlStats;
+	        const rawHistory = Array.isArray(rawStats?.controlHistory)
+	          ? rawStats.controlHistory
+	              .filter((entry: any) =>
+	                entry &&
+	                typeof entry.turn === 'number' &&
+	                typeof entry.region === 'string' &&
+	                typeof entry.fromPlayer === 'string' &&
+	                typeof entry.toPlayer === 'string' &&
+	                (entry.method === 'deposit' || entry.method === 'steal' || entry.method === 'proposal')
+	              )
+	              .map((entry: any) => ({
+	                turn: Math.floor(entry.turn),
+	                region: entry.region,
+	                fromPlayer: entry.fromPlayer,
+	                toPlayer: entry.toPlayer,
+	                method: entry.method
+	              }))
+	          : [];
+	        return computeRegionControlStats(
+	          sanitizeRegionDeposits(stateData.regionDeposits),
+	          rawHistory
+	        );
+	      })(),
+      proposals: Array.isArray(stateData.proposals)
+        ? stateData.proposals
+            .filter((proposal: Proposal) =>
+              proposal &&
+              typeof proposal.id === 'string' &&
+              typeof proposal.from === 'string' &&
+              typeof proposal.to === 'string' &&
+              typeof proposal.region === 'string'
+            )
+            .map((proposal: Proposal) => ({
+              ...proposal,
+              status: ['pending', 'accepted', 'declined', 'completed', 'cancelled'].includes(proposal.status)
+                ? proposal.status
+                : 'pending',
+              termType: ['cash', 'resources', 'quest', 'hybrid', 'custom'].includes(proposal.termType)
+                ? proposal.termType
+                : 'custom',
+              createdTurn: typeof proposal.createdTurn === 'number' && Number.isFinite(proposal.createdTurn)
+                ? Math.max(0, Math.floor(proposal.createdTurn))
+                : (typeof stateData.turnCounter === 'number' && Number.isFinite(stateData.turnCounter)
+                    ? Math.max(0, Math.floor(stateData.turnCounter))
+                    : (typeof stateData.day === 'number' && Number.isFinite(stateData.day)
+                        ? Math.max(0, Math.floor(stateData.day))
+                        : 1)),
+              termDetails: {
+                cashAmount: typeof proposal.termDetails?.cashAmount === 'number' ? proposal.termDetails.cashAmount : undefined,
+                resources: proposal.termDetails?.resources && typeof proposal.termDetails.resources === 'object'
+                  ? proposal.termDetails.resources
+                  : undefined,
+                challengeNames: Array.isArray(proposal.termDetails?.challengeNames) ? proposal.termDetails.challengeNames : undefined,
+                customText: typeof proposal.termDetails?.customText === 'string' ? proposal.termDetails.customText : undefined
+              }
+            }))
+        : [],
+      negotiationCenter: (() => {
+        const rawCenter = stateData.negotiationCenter || {};
+        return {
+          ...createDefaultNegotiationCenterState(),
+          ...rawCenter,
+          activeTab: ['active', 'pending', 'create', 'history', 'settings', 'logs'].includes(rawCenter.activeTab)
+            ? rawCenter.activeTab
+            : 'active',
+          sortOptions: {
+            ...createDefaultNegotiationCenterState().sortOptions,
+            ...(rawCenter.sortOptions || {})
+          },
+          filters: {
+            ...(rawCenter.filters || {})
+          }
+        } as NegotiationCenterState;
+      })(),
+      negotiationLogs: Array.isArray(stateData.negotiationLogs)
+        ? stateData.negotiationLogs
+            .filter((entry: NegotiationLogEntry) => entry && typeof entry.id === 'string')
+            .slice(-1000)
+        : [],
+      negotiationStats: {
+        ...createDefaultNegotiationStats(),
+        ...(stateData.negotiationStats || {})
+      },
+      challengeCompletions: Array.isArray(stateData.challengeCompletions)
+        ? stateData.challengeCompletions
+            .filter((entry: ChallengeCompletionLogEntry) =>
+              entry &&
+              typeof entry.playerId === 'string' &&
+              typeof entry.challengeName === 'string' &&
+              typeof entry.timestamp === 'number'
+            )
+            .slice(-1000)
+        : [],
+      grandTourState: normalizeGrandTourState(stateData.grandTourState),
+      decisionState: sanitizeDecisionState(stateData.decisionState),
+      gameActivityLedger: sanitizeGameActivityLedgerState(stateData.gameActivityLedger),
+      expeditionRun: sanitizeExpeditionRunState(stateData.expeditionRun)
+	    };
+
+    const sanitizedActorsById = typeof raw.actorsById === 'object' && raw.actorsById !== null
+      ? Object.entries(raw.actorsById).reduce<Record<string, ActorState>>((acc, [actorId, actorData]) => {
+          acc[actorId] = sanitizePlayerState(actorData, actorId) as ActorState;
+          return acc;
+        }, {})
+      : undefined;
+
+    const sanitizedTeamsById = typeof raw.teamsById === 'object' && raw.teamsById !== null
+      ? Object.entries(raw.teamsById).reduce<Record<string, TeamState>>((acc, [teamId, teamData]: [string, any]) => {
+          const actorIds: string[] = Array.isArray(teamData?.actorIds) ? teamData.actorIds.map(String) : [];
+          const defaultRecentPerformanceByActor = createDefaultRecentPerformanceByActor(actorIds);
+          const defaultRealizedPerformanceByActor = createDefaultRealizedPerformanceByActor(actorIds);
+          acc[teamId] = {
+            ...createDefaultTeamState(teamId, teamData?.name || teamId, actorIds, teamData?.color || '#3b82f6'),
+            ...teamData,
+            id: teamId,
+            actorIds,
+            messageLog: Array.isArray(teamData?.messageLog)
+              ? teamData.messageLog
+                  .filter((message: TeamMessage) => message && typeof message.type === 'string')
+                  .map((message: TeamMessage) => ({
+                    ...message,
+                    strength: normalizeDirectiveStrength(message?.strength)
+                  }))
+              : [],
+            activeReservations: Array.isArray(teamData?.activeReservations) ? teamData.activeReservations : [],
+            teamGoals: Array.isArray(teamData?.teamGoals) ? teamData.teamGoals : [],
+            scoreBreakdown: {
+              ...createDefaultTeamScoreBreakdown(),
+              ...(teamData?.scoreBreakdown || {})
+            },
+            contributionByActor: typeof teamData?.contributionByActor === 'object' && teamData.contributionByActor !== null
+              ? teamData.contributionByActor
+              : {},
+            recentPerformanceByActor: actorIds.reduce<Record<string, TeammatePerformanceSample[]>>((historyByActor, actorId) => {
+              historyByActor[actorId] = sanitizeTeammatePerformanceSamples(teamData?.recentPerformanceByActor?.[actorId] || defaultRecentPerformanceByActor[actorId]);
+              return historyByActor;
+            }, {}),
+            realizedPerformanceByActor: actorIds.reduce<Record<string, RealizedValueSample[]>>((historyByActor, actorId) => {
+              historyByActor[actorId] = sanitizeRealizedValueSamples(teamData?.realizedPerformanceByActor?.[actorId] || defaultRealizedPerformanceByActor[actorId]);
+              return historyByActor;
+            }, {}),
+            supportLedger: sanitizeTeamSupportLedger(teamData?.supportLedger),
+            adaptiveState: sanitizeTeamAdaptiveState(teamData?.adaptiveState),
+            teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank),
+            actionTokens: sanitizeActionTokens(teamData?.actionTokens),
+            activeTeamPlan: sanitizeTeamPlan(teamData?.activeTeamPlan),
+            teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory),
+            activeThreatTarget: sanitizeTeamThreatTarget(teamData?.activeThreatTarget),
+            activeEmergency: sanitizeTeamEmergencyState(teamData?.activeEmergency),
+            teamInitiative: sanitizeTeamInitiativeState(teamData?.teamInitiative),
+            comboTracking: sanitizeTeamComboTrackingState(teamData?.comboTracking),
+            sequences: sanitizeTeammateSequences(teamData?.sequences),
+            phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments),
+            treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId),
+            governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions),
+            // Team AI Overseer System Phase O10 (GD8, item d): the actor-roster-aware prune lives
+            // here (not inside the pure sanitizeTeamOverseerState) since only this reduce actually
+            // knows the team's current actorIds — strips any strategicDirectives/lockedDirectiveActorIds
+            // entry referencing an actor no longer on this team. Additive-only, same "well-formed
+            // save is provably unaffected" guarantee as the rest of Phase O10's sanitizer hardening.
+            overseer: (() => {
+              const sanitizedOverseer = sanitizeTeamOverseerState(teamData?.overseer);
+              return {
+                ...sanitizedOverseer,
+                strategicDirectives: sanitizedOverseer.strategicDirectives.filter(d => actorIds.includes(d.assignedActorId)),
+                lockedDirectiveActorIds: sanitizedOverseer.lockedDirectiveActorIds.filter(id => actorIds.includes(id))
+              };
+            })(),
+            // AI Operations Auditor Phase AA1: genuinely separate from `overseer` above.
+            auditor: sanitizeAiOperationsAuditorState(teamData?.auditor),
+            // AI Thinking/Algorithm Builder Phase AB1: always sanitizes to [] today (no code path
+            // this phase can ever have populated it), but wired now so a later phase's real
+            // configs round-trip safely without a save-format migration.
+            algorithmConfigs: sanitizeAiAlgorithmConfigs(teamData?.algorithmConfigs),
+            // PI1: AI Action Pipeline Inspector history — inert (always []) until aiPipelineInspectorEnabled.
+            pipelineTraces: sanitizePipelineTraceRecords(teamData?.pipelineTraces)
+          };
+          return acc;
+        }, {})
+      : undefined;
+
+    const loadedAiStrategyLabSafeRangesEnabled = typeof settingsData.aiStrategyLabSafeRangesEnabled === 'boolean'
+      ? settingsData.aiStrategyLabSafeRangesEnabled
+      : DEFAULT_GAME_SETTINGS.aiStrategyLabSafeRangesEnabled;
+    const loadedAiStrategyLabExtremeModeEnabled = typeof settingsData.aiStrategyLabExtremeModeEnabled === 'boolean'
+      ? settingsData.aiStrategyLabExtremeModeEnabled
+      : DEFAULT_GAME_SETTINGS.aiStrategyLabExtremeModeEnabled;
+    const loadedTeamBrainSliderRange = getTeamBrainSliderRangeV63({
+      aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled
+    });
+    const loadedTeamBrainModeV63 = normalizeTeamBrainModeV63(settingsData.teamBrainModeV63);
+    const loadedTeamBrainV63Enabled = typeof settingsData.teamBrainV63Enabled === 'boolean'
+      ? settingsData.teamBrainV63Enabled
+      : DEFAULT_GAME_SETTINGS.teamBrainV63Enabled;
+
+	    const sanitizedGameSettings: GameSettingsState = {
+	      actionPointConsumptionSettings: sanitizeActionPointConsumptionSettings(settingsData.actionPointConsumptionSettings),
+	      autoModeEnabled: typeof settingsData.autoModeEnabled === 'boolean' ? settingsData.autoModeEnabled : (DEFAULT_GAME_SETTINGS.autoModeEnabled ?? false),
+	      permissionMode: typeof settingsData.permissionMode === 'string' ? settingsData.permissionMode : (DEFAULT_GAME_SETTINGS.permissionMode ?? 'recommend'),
+	      allowStrategyChanges: typeof settingsData.allowStrategyChanges === 'boolean' ? settingsData.allowStrategyChanges : (DEFAULT_GAME_SETTINGS.allowStrategyChanges ?? true),
+	      allowEconomyChanges: typeof settingsData.allowEconomyChanges === 'boolean' ? settingsData.allowEconomyChanges : (DEFAULT_GAME_SETTINGS.allowEconomyChanges ?? true),
+	      allowActionManagementChanges: typeof settingsData.allowActionManagementChanges === 'boolean' ? settingsData.allowActionManagementChanges : (DEFAULT_GAME_SETTINGS.allowActionManagementChanges ?? true),
+	      allowNumericalModifiers: typeof settingsData.allowNumericalModifiers === 'boolean' ? settingsData.allowNumericalModifiers : (DEFAULT_GAME_SETTINGS.allowNumericalModifiers ?? false),
+	      preserveReplayDeterminism: typeof settingsData.preserveReplayDeterminism === 'boolean' ? settingsData.preserveReplayDeterminism : (DEFAULT_GAME_SETTINGS.preserveReplayDeterminism ?? true),
+	      randomnessMode: typeof settingsData.randomnessMode === 'string' ? settingsData.randomnessMode : 'deterministic',
+	      smartSettingsProfile: settingsData.smartSettingsProfile ? (typeof sanitizeSmartSettingsProfile === 'function' ? sanitizeSmartSettingsProfile(settingsData.smartSettingsProfile) : settingsData.smartSettingsProfile) : DEFAULT_GAME_SETTINGS.smartSettingsProfile,
+	      scenarioEngineV73Enabled: typeof settingsData.scenarioEngineV73Enabled === 'boolean' ? settingsData.scenarioEngineV73Enabled : DEFAULT_GAME_SETTINGS.scenarioEngineV73Enabled,
+	      customScenarioBuilderEnabled: typeof settingsData.customScenarioBuilderEnabled === 'boolean' ? settingsData.customScenarioBuilderEnabled : DEFAULT_GAME_SETTINGS.customScenarioBuilderEnabled,
+	      regionalContractsEnabled: typeof settingsData.regionalContractsEnabled === 'boolean'
+	        ? settingsData.regionalContractsEnabled
+	        : DEFAULT_GAME_SETTINGS.regionalContractsEnabled,
+	      stateInfrastructureEnabled: typeof settingsData.stateInfrastructureEnabled === 'boolean'
+	        ? settingsData.stateInfrastructureEnabled
+	        : DEFAULT_GAME_SETTINGS.stateInfrastructureEnabled,
+	      expeditionsRelicsEnabled: typeof settingsData.expeditionsRelicsEnabled === 'boolean'
+	        ? settingsData.expeditionsRelicsEnabled
+	        : DEFAULT_GAME_SETTINGS.expeditionsRelicsEnabled,
+	      expeditionModeEnabled: typeof settingsData.expeditionModeEnabled === 'boolean'
+	        ? settingsData.expeditionModeEnabled
+	        : DEFAULT_GAME_SETTINGS.expeditionModeEnabled,
+	      dynamicCrisesEnabled: typeof settingsData.dynamicCrisesEnabled === 'boolean'
+	        ? settingsData.dynamicCrisesEnabled
+	        : (typeof settingsData.dynamicCrisisChainsEnabled === 'boolean' ? settingsData.dynamicCrisisChainsEnabled : DEFAULT_GAME_SETTINGS.dynamicCrisesEnabled),
+	      dynamicCrisisChainsEnabled: typeof settingsData.dynamicCrisisChainsEnabled === 'boolean'
+	        ? settingsData.dynamicCrisisChainsEnabled
+	        : (typeof settingsData.dynamicCrisesEnabled === 'boolean' ? settingsData.dynamicCrisesEnabled : DEFAULT_GAME_SETTINGS.dynamicCrisesEnabled),
+	      campaignModeEnabled: typeof settingsData.campaignModeEnabled === 'boolean'
+	        ? settingsData.campaignModeEnabled
+	        : (typeof settingsData.campaignEngineEnabled === 'boolean' ? settingsData.campaignEngineEnabled : DEFAULT_GAME_SETTINGS.campaignModeEnabled),
+	      campaignEngineEnabled: typeof settingsData.campaignEngineEnabled === 'boolean'
+	        ? settingsData.campaignEngineEnabled
+	        : (typeof settingsData.campaignModeEnabled === 'boolean' ? settingsData.campaignModeEnabled : DEFAULT_GAME_SETTINGS.campaignEngineEnabled),
+	      fogOfWarEnabled: typeof settingsData.fogOfWarEnabled === 'boolean' ? settingsData.fogOfWarEnabled : DEFAULT_GAME_SETTINGS.fogOfWarEnabled,
+	      whatIfTimelinesEnabled: typeof settingsData.whatIfTimelinesEnabled === 'boolean'
+	        ? settingsData.whatIfTimelinesEnabled
+	        : DEFAULT_GAME_SETTINGS.whatIfTimelinesEnabled,
+	      narrativeEngineEnabled: typeof settingsData.narrativeEngineEnabled === 'boolean' ? settingsData.narrativeEngineEnabled : DEFAULT_GAME_SETTINGS.narrativeEngineEnabled,
+	      publicStabilityEnabled: typeof settingsData.publicStabilityEnabled === 'boolean' ? settingsData.publicStabilityEnabled : DEFAULT_GAME_SETTINGS.publicStabilityEnabled,
+	      nationalEventsEnabled: typeof settingsData.nationalEventsEnabled === 'boolean' ? settingsData.nationalEventsEnabled : DEFAULT_GAME_SETTINGS.nationalEventsEnabled,
+	      careerProgressionEnabled: typeof settingsData.careerProgressionEnabled === 'boolean' ? settingsData.careerProgressionEnabled : DEFAULT_GAME_SETTINGS.careerProgressionEnabled,
+	      achievementsEnabled: typeof settingsData.achievementsEnabled === 'boolean' ? settingsData.achievementsEnabled : DEFAULT_GAME_SETTINGS.achievementsEnabled,
+	      aiRivalryEnabled: typeof settingsData.aiRivalryEnabled === 'boolean' ? settingsData.aiRivalryEnabled : DEFAULT_GAME_SETTINGS.aiRivalryEnabled,
+	      actionLimitsEnabled: typeof settingsData.actionLimitsEnabled === 'boolean' ? settingsData.actionLimitsEnabled : DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
+      maxActionsPerTurn: clampSettingNumber(settingsData.maxActionsPerTurn, DEFAULT_GAME_SETTINGS.maxActionsPerTurn, 1, 12),
+      aiMaxActionsPerTurn: clampSettingNumber(settingsData.aiMaxActionsPerTurn, DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn, 1, 12),
+      allowActionOverride: typeof settingsData.allowActionOverride === 'boolean' ? settingsData.allowActionOverride : DEFAULT_GAME_SETTINGS.allowActionOverride,
+      overrideCost: clampSettingNumber(settingsData.overrideCost, DEFAULT_GAME_SETTINGS.overrideCost, 0, 5000),
+      totalDays: clampSettingNumber(settingsData.totalDays, DEFAULT_GAME_SETTINGS.totalDays, 10, 150),
+      playerActionsPerDay: clampSettingNumber(
+        settingsData.playerActionsPerDay,
+        typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.playerActionsPerDay,
+        1,
+        12
+      ),
+      aiActionsPerDay: clampSettingNumber(
+        settingsData.aiActionsPerDay,
+        typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiActionsPerDay,
+        1,
+        12
+      ),
+      showDayTransition: typeof settingsData.showDayTransition === 'boolean' ? settingsData.showDayTransition : DEFAULT_GAME_SETTINGS.showDayTransition,
+      dynamicWagerEnabled: typeof settingsData.dynamicWagerEnabled === 'boolean' ? settingsData.dynamicWagerEnabled : DEFAULT_GAME_SETTINGS.dynamicWagerEnabled,
+      doubleOrNothingEnabled: typeof settingsData.doubleOrNothingEnabled === 'boolean' ? settingsData.doubleOrNothingEnabled : DEFAULT_GAME_SETTINGS.doubleOrNothingEnabled,
+      investmentsEnabled: typeof settingsData.investmentsEnabled === 'boolean' ? settingsData.investmentsEnabled : DEFAULT_GAME_SETTINGS.investmentsEnabled,
+      equipmentShopEnabled: typeof settingsData.equipmentShopEnabled === 'boolean' ? settingsData.equipmentShopEnabled : DEFAULT_GAME_SETTINGS.equipmentShopEnabled,
+      sabotageEnabled: typeof settingsData.sabotageEnabled === 'boolean' ? settingsData.sabotageEnabled : DEFAULT_GAME_SETTINGS.sabotageEnabled,
+      aiUsesMarketModifiers: typeof settingsData.aiUsesMarketModifiers === 'boolean' ? settingsData.aiUsesMarketModifiers : DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
+      aiMarketModifierAwareness: clampSettingNumber(settingsData.aiMarketModifierAwareness, DEFAULT_GAME_SETTINGS.aiMarketModifierAwareness, 0, 2),
+      aiSpecialAbilitiesEnabled: typeof settingsData.aiSpecialAbilitiesEnabled === 'boolean' ? settingsData.aiSpecialAbilitiesEnabled : DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
+      aiSpecialAbilityPriority: clampSettingNumber(settingsData.aiSpecialAbilityPriority, DEFAULT_GAME_SETTINGS.aiSpecialAbilityPriority, 0, 2),
+      aiAffectsEconomy: typeof settingsData.aiAffectsEconomy === 'boolean' ? settingsData.aiAffectsEconomy : DEFAULT_GAME_SETTINGS.aiAffectsEconomy,
+      aiEconomyInteractionWeight: clampSettingNumber(settingsData.aiEconomyInteractionWeight, DEFAULT_GAME_SETTINGS.aiEconomyInteractionWeight, 0, 2),
+      aiWinConditionSpendingEnabled: typeof settingsData.aiWinConditionSpendingEnabled === 'boolean'
+        ? settingsData.aiWinConditionSpendingEnabled
+        : DEFAULT_GAME_SETTINGS.aiWinConditionSpendingEnabled,
+      aiWinConditionAdaptationV2Enabled: typeof settingsData.aiWinConditionAdaptationV2Enabled === 'boolean'
+        ? settingsData.aiWinConditionAdaptationV2Enabled
+        : DEFAULT_GAME_SETTINGS.aiWinConditionAdaptationV2Enabled,
+      aiWinConditionSpendingStrength: clampSettingNumber(settingsData.aiWinConditionSpendingStrength, DEFAULT_GAME_SETTINGS.aiWinConditionSpendingStrength, 0, 2.5),
+      aiRegionsMajorityRushEnabled: typeof settingsData.aiRegionsMajorityRushEnabled === 'boolean'
+        ? settingsData.aiRegionsMajorityRushEnabled
+        : DEFAULT_GAME_SETTINGS.aiRegionsMajorityRushEnabled,
+      aiRegionRushIntensity: clampSettingNumber(settingsData.aiRegionRushIntensity, DEFAULT_GAME_SETTINGS.aiRegionRushIntensity, 0, 2.5),
+      teammatePerformanceSyncEnabled: typeof settingsData.teammatePerformanceSyncEnabled === 'boolean'
+        ? settingsData.teammatePerformanceSyncEnabled
+        : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncEnabled,
+      teammatePerformanceSyncStrength: clampSettingNumber(settingsData.teammatePerformanceSyncStrength, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncStrength, 0, 2),
+      aiStrategyLabEnabled: typeof settingsData.aiStrategyLabEnabled === 'boolean' ? settingsData.aiStrategyLabEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
+      aiStrategyLabScope: normalizeAiStrategyLabScope(settingsData.aiStrategyLabScope),
+      aiStrategyLabPreset: normalizeAiStrategyLabPreset(settingsData.aiStrategyLabPreset),
+      aiStrategyLabSafeRangesEnabled: loadedAiStrategyLabSafeRangesEnabled,
+      aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled,
+      aiStrategyLabSeparateProfilesEnabled: typeof settingsData.aiStrategyLabSeparateProfilesEnabled === 'boolean' ? settingsData.aiStrategyLabSeparateProfilesEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabSeparateProfilesEnabled,
+      aiStrategyLabScorePreviewEnabled: typeof settingsData.aiStrategyLabScorePreviewEnabled === 'boolean' ? settingsData.aiStrategyLabScorePreviewEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabScorePreviewEnabled,
+      aiStrategyLabWarningsEnabled: typeof settingsData.aiStrategyLabWarningsEnabled === 'boolean' ? settingsData.aiStrategyLabWarningsEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabWarningsEnabled,
+      aiStrategyLabDesignerNotesEnabled: typeof settingsData.aiStrategyLabDesignerNotesEnabled === 'boolean' ? settingsData.aiStrategyLabDesignerNotesEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabDesignerNotesEnabled,
+      playerTeammateAiPreset: normalizeAiStrategyLabPreset(settingsData.playerTeammateAiPreset, DEFAULT_GAME_SETTINGS.playerTeammateAiPreset),
+      opponentAiPreset: normalizeAiStrategyLabPreset(settingsData.opponentAiPreset, DEFAULT_GAME_SETTINGS.opponentAiPreset),
+      aiEvaluationFactors: sanitizeAiEvaluationFactorsV63(settingsData.aiEvaluationFactors, {
+        aiStrategyLabSafeRangesEnabled: loadedAiStrategyLabSafeRangesEnabled,
+        aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled
+      }),
+      directiveStrength: normalizeDirectiveStrength(settingsData.directiveStrength),
+      directiveBudgetEnabled: typeof settingsData.directiveBudgetEnabled === 'boolean'
+        ? settingsData.directiveBudgetEnabled
+        : DEFAULT_GAME_SETTINGS.directiveBudgetEnabled,
+      directivesPerTurn: clampSettingNumber(settingsData.directivesPerTurn, DEFAULT_GAME_SETTINGS.directivesPerTurn, 1, 10),
+      directiveEscalationCost: clampSettingNumber(settingsData.directiveEscalationCost, DEFAULT_GAME_SETTINGS.directiveEscalationCost, 0, 10),
+      overseerAutoResolveThreshold: clampSettingNumber(settingsData.overseerAutoResolveThreshold, DEFAULT_GAME_SETTINGS.overseerAutoResolveThreshold ?? 70, 0, 100),
+      deterministicRngActive: typeof settingsData.deterministicRngActive === 'boolean' ? settingsData.deterministicRngActive : DEFAULT_GAME_SETTINGS.deterministicRngActive ?? false,
+      teamAiTacticalLookaheadDepth: clampSettingNumber(settingsData.teamAiTacticalLookaheadDepth, DEFAULT_GAME_SETTINGS.teamAiTacticalLookaheadDepth ?? 2, 1, 10),
+      teamAiCandidateEvaluationWidth: clampSettingNumber(settingsData.teamAiCandidateEvaluationWidth, DEFAULT_GAME_SETTINGS.teamAiCandidateEvaluationWidth ?? 5, 1, 50),
+      aiDeterministic: typeof settingsData.aiDeterministic === 'boolean' ? settingsData.aiDeterministic : DEFAULT_GAME_SETTINGS.aiDeterministic,
+      aiDeterministicSeed: normalizeAiSeed(
+        typeof settingsData.aiDeterministicSeed === 'number'
+          ? settingsData.aiDeterministicSeed
+	          : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
+	      ),
+      worldRngMode: normalizeWorldRngMode(settingsData.worldRngMode),
+      worldRngSeed: normalizeAiSeed(
+        typeof settingsData.worldRngSeed === 'number'
+          ? settingsData.worldRngSeed
+          : DEFAULT_GAME_SETTINGS.worldRngSeed
+      ),
+      aiReplayRecordingEnabled: typeof settingsData.aiReplayRecordingEnabled === 'boolean'
+        ? settingsData.aiReplayRecordingEnabled
+        : DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
+      aiReplayMaxEvents: clampSettingNumber(settingsData.aiReplayMaxEvents, DEFAULT_GAME_SETTINGS.aiReplayMaxEvents, 100, 10000),
+      aiReplayPolicy: normalizeReplayPolicy(settingsData.aiReplayPolicy),
+      replaySmartCheckpointsEnabled: typeof settingsData.replaySmartCheckpointsEnabled === 'boolean'
+        ? settingsData.replaySmartCheckpointsEnabled
+        : DEFAULT_GAME_SETTINGS.replaySmartCheckpointsEnabled,
+      replayTurningPointDetectionEnabled: typeof settingsData.replayTurningPointDetectionEnabled === 'boolean'
+        ? settingsData.replayTurningPointDetectionEnabled
+        : DEFAULT_GAME_SETTINGS.replayTurningPointDetectionEnabled,
+      replayDeterministicValidationEnabled: typeof settingsData.replayDeterministicValidationEnabled === 'boolean'
+        ? settingsData.replayDeterministicValidationEnabled
+        : DEFAULT_GAME_SETTINGS.replayDeterministicValidationEnabled,
+      replayWhatIfBranchingEnabled: typeof settingsData.replayWhatIfBranchingEnabled === 'boolean'
+        ? settingsData.replayWhatIfBranchingEnabled
+        : DEFAULT_GAME_SETTINGS.replayWhatIfBranchingEnabled,
+      replayDeveloperDiagnosticsEnabled: typeof settingsData.replayDeveloperDiagnosticsEnabled === 'boolean'
+        ? settingsData.replayDeveloperDiagnosticsEnabled
+        : DEFAULT_GAME_SETTINGS.replayDeveloperDiagnosticsEnabled,
+      replayAutoOpenAtMatchEnd: typeof settingsData.replayAutoOpenAtMatchEnd === 'boolean'
+        ? settingsData.replayAutoOpenAtMatchEnd
+        : DEFAULT_GAME_SETTINGS.replayAutoOpenAtMatchEnd,
+      replayDetailLevel: (['standard', 'analysis', 'developer'] as const).includes(settingsData.replayDetailLevel as 'standard')
+        ? settingsData.replayDetailLevel as 'standard' | 'analysis' | 'developer'
+        : DEFAULT_GAME_SETTINGS.replayDetailLevel,
+      aiEngineVersion: typeof settingsData.aiEngineVersion === 'string' && settingsData.aiEngineVersion.trim()
+        ? settingsData.aiEngineVersion
+        : DEFAULT_GAME_SETTINGS.aiEngineVersion,
+      aiFairnessLevel: clampSettingNumber(settingsData.aiFairnessLevel, DEFAULT_GAME_SETTINGS.aiFairnessLevel, 0, 1),
+      aiPersonalityVariance: clampSettingNumber(settingsData.aiPersonalityVariance, DEFAULT_GAME_SETTINGS.aiPersonalityVariance, 0, 1),
+      aiPlanningDepth: clampSettingNumber(settingsData.aiPlanningDepth, DEFAULT_GAME_SETTINGS.aiPlanningDepth, 1, 5),
+      aiGrandTourPriority: clampSettingNumber(settingsData.aiGrandTourPriority, DEFAULT_GAME_SETTINGS.aiGrandTourPriority, 0, 2.5),
+	      advancedLoansEnabled: typeof settingsData.advancedLoansEnabled === 'boolean' ? settingsData.advancedLoansEnabled : DEFAULT_GAME_SETTINGS.advancedLoansEnabled,
+	      advancedLoansAccessMode: normalizeAdvancedLoansAccessMode(settingsData.advancedLoansAccessMode),
+	      creditScoreEnabled: typeof settingsData.creditScoreEnabled === 'boolean' ? settingsData.creditScoreEnabled : DEFAULT_GAME_SETTINGS.creditScoreEnabled,
+	      loanEventsEnabled: typeof settingsData.loanEventsEnabled === 'boolean' ? settingsData.loanEventsEnabled : DEFAULT_GAME_SETTINGS.loanEventsEnabled,
+	      earlyRepaymentEnabled: typeof settingsData.earlyRepaymentEnabled === 'boolean' ? settingsData.earlyRepaymentEnabled : DEFAULT_GAME_SETTINGS.earlyRepaymentEnabled,
+	      loanRefinancingEnabled: typeof settingsData.loanRefinancingEnabled === 'boolean' ? settingsData.loanRefinancingEnabled : DEFAULT_GAME_SETTINGS.loanRefinancingEnabled,
+	      defaultPenaltyMultiplier: clampSettingNumber(settingsData.defaultPenaltyMultiplier, DEFAULT_GAME_SETTINGS.defaultPenaltyMultiplier, 1, 4),
+	      interestAccrualRate: clampSettingNumber(settingsData.interestAccrualRate, DEFAULT_GAME_SETTINGS.interestAccrualRate, 0.25, 3),
+	      maxSimultaneousLoans: clampSettingNumber(settingsData.maxSimultaneousLoans, DEFAULT_GAME_SETTINGS.maxSimultaneousLoans, 1, 6),
+	      loanTierUnlockSpeedMultiplier: clampSettingNumber(settingsData.loanTierUnlockSpeedMultiplier, DEFAULT_GAME_SETTINGS.loanTierUnlockSpeedMultiplier, 0.5, 2),
+        aiLoanRiskWeight: clampSettingNumber(settingsData.aiLoanRiskWeight, DEFAULT_GAME_SETTINGS.aiLoanRiskWeight, 0, 2),
+        aiLoanRepaymentPriority: clampSettingNumber(settingsData.aiLoanRepaymentPriority, DEFAULT_GAME_SETTINGS.aiLoanRepaymentPriority, 0, 2),
+        aiLoanRefinancingWeight: clampSettingNumber(settingsData.aiLoanRefinancingWeight, DEFAULT_GAME_SETTINGS.aiLoanRefinancingWeight, 0, 2),
+        aiLoanEmergencyOnly: typeof settingsData.aiLoanEmergencyOnly === 'boolean' ? settingsData.aiLoanEmergencyOnly : DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly,
+	      adaptiveAiEnabled: typeof settingsData.adaptiveAiEnabled === 'boolean' ? settingsData.adaptiveAiEnabled : DEFAULT_GAME_SETTINGS.adaptiveAiEnabled,
+	      // V9.5: was clamped to 2 while the default is 2.5, so every load silently changed rival adaptation.
+	      adaptiveAiNetWorthThreshold: clampSettingNumber(settingsData.adaptiveAiNetWorthThreshold, DEFAULT_GAME_SETTINGS.adaptiveAiNetWorthThreshold, 0.1, 5),
+	      adaptiveAiLevelDifference: clampSettingNumber(settingsData.adaptiveAiLevelDifference, DEFAULT_GAME_SETTINGS.adaptiveAiLevelDifference, 0, 10),
+	      adaptiveAiChallengeDifference: clampSettingNumber(settingsData.adaptiveAiChallengeDifference, DEFAULT_GAME_SETTINGS.adaptiveAiChallengeDifference, 0, 20),
+	      adaptiveAiConsecutiveDays: clampSettingNumber(settingsData.adaptiveAiConsecutiveDays, DEFAULT_GAME_SETTINGS.adaptiveAiConsecutiveDays, 1, 10),
+	      adaptiveAiMaxDifficulty: settingsData.adaptiveAiMaxDifficulty || DEFAULT_GAME_SETTINGS.adaptiveAiMaxDifficulty,
+	      adaptiveAiAggressionMultiplier: clampSettingNumber(settingsData.adaptiveAiAggressionMultiplier, DEFAULT_GAME_SETTINGS.adaptiveAiAggressionMultiplier, 0.5, 3),
+	      adaptiveAiPatternLearning: typeof settingsData.adaptiveAiPatternLearning === 'boolean' ? settingsData.adaptiveAiPatternLearning : DEFAULT_GAME_SETTINGS.adaptiveAiPatternLearning,
+	      adaptiveAiRubberBanding: typeof settingsData.adaptiveAiRubberBanding === 'boolean' ? settingsData.adaptiveAiRubberBanding : DEFAULT_GAME_SETTINGS.adaptiveAiRubberBanding,
+	      adaptiveAiTauntsEnabled: typeof settingsData.adaptiveAiTauntsEnabled === 'boolean' ? settingsData.adaptiveAiTauntsEnabled : DEFAULT_GAME_SETTINGS.adaptiveAiTauntsEnabled,
+        adaptiveAiAffectedModes: sanitizeAdaptiveAiAffectedModes(settingsData.adaptiveAiAffectedModes),
+        adaptiveAiTeamComebackStrength: clampSettingNumber(settingsData.adaptiveAiTeamComebackStrength, DEFAULT_GAME_SETTINGS.adaptiveAiTeamComebackStrength, 0, 2),
+        adaptiveAiTriggerSensitivity: clampSettingNumber(settingsData.adaptiveAiTriggerSensitivity, DEFAULT_GAME_SETTINGS.adaptiveAiTriggerSensitivity, 0.5, 2),
+        adaptiveAiSupportFocus: clampSettingNumber(settingsData.adaptiveAiSupportFocus, DEFAULT_GAME_SETTINGS.adaptiveAiSupportFocus, 0, 2),
+        adaptiveAiRiskBias: clampSettingNumber(settingsData.adaptiveAiRiskBias, DEFAULT_GAME_SETTINGS.adaptiveAiRiskBias, 0, 2),
+        adaptiveAiEconomyRecoveryBias: clampSettingNumber(settingsData.adaptiveAiEconomyRecoveryBias, DEFAULT_GAME_SETTINGS.adaptiveAiEconomyRecoveryBias, 0, 2),
+        adaptiveAiDisruptionBias: clampSettingNumber(settingsData.adaptiveAiDisruptionBias, DEFAULT_GAME_SETTINGS.adaptiveAiDisruptionBias, 0, 2),
+        adaptiveAiPatternMemoryStrength: clampSettingNumber(settingsData.adaptiveAiPatternMemoryStrength, DEFAULT_GAME_SETTINGS.adaptiveAiPatternMemoryStrength, 0, 2),
+        adaptiveAiRubberBandingStrength: clampSettingNumber(settingsData.adaptiveAiRubberBandingStrength, DEFAULT_GAME_SETTINGS.adaptiveAiRubberBandingStrength, 0, 2),
+        adaptiveAiShowDecisionTransparency: typeof settingsData.adaptiveAiShowDecisionTransparency === 'boolean' ? settingsData.adaptiveAiShowDecisionTransparency : DEFAULT_GAME_SETTINGS.adaptiveAiShowDecisionTransparency,
+        adaptiveAiShowActiveModifiers: typeof settingsData.adaptiveAiShowActiveModifiers === 'boolean' ? settingsData.adaptiveAiShowActiveModifiers : DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers,
+        opponentModelDecayRate: clampSettingNumber(settingsData.opponentModelDecayRate, DEFAULT_GAME_SETTINGS.opponentModelDecayRate, 0, 1),
+        opponentModelWeight: clampSettingNumber(settingsData.opponentModelWeight, DEFAULT_GAME_SETTINGS.opponentModelWeight, 0, 100),
+        opponentThreatWeightsEnabled: typeof settingsData.opponentThreatWeightsEnabled === 'boolean' ? settingsData.opponentThreatWeightsEnabled : DEFAULT_GAME_SETTINGS.opponentThreatWeightsEnabled,
+        rivalDossierPanelEnabled: typeof settingsData.rivalDossierPanelEnabled === 'boolean' ? settingsData.rivalDossierPanelEnabled : DEFAULT_GAME_SETTINGS.rivalDossierPanelEnabled,
+        aiMemoryEnabled: typeof settingsData.aiMemoryEnabled === 'boolean' ? settingsData.aiMemoryEnabled : DEFAULT_GAME_SETTINGS.aiMemoryEnabled,
+        aiMemoryInfluenceStrength: clampSettingNumber(settingsData.aiMemoryInfluenceStrength, DEFAULT_GAME_SETTINGS.aiMemoryInfluenceStrength, 0, 2),
+        aiMemoryInspectionEnabled: typeof settingsData.aiMemoryInspectionEnabled === 'boolean' ? settingsData.aiMemoryInspectionEnabled : DEFAULT_GAME_SETTINGS.aiMemoryInspectionEnabled,
+        aiMemoryFullInspectionEnabled: typeof settingsData.aiMemoryFullInspectionEnabled === 'boolean' ? settingsData.aiMemoryFullInspectionEnabled : DEFAULT_GAME_SETTINGS.aiMemoryFullInspectionEnabled,
+        aiStrategicLearningEnabled: typeof settingsData.aiStrategicLearningEnabled === 'boolean' ? settingsData.aiStrategicLearningEnabled : DEFAULT_GAME_SETTINGS.aiStrategicLearningEnabled,
+        aiStrategicLearningStrength: clampSettingNumber(settingsData.aiStrategicLearningStrength, DEFAULT_GAME_SETTINGS.aiStrategicLearningStrength, 0, 2),
+        aiPersistentMemoryEnabled: applyPersistencePolicyToSettings(
+          { aiPersistentMemoryEnabled: typeof settingsData.aiPersistentMemoryEnabled === 'boolean' ? settingsData.aiPersistentMemoryEnabled : DEFAULT_GAME_SETTINGS.aiPersistentMemoryEnabled },
+          loadPersistencePolicy()
+        ).aiPersistentMemoryEnabled,
+        aiPersistentLearningEnabled: typeof settingsData.aiPersistentLearningEnabled === 'boolean' ? settingsData.aiPersistentLearningEnabled : DEFAULT_GAME_SETTINGS.aiPersistentLearningEnabled,
+        aiPersistentIdentityMode: settingsData.aiPersistentIdentityMode === 'recurring' ? 'recurring' : DEFAULT_GAME_SETTINGS.aiPersistentIdentityMode,
+        aiPersistentAskOnAbandon: typeof settingsData.aiPersistentAskOnAbandon === 'boolean' ? settingsData.aiPersistentAskOnAbandon : DEFAULT_GAME_SETTINGS.aiPersistentAskOnAbandon,
+        aiPersistentAivsAiEnabled: typeof settingsData.aiPersistentAivsAiEnabled === 'boolean' ? settingsData.aiPersistentAivsAiEnabled : DEFAULT_GAME_SETTINGS.aiPersistentAivsAiEnabled,
+        aiCommunicationEnabled: typeof settingsData.aiCommunicationEnabled === 'boolean' ? settingsData.aiCommunicationEnabled : DEFAULT_GAME_SETTINGS.aiCommunicationEnabled,
+        aiCommunicationProactiveEnabled: typeof settingsData.aiCommunicationProactiveEnabled === 'boolean' ? settingsData.aiCommunicationProactiveEnabled : DEFAULT_GAME_SETTINGS.aiCommunicationProactiveEnabled,
+        aiCommunicationProactiveFrequency: settingsData.aiCommunicationProactiveFrequency === 'low' || settingsData.aiCommunicationProactiveFrequency === 'high'
+          ? settingsData.aiCommunicationProactiveFrequency
+          : DEFAULT_GAME_SETTINGS.aiCommunicationProactiveFrequency,
+        aiCommunicationAutonomyLevel: settingsData.aiCommunicationAutonomyLevel === 'assisted' || settingsData.aiCommunicationAutonomyLevel === 'delegated'
+          ? settingsData.aiCommunicationAutonomyLevel
+          : DEFAULT_GAME_SETTINGS.aiCommunicationAutonomyLevel,
+        regionalStandingEnabled: typeof settingsData.regionalStandingEnabled === 'boolean'
+          ? settingsData.regionalStandingEnabled
+          : DEFAULT_GAME_SETTINGS.regionalStandingEnabled,
+        regionalStandingDecayRate: clampSettingNumber(
+          settingsData.regionalStandingDecayRate,
+          DEFAULT_GAME_SETTINGS.regionalStandingDecayRate,
+          0,
+          5
+        ),
+        aiStandingWeight: clampSettingNumber(
+          settingsData.aiStandingWeight,
+          DEFAULT_GAME_SETTINGS.aiStandingWeight,
+          0,
+          2.5
+        ),
+        aiStandingPriority: clampSettingNumber(
+          settingsData.aiStandingPriority,
+          DEFAULT_GAME_SETTINGS.aiStandingPriority,
+          0,
+          2.5
+        ),
+        externalTerritoriesEnabled: typeof settingsData.externalTerritoriesEnabled === 'boolean'
+          ? settingsData.externalTerritoriesEnabled
+          : DEFAULT_GAME_SETTINGS.externalTerritoriesEnabled,
+        territoryEquipmentGateEnabled: typeof settingsData.territoryEquipmentGateEnabled === 'boolean'
+          ? settingsData.territoryEquipmentGateEnabled
+          : (typeof settingsData.expeditionModeEnabled === 'boolean'
+            ? settingsData.expeditionModeEnabled
+            : DEFAULT_GAME_SETTINGS.territoryEquipmentGateEnabled),
+        territoryTravelMode: (settingsData.territoryTravelMode === 'committed' || settingsData.territoryTravelMode === 'transit')
+          ? settingsData.territoryTravelMode
+          : DEFAULT_GAME_SETTINGS.territoryTravelMode,
+        multiTurnJourneyEnabled: typeof settingsData.multiTurnJourneyEnabled === 'boolean'
+          ? settingsData.multiTurnJourneyEnabled
+          : DEFAULT_GAME_SETTINGS.multiTurnJourneyEnabled,
+        survivalMechanicsEnabled: typeof settingsData.survivalMechanicsEnabled === 'boolean'
+          ? settingsData.survivalMechanicsEnabled
+          : (DEFAULT_GAME_SETTINGS.survivalMechanicsEnabled ?? true),
+        dailySupplyConsumptionRate: clampSettingNumber(
+          settingsData.dailySupplyConsumptionRate,
+          DEFAULT_GAME_SETTINGS.dailySupplyConsumptionRate ?? 10,
+          0,
+          100
+        ),
+        forcedRetreatEnabled: typeof settingsData.forcedRetreatEnabled === 'boolean'
+          ? settingsData.forcedRetreatEnabled
+          : (DEFAULT_GAME_SETTINGS.forcedRetreatEnabled ?? true),
+	      winCondition: normalizeWinMetric(settingsData.winCondition),
+        winConditionTieBreakers: sanitizeWinMetricTieBreakers(settingsData.winConditionTieBreakers),
+	      allowCashOut: typeof settingsData.allowCashOut === 'boolean' ? settingsData.allowCashOut : DEFAULT_GAME_SETTINGS.allowCashOut,
+        negotiationMode: typeof settingsData.negotiationMode === 'boolean'
+          ? settingsData.negotiationMode
+          : DEFAULT_GAME_SETTINGS.negotiationMode,
+        negotiationOptions: {
+          ...createDefaultNegotiationOptions(),
+          ...(settingsData.negotiationOptions || {}),
+          proposalExpirationTurns: clampSettingNumber(
+            settingsData.negotiationOptions?.proposalExpirationTurns,
+            createDefaultNegotiationOptions().proposalExpirationTurns,
+            0,
+            15
+          )
+        },
+        aiSabotagePriority: clampSettingNumber(settingsData.aiSabotagePriority, DEFAULT_GAME_SETTINGS.aiSabotagePriority, 0, 2),
+        aiInvestmentPriority: clampSettingNumber(settingsData.aiInvestmentPriority, DEFAULT_GAME_SETTINGS.aiInvestmentPriority, 0, 2),
+        aiEquipmentPurchasePriority: clampSettingNumber(settingsData.aiEquipmentPurchasePriority, DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority, 0, 2),
+        aiRegionalContractPriority: clampSettingNumber(settingsData.aiRegionalContractPriority, DEFAULT_GAME_SETTINGS.aiRegionalContractPriority ?? 1.0, 0, 2.5),
+        aiInfrastructurePriority: clampSettingNumber(settingsData.aiInfrastructurePriority, DEFAULT_GAME_SETTINGS.aiInfrastructurePriority ?? 1.0, 0, 2.5),
+        aiRelicEquipPriority: clampSettingNumber(settingsData.aiRelicEquipPriority, DEFAULT_GAME_SETTINGS.aiRelicEquipPriority ?? 1.0, 0, 2.5),
+        aiCrisisMitigationPriority: clampSettingNumber(settingsData.aiCrisisMitigationPriority, DEFAULT_GAME_SETTINGS.aiCrisisMitigationPriority ?? 1.0, 0, 2.5),
+        aiNegotiationParticipationWeight: clampSettingNumber(settingsData.aiNegotiationParticipationWeight, DEFAULT_GAME_SETTINGS.aiNegotiationParticipationWeight, 0, 2),
+        aiNegotiationValuationWeight: clampSettingNumber(settingsData.aiNegotiationValuationWeight, DEFAULT_GAME_SETTINGS.aiNegotiationValuationWeight, 0, 2),
+        settingPriorityMode: normalizePriorityMode(settingsData.settingPriorityMode),
+        maxConcurrentHighInfluenceSettings: clampSettingNumber(settingsData.maxConcurrentHighInfluenceSettings, DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings, 1, 8),
+        conflictResolutionStrength: clampSettingNumber(settingsData.conflictResolutionStrength, DEFAULT_GAME_SETTINGS.conflictResolutionStrength, 0, 2),
+        deprioritizeLowImpactSettings: typeof settingsData.deprioritizeLowImpactSettings === 'boolean' ? settingsData.deprioritizeLowImpactSettings : DEFAULT_GAME_SETTINGS.deprioritizeLowImpactSettings,
+        priorityTransparencyEnabled: typeof settingsData.priorityTransparencyEnabled === 'boolean' ? settingsData.priorityTransparencyEnabled : DEFAULT_GAME_SETTINGS.priorityTransparencyEnabled,
+        manualPriorityWeights: sanitizeManualPriorityWeights(settingsData.manualPriorityWeights),
+        decisionTransparencyEnabled: typeof settingsData.decisionTransparencyEnabled === 'boolean' ? settingsData.decisionTransparencyEnabled : DEFAULT_GAME_SETTINGS.decisionTransparencyEnabled,
+        decisionTransparencyVisibilityScope: normalizeDecisionTransparencyVisibilityScope(settingsData.decisionTransparencyVisibilityScope),
+        decisionTransparencyViewMode: normalizeDecisionTransparencyViewMode(settingsData.decisionTransparencyViewMode),
+        decisionTransparencyRealtimeBreakdown: typeof settingsData.decisionTransparencyRealtimeBreakdown === 'boolean' ? settingsData.decisionTransparencyRealtimeBreakdown : DEFAULT_GAME_SETTINGS.decisionTransparencyRealtimeBreakdown,
+        decisionTransparencyTimeline: typeof settingsData.decisionTransparencyTimeline === 'boolean' ? settingsData.decisionTransparencyTimeline : DEFAULT_GAME_SETTINGS.decisionTransparencyTimeline,
+        decisionTransparencySettingContributions: typeof settingsData.decisionTransparencySettingContributions === 'boolean' ? settingsData.decisionTransparencySettingContributions : DEFAULT_GAME_SETTINGS.decisionTransparencySettingContributions,
+        decisionTransparencyReasonExplanations: typeof settingsData.decisionTransparencyReasonExplanations === 'boolean' ? settingsData.decisionTransparencyReasonExplanations : DEFAULT_GAME_SETTINGS.decisionTransparencyReasonExplanations,
+        decisionTransparencyAlternativeActions: typeof settingsData.decisionTransparencyAlternativeActions === 'boolean' ? settingsData.decisionTransparencyAlternativeActions : DEFAULT_GAME_SETTINGS.decisionTransparencyAlternativeActions,
+        decisionTransparencyPriorityFlow: typeof settingsData.decisionTransparencyPriorityFlow === 'boolean' ? settingsData.decisionTransparencyPriorityFlow : DEFAULT_GAME_SETTINGS.decisionTransparencyPriorityFlow,
+        decisionTransparencyMaxHistoryRetained: clampSettingNumber(settingsData.decisionTransparencyMaxHistoryRetained, DEFAULT_GAME_SETTINGS.decisionTransparencyMaxHistoryRetained, 5, 120),
+        decisionTransparencyDetailLevel: clampSettingNumber(settingsData.decisionTransparencyDetailLevel, DEFAULT_GAME_SETTINGS.decisionTransparencyDetailLevel, 0, 100),
+        decisionTransparencyExplanationDepth: clampSettingNumber(settingsData.decisionTransparencyExplanationDepth, DEFAULT_GAME_SETTINGS.decisionTransparencyExplanationDepth, 0, 100),
+        decisionTransparencyTimelineLength: clampSettingNumber(settingsData.decisionTransparencyTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyTimelineLength, 5, 120),
+        decisionTransparencySamplingDensity: clampSettingNumber(settingsData.decisionTransparencySamplingDensity, DEFAULT_GAME_SETTINGS.decisionTransparencySamplingDensity, 1, 10),
+        decisionTransparencyPanelDensity: normalizeDecisionTransparencyPanelDensity(settingsData.decisionTransparencyPanelDensity),
+        decisionTransparencyMultiAiOverviewEnabled: typeof settingsData.decisionTransparencyMultiAiOverviewEnabled === 'boolean' ? settingsData.decisionTransparencyMultiAiOverviewEnabled : DEFAULT_GAME_SETTINGS.decisionTransparencyMultiAiOverviewEnabled,
+        decisionTransparencyShowPerAiMiniCards: typeof settingsData.decisionTransparencyShowPerAiMiniCards === 'boolean' ? settingsData.decisionTransparencyShowPerAiMiniCards : DEFAULT_GAME_SETTINGS.decisionTransparencyShowPerAiMiniCards,
+        decisionTransparencyShowAdaptiveActorBreakdown: typeof settingsData.decisionTransparencyShowAdaptiveActorBreakdown === 'boolean' ? settingsData.decisionTransparencyShowAdaptiveActorBreakdown : DEFAULT_GAME_SETTINGS.decisionTransparencyShowAdaptiveActorBreakdown,
+        decisionTransparencyShowTeamAdaptiveSource: typeof settingsData.decisionTransparencyShowTeamAdaptiveSource === 'boolean' ? settingsData.decisionTransparencyShowTeamAdaptiveSource : DEFAULT_GAME_SETTINGS.decisionTransparencyShowTeamAdaptiveSource,
+        decisionTransparencyShowActorAppliedEffects: typeof settingsData.decisionTransparencyShowActorAppliedEffects === 'boolean' ? settingsData.decisionTransparencyShowActorAppliedEffects : DEFAULT_GAME_SETTINGS.decisionTransparencyShowActorAppliedEffects,
+        decisionTransparencyDefaultGroupView: normalizeDecisionTransparencyGroupView(settingsData.decisionTransparencyDefaultGroupView),
+        decisionTransparencyShowOnlyActiveAis: typeof settingsData.decisionTransparencyShowOnlyActiveAis === 'boolean' ? settingsData.decisionTransparencyShowOnlyActiveAis : DEFAULT_GAME_SETTINGS.decisionTransparencyShowOnlyActiveAis,
+        decisionTransparencyShowUnaffectedAis: typeof settingsData.decisionTransparencyShowUnaffectedAis === 'boolean' ? settingsData.decisionTransparencyShowUnaffectedAis : DEFAULT_GAME_SETTINGS.decisionTransparencyShowUnaffectedAis,
+        decisionTransparencyMaxVisibleAiCards: clampSettingNumber(settingsData.decisionTransparencyMaxVisibleAiCards, DEFAULT_GAME_SETTINGS.decisionTransparencyMaxVisibleAiCards, 1, 8),
+        decisionTransparencyPerAiTimelineDensity: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineDensity, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity, 1, 6),
+        decisionTransparencyPerAiTimelineLength: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength, 4, 30),
+        gameActivityLedgerEnabled: typeof settingsData.gameActivityLedgerEnabled === 'boolean' ? settingsData.gameActivityLedgerEnabled : DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
+        gameActivityLedgerDetailLevel: ['standard', 'detailed', 'developer'].includes(settingsData.gameActivityLedgerDetailLevel) ? settingsData.gameActivityLedgerDetailLevel : DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
+        gameActivityLedgerIncludeInSaveFile: typeof settingsData.gameActivityLedgerIncludeInSaveFile === 'boolean' ? settingsData.gameActivityLedgerIncludeInSaveFile : DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
+        gameActivityLedgerMaxEvents: typeof settingsData.gameActivityLedgerMaxEvents === 'number' && Number.isFinite(settingsData.gameActivityLedgerMaxEvents)
+          ? Math.max(10, Math.min(GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING, Math.floor(settingsData.gameActivityLedgerMaxEvents)))
+          : DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
+        gameActivityLedgerRetentionPolicy: ['keep_recent', 'keep_critical'].includes(settingsData.gameActivityLedgerRetentionPolicy) ? settingsData.gameActivityLedgerRetentionPolicy : DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
+        gameActivityLedgerRecordingPaused: typeof settingsData.gameActivityLedgerRecordingPaused === 'boolean' ? settingsData.gameActivityLedgerRecordingPaused : DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
+        aiPipelineInspectorEnabled: typeof settingsData.aiPipelineInspectorEnabled === 'boolean' ? settingsData.aiPipelineInspectorEnabled : DEFAULT_GAME_SETTINGS.aiPipelineInspectorEnabled,
+        diag2OverlayEnabled: settingsData.diag2OverlayEnabled === true,
+        coPilotStartPhaseOverlayEnabled: settingsData.coPilotStartPhaseOverlayEnabled === true,
+        postMatchDebriefEnabled: typeof settingsData.postMatchDebriefEnabled === 'boolean' ? settingsData.postMatchDebriefEnabled : DEFAULT_GAME_SETTINGS.postMatchDebriefEnabled,
+        scenarioModeEnabled: typeof settingsData.scenarioModeEnabled === 'boolean' ? settingsData.scenarioModeEnabled : DEFAULT_GAME_SETTINGS.scenarioModeEnabled,
+        selectedScenarioId: typeof settingsData.selectedScenarioId === 'string' ? settingsData.selectedScenarioId : DEFAULT_GAME_SETTINGS.selectedScenarioId,
+        uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
+        simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
+        disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
+        interactiveMapEnabled: typeof settingsData.interactiveMapEnabled === 'boolean' ? settingsData.interactiveMapEnabled : DEFAULT_GAME_SETTINGS.interactiveMapEnabled,
+        winConditionCoachEnabled: typeof settingsData.winConditionCoachEnabled === 'boolean' ? settingsData.winConditionCoachEnabled : DEFAULT_GAME_SETTINGS.winConditionCoachEnabled,
+        settingsPresetsEnabled: typeof settingsData.settingsPresetsEnabled === 'boolean' ? settingsData.settingsPresetsEnabled : DEFAULT_GAME_SETTINGS.settingsPresetsEnabled,
+        groupedInventoryCardsEnabled: typeof settingsData.groupedInventoryCardsEnabled === 'boolean' ? settingsData.groupedInventoryCardsEnabled : DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
+        playerIntentOnboardingEnabled: typeof settingsData.playerIntentOnboardingEnabled === 'boolean' ? settingsData.playerIntentOnboardingEnabled : DEFAULT_GAME_SETTINGS.playerIntentOnboardingEnabled,
+        playerIntentOnboardingDismissed: Array.isArray(settingsData.playerIntentOnboardingDismissed) ? settingsData.playerIntentOnboardingDismissed.filter((x: any) => typeof x === 'string') : DEFAULT_GAME_SETTINGS.playerIntentOnboardingDismissed,
+        // V9.2: learning progress survives save/load (sanitised, bounded); absent in old saves → fresh state.
+        guidedLearning: settingsData.guidedLearning && typeof settingsData.guidedLearning === 'object' ? { ...sanitizeLearningState(settingsData.guidedLearning), forcedLessonId: null, sessionHintsShown: 0 } : null,
+        playerIntentExplainRoutineActions: settingsData.playerIntentExplainRoutineActions === true,
+        playerIntentExplainMode: ['routine_off', 'high_impact', 'every'].includes(settingsData.playerIntentExplainMode)
+          ? settingsData.playerIntentExplainMode
+          : (settingsData.playerIntentExplainRoutineActions === true ? 'every' : DEFAULT_GAME_SETTINGS.playerIntentExplainMode),
+        teamModeAiSystemsEnabled: typeof settingsData.teamModeAiSystemsEnabled === 'boolean' ? settingsData.teamModeAiSystemsEnabled : DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
+        teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(settingsData.teamModeAiSystemProfile),
+        teamBrainV63Enabled: loadedTeamBrainV63Enabled,
+        teamBrainModeV63: loadedTeamBrainModeV63,
+        teamBrainStrategyModesEnabled: typeof settingsData.teamBrainStrategyModesEnabled === 'boolean' ? settingsData.teamBrainStrategyModesEnabled : DEFAULT_GAME_SETTINGS.teamBrainStrategyModesEnabled,
+        teamBrainPersonalitiesEnabled: typeof settingsData.teamBrainPersonalitiesEnabled === 'boolean' ? settingsData.teamBrainPersonalitiesEnabled : DEFAULT_GAME_SETTINGS.teamBrainPersonalitiesEnabled,
+        teamBrainTeammateSupportEnabled: typeof settingsData.teamBrainTeammateSupportEnabled === 'boolean' ? settingsData.teamBrainTeammateSupportEnabled : DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportEnabled,
+        teamBrainOpponentPressureEnabled: typeof settingsData.teamBrainOpponentPressureEnabled === 'boolean' ? settingsData.teamBrainOpponentPressureEnabled : DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureEnabled,
+        teamBrainComebackLogicEnabled: typeof settingsData.teamBrainComebackLogicEnabled === 'boolean' ? settingsData.teamBrainComebackLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainComebackLogicEnabled,
+        teamBrainRecoveryLogicEnabled: typeof settingsData.teamBrainRecoveryLogicEnabled === 'boolean' ? settingsData.teamBrainRecoveryLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainRecoveryLogicEnabled,
+        teamBrainTravelDisciplineEnabled: typeof settingsData.teamBrainTravelDisciplineEnabled === 'boolean' ? settingsData.teamBrainTravelDisciplineEnabled : DEFAULT_GAME_SETTINGS.teamBrainTravelDisciplineEnabled,
+        teamBrainResourceLogicEnabled: typeof settingsData.teamBrainResourceLogicEnabled === 'boolean' ? settingsData.teamBrainResourceLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainResourceLogicEnabled,
+        teamBrainExplanationEnabled: typeof settingsData.teamBrainExplanationEnabled === 'boolean' ? settingsData.teamBrainExplanationEnabled : DEFAULT_GAME_SETTINGS.teamBrainExplanationEnabled,
+        teamBrainTeammateSupportBias: clampSettingNumber(settingsData.teamBrainTeammateSupportBias, DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportBias, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
+        teamBrainOpponentPressureBias: clampSettingNumber(settingsData.teamBrainOpponentPressureBias, DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureBias, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
+        teamBrainTravelDiscipline: clampSettingNumber(settingsData.teamBrainTravelDiscipline, DEFAULT_GAME_SETTINGS.teamBrainTravelDiscipline, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
+        teamBrainRiskScaling: clampSettingNumber(settingsData.teamBrainRiskScaling, DEFAULT_GAME_SETTINGS.teamBrainRiskScaling, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
+        teamCompetitiveAiEnabled: typeof settingsData.teamCompetitiveAiEnabled === 'boolean'
+          ? settingsData.teamCompetitiveAiEnabled
+          : DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
+        teamModeAiDifficultyPreset: normalizeTeamModeAiDifficultyPreset(settingsData.teamModeAiDifficultyPreset, DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset),
+        friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(settingsData.friendlyTeamAiPreset, DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset),
+        enemyTeamAiPreset: normalizeEnemyTeamAiPreset(settingsData.enemyTeamAiPreset, DEFAULT_GAME_SETTINGS.enemyTeamAiPreset),
+        teamAiActionOverridesEnabled: typeof settingsData.teamAiActionOverridesEnabled === 'boolean'
+          ? settingsData.teamAiActionOverridesEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionOverridesEnabled,
+        teamAiOverridePolicy: normalizeTeamAiOverridePolicy(settingsData.teamAiOverridePolicy, DEFAULT_GAME_SETTINGS.teamAiOverridePolicy),
+        friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(settingsData.friendlyAiOverridePolicy, DEFAULT_GAME_SETTINGS.friendlyAiOverridePolicy),
+        teamAiOverrideMaxPerActorPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerActorPerDay, 1, OVERRIDE_DAILY_CAP),
+        teamAiOverrideMaxPerTeamPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerTeamPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerTeamPerDay, 1, OVERRIDE_DAILY_CAP * 2),
+        teamAiOverrideBaseCostMultiplier: clampSettingNumber(settingsData.teamAiOverrideBaseCostMultiplier, DEFAULT_GAME_SETTINGS.teamAiOverrideBaseCostMultiplier, 0.5, 3.0),
+        teamAiOverrideMinimumDecisionScore: clampSettingNumber(settingsData.teamAiOverrideMinimumDecisionScore, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumDecisionScore, 0, 400),
+        teamAiOverrideMinimumCashReserve: clampSettingNumber(settingsData.teamAiOverrideMinimumCashReserve, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve, 0, 5000),
+        teamAiOverrideEscalatingCostEnabled: typeof settingsData.teamAiOverrideEscalatingCostEnabled === 'boolean'
+          ? settingsData.teamAiOverrideEscalatingCostEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
+        teamAiOverrideFatigueEnabled: typeof settingsData.teamAiOverrideFatigueEnabled === 'boolean'
+          ? settingsData.teamAiOverrideFatigueEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
+        teamAiOverrideTransparencyEnabled: typeof settingsData.teamAiOverrideTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiOverrideTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
+        teamActionBankEnabled: typeof settingsData.teamActionBankEnabled === 'boolean'
+          ? settingsData.teamActionBankEnabled
+          : DEFAULT_GAME_SETTINGS.teamActionBankEnabled,
+        teamActionBankBonusActionsPerDay: clampSettingNumber(settingsData.teamActionBankBonusActionsPerDay, DEFAULT_GAME_SETTINGS.teamActionBankBonusActionsPerDay, 0, 10),
+        teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(settingsData.teamActionBankDistributionMode, DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode),
+        teamActionBankReserveActions: clampSettingNumber(settingsData.teamActionBankReserveActions, DEFAULT_GAME_SETTINGS.teamActionBankReserveActions, 0, 5),
+        teamActionBankMaxDrawsPerActorPerDay: clampSettingNumber(settingsData.teamActionBankMaxDrawsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay, 1, 5),
+        teamActionBankTransparencyEnabled: typeof settingsData.teamActionBankTransparencyEnabled === 'boolean'
+          ? settingsData.teamActionBankTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
+        teamAiActionLendingEnabled: typeof settingsData.teamAiActionLendingEnabled === 'boolean'
+          ? settingsData.teamAiActionLendingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingEnabled,
+        teamAiMaxLentActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxLentActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxLentActionsPerActorPerDay, 1, 3),
+        teamAiMaxReceivedActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxReceivedActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay, 1, 3),
+        teamAiActionLendingMinimumValueGain: clampSettingNumber(settingsData.teamAiActionLendingMinimumValueGain, DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain, 0, 200),
+        teamAiActionLendingRequiresCommittedPlan: typeof settingsData.teamAiActionLendingRequiresCommittedPlan === 'boolean'
+          ? settingsData.teamAiActionLendingRequiresCommittedPlan
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
+        teamAiActionLendingTransparencyEnabled: typeof settingsData.teamAiActionLendingTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiActionLendingTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
+        teamAiPlanCommitmentEnabled: typeof settingsData.teamAiPlanCommitmentEnabled === 'boolean'
+          ? settingsData.teamAiPlanCommitmentEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentEnabled,
+        teamAiPlanCommitmentStrength: clampSettingNumber(settingsData.teamAiPlanCommitmentStrength, DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentStrength, 0, 100),
+        teamAiPlanMaximumDurationDays: clampSettingNumber(settingsData.teamAiPlanMaximumDurationDays, DEFAULT_GAME_SETTINGS.teamAiPlanMaximumDurationDays, 1, 14),
+        teamAiPlanReevaluationFrequency: clampSettingNumber(settingsData.teamAiPlanReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiPlanReevaluationFrequency, 1, 5),
+        teamAiPlanInterruptionSensitivity: clampSettingNumber(settingsData.teamAiPlanInterruptionSensitivity, DEFAULT_GAME_SETTINGS.teamAiPlanInterruptionSensitivity, 0, 100),
+        teamAiPlanTransparencyEnabled: typeof settingsData.teamAiPlanTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiPlanTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
+        teamAiReservationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.teamAiReservationStrictness)
+          ? settingsData.teamAiReservationStrictness
+          : DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
+        friendlyAiRespectPlayerReservations: typeof settingsData.friendlyAiRespectPlayerReservations === 'boolean'
+          ? settingsData.friendlyAiRespectPlayerReservations
+          : DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
+        friendlyAiMayRequestReservedResource: typeof settingsData.friendlyAiMayRequestReservedResource === 'boolean'
+          ? settingsData.friendlyAiMayRequestReservedResource
+          : DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
+        teamAiThreatTargetingEnabled: typeof settingsData.teamAiThreatTargetingEnabled === 'boolean'
+          ? settingsData.teamAiThreatTargetingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingEnabled,
+        teamAiThreatTargetingStrength: clampSettingNumber(settingsData.teamAiThreatTargetingStrength, DEFAULT_GAME_SETTINGS.teamAiThreatTargetingStrength, 0, 100),
+        teamAiThreatReevaluationFrequency: clampSettingNumber(settingsData.teamAiThreatReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiThreatReevaluationFrequency, 1, 10),
+        teamAiThreatFocusDuration: clampSettingNumber(settingsData.teamAiThreatFocusDuration, DEFAULT_GAME_SETTINGS.teamAiThreatFocusDuration, 1, 10),
+        teamAiMayTargetFriendlyAiTeammate: typeof settingsData.teamAiMayTargetFriendlyAiTeammate === 'boolean'
+          ? settingsData.teamAiMayTargetFriendlyAiTeammate
+          : DEFAULT_GAME_SETTINGS.teamAiMayTargetFriendlyAiTeammate,
+        teamAiEndgameAccelerationEnabled: typeof settingsData.teamAiEndgameAccelerationEnabled === 'boolean'
+          ? settingsData.teamAiEndgameAccelerationEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationEnabled,
+        teamAiEndgameStartPercent: clampSettingNumber(settingsData.teamAiEndgameStartPercent, DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent, 0.5, 0.95),
+        teamAiEndgameAggressionMultiplier: clampSettingNumber(settingsData.teamAiEndgameAggressionMultiplier, DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier, 1.0, 3.0),
+        teamAiEndgameOverrideBias: clampSettingNumber(settingsData.teamAiEndgameOverrideBias, DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias, 0, 0.5),
+        teamAiEndgameCashConversionStrength: clampSettingNumber(settingsData.teamAiEndgameCashConversionStrength, DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength, 0, 100),
+        teamAiEmergencyActionsEnabled: typeof settingsData.teamAiEmergencyActionsEnabled === 'boolean'
+          ? settingsData.teamAiEmergencyActionsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsEnabled,
+        teamAiEmergencyActionCooldownDays: clampSettingNumber(settingsData.teamAiEmergencyActionCooldownDays, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionCooldownDays, 1, 10),
+        teamAiEmergencyActionsPerGame: clampSettingNumber(settingsData.teamAiEmergencyActionsPerGame, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsPerGame, 1, 10),
+        teamAiEmergencyActionStrength: clampSettingNumber(settingsData.teamAiEmergencyActionStrength, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionStrength, 0, 100),
+        teamAiEmergencyActionsForFriendlyTeam: typeof settingsData.teamAiEmergencyActionsForFriendlyTeam === 'boolean'
+          ? settingsData.teamAiEmergencyActionsForFriendlyTeam
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForFriendlyTeam,
+        teamAiEmergencyActionsForEnemyTeam: typeof settingsData.teamAiEmergencyActionsForEnemyTeam === 'boolean'
+          ? settingsData.teamAiEmergencyActionsForEnemyTeam
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForEnemyTeam,
+        teamInitiativeEnabled: typeof settingsData.teamInitiativeEnabled === 'boolean'
+          ? settingsData.teamInitiativeEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeEnabled,
+        teamInitiativeMaximum: clampSettingNumber(settingsData.teamInitiativeMaximum, DEFAULT_GAME_SETTINGS.teamInitiativeMaximum, 20, 500),
+        teamInitiativeGainMultiplier: clampSettingNumber(settingsData.teamInitiativeGainMultiplier, DEFAULT_GAME_SETTINGS.teamInitiativeGainMultiplier, 0, 3),
+        teamInitiativeDecayEnabled: typeof settingsData.teamInitiativeDecayEnabled === 'boolean'
+          ? settingsData.teamInitiativeDecayEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeDecayEnabled,
+        teamInitiativeVisibleToPlayer: typeof settingsData.teamInitiativeVisibleToPlayer === 'boolean'
+          ? settingsData.teamInitiativeVisibleToPlayer
+          : DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
+        teamComboBonusesEnabled: typeof settingsData.teamComboBonusesEnabled === 'boolean'
+          ? settingsData.teamComboBonusesEnabled
+          : DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
+        teamComboBonusStrength: clampSettingNumber(settingsData.teamComboBonusStrength, DEFAULT_GAME_SETTINGS.teamComboBonusStrength, 0, 100),
+        teamComboWindowActions: clampSettingNumber(settingsData.teamComboWindowActions, DEFAULT_GAME_SETTINGS.teamComboWindowActions, 2, 6),
+        teamAiReservationTransparencyEnabled: typeof settingsData.teamAiReservationTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiReservationTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiReservationTransparencyEnabled,
+        teamAiThreatTargetingTransparencyEnabled: typeof settingsData.teamAiThreatTargetingTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiThreatTargetingTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingTransparencyEnabled,
+        teamAiEndgameAccelerationTransparencyEnabled: typeof settingsData.teamAiEndgameAccelerationTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiEndgameAccelerationTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
+        teamAiEmergencyActionsTransparencyEnabled: typeof settingsData.teamAiEmergencyActionsTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiEmergencyActionsTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
+        teamInitiativeTransparencyEnabled: typeof settingsData.teamInitiativeTransparencyEnabled === 'boolean'
+          ? settingsData.teamInitiativeTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
+        teamComboBonusesTransparencyEnabled: typeof settingsData.teamComboBonusesTransparencyEnabled === 'boolean'
+          ? settingsData.teamComboBonusesTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
+        teamCashVaultEnabled: typeof settingsData.teamCashVaultEnabled === 'boolean'
+          ? settingsData.teamCashVaultEnabled
+          : DEFAULT_GAME_SETTINGS.teamCashVaultEnabled,
+        automaticCashLockingEnabled: typeof settingsData.automaticCashLockingEnabled === 'boolean'
+          ? settingsData.automaticCashLockingEnabled
+          : DEFAULT_GAME_SETTINGS.automaticCashLockingEnabled,
+        vaultProtectionMode: ['spending_reserve', 'secure_vault', 'absolute_lock'].includes(settingsData.vaultProtectionMode)
+          ? settingsData.vaultProtectionMode
+          : DEFAULT_GAME_SETTINGS.vaultProtectionMode,
+        vaultLockPercentage: clampSettingNumber(settingsData.vaultLockPercentage, DEFAULT_GAME_SETTINGS.vaultLockPercentage, 0, 100),
+        vaultMilestoneSizeMultiplier: clampSettingNumber(settingsData.vaultMilestoneSizeMultiplier, DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier, 0.25, 4),
+        vaultMinimumWorkingCash: clampSettingNumber(settingsData.vaultMinimumWorkingCash, DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash, 0, 5000),
+        vaultCountProtectedCashTowardVictory: typeof settingsData.vaultCountProtectedCashTowardVictory === 'boolean'
+          ? settingsData.vaultCountProtectedCashTowardVictory
+          : DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
+        vaultTransparencyEnabled: typeof settingsData.vaultTransparencyEnabled === 'boolean'
+          ? settingsData.vaultTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
+        teamEconomyGovernorEnabled: typeof settingsData.teamEconomyGovernorEnabled === 'boolean'
+          ? settingsData.teamEconomyGovernorEnabled
+          : DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
+        teamIntelligenceOsEnabled: typeof settingsData.teamIntelligenceOsEnabled === 'boolean'
+          ? settingsData.teamIntelligenceOsEnabled
+          : DEFAULT_GAME_SETTINGS.teamIntelligenceOsEnabled,
+        teamOsAuthorityLevel: (['manual', 'advisor', 'assisted', 'delegated', 'autonomous'] as string[]).includes(settingsData.teamOsAuthorityLevel)
+          ? settingsData.teamOsAuthorityLevel
+          : DEFAULT_GAME_SETTINGS.teamOsAuthorityLevel,
+        teamOsEnemyEnabled: typeof settingsData.teamOsEnemyEnabled === 'boolean' ? settingsData.teamOsEnemyEnabled : DEFAULT_GAME_SETTINGS.teamOsEnemyEnabled,
+        teamOsFullInspectionEnabled: typeof settingsData.teamOsFullInspectionEnabled === 'boolean' ? settingsData.teamOsFullInspectionEnabled : DEFAULT_GAME_SETTINGS.teamOsFullInspectionEnabled,
+        economyCashFloor: clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
+        // Never sanitized below economyCashFloor (post-clamp), so the recovery target can never
+        // be misconfigured lower than the floor it's supposed to be above.
+        economyRecoveryTarget: Math.max(
+          clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
+          clampSettingNumber(settingsData.economyRecoveryTarget, DEFAULT_GAME_SETTINGS.economyRecoveryTarget, 0, 100000)
+        ),
+        economyMinimumChallengeProbability: clampSettingNumber(settingsData.economyMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.economyMinimumChallengeProbability, 0, 1),
+        economyRecoverySpendingCap: clampSettingNumber(settingsData.economyRecoverySpendingCap, DEFAULT_GAME_SETTINGS.economyRecoverySpendingCap, 0, 1),
+        economyReserveStrength: ['low', 'balanced', 'high'].includes(settingsData.economyReserveStrength)
+          ? settingsData.economyReserveStrength
+          : DEFAULT_GAME_SETTINGS.economyReserveStrength,
+        economyEndgameCashConversionEnabled: typeof settingsData.economyEndgameCashConversionEnabled === 'boolean'
+          ? settingsData.economyEndgameCashConversionEnabled
+          : DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
+        economySpendingApprovalStrictness: ['low', 'balanced', 'strict'].includes(settingsData.economySpendingApprovalStrictness)
+          ? settingsData.economySpendingApprovalStrictness
+          : DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
+        economyGovernorTransparencyEnabled: typeof settingsData.economyGovernorTransparencyEnabled === 'boolean'
+          ? settingsData.economyGovernorTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
+        teamAiGovernorRestrictionDetectionEnabled: typeof settingsData.teamAiGovernorRestrictionDetectionEnabled === 'boolean'
+          ? settingsData.teamAiGovernorRestrictionDetectionEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
+        teamAiGovernorRestrictionTransparencyEnabled: typeof settingsData.teamAiGovernorRestrictionTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiGovernorRestrictionTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
+        teamAiProductiveRecoveryLadderEnabled: typeof settingsData.teamAiProductiveRecoveryLadderEnabled === 'boolean'
+          ? settingsData.teamAiProductiveRecoveryLadderEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiProductiveRecoveryLadderEnabled,
+        teamAiGovernorAutomaticExceptionsEnabled: typeof settingsData.teamAiGovernorAutomaticExceptionsEnabled === 'boolean'
+          ? settingsData.teamAiGovernorAutomaticExceptionsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiGovernorAutomaticExceptionsEnabled,
+        teamAiGovernorExceptionConsecutiveTurnsThreshold: clampSettingNumber(settingsData.teamAiGovernorExceptionConsecutiveTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionConsecutiveTurnsThreshold, 1, 20),
+        teamAiGovernorExceptionMaxReserveBreach: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxReserveBreach, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxReserveBreach, 0, 100000),
+        teamAiGovernorExceptionMinProbability: clampSettingNumber(settingsData.teamAiGovernorExceptionMinProbability, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinProbability, 0, 1),
+        teamAiGovernorExceptionMinEvRatio: clampSettingNumber(settingsData.teamAiGovernorExceptionMinEvRatio, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinEvRatio, 0, 10),
+        teamAiGovernorExceptionMaxCost: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxCost, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxCost, 0, 100000),
+        teammatePerformanceSync2Enabled: typeof settingsData.teammatePerformanceSync2Enabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2Enabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
+        teammatePerformanceSync2Strength: clampSettingNumber(settingsData.teammatePerformanceSync2Strength, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength, 0, 2),
+        teammatePerformanceSync2StrategyLearningEnabled: typeof settingsData.teammatePerformanceSync2StrategyLearningEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2StrategyLearningEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
+        teammatePerformanceSync2ChallengeExpertiseEnabled: typeof settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseEnabled,
+        teammatePerformanceSync2ChallengeExpertiseMaxBonus: clampSettingNumber(settingsData.teammatePerformanceSync2ChallengeExpertiseMaxBonus, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus, 0, 0.2),
+        guaranteedRecoveryProtocolEnabled: typeof settingsData.guaranteedRecoveryProtocolEnabled === 'boolean'
+          ? settingsData.guaranteedRecoveryProtocolEnabled
+          : DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
+        guaranteedRecoveryMinimumChallengeProbability: clampSettingNumber(settingsData.guaranteedRecoveryMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability, 0, 1),
+        teammatePerformanceSync2TransparencyEnabled: typeof settingsData.teammatePerformanceSync2TransparencyEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSync2TransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
+        teammatePerformanceSyncAssistScope: normalizeAssistScope(settingsData.teammatePerformanceSyncAssistScope, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncAssistScope),
+        governorCategoryPolicy: ['off', 'win_condition_aligned', 'strict_win_condition', 'dynamic_metric'].includes(settingsData.governorCategoryPolicy)
+          ? settingsData.governorCategoryPolicy
+          : DEFAULT_GAME_SETTINGS.governorCategoryPolicy,
+        teamDifficultyOverrides: typeof settingsData.teamDifficultyOverrides === 'object' && settingsData.teamDifficultyOverrides !== null
+          ? settingsData.teamDifficultyOverrides
+          : DEFAULT_GAME_SETTINGS.teamDifficultyOverrides,
+        teammatePerformanceSyncMomentumEnabled: typeof settingsData.teammatePerformanceSyncMomentumEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSyncMomentumEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncMomentumEnabled,
+        teammatePerformanceSyncExpertiseDecayEnabled: typeof settingsData.teammatePerformanceSyncExpertiseDecayEnabled === 'boolean'
+          ? settingsData.teammatePerformanceSyncExpertiseDecayEnabled
+          : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncExpertiseDecayEnabled,
+        teammatePerformanceSyncExpertiseDecayRate: clampSettingNumber(settingsData.teammatePerformanceSyncExpertiseDecayRate, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncExpertiseDecayRate, 0.01, 0.5),
+        parallelAiPlanningEnabled: typeof settingsData.parallelAiPlanningEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
+        parallelAiPlanningCoordinationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.parallelAiPlanningCoordinationStrictness)
+          ? settingsData.parallelAiPlanningCoordinationStrictness
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
+        parallelAiPlanningSabotageCoordinationEnabled: typeof settingsData.parallelAiPlanningSabotageCoordinationEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningSabotageCoordinationEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
+        parallelAiPlanningTransparencyEnabled: typeof settingsData.parallelAiPlanningTransparencyEnabled === 'boolean'
+          ? settingsData.parallelAiPlanningTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
+        teamAiActionSequencesEnabled: typeof settingsData.teamAiActionSequencesEnabled === 'boolean'
+          ? settingsData.teamAiActionSequencesEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
+        aiActionApprovalEnabled: typeof settingsData.aiActionApprovalEnabled === 'boolean'
+          ? settingsData.aiActionApprovalEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
+        actionRequirementsEnabled: typeof settingsData.actionRequirementsEnabled === 'boolean'
+          ? settingsData.actionRequirementsEnabled
+          : DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
+        actionRequirementGroups: sanitizeRequirementGroups(settingsData.actionRequirementGroups),
+        actionRequirementsTransparencyEnabled: typeof settingsData.actionRequirementsTransparencyEnabled === 'boolean'
+          ? settingsData.actionRequirementsTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
+        aiActionApprovalMode: APPROVAL_MODES.includes(settingsData.aiActionApprovalMode)
+          ? settingsData.aiActionApprovalMode
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalMode,
+        aiActionApprovalSelectedTypes: Array.isArray(settingsData.aiActionApprovalSelectedTypes)
+          ? settingsData.aiActionApprovalSelectedTypes.filter((t: unknown) => typeof t === 'string')
+          : [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
+        aiActionApprovalHighRiskThresholds: sanitizeApprovalHighRiskThresholds(settingsData.aiActionApprovalHighRiskThresholds),
+        aiActionApprovalTeammateOverrides: sanitizeApprovalTeammateOverrides(settingsData.aiActionApprovalTeammateOverrides),
+        aiActionApprovalRejectionOutcome: APPROVAL_REJECTION_OUTCOMES.includes(settingsData.aiActionApprovalRejectionOutcome)
+          ? settingsData.aiActionApprovalRejectionOutcome
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalRejectionOutcome,
+        aiActionApprovalTransparencyEnabled: typeof settingsData.aiActionApprovalTransparencyEnabled === 'boolean'
+          ? settingsData.aiActionApprovalTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
+        aiActionApprovalAutoRulesEnabled: typeof settingsData.aiActionApprovalAutoRulesEnabled === 'boolean'
+          ? settingsData.aiActionApprovalAutoRulesEnabled
+          : DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
+        aiActionApprovalAutoRules: sanitizeAutomaticApprovalRules(settingsData.aiActionApprovalAutoRules),
+        teamAiActionSequencesTransparencyEnabled: typeof settingsData.teamAiActionSequencesTransparencyEnabled === 'boolean'
+          ? settingsData.teamAiActionSequencesTransparencyEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled,
+        teamAiSequenceInterruptsEnabled: typeof settingsData.teamAiSequenceInterruptsEnabled === 'boolean'
+          ? settingsData.teamAiSequenceInterruptsEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiSequenceInterruptsEnabled,
+        teamAiPhaseSequenceSwitchingEnabled: typeof settingsData.teamAiPhaseSequenceSwitchingEnabled === 'boolean'
+          ? settingsData.teamAiPhaseSequenceSwitchingEnabled
+          : DEFAULT_GAME_SETTINGS.teamAiPhaseSequenceSwitchingEnabled,
+        teamOverviewDensity: (settingsData.teamOverviewDensity === 'compact' || settingsData.teamOverviewDensity === 'comfortable')
+          ? settingsData.teamOverviewDensity
+          : DEFAULT_GAME_SETTINGS.teamOverviewDensity,
+	      notificationSettings: (() => {
+	        const source = settingsData.notificationSettings || {};
+	        const defaults = createDefaultNotificationSettings();
+	        const autoDismiss = { ...defaults.autoDismiss };
+	        const typeFilters = { ...defaults.typeFilters };
+          const allowedPositions: NotificationSettings['position'][] = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center'];
+          const allowedMaxVisible = [0, 1, 2, 3, 5, 10, 20];
+	        NOTIFICATION_TYPES_ALL.forEach(typeKey => {
+	          const rawDismiss = source.autoDismiss?.[typeKey];
+	          if (typeof rawDismiss === 'number' && isFinite(rawDismiss) && rawDismiss >= 0) {
+	            autoDismiss[typeKey] = rawDismiss;
+	          }
+	          if (typeof source.typeFilters?.[typeKey] === 'boolean') {
+	            typeFilters[typeKey] = source.typeFilters[typeKey];
+	          }
+	        });
+	        return {
+	          size: source.size === 'nano' || source.size === 'small' || source.size === 'medium' || source.size === 'large' || source.size === 'custom' ? source.size : defaults.size,
+	          customSize: typeof source.customSize === 'number' ? Math.max(70, Math.min(150, source.customSize)) : defaults.customSize,
+	          position: allowedPositions.includes(source.position) ? source.position : defaults.position,
+	          animation: source.animation === 'fade' || source.animation === 'none' ? source.animation : 'slide',
+	          animationSpeed: typeof source.animationSpeed === 'number' ? source.animationSpeed : defaults.animationSpeed,
+	          autoDismiss,
+	          typeFilters,
+	          opacity: typeof source.opacity === 'number' ? Math.max(70, Math.min(100, source.opacity)) : defaults.opacity,
+	          maxVisible: allowedMaxVisible.includes(Number(source.maxVisible)) ? Number(source.maxVisible) : defaults.maxVisible,
+	          stackOrder: source.stackOrder === 'oldest-first' ? 'oldest-first' : 'newest-first',
+	          borderStyle: source.borderStyle === 'none' || source.borderStyle === 'thick' ? source.borderStyle : 'thin',
+	          shadow: source.shadow === 'none' || source.shadow === 'prominent' ? source.shadow : 'subtle'
+	        } as NotificationSettings;
+	      })(),
+	      notificationClearShortcut: settingsData.notificationClearShortcut === 'ctrl+alt+c'
+	        ? 'ctrl+alt+c'
+	        : settingsData.notificationClearShortcut === 'disabled'
+	          ? 'disabled'
+	          : 'ctrl+shift+c',
+	      teamTreasuryEnabled: typeof settingsData.teamTreasuryEnabled === 'boolean'
+	        ? settingsData.teamTreasuryEnabled
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabled,
+	      teamTreasuryEnabledForFriendlyTeam: typeof settingsData.teamTreasuryEnabledForFriendlyTeam === 'boolean'
+	        ? settingsData.teamTreasuryEnabledForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabledForFriendlyTeam,
+	      teamTreasuryEnabledForEnemyTeam: typeof settingsData.teamTreasuryEnabledForEnemyTeam === 'boolean'
+	        ? settingsData.teamTreasuryEnabledForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabledForEnemyTeam,
+	      teamTreasuryShowInUi: typeof settingsData.teamTreasuryShowInUi === 'boolean'
+	        ? settingsData.teamTreasuryShowInUi
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryShowInUi,
+	      teamTreasuryShowTransactions: typeof settingsData.teamTreasuryShowTransactions === 'boolean'
+	        ? settingsData.teamTreasuryShowTransactions
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryShowTransactions,
+	      teamTreasuryAllowManualContributions: typeof settingsData.teamTreasuryAllowManualContributions === 'boolean'
+	        ? settingsData.teamTreasuryAllowManualContributions
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowManualContributions,
+	      teamTreasuryAllowProtectedCashContribution: typeof settingsData.teamTreasuryAllowProtectedCashContribution === 'boolean'
+	        ? settingsData.teamTreasuryAllowProtectedCashContribution
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowProtectedCashContribution,
+	      teamAiTreasuryContributionEnabled: typeof settingsData.teamAiTreasuryContributionEnabled === 'boolean'
+	        ? settingsData.teamAiTreasuryContributionEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryContributionEnabled,
+	      treasuryAutomaticContributionEnabled: typeof settingsData.treasuryAutomaticContributionEnabled === 'boolean'
+	        ? settingsData.treasuryAutomaticContributionEnabled
+	        : DEFAULT_GAME_SETTINGS.treasuryAutomaticContributionEnabled,
+	      treasuryAutomaticContributionPolicy: (() => {
+	        const source = settingsData.treasuryAutomaticContributionPolicy;
+	        const defaults = DEFAULT_GAME_SETTINGS.treasuryAutomaticContributionPolicy;
+	        if (!source || typeof source !== 'object') return defaults;
+	        const pct = (v: unknown, fallback: number) => typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
+	        const nonNeg = (v: unknown, fallback: number) => typeof v === 'number' && isFinite(v) ? Math.max(0, v) : fallback;
+	        return {
+	          enabled: typeof source.enabled === 'boolean' ? source.enabled : defaults.enabled,
+	          percentageOfChallengeWinnings: pct(source.percentageOfChallengeWinnings, defaults.percentageOfChallengeWinnings),
+	          percentageOfResourceSaleRevenue: pct(source.percentageOfResourceSaleRevenue, defaults.percentageOfResourceSaleRevenue),
+	          percentageOfInvestmentIncome: pct(source.percentageOfInvestmentIncome, defaults.percentageOfInvestmentIncome),
+	          percentageOfOtherPositiveIncome: pct(source.percentageOfOtherPositiveIncome, defaults.percentageOfOtherPositiveIncome),
+	          percentageOfExcessAboveReserve: pct(source.percentageOfExcessAboveReserve, defaults.percentageOfExcessAboveReserve),
+	          fixedDailyContribution: nonNeg(source.fixedDailyContribution, defaults.fixedDailyContribution),
+	          endgameContributionMultiplier: typeof source.endgameContributionMultiplier === 'number' && isFinite(source.endgameContributionMultiplier)
+	            ? Math.max(1, source.endgameContributionMultiplier)
+	            : defaults.endgameContributionMultiplier
+	        };
+	      })(),
+	      teamTreasuryMaxAutoContributionPerActorPerDay: typeof settingsData.teamTreasuryMaxAutoContributionPerActorPerDay === 'number' && isFinite(settingsData.teamTreasuryMaxAutoContributionPerActorPerDay)
+	        ? Math.max(0, settingsData.teamTreasuryMaxAutoContributionPerActorPerDay)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxAutoContributionPerActorPerDay,
+	      teamTreasuryMinPersonalCashRemaining: typeof settingsData.teamTreasuryMinPersonalCashRemaining === 'number' && isFinite(settingsData.teamTreasuryMinPersonalCashRemaining)
+	        ? Math.max(0, settingsData.teamTreasuryMinPersonalCashRemaining)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMinPersonalCashRemaining,
+	      teamTreasuryMinContributionAmount: typeof settingsData.teamTreasuryMinContributionAmount === 'number' && isFinite(settingsData.teamTreasuryMinContributionAmount)
+	        ? Math.max(0, settingsData.teamTreasuryMinContributionAmount)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMinContributionAmount,
+	      teamTreasuryContributionCooldownDays: typeof settingsData.teamTreasuryContributionCooldownDays === 'number' && isFinite(settingsData.teamTreasuryContributionCooldownDays)
+	        ? Math.max(0, Math.floor(settingsData.teamTreasuryContributionCooldownDays))
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryContributionCooldownDays,
+	      teamTreasuryDisableContributionDuringRecovery: typeof settingsData.teamTreasuryDisableContributionDuringRecovery === 'boolean'
+	        ? settingsData.teamTreasuryDisableContributionDuringRecovery
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryDisableContributionDuringRecovery,
+	      teamTreasuryReserve: typeof settingsData.teamTreasuryReserve === 'number' && isFinite(settingsData.teamTreasuryReserve)
+	        ? Math.max(0, settingsData.teamTreasuryReserve)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryReserve,
+	      teamTreasuryDynamicReserveEnabled: typeof settingsData.teamTreasuryDynamicReserveEnabled === 'boolean'
+	        ? settingsData.teamTreasuryDynamicReserveEnabled
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled,
+	      teamTreasuryAllowHumanFundingRequests: typeof settingsData.teamTreasuryAllowHumanFundingRequests === 'boolean'
+	        ? settingsData.teamTreasuryAllowHumanFundingRequests
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowHumanFundingRequests,
+	      teamTreasuryAllowAiFundingRequests: typeof settingsData.teamTreasuryAllowAiFundingRequests === 'boolean'
+	        ? settingsData.teamTreasuryAllowAiFundingRequests
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowAiFundingRequests,
+	      teamTreasuryAllowRequestsAtZeroCash: typeof settingsData.teamTreasuryAllowRequestsAtZeroCash === 'boolean'
+	        ? settingsData.teamTreasuryAllowRequestsAtZeroCash
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowRequestsAtZeroCash,
+	      teamTreasuryEmergencyOperatingTarget: typeof settingsData.teamTreasuryEmergencyOperatingTarget === 'number' && isFinite(settingsData.teamTreasuryEmergencyOperatingTarget)
+	        ? Math.max(0, settingsData.teamTreasuryEmergencyOperatingTarget)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryEmergencyOperatingTarget,
+	      teamTreasuryMaxWithdrawalPerRequest: typeof settingsData.teamTreasuryMaxWithdrawalPerRequest === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerRequest)
+	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerRequest)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerRequest,
+	      teamTreasuryMaxWithdrawalPerActorPerDay: typeof settingsData.teamTreasuryMaxWithdrawalPerActorPerDay === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
+	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerActorPerDay,
+	      teamTreasuryRequireApprovalForFriendlyAiWithdrawals: typeof settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals === 'boolean'
+	        ? settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireApprovalForFriendlyAiWithdrawals,
+	      teamTreasuryAllowPartialApproval: typeof settingsData.teamTreasuryAllowPartialApproval === 'boolean'
+	        ? settingsData.teamTreasuryAllowPartialApproval
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowPartialApproval,
+	      teamTreasuryRequireIntendedAction: typeof settingsData.teamTreasuryRequireIntendedAction === 'boolean'
+	        ? settingsData.teamTreasuryRequireIntendedAction
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
+	      teamTreasuryReturnUnusedRestrictedFunds: typeof settingsData.teamTreasuryReturnUnusedRestrictedFunds === 'boolean'
+	        ? settingsData.teamTreasuryReturnUnusedRestrictedFunds
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
+	      teamTreasuryRequestCooldownDays: typeof settingsData.teamTreasuryRequestCooldownDays === 'number' && isFinite(settingsData.teamTreasuryRequestCooldownDays)
+	        ? Math.max(0, settingsData.teamTreasuryRequestCooldownDays)
+	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
+	      teamAiTreasuryRequestsEnabled: typeof settingsData.teamAiTreasuryRequestsEnabled === 'boolean'
+	        ? settingsData.teamAiTreasuryRequestsEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
+	      countTeamTreasuryTowardVictory: typeof settingsData.countTeamTreasuryTowardVictory === 'boolean'
+	        ? settingsData.countTeamTreasuryTowardVictory
+	        : DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory,
+	      teamAiOverseerSystemEnabled: typeof settingsData.teamAiOverseerSystemEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerSystemEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
+	      teamAiStrategicCommandEnabled: typeof settingsData.teamAiStrategicCommandEnabled === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
+	      teamAiStrategicCommandAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
+	        ? (settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
+	      teamAiStrategicCommandDirectiveDurationDays: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveDurationDays, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays, 1, 30),
+	      teamAiStrategicCommandDirectiveScoreBias: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveScoreBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias, 0, 100),
+	      teamAiStrategicCommandMaxSpendingPercent: clampSettingNumber(settingsData.teamAiStrategicCommandMaxSpendingPercent, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent, 0, 100),
+	      teamAiStrategicCommandTreasuryAllocationCap: clampSettingNumber(settingsData.teamAiStrategicCommandTreasuryAllocationCap, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap, 0, 100000),
+	      teamAiStrategicCommandOverrideBias: clampSettingNumber(settingsData.teamAiStrategicCommandOverrideBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias, 0, 0.5),
+	      teamAiStrategicCommandEnabledForFriendlyTeam: typeof settingsData.teamAiStrategicCommandEnabledForFriendlyTeam === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabledForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForFriendlyTeam,
+	      teamAiStrategicCommandEnabledForEnemyTeam: typeof settingsData.teamAiStrategicCommandEnabledForEnemyTeam === 'boolean'
+	        ? settingsData.teamAiStrategicCommandEnabledForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForEnemyTeam,
+	      teamAiStrategicCommandInterventionsEnabled: typeof settingsData.teamAiStrategicCommandInterventionsEnabled === 'boolean'
+	        ? settingsData.teamAiStrategicCommandInterventionsEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandInterventionsEnabled,
+	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
+	        ? settingsData.teamAiAdaptiveOverseerEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
+	      teamAiAdaptiveOverseerAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
+	        ? (settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
+	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
+	      teamAiOverseerShowStatusCard: typeof settingsData.teamAiOverseerShowStatusCard === 'boolean'
+	        ? settingsData.teamAiOverseerShowStatusCard
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
+	      teamAiOverseerTransparencyEnabled: typeof settingsData.teamAiOverseerTransparencyEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerTransparencyEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
+	      teamAiOverseerDashboardEnabled: typeof settingsData.teamAiOverseerDashboardEnabled === 'boolean'
+	        ? settingsData.teamAiOverseerDashboardEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
+      teamAiSafeModeEnabled: typeof settingsData.teamAiSafeModeEnabled === 'boolean'
+        ? settingsData.teamAiSafeModeEnabled
+        : DEFAULT_GAME_SETTINGS.teamAiSafeModeEnabled,
+      teamAiSafeModeRestrictedActorThreshold: clampSettingNumber(settingsData.teamAiSafeModeRestrictedActorThreshold, DEFAULT_GAME_SETTINGS.teamAiSafeModeRestrictedActorThreshold, 1, 10),
+      teamAiStrategicCommandPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
+        ? (settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
+        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandPersonality,
+      teamAiAdaptiveOverseerPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
+        ? (settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
+        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerPersonality,
+	      teamAiAdaptiveOverseerComebackEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent, 0, 100),
+	      teamAiAdaptiveOverseerComebackExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent, 0, 100),
+	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
+	      teamAiAdaptiveOverseerProtectLeadExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent, 0, 100),
+	      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: clampSettingNumber(settingsData.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, 1, 20),
+	      teamAiAdaptiveOverseerMinimumStrategyDurationDays: clampSettingNumber(settingsData.teamAiAdaptiveOverseerMinimumStrategyDurationDays, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays, 0, 30),
+	      overseerWinConditionCounterStrategyEnabled: typeof settingsData.overseerWinConditionCounterStrategyEnabled === 'boolean'
+	        ? settingsData.overseerWinConditionCounterStrategyEnabled
+	        : DEFAULT_GAME_SETTINGS.overseerWinConditionCounterStrategyEnabled,
+	      teamAiAuditorSystemEnabled: typeof settingsData.teamAiAuditorSystemEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorSystemEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSystemEnabled,
+	      teamAiAuditorModeForFriendlyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForFriendlyTeam)
+	        ? settingsData.teamAiAuditorModeForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
+	      teamAiAuditorModeForEnemyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForEnemyTeam)
+	        ? settingsData.teamAiAuditorModeForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
+	      teamAiAuditorShowStatusCard: typeof settingsData.teamAiAuditorShowStatusCard === 'boolean'
+	        ? settingsData.teamAiAuditorShowStatusCard
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
+	      teamAiAuditorDashboardEnabled: typeof settingsData.teamAiAuditorDashboardEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorDashboardEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
+	      teamAiAuditorAutomaticRecoveryMinConfidence: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMinConfidence, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence, 0, 1),
+	      teamAiAuditorAutomaticRecoveryMaxPerDay: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMaxPerDay, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay, 0, 20),
+	      teamAiAuditorSafeModeEnabled: typeof settingsData.teamAiAuditorSafeModeEnabled === 'boolean'
+	        ? settingsData.teamAiAuditorSafeModeEnabled
+	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
+	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20),
+	      // Accepts 'classic_layered'/'end_to_end_planner', or any string starting with 'algo_' — the
+	      // exact prefix every real Algorithm Builder AiAlgorithmConfig.configId is minted with (see
+	      // createAiAlgorithmConfigInPlayerTeam and its sibling CRUD functions). A stale/deleted
+	      // configId that no longer matches any real config is already handled safely downstream:
+	      // runCustomAiAlgorithmEngine returns usedFallback:true when the config isn't found, so the
+	      // mandatory Classic fallback still applies. Anything else falls back to 'classic_layered'.
+	      aiAlgorithmForFriendlyTeam: (settingsData.aiAlgorithmForFriendlyTeam === 'classic_layered' || settingsData.aiAlgorithmForFriendlyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForFriendlyTeam === 'string' && settingsData.aiAlgorithmForFriendlyTeam.startsWith('algo_')))
+	        ? settingsData.aiAlgorithmForFriendlyTeam
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
+	      aiAlgorithmForEnemyTeam: (settingsData.aiAlgorithmForEnemyTeam === 'classic_layered' || settingsData.aiAlgorithmForEnemyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForEnemyTeam === 'string' && settingsData.aiAlgorithmForEnemyTeam.startsWith('algo_')))
+	        ? settingsData.aiAlgorithmForEnemyTeam
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
+	      aiAlgorithmForOpponent: (settingsData.aiAlgorithmForOpponent === 'classic_layered' || settingsData.aiAlgorithmForOpponent === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForOpponent === 'string' && settingsData.aiAlgorithmForOpponent.startsWith('algo_')))
+	        ? settingsData.aiAlgorithmForOpponent
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
+	      aiThinkingDepth: (settingsData.aiThinkingDepth === 'fast' || settingsData.aiThinkingDepth === 'balanced' || settingsData.aiThinkingDepth === 'deep')
+	        ? settingsData.aiThinkingDepth
+	        : DEFAULT_GAME_SETTINGS.aiThinkingDepth,
+	      aiAlgorithmBuilderEnabled: typeof settingsData.aiAlgorithmBuilderEnabled === 'boolean' ? settingsData.aiAlgorithmBuilderEnabled : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
+	      aiAlgorithmBuilderDefaultEditorMode: AI_ALGORITHM_EDITOR_MODES.includes(settingsData.aiAlgorithmBuilderDefaultEditorMode)
+	        ? settingsData.aiAlgorithmBuilderDefaultEditorMode
+	        : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
+	      humanAutomationEnabled: typeof settingsData.humanAutomationEnabled === 'boolean' ? settingsData.humanAutomationEnabled : DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
+	      humanAutomationTransparencyEnabled: typeof settingsData.humanAutomationTransparencyEnabled === 'boolean' ? settingsData.humanAutomationTransparencyEnabled : DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled,
+	      automationSequenceLaunchEnabled: typeof settingsData.automationSequenceLaunchEnabled === 'boolean' ? settingsData.automationSequenceLaunchEnabled : DEFAULT_GAME_SETTINGS.automationSequenceLaunchEnabled,
+	      automationSlotProgressionEnabled: typeof settingsData.automationSlotProgressionEnabled === 'boolean' ? settingsData.automationSlotProgressionEnabled : DEFAULT_GAME_SETTINGS.automationSlotProgressionEnabled,
+	      automationRunHistoryEnabled: typeof settingsData.automationRunHistoryEnabled === 'boolean' ? settingsData.automationRunHistoryEnabled : DEFAULT_GAME_SETTINGS.automationRunHistoryEnabled,
+	      automationExtendedTriggersEnabled: typeof settingsData.automationExtendedTriggersEnabled === 'boolean' ? settingsData.automationExtendedTriggersEnabled : DEFAULT_GAME_SETTINGS.automationExtendedTriggersEnabled,
+	      automationExtendedActionsEnabled: typeof settingsData.automationExtendedActionsEnabled === 'boolean' ? settingsData.automationExtendedActionsEnabled : DEFAULT_GAME_SETTINGS.automationExtendedActionsEnabled,
+	      automationConflictWarningsEnabled: typeof settingsData.automationConflictWarningsEnabled === 'boolean' ? settingsData.automationConflictWarningsEnabled : DEFAULT_GAME_SETTINGS.automationConflictWarningsEnabled,
+	      automationDailyDigestEnabled: typeof settingsData.automationDailyDigestEnabled === 'boolean' ? settingsData.automationDailyDigestEnabled : DEFAULT_GAME_SETTINGS.automationDailyDigestEnabled,
+	      automationImportExportEnabled: typeof settingsData.automationImportExportEnabled === 'boolean' ? settingsData.automationImportExportEnabled : DEFAULT_GAME_SETTINGS.automationImportExportEnabled,
+	      replayComparisonEnabled: typeof settingsData.replayComparisonEnabled === 'boolean'
+	        ? settingsData.replayComparisonEnabled
+	        : DEFAULT_GAME_SETTINGS.replayComparisonEnabled,
+	      replayComparisonToleranceThreshold: clampSettingNumber(settingsData.replayComparisonToleranceThreshold, DEFAULT_GAME_SETTINGS.replayComparisonToleranceThreshold, 0, 1),
+	      replayComparisonIgnoreMinorTiming: typeof settingsData.replayComparisonIgnoreMinorTiming === 'boolean'
+	        ? settingsData.replayComparisonIgnoreMinorTiming
+	        : DEFAULT_GAME_SETTINGS.replayComparisonIgnoreMinorTiming,
+	      aiEffectivenessScorecardEnabled: typeof settingsData.aiEffectivenessScorecardEnabled === 'boolean'
+	        ? settingsData.aiEffectivenessScorecardEnabled
+	        : DEFAULT_GAME_SETTINGS.aiEffectivenessScorecardEnabled,
+	      aiEffectivenessBlunderThresholdRoi: clampSettingNumber(settingsData.aiEffectivenessBlunderThresholdRoi, DEFAULT_GAME_SETTINGS.aiEffectivenessBlunderThresholdRoi, -100, 0),
+	      aiEffectivenessTrackCompliance: typeof settingsData.aiEffectivenessTrackCompliance === 'boolean'
+	        ? settingsData.aiEffectivenessTrackCompliance
+	        : DEFAULT_GAME_SETTINGS.aiEffectivenessTrackCompliance,
+	      balanceLabEnabled: typeof settingsData.balanceLabEnabled === 'boolean'
+	        ? settingsData.balanceLabEnabled
+	        : DEFAULT_GAME_SETTINGS.balanceLabEnabled,
+	      balanceLabAutoStressTracking: typeof settingsData.balanceLabAutoStressTracking === 'boolean'
+	        ? settingsData.balanceLabAutoStressTracking
+	        : DEFAULT_GAME_SETTINGS.balanceLabAutoStressTracking,
+	      balanceLabSandboxMode: typeof settingsData.balanceLabSandboxMode === 'boolean'
+	        ? settingsData.balanceLabSandboxMode
+	        : DEFAULT_GAME_SETTINGS.balanceLabSandboxMode,
+	      ledgerDiagnosticsEnabled: typeof settingsData.ledgerDiagnosticsEnabled === 'boolean'
+	        ? settingsData.ledgerDiagnosticsEnabled
+	        : DEFAULT_GAME_SETTINGS.ledgerDiagnosticsEnabled,
+	      ledgerPruneRetentionLimit: clampSettingNumber(settingsData.ledgerPruneRetentionLimit, DEFAULT_GAME_SETTINGS.ledgerPruneRetentionLimit, 100, 10000),
+	      ledgerAutoPruneEnabled: typeof settingsData.ledgerAutoPruneEnabled === 'boolean'
+	        ? settingsData.ledgerAutoPruneEnabled
+	        : DEFAULT_GAME_SETTINGS.ledgerAutoPruneEnabled,
+	      ledgerExportCompressionEnabled: typeof settingsData.ledgerExportCompressionEnabled === 'boolean'
+	        ? settingsData.ledgerExportCompressionEnabled
+	        : DEFAULT_GAME_SETTINGS.ledgerExportCompressionEnabled,
+	      enableAiCalibrationLearning: typeof settingsData.enableAiCalibrationLearning === 'boolean'
+	        ? settingsData.enableAiCalibrationLearning
+	        : DEFAULT_GAME_SETTINGS.enableAiCalibrationLearning,
+	      aiCalibrationLearningRate: clampSettingNumber(settingsData.aiCalibrationLearningRate, DEFAULT_GAME_SETTINGS.aiCalibrationLearningRate, 0.001, 1),
+	      enableCounterfactualEvaluation: typeof settingsData.enableCounterfactualEvaluation === 'boolean'
+	        ? settingsData.enableCounterfactualEvaluation
+	        : DEFAULT_GAME_SETTINGS.enableCounterfactualEvaluation,
+	      enablePersistentOpponentModels: typeof settingsData.enablePersistentOpponentModels === 'boolean'
+	        ? settingsData.enablePersistentOpponentModels
+	        : DEFAULT_GAME_SETTINGS.enablePersistentOpponentModels,
+	      planSwitchingCost: clampSettingNumber(settingsData.planSwitchingCost, DEFAULT_GAME_SETTINGS.planSwitchingCost, 0, 100),
+	      teamGovernanceMode: TEAM_GOVERNANCE_MODES.includes(settingsData.teamGovernanceMode)
+	        ? settingsData.teamGovernanceMode
+	        : DEFAULT_GAME_SETTINGS.teamGovernanceMode,
+	      aiTacticalIntelligence: (() => {
+	        const source = settingsData.aiTacticalIntelligence || {};
+	        const defaults = DEFAULT_GAME_SETTINGS.aiTacticalIntelligence;
+	        const pb: ('narrow' | 'standard' | 'wide')[] = ['narrow', 'standard', 'wide'];
+	        return {
+	          lookaheadDepth: clampSettingNumber(source.lookaheadDepth, defaults.lookaheadDepth, 1, 5),
+	          candidateEvaluationWidth: clampSettingNumber(source.candidateEvaluationWidth, defaults.candidateEvaluationWidth, 1, 50),
+	          planningBreadth: pb.includes(source.planningBreadth) ? source.planningBreadth : defaults.planningBreadth,
+	          useCounterfactuals: typeof source.useCounterfactuals === 'boolean' ? source.useCounterfactuals : defaults.useCounterfactuals,
+	          useOpponentModeling: typeof source.useOpponentModeling === 'boolean' ? source.useOpponentModeling : defaults.useOpponentModeling
+	        };
+	      })(),
+	      aiEconomicCheats: (() => {
+	        const source = settingsData.aiEconomicCheats || {};
+	        const defaults = DEFAULT_GAME_SETTINGS.aiEconomicCheats;
+	        return {
+	          bonusStartingCash: clampSettingNumber(source.bonusStartingCash, defaults.bonusStartingCash, 0, 10000),
+	          yieldBoostMultiplier: clampSettingNumber(source.yieldBoostMultiplier, defaults.yieldBoostMultiplier, 0.5, 3),
+	          costDiscountMultiplier: clampSettingNumber(source.costDiscountMultiplier, defaults.costDiscountMultiplier, 0.1, 2),
+	          extraActionPointsPerTurn: clampSettingNumber(source.extraActionPointsPerTurn, defaults.extraActionPointsPerTurn, 0, 10)
+	        };
+	      })(),
+        // Phase 7: Projected Outcome Hydration
+        projectedOutcomeEnabled: typeof settingsData.projectedOutcomeEnabled === 'boolean' ? settingsData.projectedOutcomeEnabled : DEFAULT_GAME_SETTINGS.projectedOutcomeEnabled,
+        projectedOutcomeHorizon: typeof settingsData.projectedOutcomeHorizon === 'number' ? clampSettingNumber(settingsData.projectedOutcomeHorizon, DEFAULT_GAME_SETTINGS.projectedOutcomeHorizon, 1, 30) : DEFAULT_GAME_SETTINGS.projectedOutcomeHorizon,
+        projectedOutcomeMode: (['auto', 'simulation_only', 'extrapolation_only'].includes(settingsData.projectedOutcomeMode) ? settingsData.projectedOutcomeMode : DEFAULT_GAME_SETTINGS.projectedOutcomeMode) as 'auto' | 'simulation_only' | 'extrapolation_only',
+        deterministicMode: typeof settingsData.deterministicMode === 'boolean' ? settingsData.deterministicMode : (settingsData.worldRngMode === 'deterministic' && Boolean(settingsData.aiDeterministic)),
+        // Phase 8: Team Governance Control Surface Hydration
+        governanceControlSurfaceEnabled: typeof settingsData.governanceControlSurfaceEnabled === 'boolean'
+          ? settingsData.governanceControlSurfaceEnabled
+          : DEFAULT_GAME_SETTINGS.governanceControlSurfaceEnabled,
+        humanGovernanceVetoEnabled: typeof settingsData.humanGovernanceVetoEnabled === 'boolean'
+          ? settingsData.humanGovernanceVetoEnabled
+          : DEFAULT_GAME_SETTINGS.humanGovernanceVetoEnabled,
+        teamGovernanceModeOverrides: settingsData.teamGovernanceModeOverrides && typeof settingsData.teamGovernanceModeOverrides === 'object'
+          ? (settingsData.teamGovernanceModeOverrides as Record<string, TeamGovernanceOverrideMode>)
+          : { ...DEFAULT_GAME_SETTINGS.teamGovernanceModeOverrides },
+        governanceWeightSettings: (() => {
+          const source = settingsData.governanceWeightSettings || {};
+          const defaults = DEFAULT_GAME_SETTINGS.governanceWeightSettings;
+          return {
+            leaderWeight: clampSettingNumber(source.leaderWeight, defaults.leaderWeight, 0, 10),
+            consensusWeight: clampSettingNumber(source.consensusWeight, defaults.consensusWeight, 0, 10),
+            riskWeight: clampSettingNumber(source.riskWeight, defaults.riskWeight, 0, 10),
+            economicWeight: clampSettingNumber(source.economicWeight, defaults.economicWeight, 0, 10),
+            memberWeight: clampSettingNumber(source.memberWeight, defaults.memberWeight, 0, 10)
+          };
+        })(),
+        governanceLeaderVoteWeight: clampSettingNumber(settingsData.governanceLeaderVoteWeight, DEFAULT_GAME_SETTINGS.governanceLeaderVoteWeight, 0, 10),
+        governanceMemberVoteWeight: clampSettingNumber(settingsData.governanceMemberVoteWeight, DEFAULT_GAME_SETTINGS.governanceMemberVoteWeight, 0, 10),
+        governanceVoteThreshold: clampSettingNumber(settingsData.governanceVoteThreshold, DEFAULT_GAME_SETTINGS.governanceVoteThreshold, 0, 1),
+        governanceConsensusThreshold: clampSettingNumber(settingsData.governanceConsensusThreshold, DEFAULT_GAME_SETTINGS.governanceConsensusThreshold, 0, 1),
+        governanceVetoUsesPerMatch: clampSettingNumber(settingsData.governanceVetoUsesPerMatch, DEFAULT_GAME_SETTINGS.governanceVetoUsesPerMatch, 0, 20),
+        autoModeSettings: sanitizeAutoModeGlobalSettings(settingsData.autoModeSettings),
+        showGuardianInQuickActions: typeof settingsData.showGuardianInQuickActions === 'boolean'
+          ? settingsData.showGuardianInQuickActions
+          : false,
+        coPilotSettings: sanitizeCoPilotSettings(settingsData.coPilotSettings),
+        guardianAiSettings: sanitizeGuardianAiSettings(settingsData.guardianAiSettings),
+        commandCenterSettings: sanitizeCommandCenterSettings(settingsData.commandCenterSettings),
+        strategyPlannerSettings: sanitizeStrategyPlannerSettings(settingsData.strategyPlannerSettings),
+        userOverrides: settingsData.userOverrides && typeof settingsData.userOverrides === 'object'
+          ? (settingsData.userOverrides as Record<string, boolean>)
+          : {},
+        userOverriddenKeys: Array.isArray(settingsData.userOverriddenKeys)
+          ? (settingsData.userOverriddenKeys as string[])
+          : [],
+        lockedSettingKeys: Array.isArray(settingsData.lockedSettingKeys)
+          ? (settingsData.lockedSettingKeys as string[])
+          : [],
+        lockedAdjustmentKeys: Array.isArray(settingsData.lockedAdjustmentKeys)
+          ? (settingsData.lockedAdjustmentKeys as string[])
+          : []
+	    };
+
+	    if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+	      // V9.5: profile-scoped keys are intentionally not restored and match-scoped ones are restored
+	      // afterwards, so only genuinely unclassified keys are reported (this used to warn on every load).
+	      const missingHydrationKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(
+	        (key) => !(key in sanitizedGameSettings) && !V95_PROFILE_SCOPED_SETTING_KEYS.includes(key) && !(V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes(key)
+	      );
+	      if (missingHydrationKeys.length > 0) {
+	        console.warn(
+	          `[Game Settings Hydration Assertion Warning] ${missingHydrationKeys.length} key(s) in DEFAULT_GAME_SETTINGS are missing from sanitizedGameSettings:`,
+	          missingHydrationKeys
+	        );
+	      }
+	    }
+
+	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
+	      ? raw.notifications
+	          .filter((n: any) => n && typeof n.message === 'string' && typeof n.type === 'string')
+	          .slice(-V95_NOTIFICATION_HISTORY_CAP)
+	          .map((n: any, notifIndex: number) => ({
+	            id: typeof n.id === 'string' ? n.id : `legacy_notif_${notifIndex}`,
+	            type: n.type in NOTIFICATION_TYPES ? n.type : 'info',
+	            notificationType: NOTIFICATION_TYPES_ALL.includes(n.notificationType as NotificationType)
+	              ? n.notificationType
+	              : 'system',
+	            message: n.message,
+	            timestamp: typeof n.timestamp === 'number' ? n.timestamp : metadata.timestamp,
+	            day: typeof n.day === 'number' ? n.day : stateData.day,
+	            read: Boolean(n.read),
+	            persistent: Boolean(n.persistent)
+          }))
+      : [];
+
+    const sanitizedPersonalRecords: PersonalRecord = {
+      ...DEFAULT_PERSONAL_RECORDS,
+      ...(raw.personalRecords || {})
+    };
+
+    const sanitizedDontAskAgain: DontAskAgainPrefs = {
+      travel: Boolean(raw.dontAskAgain?.travel),
+      sell: Boolean(raw.dontAskAgain?.sell),
+      challenge: Boolean(raw.dontAskAgain?.challenge),
+      endDay: Boolean(raw.dontAskAgain?.endDay)
+    };
+
+    const sanitizedHumanAutomations: HumanAutomation[] = sanitizeHumanAutomations(raw.humanAutomations);
+
+    const sanitizedRuntime = {
+      queue: Array.isArray(raw.aiRuntime?.queue) ? raw.aiRuntime.queue : [],
+      currentAction: raw.aiRuntime?.currentAction || null,
+      rngState: typeof raw.aiRuntime?.rngState === 'number'
+        ? raw.aiRuntime.rngState
+        : normalizeAiSeed(
+            typeof settingsData.aiDeterministicSeed === 'number'
+              ? settingsData.aiDeterministicSeed
+              : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
+          ),
+      worldRngState: typeof raw.aiRuntime?.worldRngState === 'number'
+        ? raw.aiRuntime.worldRngState
+        : normalizeAiSeed(
+            typeof settingsData.worldRngSeed === 'number'
+              ? settingsData.worldRngSeed
+              : DEFAULT_GAME_SETTINGS.worldRngSeed
+          )
+    };
+
+    const uiPreferences: { theme: GameTheme } = {
+      theme: raw.uiPreferences?.theme === 'light' ? 'light'
+        : raw.uiPreferences?.theme === 'system' ? 'system'
+        : 'dark'
+    };
+
+    return {
+      metadata: {
+        timestamp: metadata.timestamp,
+        gameVersion: metadata.gameVersion,
+        saveDescription: typeof metadata.saveDescription === 'string' ? metadata.saveDescription : '',
+        ...(typeof metadata.schemaVersion === 'string' ? { schemaVersion: metadata.schemaVersion } : {})
+      },
+      player: sanitizePlayerState(playerData, "Player"),
+      aiPlayer: sanitizePlayerState(aiData, "AI Opponent"),
+      actorsById: sanitizedActorsById,
+      teamsById: sanitizedTeamsById,
+      gameState: sanitizedGameState,
+      gameSettings: v95RestoreMatchScopedSettings(sanitizedGameSettings, settingsData),
+      campaignState: raw.campaignState || createDefaultCampaignState(),
+      publicStabilityState: raw.publicStabilityState || createDefaultPublicStabilityState(),
+      crisisChainState: raw.crisisChainState || createDefaultCrisisChainState(),
+      narrativePopup: raw.narrativePopup || createDefaultNarrativePopupState(),
+      scenarioConfig: raw.scenarioConfig || undefined,
+      notifications: sanitizedNotifications,
+      personalRecords: sanitizedPersonalRecords,
+      dontAskAgain: sanitizedDontAskAgain,
+      humanAutomations: sanitizedHumanAutomations,
+      uiPreferences,
+      aiRuntime: sanitizedRuntime,
+      autoModeGlobalSettings: sanitizedGameSettings.autoModeSettings,
+      autoModeRuntimeState: sanitizeAutoModeRuntimeState(raw.autoModeRuntimeState || raw.autoModeRuntime || raw.gameState?.autoModeRuntime),
+      // V9.5: these were written by buildSaveData but silently dropped here, so every load reseeded the
+      // gameplay RNG streams and reset id counters (determinism drift + possible id reuse after load).
+      rngRegistryState: sanitizeSavedRngRegistryState(raw.rngRegistryState),
+      deterministicCounters: sanitizeSavedDeterministicCounters(raw.deterministicCounters)
+    };
+}
+
+// ---- V9.5 audit record (what this pass found, with the release severity model) ---------------------------
+export interface V95AuditFinding {
+  id: string;
+  severity: V95Severity;
+  system: string;
+  title: string;
+  status: 'fixed' | 'known' | 'accepted';
+  detail: string;
+}
+
+export const V95_AUDIT_FINDINGS: V95AuditFinding[] = [
+  { id: 'F00', severity: 'BLOCKER', system: 'Save / Load', status: 'fixed', title: 'Loading a save file from the UI was impossible',
+    detail: 'The hidden file input behind "Upload Save File" was never mounted (fileInputRef stayed null), so every attempt ended with "Load input not ready". The input is now mounted and routed through the safe load transaction.' },
+  { id: 'F01', severity: 'CRITICAL', system: 'Save / Replay', status: 'fixed', title: 'Loading dropped RNG stream state and id counters',
+    detail: 'buildSaveData wrote rngRegistryState + deterministicCounters but validateSaveData never returned them, so every load reseeded gameplay RNG from the master seed (determinism drift after load) and reset id counters (possible id reuse). Both are now validated and restored.' },
+  { id: 'F02', severity: 'MAJOR', system: 'Save / Load', status: 'fixed', title: 'Migration ran after the live match had already been replaced',
+    detail: 'migrateV69ToV70SaveData ran at the end of applyLoadedState, so its result was discarded. It now runs on the candidate before anything is replaced, without resetting profile preferences.' },
+  { id: 'F03', severity: 'MAJOR', system: 'Save / Load', status: 'fixed', title: 'Match-scoped settings not restored from a save',
+    detail: 'The V9.3 content profile settings and the opponent genome were never listed by the save sanitizer, so a loaded match silently used the current session values. They are now restored (type-checked); profile/UI preferences deliberately keep the current session value.' },
+  { id: 'F04', severity: 'MAJOR', system: 'Save / Adaptive AI', status: 'fixed', title: 'adaptiveAiNetWorthThreshold clamped below its own default on load',
+    detail: 'Default 2.5 was clamped to 2 by the loader, changing rival adaptation after every load. Range widened to 0.1–5.' },
+  { id: 'F05', severity: 'MAJOR', system: 'Save / Auto Mode', status: 'fixed', title: 'Auto Mode primary goal reset on every load',
+    detail: 'sanitizeAutoModeGlobalSettings dropped primaryGoal, silently reverting Auto Mode to the balanced goal.' },
+  { id: 'F06', severity: 'MAJOR', system: 'Load transaction', status: 'fixed', title: 'A malformed load could tear down the live AI turn before failing',
+    detail: 'applyLoadedState cleared timers and AI sessions before reading the candidate; a missing section threw mid-way and left the live match hung. The candidate is now verified first and a rejected load changes nothing.' },
+  { id: 'F07', severity: 'MAJOR', system: 'Notifications', status: 'fixed', title: 'Notification history was unbounded (live and in saves)',
+    detail: `Every addNotification appended forever; persistent entries are never auto-dismissed. Now capped at ${V95_NOTIFICATION_HISTORY_CAP}, evicting read/routine entries before unread critical ones.` },
+  { id: 'F08', severity: 'MAJOR', system: 'Economy / Canonical executor', status: 'fixed', title: 'Non-positive or non-finite amounts accepted by canonical money transfers',
+    detail: 'give_cash / transfer_cash only checked money >= amount, so a negative amount reversed the transfer (taking the recipient\'s cash). Amounts must now be finite and positive.' },
+  { id: 'F09', severity: 'MINOR', system: 'Timers', status: 'fixed', title: 'Deferred end-turn / starting-stake callbacks were not match-scoped',
+    detail: 'A load or new game inside the 0–50 ms window could let the previous match\'s deferred callback act on the new match. Guarded with a match epoch.' },
+  { id: 'F10', severity: 'MINOR', system: 'Save preview', status: 'fixed', title: 'Previewing a save advanced live id counters',
+    detail: 'The validator minted fallback notification/loan ids from the global counters while only previewing. Fallback ids are now deterministic legacy ids.' },
+  { id: 'F11', severity: 'MINOR', system: 'Determinism', status: 'fixed', title: 'Hybrid RNG fallback was silent',
+    detail: 'The hybrid mode swallowed a stream error and used Math.random without marking the replay uncertified. It now marks the replay uncertified.' },
+  { id: 'F12', severity: 'MINOR', system: 'Save', status: 'fixed', title: 'Non-finite numbers (e.g. 1e999 → Infinity) accepted for cash / level / day',
+    detail: 'typeof NaN/Infinity === "number" passed the loader checks. Cash, level, XP, day, turn and loan amounts must now be finite.' },
+  { id: 'F13', severity: 'COSMETIC', system: 'Versioning', status: 'fixed', title: 'GAME_VERSION still reported 8.6.0',
+    detail: 'Saves, replays and diagnostics were stamped 8.6.0 across the V9.x line. Bumped to 9.5.0; save/replay schema versions are unchanged (no format change).' },
+  { id: 'F14', severity: 'COSMETIC', system: 'Save', status: 'fixed', title: 'Decision-transparency defaults changed on every load',
+    detail: 'Defaults 0.6 / 0.65 were clamped to 1 by the loader (presentation only). The loader range now includes the defaults, so a fresh save round-trips exactly.' },
+  { id: 'K01', severity: 'MINOR', system: 'Content (legacy)', status: 'known', title: 'Some legacy crisis-stage effects are descriptive only',
+    detail: 'Flagged in the V9.3 content audit; unchanged (no silent balance change in a stability pass).' },
+  { id: 'K02', severity: 'MINOR', system: 'Content (legacy)', status: 'known', title: 'Legacy reward fields without an executor (unlockedItemIds, victoryPoints, regionalEconomicMultiplierBonus, resource_yield)',
+    detail: 'Flagged in the V9.3 content audit; still shown as descriptive only.' },
+  { id: 'F15', severity: 'MAJOR', system: 'Simulation / memory', status: 'fixed', title: 'Canonical executor nested the whole state one level deeper on every action',
+    detail: 'canonicalStateFromLiveRuntime treated an already-canonical state as its own gameState, so repeated reduceGameAction calls (Tuning Lab, stress runs) built state.gameState.gameState… — about 0.6 MB more per action and gameState writes landing on the wrong level. A 60-turn run went from ~200 s to ~1 s; size now plateaus once capped histories fill.' },
+  { id: 'F16', severity: 'MINOR', system: 'Ledger', status: 'fixed', title: 'Ledger sanitizer minted ids and did not cap archived events',
+    detail: 'Every sanitize built a default ledger (minting a match id from live counters) and archivedEvents from a save were unbounded. Defaults are now lazy and the archive is capped at the ledger ceiling.' },
+  { id: 'F17', severity: 'MINOR', system: 'Co-Pilot tests', status: 'fixed', title: 'Co-Pilot self-test AA failed on a stale fixture (legacy turn key)',
+    detail: 'The runtime was correct (holds until the turn key changes); the fixture used the pre-day key format. The fixture now derives the key like the runtime.' },
+  { id: 'F18', severity: 'MINOR', system: 'Console noise', status: 'fixed', title: 'Settings hydration warning fired on every load',
+    detail: 'The dev assertion listed the 42 deliberately profile-scoped keys on every load. Keys are now classified explicitly; the assertion reports only unclassified keys.' },
+  { id: 'K03', severity: 'MINOR', system: 'Profile vs match', status: 'accepted', title: 'Profile/UI preferences are not restored from a save by design',
+    detail: 'Accessibility, dock, Guardian placement and similar preferences stay with the player, not the save file.' }
+];
+
+// ---- Save health + safe load transaction -----------------------------------------------------------------
+export interface V95InvariantViolation {
+  id: string;
+  severity: V95Severity;
+  system: string;
+  message: string;
+  expected: string;
+  actual: string;
+}
+
+export interface SaveHealthReport {
+  valid: boolean;
+  loadable: boolean;
+  sourceVersion: string;
+  targetVersion: string;
+  sourceSchema: string | null;
+  targetSchema: string;
+  fatalErrors: string[];
+  warnings: string[];
+  defaultsApplied: string[];
+  fieldsRepaired: string[];
+  fieldsDropped: string[];
+  profileKeysKept: number;
+  unknownKeysIgnored: number;
+  migrationRequired: boolean;
+  migrationIdempotent: boolean;
+  integrityStatus: 'intact' | 'repaired' | 'degraded' | 'corrupt';
+  invariantViolations: V95InvariantViolation[];
+  sizeBytes: number;
+  durationMs: number;
+}
+
+const V95_LIST_CAP = 60;
+const v95Push = (list: string[], v: string) => { if (list.length < V95_LIST_CAP) list.push(v); else if (list.length === V95_LIST_CAP) list.push('… more'); };
+const v95IsPrimitive = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+const v95Fmt = (v: unknown) => { const s = typeof v === 'number' && !Number.isFinite(v) ? String(v) : JSON.stringify(v); return (s === undefined ? 'undefined' : s).slice(0, 40); };
+
+function v95DiffSection(label: string, raw: any, clean: any, report: SaveHealthReport, opts: { profileSettings?: boolean } = {}) {
+  if (!raw || typeof raw !== 'object' || !clean || typeof clean !== 'object') return;
+  Object.keys(raw).forEach(k => {
+    if (!(k in clean)) {
+      if (opts.profileSettings && k in (DEFAULT_GAME_SETTINGS as unknown as Record<string, unknown>)) report.profileKeysKept += 1;
+      else if (opts.profileSettings) report.unknownKeysIgnored += 1; // stray / derived keys this version does not define (e.g. coPilotMode)
+      else v95Push(report.fieldsDropped, `${label}.${k}`);
+      return;
+    }
+    const a = raw[k], b = clean[k];
+    if (v95IsPrimitive(a) && v95IsPrimitive(b) && a !== b) v95Push(report.fieldsRepaired, `${label}.${k}: ${v95Fmt(a)} → ${v95Fmt(b)}`);
+    else if (v95IsPrimitive(a) !== v95IsPrimitive(b) && a !== undefined) v95Push(report.fieldsRepaired, `${label}.${k}: type ${a === null ? 'null' : typeof a} → ${b === null ? 'null' : typeof b}`);
+  });
+  Object.keys(clean).forEach(k => { if (!(k in raw)) v95Push(report.defaultsApplied, `${label}.${k}`); });
+}
+
+/** Finds values JSON can smuggle in that break arithmetic (1e999 → Infinity) or type-confused numbers. */
+function v95ScanNumericHazards(raw: any, report: SaveHealthReport) {
+  const check = (path: string, v: unknown) => {
+    if (typeof v === 'number' && !Number.isFinite(v)) v95Push(report.warnings, `${path} was ${String(v)} (repaired)`);
+    else if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v95Push(report.warnings, `${path} was a number stored as text (repaired)`);
+  };
+  ['player', 'aiPlayer'].forEach(a => ['money', 'level', 'xp', 'actionsUsedThisTurn'].forEach(f => check(`${a}.${f}`, raw?.[a]?.[f])));
+  ['day', 'turnCounter', 'roundNumber'].forEach(f => check(`gameState.${f}`, raw?.gameState?.[f]));
+  const deposits = raw?.gameState?.regionDeposits;
+  if (deposits && typeof deposits === 'object') Object.entries(deposits).forEach(([r, owners]: [string, any]) => {
+    if (owners && typeof owners === 'object') Object.entries(owners).forEach(([o, v]) => { if (typeof v === 'number' && (!Number.isFinite(v) || v < 0)) v95Push(report.warnings, `regionDeposits.${r}.${o} was ${String(v)}`); });
+  });
+}
+
+export function createEmptySaveHealthReport(): SaveHealthReport {
+  return {
+    valid: false, loadable: false, sourceVersion: 'unknown', targetVersion: VERSION_CONSTANTS.GAME_VERSION,
+    sourceSchema: null, targetSchema: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION,
+    fatalErrors: [], warnings: [], defaultsApplied: [], fieldsRepaired: [], fieldsDropped: [], profileKeysKept: 0, unknownKeysIgnored: 0,
+    migrationRequired: false, migrationIdempotent: true, integrityStatus: 'corrupt', invariantViolations: [], sizeBytes: 0, durationMs: 0
+  };
+}
+
+const v95Now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now());
+
+/**
+ * Safe load transaction, stage 1 (pure): parse → validate a CLONE → migrate a clone → verify → invariants.
+ * Returns the validated (not yet migrated) candidate for the preview; applyLoadedState performs the same
+ * migration again right before replacing live state (idempotent). Never touches live state.
+ */
+export function prepareSaveLoadTransaction(input: string | unknown): { ok: boolean; data: SaveGameData | null; report: SaveHealthReport } {
+  const t0 = v95Now();
+  const report = createEmptySaveHealthReport();
+  const finish = (data: SaveGameData | null) => {
+    report.loadable = report.fatalErrors.length === 0 && Boolean(data);
+    report.valid = report.loadable && report.fieldsRepaired.length === 0 && report.fieldsDropped.length === 0 && !report.invariantViolations.some(v => v.severity === 'BLOCKER' || v.severity === 'CRITICAL');
+    report.integrityStatus = !report.loadable ? 'corrupt'
+      : report.fieldsDropped.length > 10 || report.invariantViolations.length > 0 ? 'degraded'
+      : report.fieldsRepaired.length > 0 || report.fieldsDropped.length > 0 || report.warnings.length > 0 ? 'repaired' : 'intact';
+    report.durationMs = Math.round((v95Now() - t0) * 100) / 100;
+    return { ok: report.loadable, data: report.loadable ? data : null, report };
+  };
+  let raw: any = input;
+  if (typeof input === 'string') {
+    report.sizeBytes = input.length;
+    try { raw = JSON.parse(input); } catch (err) {
+      report.fatalErrors.push(`The file is not a readable save (invalid JSON: ${err instanceof Error ? err.message : 'parse error'}).`);
+      return finish(null);
+    }
+  } else {
+    try { report.sizeBytes = JSON.stringify(input ?? null).length; } catch { report.fatalErrors.push('The save contains values that cannot be serialized.'); return finish(null); }
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { report.fatalErrors.push('The file does not contain a save object.'); return finish(null); }
+  report.sourceVersion = typeof raw.metadata?.gameVersion === 'string' ? raw.metadata.gameVersion : 'unknown';
+  report.sourceSchema = typeof raw.metadata?.schemaVersion === 'string' ? raw.metadata.schemaVersion : (typeof raw.schemaVersion === 'string' ? raw.schemaVersion : null);
+  if (report.sourceVersion !== 'unknown' && compareSemVer(report.sourceVersion, VERSION_CONSTANTS.GAME_VERSION) > 0) {
+    report.warnings.push(`This save was made by a newer version (${report.sourceVersion}); settings this version does not know are ignored.`);
+  }
+  v95ScanNumericHazards(raw, report);
+  let clean: SaveGameData;
+  try {
+    clean = validateSaveDataCore(JSON.parse(JSON.stringify(raw)));
+  } catch (err) {
+    report.fatalErrors.push(err instanceof Error ? err.message : 'The save could not be validated.');
+    return finish(null);
+  }
+  v95DiffSection('player', raw.player, clean.player, report);
+  v95DiffSection('aiPlayer', raw.aiPlayer, clean.aiPlayer, report);
+  v95DiffSection('gameState', raw.gameState, clean.gameState, report);
+  v95DiffSection('gameSettings', raw.gameSettings, clean.gameSettings, report, { profileSettings: true });
+  let migrated: SaveGameData = clean;
+  try {
+    const m1 = v95MigrateSaveForLoad(JSON.parse(JSON.stringify(clean)));
+    report.migrationRequired = m1.migrated;
+    migrated = m1.data;
+    const m2 = v95MigrateSaveForLoad(JSON.parse(JSON.stringify(m1.data)));
+    report.migrationIdempotent = !m2.migrated && JSON.stringify(m2.data) === JSON.stringify(m1.data);
+    if (!report.migrationIdempotent) report.warnings.push('Upgrading this save twice would not give the same result.');
+  } catch (err) {
+    report.fatalErrors.push(`The save could not be upgraded (${err instanceof Error ? err.message : 'migration error'}).`);
+    return finish(null);
+  }
+  const verify = verifySaveLoadCandidate(migrated);
+  if (!verify.ok) verify.errors.forEach(e => report.fatalErrors.push(`Unplayable save: ${e}.`));
+  report.invariantViolations = validateCriticalGameInvariants({
+    player: migrated.player, aiPlayer: migrated.aiPlayer, gameState: migrated.gameState, gameSettings: migrated.gameSettings,
+    actorsById: migrated.actorsById as any, notifications: migrated.notifications
+  });
+  report.invariantViolations.filter(v => v.severity === 'BLOCKER').forEach(v => report.fatalErrors.push(`Unplayable save: ${v.message}.`));
+  return finish(clean);
+}
+
+export function buildSaveHealthReport(input: string | unknown): SaveHealthReport {
+  return prepareSaveLoadTransaction(input).report;
+}
+
+// ---- Critical game invariants (pure; called on demand — never every render) ------------------------------
+export interface V95InvariantInput {
+  player: any;
+  aiPlayer: any;
+  gameState: any;
+  gameSettings?: any;
+  actorsById?: Record<string, any> | null;
+  notifications?: any[] | null;
+}
+
+export function validateCriticalGameInvariants(s: V95InvariantInput): V95InvariantViolation[] {
+  const out: V95InvariantViolation[] = [];
+  const add = (id: string, severity: V95Severity, system: string, message: string, expected: string, actual: unknown) =>
+    out.push({ id, severity, system, message, expected, actual: v95Fmt(actual) });
+  const actors: Array<[string, any]> = [['player', s.player], ['ai', s.aiPlayer]];
+  Object.entries(s.actorsById || {}).forEach(([id, a]) => { if (id !== 'player' && id !== 'ai') actors.push([id, a]); });
+  actors.forEach(([id, a]) => {
+    if (!a || typeof a !== 'object') { add(`actor_missing_${id}`, 'BLOCKER', 'Actors', `${id} state is missing`, 'actor object', a); return; }
+    if (!v95IsFiniteNum(a.money)) add(`money_finite_${id}`, 'BLOCKER', 'Economy', `${id} cash is not a finite number`, 'finite number', a.money);
+    if (typeof a.currentRegion === 'string' && !REGIONS[a.currentRegion]) add(`region_valid_${id}`, 'CRITICAL', 'Map', `${id} is in an unknown region`, 'known region', a.currentRegion);
+    if (a.actionsUsedThisTurn !== undefined && (!v95IsFiniteNum(a.actionsUsedThisTurn) || a.actionsUsedThisTurn < 0)) add(`ap_used_${id}`, 'CRITICAL', 'Actions', `${id} actions used is invalid`, 'finite ≥ 0', a.actionsUsedThisTurn);
+    (Array.isArray(a.loans) ? a.loans : []).forEach((l: any, i: number) => {
+      if (!v95IsFiniteNum(l?.amount) || l.amount < 0) add(`loan_amount_${id}_${i}`, 'CRITICAL', 'Loans', `${id} loan ${i} has an invalid balance`, 'finite ≥ 0', l?.amount);
+    });
+    if (a.level !== undefined && (!v95IsFiniteNum(a.level) || a.level < 1)) add(`level_${id}`, 'MAJOR', 'Progression', `${id} level is invalid`, 'finite ≥ 1', a.level);
+  });
+  const gs = s.gameState || {};
+  if (!v95IsFiniteNum(gs.day) || gs.day < 1) add('day_valid', 'BLOCKER', 'Turn flow', 'Day is not a valid number', 'finite ≥ 1', gs.day);
+  const totalDays = Number(s.gameSettings?.totalDays);
+  if (v95IsFiniteNum(gs.day) && v95IsFiniteNum(totalDays) && totalDays > 0 && gs.day > totalDays + 1 && gs.gameMode === 'game') add('day_within_match', 'MAJOR', 'Turn flow', 'Live match is past its final day', `≤ ${totalDays + 1}`, gs.day);
+  if (gs.turnCounter !== undefined && (!v95IsFiniteNum(gs.turnCounter) || gs.turnCounter < 0)) add('turn_counter', 'CRITICAL', 'Turn flow', 'Turn counter is invalid', 'finite ≥ 0', gs.turnCounter);
+  if (Array.isArray(gs.turnOrder) && gs.turnOrder.length && typeof gs.currentActorId === 'string' && !gs.turnOrder.includes(gs.currentActorId)) {
+    add('current_actor_in_order', 'CRITICAL', 'Turn flow', 'Current actor is not in the turn order', gs.turnOrder.join(','), gs.currentActorId);
+  }
+  const deposits = gs.regionDeposits;
+  if (deposits && typeof deposits === 'object') Object.entries(deposits).forEach(([r, owners]: [string, any]) => {
+    if (!REGIONS[r]) add(`deposit_region_${r}`, 'MAJOR', 'Regions', 'Deposit recorded for an unknown region', 'known region', r);
+    if (owners && typeof owners === 'object') Object.entries(owners).forEach(([o, v]) => {
+      if (!v95IsFiniteNum(v) || (v as number) < 0) add(`deposit_value_${r}_${o}`, 'CRITICAL', 'Regions', `Deposit for ${o} in ${r} is invalid`, 'finite ≥ 0', v);
+    });
+  });
+  const contracts = gs.regionalContracts && typeof gs.regionalContracts === 'object' ? Object.values(gs.regionalContracts) : [];
+  contracts.forEach((c: any) => {
+    if (!c || typeof c !== 'object') return;
+    const reward = c.rewards?.money;
+    if (reward !== undefined && (!v95IsFiniteNum(reward) || reward < 0)) add(`contract_reward_${c.id}`, 'MAJOR', 'Contracts', `Contract ${c.id} reward is invalid`, 'finite ≥ 0', reward);
+  });
+  const projects = gs.infrastructureProjects && typeof gs.infrastructureProjects === 'object' ? Object.values(gs.infrastructureProjects) : [];
+  projects.forEach((p: any) => {
+    if (!p || typeof p !== 'object') return;
+    ['fundedAmount', 'progress', 'investedAmount'].forEach(f => {
+      if (p[f] !== undefined && (!v95IsFiniteNum(p[f]) || p[f] < 0)) add(`infra_${f}_${p.id}`, 'MAJOR', 'Infrastructure', `Project ${p.id} ${f} is invalid`, 'finite ≥ 0', p[f]);
+    });
+  });
+  const ledgerEvents = gs.gameActivityLedger?.events;
+  if (Array.isArray(ledgerEvents) && ledgerEvents.length > GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING) add('ledger_cap', 'MAJOR', 'Ledger', 'Activity ledger exceeds its hard ceiling', `≤ ${GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING}`, ledgerEvents.length);
+  if (Array.isArray(s.notifications) && s.notifications.length > V95_NOTIFICATION_HISTORY_CAP) add('notification_cap', 'MINOR', 'Notifications', 'Notification history exceeds its cap', `≤ ${V95_NOTIFICATION_HISTORY_CAP}`, s.notifications.length);
+  if (s.gameSettings && s.gameSettings.aiPersistentMemoryEnabled === true) {
+    let consent = false;
+    try { consent = isPersistenceConsentActive(loadPersistencePolicy()); } catch { consent = false; }
+    if (!consent) add('persistence_consent', 'CRITICAL', 'Persistent AI Memory', 'Persistent AI Memory is on without verified consent', 'off without consent', true);
+  }
+  return out;
+}
+
+// ---- Replay integrity + first-divergence classification ---------------------------------------------------
+export interface ReplayIntegrityIssue { severity: V95Severity; code: string; message: string; sequence?: number }
+export interface ReplayIntegrityReport {
+  ok: boolean;
+  checksum: 'ok' | 'legacy' | 'missing' | 'mismatch';
+  eventCount: number;
+  checkpointCount: number;
+  drawCount: number;
+  truncated: boolean;
+  issues: ReplayIntegrityIssue[];
+}
+
+export function checkReplayIntegrity(file: any): ReplayIntegrityReport {
+  const issues: ReplayIntegrityIssue[] = [];
+  const report: ReplayIntegrityReport = { ok: false, checksum: 'missing', eventCount: 0, checkpointCount: 0, drawCount: 0, truncated: false, issues };
+  if (!file || typeof file !== 'object') { issues.push({ severity: 'BLOCKER', code: 'not_object', message: 'Replay is not an object' }); return report; }
+  const events: any[] = Array.isArray(file.events) ? file.events : [];
+  const checkpoints: any[] = Array.isArray(file.checkpoints) ? file.checkpoints : [];
+  const draws: any[] = Array.isArray(file.randomDraws) ? file.randomDraws : [];
+  if (!Array.isArray(file.events)) issues.push({ severity: 'BLOCKER', code: 'events_missing', message: 'Replay has no event list' });
+  if (!file.initialConfig || typeof file.initialConfig !== 'object') issues.push({ severity: 'CRITICAL', code: 'config_missing', message: 'Replay has no initial configuration' });
+  report.eventCount = events.length; report.checkpointCount = checkpoints.length; report.drawCount = draws.length;
+  report.truncated = Boolean(file.truncated);
+  if (!file.checksum) report.checksum = 'missing';
+  else {
+    try { const v = verifyReplayChecksum(file as ReplayFile); report.checksum = v.ok ? (v.legacyOk && file.checksum !== v.expected ? 'legacy' : 'ok') : 'mismatch'; }
+    catch { report.checksum = 'mismatch'; }
+  }
+  if (report.checksum === 'mismatch') issues.push({ severity: 'CRITICAL', code: 'checksum_mismatch', message: 'Checksum does not match the contents (edited or corrupted)' });
+  const ids = new Set<string>();
+  let prevSeq = -Infinity, prevDay = -Infinity;
+  events.forEach((e, i) => {
+    if (!e || typeof e !== 'object') { issues.push({ severity: 'CRITICAL', code: 'event_invalid', message: `Event ${i} is not an object` }); return; }
+    if (typeof e.id === 'string') { if (ids.has(e.id)) issues.push({ severity: 'MAJOR', code: 'event_duplicate_id', message: `Duplicate event id ${e.id}`, sequence: e.sequence }); ids.add(e.id); }
+    if (!v95IsFiniteNum(e.sequence)) issues.push({ severity: 'CRITICAL', code: 'event_sequence_invalid', message: `Event ${i} has no numeric sequence` });
+    else { if (e.sequence <= prevSeq) issues.push({ severity: 'CRITICAL', code: 'event_order', message: `Event sequence ${e.sequence} is not after ${prevSeq}`, sequence: e.sequence }); prevSeq = e.sequence; }
+    if (v95IsFiniteNum(e.day)) { if (e.day < prevDay) issues.push({ severity: 'MAJOR', code: 'event_day_regressed', message: `Day went backwards at sequence ${e.sequence}`, sequence: e.sequence }); prevDay = Math.max(prevDay, e.day); }
+  });
+  const lastSeq = events.length && v95IsFiniteNum(events[events.length - 1]?.sequence) ? events[events.length - 1].sequence : -1;
+  let prevCp = -Infinity;
+  checkpoints.forEach((c, i) => {
+    if (!c || !v95IsFiniteNum(c.sequence)) { issues.push({ severity: 'MAJOR', code: 'checkpoint_invalid', message: `Checkpoint ${i} has no sequence` }); return; }
+    if (c.sequence < prevCp) issues.push({ severity: 'MAJOR', code: 'checkpoint_order', message: `Checkpoint ${c.id || i} is out of order`, sequence: c.sequence });
+    if (c.sequence > lastSeq + 1 && events.length) issues.push({ severity: 'MAJOR', code: 'checkpoint_beyond_events', message: `Checkpoint ${c.id || i} points past the last event`, sequence: c.sequence });
+    prevCp = c.sequence;
+  });
+  if (report.truncated && v95IsFiniteNum(file.truncatedAtSequence)) {
+    const past = events.filter(e => v95IsFiniteNum(e?.sequence) && e.sequence > file.truncatedAtSequence && e.category !== 'match_result');
+    if (past.length) issues.push({ severity: 'CRITICAL', code: 'truncation_prefix', message: `${past.length} event(s) recorded after the truncation point — the file is not a clean prefix` });
+  }
+  draws.forEach((d, i) => {
+    if (d && typeof d.value === 'number' && (!(d.value >= 0) || d.value >= 1)) issues.push({ severity: 'MAJOR', code: 'draw_range', message: `Random draw ${i} is outside [0,1)` });
+  });
+  report.ok = !issues.some(x => x.severity === 'BLOCKER' || x.severity === 'CRITICAL');
+  return report;
+}
+
+export type ReplayDivergenceClass = 'identical' | 'config' | 'expected_truncation' | 'rng' | 'event' | 'checkpoint' | 'result';
+export interface ReplayDivergence { classification: ReplayDivergenceClass; sequence: number | null; day: number | null; turn: number | null; detail: string }
+
+const v95EventKey = (e: any) => JSON.stringify([e?.category, e?.actorId, e?.day, e?.turn, e?.summary, e?.payload ?? null]);
+
+export function findFirstReplayDivergence(a: any, b: any): ReplayDivergence {
+  const cfg = (f: any) => JSON.stringify([f?.initialConfig?.aiSeed, f?.initialConfig?.worldSeed, f?.initialConfig?.selectedMode, f?.initialConfig?.aiDifficulty]);
+  if (cfg(a) !== cfg(b)) return { classification: 'config', sequence: null, day: 1, turn: 0, detail: 'The two replays started from different seeds, mode or difficulty.' };
+  const ea: any[] = Array.isArray(a?.events) ? a.events : [], eb: any[] = Array.isArray(b?.events) ? b.events : [];
+  const n = Math.min(ea.length, eb.length);
+  let eventDiv: ReplayDivergence | null = null;
+  for (let i = 0; i < n; i++) {
+    if (v95EventKey(ea[i]) !== v95EventKey(eb[i])) {
+      eventDiv = { classification: 'event', sequence: v95IsFiniteNum(ea[i]?.sequence) ? ea[i].sequence : i, day: ea[i]?.day ?? null, turn: ea[i]?.turn ?? null, detail: `Event ${i} differs: "${String(ea[i]?.summary || ea[i]?.category)}" vs "${String(eb[i]?.summary || eb[i]?.category)}".` };
+      break;
+    }
+  }
+  let rngDiv: ReplayDivergence | null = null;
+  try {
+    const r = findFirstReplayRngDivergence(a as ReplayFile, b as ReplayFile);
+    if (r) rngDiv = { classification: 'rng', sequence: r.sequence, day: r.day, turn: r.turn, detail: r.explanation };
+  } catch { rngDiv = null; }
+  if (rngDiv && (!eventDiv || (rngDiv.sequence ?? Infinity) <= (eventDiv.sequence ?? Infinity))) return rngDiv;
+  if (eventDiv) return eventDiv;
+  if (ea.length !== eb.length) {
+    const shorter = ea.length < eb.length ? a : b;
+    const longer = ea.length < eb.length ? eb : ea;
+    const next = longer[n];
+    if (shorter?.truncated) return { classification: 'expected_truncation', sequence: next?.sequence ?? n, day: next?.day ?? null, turn: next?.turn ?? null, detail: 'One replay is a truncated prefix of the other (expected, deterministic prefix).' };
+    return { classification: 'event', sequence: next?.sequence ?? n, day: next?.day ?? null, turn: next?.turn ?? null, detail: `Event counts differ (${ea.length} vs ${eb.length}) with no truncation recorded.` };
+  }
+  const ca: any[] = Array.isArray(a?.checkpoints) ? a.checkpoints : [], cb: any[] = Array.isArray(b?.checkpoints) ? b.checkpoints : [];
+  for (let i = 0; i < Math.max(ca.length, cb.length); i++) {
+    const x = ca[i], y = cb[i];
+    if (JSON.stringify([x?.sequence, x?.kind, x?.day, x?.stateHash ?? null]) !== JSON.stringify([y?.sequence, y?.kind, y?.day, y?.stateHash ?? null])) {
+      return { classification: 'checkpoint', sequence: x?.sequence ?? y?.sequence ?? null, day: x?.day ?? y?.day ?? null, turn: x?.turn ?? y?.turn ?? null, detail: `Checkpoint ${i} differs.` };
+    }
+  }
+  if (JSON.stringify(a?.finalResult ?? null) !== JSON.stringify(b?.finalResult ?? null)) return { classification: 'result', sequence: null, day: a?.finalResult?.day ?? null, turn: a?.finalResult?.turn ?? null, detail: 'Same events, different recorded result.' };
+  return { classification: 'identical', sequence: null, day: null, turn: null, detail: 'No divergence.' };
+}
+
+// ---- Bounded-state measurement ------------------------------------------------------------------------------
+/** Walks a state tree (depth-bounded, cycle-safe) and records every array length by path. */
+export function collectArrayLengths(root: unknown, maxDepth = 5, minLength = 1): Record<string, number> {
+  const out: Record<string, number> = {};
+  const seen = new Set<unknown>();
+  const walk = (v: unknown, path: string, depth: number) => {
+    if (!v || typeof v !== 'object' || seen.has(v) || depth > maxDepth) return;
+    seen.add(v);
+    if (Array.isArray(v)) {
+      if (v.length >= minLength) out[path || '(root)'] = v.length;
+      if (v.length && depth < maxDepth) walk(v[v.length - 1], `${path}[]`, depth + 1);
+      return;
+    }
+    Object.keys(v as Record<string, unknown>).forEach(k => walk((v as Record<string, unknown>)[k], path ? `${path}.${k}` : k, depth + 1));
+  };
+  walk(root, '', 0);
+  return out;
+}
+
+export interface V95GrowthRow { path: string; from: number; to: number; perDay: number; status: 'bounded' | 'growing' | 'suspicious' }
+
+/** Compares two samples taken days apart: flags arrays that are large and still growing. */
+export function analyzeHistoryGrowth(before: { day: number; lengths: Record<string, number> }, after: { day: number; lengths: Record<string, number> }, opts: { largeAt?: number } = {}): V95GrowthRow[] {
+  const largeAt = opts.largeAt ?? 300;
+  const days = Math.max(1, after.day - before.day);
+  return Object.entries(after.lengths).map(([path, to]) => {
+    const from = before.lengths[path] ?? 0;
+    const perDay = Math.round(((to - from) / days) * 100) / 100;
+    const status: V95GrowthRow['status'] = to > largeAt && perDay > 0 ? 'suspicious' : perDay > 0 ? 'growing' : 'bounded';
+    return { path, from, to, perDay, status };
+  }).sort((x, y) => (y.to - x.to));
+}
+
+/** Top-level JSON size breakdown (bytes) — for save-size and memory audits. */
+export function measureStateSizeBreakdown(obj: unknown, top = 12): Array<{ key: string; bytes: number }> {
+  if (!obj || typeof obj !== 'object') return [];
+  const rows = Object.entries(obj as Record<string, unknown>).map(([key, v]) => {
+    let bytes = 0; try { bytes = JSON.stringify(v ?? null).length; } catch { bytes = -1; }
+    return { key, bytes };
+  });
+  return rows.sort((a, b) => b.bytes - a.bytes).slice(0, top);
+}
+
+// ---- Performance budgets (measured, never faked) ----------------------------------------------------------
+export type V95PerfBand = 'GOOD' | 'NOTICEABLE' | 'SLOW' | 'CRITICAL';
+export interface V95PerfBudget { id: string; label: string; goodMs: number; noticeableMs: number; slowMs: number }
+export const V95_PERF_BUDGETS: V95PerfBudget[] = [
+  { id: 'save_validate', label: 'Validate a save (load preview)', goodMs: 25, noticeableMs: 60, slowMs: 150 },
+  { id: 'save_serialize', label: 'Serialize a save', goodMs: 15, noticeableMs: 40, slowMs: 120 },
+  { id: 'state_hash', label: 'Canonical state hash', goodMs: 8, noticeableMs: 25, slowMs: 80 },
+  { id: 'canonical_action', label: 'One canonical action (reducer)', goodMs: 8, noticeableMs: 20, slowMs: 60 },
+  { id: 'ai_choice', label: 'AI chooses one action', goodMs: 15, noticeableMs: 40, slowMs: 120 },
+  { id: 'invariants', label: 'Critical invariant check', goodMs: 2, noticeableMs: 8, slowMs: 25 },
+  { id: 'history_scan', label: 'History-bounds scan', goodMs: 10, noticeableMs: 30, slowMs: 90 }
+];
+export function classifyPerf(ms: number, b: Pick<V95PerfBudget, 'goodMs' | 'noticeableMs' | 'slowMs'>): V95PerfBand {
+  return ms <= b.goodMs ? 'GOOD' : ms <= b.noticeableMs ? 'NOTICEABLE' : ms <= b.slowMs ? 'SLOW' : 'CRITICAL';
+}
+function v95Median(fn: () => void, runs: number): number {
+  const times: number[] = [];
+  for (let i = 0; i < runs; i++) { const t = v95Now(); fn(); times.push(v95Now() - t); }
+  times.sort((a, b) => a - b);
+  return Math.round(times[Math.floor(times.length / 2)] * 100) / 100;
+}
+
+/** A realistic save built from the same defaults a new match uses (no component state required). */
+export function createV95SaveFixture(opts: { day?: number; money?: number; notifications?: number; mode?: string } = {}): SaveGameData {
+  const actor = (id: string, name: string, kind: 'human' | 'ai', charIndex: number) => ({
+    ...JSON.parse(JSON.stringify(initialPlayerState)), id, name, kind, isHuman: kind === 'human',
+    teamId: id === 'player' ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID, character: CHARACTERS[charIndex] || CHARACTERS[0],
+    money: opts.money ?? 1000, currentRegion: id === 'player' ? 'NSW' : 'VIC', visitedRegions: [id === 'player' ? 'NSW' : 'VIC']
+  });
+  const gameState = JSON.parse(JSON.stringify(initialGameState));
+  Object.assign(gameState, { selectedMode: opts.mode || 'ai', gameMode: 'game', day: opts.day ?? 5, turnCounter: ((opts.day ?? 5) - 1) * 2, currentActorId: 'player', turnOrder: ['player', 'ai'] });
+  gameState.regionDeposits = { NSW: { player: 600 }, VIC: { ai: 450 } };
+  const notifications = Array.from({ length: opts.notifications ?? 3 }, (_, i) => ({ id: `n${i}`, type: 'info', notificationType: 'system', message: `Note ${i}`, timestamp: 1000 + i, day: 1, read: i % 2 === 0, persistent: true }));
+  return {
+    metadata: { timestamp: 1700000000000, gameVersion: VERSION_CONSTANTS.GAME_VERSION, saveDescription: 'V9.5 fixture', schemaVersion: VERSION_CONSTANTS.SAVE_SCHEMA_VERSION },
+    player: actor('player', 'Fixture Player', 'human', 0) as any,
+    aiPlayer: actor('ai', 'AI Opponent', 'ai', 1) as any,
+    gameState,
+    gameSettings: JSON.parse(JSON.stringify(DEFAULT_GAME_SETTINGS)),
+    notifications: notifications as any,
+    personalRecords: { ...DEFAULT_PERSONAL_RECORDS },
+    dontAskAgain: { ...DEFAULT_DONT_ASK },
+    humanAutomations: [],
+    uiPreferences: { theme: 'dark' },
+    aiRuntime: { queue: [], currentAction: null, rngState: 12345, worldRngState: 67890 },
+    rngRegistryState: { World: { domain: 'World', streamSeed: 11, drawCount: 7, rollingHash: 99, currentState: 4242, state: 4242, xoshiroState: [1, 2, 3, 4] } } as any,
+    deterministicCounters: { ...createInitialDeterministicCounters(), actionAttempt: 17, ledgerEvent: 40, correlation: 77 }
+  } as SaveGameData;
+}
+
+export interface V95PerfRow { id: string; label: string; ms: number; band: V95PerfBand; budget: V95PerfBudget }
+export function measureV95PerformanceBaseline(runs = 5): V95PerfRow[] {
+  const rows: V95PerfRow[] = [];
+  const add = (id: string, ms: number) => { const b = V95_PERF_BUDGETS.find(x => x.id === id)!; rows.push({ id, label: b.label, ms, band: classifyPerf(ms, b), budget: b }); };
+  const save = createV95SaveFixture({ notifications: V95_NOTIFICATION_HISTORY_CAP });
+  const text = JSON.stringify(save);
+  add('save_validate', v95Median(() => { validateSaveDataCore(JSON.parse(text)); }, runs));
+  add('save_serialize', v95Median(() => { JSON.stringify(save); }, runs));
+  add('state_hash', v95Median(() => { computeCanonicalStateHash(save.gameState); }, runs));
+  let state: CanonicalGameState | null = null;
+  try { state = createTuningMatchState(4242, false); } catch { state = null; }
+  if (state) {
+    const st = state;
+    add('canonical_action', v95Median(() => { reduceGameAction(st, { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 10 } as unknown as GameAction); }, runs));
+    const genome = createSeedGenome();
+    add('ai_choice', v95Median(() => { chooseReferenceBotAction('classic', st, 'player', genome.weights, createSeededRng(7), 1); }, runs));
+  }
+  add('invariants', v95Median(() => { validateCriticalGameInvariants({ player: save.player, aiPlayer: save.aiPlayer, gameState: save.gameState, gameSettings: save.gameSettings, notifications: save.notifications }); }, runs));
+  add('history_scan', v95Median(() => { collectArrayLengths(save); }, runs));
+  return rows;
+}
+
+// ---- Long-match stress (canonical reducer, seeded AI vs AI) -----------------------------------------------
+export interface V95StressResult {
+  seed: number;
+  turns: number;
+  actions: number;
+  errors: string[];
+  violations: V95InvariantViolation[];
+  sizes: Array<{ turn: number; bytes: number }>;
+  finalHash: string;
+  maxTurnMs: number;
+  durationMs: number;
+  moneyConservationBreaks: number;
+}
+
+export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): V95StressResult {
+  const seed = opts.seed ?? 9501, turns = opts.turns ?? 100, every = opts.sampleEvery ?? 20;
+  const t0 = v95Now();
+  const res: V95StressResult = { seed, turns: 0, actions: 0, errors: [], violations: [], sizes: [], finalHash: '', maxTurnMs: 0, durationMs: 0, moneyConservationBreaks: 0 };
+  try {
+    setRngMasterSeed(seed, true);
+    const rng = createSeededRng(seed);
+    const genome = createSeedGenome();
+    let state = createTuningMatchState(seed, false);
+    for (let turn = 1; turn <= turns; turn++) {
+      const tt = v95Now();
+      const actorId = turn % 2 === 1 ? 'player' : 'ai';
+      state.turnCounter = turn; (state as any).turn = turn; state.day = Math.floor((turn - 1) / 2) + 1;
+      if (state.gameState) { (state.gameState as any).turnCounter = turn; (state.gameState as any).currentActorId = actorId; (state.gameState as any).day = state.day; }
+      for (let step = 0; step < 3; step++) {
+        const action = chooseReferenceBotAction('classic', state, actorId, genome.weights, rng, turn);
+        if (!action || action.type === 'end_turn' || action.type === 'think') break;
+        const mapped = mapAiActionToGameAction(actorId, action, rng);
+        const before = state;
+        const reduced = reduceGameAction(state, mapped);
+        res.actions += 1;
+        if (reduced?.nextState) {
+          state = reduced.nextState;
+          if (!reduced.success) {
+            const pb = Number((before as any).player?.money), pa = Number((state as any).player?.money);
+            const ab = Number((before as any).aiPlayer?.money), aa = Number((state as any).aiPlayer?.money);
+            if (pb !== pa || ab !== aa) res.moneyConservationBreaks += 1; // a failed action must not consume resources
+          }
+        }
+      }
+      const v = validateCriticalGameInvariants({ player: (state as any).player || state.actorsById?.player, aiPlayer: (state as any).aiPlayer || state.actorsById?.ai, gameState: state.gameState, gameSettings: state.gameSettings, actorsById: state.actorsById as any });
+      v.forEach(x => { if (res.violations.length < 20) res.violations.push({ ...x, message: `turn ${turn}: ${x.message}` }); });
+      if (turn % every === 0) { try { res.sizes.push({ turn, bytes: JSON.stringify(state).length }); } catch { res.errors.push(`turn ${turn}: state not serializable`); } }
+      res.turns = turn;
+      res.maxTurnMs = Math.max(res.maxTurnMs, Math.round((v95Now() - tt) * 100) / 100);
+    }
+    res.finalHash = computeCanonicalStateHash(state);
+  } catch (err) {
+    res.errors.push(err instanceof Error ? `${err.message}` : String(err));
+  }
+  res.durationMs = Math.round(v95Now() - t0);
+  return res;
+}
+
+// ---- Resource conservation / numeric-boundary fuzz on the canonical executor -------------------------------
+export interface V95FuzzResult { cases: number; breaches: string[] }
+export function runV95ResourceConservationFuzz(seed = 95): V95FuzzResult {
+  const out: V95FuzzResult = { cases: 0, breaches: [] };
+  const hostile = [-500, -1, 0, NaN, Infinity, -Infinity, 1e308, 0.5, 5, 250];
+  const base = createTuningMatchState(seed, false);
+  const totalCash = (s: any) => {
+    const ids = new Set<string>(['player', 'ai', ...Object.keys(s.actorsById || {})]);
+    let sum = 0; ids.forEach(id => { const a = s.actorsById?.[id] || (id === 'player' ? s.player : id === 'ai' ? s.aiPlayer : null); sum += Number(a?.money) || 0; });
+    return sum;
+  };
+  const deposits = (s: any) => { let sum = 0; Object.values(s.gameState?.regionDeposits || {}).forEach((o: any) => Object.values(o || {}).forEach(v => { sum += Number(v) || 0; })); return sum; };
+  const mk = (type: string, amount: number): GameAction => ({ type, actorId: 'player', targetActorId: 'ai', targetRegion: 'NSW', investmentAmount: amount, price: amount, parameters: { amount, targetActorId: 'ai', region: 'NSW', regionCode: 'NSW' } } as unknown as GameAction);
+  ['give_cash', 'transfer_cash', 'region_deposit'].forEach(type => hostile.forEach(amount => {
+    out.cases += 1;
+    let r: ActionTransitionResult | null = null;
+    try { r = reduceGameAction(base, mk(type, amount)); } catch (err) { out.breaches.push(`${type}(${amount}) threw: ${err instanceof Error ? err.message : err}`); return; }
+    const next: any = r?.nextState;
+    if (!next) return;
+    const pm = Number((next.actorsById?.player || next.player)?.money);
+    if (!Number.isFinite(pm)) out.breaches.push(`${type}(${amount}) left cash non-finite`);
+    const beforeTotal = totalCash(base) + deposits(base), afterTotal = totalCash(next) + deposits(next);
+    if (Number.isFinite(afterTotal) && Math.abs(afterTotal - beforeTotal) > 1e-6) out.breaches.push(`${type}(${amount}) created or destroyed $${Math.round(afterTotal - beforeTotal)}`);
+    const recipientBefore = Number((base.actorsById?.ai || (base as any).aiPlayer)?.money), recipientAfter = Number((next.actorsById?.ai || next.aiPlayer)?.money);
+    if (type !== 'region_deposit' && recipientAfter < recipientBefore) out.breaches.push(`${type}(${amount}) took $${Math.round(recipientBefore - recipientAfter)} from the recipient`);
+    // 0 / NaN fall back to the executor's documented default amount; negative and infinite amounts must fail.
+    if ((amount < 0 || !Number.isFinite(amount)) && !Number.isNaN(amount) && r?.success) out.breaches.push(`${type}(${amount}) succeeded with a non-positive / non-finite amount`);
+  }));
+  return out;
+}
+
+// ---- AI turn watchdog decision (pure; the live effect uses exactly this) ------------------------------------
+export const V95_AI_TURN_WATCHDOG_MS = 15000;
+export function decideAiTurnWatchdog(input: { isThinking: boolean; hasPendingApprovals: boolean; msSinceLastAction: number; thresholdMs?: number }): 'idle' | 'healthy' | 'waiting_for_approval' | 'recover' {
+  if (!input.isThinking) return 'idle';
+  if (input.hasPendingApprovals) return 'waiting_for_approval'; // a human deciding is never a hang
+  return input.msSinceLastAction > (input.thresholdMs ?? V95_AI_TURN_WATCHDOG_MS) ? 'recover' : 'healthy';
+}
+
+// ---- Release readiness ----------------------------------------------------------------------------------------
+export type V95ReleaseSection =
+  | 'Critical Invariants' | 'Save Health' | 'Migration' | 'Replay Integrity' | 'Determinism' | 'Long-Match Stress'
+  | 'AI Turn Reliability' | 'Memory/History Bounds' | 'Performance' | 'UI Recovery' | 'System Regression' | 'Known Issues';
+
+export const V95_RELEASE_SECTIONS: V95ReleaseSection[] = [
+  'Critical Invariants', 'Save Health', 'Migration', 'Replay Integrity', 'Determinism', 'Long-Match Stress',
+  'AI Turn Reliability', 'Memory/History Bounds', 'Performance', 'UI Recovery', 'System Regression', 'Known Issues'
+];
+
+export interface V95CheckResult {
+  id: string;
+  name: string;
+  section: V95ReleaseSection;
+  severity: V95Severity; // severity if this check fails
+  passed: boolean;
+  detail: string;
+  expected?: string;
+  actual?: string;
+  system?: string;
+  turn?: number | null;
+  seed?: number | null;
+  reproduction?: string;
+  durationMs?: number;
+}
+
+export interface ReleaseReadinessReport {
+  status: 'NOT_READY' | 'READY_WITH_WARNINGS' | 'READY';
+  mode: 'quick' | 'full';
+  generatedAtVersion: string;
+  totals: { checks: number; passed: number; failed: number };
+  failuresBySeverity: Record<V95Severity, number>;
+  sections: Array<{ section: V95ReleaseSection; passed: number; failed: number; worst: V95Severity | null }>;
+  failures: V95CheckResult[];
+  openKnownIssues: V95AuditFinding[];
+  gateReasons: string[];
+  durationMs: number;
+}
+
+const V95_SEVERITY_RANK: Record<V95Severity, number> = { BLOCKER: 5, CRITICAL: 4, MAJOR: 3, MINOR: 2, COSMETIC: 1 };
+
+export function buildReleaseReadinessReport(checks: V95CheckResult[], mode: 'quick' | 'full', durationMs = 0, findings: V95AuditFinding[] = V95_AUDIT_FINDINGS): ReleaseReadinessReport {
+  const failures = checks.filter(c => !c.passed).sort((a, b) => V95_SEVERITY_RANK[b.severity] - V95_SEVERITY_RANK[a.severity]);
+  const failuresBySeverity: Record<V95Severity, number> = { BLOCKER: 0, CRITICAL: 0, MAJOR: 0, MINOR: 0, COSMETIC: 0 };
+  failures.forEach(f => { failuresBySeverity[f.severity] += 1; });
+  const openKnownIssues = findings.filter(f => f.status !== 'fixed');
+  const sections = V95_RELEASE_SECTIONS.map(section => {
+    const inSection = checks.filter(c => c.section === section);
+    const failed = inSection.filter(c => !c.passed);
+    const worst = failed.reduce<V95Severity | null>((w, c) => (!w || V95_SEVERITY_RANK[c.severity] > V95_SEVERITY_RANK[w] ? c.severity : w), null);
+    return { section, passed: inSection.length - failed.length, failed: failed.length, worst };
+  });
+  const gateReasons: string[] = [];
+  if (failuresBySeverity.BLOCKER) gateReasons.push(`${failuresBySeverity.BLOCKER} blocker failure(s)`);
+  if (failuresBySeverity.CRITICAL) gateReasons.push(`${failuresBySeverity.CRITICAL} critical failure(s)`);
+  openKnownIssues.filter(f => f.severity === 'BLOCKER' || f.severity === 'CRITICAL').forEach(f => gateReasons.push(`open ${f.severity.toLowerCase()} issue ${f.id}: ${f.title}`));
+  const warnings = failuresBySeverity.MAJOR + failuresBySeverity.MINOR + failuresBySeverity.COSMETIC + openKnownIssues.length;
+  const status: ReleaseReadinessReport['status'] = gateReasons.length ? 'NOT_READY' : warnings ? 'READY_WITH_WARNINGS' : 'READY';
+  return {
+    status, mode, generatedAtVersion: VERSION_CONSTANTS.GAME_VERSION,
+    totals: { checks: checks.length, passed: checks.length - failures.length, failed: failures.length },
+    failuresBySeverity, sections, failures, openKnownIssues, gateReasons, durationMs
+  };
+}
+
+export function formatReleaseDiagnosticSummary(r: ReleaseReadinessReport): string {
+  const lines = [
+    `Release readiness (${r.mode}) — ${r.status} — v${r.generatedAtVersion}`,
+    `Checks: ${r.totals.passed}/${r.totals.checks} passed in ${r.durationMs} ms`,
+    ...(r.gateReasons.length ? [`Gate: ${r.gateReasons.join('; ')}`] : []),
+    ...r.sections.filter(s => s.passed + s.failed > 0).map(s => `  ${s.section}: ${s.passed} passed, ${s.failed} failed${s.worst ? ` (worst ${s.worst})` : ''}`),
+    ...r.failures.slice(0, 25).map(f => `  ✗ [${f.severity}] ${f.section} › ${f.name}: ${f.detail}${f.expected ? ` | expected ${f.expected}` : ''}${f.actual ? ` | actual ${f.actual}` : ''}${f.seed != null ? ` | seed ${f.seed}` : ''}${f.turn != null ? ` | turn ${f.turn}` : ''}${f.reproduction ? ` | repro: ${f.reproduction}` : ''}`),
+    ...r.openKnownIssues.map(k => `  • known ${k.severity} ${k.id} (${k.status}): ${k.title}`)
+  ];
+  return lines.join('\n');
+}
+
+// ---- Existing-suite orchestration (reuses every suite; never re-implements them) ---------------------------
+export interface V95SuiteSpec { id: string; label: string; tier: 'quick' | 'full'; section: V95ReleaseSection; severity: V95Severity; run: () => unknown; knownFailures?: string[] }
+
+function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: boolean; detail: string }> {
+  const r: any = raw;
+  const arr: any[] = Array.isArray(r) ? r : (r?.results || r?.tests || r?.categories?.flatMap?.((c: any) => c.results || c.tests || []) || []);
+  return arr.map((t: any) => ({
+    name: String(t?.id || t?.name || t?.testId || 'test'),
+    passed: t?.passed === true || t?.pass === true || t?.status === 'pass' || t?.status === 'passed',
+    detail: String(t?.detail ?? t?.message ?? t?.reason ?? '')
+  }));
+}
+
+export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
+  { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
+  { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
+  { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
+  { id: 'v9c', label: 'V9 Cohesion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV9GameplayCohesionSelfTests() },
+  { id: 'v9x', label: 'V9 Experience', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV9ExperienceSelfTests() },
+  { id: 'rf2', label: 'Regional Factions', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runRegionalFactions2SelfTests() },
+  { id: 'lr2', label: 'Living Regions', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runLivingRegions2SelfTests() },
+  { id: 'swr', label: 'World Reaction', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicWorldReactionSelfTests() },
+  { id: 'dn2', label: 'Diplomacy', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runDiplomacyNegotiation2SelfTests() },
+  { id: 'si2', label: 'Settings Intelligence', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runSettingsIntelligence2SelfTests() },
+  { id: 'bg', label: 'Background AI', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runBackgroundAISelfTests() },
+  { id: 'gi3', label: 'Game Intelligence 3', tier: 'full', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runGameIntelligence3SelfTests() },
+  { id: 'teamos', label: 'Team OS scenarios', tier: 'full', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runTeamOsScenarioSelfTests() },
+  { id: 'ti2', label: 'Team Intelligence', tier: 'full', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runTeamIntelligence2SelfTests() },
+  { id: 'gi21', label: 'Game Intelligence 2.1', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runGameIntelligence21SelfTests() },
+  { id: 'gi2', label: 'Game Intelligence 2', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runGameIntelligence2SelfTests() },
+  { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
+  { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
+  { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
+  { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
+    ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
+    ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
+  ] }
+];
+
+export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
+  const t0 = v95Now();
+  let rows: Array<{ name: string; passed: boolean; detail: string }> = [];
+  try { rows = v95NormalizeSuiteResults(spec.run()); }
+  catch (err) {
+    return [{ id: `${spec.id}:threw`, name: `${spec.label} suite`, section: spec.section, severity: 'BLOCKER', passed: false, detail: `Suite threw: ${err instanceof Error ? err.message : String(err)}`, system: spec.label, reproduction: `Run ${spec.label} self-tests from LAB` }];
+  }
+  const ms = Math.round(v95Now() - t0);
+  const failed = rows.filter(r => !r.passed);
+  const check: V95CheckResult = {
+    id: `${spec.id}:suite`, name: `${spec.label} suite`, section: spec.section, severity: spec.severity,
+    passed: rows.length > 0 && failed.length === 0,
+    detail: rows.length ? `${rows.length - failed.length}/${rows.length} passed${failed.length ? ` — failing: ${failed.slice(0, 4).map(f => `${f.name}${f.detail ? ` (${f.detail.slice(0, 80)})` : ''}`).join('; ')}` : ''}` : 'Suite returned no results',
+    expected: `${rows.length}/${rows.length}`, actual: `${rows.length - failed.length}/${rows.length}`, system: spec.label,
+    reproduction: `LAB › Run self-tests (${spec.label})`, durationMs: ms
+  };
+  return [check];
+}
+
+// ---- Isolation: diagnostics must never change the live match ------------------------------------------------
+/**
+ * Runs fn with the global RNG registry, its flags and the deterministic id counters snapshotted, and restores
+ * them afterwards — so a Release Check run from LAB mid-match cannot shift the live match's random draws or ids.
+ */
+export function v95WithIsolatedGlobals<T>(fn: () => T): T {
+  const reg: any = globalRngRegistry as any;
+  const streams = globalRngRegistry.exportStreamStates();
+  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
+  const counters = { ...globalDeterministicCounters };
+  try { return fn(); }
+  finally {
+    globalRngRegistry.importStreamStates(streams);
+    Object.assign(reg, flags);
+    Object.assign(globalDeterministicCounters, counters);
+  }
+}
+
+function v95SyntheticReplay(n = 6): ReplayFile {
+  const events: ReplayEvent[] = Array.from({ length: n }, (_, i) => ({
+    id: `v95e${i}`, sequence: i, category: (i === n - 1 ? 'match_result' : i % 2 ? 'ai_decision' : 'human_action') as ReplayEventCategory,
+    day: Math.floor(i / 2) + 1, turn: i, actorId: i % 2 ? 'ai' : 'player', teamId: null, summary: `step ${i}`, payload: { n: i }, timestamp: 1 + i
+  }));
+  const file: ReplayFile = {
+    schemaVersion: REPLAY_SCHEMA_VERSION, gameVersion: VERSION_CONSTANTS.GAME_VERSION, matchId: 'v95_fixture', createdAt: 1,
+    initialConfig: { gameSettings: createDefaultGameSettings(), actorsById: {}, teamsById: {}, selectedMode: 'ai', aiDifficulty: 'medium', aiSeed: 1337, worldSeed: 1337 } as any,
+    events, checkpoints: [{ id: 'c0', sequence: 0, day: 1, turn: 0, label: 'Match start', kind: 'match_start' } as any, { id: 'c1', sequence: n - 1, day: Math.floor((n - 1) / 2) + 1, turn: n - 1, label: 'Match end', kind: 'match_end' } as any],
+    finalResult: { winnerTeamId: 'team_player', winnerActorId: 'player', reason: 'net worth', day: 3, turn: n - 1, scoresByTeam: {} } as any,
+    randomDraws: [{ seq: 0, value: 0.25, stream: 'World', context: 'World', day: 1, turn: 0 } as any, { seq: 1, value: 0.75, stream: 'World', context: 'World', day: 1, turn: 1 } as any],
+    bookmarks: [], branches: []
+  };
+  file.checksum = computeReplayChecksum(file);
+  return file;
+}
+
+/** Section tag for each V9.5 check id prefix. */
+const V95_TEST_SECTION: Record<string, V95ReleaseSection> = {
+  s: 'Save Health', m: 'Migration', r: 'Replay Integrity', d: 'Determinism', a: 'AI Turn Reliability', b: 'Memory/History Bounds',
+  i: 'Critical Invariants', p: 'Performance', u: 'UI Recovery', v: 'System Regression', rr: 'System Regression', k: 'Known Issues'
+};
+
+export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } = {}): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const fixture = () => JSON.parse(JSON.stringify(createV95SaveFixture()));
+
+  // ---- Version consistency
+  check('v_game_version', 'GAME_VERSION reports the V9.5 build', () => GAME_VERSION === '9.5.0' || `GAME_VERSION=${GAME_VERSION}`);
+  check('v_schema_labels', 'Save / replay schema labels agree with their numeric forms', () =>
+    (VERSION_CONSTANTS.SAVE_SCHEMA_VERSION === '7.1' && Number.parseInt(VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION, 10) === REPLAY_SCHEMA_VERSION) || `${VERSION_CONSTANTS.SAVE_SCHEMA_VERSION}/${VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION}/${REPLAY_SCHEMA_VERSION}`);
+
+  // ---- Save health / round trip
+  check('s_roundtrip_intact', 'A fresh save round-trips intact (no repairs, no drops)', () => {
+    const t = prepareSaveLoadTransaction(JSON.stringify(fixture()));
+    return (t.ok && t.report.integrityStatus === 'intact' && !t.report.fieldsRepaired.length && !t.report.fieldsDropped.length) || `${t.report.integrityStatus} repaired=${t.report.fieldsRepaired.slice(0, 4).join(', ')} dropped=${t.report.fieldsDropped.slice(0, 4).join(', ')} warn=${t.report.warnings.slice(0, 2).join(', ')}`;
+  });
+  check('s_roundtrip_repeat', 'Repeated save → load round trips do not drift', () => {
+    let cur: any = validateSaveDataCore(fixture());
+    const first = JSON.stringify(cur);
+    for (let i = 0; i < 4; i++) cur = validateSaveDataCore(JSON.parse(JSON.stringify(cur)));
+    return JSON.stringify(cur) === first || 'drifted after repeated round trips';
+  });
+  check('s_rng_counters_restored', 'RNG stream state and id counters survive a load (F01)', () => {
+    const v: any = validateSaveDataCore(fixture());
+    return (v.rngRegistryState?.World?.currentState === 4242 && v.rngRegistryState.World.drawCount === 7 && v.deterministicCounters?.actionAttempt === 17 && v.deterministicCounters.correlation === 77) || JSON.stringify({ r: v.rngRegistryState?.World, c: v.deterministicCounters }).slice(0, 160);
+  });
+  check('s_rng_corrupt_dropped', 'A corrupted RNG stream is dropped, never imported', () => {
+    const f: any = fixture(); f.rngRegistryState = { World: { streamSeed: 'x', currentState: NaN }, AIReasoning: { streamSeed: 3, currentState: 5, drawCount: -4 } };
+    const v: any = validateSaveDataCore(f);
+    return (!v.rngRegistryState.World && v.rngRegistryState.AIReasoning?.drawCount === 0) || JSON.stringify(v.rngRegistryState);
+  });
+  check('s_match_settings_restored', 'Match-scoped settings are restored from the save (F03)', () => {
+    const f: any = fixture(); f.gameSettings.v93ContentEnabled = false; f.gameSettings.v93CrisisIntensity = 'high'; f.gameSettings.opponentGenomeId = 'genome_x';
+    const v: any = validateSaveDataCore(f).gameSettings;
+    return (v.v93ContentEnabled === false && v.v93CrisisIntensity === 'high' && v.opponentGenomeId === 'genome_x') || JSON.stringify([v.v93ContentEnabled, v.v93CrisisIntensity, v.opponentGenomeId]);
+  });
+  check('s_match_settings_type_checked', 'Match-scoped settings with the wrong type fall back to defaults', () => {
+    const f: any = fixture(); f.gameSettings.v93ContentEnabled = 'yes'; f.gameSettings.v93ContentThemes = 'x';
+    const v: any = validateSaveDataCore(f).gameSettings;
+    return (v.v93ContentEnabled === (DEFAULT_GAME_SETTINGS as any).v93ContentEnabled && JSON.stringify(v.v93ContentThemes) === JSON.stringify((DEFAULT_GAME_SETTINGS as any).v93ContentThemes)) || JSON.stringify([v.v93ContentEnabled, v.v93ContentThemes]);
+  });
+  check('s_profile_not_overwritten', 'Loading never overwrites profile preferences such as reduce motion (K03)', () => {
+    const f: any = fixture(); f.metadata.gameVersion = '7.0.0';
+    const v = validateSaveDataCore(f);
+    const m = v95MigrateSaveForLoad(v);
+    const s: any = m.data.gameSettings;
+    return (m.migrated && s.accessibilitySettings === undefined && s.dockSettings === undefined) || `accessibility=${JSON.stringify(s.accessibilitySettings)?.slice(0, 40)} dock=${Boolean(s.dockSettings)}`;
+  });
+  check('s_settings_classified', 'Every default setting is either restored, match-scoped or profile-scoped', () => {
+    const v = validateSaveDataCore(fixture()).gameSettings as unknown as Record<string, unknown>;
+    const missing = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => !(k in v) && !V95_PROFILE_SCOPED_SETTING_KEYS.includes(k));
+    return missing.length === 0 || missing.join(', ');
+  });
+  check('s_adaptive_threshold_roundtrip', 'Rival adaptation threshold survives a load (F04)', () => {
+    const v = validateSaveDataCore(fixture()).gameSettings;
+    return v.adaptiveAiNetWorthThreshold === DEFAULT_GAME_SETTINGS.adaptiveAiNetWorthThreshold || `${v.adaptiveAiNetWorthThreshold}`;
+  });
+  check('s_auto_goal_roundtrip', 'Auto Mode primary goal survives a load (F05)', () => {
+    const f: any = fixture(); f.gameSettings.autoModeSettings = { ...f.gameSettings.autoModeSettings, primaryGoal: 'regional_control' };
+    return (validateSaveDataCore(f).gameSettings.autoModeSettings as any).primaryGoal === 'regional_control' || 'primaryGoal lost';
+  });
+  check('s_consent_enforced', 'A save cannot switch Persistent AI Memory on without consent', () => {
+    const f: any = fixture(); f.gameSettings.aiPersistentMemoryEnabled = true;
+    let consent = false; try { consent = isPersistenceConsentActive(loadPersistencePolicy()); } catch { consent = false; }
+    const v = validateSaveDataCore(f).gameSettings;
+    return consent || v.aiPersistentMemoryEnabled === false || 'persistent memory enabled from a save without consent';
+  });
+  check('s_preview_no_side_effects', 'Validating a save preview never advances live id counters (F10)', () => {
+    const f: any = fixture(); f.notifications = [{ type: 'info', message: 'legacy without id' }]; f.player.loans = [{ amount: 100 }];
+    const before = JSON.stringify(globalDeterministicCounters);
+    const v: any = validateSaveDataCore(f);
+    return (JSON.stringify(globalDeterministicCounters) === before && v.notifications[0].id === 'legacy_notif_0' && String(v.player.loans[0].id).startsWith('legacy_loan_')) || 'counters advanced or ids not deterministic';
+  });
+  check('s_size_measured', 'Save size is measured and bounded by the notification cap', () => {
+    const small = JSON.stringify(createV95SaveFixture({ notifications: 3 })).length;
+    const f: any = createV95SaveFixture({ notifications: 5000 });
+    const v = validateSaveDataCore(JSON.parse(JSON.stringify(f)));
+    const big = JSON.stringify(v).length;
+    return (v.notifications.length === V95_NOTIFICATION_HISTORY_CAP && big < small * 6) || `small=${small} capped=${big} notifs=${v.notifications.length}`;
+  });
+  check('s_ephemeral_not_persisted', 'Load clears transient runtime (AI thinking, open negotiation panel)', () => {
+    const f: any = fixture(); f.gameState.isAiThinking = true;
+    const v: any = validateSaveDataCore(f);
+    return v.gameState.isAiThinking === false || 'isAiThinking restored as true';
+  });
+
+  // ---- Corruption / numeric safety
+  const corrupt = (mut: (f: any) => void) => { const f: any = fixture(); mut(f); return prepareSaveLoadTransaction(JSON.stringify(f).replace(/"__INF__"/g, '1e999')); };
+  check('s_corrupt_invalid_json', 'Invalid JSON is rejected with a clear reason', () => { const t = prepareSaveLoadTransaction('{"metadata": {'); return (!t.ok && t.data === null && /not a readable save/.test(t.report.fatalErrors[0] || '')) || t.report.fatalErrors.join('|'); });
+  check('s_corrupt_truncated', 'A truncated file is rejected', () => { const s = JSON.stringify(fixture()); const t = prepareSaveLoadTransaction(s.slice(0, Math.floor(s.length / 2))); return (!t.ok && t.report.integrityStatus === 'corrupt') || 'truncated file accepted'; });
+  check('s_corrupt_not_object', 'Non-object JSON is rejected', () => { const t = prepareSaveLoadTransaction('[1,2,3]'); return !t.ok || 'array accepted'; });
+  check('s_corrupt_missing_sections', 'A save missing core sections is rejected', () => { const t = corrupt(f => { delete f.player; }); return (!t.ok && t.report.fatalErrors.length > 0) || 'accepted without player'; });
+  check('s_corrupt_missing_version', 'A save without version information is rejected', () => { const t = corrupt(f => { delete f.metadata.gameVersion; }); return !t.ok || 'accepted without version'; });
+  check('s_numeric_infinity', 'Infinity cash (1e999) is repaired to a finite value (F12)', () => {
+    const t = corrupt(f => { f.player.money = '__INF__'; });
+    return (t.ok && Number.isFinite((t.data as any).player.money) && t.report.fieldsRepaired.some(r => r.startsWith('player.money'))) || `${t.ok} ${JSON.stringify((t.data as any)?.player?.money)} ${t.report.fieldsRepaired.join(',')}`;
+  });
+  check('s_numeric_text', 'Text where a number belongs is repaired', () => { const t = corrupt(f => { f.player.money = 'lots'; f.gameState.day = 'three'; }); return (t.ok && typeof (t.data as any).player.money === 'number' && (t.data as any).gameState.day === 1) || 'not repaired'; });
+  check('s_numeric_negative_day', 'A negative day is repaired to day 1', () => { const t = corrupt(f => { f.gameState.day = -3; }); return (t.ok && (t.data as any).gameState.day === 1) || `${(t.data as any)?.gameState?.day}`; });
+  check('s_bad_region', 'An unknown region is repaired to a real one', () => { const t = corrupt(f => { f.player.currentRegion = 'ATLANTIS'; }); return (t.ok && REGIONS[(t.data as any).player.currentRegion] !== undefined) || 'unknown region kept'; });
+  check('s_bad_loans', 'Non-finite loans are dropped', () => { const t = corrupt(f => { f.player.loans = [{ id: 'a', amount: '__INF__' }, { id: 'b', amount: 50 }]; }); return (t.ok && (t.data as any).player.loans.length === 1) || JSON.stringify((t.data as any)?.player?.loans); });
+  check('s_extreme_settings', 'Extreme settings are clamped (no crash, no loop)', () => {
+    const t = corrupt(f => { f.gameSettings.maxActionsPerTurn = 9999; f.gameSettings.totalDays = -5; f.gameSettings.overrideCost = '__INF__'; });
+    const s: any = t.data?.gameSettings;
+    return (t.ok && s.maxActionsPerTurn <= 12 && s.totalDays >= 10 && Number.isFinite(s.overrideCost)) || JSON.stringify([s?.maxActionsPerTurn, s?.totalDays, s?.overrideCost]);
+  });
+  check('s_future_version', 'A save from a newer version loads with a warning', () => { const t = corrupt(f => { f.metadata.gameVersion = '99.0.0'; }); return (t.ok && t.report.warnings.some(w => /newer version/.test(w))) || t.report.warnings.join('|'); });
+  check('s_failed_load_no_data', 'A rejected load returns no candidate (live match untouched)', () => { const t = prepareSaveLoadTransaction('nope'); return (t.data === null && !t.report.loadable) || 'candidate returned'; });
+  check('s_verify_rejects_unplayable', 'Pre-apply verification rejects an unplayable candidate', () => {
+    const f: any = createV95SaveFixture(); delete f.player.character; f.aiPlayer.money = NaN; f.gameState.day = 0;
+    const v = verifySaveLoadCandidate(f);
+    return (!v.ok && v.errors.length >= 3) || v.errors.join('|');
+  });
+  check('s_verify_accepts_valid', 'Pre-apply verification accepts a valid candidate', () => { const v = verifySaveLoadCandidate(validateSaveDataCore(fixture())); return v.ok || v.errors.join('|'); });
+
+  // ---- Migration
+  check('m_idempotent', 'Migration is idempotent', () => {
+    const f: any = fixture(); f.metadata.gameVersion = '6.9.0';
+    const t = prepareSaveLoadTransaction(JSON.stringify(f));
+    return (t.ok && t.report.migrationRequired && t.report.migrationIdempotent) || JSON.stringify({ req: t.report.migrationRequired, idem: t.report.migrationIdempotent, fatal: t.report.fatalErrors });
+  });
+  check('m_current_no_migration', 'A current save needs no migration', () => { const t = prepareSaveLoadTransaction(JSON.stringify(fixture())); return !t.report.migrationRequired || 'migration flagged for a current save'; });
+  check('m_stamps_version', 'Migration stamps the current version', () => { const f: any = validateSaveDataCore(fixture()); f.metadata.gameVersion = '7.0.0'; const m = v95MigrateSaveForLoad(f); return (m.data.metadata.gameVersion === GAME_VERSION && m.sourceVersion === '7.0.0') || JSON.stringify(m.data.metadata); });
+
+  // ---- Critical invariants
+  check('i_clean_fixture', 'A healthy save has no invariant violations', () => {
+    const v = validateSaveDataCore(fixture());
+    const x = validateCriticalGameInvariants({ player: v.player, aiPlayer: v.aiPlayer, gameState: v.gameState, gameSettings: v.gameSettings, notifications: v.notifications });
+    return x.length === 0 || x.map(y => `${y.id}:${y.actual}`).join(', ');
+  });
+  check('i_detects_nan_cash', 'NaN cash is a blocker', () => { const f: any = createV95SaveFixture(); f.player.money = NaN; const x = validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState }); return x.some(y => y.severity === 'BLOCKER' && y.id === 'money_finite_player') || 'not detected'; });
+  check('i_detects_turn_order', 'Current actor outside the turn order is critical', () => { const f: any = createV95SaveFixture(); f.gameState.currentActorId = 'ghost'; const x = validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState }); return x.some(y => y.id === 'current_actor_in_order' && y.severity === 'CRITICAL') || 'not detected'; });
+  check('i_detects_negative_deposit', 'A negative regional deposit is critical', () => { const f: any = createV95SaveFixture(); f.gameState.regionDeposits.NSW.player = -10; const x = validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState }); return x.some(y => y.id === 'deposit_value_NSW_player') || 'not detected'; });
+  check('i_consent_invariant', 'Persistent memory without consent is flagged', () => {
+    let consent = false; try { consent = isPersistenceConsentActive(loadPersistencePolicy()); } catch { consent = false; }
+    const f: any = createV95SaveFixture(); f.gameSettings.aiPersistentMemoryEnabled = true;
+    const x = validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState, gameSettings: f.gameSettings });
+    return consent || x.some(y => y.id === 'persistence_consent') || 'not flagged';
+  });
+  check('i_cheap', 'Invariant check stays cheap (on demand, never per render)', () => {
+    const f: any = createV95SaveFixture({ notifications: V95_NOTIFICATION_HISTORY_CAP });
+    const t = v95Now(); for (let k = 0; k < 20; k++) validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState, gameSettings: f.gameSettings, notifications: f.notifications });
+    const ms = (v95Now() - t) / 20; return ms < 8 || `${ms.toFixed(2)}ms`;
+  });
+
+  // ---- Replay integrity + divergence
+  check('r_clean', 'A clean replay passes integrity', () => { const r = checkReplayIntegrity(v95SyntheticReplay()); return (r.ok && r.checksum === 'ok' && r.issues.length === 0) || JSON.stringify(r.issues); });
+  check('r_tamper', 'An edited replay fails its checksum', () => { const f: any = v95SyntheticReplay(); f.events[2].summary = 'edited'; const r = checkReplayIntegrity(f); return (!r.ok && r.checksum === 'mismatch') || r.checksum; });
+  check('r_order', 'Out-of-order events are detected', () => { const f: any = v95SyntheticReplay(); [f.events[1].sequence, f.events[2].sequence] = [f.events[2].sequence, f.events[1].sequence]; f.checksum = computeReplayChecksum(f); const r = checkReplayIntegrity(f); return r.issues.some(x => x.code === 'event_order') || JSON.stringify(r.issues); });
+  check('r_duplicate_ids', 'Duplicate event ids are detected', () => { const f: any = v95SyntheticReplay(); f.events[3].id = f.events[2].id; f.checksum = computeReplayChecksum(f); return checkReplayIntegrity(f).issues.some(x => x.code === 'event_duplicate_id') || 'not detected'; });
+  check('r_missing_events', 'A replay without events is a blocker', () => { const r = checkReplayIntegrity({ initialConfig: {} }); return (!r.ok && r.issues.some(x => x.severity === 'BLOCKER')) || 'accepted'; });
+  check('r_truncation_prefix', 'A truncated replay must be a clean prefix', () => {
+    const clean: any = v95SyntheticReplay(); clean.truncated = true; clean.truncatedAtSequence = 10; clean.checksum = computeReplayChecksum(clean);
+    const bad: any = v95SyntheticReplay(); bad.truncated = true; bad.truncatedAtSequence = 2; bad.checksum = computeReplayChecksum(bad);
+    return (checkReplayIntegrity(clean).ok && checkReplayIntegrity(bad).issues.some(x => x.code === 'truncation_prefix')) || 'prefix semantics not enforced';
+  });
+  check('r_bad_draw', 'A random draw outside [0,1) is detected', () => { const f: any = v95SyntheticReplay(); f.randomDraws[0].value = 1.5; return checkReplayIntegrity(f).issues.some(x => x.code === 'draw_range') || 'not detected'; });
+  check('r_div_identical', 'Identical replays report no divergence', () => { const d = findFirstReplayDivergence(v95SyntheticReplay(), v95SyntheticReplay()); return d.classification === 'identical' || d.classification; });
+  check('r_div_event', 'First divergent event is located', () => { const b: any = v95SyntheticReplay(); b.events[3].summary = 'different'; const d = findFirstReplayDivergence(v95SyntheticReplay(), b); return (d.classification === 'event' && d.sequence === 3) || JSON.stringify(d); });
+  check('r_div_rng', 'An RNG divergence is classified before its effects', () => { const b: any = v95SyntheticReplay(); b.randomDraws[1].value = 0.9; b.events[4].summary = 'effect'; const d = findFirstReplayDivergence(v95SyntheticReplay(), b); return (d.classification === 'rng' && d.sequence === 1) || JSON.stringify(d); });
+  check('r_div_config', 'Different seeds are a configuration divergence', () => { const b: any = v95SyntheticReplay(); b.initialConfig.worldSeed = 9; return findFirstReplayDivergence(v95SyntheticReplay(), b).classification === 'config' || 'not config'; });
+  check('r_div_truncation', 'A truncated prefix is an expected divergence', () => { const b: any = v95SyntheticReplay(8); const a: any = v95SyntheticReplay(8); a.events = a.events.slice(0, 5); a.truncated = true; a.truncatedAtSequence = 4; return findFirstReplayDivergence(a, b).classification === 'expected_truncation' || findFirstReplayDivergence(a, b).classification; });
+  check('r_attempt_dedupe', 'A human action attempt is recorded once (existing attempt ids)', () => { const f = v95SyntheticReplay(); (f.events[1] as any).actionAttemptId = 'm:action:5'; return (replayActionAttemptAlreadyRecorded(f.events, 'm:action:5') && !replayActionAttemptAlreadyRecorded(f.events, 'm:action:6')) || 'dedupe failed'; });
+
+  // ---- AI turn reliability
+  check('a_watchdog_recovers', 'Watchdog recovers a real hang', () => decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: 16000 }) === 'recover' || 'no recovery');
+  check('a_watchdog_approval', 'Watchdog never kills a legitimate pending approval', () => decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: true, msSinceLastAction: 600000 }) === 'waiting_for_approval' || 'approval killed');
+  check('a_watchdog_healthy', 'Watchdog leaves a working AI turn alone', () => (decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: 2000 }) === 'healthy' && decideAiTurnWatchdog({ isThinking: false, hasPendingApprovals: false, msSinceLastAction: 99999 }) === 'idle') || 'wrong state');
+  check('a_approval_session_repair', 'Approval session invariants repair an inconsistent session', () => {
+    const s: any = { isPausedForApproval: true, currentProposal: null, currentApprovalRequestId: 'x', isFinished: false };
+    const ok = assertApprovalSessionInvariants(s, 'v95');
+    return (!ok && s.isPausedForApproval === false && s.currentApprovalRequestId === undefined) || JSON.stringify(s);
+  });
+  check('a_resource_fuzz', 'Money transfers conserve cash under hostile amounts (F08)', () => {
+    const f = v95WithIsolatedGlobals(() => runV95ResourceConservationFuzz());
+    return f.breaches.length === 0 || `${f.breaches.length}/${f.cases}: ${f.breaches.slice(0, 3).join('; ')}`;
+  });
+
+  // ---- Determinism + long match
+  const turns = opts.stressTurns ?? 60;
+  const sampleEvery = Math.max(5, Math.floor(turns / 6));
+  const s1 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  const s2 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  check('d_stress_repeatable', `AI vs AI ${turns}-turn match is deterministic for a seed`, () => (s1.finalHash !== '' && s1.finalHash === s2.finalHash) || `${s1.finalHash} vs ${s2.finalHash} ${s1.errors.join('|')}`);
+  check('d_isolation', 'Stress runs never change the live RNG streams or id counters', () => {
+    const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 3, turns: 6 }));
+    return JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]) === before || 'globals changed';
+  });
+  check('d_rng_resume', 'Restoring saved RNG streams resumes the exact sequence', () => v95WithIsolatedGlobals(() => {
+    setRngMasterSeed(777, true);
+    drawGameplayRandom('World');
+    const saved = sanitizeSavedRngRegistryState(JSON.parse(JSON.stringify(globalRngRegistry.exportStreamStates())))!;
+    const expected = [drawGameplayRandom('World'), drawGameplayRandom('World')];
+    setRngMasterSeed(1, true);
+    globalRngRegistry.importStreamStates(saved);
+    const got = [drawGameplayRandom('World'), drawGameplayRandom('World')];
+    return JSON.stringify(expected) === JSON.stringify(got) || `${expected} vs ${got}`;
+  }));
+  check('b_long_match_clean', `Long match (${turns} turns) has no errors or invariant violations`, () => (s1.errors.length === 0 && s1.violations.length === 0 && s1.turns === turns) || `${s1.errors.join('|')} ${s1.violations.slice(0, 3).map(v => v.message).join('|')}`);
+  check('a_failed_actions_free', 'Failed AI actions never consume resources', () => s1.moneyConservationBreaks === 0 || `${s1.moneyConservationBreaks} failed actions changed cash`);
+  check('b_state_growth_bounded', 'Canonical state size does not accelerate over a long match', () => {
+    const z = s1.sizes; if (z.length < 3) return `only ${z.length} samples`;
+    const mid = Math.floor(z.length / 2);
+    const early = (z[mid].bytes - z[0].bytes) / Math.max(1, z[mid].turn - z[0].turn);
+    const late = (z[z.length - 1].bytes - z[mid].bytes) / Math.max(1, z[z.length - 1].turn - z[mid].turn);
+    return late <= Math.max(early * 1.5, 400) || `early ${early.toFixed(0)} B/turn, late ${late.toFixed(0)} B/turn`;
+  });
+
+  // ---- Bounds
+  check('b_notification_cap', 'Mass notifications stay capped and keep unread critical ones', () => {
+    const list = Array.from({ length: 5000 }, (_, i) => ({ id: `n${i}`, type: i === 3 ? 'error' : 'info', notificationType: 'system', read: i !== 3 }));
+    const capped = capNotificationHistory(list);
+    return (capped.length === V95_NOTIFICATION_HISTORY_CAP && capped.some(n => n.id === 'n3') && capped[capped.length - 1].id === 'n4999') || `${capped.length}`;
+  });
+  check('b_notification_noop', 'The notification cap is a no-op under the limit (same array)', () => { const l = [{ id: 'a', read: true }]; return capNotificationHistory(l) === l || 'copied'; });
+  check('b_growth_analyzer', 'History growth analysis flags large growing arrays only', () => {
+    const rows = analyzeHistoryGrowth({ day: 1, lengths: { a: 10, b: 500, c: 20 } }, { day: 11, lengths: { a: 10, b: 900, c: 30 } });
+    const by = Object.fromEntries(rows.map(r => [r.path, r.status]));
+    return (by.a === 'bounded' && by.b === 'suspicious' && by.c === 'growing') || JSON.stringify(by);
+  });
+  check('b_collect_lengths', 'Array-length scan is depth-bounded and cycle-safe', () => {
+    const o: any = { x: [1, 2, 3], y: { z: [{ w: [1] }] } }; o.self = o;
+    const r = collectArrayLengths(o);
+    return (r.x === 3 && r['y.z'] === 1 && r['y.z[].w'] === 1) || JSON.stringify(r);
+  });
+
+  // ---- Performance
+  const perf = v95WithIsolatedGlobals(() => measureV95PerformanceBaseline(3));
+  check('p_baseline', 'Performance baseline measured for core paths', () => perf.length >= 6 || `${perf.length} rows`);
+  check('p_no_critical', 'No core path is in the CRITICAL budget band', () => { const bad = perf.filter(r => r.band === 'CRITICAL'); return bad.length === 0 || bad.map(r => `${r.id} ${r.ms}ms`).join(', '); });
+
+  // ---- Release readiness model
+  const mk = (sev: V95Severity, passed: boolean): V95CheckResult => ({ id: `x_${sev}`, name: sev, section: 'Save Health', severity: sev, passed, detail: '' });
+  check('rr_blocker', 'Any blocker failure makes the build NOT_READY', () => buildReleaseReadinessReport([mk('BLOCKER', false), mk('MINOR', true)], 'quick', 0, []).status === 'NOT_READY' || 'gate did not fail');
+  check('rr_critical', 'A critical failure makes the build NOT_READY', () => buildReleaseReadinessReport([mk('CRITICAL', false)], 'quick', 0, []).status === 'NOT_READY' || 'gate did not fail');
+  check('rr_major_warns', 'A major failure only warns', () => buildReleaseReadinessReport([mk('MAJOR', false)], 'quick', 0, []).status === 'READY_WITH_WARNINGS' || 'wrong status');
+  check('rr_ready', 'All passing with no open issues is READY', () => buildReleaseReadinessReport([mk('MAJOR', true)], 'quick', 0, []).status === 'READY' || 'wrong status');
+  check('rr_known_issue_warns', 'Open known issues keep the build at READY_WITH_WARNINGS', () => buildReleaseReadinessReport([mk('MAJOR', true)], 'quick', 0, V95_AUDIT_FINDINGS).status === 'READY_WITH_WARNINGS' || 'wrong status');
+  check('rr_no_fake_score', 'The readiness report has a status, never a 0–100 score', () => { const r: any = buildReleaseReadinessReport([], 'quick'); return (!('score' in r) && typeof r.status === 'string') || 'score present'; });
+  check('rr_failure_details', 'Failure details carry expected / actual / reproduction', () => {
+    const r = buildReleaseReadinessReport([{ ...mk('MAJOR', false), expected: '1', actual: '2', reproduction: 'do x', seed: 5, turn: 3 }], 'full', 0, []);
+    const txt = formatReleaseDiagnosticSummary(r);
+    return (/expected 1/.test(txt) && /actual 2/.test(txt) && /seed 5/.test(txt) && /repro: do x/.test(txt)) || txt;
+  });
+  check('k_findings_classified', 'Every audit finding has a severity and a status', () => V95_AUDIT_FINDINGS.every(f => f.severity && f.status && f.title) || 'unclassified finding');
+  check('k_no_open_blockers', 'No open blocker/critical finding remains', () => { const o = V95_AUDIT_FINDINGS.filter(f => f.status !== 'fixed' && (f.severity === 'BLOCKER' || f.severity === 'CRITICAL')); return o.length === 0 || o.map(f => f.id).join(','); });
+
+  return results;
+}
+
+/** Maps a V9.5 self-test to its release section + failure severity. */
+function v95ClassifyOwnTest(t: V9SelfTestResult): V95CheckResult {
+  const prefix = t.id.startsWith('rr_') ? 'rr' : t.id.split('_')[0];
+  const section = V95_TEST_SECTION[prefix] || 'System Regression';
+  const severity: V95Severity = /^(s_rng|s_corrupt|s_failed_load|s_verify|i_detects_nan|d_stress|d_rng|d_isolation|a_watchdog_approval|a_resource|a_failed|rr_blocker|rr_critical|k_no_open)/.test(t.id) ? 'CRITICAL'
+    : /^(p_|b_collect|b_growth|v_|rr_no_fake)/.test(t.id) ? 'MINOR' : 'MAJOR';
+  return { id: `v95:${t.id}`, name: t.name, section, severity, passed: t.passed, detail: t.detail || 'ok', system: section, reproduction: `LAB › Release Readiness › ${section} (${t.id})`, seed: /^(d_|b_long|a_failed|b_state)/.test(t.id) ? 9501 : null };
+}
+
+/**
+ * Master release check. Orchestrates the V9.5 checks and the EXISTING suites (never rewrites them). Async only
+ * to yield between suites so the page stays responsive — no artificial delays. Local only.
+ */
+export async function runV95ReleaseCheck(mode: 'quick' | 'full', onProgress?: (label: string, done: number, total: number) => void): Promise<{ report: ReleaseReadinessReport; checks: V95CheckResult[] }> {
+  const t0 = v95Now();
+  const suites = V95_EXISTING_SUITES.filter(s => mode === 'full' || s.tier === 'quick');
+  const total = suites.length + 1;
+  const yieldToUi = () => new Promise<void>(res => (typeof setTimeout === 'function' ? setTimeout(res, 0) : res()));
+  const checks: V95CheckResult[] = [];
+  onProgress?.('V9.5 release checks', 0, total);
+  await yieldToUi();
+  const own = v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: mode === 'full' ? 120 : 40 }));
+  own.forEach(t => checks.push(v95ClassifyOwnTest(t)));
+  let done = 1;
+  for (const s of suites) {
+    onProgress?.(s.label, done, total);
+    await yieldToUi();
+    checks.push(...v95WithIsolatedGlobals(() => runV95ExistingSuite(s)));
+    done += 1;
+  }
+  onProgress?.('done', total, total);
+  return { report: buildReleaseReadinessReport(checks, mode, Math.round(v95Now() - t0)), checks };
+}
+
+
+// ---- White-screen defense for OPTIONAL surfaces only (LAB / inspectors). Canonical errors are never hidden:
+// every caught error is still logged to the console and kept in a small local ring for the Release Center.
+export const V95_SURFACE_ERRORS: Array<{ surface: string; message: string; at: number }> = [];
+
+export class OptionalSurfaceBoundary extends React.Component<{ surface: string; children?: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error) {
+    console.error(`[OptionalSurfaceBoundary:${this.props.surface}]`, error);
+    V95_SURFACE_ERRORS.unshift({ surface: this.props.surface, message: String(error?.message || error), at: Date.now() });
+    if (V95_SURFACE_ERRORS.length > 20) V95_SURFACE_ERRORS.length = 20;
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div role="alert" className="mt-4 p-3 rounded-lg border border-rose-600 text-xs space-y-1" data-testid="v95-surface-fallback">
+          <div className="font-bold">{this.props.surface} could not be displayed. Your match is not affected.</div>
+          <div className="opacity-80 break-words">{this.state.error.message}</div>
+          <button type="button" className="underline" onClick={() => this.setState({ error: null })}>Try again</button>
+        </div>
+      );
+    }
+    return (this.props.children ?? null) as React.ReactElement;
+  }
+}
+
+export interface V95LiveSnapshot {
+  player: any;
+  aiPlayer: any;
+  gameState: any;
+  gameSettings: any;
+  actorsById?: Record<string, any> | null;
+  notifications?: any[];
+}
+
+const V95_BAND_CLASS: Record<string, string> = { GOOD: 'text-emerald-400', NOTICEABLE: 'text-amber-300', SLOW: 'text-orange-400', CRITICAL: 'text-rose-400' };
+const V95_STATUS_CLASS: Record<ReleaseReadinessReport['status'], string> = { READY: 'bg-emerald-700', READY_WITH_WARNINGS: 'bg-amber-700', NOT_READY: 'bg-rose-700' };
+const V95_SEV_CLASS: Record<V95Severity, string> = { BLOCKER: 'text-rose-400', CRITICAL: 'text-rose-300', MAJOR: 'text-amber-300', MINOR: 'text-sky-300', COSMETIC: 'opacity-70' };
+
+/** LAB › V9.5 Release Readiness Center. Everything runs locally, on demand; nothing is sent anywhere. */
+export const ReleaseReadinessCenter: React.FC<{
+  theme: any;
+  day: number;
+  getLive: () => V95LiveSnapshot;
+  buildCurrentSave: () => unknown;
+  lastLoadHealth: SaveHealthReport | null;
+  getReplay: () => any | null;
+  getSurfaceState: () => { modalStack: number; blocking: boolean };
+}> = ({ theme, day, getLive, buildCurrentSave, lastLoadHealth, getReplay, getSurfaceState }) => {
+  const [open, setOpen] = useState(false);
+  const [running, setRunning] = useState<string | null>(null);
+  const [progress, setProgress] = useState('');
+  const [result, setResult] = useState<{ report: ReleaseReadinessReport; checks: V95CheckResult[] } | null>(null);
+  const [live, setLive] = useState<{ invariants: V95InvariantViolation[]; saveHealth: SaveHealthReport | null; replay: ReplayIntegrityReport | null; sizes: Array<{ key: string; bytes: number }>; ms: number } | null>(null);
+  const [perf, setPerf] = useState<V95PerfRow[] | null>(null);
+  const [stress, setStress] = useState<(V95StressResult & { repeatHash?: string }) | null>(null);
+  const [growth, setGrowth] = useState<V95GrowthRow[] | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const samplesRef = useRef<Array<{ day: number; lengths: Record<string, number> }>>([]);
+  const busyRef = useRef(false);
+
+  // History sampling while the LAB is open: one bounded scan per day change (never per render).
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const gs = getLive().gameState;
+      const s = { day: Number(gs?.day || day || 1), lengths: collectArrayLengths(gs, 5, 5) };
+      const prev = samplesRef.current;
+      if (!prev.length || prev[prev.length - 1].day !== s.day) {
+        samplesRef.current = [...prev, s].slice(-6);
+        const first = samplesRef.current[0];
+        if (samplesRef.current.length > 1) setGrowth(analyzeHistoryGrowth(first, s).filter(r => r.status !== 'bounded').slice(0, 12));
+      }
+    } catch (err) { console.error('[V9.5 history sample]', err); }
+  }, [open, day]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const guard = (label: string, fn: () => void) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setRunning(label);
+    setTimeout(() => { try { fn(); } catch (err) { console.error(`[V9.5 ${label}]`, err); } finally { busyRef.current = false; setRunning(null); } }, 0);
+  };
+
+  const runLiveChecks = () => guard('live', () => {
+    const t0 = v95Now();
+    const snap = getLive();
+    const invariants = validateCriticalGameInvariants(snap);
+    let saveHealth: SaveHealthReport | null = null;
+    try { saveHealth = buildSaveHealthReport(JSON.stringify(buildCurrentSave())); } catch (err) { console.error('[V9.5 save health]', err); }
+    const rf = getReplay();
+    setLive({ invariants, saveHealth, replay: rf ? checkReplayIntegrity(rf) : null, sizes: measureStateSizeBreakdown(snap.gameState, 10), ms: Math.round((v95Now() - t0) * 10) / 10 });
+  });
+
+  const runCheck = async (mode: 'quick' | 'full') => {
+    if (busyRef.current) return;
+    busyRef.current = true; setRunning(mode); setProgress('starting…');
+    try { setResult(await runV95ReleaseCheck(mode, (label, done, total) => setProgress(`${label} (${done}/${total})`))); }
+    catch (err) { console.error('[V9.5 release check]', err); setProgress(`failed: ${err instanceof Error ? err.message : String(err)}`); }
+    finally { busyRef.current = false; setRunning(null); }
+  };
+
+  const runStress = (turns: number) => guard(`stress ${turns}`, () => {
+    const a = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery: Math.max(10, Math.floor(turns / 6)) }));
+    const b = turns <= 60 ? v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery: turns })) : null;
+    setStress({ ...a, repeatHash: b?.finalHash });
+  });
+
+  const copySummary = () => {
+    const parts: string[] = [];
+    if (result) parts.push(formatReleaseDiagnosticSummary(result.report));
+    if (live) parts.push(`Live: ${live.invariants.length} invariant violation(s); save ${live.saveHealth?.integrityStatus ?? 'n/a'} (${live.saveHealth?.sizeBytes ?? 0} bytes)`);
+    if (perf) parts.push(`Perf: ${perf.map(p => `${p.id} ${p.ms}ms ${p.band}`).join(', ')}`);
+    if (stress) parts.push(`Stress: ${stress.turns} turns, ${stress.actions} actions, ${stress.errors.length} errors, ${stress.violations.length} violations, max turn ${stress.maxTurnMs}ms`);
+    const text = parts.join('\n') || 'No checks run yet.';
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopied('Copied to clipboard (stays on this device).'), () => setCopied(text));
+      else setCopied(text);
+    } catch { setCopied(text); }
+  };
+
+  const H = ({ children }: { children: React.ReactNode }) => <div className="font-bold uppercase tracking-wider opacity-70 mt-3">{children}</div>;
+  const report = result?.report;
+  const surface = (() => { try { return getSurfaceState(); } catch { return { modalStack: 0, blocking: false }; } })();
+  const Btn = ({ onClick, children, testId, disabled }: { onClick: () => void; children: React.ReactNode; testId: string; disabled?: boolean }) => (
+    <button type="button" className={`${theme.buttonSecondary || ''} px-2 py-1 rounded border ${theme.border} disabled:opacity-50`} onClick={onClick} disabled={Boolean(running) || disabled} data-testid={testId}>{children}</button>
+  );
+
+  return (
+    <section aria-labelledby="v95-rrc-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v95-release-center">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 id="v95-rrc-h" className="font-bold text-sm">🛡️ V9.5 Release Readiness Center</h3>
+        <div className="flex items-center gap-2">
+          {report && <span className={`px-2 py-0.5 rounded text-white font-bold ${V95_STATUS_CLASS[report.status]}`} data-testid="v95-release-status">{report.status.replace(/_/g, ' ')}</span>}
+          <button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="v95-release-toggle">{open ? 'Hide' : 'Open'}</button>
+        </div>
+      </div>
+      <div className="opacity-80">Local diagnostics only · v{VERSION_CONSTANTS.GAME_VERSION} · save schema {VERSION_CONSTANTS.SAVE_SCHEMA_VERSION} · replay schema {VERSION_CONSTANTS.REPLAY_SCHEMA_VERSION} · checks never change the live match</div>
+      {open && (
+        <div className="space-y-1" data-testid="v95-release-body">
+          <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Release checks">
+            <Btn onClick={() => { void runCheck('quick'); }} testId="v95-run-quick">Run Quick Release Check</Btn>
+            <Btn onClick={() => { void runCheck('full'); }} testId="v95-run-full">Run Full Release Check</Btn>
+            <Btn onClick={runLiveChecks} testId="v95-run-live">Check live match</Btn>
+            <Btn onClick={() => guard('perf', () => setPerf(v95WithIsolatedGlobals(() => measureV95PerformanceBaseline(5))))} testId="v95-run-perf">Measure performance</Btn>
+            <Btn onClick={copySummary} testId="v95-copy">Copy Diagnostic Summary</Btn>
+          </div>
+          {running && <div aria-live="polite" data-testid="v95-running">Running {running}… {progress}</div>}
+          {copied && <pre className="whitespace-pre-wrap opacity-80 max-h-32 overflow-auto" data-testid="v95-copied">{copied}</pre>}
+
+          <H>Release Gate</H>
+          {report ? (
+            <div data-testid="v95-gate">
+              <div><b>{report.status.replace(/_/g, ' ')}</b> · {report.totals.passed}/{report.totals.checks} checks passed ({report.mode}) in {report.durationMs} ms</div>
+              <div>Failures — blocker {report.failuresBySeverity.BLOCKER} · critical {report.failuresBySeverity.CRITICAL} · major {report.failuresBySeverity.MAJOR} · minor {report.failuresBySeverity.MINOR} · cosmetic {report.failuresBySeverity.COSMETIC}</div>
+              {report.gateReasons.length > 0 && <div className="text-rose-300">Blocked by: {report.gateReasons.join('; ')}</div>}
+            </div>
+          ) : <div className="opacity-70">Run a release check to evaluate the gate.</div>}
+
+          {report && (
+            <>
+              <H>Sections</H>
+              <table className="w-full text-left" data-testid="v95-sections">
+                <tbody>
+                  {report.sections.map(s => (
+                    <tr key={s.section}><td className="pr-2">{s.section}</td><td>{s.passed + s.failed === 0 ? <span className="opacity-60">not run</span> : s.failed ? <span className={V95_SEV_CLASS[s.worst || 'MINOR']}>✗ {s.failed} failed ({s.worst})</span> : <span className="text-emerald-400">✓ {s.passed}</span>}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              {report.failures.length > 0 && <H>Failure details</H>}
+              {report.failures.slice(0, 30).map(f => (
+                <details key={f.id} className="border rounded p-1 border-rose-800" data-testid="v95-failure">
+                  <summary><span className={V95_SEV_CLASS[f.severity]}>[{f.severity}]</span> {f.section} › {f.name}</summary>
+                  <div>{f.detail}</div>
+                  {f.expected && <div>Expected: {f.expected}</div>}
+                  {f.actual && <div>Actual: {f.actual}</div>}
+                  <div>System: {f.system || f.section}{f.turn != null ? ` · turn ${f.turn}` : ''}{f.seed != null ? ` · seed ${f.seed}` : ''}</div>
+                  {f.reproduction && <div>Reproduce: {f.reproduction}</div>}
+                </details>
+              ))}
+            </>
+          )}
+
+          <H>Critical Invariants (live)</H>
+          {live ? (live.invariants.length ? live.invariants.map(v => <div key={v.id} className={V95_SEV_CLASS[v.severity]}>[{v.severity}] {v.system}: {v.message} — expected {v.expected}, got {v.actual}</div>) : <div className="text-emerald-400" data-testid="v95-live-invariants-ok">✓ No violations in the live match ({live.ms} ms)</div>) : <div className="opacity-70">Use “Check live match”.</div>}
+
+          <H>Save Health</H>
+          {live?.saveHealth ? (
+            <div data-testid="v95-save-health">Current match as a save: <b>{live.saveHealth.integrityStatus}</b> · {(live.saveHealth.sizeBytes / 1024).toFixed(1)} KB · validated in {live.saveHealth.durationMs} ms · repaired {live.saveHealth.fieldsRepaired.length} · dropped {live.saveHealth.fieldsDropped.length} · profile keys kept {live.saveHealth.profileKeysKept}{live.saveHealth.fieldsRepaired.length ? ` (${live.saveHealth.fieldsRepaired.slice(0, 4).join('; ')})` : ''}</div>
+          ) : <div className="opacity-70">Use “Check live match”.</div>}
+          {lastLoadHealth && <div data-testid="v95-last-load">Last loaded file: <b>{lastLoadHealth.integrityStatus}</b> · v{lastLoadHealth.sourceVersion} → v{lastLoadHealth.targetVersion} · {lastLoadHealth.warnings.length} warning(s) · {lastLoadHealth.fieldsRepaired.length} repaired</div>}
+
+          <H>Migration</H>
+          <div>{lastLoadHealth ? `Last load: migration ${lastLoadHealth.migrationRequired ? 'applied' : 'not needed'} · idempotent ${lastLoadHealth.migrationIdempotent ? 'yes' : 'NO'}` : 'Idempotence and version stamping are covered by the release check (m_* tests).'}</div>
+
+          <H>Replay Integrity</H>
+          <div>{live ? (live.replay ? `${live.replay.ok ? '✓' : '✗'} ${live.replay.eventCount} events · ${live.replay.checkpointCount} checkpoints · checksum ${live.replay.checksum}${live.replay.issues.length ? ` · ${live.replay.issues.slice(0, 3).map(i => i.message).join('; ')}` : ''}` : 'No replay recording in this match.') : 'Use “Check live match”.'}</div>
+
+          <H>Determinism · Long-Match Stress</H>
+          <div className="flex flex-wrap gap-2">
+            <Btn onClick={() => runStress(40)} testId="v95-stress-40">AI vs AI 40 turns (×2)</Btn>
+            <Btn onClick={() => runStress(120)} testId="v95-stress-120">120 turns</Btn>
+            <Btn onClick={() => runStress(300)} testId="v95-stress-300">300 turns (systems maximum)</Btn>
+          </div>
+          {stress && (
+            <div data-testid="v95-stress-result">
+              seed {stress.seed} · {stress.turns} turns · {stress.actions} actions · {stress.errors.length} errors · {stress.violations.length} violations · failed-action resource leaks {stress.moneyConservationBreaks} · max turn {stress.maxTurnMs} ms · total {stress.durationMs} ms
+              {stress.repeatHash !== undefined && <div>Repeat run: {stress.repeatHash === stress.finalHash ? '✓ identical final state (deterministic)' : '✗ final state differs'}</div>}
+              <div>State size: {stress.sizes.map(s => `t${s.turn} ${(s.bytes / 1024).toFixed(0)}KB`).join(' · ')}</div>
+              {stress.violations.slice(0, 3).map((v, i) => <div key={i} className="text-rose-300">{v.message}</div>)}
+            </div>
+          )}
+
+          <H>AI Turn Reliability</H>
+          <div>Watchdog: recovers a turn stuck for {V95_AI_TURN_WATCHDOG_MS / 1000}s with no action; never while an approval is pending. Covered by a_* checks and the Co-Pilot, Team OS, GI3 and Background AI suites.</div>
+
+          <H>Memory / History Bounds</H>
+          {growth ? (growth.length ? growth.map(g => <div key={g.path} className={g.status === 'suspicious' ? 'text-amber-300' : ''}>{g.status === 'suspicious' ? '⚠ ' : ''}{g.path}: {g.from} → {g.to} ({g.perDay}/day)</div>) : <div className="text-emerald-400">✓ No history grew across the sampled days</div>) : <div className="opacity-70">Samples are taken once per day while this panel is open (needs two days).</div>}
+          <div>Caps: notifications {V95_NOTIFICATION_HISTORY_CAP} · activity ledger ≤ {GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING} · feedback queue {UI_FEEDBACK_LIMITS.queue}</div>
+          {live && <div>Largest state keys: {live.sizes.slice(0, 6).map(s => `${s.key} ${(s.bytes / 1024).toFixed(1)}KB`).join(' · ')}</div>}
+
+          <H>Performance</H>
+          {perf ? perf.map(p => <div key={p.id}>{p.label}: <span className={V95_BAND_CLASS[p.band]}>{p.ms} ms {p.band}</span> <span className="opacity-60">(good ≤ {p.budget.goodMs} ms)</span></div>) : <div className="opacity-70">Use “Measure performance” (median of 5 local runs).</div>}
+
+          <H>UI Recovery</H>
+          <div>Modal stack {surface.modalStack} · blocking {surface.blocking ? 'yes' : 'no'} · Emergency UI Rescue: Shift+Escape · optional-surface errors caught {V95_SURFACE_ERRORS.length}</div>
+          {V95_SURFACE_ERRORS.slice(0, 3).map((e, i) => <div key={i} className="text-rose-300">{e.surface}: {e.message}</div>)}
+
+          <H>Known Issues & Fixed Findings</H>
+          {V95_AUDIT_FINDINGS.map(f => (
+            <div key={f.id} data-testid={`v95-finding-${f.id}`}><span className={V95_SEV_CLASS[f.severity]}>[{f.severity}]</span> {f.id} · {f.status === 'fixed' ? '✓ fixed' : f.status} · {f.system}: {f.title}</div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+};
+
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -133084,6 +136184,7 @@ function AustraliaGame() {
   }, [gameState.day, player.level, gameSettings]);
 
   const [saveDescription, setSaveDescription] = useState("");
+  const [v95LastLoadHealth, setV95LastLoadHealth] = useState<SaveHealthReport | null>(null);
   const [loadPreview, setLoadPreview] = useState<LoadPreviewState>({
     isOpen: false,
     data: null
@@ -133094,6 +136195,9 @@ function AustraliaGame() {
   const difficultySectionRef = useRef<HTMLDivElement>(null);
   const soloAiTurnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soloAiTurnSessionTokenRef = useRef<symbol | null>(null);
+  // V9.5: bumped whenever a match is replaced (load / new game / restart); deferred gameplay callbacks
+  // capture it and do nothing if a different match is live by the time they fire.
+  const v95MatchEpochRef = useRef(0);
   const teamAiTurnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const coPilotTeamAiReleasedRef = useRef(true);
   const startReleasedTeamAiTurnRef = useRef<() => void>(() => {});
@@ -133586,7 +136690,7 @@ function AustraliaGame() {
       persistent
     };
     
-    setNotifications(prev => [...prev, notification]);
+    setNotifications(prev => capNotificationHistory([...prev, notification]));
     
     const dismissSeconds = gameSettings.notificationSettings?.autoDismiss?.[notificationType] ?? 5;
     if (!persistent && dismissSeconds > 0) {
@@ -135175,1586 +138279,8 @@ function dispatchGameSettingsChange(
     }
   }, [addNotification, buildSaveData, downloadSaveFile, gameState.gameMode]);
 
-  const validateSaveData = useCallback((raw: any): SaveGameData => {
-    if (!raw || typeof raw !== 'object') {
-      throw new Error('Save file is empty or corrupted.');
-    }
-
-    const metadata = raw.metadata || {};
-    if (typeof metadata.timestamp !== 'number') {
-      throw new Error('Save file missing timestamp.');
-    }
-    if (typeof metadata.gameVersion !== 'string') {
-      throw new Error('Save file missing version information.');
-    }
-
-    const playerData = raw.player;
-    const aiData = raw.aiPlayer;
-    const stateData = raw.gameState;
-    const settingsData = raw.gameSettings;
-    if (!playerData || !aiData || !stateData || !settingsData) {
-      throw new Error('Save file missing core state sections.');
-    }
-
-    const requiredPlayerFields = [
-      'money', 'currentRegion', 'inventory', 'visitedRegions', 'challengesCompleted',
-      'character', 'level', 'xp', 'stats', 'consecutiveWins', 'specialAbilityUses',
-      'masteryUnlocks', 'name', 'actionsUsedThisTurn'
-    ];
-    // AUDIT-BUG-013: Graceful default baseline assignments instead of strict throws
-    requiredPlayerFields.forEach(field => {
-      if (typeof playerData[field] === 'undefined') {
-        playerData[field] = (initialPlayerState as Record<string, unknown>)[field];
-      }
-      if (typeof aiData[field] === 'undefined') {
-        aiData[field] = (initialPlayerState as Record<string, unknown>)[field];
-      }
-    });
-
-    const requiredGameFields = [
-      'day', 'season', 'weather', 'resourcePrices', 'activeEvents', 'marketTrend',
-      'gameMode', 'selectedMode', 'currentTurn', 'isAiThinking', 'aiDifficulty',
-      'actionsThisTurn', 'maxActionsPerTurn', 'actionLimitsEnabled',
-      'playerActionsThisTurn', 'allChallengesCompleted'
-    ];
-    // AUDIT-BUG-013: Graceful default baseline assignments instead of strict throws
-    requiredGameFields.forEach(field => {
-      if (typeof stateData[field] === 'undefined') {
-        stateData[field] = (initialGameState as Record<string, unknown>)[field];
-      }
-    });
-
-    const sanitizeStats = (stats: any) => ({
-      strength: typeof stats?.strength === 'number' ? stats.strength : initialPlayerState.stats.strength,
-      charisma: typeof stats?.charisma === 'number' ? stats.charisma : initialPlayerState.stats.charisma,
-      luck: typeof stats?.luck === 'number' ? stats.luck : initialPlayerState.stats.luck,
-      intelligence: typeof stats?.intelligence === 'number' ? stats.intelligence : initialPlayerState.stats.intelligence
-    });
-
-    const sanitizePlayerState = (data: any, fallbackName: string): PlayerStateSnapshot => {
-      const character = resolveCharacter(data?.character?.name);
-      const region = REGIONS[data?.currentRegion] ? data.currentRegion : initialPlayerState.currentRegion;
-      const visited = Array.isArray(data?.visitedRegions)
-        ? data.visitedRegions.filter((regionCode: any) => REGIONS[regionCode]).map(String)
-        : [];
-      if (!visited.includes(region)) {
-        visited.push(region);
-      }
-
-      const inventory = Array.isArray(data?.inventory) ? data.inventory.map(String) : [];
-      const challenges = Array.isArray(data?.challengesCompleted) ? data.challengesCompleted.map(String) : [];
-      const mastery = Array.isArray(data?.masteryUnlocks) ? data.masteryUnlocks.map(String) : [];
-      const completedThisSeason = Array.isArray(data?.completedThisSeason) ? data.completedThisSeason.map(String) : [];
-      const challengeMastery = typeof data?.challengeMastery === 'object' && data.challengeMastery !== null ? data.challengeMastery : {};
-      const challengeCategoryExpertise = typeof data?.challengeCategoryExpertise === 'object' && data.challengeCategoryExpertise !== null ? data.challengeCategoryExpertise : {};
-      const actionCalibrationMultipliers = (data?.actionCalibrationMultipliers && typeof data.actionCalibrationMultipliers === 'object')
-        ? {
-            profit: typeof data.actionCalibrationMultipliers.profit === 'number' && isFinite(data.actionCalibrationMultipliers.profit) ? data.actionCalibrationMultipliers.profit : 1.0,
-            risk: typeof data.actionCalibrationMultipliers.risk === 'number' && isFinite(data.actionCalibrationMultipliers.risk) ? data.actionCalibrationMultipliers.risk : 1.0,
-            momentum: typeof data.actionCalibrationMultipliers.momentum === 'number' && isFinite(data.actionCalibrationMultipliers.momentum) ? data.actionCalibrationMultipliers.momentum : 1.0,
-            ...Object.entries(data.actionCalibrationMultipliers as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, val]) => {
-              if (typeof val === 'number' && isFinite(val)) {
-                acc[key] = val;
-              }
-              return acc;
-            }, {})
-          }
-        : { profit: 1.0, risk: 1.0, momentum: 1.0 };
-      const opponentModels = (typeof data?.opponentModels === 'object' && data.opponentModels !== null) ? data.opponentModels : {};
-      const investments = Array.isArray(data?.investments)
-        ? data.investments.filter((regionCode: string) => REGIONAL_INVESTMENTS[regionCode]).map(String)
-        : [];
-      const equipment = Array.isArray(data?.equipment)
-        ? data.equipment.filter((itemId: string) => SHOP_ITEMS.some(item => item.id === itemId)).map(String)
-        : [];
-      const debuffs = Array.isArray(data?.debuffs)
-        ? data.debuffs
-            .filter((debuff: Debuff) => debuff && typeof debuff.type === 'string' && typeof debuff.remainingDays === 'number')
-            .map((debuff: Debuff) => ({
-              type: debuff.type,
-              remainingDays: Math.max(0, Math.floor(debuff.remainingDays))
-            }))
-        : [];
-      const loans = Array.isArray(data?.loans)
-        ? data.loans
-            .filter((l: any) => typeof l?.amount === 'number')
-            .map((l: any) => ({
-              id: typeof l?.id === 'string' ? l.id : nextCorrelationId(globalDeterministicCounters, 'loan'),
-              amount: typeof l?.amount === 'number' ? l.amount : 0,
-              accrued: typeof l?.accrued === 'number' ? l.accrued : 0
-            }))
-        : [];
-
-      return {
-        ...initialPlayerState,
-        ...data,
-        character,
-        currentRegion: region,
-        money: typeof data?.money === 'number' ? data.money : initialPlayerState.money,
-        visitedRegions: visited,
-        inventory,
-        challengesCompleted: challenges,
-        masteryUnlocks: mastery,
-        stats: sanitizeStats(data?.stats),
-        level: typeof data?.level === 'number' ? data.level : initialPlayerState.level,
-        xp: typeof data?.xp === 'number' ? data.xp : initialPlayerState.xp,
-        consecutiveWins: typeof data?.consecutiveWins === 'number' ? data.consecutiveWins : 0,
-        specialAbilityUses: typeof data?.specialAbilityUses === 'number' ? data.specialAbilityUses : character.specialAbility.usesLeft,
-        name: typeof data?.name === 'string' && data.name.trim() ? data.name : fallbackName,
-        actionsUsedThisTurn: typeof data?.actionsUsedThisTurn === 'number' ? data.actionsUsedThisTurn : 0,
-        overridesUsedToday: typeof data?.overridesUsedToday === 'number' ? data.overridesUsedToday : 0,
-        overrideFatigue: typeof data?.overrideFatigue === 'number' ? data.overrideFatigue : 0,
-        lentActionsUsedToday: typeof data?.lentActionsUsedToday === 'number' ? data.lentActionsUsedToday : 0,
-        receivedActionsUsedToday: typeof data?.receivedActionsUsedToday === 'number' ? data.receivedActionsUsedToday : 0,
-        pendingLentActionCredits: (data?.pendingLentActionCredits && typeof data.pendingLentActionCredits === 'object')
-          ? Object.entries(data.pendingLentActionCredits as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, amount]) => {
-              if (typeof amount === 'number' && Number.isFinite(amount)) {
-                acc[key] = Math.max(0, Math.floor(amount));
-              }
-              return acc;
-            }, {})
-          : {},
-        pendingEmergencyActionCredits: (data?.pendingEmergencyActionCredits && typeof data.pendingEmergencyActionCredits === 'object')
-          ? Object.entries(data.pendingEmergencyActionCredits as unknown as Record<string, number>).reduce<Record<string, number>>((acc, [key, amount]) => {
-              if (typeof amount === 'number' && Number.isFinite(amount)) {
-                acc[key] = Math.max(0, Math.floor(amount));
-              }
-              return acc;
-            }, {})
-          : {},
-        sabotageProtectionExpiresTurn: typeof data?.sabotageProtectionExpiresTurn === 'number' && isFinite(data.sabotageProtectionExpiresTurn)
-          ? Math.max(0, Math.floor(data.sabotageProtectionExpiresTurn))
-          : 0,
-        protectedCash: typeof data?.protectedCash === 'number' && isFinite(data.protectedCash)
-          ? Math.max(0, Math.floor(data.protectedCash))
-          : 0,
-        vaultBaselineMilestoneIndex: typeof data?.vaultBaselineMilestoneIndex === 'number' && isFinite(data.vaultBaselineMilestoneIndex)
-          ? Math.max(-1, Math.floor(data.vaultBaselineMilestoneIndex))
-          : -1,
-        inEconomicRecovery: typeof data?.inEconomicRecovery === 'boolean' ? data.inEconomicRecovery : false,
-        activeTreasuryFundingRequestId: typeof data?.activeTreasuryFundingRequestId === 'string' ? data.activeTreasuryFundingRequestId : null,
-        consecutiveRestrictedTurns: typeof data?.consecutiveRestrictedTurns === 'number' && isFinite(data.consecutiveRestrictedTurns)
-          ? Math.max(0, Math.floor(data.consecutiveRestrictedTurns))
-          : 0,
-        loans,
-        completedThisSeason,
-        challengeMastery,
-        challengeCategoryExpertise,
-        stipendCooldown: typeof data?.stipendCooldown === 'number' ? data.stipendCooldown : 0,
-        investments,
-        equipment,
-        debuffs,
-        activeSpecialAbility: typeof data?.activeSpecialAbility === 'string' && data.activeSpecialAbility.trim() ? data.activeSpecialAbility : null,
-        id: typeof data?.id === 'string' ? data.id : fallbackName.toLowerCase().replace(/\s+/g, '_'),
-        displayName: typeof data?.displayName === 'string' && data.displayName.trim() ? data.displayName : (typeof data?.name === 'string' ? data.name : fallbackName),
-        teamId: typeof data?.teamId === 'string' ? data.teamId : (fallbackName === 'AI Opponent' ? TEAM_OPPONENT_ID : TEAM_PLAYER_ID),
-        kind: data?.kind === 'ai' ? 'ai' : 'human',
-        isHuman: data?.kind === 'ai' ? false : true, // CPFIX4: Ensure restored actor state aligns isHuman with kind
-        role: typeof data?.role === 'string' ? data.role : 'leader',
-        aiPlan: data?.aiPlan && typeof data.aiPlan.summary === 'string'
-          ? {
-              ...data.aiPlan,
-              decisionSummary: sanitizeAiDecisionCompactSummary(data.aiPlan.decisionSummary),
-              confidence: typeof data.aiPlan.confidence === 'number' ? data.aiPlan.confidence : 0.5,
-              priority: typeof data.aiPlan.priority === 'number' ? data.aiPlan.priority : 3,
-              updatedTurn: typeof data.aiPlan.updatedTurn === 'number' ? data.aiPlan.updatedTurn : 0
-            }
-          : null,
-        lastDirectiveStatus: typeof data?.lastDirectiveStatus === 'string' ? data.lastDirectiveStatus : null,
-        aiRoleMode: normalizeAiRoleMode(data?.aiRoleMode),
-        aiRoleModeSource: normalizeAiRoleModeSource(data?.aiRoleModeSource),
-        aiRoleModeReason: typeof data?.aiRoleModeReason === 'string' ? data.aiRoleModeReason : '',
-        aiRoleModeExpiresTurn: Math.max(0, Math.floor(Number(data?.aiRoleModeExpiresTurn) || 0)),
-        teamAiRole: normalizeTeamAiRole(data?.teamAiRole),
-        teamAiRoleReason: typeof data?.teamAiRoleReason === 'string' ? data.teamAiRoleReason : '',
-        teamObjectiveSummary: typeof data?.teamObjectiveSummary === 'string' ? data.teamObjectiveSummary : '',
-        supportRequests: sanitizeSupportRequests(data?.supportRequests),
-        contributionStats: {
-          ...createDefaultContributionStats(),
-          ...(data?.contributionStats || {})
-        },
-        actionCalibrationMultipliers,
-        opponentModels
-      };
-    };
-
-	    const sanitizedGameState: GameStateSnapshot = {
-	      ...initialGameState,
-	      ...stateData,
-        aiMemoriesByActor: migrateAiMemoriesFromSave(stateData.aiMemoriesByActor || raw.aiMemoriesByActor),
-        persistentMemorySnapshot: sanitizePersistentSnapshot(stateData.persistentMemorySnapshot || raw.persistentMemorySnapshot || raw.gameState?.persistentMemorySnapshot),
-        aiCommunication: migrateCommunicationState(stateData.aiCommunication || raw.aiCommunication || raw.gameState?.aiCommunication),
-        teamStrategicPlansByTeam: sanitizeTeamStrategicPlansByTeam(stateData.teamStrategicPlansByTeam || raw.teamStrategicPlansByTeam || raw.gameState?.teamStrategicPlansByTeam),
-        teamOperatingSystem: sanitizeTeamOperatingSystemState(stateData.teamOperatingSystem || raw.teamOperatingSystem || raw.gameState?.teamOperatingSystem),
-        gi3Strategy: sanitizeGI3StrategyState(stateData.gi3Strategy || raw.gi3Strategy || raw.gameState?.gi3Strategy),
-        backgroundAI: sanitizeBackgroundAIState(stateData.backgroundAI || raw.backgroundAI || raw.gameState?.backgroundAI),
-        settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
-        diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
-        worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
-        livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
-        regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
-        contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
-	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
-      resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
-      activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
-      currentTurn: stateData.currentTurn === 'ai' ? 'ai' : 'player',
-      currentActorId: typeof stateData.currentActorId === 'string' ? stateData.currentActorId : initialGameState.currentActorId,
-      turnOrder: Array.isArray(stateData.turnOrder) ? stateData.turnOrder.map(String) : initialGameState.turnOrder,
-      turnCounter: typeof stateData.turnCounter === 'number' ? stateData.turnCounter : initialGameState.turnCounter,
-      roundNumber: typeof stateData.roundNumber === 'number' ? stateData.roundNumber : initialGameState.roundNumber,
-      autoplay: stateData.autoplay
-        ? {
-            enabled: Boolean(stateData.autoplay.enabled),
-            paused: stateData.selectedMode === 'team_ai_vs_ai' ? Boolean(stateData.autoplay.paused) : false,
-            speed: TEAM_MODE_SPEEDS.includes(stateData.autoplay.speed) ? stateData.autoplay.speed : 1
-          }
-        : initialGameState.autoplay,
-      currentDirectiveStrength: normalizeDirectiveStrength(
-        stateData.currentDirectiveStrength ?? settingsData.directiveStrength ?? DEFAULT_GAME_SETTINGS.directiveStrength
-      ),
-      directiveStrengthSource: stateData.directiveStrengthSource === 'manual' ? 'manual' : 'default',
-      selectedMode: ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', 'scenario'].includes(stateData.selectedMode)
-        ? stateData.selectedMode
-        : null,
-      gameMode: ['menu', 'game', 'end'].includes(stateData.gameMode) ? stateData.gameMode : 'game',
-      aiDifficulty: typeof stateData.aiDifficulty === 'string' && AI_DIFFICULTY_PROFILES[stateData.aiDifficulty]
-        ? stateData.aiDifficulty
-        : initialGameState.aiDifficulty,
-      actionLimitsEnabled: Boolean(stateData.actionLimitsEnabled),
-      actionsThisTurn: typeof stateData.actionsThisTurn === 'number' ? stateData.actionsThisTurn : 0,
-      maxActionsPerTurn: typeof stateData.maxActionsPerTurn === 'number' ? stateData.maxActionsPerTurn : initialGameState.maxActionsPerTurn,
-      playerActionsThisTurn: typeof stateData.playerActionsThisTurn === 'number' ? stateData.playerActionsThisTurn : 0,
-      allChallengesCompleted: Boolean(stateData.allChallengesCompleted),
-      isAiThinking: false,
-	      bankruptcyTracker: typeof stateData.bankruptcyTracker === 'object' && stateData.bankruptcyTracker !== null
-	        ? { player: stateData.bankruptcyTracker.player || 0, ai: stateData.bankruptcyTracker.ai || 0 }
-	        : initialGameState.bankruptcyTracker,
-	      dominanceTracker: typeof stateData.dominanceTracker === 'object' && stateData.dominanceTracker !== null
-	        ? { player: stateData.dominanceTracker.player || 0, ai: stateData.dominanceTracker.ai || 0 }
-	        : initialGameState.dominanceTracker,
-	      regionDeposits: sanitizeRegionDeposits(stateData.regionDeposits),
-	      standingPerActor: sanitizeStandingPerActor(stateData.standingPerActor),
-	      regionControlStats: (() => {
-	        const rawStats = stateData.regionControlStats;
-	        const rawHistory = Array.isArray(rawStats?.controlHistory)
-	          ? rawStats.controlHistory
-	              .filter((entry: any) =>
-	                entry &&
-	                typeof entry.turn === 'number' &&
-	                typeof entry.region === 'string' &&
-	                typeof entry.fromPlayer === 'string' &&
-	                typeof entry.toPlayer === 'string' &&
-	                (entry.method === 'deposit' || entry.method === 'steal' || entry.method === 'proposal')
-	              )
-	              .map((entry: any) => ({
-	                turn: Math.floor(entry.turn),
-	                region: entry.region,
-	                fromPlayer: entry.fromPlayer,
-	                toPlayer: entry.toPlayer,
-	                method: entry.method
-	              }))
-	          : [];
-	        return computeRegionControlStats(
-	          sanitizeRegionDeposits(stateData.regionDeposits),
-	          rawHistory
-	        );
-	      })(),
-      proposals: Array.isArray(stateData.proposals)
-        ? stateData.proposals
-            .filter((proposal: Proposal) =>
-              proposal &&
-              typeof proposal.id === 'string' &&
-              typeof proposal.from === 'string' &&
-              typeof proposal.to === 'string' &&
-              typeof proposal.region === 'string'
-            )
-            .map((proposal: Proposal) => ({
-              ...proposal,
-              status: ['pending', 'accepted', 'declined', 'completed', 'cancelled'].includes(proposal.status)
-                ? proposal.status
-                : 'pending',
-              termType: ['cash', 'resources', 'quest', 'hybrid', 'custom'].includes(proposal.termType)
-                ? proposal.termType
-                : 'custom',
-              createdTurn: typeof proposal.createdTurn === 'number' && Number.isFinite(proposal.createdTurn)
-                ? Math.max(0, Math.floor(proposal.createdTurn))
-                : (typeof stateData.turnCounter === 'number' && Number.isFinite(stateData.turnCounter)
-                    ? Math.max(0, Math.floor(stateData.turnCounter))
-                    : (typeof stateData.day === 'number' && Number.isFinite(stateData.day)
-                        ? Math.max(0, Math.floor(stateData.day))
-                        : 1)),
-              termDetails: {
-                cashAmount: typeof proposal.termDetails?.cashAmount === 'number' ? proposal.termDetails.cashAmount : undefined,
-                resources: proposal.termDetails?.resources && typeof proposal.termDetails.resources === 'object'
-                  ? proposal.termDetails.resources
-                  : undefined,
-                challengeNames: Array.isArray(proposal.termDetails?.challengeNames) ? proposal.termDetails.challengeNames : undefined,
-                customText: typeof proposal.termDetails?.customText === 'string' ? proposal.termDetails.customText : undefined
-              }
-            }))
-        : [],
-      negotiationCenter: (() => {
-        const rawCenter = stateData.negotiationCenter || {};
-        return {
-          ...createDefaultNegotiationCenterState(),
-          ...rawCenter,
-          activeTab: ['active', 'pending', 'create', 'history', 'settings', 'logs'].includes(rawCenter.activeTab)
-            ? rawCenter.activeTab
-            : 'active',
-          sortOptions: {
-            ...createDefaultNegotiationCenterState().sortOptions,
-            ...(rawCenter.sortOptions || {})
-          },
-          filters: {
-            ...(rawCenter.filters || {})
-          }
-        } as NegotiationCenterState;
-      })(),
-      negotiationLogs: Array.isArray(stateData.negotiationLogs)
-        ? stateData.negotiationLogs
-            .filter((entry: NegotiationLogEntry) => entry && typeof entry.id === 'string')
-            .slice(-1000)
-        : [],
-      negotiationStats: {
-        ...createDefaultNegotiationStats(),
-        ...(stateData.negotiationStats || {})
-      },
-      challengeCompletions: Array.isArray(stateData.challengeCompletions)
-        ? stateData.challengeCompletions
-            .filter((entry: ChallengeCompletionLogEntry) =>
-              entry &&
-              typeof entry.playerId === 'string' &&
-              typeof entry.challengeName === 'string' &&
-              typeof entry.timestamp === 'number'
-            )
-            .slice(-1000)
-        : [],
-      grandTourState: normalizeGrandTourState(stateData.grandTourState),
-      decisionState: sanitizeDecisionState(stateData.decisionState),
-      gameActivityLedger: sanitizeGameActivityLedgerState(stateData.gameActivityLedger),
-      expeditionRun: sanitizeExpeditionRunState(stateData.expeditionRun)
-	    };
-
-    const sanitizedActorsById = typeof raw.actorsById === 'object' && raw.actorsById !== null
-      ? Object.entries(raw.actorsById).reduce<Record<string, ActorState>>((acc, [actorId, actorData]) => {
-          acc[actorId] = sanitizePlayerState(actorData, actorId) as ActorState;
-          return acc;
-        }, {})
-      : undefined;
-
-    const sanitizedTeamsById = typeof raw.teamsById === 'object' && raw.teamsById !== null
-      ? Object.entries(raw.teamsById).reduce<Record<string, TeamState>>((acc, [teamId, teamData]: [string, any]) => {
-          const actorIds: string[] = Array.isArray(teamData?.actorIds) ? teamData.actorIds.map(String) : [];
-          const defaultRecentPerformanceByActor = createDefaultRecentPerformanceByActor(actorIds);
-          const defaultRealizedPerformanceByActor = createDefaultRealizedPerformanceByActor(actorIds);
-          acc[teamId] = {
-            ...createDefaultTeamState(teamId, teamData?.name || teamId, actorIds, teamData?.color || '#3b82f6'),
-            ...teamData,
-            id: teamId,
-            actorIds,
-            messageLog: Array.isArray(teamData?.messageLog)
-              ? teamData.messageLog
-                  .filter((message: TeamMessage) => message && typeof message.type === 'string')
-                  .map((message: TeamMessage) => ({
-                    ...message,
-                    strength: normalizeDirectiveStrength(message?.strength)
-                  }))
-              : [],
-            activeReservations: Array.isArray(teamData?.activeReservations) ? teamData.activeReservations : [],
-            teamGoals: Array.isArray(teamData?.teamGoals) ? teamData.teamGoals : [],
-            scoreBreakdown: {
-              ...createDefaultTeamScoreBreakdown(),
-              ...(teamData?.scoreBreakdown || {})
-            },
-            contributionByActor: typeof teamData?.contributionByActor === 'object' && teamData.contributionByActor !== null
-              ? teamData.contributionByActor
-              : {},
-            recentPerformanceByActor: actorIds.reduce<Record<string, TeammatePerformanceSample[]>>((historyByActor, actorId) => {
-              historyByActor[actorId] = sanitizeTeammatePerformanceSamples(teamData?.recentPerformanceByActor?.[actorId] || defaultRecentPerformanceByActor[actorId]);
-              return historyByActor;
-            }, {}),
-            realizedPerformanceByActor: actorIds.reduce<Record<string, RealizedValueSample[]>>((historyByActor, actorId) => {
-              historyByActor[actorId] = sanitizeRealizedValueSamples(teamData?.realizedPerformanceByActor?.[actorId] || defaultRealizedPerformanceByActor[actorId]);
-              return historyByActor;
-            }, {}),
-            supportLedger: sanitizeTeamSupportLedger(teamData?.supportLedger),
-            adaptiveState: sanitizeTeamAdaptiveState(teamData?.adaptiveState),
-            teamActionBank: sanitizeTeamActionBank(teamData?.teamActionBank),
-            actionTokens: sanitizeActionTokens(teamData?.actionTokens),
-            activeTeamPlan: sanitizeTeamPlan(teamData?.activeTeamPlan),
-            teamPlanHistory: sanitizeTeamPlanHistory(teamData?.teamPlanHistory),
-            activeThreatTarget: sanitizeTeamThreatTarget(teamData?.activeThreatTarget),
-            activeEmergency: sanitizeTeamEmergencyState(teamData?.activeEmergency),
-            teamInitiative: sanitizeTeamInitiativeState(teamData?.teamInitiative),
-            comboTracking: sanitizeTeamComboTrackingState(teamData?.comboTracking),
-            sequences: sanitizeTeammateSequences(teamData?.sequences),
-            phaseSequenceAssignments: sanitizePhaseSequenceAssignments(teamData?.phaseSequenceAssignments),
-            treasury: sanitizeTeamTreasuryState(teamData?.treasury, teamId),
-            governorExceptions: sanitizeTeamGovernorExceptions(teamData?.governorExceptions),
-            // Team AI Overseer System Phase O10 (GD8, item d): the actor-roster-aware prune lives
-            // here (not inside the pure sanitizeTeamOverseerState) since only this reduce actually
-            // knows the team's current actorIds — strips any strategicDirectives/lockedDirectiveActorIds
-            // entry referencing an actor no longer on this team. Additive-only, same "well-formed
-            // save is provably unaffected" guarantee as the rest of Phase O10's sanitizer hardening.
-            overseer: (() => {
-              const sanitizedOverseer = sanitizeTeamOverseerState(teamData?.overseer);
-              return {
-                ...sanitizedOverseer,
-                strategicDirectives: sanitizedOverseer.strategicDirectives.filter(d => actorIds.includes(d.assignedActorId)),
-                lockedDirectiveActorIds: sanitizedOverseer.lockedDirectiveActorIds.filter(id => actorIds.includes(id))
-              };
-            })(),
-            // AI Operations Auditor Phase AA1: genuinely separate from `overseer` above.
-            auditor: sanitizeAiOperationsAuditorState(teamData?.auditor),
-            // AI Thinking/Algorithm Builder Phase AB1: always sanitizes to [] today (no code path
-            // this phase can ever have populated it), but wired now so a later phase's real
-            // configs round-trip safely without a save-format migration.
-            algorithmConfigs: sanitizeAiAlgorithmConfigs(teamData?.algorithmConfigs),
-            // PI1: AI Action Pipeline Inspector history — inert (always []) until aiPipelineInspectorEnabled.
-            pipelineTraces: sanitizePipelineTraceRecords(teamData?.pipelineTraces)
-          };
-          return acc;
-        }, {})
-      : undefined;
-
-    const loadedAiStrategyLabSafeRangesEnabled = typeof settingsData.aiStrategyLabSafeRangesEnabled === 'boolean'
-      ? settingsData.aiStrategyLabSafeRangesEnabled
-      : DEFAULT_GAME_SETTINGS.aiStrategyLabSafeRangesEnabled;
-    const loadedAiStrategyLabExtremeModeEnabled = typeof settingsData.aiStrategyLabExtremeModeEnabled === 'boolean'
-      ? settingsData.aiStrategyLabExtremeModeEnabled
-      : DEFAULT_GAME_SETTINGS.aiStrategyLabExtremeModeEnabled;
-    const loadedTeamBrainSliderRange = getTeamBrainSliderRangeV63({
-      aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled
-    });
-    const loadedTeamBrainModeV63 = normalizeTeamBrainModeV63(settingsData.teamBrainModeV63);
-    const loadedTeamBrainV63Enabled = typeof settingsData.teamBrainV63Enabled === 'boolean'
-      ? settingsData.teamBrainV63Enabled
-      : DEFAULT_GAME_SETTINGS.teamBrainV63Enabled;
-
-	    const sanitizedGameSettings: GameSettingsState = {
-	      actionPointConsumptionSettings: sanitizeActionPointConsumptionSettings(settingsData.actionPointConsumptionSettings),
-	      autoModeEnabled: typeof settingsData.autoModeEnabled === 'boolean' ? settingsData.autoModeEnabled : (DEFAULT_GAME_SETTINGS.autoModeEnabled ?? false),
-	      permissionMode: typeof settingsData.permissionMode === 'string' ? settingsData.permissionMode : (DEFAULT_GAME_SETTINGS.permissionMode ?? 'recommend'),
-	      allowStrategyChanges: typeof settingsData.allowStrategyChanges === 'boolean' ? settingsData.allowStrategyChanges : (DEFAULT_GAME_SETTINGS.allowStrategyChanges ?? true),
-	      allowEconomyChanges: typeof settingsData.allowEconomyChanges === 'boolean' ? settingsData.allowEconomyChanges : (DEFAULT_GAME_SETTINGS.allowEconomyChanges ?? true),
-	      allowActionManagementChanges: typeof settingsData.allowActionManagementChanges === 'boolean' ? settingsData.allowActionManagementChanges : (DEFAULT_GAME_SETTINGS.allowActionManagementChanges ?? true),
-	      allowNumericalModifiers: typeof settingsData.allowNumericalModifiers === 'boolean' ? settingsData.allowNumericalModifiers : (DEFAULT_GAME_SETTINGS.allowNumericalModifiers ?? false),
-	      preserveReplayDeterminism: typeof settingsData.preserveReplayDeterminism === 'boolean' ? settingsData.preserveReplayDeterminism : (DEFAULT_GAME_SETTINGS.preserveReplayDeterminism ?? true),
-	      randomnessMode: typeof settingsData.randomnessMode === 'string' ? settingsData.randomnessMode : 'deterministic',
-	      smartSettingsProfile: settingsData.smartSettingsProfile ? (typeof sanitizeSmartSettingsProfile === 'function' ? sanitizeSmartSettingsProfile(settingsData.smartSettingsProfile) : settingsData.smartSettingsProfile) : DEFAULT_GAME_SETTINGS.smartSettingsProfile,
-	      scenarioEngineV73Enabled: typeof settingsData.scenarioEngineV73Enabled === 'boolean' ? settingsData.scenarioEngineV73Enabled : DEFAULT_GAME_SETTINGS.scenarioEngineV73Enabled,
-	      customScenarioBuilderEnabled: typeof settingsData.customScenarioBuilderEnabled === 'boolean' ? settingsData.customScenarioBuilderEnabled : DEFAULT_GAME_SETTINGS.customScenarioBuilderEnabled,
-	      regionalContractsEnabled: typeof settingsData.regionalContractsEnabled === 'boolean'
-	        ? settingsData.regionalContractsEnabled
-	        : DEFAULT_GAME_SETTINGS.regionalContractsEnabled,
-	      stateInfrastructureEnabled: typeof settingsData.stateInfrastructureEnabled === 'boolean'
-	        ? settingsData.stateInfrastructureEnabled
-	        : DEFAULT_GAME_SETTINGS.stateInfrastructureEnabled,
-	      expeditionsRelicsEnabled: typeof settingsData.expeditionsRelicsEnabled === 'boolean'
-	        ? settingsData.expeditionsRelicsEnabled
-	        : DEFAULT_GAME_SETTINGS.expeditionsRelicsEnabled,
-	      expeditionModeEnabled: typeof settingsData.expeditionModeEnabled === 'boolean'
-	        ? settingsData.expeditionModeEnabled
-	        : DEFAULT_GAME_SETTINGS.expeditionModeEnabled,
-	      dynamicCrisesEnabled: typeof settingsData.dynamicCrisesEnabled === 'boolean'
-	        ? settingsData.dynamicCrisesEnabled
-	        : (typeof settingsData.dynamicCrisisChainsEnabled === 'boolean' ? settingsData.dynamicCrisisChainsEnabled : DEFAULT_GAME_SETTINGS.dynamicCrisesEnabled),
-	      dynamicCrisisChainsEnabled: typeof settingsData.dynamicCrisisChainsEnabled === 'boolean'
-	        ? settingsData.dynamicCrisisChainsEnabled
-	        : (typeof settingsData.dynamicCrisesEnabled === 'boolean' ? settingsData.dynamicCrisesEnabled : DEFAULT_GAME_SETTINGS.dynamicCrisesEnabled),
-	      campaignModeEnabled: typeof settingsData.campaignModeEnabled === 'boolean'
-	        ? settingsData.campaignModeEnabled
-	        : (typeof settingsData.campaignEngineEnabled === 'boolean' ? settingsData.campaignEngineEnabled : DEFAULT_GAME_SETTINGS.campaignModeEnabled),
-	      campaignEngineEnabled: typeof settingsData.campaignEngineEnabled === 'boolean'
-	        ? settingsData.campaignEngineEnabled
-	        : (typeof settingsData.campaignModeEnabled === 'boolean' ? settingsData.campaignModeEnabled : DEFAULT_GAME_SETTINGS.campaignEngineEnabled),
-	      fogOfWarEnabled: typeof settingsData.fogOfWarEnabled === 'boolean' ? settingsData.fogOfWarEnabled : DEFAULT_GAME_SETTINGS.fogOfWarEnabled,
-	      whatIfTimelinesEnabled: typeof settingsData.whatIfTimelinesEnabled === 'boolean'
-	        ? settingsData.whatIfTimelinesEnabled
-	        : DEFAULT_GAME_SETTINGS.whatIfTimelinesEnabled,
-	      narrativeEngineEnabled: typeof settingsData.narrativeEngineEnabled === 'boolean' ? settingsData.narrativeEngineEnabled : DEFAULT_GAME_SETTINGS.narrativeEngineEnabled,
-	      publicStabilityEnabled: typeof settingsData.publicStabilityEnabled === 'boolean' ? settingsData.publicStabilityEnabled : DEFAULT_GAME_SETTINGS.publicStabilityEnabled,
-	      nationalEventsEnabled: typeof settingsData.nationalEventsEnabled === 'boolean' ? settingsData.nationalEventsEnabled : DEFAULT_GAME_SETTINGS.nationalEventsEnabled,
-	      careerProgressionEnabled: typeof settingsData.careerProgressionEnabled === 'boolean' ? settingsData.careerProgressionEnabled : DEFAULT_GAME_SETTINGS.careerProgressionEnabled,
-	      achievementsEnabled: typeof settingsData.achievementsEnabled === 'boolean' ? settingsData.achievementsEnabled : DEFAULT_GAME_SETTINGS.achievementsEnabled,
-	      aiRivalryEnabled: typeof settingsData.aiRivalryEnabled === 'boolean' ? settingsData.aiRivalryEnabled : DEFAULT_GAME_SETTINGS.aiRivalryEnabled,
-	      actionLimitsEnabled: typeof settingsData.actionLimitsEnabled === 'boolean' ? settingsData.actionLimitsEnabled : DEFAULT_GAME_SETTINGS.actionLimitsEnabled,
-      maxActionsPerTurn: clampSettingNumber(settingsData.maxActionsPerTurn, DEFAULT_GAME_SETTINGS.maxActionsPerTurn, 1, 12),
-      aiMaxActionsPerTurn: clampSettingNumber(settingsData.aiMaxActionsPerTurn, DEFAULT_GAME_SETTINGS.aiMaxActionsPerTurn, 1, 12),
-      allowActionOverride: typeof settingsData.allowActionOverride === 'boolean' ? settingsData.allowActionOverride : DEFAULT_GAME_SETTINGS.allowActionOverride,
-      overrideCost: clampSettingNumber(settingsData.overrideCost, DEFAULT_GAME_SETTINGS.overrideCost, 0, 5000),
-      totalDays: clampSettingNumber(settingsData.totalDays, DEFAULT_GAME_SETTINGS.totalDays, 10, 150),
-      playerActionsPerDay: clampSettingNumber(
-        settingsData.playerActionsPerDay,
-        typeof settingsData.maxActionsPerTurn === 'number' ? settingsData.maxActionsPerTurn : DEFAULT_GAME_SETTINGS.playerActionsPerDay,
-        1,
-        12
-      ),
-      aiActionsPerDay: clampSettingNumber(
-        settingsData.aiActionsPerDay,
-        typeof settingsData.aiMaxActionsPerTurn === 'number' ? settingsData.aiMaxActionsPerTurn : DEFAULT_GAME_SETTINGS.aiActionsPerDay,
-        1,
-        12
-      ),
-      showDayTransition: typeof settingsData.showDayTransition === 'boolean' ? settingsData.showDayTransition : DEFAULT_GAME_SETTINGS.showDayTransition,
-      dynamicWagerEnabled: typeof settingsData.dynamicWagerEnabled === 'boolean' ? settingsData.dynamicWagerEnabled : DEFAULT_GAME_SETTINGS.dynamicWagerEnabled,
-      doubleOrNothingEnabled: typeof settingsData.doubleOrNothingEnabled === 'boolean' ? settingsData.doubleOrNothingEnabled : DEFAULT_GAME_SETTINGS.doubleOrNothingEnabled,
-      investmentsEnabled: typeof settingsData.investmentsEnabled === 'boolean' ? settingsData.investmentsEnabled : DEFAULT_GAME_SETTINGS.investmentsEnabled,
-      equipmentShopEnabled: typeof settingsData.equipmentShopEnabled === 'boolean' ? settingsData.equipmentShopEnabled : DEFAULT_GAME_SETTINGS.equipmentShopEnabled,
-      sabotageEnabled: typeof settingsData.sabotageEnabled === 'boolean' ? settingsData.sabotageEnabled : DEFAULT_GAME_SETTINGS.sabotageEnabled,
-      aiUsesMarketModifiers: typeof settingsData.aiUsesMarketModifiers === 'boolean' ? settingsData.aiUsesMarketModifiers : DEFAULT_GAME_SETTINGS.aiUsesMarketModifiers,
-      aiMarketModifierAwareness: clampSettingNumber(settingsData.aiMarketModifierAwareness, DEFAULT_GAME_SETTINGS.aiMarketModifierAwareness, 0, 2),
-      aiSpecialAbilitiesEnabled: typeof settingsData.aiSpecialAbilitiesEnabled === 'boolean' ? settingsData.aiSpecialAbilitiesEnabled : DEFAULT_GAME_SETTINGS.aiSpecialAbilitiesEnabled,
-      aiSpecialAbilityPriority: clampSettingNumber(settingsData.aiSpecialAbilityPriority, DEFAULT_GAME_SETTINGS.aiSpecialAbilityPriority, 0, 2),
-      aiAffectsEconomy: typeof settingsData.aiAffectsEconomy === 'boolean' ? settingsData.aiAffectsEconomy : DEFAULT_GAME_SETTINGS.aiAffectsEconomy,
-      aiEconomyInteractionWeight: clampSettingNumber(settingsData.aiEconomyInteractionWeight, DEFAULT_GAME_SETTINGS.aiEconomyInteractionWeight, 0, 2),
-      aiWinConditionSpendingEnabled: typeof settingsData.aiWinConditionSpendingEnabled === 'boolean'
-        ? settingsData.aiWinConditionSpendingEnabled
-        : DEFAULT_GAME_SETTINGS.aiWinConditionSpendingEnabled,
-      aiWinConditionAdaptationV2Enabled: typeof settingsData.aiWinConditionAdaptationV2Enabled === 'boolean'
-        ? settingsData.aiWinConditionAdaptationV2Enabled
-        : DEFAULT_GAME_SETTINGS.aiWinConditionAdaptationV2Enabled,
-      aiWinConditionSpendingStrength: clampSettingNumber(settingsData.aiWinConditionSpendingStrength, DEFAULT_GAME_SETTINGS.aiWinConditionSpendingStrength, 0, 2.5),
-      aiRegionsMajorityRushEnabled: typeof settingsData.aiRegionsMajorityRushEnabled === 'boolean'
-        ? settingsData.aiRegionsMajorityRushEnabled
-        : DEFAULT_GAME_SETTINGS.aiRegionsMajorityRushEnabled,
-      aiRegionRushIntensity: clampSettingNumber(settingsData.aiRegionRushIntensity, DEFAULT_GAME_SETTINGS.aiRegionRushIntensity, 0, 2.5),
-      teammatePerformanceSyncEnabled: typeof settingsData.teammatePerformanceSyncEnabled === 'boolean'
-        ? settingsData.teammatePerformanceSyncEnabled
-        : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncEnabled,
-      teammatePerformanceSyncStrength: clampSettingNumber(settingsData.teammatePerformanceSyncStrength, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncStrength, 0, 2),
-      aiStrategyLabEnabled: typeof settingsData.aiStrategyLabEnabled === 'boolean' ? settingsData.aiStrategyLabEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabEnabled,
-      aiStrategyLabScope: normalizeAiStrategyLabScope(settingsData.aiStrategyLabScope),
-      aiStrategyLabPreset: normalizeAiStrategyLabPreset(settingsData.aiStrategyLabPreset),
-      aiStrategyLabSafeRangesEnabled: loadedAiStrategyLabSafeRangesEnabled,
-      aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled,
-      aiStrategyLabSeparateProfilesEnabled: typeof settingsData.aiStrategyLabSeparateProfilesEnabled === 'boolean' ? settingsData.aiStrategyLabSeparateProfilesEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabSeparateProfilesEnabled,
-      aiStrategyLabScorePreviewEnabled: typeof settingsData.aiStrategyLabScorePreviewEnabled === 'boolean' ? settingsData.aiStrategyLabScorePreviewEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabScorePreviewEnabled,
-      aiStrategyLabWarningsEnabled: typeof settingsData.aiStrategyLabWarningsEnabled === 'boolean' ? settingsData.aiStrategyLabWarningsEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabWarningsEnabled,
-      aiStrategyLabDesignerNotesEnabled: typeof settingsData.aiStrategyLabDesignerNotesEnabled === 'boolean' ? settingsData.aiStrategyLabDesignerNotesEnabled : DEFAULT_GAME_SETTINGS.aiStrategyLabDesignerNotesEnabled,
-      playerTeammateAiPreset: normalizeAiStrategyLabPreset(settingsData.playerTeammateAiPreset, DEFAULT_GAME_SETTINGS.playerTeammateAiPreset),
-      opponentAiPreset: normalizeAiStrategyLabPreset(settingsData.opponentAiPreset, DEFAULT_GAME_SETTINGS.opponentAiPreset),
-      aiEvaluationFactors: sanitizeAiEvaluationFactorsV63(settingsData.aiEvaluationFactors, {
-        aiStrategyLabSafeRangesEnabled: loadedAiStrategyLabSafeRangesEnabled,
-        aiStrategyLabExtremeModeEnabled: loadedAiStrategyLabExtremeModeEnabled
-      }),
-      directiveStrength: normalizeDirectiveStrength(settingsData.directiveStrength),
-      directiveBudgetEnabled: typeof settingsData.directiveBudgetEnabled === 'boolean'
-        ? settingsData.directiveBudgetEnabled
-        : DEFAULT_GAME_SETTINGS.directiveBudgetEnabled,
-      directivesPerTurn: clampSettingNumber(settingsData.directivesPerTurn, DEFAULT_GAME_SETTINGS.directivesPerTurn, 1, 10),
-      directiveEscalationCost: clampSettingNumber(settingsData.directiveEscalationCost, DEFAULT_GAME_SETTINGS.directiveEscalationCost, 0, 10),
-      overseerAutoResolveThreshold: clampSettingNumber(settingsData.overseerAutoResolveThreshold, DEFAULT_GAME_SETTINGS.overseerAutoResolveThreshold ?? 70, 0, 100),
-      deterministicRngActive: typeof settingsData.deterministicRngActive === 'boolean' ? settingsData.deterministicRngActive : DEFAULT_GAME_SETTINGS.deterministicRngActive ?? false,
-      teamAiTacticalLookaheadDepth: clampSettingNumber(settingsData.teamAiTacticalLookaheadDepth, DEFAULT_GAME_SETTINGS.teamAiTacticalLookaheadDepth ?? 2, 1, 10),
-      teamAiCandidateEvaluationWidth: clampSettingNumber(settingsData.teamAiCandidateEvaluationWidth, DEFAULT_GAME_SETTINGS.teamAiCandidateEvaluationWidth ?? 5, 1, 50),
-      aiDeterministic: typeof settingsData.aiDeterministic === 'boolean' ? settingsData.aiDeterministic : DEFAULT_GAME_SETTINGS.aiDeterministic,
-      aiDeterministicSeed: normalizeAiSeed(
-        typeof settingsData.aiDeterministicSeed === 'number'
-          ? settingsData.aiDeterministicSeed
-	          : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
-	      ),
-      worldRngMode: normalizeWorldRngMode(settingsData.worldRngMode),
-      worldRngSeed: normalizeAiSeed(
-        typeof settingsData.worldRngSeed === 'number'
-          ? settingsData.worldRngSeed
-          : DEFAULT_GAME_SETTINGS.worldRngSeed
-      ),
-      aiReplayRecordingEnabled: typeof settingsData.aiReplayRecordingEnabled === 'boolean'
-        ? settingsData.aiReplayRecordingEnabled
-        : DEFAULT_GAME_SETTINGS.aiReplayRecordingEnabled,
-      aiReplayMaxEvents: clampSettingNumber(settingsData.aiReplayMaxEvents, DEFAULT_GAME_SETTINGS.aiReplayMaxEvents, 100, 10000),
-      aiReplayPolicy: normalizeReplayPolicy(settingsData.aiReplayPolicy),
-      replaySmartCheckpointsEnabled: typeof settingsData.replaySmartCheckpointsEnabled === 'boolean'
-        ? settingsData.replaySmartCheckpointsEnabled
-        : DEFAULT_GAME_SETTINGS.replaySmartCheckpointsEnabled,
-      replayTurningPointDetectionEnabled: typeof settingsData.replayTurningPointDetectionEnabled === 'boolean'
-        ? settingsData.replayTurningPointDetectionEnabled
-        : DEFAULT_GAME_SETTINGS.replayTurningPointDetectionEnabled,
-      replayDeterministicValidationEnabled: typeof settingsData.replayDeterministicValidationEnabled === 'boolean'
-        ? settingsData.replayDeterministicValidationEnabled
-        : DEFAULT_GAME_SETTINGS.replayDeterministicValidationEnabled,
-      replayWhatIfBranchingEnabled: typeof settingsData.replayWhatIfBranchingEnabled === 'boolean'
-        ? settingsData.replayWhatIfBranchingEnabled
-        : DEFAULT_GAME_SETTINGS.replayWhatIfBranchingEnabled,
-      replayDeveloperDiagnosticsEnabled: typeof settingsData.replayDeveloperDiagnosticsEnabled === 'boolean'
-        ? settingsData.replayDeveloperDiagnosticsEnabled
-        : DEFAULT_GAME_SETTINGS.replayDeveloperDiagnosticsEnabled,
-      replayAutoOpenAtMatchEnd: typeof settingsData.replayAutoOpenAtMatchEnd === 'boolean'
-        ? settingsData.replayAutoOpenAtMatchEnd
-        : DEFAULT_GAME_SETTINGS.replayAutoOpenAtMatchEnd,
-      replayDetailLevel: (['standard', 'analysis', 'developer'] as const).includes(settingsData.replayDetailLevel as 'standard')
-        ? settingsData.replayDetailLevel as 'standard' | 'analysis' | 'developer'
-        : DEFAULT_GAME_SETTINGS.replayDetailLevel,
-      aiEngineVersion: typeof settingsData.aiEngineVersion === 'string' && settingsData.aiEngineVersion.trim()
-        ? settingsData.aiEngineVersion
-        : DEFAULT_GAME_SETTINGS.aiEngineVersion,
-      aiFairnessLevel: clampSettingNumber(settingsData.aiFairnessLevel, DEFAULT_GAME_SETTINGS.aiFairnessLevel, 0, 1),
-      aiPersonalityVariance: clampSettingNumber(settingsData.aiPersonalityVariance, DEFAULT_GAME_SETTINGS.aiPersonalityVariance, 0, 1),
-      aiPlanningDepth: clampSettingNumber(settingsData.aiPlanningDepth, DEFAULT_GAME_SETTINGS.aiPlanningDepth, 1, 5),
-      aiGrandTourPriority: clampSettingNumber(settingsData.aiGrandTourPriority, DEFAULT_GAME_SETTINGS.aiGrandTourPriority, 0, 2.5),
-	      advancedLoansEnabled: typeof settingsData.advancedLoansEnabled === 'boolean' ? settingsData.advancedLoansEnabled : DEFAULT_GAME_SETTINGS.advancedLoansEnabled,
-	      advancedLoansAccessMode: normalizeAdvancedLoansAccessMode(settingsData.advancedLoansAccessMode),
-	      creditScoreEnabled: typeof settingsData.creditScoreEnabled === 'boolean' ? settingsData.creditScoreEnabled : DEFAULT_GAME_SETTINGS.creditScoreEnabled,
-	      loanEventsEnabled: typeof settingsData.loanEventsEnabled === 'boolean' ? settingsData.loanEventsEnabled : DEFAULT_GAME_SETTINGS.loanEventsEnabled,
-	      earlyRepaymentEnabled: typeof settingsData.earlyRepaymentEnabled === 'boolean' ? settingsData.earlyRepaymentEnabled : DEFAULT_GAME_SETTINGS.earlyRepaymentEnabled,
-	      loanRefinancingEnabled: typeof settingsData.loanRefinancingEnabled === 'boolean' ? settingsData.loanRefinancingEnabled : DEFAULT_GAME_SETTINGS.loanRefinancingEnabled,
-	      defaultPenaltyMultiplier: clampSettingNumber(settingsData.defaultPenaltyMultiplier, DEFAULT_GAME_SETTINGS.defaultPenaltyMultiplier, 1, 4),
-	      interestAccrualRate: clampSettingNumber(settingsData.interestAccrualRate, DEFAULT_GAME_SETTINGS.interestAccrualRate, 0.25, 3),
-	      maxSimultaneousLoans: clampSettingNumber(settingsData.maxSimultaneousLoans, DEFAULT_GAME_SETTINGS.maxSimultaneousLoans, 1, 6),
-	      loanTierUnlockSpeedMultiplier: clampSettingNumber(settingsData.loanTierUnlockSpeedMultiplier, DEFAULT_GAME_SETTINGS.loanTierUnlockSpeedMultiplier, 0.5, 2),
-        aiLoanRiskWeight: clampSettingNumber(settingsData.aiLoanRiskWeight, DEFAULT_GAME_SETTINGS.aiLoanRiskWeight, 0, 2),
-        aiLoanRepaymentPriority: clampSettingNumber(settingsData.aiLoanRepaymentPriority, DEFAULT_GAME_SETTINGS.aiLoanRepaymentPriority, 0, 2),
-        aiLoanRefinancingWeight: clampSettingNumber(settingsData.aiLoanRefinancingWeight, DEFAULT_GAME_SETTINGS.aiLoanRefinancingWeight, 0, 2),
-        aiLoanEmergencyOnly: typeof settingsData.aiLoanEmergencyOnly === 'boolean' ? settingsData.aiLoanEmergencyOnly : DEFAULT_GAME_SETTINGS.aiLoanEmergencyOnly,
-	      adaptiveAiEnabled: typeof settingsData.adaptiveAiEnabled === 'boolean' ? settingsData.adaptiveAiEnabled : DEFAULT_GAME_SETTINGS.adaptiveAiEnabled,
-	      adaptiveAiNetWorthThreshold: clampSettingNumber(settingsData.adaptiveAiNetWorthThreshold, DEFAULT_GAME_SETTINGS.adaptiveAiNetWorthThreshold, 0.1, 2),
-	      adaptiveAiLevelDifference: clampSettingNumber(settingsData.adaptiveAiLevelDifference, DEFAULT_GAME_SETTINGS.adaptiveAiLevelDifference, 0, 10),
-	      adaptiveAiChallengeDifference: clampSettingNumber(settingsData.adaptiveAiChallengeDifference, DEFAULT_GAME_SETTINGS.adaptiveAiChallengeDifference, 0, 20),
-	      adaptiveAiConsecutiveDays: clampSettingNumber(settingsData.adaptiveAiConsecutiveDays, DEFAULT_GAME_SETTINGS.adaptiveAiConsecutiveDays, 1, 10),
-	      adaptiveAiMaxDifficulty: settingsData.adaptiveAiMaxDifficulty || DEFAULT_GAME_SETTINGS.adaptiveAiMaxDifficulty,
-	      adaptiveAiAggressionMultiplier: clampSettingNumber(settingsData.adaptiveAiAggressionMultiplier, DEFAULT_GAME_SETTINGS.adaptiveAiAggressionMultiplier, 0.5, 3),
-	      adaptiveAiPatternLearning: typeof settingsData.adaptiveAiPatternLearning === 'boolean' ? settingsData.adaptiveAiPatternLearning : DEFAULT_GAME_SETTINGS.adaptiveAiPatternLearning,
-	      adaptiveAiRubberBanding: typeof settingsData.adaptiveAiRubberBanding === 'boolean' ? settingsData.adaptiveAiRubberBanding : DEFAULT_GAME_SETTINGS.adaptiveAiRubberBanding,
-	      adaptiveAiTauntsEnabled: typeof settingsData.adaptiveAiTauntsEnabled === 'boolean' ? settingsData.adaptiveAiTauntsEnabled : DEFAULT_GAME_SETTINGS.adaptiveAiTauntsEnabled,
-        adaptiveAiAffectedModes: sanitizeAdaptiveAiAffectedModes(settingsData.adaptiveAiAffectedModes),
-        adaptiveAiTeamComebackStrength: clampSettingNumber(settingsData.adaptiveAiTeamComebackStrength, DEFAULT_GAME_SETTINGS.adaptiveAiTeamComebackStrength, 0, 2),
-        adaptiveAiTriggerSensitivity: clampSettingNumber(settingsData.adaptiveAiTriggerSensitivity, DEFAULT_GAME_SETTINGS.adaptiveAiTriggerSensitivity, 0.5, 2),
-        adaptiveAiSupportFocus: clampSettingNumber(settingsData.adaptiveAiSupportFocus, DEFAULT_GAME_SETTINGS.adaptiveAiSupportFocus, 0, 2),
-        adaptiveAiRiskBias: clampSettingNumber(settingsData.adaptiveAiRiskBias, DEFAULT_GAME_SETTINGS.adaptiveAiRiskBias, 0, 2),
-        adaptiveAiEconomyRecoveryBias: clampSettingNumber(settingsData.adaptiveAiEconomyRecoveryBias, DEFAULT_GAME_SETTINGS.adaptiveAiEconomyRecoveryBias, 0, 2),
-        adaptiveAiDisruptionBias: clampSettingNumber(settingsData.adaptiveAiDisruptionBias, DEFAULT_GAME_SETTINGS.adaptiveAiDisruptionBias, 0, 2),
-        adaptiveAiPatternMemoryStrength: clampSettingNumber(settingsData.adaptiveAiPatternMemoryStrength, DEFAULT_GAME_SETTINGS.adaptiveAiPatternMemoryStrength, 0, 2),
-        adaptiveAiRubberBandingStrength: clampSettingNumber(settingsData.adaptiveAiRubberBandingStrength, DEFAULT_GAME_SETTINGS.adaptiveAiRubberBandingStrength, 0, 2),
-        adaptiveAiShowDecisionTransparency: typeof settingsData.adaptiveAiShowDecisionTransparency === 'boolean' ? settingsData.adaptiveAiShowDecisionTransparency : DEFAULT_GAME_SETTINGS.adaptiveAiShowDecisionTransparency,
-        adaptiveAiShowActiveModifiers: typeof settingsData.adaptiveAiShowActiveModifiers === 'boolean' ? settingsData.adaptiveAiShowActiveModifiers : DEFAULT_GAME_SETTINGS.adaptiveAiShowActiveModifiers,
-        opponentModelDecayRate: clampSettingNumber(settingsData.opponentModelDecayRate, DEFAULT_GAME_SETTINGS.opponentModelDecayRate, 0, 1),
-        opponentModelWeight: clampSettingNumber(settingsData.opponentModelWeight, DEFAULT_GAME_SETTINGS.opponentModelWeight, 0, 100),
-        opponentThreatWeightsEnabled: typeof settingsData.opponentThreatWeightsEnabled === 'boolean' ? settingsData.opponentThreatWeightsEnabled : DEFAULT_GAME_SETTINGS.opponentThreatWeightsEnabled,
-        rivalDossierPanelEnabled: typeof settingsData.rivalDossierPanelEnabled === 'boolean' ? settingsData.rivalDossierPanelEnabled : DEFAULT_GAME_SETTINGS.rivalDossierPanelEnabled,
-        aiMemoryEnabled: typeof settingsData.aiMemoryEnabled === 'boolean' ? settingsData.aiMemoryEnabled : DEFAULT_GAME_SETTINGS.aiMemoryEnabled,
-        aiMemoryInfluenceStrength: clampSettingNumber(settingsData.aiMemoryInfluenceStrength, DEFAULT_GAME_SETTINGS.aiMemoryInfluenceStrength, 0, 2),
-        aiMemoryInspectionEnabled: typeof settingsData.aiMemoryInspectionEnabled === 'boolean' ? settingsData.aiMemoryInspectionEnabled : DEFAULT_GAME_SETTINGS.aiMemoryInspectionEnabled,
-        aiMemoryFullInspectionEnabled: typeof settingsData.aiMemoryFullInspectionEnabled === 'boolean' ? settingsData.aiMemoryFullInspectionEnabled : DEFAULT_GAME_SETTINGS.aiMemoryFullInspectionEnabled,
-        aiStrategicLearningEnabled: typeof settingsData.aiStrategicLearningEnabled === 'boolean' ? settingsData.aiStrategicLearningEnabled : DEFAULT_GAME_SETTINGS.aiStrategicLearningEnabled,
-        aiStrategicLearningStrength: clampSettingNumber(settingsData.aiStrategicLearningStrength, DEFAULT_GAME_SETTINGS.aiStrategicLearningStrength, 0, 2),
-        aiPersistentMemoryEnabled: applyPersistencePolicyToSettings(
-          { aiPersistentMemoryEnabled: typeof settingsData.aiPersistentMemoryEnabled === 'boolean' ? settingsData.aiPersistentMemoryEnabled : DEFAULT_GAME_SETTINGS.aiPersistentMemoryEnabled },
-          loadPersistencePolicy()
-        ).aiPersistentMemoryEnabled,
-        aiPersistentLearningEnabled: typeof settingsData.aiPersistentLearningEnabled === 'boolean' ? settingsData.aiPersistentLearningEnabled : DEFAULT_GAME_SETTINGS.aiPersistentLearningEnabled,
-        aiPersistentIdentityMode: settingsData.aiPersistentIdentityMode === 'recurring' ? 'recurring' : DEFAULT_GAME_SETTINGS.aiPersistentIdentityMode,
-        aiPersistentAskOnAbandon: typeof settingsData.aiPersistentAskOnAbandon === 'boolean' ? settingsData.aiPersistentAskOnAbandon : DEFAULT_GAME_SETTINGS.aiPersistentAskOnAbandon,
-        aiPersistentAivsAiEnabled: typeof settingsData.aiPersistentAivsAiEnabled === 'boolean' ? settingsData.aiPersistentAivsAiEnabled : DEFAULT_GAME_SETTINGS.aiPersistentAivsAiEnabled,
-        aiCommunicationEnabled: typeof settingsData.aiCommunicationEnabled === 'boolean' ? settingsData.aiCommunicationEnabled : DEFAULT_GAME_SETTINGS.aiCommunicationEnabled,
-        aiCommunicationProactiveEnabled: typeof settingsData.aiCommunicationProactiveEnabled === 'boolean' ? settingsData.aiCommunicationProactiveEnabled : DEFAULT_GAME_SETTINGS.aiCommunicationProactiveEnabled,
-        aiCommunicationProactiveFrequency: settingsData.aiCommunicationProactiveFrequency === 'low' || settingsData.aiCommunicationProactiveFrequency === 'high'
-          ? settingsData.aiCommunicationProactiveFrequency
-          : DEFAULT_GAME_SETTINGS.aiCommunicationProactiveFrequency,
-        aiCommunicationAutonomyLevel: settingsData.aiCommunicationAutonomyLevel === 'assisted' || settingsData.aiCommunicationAutonomyLevel === 'delegated'
-          ? settingsData.aiCommunicationAutonomyLevel
-          : DEFAULT_GAME_SETTINGS.aiCommunicationAutonomyLevel,
-        regionalStandingEnabled: typeof settingsData.regionalStandingEnabled === 'boolean'
-          ? settingsData.regionalStandingEnabled
-          : DEFAULT_GAME_SETTINGS.regionalStandingEnabled,
-        regionalStandingDecayRate: clampSettingNumber(
-          settingsData.regionalStandingDecayRate,
-          DEFAULT_GAME_SETTINGS.regionalStandingDecayRate,
-          0,
-          5
-        ),
-        aiStandingWeight: clampSettingNumber(
-          settingsData.aiStandingWeight,
-          DEFAULT_GAME_SETTINGS.aiStandingWeight,
-          0,
-          2.5
-        ),
-        aiStandingPriority: clampSettingNumber(
-          settingsData.aiStandingPriority,
-          DEFAULT_GAME_SETTINGS.aiStandingPriority,
-          0,
-          2.5
-        ),
-        externalTerritoriesEnabled: typeof settingsData.externalTerritoriesEnabled === 'boolean'
-          ? settingsData.externalTerritoriesEnabled
-          : DEFAULT_GAME_SETTINGS.externalTerritoriesEnabled,
-        territoryEquipmentGateEnabled: typeof settingsData.territoryEquipmentGateEnabled === 'boolean'
-          ? settingsData.territoryEquipmentGateEnabled
-          : (typeof settingsData.expeditionModeEnabled === 'boolean'
-            ? settingsData.expeditionModeEnabled
-            : DEFAULT_GAME_SETTINGS.territoryEquipmentGateEnabled),
-        territoryTravelMode: (settingsData.territoryTravelMode === 'committed' || settingsData.territoryTravelMode === 'transit')
-          ? settingsData.territoryTravelMode
-          : DEFAULT_GAME_SETTINGS.territoryTravelMode,
-        multiTurnJourneyEnabled: typeof settingsData.multiTurnJourneyEnabled === 'boolean'
-          ? settingsData.multiTurnJourneyEnabled
-          : DEFAULT_GAME_SETTINGS.multiTurnJourneyEnabled,
-        survivalMechanicsEnabled: typeof settingsData.survivalMechanicsEnabled === 'boolean'
-          ? settingsData.survivalMechanicsEnabled
-          : (DEFAULT_GAME_SETTINGS.survivalMechanicsEnabled ?? true),
-        dailySupplyConsumptionRate: clampSettingNumber(
-          settingsData.dailySupplyConsumptionRate,
-          DEFAULT_GAME_SETTINGS.dailySupplyConsumptionRate ?? 10,
-          0,
-          100
-        ),
-        forcedRetreatEnabled: typeof settingsData.forcedRetreatEnabled === 'boolean'
-          ? settingsData.forcedRetreatEnabled
-          : (DEFAULT_GAME_SETTINGS.forcedRetreatEnabled ?? true),
-	      winCondition: normalizeWinMetric(settingsData.winCondition),
-        winConditionTieBreakers: sanitizeWinMetricTieBreakers(settingsData.winConditionTieBreakers),
-	      allowCashOut: typeof settingsData.allowCashOut === 'boolean' ? settingsData.allowCashOut : DEFAULT_GAME_SETTINGS.allowCashOut,
-        negotiationMode: typeof settingsData.negotiationMode === 'boolean'
-          ? settingsData.negotiationMode
-          : DEFAULT_GAME_SETTINGS.negotiationMode,
-        negotiationOptions: {
-          ...createDefaultNegotiationOptions(),
-          ...(settingsData.negotiationOptions || {}),
-          proposalExpirationTurns: clampSettingNumber(
-            settingsData.negotiationOptions?.proposalExpirationTurns,
-            createDefaultNegotiationOptions().proposalExpirationTurns,
-            0,
-            15
-          )
-        },
-        aiSabotagePriority: clampSettingNumber(settingsData.aiSabotagePriority, DEFAULT_GAME_SETTINGS.aiSabotagePriority, 0, 2),
-        aiInvestmentPriority: clampSettingNumber(settingsData.aiInvestmentPriority, DEFAULT_GAME_SETTINGS.aiInvestmentPriority, 0, 2),
-        aiEquipmentPurchasePriority: clampSettingNumber(settingsData.aiEquipmentPurchasePriority, DEFAULT_GAME_SETTINGS.aiEquipmentPurchasePriority, 0, 2),
-        aiRegionalContractPriority: clampSettingNumber(settingsData.aiRegionalContractPriority, DEFAULT_GAME_SETTINGS.aiRegionalContractPriority ?? 1.0, 0, 2.5),
-        aiInfrastructurePriority: clampSettingNumber(settingsData.aiInfrastructurePriority, DEFAULT_GAME_SETTINGS.aiInfrastructurePriority ?? 1.0, 0, 2.5),
-        aiRelicEquipPriority: clampSettingNumber(settingsData.aiRelicEquipPriority, DEFAULT_GAME_SETTINGS.aiRelicEquipPriority ?? 1.0, 0, 2.5),
-        aiCrisisMitigationPriority: clampSettingNumber(settingsData.aiCrisisMitigationPriority, DEFAULT_GAME_SETTINGS.aiCrisisMitigationPriority ?? 1.0, 0, 2.5),
-        aiNegotiationParticipationWeight: clampSettingNumber(settingsData.aiNegotiationParticipationWeight, DEFAULT_GAME_SETTINGS.aiNegotiationParticipationWeight, 0, 2),
-        aiNegotiationValuationWeight: clampSettingNumber(settingsData.aiNegotiationValuationWeight, DEFAULT_GAME_SETTINGS.aiNegotiationValuationWeight, 0, 2),
-        settingPriorityMode: normalizePriorityMode(settingsData.settingPriorityMode),
-        maxConcurrentHighInfluenceSettings: clampSettingNumber(settingsData.maxConcurrentHighInfluenceSettings, DEFAULT_GAME_SETTINGS.maxConcurrentHighInfluenceSettings, 1, 8),
-        conflictResolutionStrength: clampSettingNumber(settingsData.conflictResolutionStrength, DEFAULT_GAME_SETTINGS.conflictResolutionStrength, 0, 2),
-        deprioritizeLowImpactSettings: typeof settingsData.deprioritizeLowImpactSettings === 'boolean' ? settingsData.deprioritizeLowImpactSettings : DEFAULT_GAME_SETTINGS.deprioritizeLowImpactSettings,
-        priorityTransparencyEnabled: typeof settingsData.priorityTransparencyEnabled === 'boolean' ? settingsData.priorityTransparencyEnabled : DEFAULT_GAME_SETTINGS.priorityTransparencyEnabled,
-        manualPriorityWeights: sanitizeManualPriorityWeights(settingsData.manualPriorityWeights),
-        decisionTransparencyEnabled: typeof settingsData.decisionTransparencyEnabled === 'boolean' ? settingsData.decisionTransparencyEnabled : DEFAULT_GAME_SETTINGS.decisionTransparencyEnabled,
-        decisionTransparencyVisibilityScope: normalizeDecisionTransparencyVisibilityScope(settingsData.decisionTransparencyVisibilityScope),
-        decisionTransparencyViewMode: normalizeDecisionTransparencyViewMode(settingsData.decisionTransparencyViewMode),
-        decisionTransparencyRealtimeBreakdown: typeof settingsData.decisionTransparencyRealtimeBreakdown === 'boolean' ? settingsData.decisionTransparencyRealtimeBreakdown : DEFAULT_GAME_SETTINGS.decisionTransparencyRealtimeBreakdown,
-        decisionTransparencyTimeline: typeof settingsData.decisionTransparencyTimeline === 'boolean' ? settingsData.decisionTransparencyTimeline : DEFAULT_GAME_SETTINGS.decisionTransparencyTimeline,
-        decisionTransparencySettingContributions: typeof settingsData.decisionTransparencySettingContributions === 'boolean' ? settingsData.decisionTransparencySettingContributions : DEFAULT_GAME_SETTINGS.decisionTransparencySettingContributions,
-        decisionTransparencyReasonExplanations: typeof settingsData.decisionTransparencyReasonExplanations === 'boolean' ? settingsData.decisionTransparencyReasonExplanations : DEFAULT_GAME_SETTINGS.decisionTransparencyReasonExplanations,
-        decisionTransparencyAlternativeActions: typeof settingsData.decisionTransparencyAlternativeActions === 'boolean' ? settingsData.decisionTransparencyAlternativeActions : DEFAULT_GAME_SETTINGS.decisionTransparencyAlternativeActions,
-        decisionTransparencyPriorityFlow: typeof settingsData.decisionTransparencyPriorityFlow === 'boolean' ? settingsData.decisionTransparencyPriorityFlow : DEFAULT_GAME_SETTINGS.decisionTransparencyPriorityFlow,
-        decisionTransparencyMaxHistoryRetained: clampSettingNumber(settingsData.decisionTransparencyMaxHistoryRetained, DEFAULT_GAME_SETTINGS.decisionTransparencyMaxHistoryRetained, 5, 120),
-        decisionTransparencyDetailLevel: clampSettingNumber(settingsData.decisionTransparencyDetailLevel, DEFAULT_GAME_SETTINGS.decisionTransparencyDetailLevel, 1, 100),
-        decisionTransparencyExplanationDepth: clampSettingNumber(settingsData.decisionTransparencyExplanationDepth, DEFAULT_GAME_SETTINGS.decisionTransparencyExplanationDepth, 1, 100),
-        decisionTransparencyTimelineLength: clampSettingNumber(settingsData.decisionTransparencyTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyTimelineLength, 5, 120),
-        decisionTransparencySamplingDensity: clampSettingNumber(settingsData.decisionTransparencySamplingDensity, DEFAULT_GAME_SETTINGS.decisionTransparencySamplingDensity, 1, 10),
-        decisionTransparencyPanelDensity: normalizeDecisionTransparencyPanelDensity(settingsData.decisionTransparencyPanelDensity),
-        decisionTransparencyMultiAiOverviewEnabled: typeof settingsData.decisionTransparencyMultiAiOverviewEnabled === 'boolean' ? settingsData.decisionTransparencyMultiAiOverviewEnabled : DEFAULT_GAME_SETTINGS.decisionTransparencyMultiAiOverviewEnabled,
-        decisionTransparencyShowPerAiMiniCards: typeof settingsData.decisionTransparencyShowPerAiMiniCards === 'boolean' ? settingsData.decisionTransparencyShowPerAiMiniCards : DEFAULT_GAME_SETTINGS.decisionTransparencyShowPerAiMiniCards,
-        decisionTransparencyShowAdaptiveActorBreakdown: typeof settingsData.decisionTransparencyShowAdaptiveActorBreakdown === 'boolean' ? settingsData.decisionTransparencyShowAdaptiveActorBreakdown : DEFAULT_GAME_SETTINGS.decisionTransparencyShowAdaptiveActorBreakdown,
-        decisionTransparencyShowTeamAdaptiveSource: typeof settingsData.decisionTransparencyShowTeamAdaptiveSource === 'boolean' ? settingsData.decisionTransparencyShowTeamAdaptiveSource : DEFAULT_GAME_SETTINGS.decisionTransparencyShowTeamAdaptiveSource,
-        decisionTransparencyShowActorAppliedEffects: typeof settingsData.decisionTransparencyShowActorAppliedEffects === 'boolean' ? settingsData.decisionTransparencyShowActorAppliedEffects : DEFAULT_GAME_SETTINGS.decisionTransparencyShowActorAppliedEffects,
-        decisionTransparencyDefaultGroupView: normalizeDecisionTransparencyGroupView(settingsData.decisionTransparencyDefaultGroupView),
-        decisionTransparencyShowOnlyActiveAis: typeof settingsData.decisionTransparencyShowOnlyActiveAis === 'boolean' ? settingsData.decisionTransparencyShowOnlyActiveAis : DEFAULT_GAME_SETTINGS.decisionTransparencyShowOnlyActiveAis,
-        decisionTransparencyShowUnaffectedAis: typeof settingsData.decisionTransparencyShowUnaffectedAis === 'boolean' ? settingsData.decisionTransparencyShowUnaffectedAis : DEFAULT_GAME_SETTINGS.decisionTransparencyShowUnaffectedAis,
-        decisionTransparencyMaxVisibleAiCards: clampSettingNumber(settingsData.decisionTransparencyMaxVisibleAiCards, DEFAULT_GAME_SETTINGS.decisionTransparencyMaxVisibleAiCards, 1, 8),
-        decisionTransparencyPerAiTimelineDensity: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineDensity, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineDensity, 1, 6),
-        decisionTransparencyPerAiTimelineLength: clampSettingNumber(settingsData.decisionTransparencyPerAiTimelineLength, DEFAULT_GAME_SETTINGS.decisionTransparencyPerAiTimelineLength, 4, 30),
-        gameActivityLedgerEnabled: typeof settingsData.gameActivityLedgerEnabled === 'boolean' ? settingsData.gameActivityLedgerEnabled : DEFAULT_GAME_SETTINGS.gameActivityLedgerEnabled,
-        gameActivityLedgerDetailLevel: ['standard', 'detailed', 'developer'].includes(settingsData.gameActivityLedgerDetailLevel) ? settingsData.gameActivityLedgerDetailLevel : DEFAULT_GAME_SETTINGS.gameActivityLedgerDetailLevel,
-        gameActivityLedgerIncludeInSaveFile: typeof settingsData.gameActivityLedgerIncludeInSaveFile === 'boolean' ? settingsData.gameActivityLedgerIncludeInSaveFile : DEFAULT_GAME_SETTINGS.gameActivityLedgerIncludeInSaveFile,
-        gameActivityLedgerMaxEvents: typeof settingsData.gameActivityLedgerMaxEvents === 'number' && Number.isFinite(settingsData.gameActivityLedgerMaxEvents)
-          ? Math.max(10, Math.min(GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING, Math.floor(settingsData.gameActivityLedgerMaxEvents)))
-          : DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents,
-        gameActivityLedgerRetentionPolicy: ['keep_recent', 'keep_critical'].includes(settingsData.gameActivityLedgerRetentionPolicy) ? settingsData.gameActivityLedgerRetentionPolicy : DEFAULT_GAME_SETTINGS.gameActivityLedgerRetentionPolicy,
-        gameActivityLedgerRecordingPaused: typeof settingsData.gameActivityLedgerRecordingPaused === 'boolean' ? settingsData.gameActivityLedgerRecordingPaused : DEFAULT_GAME_SETTINGS.gameActivityLedgerRecordingPaused,
-        aiPipelineInspectorEnabled: typeof settingsData.aiPipelineInspectorEnabled === 'boolean' ? settingsData.aiPipelineInspectorEnabled : DEFAULT_GAME_SETTINGS.aiPipelineInspectorEnabled,
-        diag2OverlayEnabled: settingsData.diag2OverlayEnabled === true,
-        coPilotStartPhaseOverlayEnabled: settingsData.coPilotStartPhaseOverlayEnabled === true,
-        postMatchDebriefEnabled: typeof settingsData.postMatchDebriefEnabled === 'boolean' ? settingsData.postMatchDebriefEnabled : DEFAULT_GAME_SETTINGS.postMatchDebriefEnabled,
-        scenarioModeEnabled: typeof settingsData.scenarioModeEnabled === 'boolean' ? settingsData.scenarioModeEnabled : DEFAULT_GAME_SETTINGS.scenarioModeEnabled,
-        selectedScenarioId: typeof settingsData.selectedScenarioId === 'string' ? settingsData.selectedScenarioId : DEFAULT_GAME_SETTINGS.selectedScenarioId,
-        uxAssistPackEnabled: typeof settingsData.uxAssistPackEnabled === 'boolean' ? settingsData.uxAssistPackEnabled : DEFAULT_GAME_SETTINGS.uxAssistPackEnabled,
-        simplifiedActionBarEnabled: typeof settingsData.simplifiedActionBarEnabled === 'boolean' ? settingsData.simplifiedActionBarEnabled : DEFAULT_GAME_SETTINGS.simplifiedActionBarEnabled,
-        disabledActionFeedbackEnabled: typeof settingsData.disabledActionFeedbackEnabled === 'boolean' ? settingsData.disabledActionFeedbackEnabled : DEFAULT_GAME_SETTINGS.disabledActionFeedbackEnabled,
-        interactiveMapEnabled: typeof settingsData.interactiveMapEnabled === 'boolean' ? settingsData.interactiveMapEnabled : DEFAULT_GAME_SETTINGS.interactiveMapEnabled,
-        winConditionCoachEnabled: typeof settingsData.winConditionCoachEnabled === 'boolean' ? settingsData.winConditionCoachEnabled : DEFAULT_GAME_SETTINGS.winConditionCoachEnabled,
-        settingsPresetsEnabled: typeof settingsData.settingsPresetsEnabled === 'boolean' ? settingsData.settingsPresetsEnabled : DEFAULT_GAME_SETTINGS.settingsPresetsEnabled,
-        groupedInventoryCardsEnabled: typeof settingsData.groupedInventoryCardsEnabled === 'boolean' ? settingsData.groupedInventoryCardsEnabled : DEFAULT_GAME_SETTINGS.groupedInventoryCardsEnabled,
-        playerIntentOnboardingEnabled: typeof settingsData.playerIntentOnboardingEnabled === 'boolean' ? settingsData.playerIntentOnboardingEnabled : DEFAULT_GAME_SETTINGS.playerIntentOnboardingEnabled,
-        playerIntentOnboardingDismissed: Array.isArray(settingsData.playerIntentOnboardingDismissed) ? settingsData.playerIntentOnboardingDismissed.filter((x: any) => typeof x === 'string') : DEFAULT_GAME_SETTINGS.playerIntentOnboardingDismissed,
-        // V9.2: learning progress survives save/load (sanitised, bounded); absent in old saves → fresh state.
-        guidedLearning: settingsData.guidedLearning && typeof settingsData.guidedLearning === 'object' ? { ...sanitizeLearningState(settingsData.guidedLearning), forcedLessonId: null, sessionHintsShown: 0 } : null,
-        playerIntentExplainRoutineActions: settingsData.playerIntentExplainRoutineActions === true,
-        playerIntentExplainMode: ['routine_off', 'high_impact', 'every'].includes(settingsData.playerIntentExplainMode)
-          ? settingsData.playerIntentExplainMode
-          : (settingsData.playerIntentExplainRoutineActions === true ? 'every' : DEFAULT_GAME_SETTINGS.playerIntentExplainMode),
-        teamModeAiSystemsEnabled: typeof settingsData.teamModeAiSystemsEnabled === 'boolean' ? settingsData.teamModeAiSystemsEnabled : DEFAULT_GAME_SETTINGS.teamModeAiSystemsEnabled,
-        teamModeAiSystemProfile: normalizeTeamModeAiSystemProfile(settingsData.teamModeAiSystemProfile),
-        teamBrainV63Enabled: loadedTeamBrainV63Enabled,
-        teamBrainModeV63: loadedTeamBrainModeV63,
-        teamBrainStrategyModesEnabled: typeof settingsData.teamBrainStrategyModesEnabled === 'boolean' ? settingsData.teamBrainStrategyModesEnabled : DEFAULT_GAME_SETTINGS.teamBrainStrategyModesEnabled,
-        teamBrainPersonalitiesEnabled: typeof settingsData.teamBrainPersonalitiesEnabled === 'boolean' ? settingsData.teamBrainPersonalitiesEnabled : DEFAULT_GAME_SETTINGS.teamBrainPersonalitiesEnabled,
-        teamBrainTeammateSupportEnabled: typeof settingsData.teamBrainTeammateSupportEnabled === 'boolean' ? settingsData.teamBrainTeammateSupportEnabled : DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportEnabled,
-        teamBrainOpponentPressureEnabled: typeof settingsData.teamBrainOpponentPressureEnabled === 'boolean' ? settingsData.teamBrainOpponentPressureEnabled : DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureEnabled,
-        teamBrainComebackLogicEnabled: typeof settingsData.teamBrainComebackLogicEnabled === 'boolean' ? settingsData.teamBrainComebackLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainComebackLogicEnabled,
-        teamBrainRecoveryLogicEnabled: typeof settingsData.teamBrainRecoveryLogicEnabled === 'boolean' ? settingsData.teamBrainRecoveryLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainRecoveryLogicEnabled,
-        teamBrainTravelDisciplineEnabled: typeof settingsData.teamBrainTravelDisciplineEnabled === 'boolean' ? settingsData.teamBrainTravelDisciplineEnabled : DEFAULT_GAME_SETTINGS.teamBrainTravelDisciplineEnabled,
-        teamBrainResourceLogicEnabled: typeof settingsData.teamBrainResourceLogicEnabled === 'boolean' ? settingsData.teamBrainResourceLogicEnabled : DEFAULT_GAME_SETTINGS.teamBrainResourceLogicEnabled,
-        teamBrainExplanationEnabled: typeof settingsData.teamBrainExplanationEnabled === 'boolean' ? settingsData.teamBrainExplanationEnabled : DEFAULT_GAME_SETTINGS.teamBrainExplanationEnabled,
-        teamBrainTeammateSupportBias: clampSettingNumber(settingsData.teamBrainTeammateSupportBias, DEFAULT_GAME_SETTINGS.teamBrainTeammateSupportBias, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
-        teamBrainOpponentPressureBias: clampSettingNumber(settingsData.teamBrainOpponentPressureBias, DEFAULT_GAME_SETTINGS.teamBrainOpponentPressureBias, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
-        teamBrainTravelDiscipline: clampSettingNumber(settingsData.teamBrainTravelDiscipline, DEFAULT_GAME_SETTINGS.teamBrainTravelDiscipline, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
-        teamBrainRiskScaling: clampSettingNumber(settingsData.teamBrainRiskScaling, DEFAULT_GAME_SETTINGS.teamBrainRiskScaling, loadedTeamBrainSliderRange.min, loadedTeamBrainSliderRange.max),
-        teamCompetitiveAiEnabled: typeof settingsData.teamCompetitiveAiEnabled === 'boolean'
-          ? settingsData.teamCompetitiveAiEnabled
-          : DEFAULT_GAME_SETTINGS.teamCompetitiveAiEnabled,
-        teamModeAiDifficultyPreset: normalizeTeamModeAiDifficultyPreset(settingsData.teamModeAiDifficultyPreset, DEFAULT_GAME_SETTINGS.teamModeAiDifficultyPreset),
-        friendlyTeamAiPreset: normalizeFriendlyTeamAiPreset(settingsData.friendlyTeamAiPreset, DEFAULT_GAME_SETTINGS.friendlyTeamAiPreset),
-        enemyTeamAiPreset: normalizeEnemyTeamAiPreset(settingsData.enemyTeamAiPreset, DEFAULT_GAME_SETTINGS.enemyTeamAiPreset),
-        teamAiActionOverridesEnabled: typeof settingsData.teamAiActionOverridesEnabled === 'boolean'
-          ? settingsData.teamAiActionOverridesEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiActionOverridesEnabled,
-        teamAiOverridePolicy: normalizeTeamAiOverridePolicy(settingsData.teamAiOverridePolicy, DEFAULT_GAME_SETTINGS.teamAiOverridePolicy),
-        friendlyAiOverridePolicy: normalizeFriendlyAiOverridePolicy(settingsData.friendlyAiOverridePolicy, DEFAULT_GAME_SETTINGS.friendlyAiOverridePolicy),
-        teamAiOverrideMaxPerActorPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerActorPerDay, 1, OVERRIDE_DAILY_CAP),
-        teamAiOverrideMaxPerTeamPerDay: clampSettingNumber(settingsData.teamAiOverrideMaxPerTeamPerDay, DEFAULT_GAME_SETTINGS.teamAiOverrideMaxPerTeamPerDay, 1, OVERRIDE_DAILY_CAP * 2),
-        teamAiOverrideBaseCostMultiplier: clampSettingNumber(settingsData.teamAiOverrideBaseCostMultiplier, DEFAULT_GAME_SETTINGS.teamAiOverrideBaseCostMultiplier, 0.5, 3.0),
-        teamAiOverrideMinimumDecisionScore: clampSettingNumber(settingsData.teamAiOverrideMinimumDecisionScore, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumDecisionScore, 0, 400),
-        teamAiOverrideMinimumCashReserve: clampSettingNumber(settingsData.teamAiOverrideMinimumCashReserve, DEFAULT_GAME_SETTINGS.teamAiOverrideMinimumCashReserve, 0, 5000),
-        teamAiOverrideEscalatingCostEnabled: typeof settingsData.teamAiOverrideEscalatingCostEnabled === 'boolean'
-          ? settingsData.teamAiOverrideEscalatingCostEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiOverrideEscalatingCostEnabled,
-        teamAiOverrideFatigueEnabled: typeof settingsData.teamAiOverrideFatigueEnabled === 'boolean'
-          ? settingsData.teamAiOverrideFatigueEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiOverrideFatigueEnabled,
-        teamAiOverrideTransparencyEnabled: typeof settingsData.teamAiOverrideTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiOverrideTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiOverrideTransparencyEnabled,
-        teamActionBankEnabled: typeof settingsData.teamActionBankEnabled === 'boolean'
-          ? settingsData.teamActionBankEnabled
-          : DEFAULT_GAME_SETTINGS.teamActionBankEnabled,
-        teamActionBankBonusActionsPerDay: clampSettingNumber(settingsData.teamActionBankBonusActionsPerDay, DEFAULT_GAME_SETTINGS.teamActionBankBonusActionsPerDay, 0, 10),
-        teamActionBankDistributionMode: normalizeTeamActionBankDistributionMode(settingsData.teamActionBankDistributionMode, DEFAULT_GAME_SETTINGS.teamActionBankDistributionMode),
-        teamActionBankReserveActions: clampSettingNumber(settingsData.teamActionBankReserveActions, DEFAULT_GAME_SETTINGS.teamActionBankReserveActions, 0, 5),
-        teamActionBankMaxDrawsPerActorPerDay: clampSettingNumber(settingsData.teamActionBankMaxDrawsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamActionBankMaxDrawsPerActorPerDay, 1, 5),
-        teamActionBankTransparencyEnabled: typeof settingsData.teamActionBankTransparencyEnabled === 'boolean'
-          ? settingsData.teamActionBankTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamActionBankTransparencyEnabled,
-        teamAiActionLendingEnabled: typeof settingsData.teamAiActionLendingEnabled === 'boolean'
-          ? settingsData.teamAiActionLendingEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiActionLendingEnabled,
-        teamAiMaxLentActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxLentActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxLentActionsPerActorPerDay, 1, 3),
-        teamAiMaxReceivedActionsPerActorPerDay: clampSettingNumber(settingsData.teamAiMaxReceivedActionsPerActorPerDay, DEFAULT_GAME_SETTINGS.teamAiMaxReceivedActionsPerActorPerDay, 1, 3),
-        teamAiActionLendingMinimumValueGain: clampSettingNumber(settingsData.teamAiActionLendingMinimumValueGain, DEFAULT_GAME_SETTINGS.teamAiActionLendingMinimumValueGain, 0, 200),
-        teamAiActionLendingRequiresCommittedPlan: typeof settingsData.teamAiActionLendingRequiresCommittedPlan === 'boolean'
-          ? settingsData.teamAiActionLendingRequiresCommittedPlan
-          : DEFAULT_GAME_SETTINGS.teamAiActionLendingRequiresCommittedPlan,
-        teamAiActionLendingTransparencyEnabled: typeof settingsData.teamAiActionLendingTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiActionLendingTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiActionLendingTransparencyEnabled,
-        teamAiPlanCommitmentEnabled: typeof settingsData.teamAiPlanCommitmentEnabled === 'boolean'
-          ? settingsData.teamAiPlanCommitmentEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentEnabled,
-        teamAiPlanCommitmentStrength: clampSettingNumber(settingsData.teamAiPlanCommitmentStrength, DEFAULT_GAME_SETTINGS.teamAiPlanCommitmentStrength, 0, 100),
-        teamAiPlanMaximumDurationDays: clampSettingNumber(settingsData.teamAiPlanMaximumDurationDays, DEFAULT_GAME_SETTINGS.teamAiPlanMaximumDurationDays, 1, 14),
-        teamAiPlanReevaluationFrequency: clampSettingNumber(settingsData.teamAiPlanReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiPlanReevaluationFrequency, 1, 5),
-        teamAiPlanInterruptionSensitivity: clampSettingNumber(settingsData.teamAiPlanInterruptionSensitivity, DEFAULT_GAME_SETTINGS.teamAiPlanInterruptionSensitivity, 0, 100),
-        teamAiPlanTransparencyEnabled: typeof settingsData.teamAiPlanTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiPlanTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiPlanTransparencyEnabled,
-        teamAiReservationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.teamAiReservationStrictness)
-          ? settingsData.teamAiReservationStrictness
-          : DEFAULT_GAME_SETTINGS.teamAiReservationStrictness,
-        friendlyAiRespectPlayerReservations: typeof settingsData.friendlyAiRespectPlayerReservations === 'boolean'
-          ? settingsData.friendlyAiRespectPlayerReservations
-          : DEFAULT_GAME_SETTINGS.friendlyAiRespectPlayerReservations,
-        friendlyAiMayRequestReservedResource: typeof settingsData.friendlyAiMayRequestReservedResource === 'boolean'
-          ? settingsData.friendlyAiMayRequestReservedResource
-          : DEFAULT_GAME_SETTINGS.friendlyAiMayRequestReservedResource,
-        teamAiThreatTargetingEnabled: typeof settingsData.teamAiThreatTargetingEnabled === 'boolean'
-          ? settingsData.teamAiThreatTargetingEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingEnabled,
-        teamAiThreatTargetingStrength: clampSettingNumber(settingsData.teamAiThreatTargetingStrength, DEFAULT_GAME_SETTINGS.teamAiThreatTargetingStrength, 0, 100),
-        teamAiThreatReevaluationFrequency: clampSettingNumber(settingsData.teamAiThreatReevaluationFrequency, DEFAULT_GAME_SETTINGS.teamAiThreatReevaluationFrequency, 1, 10),
-        teamAiThreatFocusDuration: clampSettingNumber(settingsData.teamAiThreatFocusDuration, DEFAULT_GAME_SETTINGS.teamAiThreatFocusDuration, 1, 10),
-        teamAiMayTargetFriendlyAiTeammate: typeof settingsData.teamAiMayTargetFriendlyAiTeammate === 'boolean'
-          ? settingsData.teamAiMayTargetFriendlyAiTeammate
-          : DEFAULT_GAME_SETTINGS.teamAiMayTargetFriendlyAiTeammate,
-        teamAiEndgameAccelerationEnabled: typeof settingsData.teamAiEndgameAccelerationEnabled === 'boolean'
-          ? settingsData.teamAiEndgameAccelerationEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationEnabled,
-        teamAiEndgameStartPercent: clampSettingNumber(settingsData.teamAiEndgameStartPercent, DEFAULT_GAME_SETTINGS.teamAiEndgameStartPercent, 0.5, 0.95),
-        teamAiEndgameAggressionMultiplier: clampSettingNumber(settingsData.teamAiEndgameAggressionMultiplier, DEFAULT_GAME_SETTINGS.teamAiEndgameAggressionMultiplier, 1.0, 3.0),
-        teamAiEndgameOverrideBias: clampSettingNumber(settingsData.teamAiEndgameOverrideBias, DEFAULT_GAME_SETTINGS.teamAiEndgameOverrideBias, 0, 0.5),
-        teamAiEndgameCashConversionStrength: clampSettingNumber(settingsData.teamAiEndgameCashConversionStrength, DEFAULT_GAME_SETTINGS.teamAiEndgameCashConversionStrength, 0, 100),
-        teamAiEmergencyActionsEnabled: typeof settingsData.teamAiEmergencyActionsEnabled === 'boolean'
-          ? settingsData.teamAiEmergencyActionsEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsEnabled,
-        teamAiEmergencyActionCooldownDays: clampSettingNumber(settingsData.teamAiEmergencyActionCooldownDays, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionCooldownDays, 1, 10),
-        teamAiEmergencyActionsPerGame: clampSettingNumber(settingsData.teamAiEmergencyActionsPerGame, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsPerGame, 1, 10),
-        teamAiEmergencyActionStrength: clampSettingNumber(settingsData.teamAiEmergencyActionStrength, DEFAULT_GAME_SETTINGS.teamAiEmergencyActionStrength, 0, 100),
-        teamAiEmergencyActionsForFriendlyTeam: typeof settingsData.teamAiEmergencyActionsForFriendlyTeam === 'boolean'
-          ? settingsData.teamAiEmergencyActionsForFriendlyTeam
-          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForFriendlyTeam,
-        teamAiEmergencyActionsForEnemyTeam: typeof settingsData.teamAiEmergencyActionsForEnemyTeam === 'boolean'
-          ? settingsData.teamAiEmergencyActionsForEnemyTeam
-          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsForEnemyTeam,
-        teamInitiativeEnabled: typeof settingsData.teamInitiativeEnabled === 'boolean'
-          ? settingsData.teamInitiativeEnabled
-          : DEFAULT_GAME_SETTINGS.teamInitiativeEnabled,
-        teamInitiativeMaximum: clampSettingNumber(settingsData.teamInitiativeMaximum, DEFAULT_GAME_SETTINGS.teamInitiativeMaximum, 20, 500),
-        teamInitiativeGainMultiplier: clampSettingNumber(settingsData.teamInitiativeGainMultiplier, DEFAULT_GAME_SETTINGS.teamInitiativeGainMultiplier, 0, 3),
-        teamInitiativeDecayEnabled: typeof settingsData.teamInitiativeDecayEnabled === 'boolean'
-          ? settingsData.teamInitiativeDecayEnabled
-          : DEFAULT_GAME_SETTINGS.teamInitiativeDecayEnabled,
-        teamInitiativeVisibleToPlayer: typeof settingsData.teamInitiativeVisibleToPlayer === 'boolean'
-          ? settingsData.teamInitiativeVisibleToPlayer
-          : DEFAULT_GAME_SETTINGS.teamInitiativeVisibleToPlayer,
-        teamComboBonusesEnabled: typeof settingsData.teamComboBonusesEnabled === 'boolean'
-          ? settingsData.teamComboBonusesEnabled
-          : DEFAULT_GAME_SETTINGS.teamComboBonusesEnabled,
-        teamComboBonusStrength: clampSettingNumber(settingsData.teamComboBonusStrength, DEFAULT_GAME_SETTINGS.teamComboBonusStrength, 0, 100),
-        teamComboWindowActions: clampSettingNumber(settingsData.teamComboWindowActions, DEFAULT_GAME_SETTINGS.teamComboWindowActions, 2, 6),
-        teamAiReservationTransparencyEnabled: typeof settingsData.teamAiReservationTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiReservationTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiReservationTransparencyEnabled,
-        teamAiThreatTargetingTransparencyEnabled: typeof settingsData.teamAiThreatTargetingTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiThreatTargetingTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiThreatTargetingTransparencyEnabled,
-        teamAiEndgameAccelerationTransparencyEnabled: typeof settingsData.teamAiEndgameAccelerationTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiEndgameAccelerationTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiEndgameAccelerationTransparencyEnabled,
-        teamAiEmergencyActionsTransparencyEnabled: typeof settingsData.teamAiEmergencyActionsTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiEmergencyActionsTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiEmergencyActionsTransparencyEnabled,
-        teamInitiativeTransparencyEnabled: typeof settingsData.teamInitiativeTransparencyEnabled === 'boolean'
-          ? settingsData.teamInitiativeTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamInitiativeTransparencyEnabled,
-        teamComboBonusesTransparencyEnabled: typeof settingsData.teamComboBonusesTransparencyEnabled === 'boolean'
-          ? settingsData.teamComboBonusesTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamComboBonusesTransparencyEnabled,
-        teamCashVaultEnabled: typeof settingsData.teamCashVaultEnabled === 'boolean'
-          ? settingsData.teamCashVaultEnabled
-          : DEFAULT_GAME_SETTINGS.teamCashVaultEnabled,
-        automaticCashLockingEnabled: typeof settingsData.automaticCashLockingEnabled === 'boolean'
-          ? settingsData.automaticCashLockingEnabled
-          : DEFAULT_GAME_SETTINGS.automaticCashLockingEnabled,
-        vaultProtectionMode: ['spending_reserve', 'secure_vault', 'absolute_lock'].includes(settingsData.vaultProtectionMode)
-          ? settingsData.vaultProtectionMode
-          : DEFAULT_GAME_SETTINGS.vaultProtectionMode,
-        vaultLockPercentage: clampSettingNumber(settingsData.vaultLockPercentage, DEFAULT_GAME_SETTINGS.vaultLockPercentage, 0, 100),
-        vaultMilestoneSizeMultiplier: clampSettingNumber(settingsData.vaultMilestoneSizeMultiplier, DEFAULT_GAME_SETTINGS.vaultMilestoneSizeMultiplier, 0.25, 4),
-        vaultMinimumWorkingCash: clampSettingNumber(settingsData.vaultMinimumWorkingCash, DEFAULT_GAME_SETTINGS.vaultMinimumWorkingCash, 0, 5000),
-        vaultCountProtectedCashTowardVictory: typeof settingsData.vaultCountProtectedCashTowardVictory === 'boolean'
-          ? settingsData.vaultCountProtectedCashTowardVictory
-          : DEFAULT_GAME_SETTINGS.vaultCountProtectedCashTowardVictory,
-        vaultTransparencyEnabled: typeof settingsData.vaultTransparencyEnabled === 'boolean'
-          ? settingsData.vaultTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.vaultTransparencyEnabled,
-        teamEconomyGovernorEnabled: typeof settingsData.teamEconomyGovernorEnabled === 'boolean'
-          ? settingsData.teamEconomyGovernorEnabled
-          : DEFAULT_GAME_SETTINGS.teamEconomyGovernorEnabled,
-        teamIntelligenceOsEnabled: typeof settingsData.teamIntelligenceOsEnabled === 'boolean'
-          ? settingsData.teamIntelligenceOsEnabled
-          : DEFAULT_GAME_SETTINGS.teamIntelligenceOsEnabled,
-        teamOsAuthorityLevel: (['manual', 'advisor', 'assisted', 'delegated', 'autonomous'] as string[]).includes(settingsData.teamOsAuthorityLevel)
-          ? settingsData.teamOsAuthorityLevel
-          : DEFAULT_GAME_SETTINGS.teamOsAuthorityLevel,
-        teamOsEnemyEnabled: typeof settingsData.teamOsEnemyEnabled === 'boolean' ? settingsData.teamOsEnemyEnabled : DEFAULT_GAME_SETTINGS.teamOsEnemyEnabled,
-        teamOsFullInspectionEnabled: typeof settingsData.teamOsFullInspectionEnabled === 'boolean' ? settingsData.teamOsFullInspectionEnabled : DEFAULT_GAME_SETTINGS.teamOsFullInspectionEnabled,
-        economyCashFloor: clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
-        // Never sanitized below economyCashFloor (post-clamp), so the recovery target can never
-        // be misconfigured lower than the floor it's supposed to be above.
-        economyRecoveryTarget: Math.max(
-          clampSettingNumber(settingsData.economyCashFloor, DEFAULT_GAME_SETTINGS.economyCashFloor, 0, 20000),
-          clampSettingNumber(settingsData.economyRecoveryTarget, DEFAULT_GAME_SETTINGS.economyRecoveryTarget, 0, 100000)
-        ),
-        economyMinimumChallengeProbability: clampSettingNumber(settingsData.economyMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.economyMinimumChallengeProbability, 0, 1),
-        economyRecoverySpendingCap: clampSettingNumber(settingsData.economyRecoverySpendingCap, DEFAULT_GAME_SETTINGS.economyRecoverySpendingCap, 0, 1),
-        economyReserveStrength: ['low', 'balanced', 'high'].includes(settingsData.economyReserveStrength)
-          ? settingsData.economyReserveStrength
-          : DEFAULT_GAME_SETTINGS.economyReserveStrength,
-        economyEndgameCashConversionEnabled: typeof settingsData.economyEndgameCashConversionEnabled === 'boolean'
-          ? settingsData.economyEndgameCashConversionEnabled
-          : DEFAULT_GAME_SETTINGS.economyEndgameCashConversionEnabled,
-        economySpendingApprovalStrictness: ['low', 'balanced', 'strict'].includes(settingsData.economySpendingApprovalStrictness)
-          ? settingsData.economySpendingApprovalStrictness
-          : DEFAULT_GAME_SETTINGS.economySpendingApprovalStrictness,
-        economyGovernorTransparencyEnabled: typeof settingsData.economyGovernorTransparencyEnabled === 'boolean'
-          ? settingsData.economyGovernorTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.economyGovernorTransparencyEnabled,
-        teamAiGovernorRestrictionDetectionEnabled: typeof settingsData.teamAiGovernorRestrictionDetectionEnabled === 'boolean'
-          ? settingsData.teamAiGovernorRestrictionDetectionEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionDetectionEnabled,
-        teamAiGovernorRestrictionTransparencyEnabled: typeof settingsData.teamAiGovernorRestrictionTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiGovernorRestrictionTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiGovernorRestrictionTransparencyEnabled,
-        teamAiProductiveRecoveryLadderEnabled: typeof settingsData.teamAiProductiveRecoveryLadderEnabled === 'boolean'
-          ? settingsData.teamAiProductiveRecoveryLadderEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiProductiveRecoveryLadderEnabled,
-        teamAiGovernorAutomaticExceptionsEnabled: typeof settingsData.teamAiGovernorAutomaticExceptionsEnabled === 'boolean'
-          ? settingsData.teamAiGovernorAutomaticExceptionsEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiGovernorAutomaticExceptionsEnabled,
-        teamAiGovernorExceptionConsecutiveTurnsThreshold: clampSettingNumber(settingsData.teamAiGovernorExceptionConsecutiveTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionConsecutiveTurnsThreshold, 1, 20),
-        teamAiGovernorExceptionMaxReserveBreach: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxReserveBreach, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxReserveBreach, 0, 100000),
-        teamAiGovernorExceptionMinProbability: clampSettingNumber(settingsData.teamAiGovernorExceptionMinProbability, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinProbability, 0, 1),
-        teamAiGovernorExceptionMinEvRatio: clampSettingNumber(settingsData.teamAiGovernorExceptionMinEvRatio, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMinEvRatio, 0, 10),
-        teamAiGovernorExceptionMaxCost: clampSettingNumber(settingsData.teamAiGovernorExceptionMaxCost, DEFAULT_GAME_SETTINGS.teamAiGovernorExceptionMaxCost, 0, 100000),
-        teammatePerformanceSync2Enabled: typeof settingsData.teammatePerformanceSync2Enabled === 'boolean'
-          ? settingsData.teammatePerformanceSync2Enabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Enabled,
-        teammatePerformanceSync2Strength: clampSettingNumber(settingsData.teammatePerformanceSync2Strength, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2Strength, 0, 2),
-        teammatePerformanceSync2StrategyLearningEnabled: typeof settingsData.teammatePerformanceSync2StrategyLearningEnabled === 'boolean'
-          ? settingsData.teammatePerformanceSync2StrategyLearningEnabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2StrategyLearningEnabled,
-        teammatePerformanceSync2ChallengeExpertiseEnabled: typeof settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled === 'boolean'
-          ? settingsData.teammatePerformanceSync2ChallengeExpertiseEnabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseEnabled,
-        teammatePerformanceSync2ChallengeExpertiseMaxBonus: clampSettingNumber(settingsData.teammatePerformanceSync2ChallengeExpertiseMaxBonus, DEFAULT_GAME_SETTINGS.teammatePerformanceSync2ChallengeExpertiseMaxBonus, 0, 0.2),
-        guaranteedRecoveryProtocolEnabled: typeof settingsData.guaranteedRecoveryProtocolEnabled === 'boolean'
-          ? settingsData.guaranteedRecoveryProtocolEnabled
-          : DEFAULT_GAME_SETTINGS.guaranteedRecoveryProtocolEnabled,
-        guaranteedRecoveryMinimumChallengeProbability: clampSettingNumber(settingsData.guaranteedRecoveryMinimumChallengeProbability, DEFAULT_GAME_SETTINGS.guaranteedRecoveryMinimumChallengeProbability, 0, 1),
-        teammatePerformanceSync2TransparencyEnabled: typeof settingsData.teammatePerformanceSync2TransparencyEnabled === 'boolean'
-          ? settingsData.teammatePerformanceSync2TransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSync2TransparencyEnabled,
-        teammatePerformanceSyncAssistScope: normalizeAssistScope(settingsData.teammatePerformanceSyncAssistScope, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncAssistScope),
-        governorCategoryPolicy: ['off', 'win_condition_aligned', 'strict_win_condition', 'dynamic_metric'].includes(settingsData.governorCategoryPolicy)
-          ? settingsData.governorCategoryPolicy
-          : DEFAULT_GAME_SETTINGS.governorCategoryPolicy,
-        teamDifficultyOverrides: typeof settingsData.teamDifficultyOverrides === 'object' && settingsData.teamDifficultyOverrides !== null
-          ? settingsData.teamDifficultyOverrides
-          : DEFAULT_GAME_SETTINGS.teamDifficultyOverrides,
-        teammatePerformanceSyncMomentumEnabled: typeof settingsData.teammatePerformanceSyncMomentumEnabled === 'boolean'
-          ? settingsData.teammatePerformanceSyncMomentumEnabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncMomentumEnabled,
-        teammatePerformanceSyncExpertiseDecayEnabled: typeof settingsData.teammatePerformanceSyncExpertiseDecayEnabled === 'boolean'
-          ? settingsData.teammatePerformanceSyncExpertiseDecayEnabled
-          : DEFAULT_GAME_SETTINGS.teammatePerformanceSyncExpertiseDecayEnabled,
-        teammatePerformanceSyncExpertiseDecayRate: clampSettingNumber(settingsData.teammatePerformanceSyncExpertiseDecayRate, DEFAULT_GAME_SETTINGS.teammatePerformanceSyncExpertiseDecayRate, 0.01, 0.5),
-        parallelAiPlanningEnabled: typeof settingsData.parallelAiPlanningEnabled === 'boolean'
-          ? settingsData.parallelAiPlanningEnabled
-          : DEFAULT_GAME_SETTINGS.parallelAiPlanningEnabled,
-        parallelAiPlanningCoordinationStrictness: ['low', 'balanced', 'strict'].includes(settingsData.parallelAiPlanningCoordinationStrictness)
-          ? settingsData.parallelAiPlanningCoordinationStrictness
-          : DEFAULT_GAME_SETTINGS.parallelAiPlanningCoordinationStrictness,
-        parallelAiPlanningSabotageCoordinationEnabled: typeof settingsData.parallelAiPlanningSabotageCoordinationEnabled === 'boolean'
-          ? settingsData.parallelAiPlanningSabotageCoordinationEnabled
-          : DEFAULT_GAME_SETTINGS.parallelAiPlanningSabotageCoordinationEnabled,
-        parallelAiPlanningTransparencyEnabled: typeof settingsData.parallelAiPlanningTransparencyEnabled === 'boolean'
-          ? settingsData.parallelAiPlanningTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.parallelAiPlanningTransparencyEnabled,
-        teamAiActionSequencesEnabled: typeof settingsData.teamAiActionSequencesEnabled === 'boolean'
-          ? settingsData.teamAiActionSequencesEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiActionSequencesEnabled,
-        aiActionApprovalEnabled: typeof settingsData.aiActionApprovalEnabled === 'boolean'
-          ? settingsData.aiActionApprovalEnabled
-          : DEFAULT_GAME_SETTINGS.aiActionApprovalEnabled,
-        actionRequirementsEnabled: typeof settingsData.actionRequirementsEnabled === 'boolean'
-          ? settingsData.actionRequirementsEnabled
-          : DEFAULT_GAME_SETTINGS.actionRequirementsEnabled,
-        actionRequirementGroups: sanitizeRequirementGroups(settingsData.actionRequirementGroups),
-        actionRequirementsTransparencyEnabled: typeof settingsData.actionRequirementsTransparencyEnabled === 'boolean'
-          ? settingsData.actionRequirementsTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.actionRequirementsTransparencyEnabled,
-        aiActionApprovalMode: APPROVAL_MODES.includes(settingsData.aiActionApprovalMode)
-          ? settingsData.aiActionApprovalMode
-          : DEFAULT_GAME_SETTINGS.aiActionApprovalMode,
-        aiActionApprovalSelectedTypes: Array.isArray(settingsData.aiActionApprovalSelectedTypes)
-          ? settingsData.aiActionApprovalSelectedTypes.filter((t: unknown) => typeof t === 'string')
-          : [...DEFAULT_GAME_SETTINGS.aiActionApprovalSelectedTypes],
-        aiActionApprovalHighRiskThresholds: sanitizeApprovalHighRiskThresholds(settingsData.aiActionApprovalHighRiskThresholds),
-        aiActionApprovalTeammateOverrides: sanitizeApprovalTeammateOverrides(settingsData.aiActionApprovalTeammateOverrides),
-        aiActionApprovalRejectionOutcome: APPROVAL_REJECTION_OUTCOMES.includes(settingsData.aiActionApprovalRejectionOutcome)
-          ? settingsData.aiActionApprovalRejectionOutcome
-          : DEFAULT_GAME_SETTINGS.aiActionApprovalRejectionOutcome,
-        aiActionApprovalTransparencyEnabled: typeof settingsData.aiActionApprovalTransparencyEnabled === 'boolean'
-          ? settingsData.aiActionApprovalTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.aiActionApprovalTransparencyEnabled,
-        aiActionApprovalAutoRulesEnabled: typeof settingsData.aiActionApprovalAutoRulesEnabled === 'boolean'
-          ? settingsData.aiActionApprovalAutoRulesEnabled
-          : DEFAULT_GAME_SETTINGS.aiActionApprovalAutoRulesEnabled,
-        aiActionApprovalAutoRules: sanitizeAutomaticApprovalRules(settingsData.aiActionApprovalAutoRules),
-        teamAiActionSequencesTransparencyEnabled: typeof settingsData.teamAiActionSequencesTransparencyEnabled === 'boolean'
-          ? settingsData.teamAiActionSequencesTransparencyEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiActionSequencesTransparencyEnabled,
-        teamAiSequenceInterruptsEnabled: typeof settingsData.teamAiSequenceInterruptsEnabled === 'boolean'
-          ? settingsData.teamAiSequenceInterruptsEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiSequenceInterruptsEnabled,
-        teamAiPhaseSequenceSwitchingEnabled: typeof settingsData.teamAiPhaseSequenceSwitchingEnabled === 'boolean'
-          ? settingsData.teamAiPhaseSequenceSwitchingEnabled
-          : DEFAULT_GAME_SETTINGS.teamAiPhaseSequenceSwitchingEnabled,
-        teamOverviewDensity: (settingsData.teamOverviewDensity === 'compact' || settingsData.teamOverviewDensity === 'comfortable')
-          ? settingsData.teamOverviewDensity
-          : DEFAULT_GAME_SETTINGS.teamOverviewDensity,
-	      notificationSettings: (() => {
-	        const source = settingsData.notificationSettings || {};
-	        const defaults = createDefaultNotificationSettings();
-	        const autoDismiss = { ...defaults.autoDismiss };
-	        const typeFilters = { ...defaults.typeFilters };
-          const allowedPositions: NotificationSettings['position'][] = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center'];
-          const allowedMaxVisible = [0, 1, 2, 3, 5, 10, 20];
-	        NOTIFICATION_TYPES_ALL.forEach(typeKey => {
-	          const rawDismiss = source.autoDismiss?.[typeKey];
-	          if (typeof rawDismiss === 'number' && isFinite(rawDismiss) && rawDismiss >= 0) {
-	            autoDismiss[typeKey] = rawDismiss;
-	          }
-	          if (typeof source.typeFilters?.[typeKey] === 'boolean') {
-	            typeFilters[typeKey] = source.typeFilters[typeKey];
-	          }
-	        });
-	        return {
-	          size: source.size === 'nano' || source.size === 'small' || source.size === 'medium' || source.size === 'large' || source.size === 'custom' ? source.size : defaults.size,
-	          customSize: typeof source.customSize === 'number' ? Math.max(70, Math.min(150, source.customSize)) : defaults.customSize,
-	          position: allowedPositions.includes(source.position) ? source.position : defaults.position,
-	          animation: source.animation === 'fade' || source.animation === 'none' ? source.animation : 'slide',
-	          animationSpeed: typeof source.animationSpeed === 'number' ? source.animationSpeed : defaults.animationSpeed,
-	          autoDismiss,
-	          typeFilters,
-	          opacity: typeof source.opacity === 'number' ? Math.max(70, Math.min(100, source.opacity)) : defaults.opacity,
-	          maxVisible: allowedMaxVisible.includes(Number(source.maxVisible)) ? Number(source.maxVisible) : defaults.maxVisible,
-	          stackOrder: source.stackOrder === 'oldest-first' ? 'oldest-first' : 'newest-first',
-	          borderStyle: source.borderStyle === 'none' || source.borderStyle === 'thick' ? source.borderStyle : 'thin',
-	          shadow: source.shadow === 'none' || source.shadow === 'prominent' ? source.shadow : 'subtle'
-	        } as NotificationSettings;
-	      })(),
-	      notificationClearShortcut: settingsData.notificationClearShortcut === 'ctrl+alt+c'
-	        ? 'ctrl+alt+c'
-	        : settingsData.notificationClearShortcut === 'disabled'
-	          ? 'disabled'
-	          : 'ctrl+shift+c',
-	      teamTreasuryEnabled: typeof settingsData.teamTreasuryEnabled === 'boolean'
-	        ? settingsData.teamTreasuryEnabled
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabled,
-	      teamTreasuryEnabledForFriendlyTeam: typeof settingsData.teamTreasuryEnabledForFriendlyTeam === 'boolean'
-	        ? settingsData.teamTreasuryEnabledForFriendlyTeam
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabledForFriendlyTeam,
-	      teamTreasuryEnabledForEnemyTeam: typeof settingsData.teamTreasuryEnabledForEnemyTeam === 'boolean'
-	        ? settingsData.teamTreasuryEnabledForEnemyTeam
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryEnabledForEnemyTeam,
-	      teamTreasuryShowInUi: typeof settingsData.teamTreasuryShowInUi === 'boolean'
-	        ? settingsData.teamTreasuryShowInUi
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryShowInUi,
-	      teamTreasuryShowTransactions: typeof settingsData.teamTreasuryShowTransactions === 'boolean'
-	        ? settingsData.teamTreasuryShowTransactions
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryShowTransactions,
-	      teamTreasuryAllowManualContributions: typeof settingsData.teamTreasuryAllowManualContributions === 'boolean'
-	        ? settingsData.teamTreasuryAllowManualContributions
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowManualContributions,
-	      teamTreasuryAllowProtectedCashContribution: typeof settingsData.teamTreasuryAllowProtectedCashContribution === 'boolean'
-	        ? settingsData.teamTreasuryAllowProtectedCashContribution
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowProtectedCashContribution,
-	      teamAiTreasuryContributionEnabled: typeof settingsData.teamAiTreasuryContributionEnabled === 'boolean'
-	        ? settingsData.teamAiTreasuryContributionEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryContributionEnabled,
-	      treasuryAutomaticContributionEnabled: typeof settingsData.treasuryAutomaticContributionEnabled === 'boolean'
-	        ? settingsData.treasuryAutomaticContributionEnabled
-	        : DEFAULT_GAME_SETTINGS.treasuryAutomaticContributionEnabled,
-	      treasuryAutomaticContributionPolicy: (() => {
-	        const source = settingsData.treasuryAutomaticContributionPolicy;
-	        const defaults = DEFAULT_GAME_SETTINGS.treasuryAutomaticContributionPolicy;
-	        if (!source || typeof source !== 'object') return defaults;
-	        const pct = (v: unknown, fallback: number) => typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
-	        const nonNeg = (v: unknown, fallback: number) => typeof v === 'number' && isFinite(v) ? Math.max(0, v) : fallback;
-	        return {
-	          enabled: typeof source.enabled === 'boolean' ? source.enabled : defaults.enabled,
-	          percentageOfChallengeWinnings: pct(source.percentageOfChallengeWinnings, defaults.percentageOfChallengeWinnings),
-	          percentageOfResourceSaleRevenue: pct(source.percentageOfResourceSaleRevenue, defaults.percentageOfResourceSaleRevenue),
-	          percentageOfInvestmentIncome: pct(source.percentageOfInvestmentIncome, defaults.percentageOfInvestmentIncome),
-	          percentageOfOtherPositiveIncome: pct(source.percentageOfOtherPositiveIncome, defaults.percentageOfOtherPositiveIncome),
-	          percentageOfExcessAboveReserve: pct(source.percentageOfExcessAboveReserve, defaults.percentageOfExcessAboveReserve),
-	          fixedDailyContribution: nonNeg(source.fixedDailyContribution, defaults.fixedDailyContribution),
-	          endgameContributionMultiplier: typeof source.endgameContributionMultiplier === 'number' && isFinite(source.endgameContributionMultiplier)
-	            ? Math.max(1, source.endgameContributionMultiplier)
-	            : defaults.endgameContributionMultiplier
-	        };
-	      })(),
-	      teamTreasuryMaxAutoContributionPerActorPerDay: typeof settingsData.teamTreasuryMaxAutoContributionPerActorPerDay === 'number' && isFinite(settingsData.teamTreasuryMaxAutoContributionPerActorPerDay)
-	        ? Math.max(0, settingsData.teamTreasuryMaxAutoContributionPerActorPerDay)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxAutoContributionPerActorPerDay,
-	      teamTreasuryMinPersonalCashRemaining: typeof settingsData.teamTreasuryMinPersonalCashRemaining === 'number' && isFinite(settingsData.teamTreasuryMinPersonalCashRemaining)
-	        ? Math.max(0, settingsData.teamTreasuryMinPersonalCashRemaining)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryMinPersonalCashRemaining,
-	      teamTreasuryMinContributionAmount: typeof settingsData.teamTreasuryMinContributionAmount === 'number' && isFinite(settingsData.teamTreasuryMinContributionAmount)
-	        ? Math.max(0, settingsData.teamTreasuryMinContributionAmount)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryMinContributionAmount,
-	      teamTreasuryContributionCooldownDays: typeof settingsData.teamTreasuryContributionCooldownDays === 'number' && isFinite(settingsData.teamTreasuryContributionCooldownDays)
-	        ? Math.max(0, Math.floor(settingsData.teamTreasuryContributionCooldownDays))
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryContributionCooldownDays,
-	      teamTreasuryDisableContributionDuringRecovery: typeof settingsData.teamTreasuryDisableContributionDuringRecovery === 'boolean'
-	        ? settingsData.teamTreasuryDisableContributionDuringRecovery
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryDisableContributionDuringRecovery,
-	      teamTreasuryReserve: typeof settingsData.teamTreasuryReserve === 'number' && isFinite(settingsData.teamTreasuryReserve)
-	        ? Math.max(0, settingsData.teamTreasuryReserve)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryReserve,
-	      teamTreasuryDynamicReserveEnabled: typeof settingsData.teamTreasuryDynamicReserveEnabled === 'boolean'
-	        ? settingsData.teamTreasuryDynamicReserveEnabled
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryDynamicReserveEnabled,
-	      teamTreasuryAllowHumanFundingRequests: typeof settingsData.teamTreasuryAllowHumanFundingRequests === 'boolean'
-	        ? settingsData.teamTreasuryAllowHumanFundingRequests
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowHumanFundingRequests,
-	      teamTreasuryAllowAiFundingRequests: typeof settingsData.teamTreasuryAllowAiFundingRequests === 'boolean'
-	        ? settingsData.teamTreasuryAllowAiFundingRequests
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowAiFundingRequests,
-	      teamTreasuryAllowRequestsAtZeroCash: typeof settingsData.teamTreasuryAllowRequestsAtZeroCash === 'boolean'
-	        ? settingsData.teamTreasuryAllowRequestsAtZeroCash
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowRequestsAtZeroCash,
-	      teamTreasuryEmergencyOperatingTarget: typeof settingsData.teamTreasuryEmergencyOperatingTarget === 'number' && isFinite(settingsData.teamTreasuryEmergencyOperatingTarget)
-	        ? Math.max(0, settingsData.teamTreasuryEmergencyOperatingTarget)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryEmergencyOperatingTarget,
-	      teamTreasuryMaxWithdrawalPerRequest: typeof settingsData.teamTreasuryMaxWithdrawalPerRequest === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerRequest)
-	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerRequest)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerRequest,
-	      teamTreasuryMaxWithdrawalPerActorPerDay: typeof settingsData.teamTreasuryMaxWithdrawalPerActorPerDay === 'number' && isFinite(settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
-	        ? Math.max(0, settingsData.teamTreasuryMaxWithdrawalPerActorPerDay)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryMaxWithdrawalPerActorPerDay,
-	      teamTreasuryRequireApprovalForFriendlyAiWithdrawals: typeof settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals === 'boolean'
-	        ? settingsData.teamTreasuryRequireApprovalForFriendlyAiWithdrawals
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireApprovalForFriendlyAiWithdrawals,
-	      teamTreasuryAllowPartialApproval: typeof settingsData.teamTreasuryAllowPartialApproval === 'boolean'
-	        ? settingsData.teamTreasuryAllowPartialApproval
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryAllowPartialApproval,
-	      teamTreasuryRequireIntendedAction: typeof settingsData.teamTreasuryRequireIntendedAction === 'boolean'
-	        ? settingsData.teamTreasuryRequireIntendedAction
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequireIntendedAction,
-	      teamTreasuryReturnUnusedRestrictedFunds: typeof settingsData.teamTreasuryReturnUnusedRestrictedFunds === 'boolean'
-	        ? settingsData.teamTreasuryReturnUnusedRestrictedFunds
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryReturnUnusedRestrictedFunds,
-	      teamTreasuryRequestCooldownDays: typeof settingsData.teamTreasuryRequestCooldownDays === 'number' && isFinite(settingsData.teamTreasuryRequestCooldownDays)
-	        ? Math.max(0, settingsData.teamTreasuryRequestCooldownDays)
-	        : DEFAULT_GAME_SETTINGS.teamTreasuryRequestCooldownDays,
-	      teamAiTreasuryRequestsEnabled: typeof settingsData.teamAiTreasuryRequestsEnabled === 'boolean'
-	        ? settingsData.teamAiTreasuryRequestsEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiTreasuryRequestsEnabled,
-	      countTeamTreasuryTowardVictory: typeof settingsData.countTeamTreasuryTowardVictory === 'boolean'
-	        ? settingsData.countTeamTreasuryTowardVictory
-	        : DEFAULT_GAME_SETTINGS.countTeamTreasuryTowardVictory,
-	      teamAiOverseerSystemEnabled: typeof settingsData.teamAiOverseerSystemEnabled === 'boolean'
-	        ? settingsData.teamAiOverseerSystemEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiOverseerSystemEnabled,
-	      teamAiStrategicCommandEnabled: typeof settingsData.teamAiStrategicCommandEnabled === 'boolean'
-	        ? settingsData.teamAiStrategicCommandEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabled,
-	      teamAiStrategicCommandAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
-	        ? (settingsData.teamAiStrategicCommandAuthorityMode as OverseerAuthorityMode)
-	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandAuthorityMode,
-	      teamAiStrategicCommandDirectiveDurationDays: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveDurationDays, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveDurationDays, 1, 30),
-	      teamAiStrategicCommandDirectiveScoreBias: clampSettingNumber(settingsData.teamAiStrategicCommandDirectiveScoreBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandDirectiveScoreBias, 0, 100),
-	      teamAiStrategicCommandMaxSpendingPercent: clampSettingNumber(settingsData.teamAiStrategicCommandMaxSpendingPercent, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandMaxSpendingPercent, 0, 100),
-	      teamAiStrategicCommandTreasuryAllocationCap: clampSettingNumber(settingsData.teamAiStrategicCommandTreasuryAllocationCap, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandTreasuryAllocationCap, 0, 100000),
-	      teamAiStrategicCommandOverrideBias: clampSettingNumber(settingsData.teamAiStrategicCommandOverrideBias, DEFAULT_GAME_SETTINGS.teamAiStrategicCommandOverrideBias, 0, 0.5),
-	      teamAiStrategicCommandEnabledForFriendlyTeam: typeof settingsData.teamAiStrategicCommandEnabledForFriendlyTeam === 'boolean'
-	        ? settingsData.teamAiStrategicCommandEnabledForFriendlyTeam
-	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForFriendlyTeam,
-	      teamAiStrategicCommandEnabledForEnemyTeam: typeof settingsData.teamAiStrategicCommandEnabledForEnemyTeam === 'boolean'
-	        ? settingsData.teamAiStrategicCommandEnabledForEnemyTeam
-	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandEnabledForEnemyTeam,
-	      teamAiStrategicCommandInterventionsEnabled: typeof settingsData.teamAiStrategicCommandInterventionsEnabled === 'boolean'
-	        ? settingsData.teamAiStrategicCommandInterventionsEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandInterventionsEnabled,
-	      teamAiAdaptiveOverseerEnabled: typeof settingsData.teamAiAdaptiveOverseerEnabled === 'boolean'
-	        ? settingsData.teamAiAdaptiveOverseerEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerEnabled,
-	      teamAiAdaptiveOverseerAuthorityMode: OVERSEER_AUTHORITY_MODES.includes(settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
-	        ? (settingsData.teamAiAdaptiveOverseerAuthorityMode as OverseerAuthorityMode)
-	        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerAuthorityMode,
-	      teamAiOverseerShowStatusCard: typeof settingsData.teamAiOverseerShowStatusCard === 'boolean'
-	        ? settingsData.teamAiOverseerShowStatusCard
-	        : DEFAULT_GAME_SETTINGS.teamAiOverseerShowStatusCard,
-	      teamAiOverseerTransparencyEnabled: typeof settingsData.teamAiOverseerTransparencyEnabled === 'boolean'
-	        ? settingsData.teamAiOverseerTransparencyEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiOverseerTransparencyEnabled,
-	      teamAiOverseerDashboardEnabled: typeof settingsData.teamAiOverseerDashboardEnabled === 'boolean'
-	        ? settingsData.teamAiOverseerDashboardEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiOverseerDashboardEnabled,
-      teamAiSafeModeEnabled: typeof settingsData.teamAiSafeModeEnabled === 'boolean'
-        ? settingsData.teamAiSafeModeEnabled
-        : DEFAULT_GAME_SETTINGS.teamAiSafeModeEnabled,
-      teamAiSafeModeRestrictedActorThreshold: clampSettingNumber(settingsData.teamAiSafeModeRestrictedActorThreshold, DEFAULT_GAME_SETTINGS.teamAiSafeModeRestrictedActorThreshold, 1, 10),
-      teamAiStrategicCommandPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
-        ? (settingsData.teamAiStrategicCommandPersonality as OverseerPersonalityId)
-        : DEFAULT_GAME_SETTINGS.teamAiStrategicCommandPersonality,
-      teamAiAdaptiveOverseerPersonality: OVERSEER_PERSONALITY_IDS.includes(settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
-        ? (settingsData.teamAiAdaptiveOverseerPersonality as OverseerPersonalityId)
-        : DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerPersonality,
-	      teamAiAdaptiveOverseerComebackEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackEnterPercent, 0, 100),
-	      teamAiAdaptiveOverseerComebackExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerComebackExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerComebackExitPercent, 0, 100),
-	      teamAiAdaptiveOverseerProtectLeadEnterPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadEnterPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadEnterPercent, 0, 100),
-	      teamAiAdaptiveOverseerProtectLeadExitPercent: clampSettingNumber(settingsData.teamAiAdaptiveOverseerProtectLeadExitPercent, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerProtectLeadExitPercent, 0, 100),
-	      teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold: clampSettingNumber(settingsData.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerRecoveryRestrictedTurnsThreshold, 1, 20),
-	      teamAiAdaptiveOverseerMinimumStrategyDurationDays: clampSettingNumber(settingsData.teamAiAdaptiveOverseerMinimumStrategyDurationDays, DEFAULT_GAME_SETTINGS.teamAiAdaptiveOverseerMinimumStrategyDurationDays, 0, 30),
-	      overseerWinConditionCounterStrategyEnabled: typeof settingsData.overseerWinConditionCounterStrategyEnabled === 'boolean'
-	        ? settingsData.overseerWinConditionCounterStrategyEnabled
-	        : DEFAULT_GAME_SETTINGS.overseerWinConditionCounterStrategyEnabled,
-	      teamAiAuditorSystemEnabled: typeof settingsData.teamAiAuditorSystemEnabled === 'boolean'
-	        ? settingsData.teamAiAuditorSystemEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSystemEnabled,
-	      teamAiAuditorModeForFriendlyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForFriendlyTeam)
-	        ? settingsData.teamAiAuditorModeForFriendlyTeam
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForFriendlyTeam,
-	      teamAiAuditorModeForEnemyTeam: (['off', 'monitor', 'recommend', 'approval', 'automatic'] as AiOperationsAuditorMode[]).includes(settingsData.teamAiAuditorModeForEnemyTeam)
-	        ? settingsData.teamAiAuditorModeForEnemyTeam
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorModeForEnemyTeam,
-	      teamAiAuditorShowStatusCard: typeof settingsData.teamAiAuditorShowStatusCard === 'boolean'
-	        ? settingsData.teamAiAuditorShowStatusCard
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorShowStatusCard,
-	      teamAiAuditorDashboardEnabled: typeof settingsData.teamAiAuditorDashboardEnabled === 'boolean'
-	        ? settingsData.teamAiAuditorDashboardEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorDashboardEnabled,
-	      teamAiAuditorAutomaticRecoveryMinConfidence: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMinConfidence, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMinConfidence, 0, 1),
-	      teamAiAuditorAutomaticRecoveryMaxPerDay: clampSettingNumber(settingsData.teamAiAuditorAutomaticRecoveryMaxPerDay, DEFAULT_GAME_SETTINGS.teamAiAuditorAutomaticRecoveryMaxPerDay, 0, 20),
-	      teamAiAuditorSafeModeEnabled: typeof settingsData.teamAiAuditorSafeModeEnabled === 'boolean'
-	        ? settingsData.teamAiAuditorSafeModeEnabled
-	        : DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEnabled,
-	      teamAiAuditorSafeModeEscalatedIncidentThreshold: clampSettingNumber(settingsData.teamAiAuditorSafeModeEscalatedIncidentThreshold, DEFAULT_GAME_SETTINGS.teamAiAuditorSafeModeEscalatedIncidentThreshold, 1, 20),
-	      // Accepts 'classic_layered'/'end_to_end_planner', or any string starting with 'algo_' — the
-	      // exact prefix every real Algorithm Builder AiAlgorithmConfig.configId is minted with (see
-	      // createAiAlgorithmConfigInPlayerTeam and its sibling CRUD functions). A stale/deleted
-	      // configId that no longer matches any real config is already handled safely downstream:
-	      // runCustomAiAlgorithmEngine returns usedFallback:true when the config isn't found, so the
-	      // mandatory Classic fallback still applies. Anything else falls back to 'classic_layered'.
-	      aiAlgorithmForFriendlyTeam: (settingsData.aiAlgorithmForFriendlyTeam === 'classic_layered' || settingsData.aiAlgorithmForFriendlyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForFriendlyTeam === 'string' && settingsData.aiAlgorithmForFriendlyTeam.startsWith('algo_')))
-	        ? settingsData.aiAlgorithmForFriendlyTeam
-	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForFriendlyTeam,
-	      aiAlgorithmForEnemyTeam: (settingsData.aiAlgorithmForEnemyTeam === 'classic_layered' || settingsData.aiAlgorithmForEnemyTeam === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForEnemyTeam === 'string' && settingsData.aiAlgorithmForEnemyTeam.startsWith('algo_')))
-	        ? settingsData.aiAlgorithmForEnemyTeam
-	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForEnemyTeam,
-	      aiAlgorithmForOpponent: (settingsData.aiAlgorithmForOpponent === 'classic_layered' || settingsData.aiAlgorithmForOpponent === 'end_to_end_planner' || (typeof settingsData.aiAlgorithmForOpponent === 'string' && settingsData.aiAlgorithmForOpponent.startsWith('algo_')))
-	        ? settingsData.aiAlgorithmForOpponent
-	        : DEFAULT_GAME_SETTINGS.aiAlgorithmForOpponent,
-	      aiThinkingDepth: (settingsData.aiThinkingDepth === 'fast' || settingsData.aiThinkingDepth === 'balanced' || settingsData.aiThinkingDepth === 'deep')
-	        ? settingsData.aiThinkingDepth
-	        : DEFAULT_GAME_SETTINGS.aiThinkingDepth,
-	      aiAlgorithmBuilderEnabled: typeof settingsData.aiAlgorithmBuilderEnabled === 'boolean' ? settingsData.aiAlgorithmBuilderEnabled : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderEnabled,
-	      aiAlgorithmBuilderDefaultEditorMode: AI_ALGORITHM_EDITOR_MODES.includes(settingsData.aiAlgorithmBuilderDefaultEditorMode)
-	        ? settingsData.aiAlgorithmBuilderDefaultEditorMode
-	        : DEFAULT_GAME_SETTINGS.aiAlgorithmBuilderDefaultEditorMode,
-	      humanAutomationEnabled: typeof settingsData.humanAutomationEnabled === 'boolean' ? settingsData.humanAutomationEnabled : DEFAULT_GAME_SETTINGS.humanAutomationEnabled,
-	      humanAutomationTransparencyEnabled: typeof settingsData.humanAutomationTransparencyEnabled === 'boolean' ? settingsData.humanAutomationTransparencyEnabled : DEFAULT_GAME_SETTINGS.humanAutomationTransparencyEnabled,
-	      automationSequenceLaunchEnabled: typeof settingsData.automationSequenceLaunchEnabled === 'boolean' ? settingsData.automationSequenceLaunchEnabled : DEFAULT_GAME_SETTINGS.automationSequenceLaunchEnabled,
-	      automationSlotProgressionEnabled: typeof settingsData.automationSlotProgressionEnabled === 'boolean' ? settingsData.automationSlotProgressionEnabled : DEFAULT_GAME_SETTINGS.automationSlotProgressionEnabled,
-	      automationRunHistoryEnabled: typeof settingsData.automationRunHistoryEnabled === 'boolean' ? settingsData.automationRunHistoryEnabled : DEFAULT_GAME_SETTINGS.automationRunHistoryEnabled,
-	      automationExtendedTriggersEnabled: typeof settingsData.automationExtendedTriggersEnabled === 'boolean' ? settingsData.automationExtendedTriggersEnabled : DEFAULT_GAME_SETTINGS.automationExtendedTriggersEnabled,
-	      automationExtendedActionsEnabled: typeof settingsData.automationExtendedActionsEnabled === 'boolean' ? settingsData.automationExtendedActionsEnabled : DEFAULT_GAME_SETTINGS.automationExtendedActionsEnabled,
-	      automationConflictWarningsEnabled: typeof settingsData.automationConflictWarningsEnabled === 'boolean' ? settingsData.automationConflictWarningsEnabled : DEFAULT_GAME_SETTINGS.automationConflictWarningsEnabled,
-	      automationDailyDigestEnabled: typeof settingsData.automationDailyDigestEnabled === 'boolean' ? settingsData.automationDailyDigestEnabled : DEFAULT_GAME_SETTINGS.automationDailyDigestEnabled,
-	      automationImportExportEnabled: typeof settingsData.automationImportExportEnabled === 'boolean' ? settingsData.automationImportExportEnabled : DEFAULT_GAME_SETTINGS.automationImportExportEnabled,
-	      replayComparisonEnabled: typeof settingsData.replayComparisonEnabled === 'boolean'
-	        ? settingsData.replayComparisonEnabled
-	        : DEFAULT_GAME_SETTINGS.replayComparisonEnabled,
-	      replayComparisonToleranceThreshold: clampSettingNumber(settingsData.replayComparisonToleranceThreshold, DEFAULT_GAME_SETTINGS.replayComparisonToleranceThreshold, 0, 1),
-	      replayComparisonIgnoreMinorTiming: typeof settingsData.replayComparisonIgnoreMinorTiming === 'boolean'
-	        ? settingsData.replayComparisonIgnoreMinorTiming
-	        : DEFAULT_GAME_SETTINGS.replayComparisonIgnoreMinorTiming,
-	      aiEffectivenessScorecardEnabled: typeof settingsData.aiEffectivenessScorecardEnabled === 'boolean'
-	        ? settingsData.aiEffectivenessScorecardEnabled
-	        : DEFAULT_GAME_SETTINGS.aiEffectivenessScorecardEnabled,
-	      aiEffectivenessBlunderThresholdRoi: clampSettingNumber(settingsData.aiEffectivenessBlunderThresholdRoi, DEFAULT_GAME_SETTINGS.aiEffectivenessBlunderThresholdRoi, -100, 0),
-	      aiEffectivenessTrackCompliance: typeof settingsData.aiEffectivenessTrackCompliance === 'boolean'
-	        ? settingsData.aiEffectivenessTrackCompliance
-	        : DEFAULT_GAME_SETTINGS.aiEffectivenessTrackCompliance,
-	      balanceLabEnabled: typeof settingsData.balanceLabEnabled === 'boolean'
-	        ? settingsData.balanceLabEnabled
-	        : DEFAULT_GAME_SETTINGS.balanceLabEnabled,
-	      balanceLabAutoStressTracking: typeof settingsData.balanceLabAutoStressTracking === 'boolean'
-	        ? settingsData.balanceLabAutoStressTracking
-	        : DEFAULT_GAME_SETTINGS.balanceLabAutoStressTracking,
-	      balanceLabSandboxMode: typeof settingsData.balanceLabSandboxMode === 'boolean'
-	        ? settingsData.balanceLabSandboxMode
-	        : DEFAULT_GAME_SETTINGS.balanceLabSandboxMode,
-	      ledgerDiagnosticsEnabled: typeof settingsData.ledgerDiagnosticsEnabled === 'boolean'
-	        ? settingsData.ledgerDiagnosticsEnabled
-	        : DEFAULT_GAME_SETTINGS.ledgerDiagnosticsEnabled,
-	      ledgerPruneRetentionLimit: clampSettingNumber(settingsData.ledgerPruneRetentionLimit, DEFAULT_GAME_SETTINGS.ledgerPruneRetentionLimit, 100, 10000),
-	      ledgerAutoPruneEnabled: typeof settingsData.ledgerAutoPruneEnabled === 'boolean'
-	        ? settingsData.ledgerAutoPruneEnabled
-	        : DEFAULT_GAME_SETTINGS.ledgerAutoPruneEnabled,
-	      ledgerExportCompressionEnabled: typeof settingsData.ledgerExportCompressionEnabled === 'boolean'
-	        ? settingsData.ledgerExportCompressionEnabled
-	        : DEFAULT_GAME_SETTINGS.ledgerExportCompressionEnabled,
-	      enableAiCalibrationLearning: typeof settingsData.enableAiCalibrationLearning === 'boolean'
-	        ? settingsData.enableAiCalibrationLearning
-	        : DEFAULT_GAME_SETTINGS.enableAiCalibrationLearning,
-	      aiCalibrationLearningRate: clampSettingNumber(settingsData.aiCalibrationLearningRate, DEFAULT_GAME_SETTINGS.aiCalibrationLearningRate, 0.001, 1),
-	      enableCounterfactualEvaluation: typeof settingsData.enableCounterfactualEvaluation === 'boolean'
-	        ? settingsData.enableCounterfactualEvaluation
-	        : DEFAULT_GAME_SETTINGS.enableCounterfactualEvaluation,
-	      enablePersistentOpponentModels: typeof settingsData.enablePersistentOpponentModels === 'boolean'
-	        ? settingsData.enablePersistentOpponentModels
-	        : DEFAULT_GAME_SETTINGS.enablePersistentOpponentModels,
-	      planSwitchingCost: clampSettingNumber(settingsData.planSwitchingCost, DEFAULT_GAME_SETTINGS.planSwitchingCost, 0, 100),
-	      teamGovernanceMode: TEAM_GOVERNANCE_MODES.includes(settingsData.teamGovernanceMode)
-	        ? settingsData.teamGovernanceMode
-	        : DEFAULT_GAME_SETTINGS.teamGovernanceMode,
-	      aiTacticalIntelligence: (() => {
-	        const source = settingsData.aiTacticalIntelligence || {};
-	        const defaults = DEFAULT_GAME_SETTINGS.aiTacticalIntelligence;
-	        const pb: ('narrow' | 'standard' | 'wide')[] = ['narrow', 'standard', 'wide'];
-	        return {
-	          lookaheadDepth: clampSettingNumber(source.lookaheadDepth, defaults.lookaheadDepth, 1, 5),
-	          candidateEvaluationWidth: clampSettingNumber(source.candidateEvaluationWidth, defaults.candidateEvaluationWidth, 1, 50),
-	          planningBreadth: pb.includes(source.planningBreadth) ? source.planningBreadth : defaults.planningBreadth,
-	          useCounterfactuals: typeof source.useCounterfactuals === 'boolean' ? source.useCounterfactuals : defaults.useCounterfactuals,
-	          useOpponentModeling: typeof source.useOpponentModeling === 'boolean' ? source.useOpponentModeling : defaults.useOpponentModeling
-	        };
-	      })(),
-	      aiEconomicCheats: (() => {
-	        const source = settingsData.aiEconomicCheats || {};
-	        const defaults = DEFAULT_GAME_SETTINGS.aiEconomicCheats;
-	        return {
-	          bonusStartingCash: clampSettingNumber(source.bonusStartingCash, defaults.bonusStartingCash, 0, 10000),
-	          yieldBoostMultiplier: clampSettingNumber(source.yieldBoostMultiplier, defaults.yieldBoostMultiplier, 0.5, 3),
-	          costDiscountMultiplier: clampSettingNumber(source.costDiscountMultiplier, defaults.costDiscountMultiplier, 0.1, 2),
-	          extraActionPointsPerTurn: clampSettingNumber(source.extraActionPointsPerTurn, defaults.extraActionPointsPerTurn, 0, 10)
-	        };
-	      })(),
-        // Phase 7: Projected Outcome Hydration
-        projectedOutcomeEnabled: typeof settingsData.projectedOutcomeEnabled === 'boolean' ? settingsData.projectedOutcomeEnabled : DEFAULT_GAME_SETTINGS.projectedOutcomeEnabled,
-        projectedOutcomeHorizon: typeof settingsData.projectedOutcomeHorizon === 'number' ? clampSettingNumber(settingsData.projectedOutcomeHorizon, DEFAULT_GAME_SETTINGS.projectedOutcomeHorizon, 1, 30) : DEFAULT_GAME_SETTINGS.projectedOutcomeHorizon,
-        projectedOutcomeMode: (['auto', 'simulation_only', 'extrapolation_only'].includes(settingsData.projectedOutcomeMode) ? settingsData.projectedOutcomeMode : DEFAULT_GAME_SETTINGS.projectedOutcomeMode) as 'auto' | 'simulation_only' | 'extrapolation_only',
-        deterministicMode: typeof settingsData.deterministicMode === 'boolean' ? settingsData.deterministicMode : (settingsData.worldRngMode === 'deterministic' && Boolean(settingsData.aiDeterministic)),
-        // Phase 8: Team Governance Control Surface Hydration
-        governanceControlSurfaceEnabled: typeof settingsData.governanceControlSurfaceEnabled === 'boolean'
-          ? settingsData.governanceControlSurfaceEnabled
-          : DEFAULT_GAME_SETTINGS.governanceControlSurfaceEnabled,
-        humanGovernanceVetoEnabled: typeof settingsData.humanGovernanceVetoEnabled === 'boolean'
-          ? settingsData.humanGovernanceVetoEnabled
-          : DEFAULT_GAME_SETTINGS.humanGovernanceVetoEnabled,
-        teamGovernanceModeOverrides: settingsData.teamGovernanceModeOverrides && typeof settingsData.teamGovernanceModeOverrides === 'object'
-          ? (settingsData.teamGovernanceModeOverrides as Record<string, TeamGovernanceOverrideMode>)
-          : { ...DEFAULT_GAME_SETTINGS.teamGovernanceModeOverrides },
-        governanceWeightSettings: (() => {
-          const source = settingsData.governanceWeightSettings || {};
-          const defaults = DEFAULT_GAME_SETTINGS.governanceWeightSettings;
-          return {
-            leaderWeight: clampSettingNumber(source.leaderWeight, defaults.leaderWeight, 0, 10),
-            consensusWeight: clampSettingNumber(source.consensusWeight, defaults.consensusWeight, 0, 10),
-            riskWeight: clampSettingNumber(source.riskWeight, defaults.riskWeight, 0, 10),
-            economicWeight: clampSettingNumber(source.economicWeight, defaults.economicWeight, 0, 10),
-            memberWeight: clampSettingNumber(source.memberWeight, defaults.memberWeight, 0, 10)
-          };
-        })(),
-        governanceLeaderVoteWeight: clampSettingNumber(settingsData.governanceLeaderVoteWeight, DEFAULT_GAME_SETTINGS.governanceLeaderVoteWeight, 0, 10),
-        governanceMemberVoteWeight: clampSettingNumber(settingsData.governanceMemberVoteWeight, DEFAULT_GAME_SETTINGS.governanceMemberVoteWeight, 0, 10),
-        governanceVoteThreshold: clampSettingNumber(settingsData.governanceVoteThreshold, DEFAULT_GAME_SETTINGS.governanceVoteThreshold, 0, 1),
-        governanceConsensusThreshold: clampSettingNumber(settingsData.governanceConsensusThreshold, DEFAULT_GAME_SETTINGS.governanceConsensusThreshold, 0, 1),
-        governanceVetoUsesPerMatch: clampSettingNumber(settingsData.governanceVetoUsesPerMatch, DEFAULT_GAME_SETTINGS.governanceVetoUsesPerMatch, 0, 20),
-        autoModeSettings: sanitizeAutoModeGlobalSettings(settingsData.autoModeSettings),
-        showGuardianInQuickActions: typeof settingsData.showGuardianInQuickActions === 'boolean'
-          ? settingsData.showGuardianInQuickActions
-          : false,
-        coPilotSettings: sanitizeCoPilotSettings(settingsData.coPilotSettings),
-        guardianAiSettings: sanitizeGuardianAiSettings(settingsData.guardianAiSettings),
-        commandCenterSettings: sanitizeCommandCenterSettings(settingsData.commandCenterSettings),
-        strategyPlannerSettings: sanitizeStrategyPlannerSettings(settingsData.strategyPlannerSettings),
-        userOverrides: settingsData.userOverrides && typeof settingsData.userOverrides === 'object'
-          ? (settingsData.userOverrides as Record<string, boolean>)
-          : {},
-        userOverriddenKeys: Array.isArray(settingsData.userOverriddenKeys)
-          ? (settingsData.userOverriddenKeys as string[])
-          : [],
-        lockedSettingKeys: Array.isArray(settingsData.lockedSettingKeys)
-          ? (settingsData.lockedSettingKeys as string[])
-          : [],
-        lockedAdjustmentKeys: Array.isArray(settingsData.lockedAdjustmentKeys)
-          ? (settingsData.lockedAdjustmentKeys as string[])
-          : []
-	    };
-
-	    if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
-	      const missingHydrationKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(
-	        (key) => !(key in sanitizedGameSettings)
-	      );
-	      if (missingHydrationKeys.length > 0) {
-	        console.warn(
-	          `[Game Settings Hydration Assertion Warning] ${missingHydrationKeys.length} key(s) in DEFAULT_GAME_SETTINGS are missing from sanitizedGameSettings:`,
-	          missingHydrationKeys
-	        );
-	      }
-	    }
-
-	    const sanitizedNotifications: Notification[] = Array.isArray(raw.notifications)
-	      ? raw.notifications
-	          .filter((n: any) => n && typeof n.message === 'string' && typeof n.type === 'string')
-	          .map((n: any) => ({
-	            id: typeof n.id === 'string' ? n.id : nextCorrelationId(globalDeterministicCounters, 'notif'),
-	            type: n.type in NOTIFICATION_TYPES ? n.type : 'info',
-	            notificationType: NOTIFICATION_TYPES_ALL.includes(n.notificationType as NotificationType)
-	              ? n.notificationType
-	              : 'system',
-	            message: n.message,
-	            timestamp: typeof n.timestamp === 'number' ? n.timestamp : metadata.timestamp,
-	            day: typeof n.day === 'number' ? n.day : stateData.day,
-	            read: Boolean(n.read),
-	            persistent: Boolean(n.persistent)
-          }))
-      : [];
-
-    const sanitizedPersonalRecords: PersonalRecord = {
-      ...DEFAULT_PERSONAL_RECORDS,
-      ...(raw.personalRecords || {})
-    };
-
-    const sanitizedDontAskAgain: DontAskAgainPrefs = {
-      travel: Boolean(raw.dontAskAgain?.travel),
-      sell: Boolean(raw.dontAskAgain?.sell),
-      challenge: Boolean(raw.dontAskAgain?.challenge),
-      endDay: Boolean(raw.dontAskAgain?.endDay)
-    };
-
-    const sanitizedHumanAutomations: HumanAutomation[] = sanitizeHumanAutomations(raw.humanAutomations);
-
-    const sanitizedRuntime = {
-      queue: Array.isArray(raw.aiRuntime?.queue) ? raw.aiRuntime.queue : [],
-      currentAction: raw.aiRuntime?.currentAction || null,
-      rngState: typeof raw.aiRuntime?.rngState === 'number'
-        ? raw.aiRuntime.rngState
-        : normalizeAiSeed(
-            typeof settingsData.aiDeterministicSeed === 'number'
-              ? settingsData.aiDeterministicSeed
-              : DEFAULT_GAME_SETTINGS.aiDeterministicSeed
-          ),
-      worldRngState: typeof raw.aiRuntime?.worldRngState === 'number'
-        ? raw.aiRuntime.worldRngState
-        : normalizeAiSeed(
-            typeof settingsData.worldRngSeed === 'number'
-              ? settingsData.worldRngSeed
-              : DEFAULT_GAME_SETTINGS.worldRngSeed
-          )
-    };
-
-    const uiPreferences: { theme: GameTheme } = {
-      theme: raw.uiPreferences?.theme === 'light' ? 'light'
-        : raw.uiPreferences?.theme === 'system' ? 'system'
-        : 'dark'
-    };
-
-    return {
-      metadata: {
-        timestamp: metadata.timestamp,
-        gameVersion: metadata.gameVersion,
-        saveDescription: typeof metadata.saveDescription === 'string' ? metadata.saveDescription : ''
-      },
-      player: sanitizePlayerState(playerData, "Player"),
-      aiPlayer: sanitizePlayerState(aiData, "AI Opponent"),
-      actorsById: sanitizedActorsById,
-      teamsById: sanitizedTeamsById,
-      gameState: sanitizedGameState,
-      gameSettings: sanitizedGameSettings,
-      campaignState: raw.campaignState || createDefaultCampaignState(),
-      publicStabilityState: raw.publicStabilityState || createDefaultPublicStabilityState(),
-      crisisChainState: raw.crisisChainState || createDefaultCrisisChainState(),
-      narrativePopup: raw.narrativePopup || createDefaultNarrativePopupState(),
-      scenarioConfig: raw.scenarioConfig || undefined,
-      notifications: sanitizedNotifications,
-      personalRecords: sanitizedPersonalRecords,
-      dontAskAgain: sanitizedDontAskAgain,
-      humanAutomations: sanitizedHumanAutomations,
-      uiPreferences,
-      aiRuntime: sanitizedRuntime,
-      autoModeGlobalSettings: sanitizedGameSettings.autoModeSettings,
-      autoModeRuntimeState: sanitizeAutoModeRuntimeState(raw.autoModeRuntimeState || raw.autoModeRuntime || raw.gameState?.autoModeRuntime)
-    };
-  }, [resolveCharacter]);
+  // V9.5: body hoisted to module-level validateSaveDataCore (identical behaviour; now testable).
+  const validateSaveData = useCallback((raw: any): SaveGameData => validateSaveDataCore(raw), []);
 
   const openLoadDialog = useCallback(() => {
     if (fileInputRef.current) {
@@ -136770,12 +138296,18 @@ function dispatchGameSettingsChange(
     if (!file) return;
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      const validated = validateSaveData(parsed);
+      // V9.5 safe load transaction: parse → validate a clone → migrate a clone → verify, before any preview.
+      const tx = prepareSaveLoadTransaction(text);
+      setV95LastLoadHealth(tx.report);
+      if (!tx.ok || !tx.data) {
+        addNotification(`This save can't be loaded — ${tx.report.fatalErrors[0] || 'it failed validation.'} Your current match was not changed.`, 'error', true, 'system');
+        return;
+      }
       setLoadPreview({
         isOpen: true,
-        data: validated,
-        filename: file.name
+        data: tx.data,
+        filename: file.name,
+        health: tx.report
       });
     } catch (error) {
       console.error('Load failed', error);
@@ -136784,7 +138316,7 @@ function dispatchGameSettingsChange(
     } finally {
       event.target.value = '';
     }
-  }, [addNotification, validateSaveData]);
+  }, [addNotification]);
 
   const closeLoadPreview = useCallback(() => {
     setLoadPreview({ isOpen: false, data: null });
@@ -142242,7 +143774,7 @@ function dispatchGameSettingsChange(
     const intervalId = setInterval(() => {
       const isThinking = gameState.isAiThinking || isAiThinkingRef.current;
       const hasPendingApprovals = (pendingApprovalRequests || []).some(r => r.status === 'pending' || r.status === 'displayed');
-      if (isThinking && !hasPendingApprovals && Date.now() - lastActorActionTimeRef.current > 15000) {
+      if (decideAiTurnWatchdog({ isThinking, hasPendingApprovals, msSinceLastAction: Date.now() - lastActorActionTimeRef.current }) === 'recover') {
         if (isDev) {
           console.warn('[Watchdog] isAiThinking has remained true for >15 seconds with no actor action recorded.');
         }
@@ -142809,6 +144341,7 @@ function dispatchGameSettingsChange(
         return;
       }
       skipPersistentAbandonPromptRef.current = false;
+      v95MatchEpochRef.current += 1;
       if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
         flushDeferredTransactionsOnBoundary(gameSettings, 'next_match', (newSet) => {
           setGameSettings(newSet);
@@ -143200,6 +144733,7 @@ function dispatchGameSettingsChange(
   }, [addNotification, aiPlayer, gameSettings, gameState, player, teamsById]);
 
   const handleRestartGame = useCallback(() => {
+    v95MatchEpochRef.current += 1;
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
       soloAiTurnTimeoutRef.current = null;
@@ -143325,7 +144859,24 @@ function dispatchGameSettingsChange(
     });
   }, [dispatchGameState, dispatchPlayer, gameSettings.decisionTransparencyDefaultGroupView, setAiActionQueue, setAiPlayer, setCurrentAiAction, setNotifications, setPersonalRecords, setTeamsById, uiState.playerName, uiState.selectedCharacter]);
 
-  const applyLoadedState = useCallback((data: SaveGameData) => {
+  const applyLoadedState = useCallback((data: SaveGameData): boolean => {
+    // V9.5 safe load transaction: verify + migrate the candidate BEFORE any live state, timer or AI session
+    // is touched. A rejected load leaves the current match exactly as it was.
+    const v95Verify = verifySaveLoadCandidate(data);
+    if (!v95Verify.ok) {
+      addNotification(`Load cancelled — ${v95Verify.errors.slice(0, 2).join('; ')}. Your current match was not changed.`, 'error', true, 'system');
+      return false;
+    }
+    let v95SourceVersion = String(data.metadata?.gameVersion || '0.0.0');
+    let v95Migrated = false;
+    try {
+      const m = v95MigrateSaveForLoad(data);
+      data = m.data; v95SourceVersion = m.sourceVersion; v95Migrated = m.migrated;
+    } catch (err) {
+      addNotification(`Load cancelled — this save could not be upgraded (${err instanceof Error ? err.message : 'unknown error'}). Your current match was not changed.`, 'error', true, 'system');
+      return false;
+    }
+    v95MatchEpochRef.current += 1; // invalidates deferred callbacks scheduled by the previous match
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
       soloAiTurnTimeoutRef.current = null;
@@ -143551,7 +145102,7 @@ function dispatchGameSettingsChange(
 	    setSaveDescription(data.metadata.saveDescription || '');
 	    closeLoadPreview();
 	    addNotification(`Loaded save from Day ${data.gameState.day}`, 'success', true, 'system');
-	    const loadedVersionStr = data.metadata.gameVersion || "0.0.0";
+	    const loadedVersionStr = v95SourceVersion;
 	    if (compareSemVer(loadedVersionStr, "5.0.0") < 0) {
 	      addNotification(
 	        `Older save detected (${loadedVersionStr}). Missing V5.0 fields were initialized to defaults.`,
@@ -143567,10 +145118,9 @@ function dispatchGameSettingsChange(
 	        'system'
 	      );
 	    }
-	    if (compareSemVer(loadedVersionStr, VERSION_CONSTANTS.GAME_VERSION) < 0) {
-	      data = migrateV69ToV70SaveData(data);
+	    if (v95Migrated) {
 	      addNotification(
-	        `Save data migrated from ${loadedVersionStr} to V7.0.0 schema.`,
+	        `Save upgraded from v${loadedVersionStr} to v${VERSION_CONSTANTS.GAME_VERSION}.`,
 	        'info',
 	        true,
 	        'system'
@@ -143591,6 +145141,7 @@ function dispatchGameSettingsChange(
 	      dispatchGameState({ type: 'SET_TAKEOVER_SESSION', payload: null });
 	    }
 	    setCoPilotManualOverride(false);
+    return true;
 	  }, [addNotification, closeConfirmation, closeLoadPreview, dispatchGameState, dispatchPlayer, setAiActionQueue, setAiPlayer, setCurrentAiAction, setDontAskAgain, setGameSettings, setNotifications, setPersonalRecords, uiState.selectedCharacter, uiState.theme, updateUiState]);
 
   // RP5: "Branch From Replay" — per the user's own explicit scope decision, this is NOT true
@@ -154458,7 +156009,8 @@ function dispatchGameSettingsChange(
         });
         dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: action.type, summary: `${getActorDisplayName(actorId)} ended their turn.` });
         if (actorId === 'player' || actor.kind === 'human') {
-          setTimeout(() => { handleEndTurn(); }, 50);
+          const epochAtSchedule = v95MatchEpochRef.current;
+          setTimeout(() => { if (v95MatchEpochRef.current === epochAtSchedule) handleEndTurn(); }, 50);
         }
         return true;
       }
@@ -165362,7 +166914,8 @@ function dispatchGameSettingsChange(
         return out;
       }
     });
-    if (plan.stake) setTimeout(() => { depositInRegionRef.current?.(plan.stake!.region, 'player', plan.stake!.amount, { consumeAction: false, silent: true, reason: 'Starting stake (Regional Power)' }); }, 0);
+    const v95StakeEpoch = v95MatchEpochRef.current;
+    if (plan.stake) setTimeout(() => { if (v95MatchEpochRef.current !== v95StakeEpoch) return; depositInRegionRef.current?.(plan.stake!.region, 'player', plan.stake!.amount, { consumeAction: false, silent: true, reason: 'Starting stake (Regional Power)' }); }, 0);
     if (plan.notes.length) addNotification(`🗺 ${plan.notes.join(' · ')}`, 'info', true, 'system');
   }, [isLiveIntentMatch, contentEnabled, contentStateRaw]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -178679,6 +180232,20 @@ function dispatchGameSettingsChange(
               <p>Day: {data.gameState.day} / {totalDays} ({progressPercent}%)</p>
             </div>
 
+            {loadPreview.health && (
+              <div className={`${themeStyles.border} border rounded-lg p-4 md:col-span-2`} data-testid="v95-load-health">
+                <div className="font-bold mb-2">Save Check</div>
+                <p>
+                  {loadPreview.health.integrityStatus === 'intact' ? '✓ Healthy save'
+                    : loadPreview.health.integrityStatus === 'repaired' ? `✓ Loadable — ${loadPreview.health.fieldsRepaired.length + loadPreview.health.fieldsDropped.length + loadPreview.health.warnings.length} small issue(s) will be fixed automatically`
+                    : '⚠ Loadable with gaps — some saved details will use defaults'}
+                </p>
+                {loadPreview.health.migrationRequired && <p>Made with v{loadPreview.health.sourceVersion}; it will be upgraded to v{loadPreview.health.targetVersion}.</p>}
+                {loadPreview.health.warnings.slice(0, 3).map((w: string, i: number) => <p key={i} className="opacity-80">• {w}</p>)}
+                <p className="opacity-70">Your display and accessibility preferences stay as they are now.</p>
+              </div>
+            )}
+
             <div className={`${themeStyles.border} border rounded-lg p-4`}>
               <div className="font-bold mb-2">Player Snapshot</div>
               <p>Character: {data?.player?.character?.name || "Player"}</p>
@@ -181732,7 +183299,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests()];
+            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -181763,16 +183330,27 @@ function dispatchGameSettingsChange(
           teamOsContract={teamOsView?.state.contract ? { id: teamOsView.state.contract.id, revision: teamOsView.state.contract.revision, mission: teamOsView.state.contract.mission.label } : null}
           coPilot={gi3CoPilot}
         />
-        <ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} />
-        <SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} />
-        <DiplomacyInspector binding={dnBinding} theme={themeStyles} />
-        <WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} />
-        <LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} />
-        <FactionInspector view={rfViewRef.current} theme={themeStyles} />
-        <V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} />
-        <GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} />
-        <ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} />
-        <GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} />
+        <OptionalSurfaceBoundary surface="ParallelIntelligenceInspector"><ParallelIntelligenceInspector state={bgLive} theme={themeStyles} perf={bgPerfRef.current} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="SettingsIntelligenceInspector"><SettingsIntelligenceInspector binding={siBinding} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="DiplomacyInspector"><DiplomacyInspector binding={dnBinding} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="WorldReactionInspector"><WorldReactionInspector state={swrState} theme={themeStyles} hashes={swrSnapshot.hashes} viewerId={swrViewerId} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="LivingRegionsInspector"><LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="FactionInspector"><FactionInspector view={rfViewRef.current} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V9CohesionInspector"><V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="GuidedLearningInspector"><GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="Content & Replayability Inspector"><ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="Game Feel Inspector"><GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="Release Readiness Center">
+          <ReleaseReadinessCenter
+            theme={themeStyles}
+            day={Number(gameState.day || 1)}
+            getLive={() => ({ player, aiPlayer, gameState, gameSettings, actorsById, notifications })}
+            buildCurrentSave={() => buildSaveData()}
+            lastLoadHealth={v95LastLoadHealth}
+            getReplay={() => replayRecordingRef.current}
+            getSurfaceState={() => { const s: any = globalUISurfaceManager.getState(); return { modalStack: s?.modalStack?.length ?? 0, blocking: globalUISurfaceManager.hasBlockingModal() }; }}
+          />
+        </OptionalSurfaceBoundary>
         <StrategicBalanceInspector theme={themeStyles} winCondition={(['money', 'net_worth', 'regions'].includes(String(gameSettings.winCondition)) ? gameSettings.winCondition : 'money') as BalanceWinMetric} days={Number(gameSettings.totalDays || 30)} apPerDay={Number(gameSettings.playerActionsPerDay || 3)} features={{ investments: Boolean(gameSettings.investmentsEnabled), contracts: Boolean(gameSettings.regionalContractsEnabled), sabotage: Boolean(gameSettings.sabotageEnabled), overrides: gameSettings.allowActionOverride !== false }} />
       </div>
     );
@@ -192903,6 +194481,15 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
           reader.readAsText(file);
         }}
         className="hidden"
+      />
+      {/* V9.5: the save-file input was never mounted, so "Upload Save File" always failed with "Load input not ready". */}
+      <input
+        type="file"
+        accept="application/json,.json"
+        ref={fileInputRef}
+        onChange={handleLoadFileChange}
+        className="hidden"
+        data-testid="v95-save-file-input"
       />
       <input
         type="file"
