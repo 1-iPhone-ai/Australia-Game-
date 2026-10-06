@@ -14057,6 +14057,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   v93ContentEnabled: true,
   nationalSystemsEnabled: true,
   industriesEnabled: true,
+  infraNetworksEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26400,6 +26401,8 @@ export type GameSettingsState = {
   nationalSystemsEnabled?: boolean;
   /** V10.1 Industries & Supply Chains (requires National Systems; off = V10.0 without industry effects). */
   industriesEnabled?: boolean;
+  /** V10.2 Strategic Infrastructure Networks (requires National Systems; off = V10.0/V10.1 without network interpretation). */
+  infraNetworksEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36138,6 +36141,8 @@ export const initialGameState = {
   nationalSystems: null as any,
   /** V10.1: only non-derivable industry memory (bands, bounded history); the supply-chain snapshot is recomputed. */
   industries: null as any,
+  /** V10.2: only non-derivable network memory (bands, bounded history); networks are always re-derived. */
+  infrastructureNetworks: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80095,6 +80100,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.nationalSystems = sanitizeNationalSystemsPersisted(migrated.gameState.nationalSystems);
   // V10.1: pre-V10.1 saves carry no industry memory — derived on load; no fake supply-chain history.
   if (migrated.gameState) migrated.gameState.industries = sanitizeIndustriesPersisted(migrated.gameState.industries);
+  // V10.2: pre-V10.2 saves — networks are derived from current projects on load; no fake formation history.
+  if (migrated.gameState) migrated.gameState.infrastructureNetworks = sanitizeInfraNetworksPersisted(migrated.gameState.infrastructureNetworks);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -122051,7 +122058,10 @@ export type SWRKind =
   | 'national_resilience_improved' | 'national_resilience_deteriorated' | 'national_capacity_expanded'
   // V10.1 Industries & Supply Chains (derived band transitions; the industry layer never consumes these).
   | 'industry_became_constrained' | 'industry_recovered' | 'supply_shortage_formed' | 'supply_shortage_resolved' | 'supply_surplus_formed'
-  | 'critical_supply_dependency_formed' | 'critical_supply_dependency_reduced' | 'industrial_output_accelerated' | 'industrial_output_declined';
+  | 'critical_supply_dependency_formed' | 'critical_supply_dependency_reduced' | 'industrial_output_accelerated' | 'industrial_output_declined'
+  // V10.2 Strategic Infrastructure Networks (derived structural transitions; the network layer never consumes these).
+  | 'infrastructure_network_formed' | 'infrastructure_network_integrated' | 'infrastructure_network_fragmented' | 'infrastructure_network_restored'
+  | 'critical_infrastructure_point_emerged' | 'critical_infrastructure_point_resolved' | 'network_redundancy_improved' | 'network_resilience_deteriorated' | 'national_gateway_became_critical';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122556,35 +122566,36 @@ const SWR_REGION_KINDS: SWRKind[] = ['region_reinforced', 'region_became_safe', 
 const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed', 'faction_request_issued', 'faction_conflict_escalated'];
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
+const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
-  { system: 'contracts', label: 'Contracts', kinds: ['industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
   { system: 'crisis', label: 'Crisis chains', kinds: ['stability_shift_major', 'team_resource_shortage', 'market_shift_major'], minSignificance: 'meaningful', evaluation: () => 'crisis_context', timing: 'day_end', cooldownTurns: 1, audience: 'global', relevant: e => e.kind !== 'stability_shift_major' || e.tags.includes('worse') },
   { system: 'national_events', label: 'National events', kinds: ['stability_shift_major', 'crisis_escalated'], minSignificance: 'major', evaluation: () => 'event_context', timing: 'day_end', cooldownTurns: 2, audience: 'global' },
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123258,6 +123269,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  infrastructure_network_formed: 'Network formed', infrastructure_network_integrated: 'Network integrated', infrastructure_network_fragmented: 'Network fragmented', infrastructure_network_restored: 'Network restored',
+  critical_infrastructure_point_emerged: 'Single point', critical_infrastructure_point_resolved: 'Single point resolved', network_redundancy_improved: 'Redundancy ↑', network_resilience_deteriorated: 'Resilience ↓', national_gateway_became_critical: 'Gateway risk',
   industry_became_constrained: 'Industry constrained', industry_recovered: 'Industry recovered', supply_shortage_formed: 'Supply shortage', supply_shortage_resolved: 'Shortage eased',
   supply_surplus_formed: 'Supply surplus', critical_supply_dependency_formed: 'Critical supplier', critical_supply_dependency_reduced: 'Supplier risk eased', industrial_output_accelerated: 'Output ↑', industrial_output_declined: 'Output ↓',
   national_bottleneck_formed: 'Bottleneck', national_bottleneck_resolved: 'Bottleneck eased', national_dependency_became_critical: 'Critical dependency', national_dependency_reduced: 'Dependency eased',
@@ -124292,6 +124305,10 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
         break;
       }
       // V10.1: industry signals — Living Regions decides the (bounded) regional meaning.
+      // V10.2: infrastructure network structure — Living Regions decides the (bounded) regional meaning.
+      case 'infrastructure_network_formed': case 'infrastructure_network_integrated': case 'infrastructure_network_restored': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
+      case 'infrastructure_network_fragmented': { pulse(-0.05); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
+      case 'critical_infrastructure_point_emerged': case 'critical_infrastructure_point_resolved': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
       case 'industry_became_constrained': { pulse(e.significance === 'major' || e.significance === 'critical' ? -0.08 : -0.04); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'supply chain', e.id); break; }
       case 'industry_recovered': { pulse(0.04); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'supply chain', e.id); break; }
       case 'supply_shortage_formed': case 'supply_shortage_resolved': case 'supply_surplus_formed':
@@ -124739,7 +124756,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124757,6 +124774,8 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   const actorKey = actor ? actor.id : null;
   const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
   // V10.0: interregional network questions (only when a National Systems view exists).
+  const xq = detectInfraNetworkQuery(raw, gw);
+  if (xq) return mk('national', { infra: xq, regionId: xq.regionId });
   const iq = detectIndustryQuery(raw, gw);
   if (iq) return mk('national', { industry: iq, regionId: iq.regionId });
   const nq = detectNationalSystemsQuery(raw, gw);
@@ -124792,6 +124811,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.infra && gw.national?.infra) return composeInfraNetworkAnswer(query.infra, gw);
   if (query.topic === 'national' && query.industry && gw.national?.industries) return composeIndustryAnswer(query.industry, gw);
   if (query.topic === 'national' && query.national && gw.national) return composeNationalSystemsAnswer(query.national, gw);
   const v = gw.livingRegions!;
@@ -128764,6 +128784,9 @@ export interface LearningContext {
   /** V10.1 supply chains (public): a constrained industry, and a dominant single supplier, as one sentence each. */
   supplyConstraint?: string | null;
   supplyDependency?: string | null;
+  /** V10.2 (public): a newly meaningful infrastructure network, and a critical single point, as one sentence each. */
+  infraNetwork?: string | null;
+  infraCriticalPoint?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128855,6 +128878,12 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'supply_dependency', title: 'Supply dependency', category: 'regions', tier: 'interaction', priority: 6, minLevel: 3, requires: ['supply_chains'], directoryId: 'regions', askPrompt: 'Is Australia too dependent on one region?', related: ['supply_chains'],
     relevant: c => (c.supplyDependency ? 'one supplier dominates an input' : null),
     lesson: c => ({ headline: 'Dependency', lines: [c.supplyDependency || '', 'That makes the buyer vulnerable to a disruption in the supplier — an alternative source reduces the risk.'], asks: ['Is Australia too dependent on one region?'], surface: 'inline' }) },
+  { id: 'infra_networks', title: 'Infrastructure networks', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'infrastructure', askPrompt: 'Which projects are part of this network?', related: ['infrastructure', 'national_networks'],
+    relevant: c => (c.infraNetwork ? 'projects now work together as one network' : null),
+    lesson: c => ({ headline: 'Infrastructure network', lines: [c.infraNetwork || '', 'Connecting infrastructure can create national benefits beyond one region — for rivals too.'], asks: ['Which projects are part of this network?'], surface: 'inline' }) },
+  { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
+    relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
+    lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
   { id: 'factions', title: 'Stakeholders', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'factions', askPrompt: 'Who matters in this region?', related: ['contracts'],
     relevant: c => (c.stakeholder ? 'a regional group has asked for something' : null),
     lesson: c => ({ headline: 'Regional stakeholders', lines: [c.stakeholder || '', 'Groups support or oppose moves based on what they want for their region — helping one can worry another.'], asks: ['Who matters in this region?'], surface: 'card' }) },
@@ -129533,6 +129562,8 @@ export interface ContentContext {
   /** V10.1: region → industry / supply condition (optional; absent when Industries is off). */
   industries?: Record<string, Partial<Record<StrategicIndustryKind, IndustryCondition>>> | null;
   supplies?: Record<string, Partial<Record<StrategicSupplyKind, SupplyCondition>>> | null;
+  /** V10.2: region → infrastructure-network structural states (optional; absent when off). */
+  infraStates?: Record<string, string[]> | null;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -129564,6 +129595,8 @@ export type ContentReq =
   /** V10.1: a region's industry band, or a supply band (regional, or anywhere nationally with scope 'national'). */
   | { k: 'industry'; industry: StrategicIndustryKind; conditions: IndustryCondition[] }
   | { k: 'supply'; supply: StrategicSupplyKind; conditions: SupplyCondition[]; scope?: 'national' }
+  /** V10.2: the region sits in a derived infrastructure network with one of these structural states. */
+  | { k: 'infra_network'; states: Array<'network_fragmented' | 'corridor_missing_link' | 'critical_gateway' | 'redundancy_low' | 'network_extension_opportunity' | 'critical_point'>; kind?: StrategicInfrastructureNetworkKind }
   | { k: 'dependency'; network?: NationalNetworkKind; critical?: boolean }
   | { k: 'project'; projectId: string; status: string[] }
   | { k: 'window'; type: string }
@@ -129623,6 +129656,11 @@ export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionI
     case 'industry': {
       const c = regionId ? ctx.industries?.[regionId]?.[req.industry] : undefined;
       return res(Boolean(c && req.conditions.includes(c)), `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is ${c ? INDUSTRY_CONDITION_LABEL[c].toLowerCase() : 'absent'}`, `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is not ${req.conditions.join('/')}`);
+    }
+    case 'infra_network': {
+      const have = regionId ? (ctx.infraStates?.[regionId] || []) : [];
+      const hit = req.states.find(x => have.includes(x));
+      return res(Boolean(hit), `${name} infrastructure network: ${hit?.replace(/_/g, ' ')}`, `${name} has no ${req.states.join('/').replace(/_/g, ' ')} infrastructure-network state`);
     }
     case 'supply': {
       const where = req.scope === 'national' ? Object.entries(ctx.supplies || {}).filter(([, m]) => m[req.supply] && req.conditions.includes(m[req.supply]!)).map(([c]) => c) : [];
@@ -129897,6 +129935,7 @@ function contentReqSig(reqs: ContentReq[], ctx: ContentContext, regionId: string
       case 'network': parts.push(`n${q.network}${r ? ctx.national?.[r.code]?.[q.network] : ''}`); break;
       case 'dependency': parts.push(`dp${(ctx.nationalDeps || []).filter(x => !r || x.consumer === r.code).map(x => x.importance).join('')}`); break;
       case 'industry': parts.push(`i${q.industry}${r ? ctx.industries?.[r.code]?.[q.industry] : ''}`); break;
+      case 'infra_network': parts.push(`x${r ? (ctx.infraStates?.[r.code] || []).join('.') : ''}`); break;
       case 'supply': parts.push(`s${q.supply}${q.scope === 'national' ? Object.values(ctx.supplies || {}).map(m => m[q.supply] || '').join('') : r ? ctx.supplies?.[r.code]?.[q.supply] : ''}`); break;
       case 'project': parts.push(`pj${ctx.projects.find(x => x.id === q.projectId)?.status}`); break;
       case 'window': parts.push(`w${ctx.windows.map(w => w.id).join()}`); break;
@@ -130329,6 +130368,10 @@ export const CONTRACT_TEMPLATE_REGISTRY: ContractTemplate[] = [
     text: { '*': { title: '{region} Energy Security Program', description: '{region} leans heavily on energy from another region. Co-fund local generation to cut that dependency.' } },
     objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 9,
     requires: [{ k: 'contracts_on' }, { k: 'any', of: [{ k: 'dependency', network: 'energy' }, { k: 'network', network: 'energy', conditions: ['bottlenecked', 'critical'] }] }] }),
+  ctpl({ id: 'net_corridor_completion', title: 'Freight Corridor Completion', archetype: 'infrastructure', contractType: 'freight_capacity', issuingFactionId: 'federal_infrastructure_office', regions: ['NSW', 'SA', 'VIC', 'QLD', 'WA'], themes: ['logistics', 'trade'], roles: ['infrastructure', 'long_term_investment'],
+    text: { '*': { title: '{region} Freight Corridor Completion', description: 'A strategic freight network has a missing segment at {region}. Get a connecting project operating and the federal office pays.' } },
+    objective: { type: 'build_infrastructure', base: 1 }, requirement: { cashOnHand: 2000 }, duration: 12, offerDays: 6,
+    requires: [{ k: 'contracts_on' }, { k: 'infra_on' }, { k: 'infra_network', states: ['corridor_missing_link', 'network_fragmented'] }] }),
   ctpl({ id: 'ind_manufacturing_inputs', title: 'Manufacturing Input Security', archetype: 'capital', contractType: 'manufacturing_modernization', issuingFactionId: null, regions: ['VIC', 'NSW', 'SA', 'QLD'], themes: ['manufacturing', 'logistics'], roles: ['economic_growth', 'long_term_investment'],
     text: { '*': { title: '{region} Manufacturing Input Security', description: '{region} factories are running below capacity because their inputs are tight. Co-fund supply and logistics upgrades to restore output.' } },
     objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1500 }, duration: 10,
@@ -130435,6 +130478,10 @@ export const V93_INFRASTRUCTURE_PROJECTS: InfrastructureProject[] = [
   v93Project('infra_v93_tas_tourism_precinct', 'tourism_precinct', 'Tasmanian Tourism Precinct', 'Visitor economy: +12% standing gains in TAS. Environmental stakeholders prefer it to industrial projects.', 'TAS', 55000, 2, [{ type: 'standing_multiplier', magnitude: 0.12, targetScope: 'region' }], 500),
   v93Project('infra_v93_nt_gateway', 'remote_logistics_base', 'Darwin Northern Gateway', 'Frontier logistics hub: travel costs −25% in NT.', 'NT', 70000, 2, [{ type: 'travel_cost_reduction', magnitude: 0.25, targetScope: 'region' }], 600),
   v93Project('infra_v93_act_research_campus', 'research_campus', 'National Research Campus', 'Institutional research: +10% standing gains nationally. Competes with the tech park for the same research budget.', 'ACT', 150000, 4, [{ type: 'standing_multiplier', magnitude: 0.1, targetScope: 'national' }], 1200),
+  // V10.2 (minimal, canonical): fill clear national freight-network gaps — same engine, statuses, costs and maintenance.
+  v93Project('infra_v102_nsw_interstate_rail', 'freight_rail_upgrade', 'NSW Interstate Freight Rail', 'Doubles interstate rail paths through NSW: 10% trade discount in NSW. Links Queensland and Victorian freight.', 'NSW', 100000, 3, [{ type: 'trade_discount', magnitude: 0.1, targetScope: 'region' }], 800),
+  v93Project('infra_v102_sa_freight_corridor', 'freight_rail_upgrade', 'Adelaide Freight Corridor', 'Heavy freight through Adelaide: 8% trade discount in SA. Connects Western Australia to the east and offers an alternative to NSW routes.', 'SA', 95000, 3, [{ type: 'trade_discount', magnitude: 0.08, targetScope: 'region' }], 750),
+  v93Project('infra_v102_vic_freight_terminal', 'inland_rail_hub', 'Melbourne Intermodal Freight Terminal', 'Rail-to-road freight terminal: 8% trade discount in VIC. Gives Victorian industry direct freight-network access.', 'VIC', 90000, 3, [{ type: 'trade_discount', magnitude: 0.08, targetScope: 'region' }], 700),
   v93Project('infra_v93_national_grid', 'renewable_grid', 'National Grid Interconnector', 'A historic national project: +10% investment income nationally. Only opens when a historic infrastructure opportunity arises.', 'ACT', 240000, 5, [{ type: 'income_boost', magnitude: 0.1, targetScope: 'national' }], 1500, 2, 'locked')
 ];
 
@@ -130452,6 +130499,9 @@ export const V93_INFRA_META: InfrastructureContentMeta[] = [
   { projectId: 'infra_v93_tas_tourism_precinct', path: 'Tourism', competesWith: [], roles: ['development', 'faction'], themes: ['tourism', 'environment'] },
   { projectId: 'infra_v93_nt_gateway', path: 'Frontier logistics', competesWith: [], roles: ['exploration', 'infrastructure'], themes: ['logistics', 'exploration'] },
   { projectId: 'infra_v93_act_research_campus', path: 'Research', competesWith: ['infra_tech_park_act'], roles: ['development', 'long_term_investment'], themes: ['research'] },
+  { projectId: 'infra_v102_nsw_interstate_rail', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['logistics', 'trade'] },
+  { projectId: 'infra_v102_sa_freight_corridor', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['logistics', 'mining'] },
+  { projectId: 'infra_v102_vic_freight_terminal', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'economic_growth'], themes: ['logistics', 'manufacturing'] },
   { projectId: 'infra_v93_national_grid', path: 'National', competesWith: [], roles: ['long_term_investment', 'infrastructure'], themes: ['energy', 'governance'] }
 ];
 export const V93_INFRA_META_BY_ID: Record<string, InfrastructureContentMeta> = Object.fromEntries(V93_INFRA_META.map(m => [m.projectId, m]));
@@ -130495,6 +130545,14 @@ export const DILEMMA_TEMPLATE_REGISTRY: DilemmaTemplate[] = [
       { id: 'automated', label: 'Automated Port Expansion', pros: ['High productivity', 'Export capacity'], cons: ['Labour relationship suffers', 'Capital outlay'], scores: { economy: 2, control: 0, stability: -1, longTerm: 1 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: -4 }, { k: 'flag', key: 'qld_port_path', value: 'automated' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_partnership' }, { k: 'offer_contract', templateId: 'qld_freight_capacity' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority'], losers: ['regional_labor_coalition'] } },
       { id: 'partnership', label: 'Labour Partnership Expansion', pros: ['Regional stability', 'Labour relationship', 'Moderate capacity'], cons: ['Higher cost', 'Slower'], scores: { economy: 1, control: 1, stability: 2, longTerm: 0 }, effects: [{ k: 'cash', amount: -2500 }, { k: 'standing', delta: 8 }, { k: 'stability', delta: 2, turns: 3 }, { k: 'flag', key: 'qld_port_path', value: 'partnership' }, { k: 'lock_project', projectId: 'infra_v93_qld_port_automated' }], nav: 'infrastructure', factions: { winners: ['qld_port_authority', 'regional_labor_coalition'], losers: [] } },
       { id: 'delay', label: 'Delay', pros: ['Preserve capital'], cons: ['Regional momentum at risk', 'A rival may build first'], scores: { economy: 0, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'qld_port_path', value: 'delayed' }] }
+    ] }),
+  dtpl({ id: 'net_extend_or_reinforce', title: 'Extend or Reinforce the {region} Network?', summary: 'A key infrastructure network runs through a single point.', regions: ['NSW', 'SA', 'VIC', 'QLD', 'WA'], themes: ['logistics', 'trade'], roles: ['infrastructure', 'long_term_investment'], conflictType: 'growth_vs_capacity',
+    prompt: '{region} is now a single point of failure in a national infrastructure network. Where should the next infrastructure dollar go?',
+    requires: [{ k: 'infra_network', states: ['critical_point', 'redundancy_low'] }],
+    choices: [
+      { id: 'reinforce', label: 'Build an alternative route', pros: ['Redundancy', 'National resilience'], cons: ['Capital', 'Lower immediate throughput gain'], scores: { economy: 0, control: 0, stability: 2, longTerm: 2 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'flag', key: 'network_path', value: 'reinforce' }], nav: 'infrastructure' },
+      { id: 'extend', label: 'Extend capacity where demand is rising', pros: ['Throughput', 'Faster growth'], cons: ['Network stays fragile'], scores: { economy: 2, control: 1, stability: -1, longTerm: 0 }, effects: [{ k: 'cash', amount: -1200 }, { k: 'flag', key: 'network_path', value: 'extend' }], nav: 'infrastructure' },
+      { id: 'hold', label: 'Hold capital for now', pros: ['Preserve cash'], cons: ['Single point remains'], scores: { economy: 0, control: 0, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'network_path', value: 'hold' }] }
     ] }),
   dtpl({ id: 'ind_input_crunch', title: '{region} Manufacturing Input Crunch', summary: 'Factories are running below capacity because inputs are tight.', regions: ['VIC', 'NSW', 'SA', 'QLD'], themes: ['manufacturing', 'logistics'], roles: ['economic_growth', 'infrastructure'], conflictType: 'growth_vs_capacity', factionIds: ['pilbara_mining_consortium', 'regional_labor_coalition'],
     prompt: "{region}'s factories are operating below capacity because mineral inputs are tight. How should you respond?",
@@ -131089,6 +131147,7 @@ function satisfyReq(q: ContentReq, ctx: ContentContext, st: MatchContentState, r
     case 'network': { const code = region || 'NSW'; ctx.national = { ...(ctx.national || {}), [code]: { ...((ctx.national || {})[code] || {}), [q.network]: q.conditions[0] } }; break; }
     case 'dependency': ctx.nationalDeps = [...(ctx.nationalDeps || []), { consumer: region || 'NSW', provider: 'SA', network: q.network || 'energy', importance: 'critical' }]; break;
     case 'industry': { const code = region || 'NSW'; ctx.industries = { ...(ctx.industries || {}), [code]: { ...((ctx.industries || {})[code] || {}), [q.industry]: q.conditions[0] } }; break; }
+    case 'infra_network': { const code = region || 'NSW'; ctx.infraStates = { ...(ctx.infraStates || {}), [code]: [q.states[0]] }; break; }
     case 'supply': { const code = region || 'NSW'; ctx.supplies = { ...(ctx.supplies || {}), [code]: { ...((ctx.supplies || {})[code] || {}), [q.supply]: q.conditions[0] } }; break; }
     case 'project': ctx.projects = [...ctx.projects, { id: q.projectId, regionId: region || 'NSW', projectType: 'x', status: q.status[0] }]; break;
     case 'window': ctx.windows = [...ctx.windows, { id: 'probe', type: q.type, subject: region || 'NSW', expiresTurn: ctx.day + 2, reason: 'probe' }]; break;
@@ -131235,7 +131294,7 @@ function contentSyntheticWorld(seed: number, opening: RegionalOpening, day: numb
 export function contentIsConditionalByDesign(t: ContentTemplateBase): boolean {
   const conditional = (q: ContentReq): boolean => q.k === 'any' ? q.of.every(conditional)
     // V10/V10.1 structural requirements (network, dependency, industry, supply) only hold when that emergent state exists.
-    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window', 'network', 'dependency', 'industry', 'supply'].includes(q.k)
+    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window', 'network', 'dependency', 'industry', 'supply', 'infra_network'].includes(q.k)
       || (q.k === 'condition' && (q.kind === 'post_crisis_recovery' || q.kind === 'commodity_boom')) || (q.k === 'opportunity' && q.kind === 'recovery_investment');
   return t.rarity === 'rare' || t.rarity === 'exceptional' || t.kind === 'crisis' || t.requires.some(conditional);
 }
@@ -131312,6 +131371,8 @@ export interface ContentLiveInputs {
   national?: NationalSystemsState | null;
   /** V10.1 industries snapshot (optional). */
   industries?: IndustriesSupplyChainsState | null;
+  /** V10.2 infrastructure networks snapshot (optional). */
+  infraNetworks?: StrategicInfrastructureState | null;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   regionalStability: Record<string, number>;
 }
@@ -131361,6 +131422,7 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     strategyRegion: i.strategyRegion, campaignVars: i.campaignVars || {}, contractsEnabled: i.contractsEnabled, infraEnabled: i.infraEnabled,
     national: i.national ? Object.fromEntries(Object.values(i.national.regions).map(g => [g.regionId, Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, g.networks[n].condition]))])) : null,
     nationalDeps: i.national ? i.national.dependencies.map(d => ({ consumer: d.consumerRegionId, provider: d.providerRegionId, network: d.network, importance: d.importance })) : [],
+    infraStates: i.infraNetworks ? Object.fromEntries(Object.keys(REGIONS).map(c => [c, infraNetworkRegionStates(i.infraNetworks!, c)])) : null,
     industries: i.industries ? Object.fromEntries(Object.values(i.industries.regions).map(g => [g.regionId, Object.fromEntries(Object.values(g.industries).map(x => [x!.industry, x!.condition]))])) : null,
     supplies: i.industries ? Object.fromEntries(Object.entries(i.industries.supplies).map(([c, l]) => [c, Object.fromEntries(l.map(x => [x.supply, x.condition]))])) : null,
     projects: i.projects || [],
@@ -132040,6 +132102,8 @@ export interface FeelSnapshot {
   deals: Record<string, { status: string; title: string }>;
   /** V10.1: 'REGION:industry' → condition (significant industries only; optional). */
   industries?: Record<string, string>;
+  /** V10.2: network id → 'maturity|name' (optional). */
+  infraNetworks?: Record<string, string>;
 }
 
 let V94_SEQ = 0;
@@ -132119,6 +132183,13 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     if (!pb || pb === band || icCount >= 1 || bad(pb) === bad(band)) return;
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
+  });
+  // V10.2: a network changing maturity (EMERGING → CONNECTED, → FRAGMENTED …), capped at one per update.
+  let inCount = 0;
+  Object.entries(next.infraNetworks || {}).forEach(([nid, val]) => {
+    const [mat, name] = val.split('|'); const pv = prev.infraNetworks?.[nid]; if (!pv) return; const [pmat] = pv.split('|');
+    if (pmat === mat || inCount >= 1) return; inCount += 1;
+    out.push(v94Event('region_state_changed', 'minor', `in_${nid}`, `${name}: ${pmat.replace(/_/g, ' ')} → ${mat.replace(/_/g, ' ')}`, [], { now, turn, icon: UI_ICON.region, tone: mat === 'fragmented' ? 'negative' : 'positive', regions: [] }));
   });
   Object.entries(next.factionBands).forEach(([fid, band]) => {
     const pb = prev.factionBands[fid];
@@ -132514,7 +132585,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled'
 ] as const;
 
 /**
@@ -132867,6 +132938,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
         nationalSystems: sanitizeNationalSystemsPersisted(stateData.nationalSystems || raw.gameState?.nationalSystems),
         industries: sanitizeIndustriesPersisted(stateData.industries || raw.gameState?.industries),
+        infrastructureNetworks: sanitizeInfraNetworksPersisted(stateData.infrastructureNetworks || raw.gameState?.infrastructureNetworks),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -134912,6 +134984,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 }
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
+  { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -136982,6 +137055,8 @@ export interface NationalSystemsWorldView {
   regionOwners: Record<string, 'you' | 'rival' | 'neutral'>;
   /** V10.1 Industries & Supply Chains (null when off). */
   industries?: IndustriesWorldView | null;
+  /** V10.2 Strategic Infrastructure Networks (null when off). */
+  infra?: InfraNetworksWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -138787,6 +138862,1147 @@ export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
     for (let k = 0; k < 50; k++) { const r = computeIndustriesSupplyChains({ ...w.ii, turn: k }, p); p = r.persisted; if (r.state.flows.length > V101_LIMITS.flows || r.persisted.history.length > V101_LIMITS.history) return 'unbounded'; }
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return ms < 1500 || `${Math.round(ms)}ms`;
+  });
+  return results;
+}
+
+
+// ============================================================================
+// SECTION 20U: V10.2 STRATEGIC INFRASTRUCTURE NETWORKS
+// Derived only. Owns how canonical infrastructure projects COMBINE into strategic systems: membership,
+// corridors, coverage, continuity, redundancy, critical points, gateways, hubs, maturity, resilience and
+// network identity. It never funds, builds, repairs, upgrades, maintains or bonuses a project (Infrastructure
+// Engine), never owns capacity (V10.0) and never owns industrial supply (V10.1).
+// ============================================================================
+
+export type StrategicInfrastructureNetworkKind = 'freight' | 'energy' | 'water' | 'trade' | 'digital' | 'mobility';
+export type InfrastructureNetworkRole = 'node' | 'corridor' | 'hub' | 'generator' | 'storage' | 'gateway' | 'backbone' | 'local_support';
+export type InfrastructureNetworkMaturity = 'fragmented' | 'emerging' | 'connected' | 'integrated' | 'national_backbone';
+export type InfrastructureNetworkCondition = 'underdeveloped' | 'healthy' | 'strained' | 'bottlenecked' | 'fragile' | 'disrupted';
+export type InfrastructureRedundancyBand = 'none' | 'low' | 'moderate' | 'high';
+
+export const INFRA_NETWORK_KINDS: StrategicInfrastructureNetworkKind[] = ['freight', 'energy', 'water', 'trade', 'digital', 'mobility'];
+export const INFRA_NETWORK_LABEL: Record<StrategicInfrastructureNetworkKind, string> = { freight: 'Freight', energy: 'Energy', water: 'Water', trade: 'Trade', digital: 'Digital', mobility: 'Mobility' };
+export const INFRA_NETWORK_ICON: Record<StrategicInfrastructureNetworkKind, string> = { freight: '🚆', energy: '⚡', water: '💧', trade: '🚢', digital: '🛰', mobility: '🚄' };
+export const INFRA_MATURITY_LABEL: Record<InfrastructureNetworkMaturity, string> = { fragmented: 'Fragmented', emerging: 'Emerging', connected: 'Connected', integrated: 'Integrated', national_backbone: 'National backbone' };
+export const INFRA_CONDITION_LABEL: Record<InfrastructureNetworkCondition, string> = { underdeveloped: 'Underdeveloped', healthy: 'Healthy', strained: 'Strained', bottlenecked: 'Bottlenecked', fragile: 'Fragile', disrupted: 'Disrupted' };
+export const INFRA_CONDITION_ICON: Record<InfrastructureNetworkCondition, string> = { underdeveloped: '▫', healthy: '✓', strained: '●', bottlenecked: '⚠', fragile: '◇', disrupted: '⛔' };
+export const INFRA_ROLE_LABEL: Record<InfrastructureNetworkRole, string> = { node: 'Node', corridor: 'Corridor', hub: 'Hub', generator: 'Generator', storage: 'Storage', gateway: 'Gateway', backbone: 'Backbone', local_support: 'Local support' };
+/** Which V10.0 network supplies topology + capacity for each kind (mobility rides the land/Bass corridors). */
+export const INFRA_KIND_NETWORK: Record<StrategicInfrastructureNetworkKind, NationalNetworkKind> = { freight: 'freight', energy: 'energy', water: 'water', trade: 'trade', digital: 'digital', mobility: 'freight' };
+/** Roles that carry a network across a V10.0 corridor into a neighbouring member / endpoint region. */
+const V102_REACH_ROLES: InfrastructureNetworkRole[] = ['corridor', 'backbone', 'hub', 'gateway', 'generator'];
+const V102_MATURITY_RANK: Record<InfrastructureNetworkMaturity, number> = { fragmented: 0, emerging: 1, connected: 2, integrated: 3, national_backbone: 4 };
+const V102_RED_RANK: Record<InfrastructureRedundancyBand, number> = { none: 0, low: 1, moderate: 2, high: 3 };
+export const V102_LIMITS = { history: 30, memory: 40, cooldowns: 80, criticalPoints: 24, missingLinks: 12, evidence: 6, eventCooldownTurns: 2, opportunities: 6 } as const;
+
+export interface InfrastructureNetworkProfile {
+  projectType: InfrastructureProjectType;
+  contributesTo: Array<{ network: StrategicInfrastructureNetworkKind; role: InfrastructureNetworkRole; capacityWeight: number; connectivityWeight: number; resilienceWeight: number }>;
+  compatibleNetworkTags: string[]; bridgeCapable: boolean; endpointCapable: boolean;
+}
+const ip = (projectType: InfrastructureProjectType, contributesTo: InfrastructureNetworkProfile['contributesTo'], tags: string[], bridgeCapable: boolean, endpointCapable = true): InfrastructureNetworkProfile => ({ projectType, contributesTo, compatibleNetworkTags: tags, bridgeCapable, endpointCapable });
+/** Sidecar profiles for every ACTUAL project type (canonical project objects are never mutated). */
+export const INFRA_NETWORK_PROFILES: Record<InfrastructureProjectType, InfrastructureNetworkProfile> = {
+  high_speed_rail: ip('high_speed_rail', [{ network: 'mobility', role: 'backbone', capacityWeight: 0.9, connectivityWeight: 1, resilienceWeight: 0.5 }, { network: 'trade', role: 'local_support', capacityWeight: 0.2, connectivityWeight: 0.2, resilienceWeight: 0.1 }], ['passenger_rail'], true),
+  inland_rail_hub: ip('inland_rail_hub', [{ network: 'freight', role: 'hub', capacityWeight: 1, connectivityWeight: 1, resilienceWeight: 0.6 }, { network: 'trade', role: 'local_support', capacityWeight: 0.3, connectivityWeight: 0.3, resilienceWeight: 0.2 }], ['freight_rail'], true),
+  freight_rail_upgrade: ip('freight_rail_upgrade', [{ network: 'freight', role: 'corridor', capacityWeight: 1, connectivityWeight: 1, resilienceWeight: 0.5 }, { network: 'trade', role: 'local_support', capacityWeight: 0.3, connectivityWeight: 0.2, resilienceWeight: 0.1 }], ['freight_rail'], true),
+  remote_logistics_base: ip('remote_logistics_base', [{ network: 'freight', role: 'node', capacityWeight: 0.5, connectivityWeight: 0.6, resilienceWeight: 0.4 }, { network: 'mobility', role: 'node', capacityWeight: 0.4, connectivityWeight: 0.5, resilienceWeight: 0.3 }], ['frontier_logistics'], false),
+  automated_port: ip('automated_port', [{ network: 'trade', role: 'gateway', capacityWeight: 1, connectivityWeight: 0.8, resilienceWeight: 0.6 }, { network: 'freight', role: 'node', capacityWeight: 0.4, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['port'], false),
+  port_expansion: ip('port_expansion', [{ network: 'trade', role: 'gateway', capacityWeight: 0.8, connectivityWeight: 0.8, resilienceWeight: 0.6 }, { network: 'freight', role: 'node', capacityWeight: 0.4, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['port'], false),
+  renewable_grid: ip('renewable_grid', [{ network: 'energy', role: 'backbone', capacityWeight: 1, connectivityWeight: 1, resilienceWeight: 0.6 }], ['grid'], true),
+  offshore_wind_farm: ip('offshore_wind_farm', [{ network: 'energy', role: 'generator', capacityWeight: 0.8, connectivityWeight: 0.4, resilienceWeight: 0.5 }], ['generation'], false),
+  hydro_expansion: ip('hydro_expansion', [{ network: 'energy', role: 'generator', capacityWeight: 0.8, connectivityWeight: 0.4, resilienceWeight: 0.6 }, { network: 'water', role: 'storage', capacityWeight: 0.4, connectivityWeight: 0.3, resilienceWeight: 0.5 }], ['generation', 'water_storage'], false),
+  green_hydrogen_terminal: ip('green_hydrogen_terminal', [{ network: 'energy', role: 'gateway', capacityWeight: 0.5, connectivityWeight: 0.4, resilienceWeight: 0.4 }, { network: 'trade', role: 'gateway', capacityWeight: 0.4, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['export_terminal'], false),
+  water_pipeline: ip('water_pipeline', [{ network: 'water', role: 'corridor', capacityWeight: 1, connectivityWeight: 1, resilienceWeight: 0.5 }], ['pipeline'], true),
+  desalination_plant: ip('desalination_plant', [{ network: 'water', role: 'generator', capacityWeight: 0.9, connectivityWeight: 0.4, resilienceWeight: 0.6 }], ['water_supply'], false),
+  subsea_cable_hub: ip('subsea_cable_hub', [{ network: 'digital', role: 'gateway', capacityWeight: 1, connectivityWeight: 0.9, resilienceWeight: 0.7 }], ['cable'], true),
+  data_center: ip('data_center', [{ network: 'digital', role: 'node', capacityWeight: 0.6, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['compute'], false),
+  research_campus: ip('research_campus', [{ network: 'digital', role: 'node', capacityWeight: 0.4, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['research'], false),
+  tech_innovation_park: ip('tech_innovation_park', [{ network: 'digital', role: 'node', capacityWeight: 0.5, connectivityWeight: 0.4, resilienceWeight: 0.3 }], ['technology'], false),
+  advanced_manufacturing: ip('advanced_manufacturing', [{ network: 'freight', role: 'local_support', capacityWeight: 0.2, connectivityWeight: 0.1, resilienceWeight: 0 }], ['industrial_demand'], false),
+  tourism_precinct: ip('tourism_precinct', [{ network: 'mobility', role: 'local_support', capacityWeight: 0.2, connectivityWeight: 0.2, resilienceWeight: 0.1 }], ['visitor_demand'], false)
+};
+
+export interface InfrastructureNetworkArchetype { id: string; label: string; networkKind: StrategicInfrastructureNetworkKind; requiredRegions?: string[]; minimumRegions: number; requiredRoles: InfrastructureNetworkRole[]; strategicDescription: string }
+/** Curated identities. Recognition ALWAYS comes from derived topology — never from a checkbox. */
+export const INFRA_NETWORK_ARCHETYPES: InfrastructureNetworkArchetype[] = [
+  { id: 'eastern_freight_spine', label: 'Eastern Freight Spine', networkKind: 'freight', requiredRegions: ['QLD', 'NSW', 'VIC'], minimumRegions: 3, requiredRoles: [], strategicDescription: 'Moves mineral inputs toward Victorian manufacturing and carries east-coast trade.' },
+  { id: 'transcontinental_freight', label: 'Trans-Continental Freight Corridor', networkKind: 'freight', requiredRegions: ['WA', 'SA'], minimumRegions: 3, requiredRoles: [], strategicDescription: 'Links Western Australian supply to the eastern economy through South Australia.' },
+  { id: 'northern_export_corridor', label: 'Northern Export Corridor', networkKind: 'trade', requiredRegions: ['NT', 'QLD'], minimumRegions: 2, requiredRoles: ['gateway'], strategicDescription: 'Northern export access through Darwin and Queensland ports.' },
+  { id: 'southern_energy_network', label: 'Southern Energy Network', networkKind: 'energy', requiredRegions: ['SA', 'VIC'], minimumRegions: 3, requiredRoles: [], strategicDescription: 'Southern generation supporting Victorian industry and technology.' },
+  { id: 'eastern_energy_grid', label: 'Eastern Energy Grid', networkKind: 'energy', requiredRegions: ['QLD', 'NSW'], minimumRegions: 3, requiredRoles: [], strategicDescription: 'East-coast generation and transmission.' },
+  { id: 'national_digital_backbone', label: 'National Digital Backbone', networkKind: 'digital', minimumRegions: 5, requiredRoles: ['gateway'], strategicDescription: 'International cable access reaching most of the country.' },
+  { id: 'south_east_mobility', label: 'South-East Mobility Corridor', networkKind: 'mobility', requiredRegions: ['NSW', 'VIC'], minimumRegions: 2, requiredRoles: [], strategicDescription: 'Fast passenger connectivity between Sydney and Melbourne.' },
+  { id: 'sa_water_security', label: 'South Australian Water Security System', networkKind: 'water', requiredRegions: ['SA'], minimumRegions: 2, requiredRoles: [], strategicDescription: 'Water supply and transfer protecting South Australian growth.' },
+  { id: 'export_gateway_system', label: 'Export Gateway System', networkKind: 'trade', minimumRegions: 4, requiredRoles: ['gateway', 'gateway'], strategicDescription: 'Several national trade gateways sharing export load.' }
+];
+
+export interface InfrastructureNetworkEvidence { label: string; value: number | string; source: string }
+export interface InfrastructureCriticalPoint { id: string; type: 'project' | 'region' | 'link'; subjectId: string; networkId: string; severity: 'meaningful' | 'major' | 'critical'; affectedRegions: string[]; affectedIndustries: string[]; reason: string }
+export interface InfrastructureMissingLink { networkKind: StrategicInfrastructureNetworkKind; networkId: string | null; fromRegionId: string; toRegionId: string; strategicImportance: string; candidateProjectIds: string[]; reason: string }
+export interface StrategicInfrastructureNetworkEffect { networkId: string; networkKind: StrategicInfrastructureNetworkKind; kind: 'capacity_support' | 'bottleneck_relief' | 'resilience_support' | 'dependency_reduction' | 'industry_enablement' | 'trade_access' | 'mobility_access'; regionIds: string[]; magnitude: number; evidence: InfrastructureNetworkEvidence[] }
+export interface StrategicInfrastructureNetwork {
+  id: string; networkKind: StrategicInfrastructureNetworkKind; name: string; archetypeId: string | null; archetypeComplete: boolean;
+  memberProjectIds: string[]; impairedProjectIds: string[]; regionIds: string[]; memberRegionIds: string[]; linkIds: string[]; brokenLinkIds: string[]; endpointRegionIds: string[];
+  criticalProjectIds: string[]; criticalRegionIds: string[]; criticalLinkIds: string[]; hubRegionIds: string[]; bridgeRegionIds: string[]; gatewayProjectIds: string[];
+  coverage: number; continuity: number; effectiveCapacity: number; demand: number; utilization: number; redundancy: number; redundancyBand: InfrastructureRedundancyBand;
+  resilience: number; resilienceBand: NationalResilienceBand; maturity: InfrastructureNetworkMaturity; condition: InfrastructureNetworkCondition;
+  primaryConstraint: string | null; primaryOpportunity: string | null; contributors: Record<string, number>; downstream: string[]; economicRelevance: 'low' | 'moderate' | 'high';
+  evidence: InfrastructureNetworkEvidence[];
+}
+export interface InfrastructureProjectNetworkRole { projectId: string; title: string; regionId: string; networkId: string; networkKind: StrategicInfrastructureNetworkKind; role: InfrastructureNetworkRole; functional: boolean; capacityContribution: number; criticality: 'none' | 'meaningful' | 'major' | 'critical'; downstream: string[]; reasons: string[] }
+export interface InfrastructureRegionNetworkRole { regionId: string; networkId: string; networkKind: StrategicInfrastructureNetworkKind; role: 'hub' | 'bridge' | 'gateway' | 'member' | 'endpoint'; importance: 'low' | 'moderate' | 'high'; failureImpact: string | null }
+export interface InfrastructureNetworkHistoryEntry { id: string; turn: number; networkId: string; kind: 'formed' | 'extended' | 'integrated' | 'fragmented' | 'restored' | 'critical_point_formed' | 'critical_point_resolved' | 'redundancy_improved' | 'resilience_declined'; summary: string; sourceProjectIds: string[]; sourceEventIds: string[] }
+export type InfraNetworkDerivedKind = 'infrastructure_network_formed' | 'infrastructure_network_integrated' | 'infrastructure_network_fragmented' | 'infrastructure_network_restored'
+  | 'critical_infrastructure_point_emerged' | 'critical_infrastructure_point_resolved' | 'network_redundancy_improved' | 'network_resilience_deteriorated' | 'national_gateway_became_critical';
+export interface InfraNetworkDerivedEvent { id: string; turn: number; kind: InfraNetworkDerivedKind; networkId: string; networkKind: StrategicInfrastructureNetworkKind; regionIds: string[]; subjectRegionId: string | null; text: string; significance: 'meaningful' | 'major'; evidence: string[]; sourceProjectIds: string[] }
+export interface InfraNetworkMemory { maturity: InfrastructureNetworkMaturity; condition: InfrastructureNetworkCondition; redundancyBand: InfrastructureRedundancyBand; resilienceBand: NationalResilienceBand; critical: string[]; gatewayCritical: boolean; regions: string[]; members: string[] }
+export interface InfraNetworksPersisted { schemaVersion: '10.2'; revision: number; initializedTurn: number | null; lastUpdatedTurn: number; networks: Record<string, InfraNetworkMemory>; cooldowns: Record<string, number>; history: InfrastructureNetworkHistoryEntry[]; inputHash: string }
+export interface InfraNationalSummary {
+  mostDevelopedKind: StrategicInfrastructureNetworkKind | null; mostFragileNetworkId: string | null; primarySinglePoint: InfrastructureCriticalPoint | null;
+  resilienceOpportunity: { projectId: string; title: string; networkId: string; reason: string } | null; networksByKind: Partial<Record<StrategicInfrastructureNetworkKind, string[]>>;
+}
+export interface StrategicInfrastructureState {
+  schemaVersion: '10.2'; revision: number; networks: StrategicInfrastructureNetwork[]; criticalPoints: InfrastructureCriticalPoint[]; missingLinks: InfrastructureMissingLink[];
+  effects: StrategicInfrastructureNetworkEffect[]; projectRoles: Record<string, InfrastructureProjectNetworkRole[]>; regionRoles: Record<string, InfrastructureRegionNetworkRole[]>;
+  national: InfraNationalSummary; history: InfrastructureNetworkHistoryEntry[]; lastUpdatedTurn: number; inputHash: string; computeMs: number;
+}
+export interface InfraNetworkInputs {
+  turn: number;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; contributions?: Record<string, number> }>;
+  /** V10.0 snapshot: the ONLY topology + capacity source. Null ⇒ no networks (never invents a graph). */
+  national: NationalSystemsState | null;
+  /** V10.1 snapshot (optional): downstream industries / economic endpoints. */
+  industries: IndustriesSupplyChainsState | null;
+  /** Optional scenario modifiers: V10.0 link ids treated as impaired corridors. */
+  modifiers?: { impairedLinks?: string[] };
+}
+
+const v102R = (x: number, d = 2) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const v102Functional = (status: string) => status === 'active' || status === 'upgraded';
+const v102Member = (status: string) => v102Functional(status) || status === 'damaged';
+
+export function createEmptyInfraNetworksPersisted(): InfraNetworksPersisted { return { schemaVersion: '10.2', revision: 0, initializedTurn: null, lastUpdatedTurn: 0, networks: {}, cooldowns: {}, history: [], inputHash: '' }; }
+
+export function infraNetworkInputHash(i: InfraNetworkInputs): string {
+  const ns = i.national, ind = i.industries;
+  const raw = JSON.stringify([i.turn, i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}:${Object.entries(p.contributions || {}).sort().map(([k, v]) => `${k}=${Math.round(v)}`).join(',')}`).sort(),
+    ns ? [ns.inputHash, Object.values(ns.regions).map(r => NATIONAL_NETWORKS.map(n => r.networks[n].condition[0]).join('')).join(',')] : 'none',
+    ind ? [ind.hashes.inputs, ind.dependencies.map(d => `${d.id}:${d.importance}`).join(',')] : 'none', i.modifiers || null]);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+/** Region economic endpoints for a kind (non-member regions that actually USE the network). */
+function v102Endpoints(kind: StrategicInfrastructureNetworkKind, i: InfraNetworkInputs): Set<string> {
+  const out = new Set<string>();
+  const net = INFRA_KIND_NETWORK[kind];
+  const ind = i.industries;
+  if (ind) Object.values(ind.regions).forEach(r => (Object.values(r.industries) as IndustryState[]).forEach(st => {
+    const w = kind === 'mobility' ? (st.industry === 'tourism' ? 1 : 0) : (STRATEGIC_INDUSTRY_DEFINITIONS[st.industry].networkDependencies[net] || 0);
+    if (w >= 0.35 && st.effectiveOutput >= 20) out.add(r.regionId);
+  }));
+  if (ind && kind !== 'mobility') ind.flows.filter(f => f.network === net).forEach(f => { out.add(f.toRegionId); });
+  return out;
+}
+
+type V102Graph = { nodes: string[]; edges: Array<{ id: string; a: string; b: string }> };
+function v102Components(g: V102Graph): string[][] {
+  const adj = new Map<string, string[]>(); g.nodes.forEach(n => adj.set(n, []));
+  g.edges.forEach(e => { adj.get(e.a)?.push(e.b); adj.get(e.b)?.push(e.a); });
+  const seen = new Set<string>(); const comps: string[][] = [];
+  [...g.nodes].sort().forEach(start => {
+    if (seen.has(start)) return;
+    const comp: string[] = []; const queue = [start]; seen.add(start);
+    for (let qi = 0; qi < queue.length && qi < 64; qi++) { const n = queue[qi]; comp.push(n); (adj.get(n) || []).slice().sort().forEach(m => { if (!seen.has(m)) { seen.add(m); queue.push(m); } }); }
+    comps.push(comp.sort());
+  });
+  return comps;
+}
+
+/**
+ * Build segments for one kind: a V10.0 link joins two regions when one side has a REACH-role project and the
+ * other side has a member project or a real economic endpoint. Two unrelated nodes never connect.
+ */
+function v102Segments(kind: StrategicInfrastructureNetworkKind, i: InfraNetworkInputs, projs: InfraNetworkInputs['projects'], endpoints: Set<string>, functionalOnly: boolean): { nodes: Set<string>; edges: Array<{ id: string; a: string; b: string }> } {
+  const ns = i.national!;
+  const net = INFRA_KIND_NETWORK[kind];
+  const ok = (p: InfraNetworkInputs['projects'][number]) => (functionalOnly ? v102Functional(p.status) : v102Member(p.status));
+  const members = new Set<string>(); const reach = new Set<string>();
+  projs.forEach(p => { if (!p.regionId || !ok(p)) return; const c = INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]?.contributesTo.find(x => x.network === kind); if (!c) return; members.add(p.regionId); if (V102_REACH_ROLES.includes(c.role)) reach.add(p.regionId); });
+  const impaired = new Set(functionalOnly ? (i.modifiers?.impairedLinks || []) : []);
+  const edges: Array<{ id: string; a: string; b: string }> = [];
+  const nodes = new Set<string>(members);
+  Object.values(ns.links).filter(l => l.network === net && (functionalOnly ? l.effectiveCapacity > 0 : l.baseCapacity > 0) && !impaired.has(l.id)).sort((a, b) => a.id.localeCompare(b.id)).forEach(l => {
+    const a = l.fromRegionId, b = l.toRegionId;
+    const served = (x: string) => members.has(x) || endpoints.has(x);
+    if ((reach.has(a) && served(b)) || (reach.has(b) && served(a))) { edges.push({ id: l.id, a, b }); nodes.add(a); nodes.add(b); }
+  });
+  return { nodes, edges };
+}
+
+function v102Bridges(g: V102Graph): string[] {
+  const base = v102Components(g).length;
+  return g.edges.filter(e => v102Components({ nodes: g.nodes, edges: g.edges.filter(x => x.id !== e.id) }).length > base).map(e => e.id);
+}
+function v102Articulations(g: V102Graph): string[] {
+  const base = v102Components(g).length;
+  return g.nodes.filter(n => { const rest = g.nodes.filter(x => x !== n); return rest.length > 1 && v102Components({ nodes: rest, edges: g.edges.filter(e => e.a !== n && e.b !== n) }).length > base; });
+}
+/** Bounded centrality: how many region pairs' BFS shortest path passes through each region. */
+function v102Centrality(g: V102Graph): Record<string, number> {
+  const adj = new Map<string, string[]>(); g.nodes.forEach(n => adj.set(n, []));
+  g.edges.forEach(e => { adj.get(e.a)?.push(e.b); adj.get(e.b)?.push(e.a); });
+  const out: Record<string, number> = Object.fromEntries(g.nodes.map(n => [n, 0]));
+  const sorted = [...g.nodes].sort();
+  sorted.forEach(src => {
+    const parent: Record<string, string | null> = { [src]: null }; const q = [src];
+    for (let qi = 0; qi < q.length; qi++) (adj.get(q[qi]) || []).slice().sort().forEach(m => { if (!(m in parent)) { parent[m] = q[qi]; q.push(m); } });
+    sorted.forEach(dst => { if (dst <= src || !(dst in parent)) return; let cur = parent[dst]; let guard = 0; while (cur && cur !== src && guard++ < 16) { out[cur] += 1; cur = parent[cur]; } });
+  });
+  return out;
+}
+
+function v102Direction(regions: string[]): string {
+  const pts = regions.map(r => REGIONS[r]?.position).filter(Boolean) as Array<{ x: number; y: number }>;
+  if (!pts.length) return 'National';
+  const x = pts.reduce((a, p) => a + p.x, 0) / pts.length, y = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+  const ns = y < 40 ? 'Northern' : y > 62 ? 'Southern' : ''; const ew = x < 40 ? 'Western' : x > 65 ? 'Eastern' : '';
+  if (ns && ew) return `${ns === 'Northern' ? 'North' : 'South'}-${ew === 'Western' ? 'West' : 'East'}`;
+  return ns || ew || 'Central';
+}
+
+export interface InfraNetworkComputeResult { state: StrategicInfrastructureState; persisted: InfraNetworksPersisted; derived: InfraNetworkDerivedEvent[] }
+
+/**
+ * Pure derivation (terminates by construction: ≤ 6 kinds × ≤ 8 regions × bounded link/project removal tests).
+ * `prev` supplies only band memory + history.
+ */
+export function computeStrategicInfrastructureNetworks(i: InfraNetworkInputs, prevIn?: InfraNetworksPersisted | null, opts: { emit?: boolean; skipOpportunity?: boolean } = {}): InfraNetworkComputeResult {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || null; const turn = Number(i.turn) || 0;
+  const ns = i.national; const ind = i.industries;
+  const projects = i.projects.filter(p => p && p.regionId && REGIONS[p.regionId] && INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]).sort((a, b) => a.id.localeCompare(b.id));
+  const networks: StrategicInfrastructureNetwork[] = []; const criticalPoints: InfrastructureCriticalPoint[] = []; const missingLinks: InfrastructureMissingLink[] = []; const effects: StrategicInfrastructureNetworkEffect[] = [];
+  const projectRoles: Record<string, InfrastructureProjectNetworkRole[]> = {}; const regionRoles: Record<string, InfrastructureRegionNetworkRole[]> = {};
+  const usedArchetypes = new Set<string>();
+  if (ns) INFRA_NETWORK_KINDS.forEach(kind => {
+    const net = INFRA_KIND_NETWORK[kind];
+    const kindProjects = projects.filter(p => INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType].contributesTo.some(c => c.network === kind));
+    const endpoints = v102Endpoints(kind, i);
+    const design = v102Segments(kind, i, kindProjects, endpoints, false);
+    const designComps = v102Components({ nodes: Array.from(design.nodes), edges: design.edges }).filter(c => kindProjects.some(p => v102Member(p.status) && c.includes(p.regionId!)));
+    const funcAll = v102Segments(kind, i, kindProjects, endpoints, true);
+    const allMemberRegions = new Set(kindProjects.filter(p => v102Functional(p.status)).map(p => p.regionId!));
+    // Largest first so curated archetypes attach to the most significant component.
+    designComps.sort((a, b) => b.length - a.length || a.join().localeCompare(b.join())).forEach(comp => {
+      const compSet = new Set(comp);
+      const memberProjects = kindProjects.filter(p => v102Member(p.status) && compSet.has(p.regionId!));
+      const functionalProjects = memberProjects.filter(p => v102Functional(p.status));
+      const impaired = memberProjects.filter(p => !v102Functional(p.status));
+      const fEdges = funcAll.edges.filter(e => compSet.has(e.a) && compSet.has(e.b));
+      const fNodes = Array.from(funcAll.nodes).filter(n => compSet.has(n));
+      const fComps = v102Components({ nodes: fNodes, edges: fEdges }).filter(c => functionalProjects.some(p => c.includes(p.regionId!)));
+      const main = fComps.sort((a, b) => b.length - a.length || a.join().localeCompare(b.join()))[0] || [];
+      const mainSet = new Set(main);
+      const g: V102Graph = { nodes: main, edges: fEdges.filter(e => mainSet.has(e.a) && mainSet.has(e.b)) };
+      const memberRegions = Array.from(new Set(functionalProjects.map(p => p.regionId!))).sort();
+      const designMemberRegions = Array.from(new Set(memberProjects.map(p => p.regionId!))).sort();
+      const fragmented = designMemberRegions.length >= 2 && (fComps.length > 1 || main.length < comp.length);
+      // ---- archetype / name / id (deterministic) ----
+      const archCandidates = INFRA_NETWORK_ARCHETYPES.filter(a => a.networkKind === kind && !usedArchetypes.has(a.id)).map(a => {
+        const req = a.requiredRegions || []; const present = req.filter(r => compSet.has(r)).length;
+        const gateways = memberProjects.filter(p => INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType].contributesTo.some(c => c.network === kind && c.role === 'gateway')).length;
+        const rolesOk = gateways >= a.requiredRoles.filter(r => r === 'gateway').length;
+        const complete = present === req.length && comp.length >= a.minimumRegions && rolesOk;
+        const partial = !complete && req.length >= 3 && present >= 2 && rolesOk;
+        return { a, complete, partial, score: (complete ? 100 : 0) + req.length * 10 + a.minimumRegions };
+      }).filter(x => x.complete || x.partial).sort((x, y) => y.score - x.score || x.a.id.localeCompare(y.a.id));
+      const arch = archCandidates[0] || null;
+      if (arch) usedArchetypes.add(arch.a.id);
+      const name = arch ? arch.a.label : comp.length === 1 ? `${REGIONS[comp[0]]?.name || comp[0]} ${INFRA_NETWORK_LABEL[kind]} ${memberProjects.some(p => INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType].contributesTo.some(c => c.network === kind && c.role === 'gateway')) ? 'Gateway' : 'Hub'}`
+        : comp.length === 2 ? `${comp[0]}–${comp[1]} ${INFRA_NETWORK_LABEL[kind]} Link` : `${v102Direction(comp)} ${INFRA_NETWORK_LABEL[kind]} Network`;
+      const id = arch ? `inet:${kind}:${arch.a.id}` : `inet:${kind}:${designMemberRegions.join('-')}`;
+      // ---- capacity / utilization (V10.0 is authoritative) ----
+      const capRegions = main.length ? main : comp;
+      const cap = v102R(capRegions.reduce((a, r) => a + (ns.regions[r]?.networks[net].effectiveCapacity || 0), 0), 1);
+      const dem = v102R(capRegions.reduce((a, r) => a + (ns.regions[r]?.networks[net].demand || 0), 0), 1);
+      const util = cap > 0 ? v102R(dem / cap) : 0;
+      const nsBottleneck = capRegions.some(r => NS_COND_RANK[ns.regions[r]?.networks[net].condition || 'healthy'] >= 3);
+      // ---- coverage (contextual relevance) / continuity ----
+      const avgDem = Object.values(ns.regions).reduce((a, r) => a + r.networks[net].demand, 0) / Math.max(1, Object.keys(ns.regions).length);
+      const relevant = Object.values(ns.regions).filter(r => r.networks[net].demand >= avgDem * 0.8).map(r => r.regionId);
+      const coverage = v102R(relevant.length ? relevant.filter(r => mainSet.has(r)).length / relevant.length : 0);
+      const continuity = v102R(comp.length ? main.length / comp.length : 0);
+      // ---- redundancy / critical points / hubs / gateways ----
+      const bridges = v102Bridges(g); const arts = v102Articulations(g); const cent = v102Centrality(g);
+      const gateways = functionalProjects.filter(p => INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType].contributesTo.some(c => c.network === kind && c.role === 'gateway')).map(p => p.id);
+      let redundancy = g.edges.length ? (g.edges.length - bridges.length) / g.edges.length : 0;
+      if ((kind === 'trade' || kind === 'digital' || kind === 'energy') && gateways.length >= 2) redundancy += 0.2;
+      redundancy = v102R(Math.min(1, redundancy));
+      const redundancyBand: InfrastructureRedundancyBand = g.edges.length === 0 && gateways.length < 2 ? 'none' : redundancy >= 0.67 ? 'high' : redundancy >= 0.34 ? 'moderate' : redundancy > 0 ? 'low' : 'none';
+      const deps = ind ? ind.dependencies.filter(d => d.network === net) : [];
+      const pathUses = (pred: (a: string, b: string) => boolean) => deps.filter(d => d.path.some((x, k) => k > 0 && pred(d.path[k - 1], x)));
+      // Parts after a removal: the part keeping the most member regions stays "the network"; the rest are cut off.
+      const memberCount = (part: string[]) => part.filter(r => memberRegions.includes(r)).length;
+      const partsOf = (rmEdges: V102Graph['edges'], rmNode?: string) => v102Components({ nodes: g.nodes.filter(n => n !== rmNode), edges: rmEdges }).sort((a, b) => memberCount(b) - memberCount(a) || b.length - a.length || a.join().localeCompare(b.join()));
+      const sideOf = (rmEdges: V102Graph['edges'], rmNode?: string) => partsOf(rmEdges, rmNode).slice(1).flat();
+      // Severity scales with how much of the network is cut off and with the supply chains that cross it.
+      const sev = (affected: string[], industries: SupplyDependency[], removedNode = false): InfrastructureCriticalPoint['severity'] => {
+        const frac = affected.length / Math.max(1, g.nodes.length - (removedNode ? 1 : 0));
+        return affected.length >= 2 || frac >= 0.5 || industries.some(d => d.importance === 'critical' || d.importance === 'high') ? 'critical' : affected.length >= 1 && (industries.length || frac >= 0.34) ? 'major' : 'meaningful';
+      };
+      const cps: InfrastructureCriticalPoint[] = [];
+      if (g.nodes.length >= 2) {
+        bridges.forEach(eid => { const e = g.edges.find(x => x.id === eid)!; const aff = sideOf(g.edges.filter(x => x.id !== eid)); const inds = pathUses((a, b) => (a === e.a && b === e.b) || (a === e.b && b === e.a));
+          cps.push({ id: `icp:${id}:link:${eid}`, type: 'link', subjectId: eid, networkId: id, severity: g.nodes.length >= 3 ? sev(aff, inds) : 'meaningful', affectedRegions: aff, affectedIndustries: inds.map(d => `${d.consumerRegionId} ${d.consumerIndustry}`),
+            reason: `${e.a}–${e.b} is the only ${INFRA_NETWORK_LABEL[kind].toLowerCase()} link holding ${aff.join(', ') || 'part of the network'} to the rest of ${arch ? arch.a.label : 'the network'}.` }); });
+        arts.forEach(r => { const aff = sideOf(g.edges.filter(e => e.a !== r && e.b !== r), r); const inds = pathUses((a, b) => a === r || b === r);
+          cps.push({ id: `icp:${id}:region:${r}`, type: 'region', subjectId: r, networkId: id, severity: sev(aff, inds, true), affectedRegions: aff, affectedIndustries: inds.map(d => `${d.consumerRegionId} ${d.consumerIndustry}`),
+            reason: `${REGIONS[r]?.name || r} is the bridge: removing it splits ${arch ? arch.a.label : 'the network'} into ${partsOf(g.edges.filter(e => e.a !== r && e.b !== r), r).map(x => x.join('+')).join(' | ')}. No alternative route currently exists.` }); });
+        functionalProjects.forEach(p => {
+          const without = v102Segments(kind, i, kindProjects.map(x => (x.id === p.id ? { ...x, status: 'damaged' } : x)), endpoints, true);
+          const e2 = without.edges.filter(e => mainSet.has(e.a) && mainSet.has(e.b)); const n2 = Array.from(without.nodes).filter(n => mainSet.has(n));
+          const cs = v102Components({ nodes: n2, edges: e2 }); const biggest = cs.sort((a, b) => b.length - a.length)[0] || [];
+          const lost = main.filter(r => !biggest.includes(r));
+          if (lost.length >= (main.includes(p.regionId!) && lost.includes(p.regionId!) ? 2 : 1)) {
+            const inds = deps.filter(d => d.path.some(x => lost.includes(x)) || lost.includes(d.consumerRegionId));
+            cps.push({ id: `icp:${id}:project:${p.id}`, type: 'project', subjectId: p.id, networkId: id, severity: g.nodes.length >= 3 ? sev(lost.filter(r => r !== p.regionId), inds) : 'meaningful', affectedRegions: lost, affectedIndustries: inds.map(d => `${d.consumerRegionId} ${d.consumerIndustry}`),
+              reason: `${p.title} holds ${lost.join(', ')} in ${arch ? arch.a.label : 'the network'}; if it failed, ${lost.length} region${lost.length === 1 ? '' : 's'} would lose this ${INFRA_NETWORK_LABEL[kind].toLowerCase()} connection.` });
+          }
+        });
+      }
+      const gatewayCritical = (kind === 'trade' || kind === 'digital') && gateways.length === 1 && main.length >= 3;
+      if (gatewayCritical) cps.push({ id: `icp:${id}:gateway:${gateways[0]}`, type: 'project', subjectId: gateways[0], networkId: id, severity: 'major', affectedRegions: main.filter(r => r !== projects.find(p => p.id === gateways[0])?.regionId), affectedIndustries: [],
+        reason: `${projects.find(p => p.id === gateways[0])?.title || gateways[0]} is the only active ${INFRA_NETWORK_LABEL[kind].toLowerCase()} gateway for ${main.length} regions.` });
+      const sevRank = { meaningful: 0, major: 1, critical: 2 } as const;
+      cps.sort((a, b) => sevRank[b.severity] - sevRank[a.severity] || a.id.localeCompare(b.id));
+      criticalPoints.push(...cps);
+      const hubs = g.nodes.filter(n => g.edges.filter(e => e.a === n || e.b === n).length >= 3 || (cent[n] || 0) >= 3).sort();
+      // ---- resilience (capacity and resilience stay distinct) ----
+      const spare = cap > 0 ? Math.max(-0.5, Math.min(0.5, (cap - dem) / cap)) : -0.5;
+      const critN = cps.filter(c => c.severity === 'critical').length, majN = cps.filter(c => c.severity === 'major').length;
+      // A broken network is fragile however few critical points remain in its surviving fragment.
+      const resScore = Math.round(Math.max(0, Math.min(fragmented ? 25 : 100, 40 + redundancy * 35 + spare * 20 - critN * 8 - majN * 4 - impaired.length * 10 + (gateways.length >= 2 ? 6 : 0) + Math.min(8, main.length * 1.5))));
+      const resRaw: NationalResilienceBand = resScore >= 78 ? 'highly_resilient' : resScore >= 64 ? 'resilient' : resScore >= 48 ? 'stable' : resScore >= 32 ? 'exposed' : 'fragile';
+      const prevMem = prev?.networks[id];
+      const resBands: NationalResilienceBand[] = ['fragile', 'exposed', 'stable', 'resilient', 'highly_resilient']; const bounds = [0, 32, 48, 64, 78];
+      let resilienceBand = resRaw;
+      if (prevMem && prevMem.resilienceBand !== resRaw) { const pi = resBands.indexOf(prevMem.resilienceBand), ri = resBands.indexOf(resRaw); if (Math.abs(pi - ri) === 1) { const edge = bounds[Math.max(pi, ri)]; if (Math.abs(resScore - edge) < 3) resilienceBand = prevMem.resilienceBand; } }
+      // ---- maturity (structure, not project count) ----
+      const m = memberRegions.length, s = main.length;
+      let maturity: InfrastructureNetworkMaturity = m <= 1 ? 'emerging' : m === 2 ? (s >= 3 ? 'connected' : 'emerging') : 'connected';
+      if (m >= 3 && (s >= 5 || (s >= 4 && redundancy >= 0.25)) && coverage >= 0.5) maturity = 'integrated';
+      if (m >= 4 && s >= 6 && coverage >= 0.75 && redundancy >= 0.3) maturity = 'national_backbone';
+      if (fragmented) maturity = 'fragmented';
+      // ---- condition (with utilisation hysteresis) ----
+      const pc = prevMem?.condition; const uEdge = (lo: number, c: InfrastructureNetworkCondition) => util >= lo + (pc === c ? -0.03 : 0.03 * (pc && pc !== c ? 1 : 0));
+      let condition: InfrastructureNetworkCondition = fragmented ? 'disrupted' : s <= 1 ? 'underdeveloped' : (uEdge(1.06, 'bottlenecked') || nsBottleneck) ? 'bottlenecked' : uEdge(0.92, 'strained') ? 'strained'
+        : (critN > 0 && V102_RED_RANK[redundancyBand] <= 1 && s >= 3) ? 'fragile' : 'healthy';
+      if (!fragmented && impaired.length && condition === 'healthy') condition = 'strained';
+      // ---- contributors (canonical provenance only; never ownership) ----
+      const contributors: Record<string, number> = {};
+      memberProjects.forEach(p => Object.entries(p.contributions || {}).forEach(([actor, amt]) => { contributors[actor] = Math.round((contributors[actor] || 0) + (Number(amt) || 0)); }));
+      // ---- downstream industries (V10.1) ----
+      const downstreamDeps = deps.filter(d => d.path.every(x => mainSet.has(x)) && d.path.length >= 2);
+      const served = ind ? Object.values(ind.regions).filter(r => mainSet.has(r.regionId)).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(st => (kind === 'mobility' ? st.industry === 'tourism' : (STRATEGIC_INDUSTRY_DEFINITIONS[st.industry].networkDependencies[net] || 0) >= 0.35) && st.effectiveOutput >= 20).map(st => `${r.regionId} ${INDUSTRY_LABEL[st.industry]}`)) : [];
+      const downstream = Array.from(new Set([...downstreamDeps.map(d => `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry]} ← ${d.providerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()}`), ...served])).slice(0, 8);
+      const economicRelevance: StrategicInfrastructureNetwork['economicRelevance'] = downstreamDeps.length >= 2 || downstreamDeps.reduce((a, d) => a + d.amount, 0) >= 15 ? 'high' : downstream.length ? 'moderate' : 'low';
+      const primaryConstraint = fragmented ? `${impaired.map(p => p.title).join(', ') || 'A damaged member'} has broken the network.` : condition === 'bottlenecked' ? 'Demand exceeds V10.0 capacity across the network.' : cps[0] ? cps[0].reason : null;
+      const primaryOpportunity = redundancyBand === 'none' || redundancyBand === 'low' ? (s >= 3 ? 'A second route would reduce single-point dependence.' : 'Connecting another region would extend the network.') : null;
+      const network: StrategicInfrastructureNetwork = {
+        id, networkKind: kind, name, archetypeId: arch ? arch.a.id : null, archetypeComplete: Boolean(arch?.complete),
+        memberProjectIds: memberProjects.map(p => p.id), impairedProjectIds: impaired.map(p => p.id), regionIds: comp, memberRegionIds: designMemberRegions, linkIds: design.edges.filter(e => compSet.has(e.a) && compSet.has(e.b)).map(e => e.id),
+        brokenLinkIds: design.edges.filter(e => compSet.has(e.a) && compSet.has(e.b) && !fEdges.some(f => f.id === e.id)).map(e => e.id), endpointRegionIds: comp.filter(r => !designMemberRegions.includes(r)),
+        criticalProjectIds: cps.filter(c => c.type === 'project').map(c => c.subjectId), criticalRegionIds: cps.filter(c => c.type === 'region').map(c => c.subjectId), criticalLinkIds: cps.filter(c => c.type === 'link').map(c => c.subjectId),
+        hubRegionIds: hubs, bridgeRegionIds: arts.sort(), gatewayProjectIds: gateways, coverage, continuity, effectiveCapacity: cap, demand: dem, utilization: util, redundancy, redundancyBand,
+        resilience: resScore, resilienceBand, maturity, condition, primaryConstraint, primaryOpportunity, contributors, downstream, economicRelevance,
+        evidence: [{ label: 'Functional member regions', value: memberRegions.join(', ') || '—', source: 'infrastructure' }, { label: 'V10.0 capacity / demand', value: `${cap}/${dem}`, source: 'national_systems' },
+          { label: 'Links / bridges', value: `${g.edges.length}/${bridges.length}`, source: 'topology' }, ...(arch ? [{ label: 'Archetype', value: `${arch.a.label}${arch.complete ? '' : ' (partial)'}`, source: 'archetype' }] : [])].slice(0, V102_LIMITS.evidence)
+      };
+      networks.push(network);
+      // ---- structural effects (descriptive; receiving systems decide consequences — no canonical bonus is re-granted) ----
+      const capSupport = functionalProjects.reduce((a, p) => a + (nationalProjectNetworkEffects(p.projectType).find(e => e.network === net)?.capacity || 0) * (NATIONAL_STATUS_FACTOR[p.status] ?? 0), 0);
+      if (capSupport > 0) effects.push({ networkId: id, networkKind: kind, kind: 'capacity_support', regionIds: memberRegions, magnitude: v102R(capSupport, 1), evidence: [{ label: 'V10.0 project capacity', value: v102R(capSupport, 1), source: 'national_systems' }] });
+      if (redundancy > 0) effects.push({ networkId: id, networkKind: kind, kind: 'resilience_support', regionIds: main, magnitude: redundancy, evidence: [{ label: 'Redundant links', value: g.edges.length - bridges.length, source: 'topology' }] });
+      if (downstreamDeps.length) effects.push({ networkId: id, networkKind: kind, kind: 'industry_enablement', regionIds: Array.from(new Set(downstreamDeps.map(d => d.consumerRegionId))), magnitude: v102R(downstreamDeps.reduce((a, d) => a + d.amount, 0), 1), evidence: downstreamDeps.slice(0, 3).map(d => ({ label: d.id, value: d.amount, source: 'industries' })) });
+      if (downstreamDeps.some(d => d.alternatives.length)) effects.push({ networkId: id, networkKind: kind, kind: 'dependency_reduction', regionIds: downstreamDeps.filter(d => d.alternatives.length).map(d => d.consumerRegionId), magnitude: downstreamDeps.filter(d => d.alternatives.length).length, evidence: [] });
+      if (gateways.length && kind === 'trade') effects.push({ networkId: id, networkKind: kind, kind: 'trade_access', regionIds: main, magnitude: gateways.length, evidence: gateways.map(g2 => ({ label: 'Gateway', value: g2, source: 'infrastructure' })) });
+      if (kind === 'mobility' && main.length >= 2) effects.push({ networkId: id, networkKind: kind, kind: 'mobility_access', regionIds: main, magnitude: main.length, evidence: [] });
+      // ---- roles ----
+      memberProjects.forEach(p => {
+        const c = INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType].contributesTo.find(x => x.network === kind)!;
+        const crit = cps.filter(cp => (cp.type === 'project' && cp.subjectId === p.id) || (cp.type === 'region' && cp.subjectId === p.regionId))[0];
+        (projectRoles[p.id] = projectRoles[p.id] || []).push({ projectId: p.id, title: p.title, regionId: p.regionId!, networkId: id, networkKind: kind, role: c.role, functional: v102Functional(p.status),
+          capacityContribution: v102R((nationalProjectNetworkEffects(p.projectType).find(e => e.network === net)?.capacity || 0) * (NATIONAL_STATUS_FACTOR[p.status] ?? 0), 1), criticality: crit ? crit.severity : 'none',
+          downstream: downstreamDeps.filter(d => d.path.includes(p.regionId!)).map(d => `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry]}`).slice(0, 4),
+          reasons: [`Member of ${name}`, ...(crit ? [crit.reason] : []), ...(c.role === 'gateway' && gateways.length === 1 ? ['Only active gateway'] : [])].slice(0, 4) });
+      });
+      comp.forEach(r => {
+        const role: InfrastructureRegionNetworkRole['role'] = arts.includes(r) ? 'bridge' : hubs.includes(r) ? 'hub' : memberProjects.some(p => p.regionId === r && gateways.includes(p.id)) ? 'gateway' : designMemberRegions.includes(r) ? 'member' : 'endpoint';
+        const cp = cps.find(c => c.type === 'region' && c.subjectId === r);
+        (regionRoles[r] = regionRoles[r] || []).push({ regionId: r, networkId: id, networkKind: kind, role, importance: cp?.severity === 'critical' || role === 'hub' ? 'high' : role === 'bridge' || role === 'gateway' ? 'moderate' : 'low',
+          failureImpact: cp ? `${cp.affectedRegions.join(', ')} would lose ${INFRA_NETWORK_LABEL[kind].toLowerCase()} connectivity` : null });
+      });
+    });
+    // ---- missing links (only real candidate projects; never invented) ----
+    const candidatesIn = (region: string) => i.projects.filter(p => p.regionId === region && !v102Member(p.status) && p.status !== 'locked' && INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]?.contributesTo.some(c => c.network === kind && V102_REACH_ROLES.includes(c.role))).map(p => p.id);
+    networks.filter(n => n.networkKind === kind).forEach(n => {
+      const a = n.archetypeId ? INFRA_NETWORK_ARCHETYPES.find(x => x.id === n.archetypeId) : null;
+      (a?.requiredRegions || []).filter(r => !n.regionIds.includes(r)).forEach(r => {
+        const link = Object.values(ns.links).find(l => l.network === net && ((l.fromRegionId === r && n.regionIds.includes(l.toRegionId)) || (l.toRegionId === r && n.regionIds.includes(l.fromRegionId))));
+        if (!link) return; const from = link.fromRegionId === r ? link.toRegionId : link.fromRegionId;
+        const cands = Array.from(new Set([...candidatesIn(r), ...candidatesIn(from)])).sort();
+        missingLinks.push({ networkKind: kind, networkId: n.id, fromRegionId: from, toRegionId: r, strategicImportance: a!.label, candidateProjectIds: cands, reason: cands.length ? `Completing ${cands.map(c => i.projects.find(p => p.id === c)?.title || c).join(' or ')} would connect ${REGIONS[r]?.name || r} to the ${a!.label}.` : `No current project can close the ${from}–${r} gap in the ${a!.label}.` });
+      });
+      if (n.maturity === 'fragmented') n.impairedProjectIds.forEach(pid => { const p = i.projects.find(x => x.id === pid); if (p?.regionId) missingLinks.push({ networkKind: kind, networkId: n.id, fromRegionId: p.regionId, toRegionId: p.regionId, strategicImportance: n.name, candidateProjectIds: [pid], reason: `Repairing ${p.title} (through the infrastructure engine) would restore ${n.name}.` }); });
+    });
+    const comps = networks.filter(n => n.networkKind === kind);
+    comps.forEach((x, xi) => comps.slice(xi + 1).forEach(y => {
+      const link = Object.values(ns.links).find(l => l.network === net && ((x.regionIds.includes(l.fromRegionId) && y.regionIds.includes(l.toRegionId)) || (y.regionIds.includes(l.fromRegionId) && x.regionIds.includes(l.toRegionId))));
+      if (!link) return; const cands = Array.from(new Set([...candidatesIn(link.fromRegionId), ...candidatesIn(link.toRegionId)])).sort();
+      missingLinks.push({ networkKind: kind, networkId: null, fromRegionId: link.fromRegionId, toRegionId: link.toRegionId, strategicImportance: `${x.name} + ${y.name}`, candidateProjectIds: cands, reason: cands.length ? `A ${INFRA_NETWORK_LABEL[kind].toLowerCase()} project on ${link.fromRegionId}–${link.toRegionId} would join ${x.name} and ${y.name}.` : `No current project can join ${x.name} and ${y.name}.` });
+    }));
+    void allMemberRegions;
+  });
+  const boundedMissing = missingLinks.slice(0, V102_LIMITS.missingLinks);
+  const boundedCritical = criticalPoints.slice(0, V102_LIMITS.criticalPoints);
+  // ---- national summary ----
+  const developed = [...networks].sort((a, b) => V102_MATURITY_RANK[b.maturity] - V102_MATURITY_RANK[a.maturity] || b.regionIds.length - a.regionIds.length || a.id.localeCompare(b.id))[0];
+  // "Most fragile" only names a network that is genuinely stable-or-worse (never a highly resilient one).
+  const fragile = networks.filter(n => n.regionIds.length >= 2 && ['fragile', 'exposed', 'stable'].includes(n.resilienceBand)).sort((a, b) => a.resilience - b.resilience || a.id.localeCompare(b.id))[0];
+  const sevRank2 = { meaningful: 0, major: 1, critical: 2 } as const;
+  const single = [...boundedCritical].sort((a, b) => sevRank2[b.severity] - sevRank2[a.severity] || b.affectedRegions.length - a.affectedRegions.length || a.id.localeCompare(b.id))[0] || null;
+  const national: InfraNationalSummary = { mostDevelopedKind: developed ? developed.networkKind : null, mostFragileNetworkId: fragile ? fragile.id : null, primarySinglePoint: single, resilienceOpportunity: null,
+    networksByKind: Object.fromEntries(INFRA_NETWORK_KINDS.map(k => [k, networks.filter(n => n.networkKind === k).map(n => n.id)])) };
+  // Highest-impact resilience opportunity: bounded re-derivation for ≤ 6 real candidate projects (never per render).
+  if (!opts.skipOpportunity && ns) {
+    const critScore = (st: StrategicInfrastructureState) => st.criticalPoints.reduce((a, c) => a + (c.severity === 'critical' ? 3 : c.severity === 'major' ? 2 : 1), 0) - st.networks.reduce((a, n) => a + n.redundancy, 0);
+    const base = critScore({ criticalPoints: boundedCritical, networks } as any);
+    const cands = Array.from(new Set(boundedMissing.flatMap(m => m.candidateProjectIds).concat(i.projects.filter(p => (p.status === 'unlocked' || p.status === 'under_construction') && INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]?.contributesTo.some(c => V102_REACH_ROLES.includes(c.role))).map(p => p.id)))).sort().slice(0, V102_LIMITS.opportunities);
+    let best: { projectId: string; delta: number; networkId: string } | null = null;
+    cands.forEach(pid => {
+      const p = i.projects.find(x => x.id === pid); if (!p || p.status === 'damaged') return;
+      const st = computeStrategicInfrastructureNetworks({ ...i, projects: i.projects.map(x => (x.id === pid ? { ...x, status: 'active' } : x)) }, null, { emit: false, skipOpportunity: true }).state;
+      const delta = base - critScore(st);
+      const nid = (st.projectRoles[pid] || [])[0]?.networkId || '';
+      if (delta > 0.5 && (!best || delta > best.delta)) best = { projectId: pid, delta, networkId: nid };
+    });
+    if (best) { const b = best as { projectId: string; delta: number; networkId: string }; const p = i.projects.find(x => x.id === b.projectId)!; national.resilienceOpportunity = { projectId: p.id, title: p.title, networkId: b.networkId, reason: `Calculated: completing ${p.title} removes or weakens critical points (resilience gain ${v102R(b.delta, 1)}).` }; }
+  }
+  // ---- structural transitions → derived events (hysteresis + cooldown) ----
+  const derived: InfraNetworkDerivedEvent[] = [];
+  const cooldowns: Record<string, number> = { ...(prev?.cooldowns || {}) };
+  const history: InfrastructureNetworkHistoryEntry[] = [...(prev?.history || [])];
+  const memNow: Record<string, InfraNetworkMemory> = {};
+  networks.forEach(n => { memNow[n.id] = { maturity: n.maturity, condition: n.condition, redundancyBand: n.redundancyBand, resilienceBand: n.resilienceBand, critical: boundedCritical.filter(c => c.networkId === n.id && c.severity !== 'meaningful').map(c => c.id), gatewayCritical: boundedCritical.some(c => c.networkId === n.id && c.id.includes(':gateway:')), regions: n.regionIds, members: n.memberProjectIds }; });
+  const emit = (kind: InfraNetworkDerivedKind, n: StrategicInfrastructureNetwork, key: string, text: string, significance: 'meaningful' | 'major', subjectRegionId: string | null, hist: InfrastructureNetworkHistoryEntry['kind'] | null, sourceProjectIds: string[] = []) => {
+    const ck = `${kind}:${key}`;
+    if (cooldowns[ck] !== undefined && turn - cooldowns[ck] < V102_LIMITS.eventCooldownTurns) return;
+    cooldowns[ck] = turn;
+    const id = `in_${kind}_${key}_${turn}`.replace(/[^a-zA-Z0-9_:-]/g, '_');
+    derived.push({ id, turn, kind, networkId: n.id, networkKind: n.networkKind, regionIds: n.regionIds.slice(0, 6), subjectRegionId: subjectRegionId || n.memberRegionIds[0] || n.regionIds[0] || null, text, significance, evidence: [n.primaryConstraint || '', `${INFRA_MATURITY_LABEL[n.maturity]} · ${INFRA_CONDITION_LABEL[n.condition]}`].filter(Boolean), sourceProjectIds });
+    if (hist) history.push({ id: `h_${id}`, turn, networkId: n.id, kind: hist, summary: text, sourceProjectIds, sourceEventIds: [id] });
+  };
+  if (prev && prev.initializedTurn !== null && opts.emit !== false) {
+    networks.forEach(n => {
+      const pm = prev.networks[n.id]; const regs = n.regionIds.map(r => r).join(' • ');
+      const mNow = V102_MATURITY_RANK[n.maturity], mPrev = pm ? V102_MATURITY_RANK[pm.maturity] : -1;
+      const newMembers = pm ? n.memberProjectIds.filter(x => !pm.members.includes(x)) : n.memberProjectIds;
+      if (n.maturity === 'fragmented' && pm && pm.maturity !== 'fragmented') emit('infrastructure_network_fragmented', n, n.id, `${n.name} fragmented — ${n.primaryConstraint || 'a member is no longer functional'}`, 'major', n.criticalRegionIds[0] || null, 'fragmented', n.impairedProjectIds);
+      else if (pm && pm.maturity === 'fragmented' && n.maturity !== 'fragmented') emit('infrastructure_network_restored', n, n.id, `${n.name} restored (${INFRA_MATURITY_LABEL[n.maturity]}).`, 'meaningful', null, 'restored');
+      else if (mNow >= 3 && mPrev < 3 && n.maturity !== 'fragmented') emit('infrastructure_network_integrated', n, n.id, `${n.name} became ${INFRA_MATURITY_LABEL[n.maturity].toLowerCase()} (${regs}).`, 'major', null, 'integrated', newMembers);
+      else if (mNow >= 2 && mPrev < 2 && n.maturity !== 'fragmented') emit('infrastructure_network_formed', n, n.id, `${n.name} formed — ${regs} are now connected by active ${INFRA_NETWORK_LABEL[n.networkKind].toLowerCase()} infrastructure.`, 'meaningful', null, 'formed', newMembers);
+      else if (pm && n.regionIds.length > pm.regions.length && n.maturity !== 'fragmented' && mNow >= 2) history.push({ id: `h_ext_${n.id}_${turn}`.replace(/[^a-zA-Z0-9_:-]/g, '_'), turn, networkId: n.id, kind: 'extended', summary: `${n.name} extended to ${n.regionIds.filter(r => !pm.regions.includes(r)).join(', ')}.`, sourceProjectIds: newMembers, sourceEventIds: [] });
+      const crit = memNow[n.id].critical; const pcrit = pm?.critical || [];
+      if (pm) {
+        crit.filter(c => !pcrit.includes(c)).slice(0, 2).forEach(c => { const cp = boundedCritical.find(x => x.id === c)!; emit('critical_infrastructure_point_emerged', n, c, `${cp.type === 'region' ? `${REGIONS[cp.subjectId]?.name || cp.subjectId} is now a critical single point` : cp.type === 'link' ? `The ${cp.subjectId.replace(/^[a-z]+:/, '')} link is now a critical single point` : `${i.projects.find(p => p.id === cp.subjectId)?.title || cp.subjectId} is now critical`} in ${n.name}.`, cp.severity === 'critical' ? 'major' : 'meaningful', cp.type === 'region' ? cp.subjectId : null, 'critical_point_formed', cp.type === 'project' ? [cp.subjectId] : []); });
+        pcrit.filter(c => !crit.includes(c)).slice(0, 2).forEach(c => emit('critical_infrastructure_point_resolved', n, c, `A critical single point in ${n.name} was resolved.`, 'meaningful', null, 'critical_point_resolved'));
+        if (V102_RED_RANK[n.redundancyBand] > V102_RED_RANK[pm.redundancyBand] && n.maturity !== 'fragmented') emit('network_redundancy_improved', n, n.id, `${n.name} redundancy improved (${pm.redundancyBand} → ${n.redundancyBand}).`, 'meaningful', null, 'redundancy_improved', newMembers);
+        const rb: NationalResilienceBand[] = ['fragile', 'exposed', 'stable', 'resilient', 'highly_resilient'];
+        if (rb.indexOf(n.resilienceBand) < rb.indexOf(pm.resilienceBand) && n.maturity !== 'fragmented') emit('network_resilience_deteriorated', n, n.id, `${n.name} resilience deteriorated (${NATIONAL_RESILIENCE_LABEL[pm.resilienceBand]} → ${NATIONAL_RESILIENCE_LABEL[n.resilienceBand]}).`, 'meaningful', null, 'resilience_declined');
+        if (memNow[n.id].gatewayCritical && !pm.gatewayCritical) emit('national_gateway_became_critical', n, n.id, `${n.name} now depends on a single gateway.`, 'meaningful', null, null);
+      }
+    });
+    // A remembered network that vanished entirely because members failed is also a fragmentation.
+    Object.entries(prev.networks).forEach(([nid, pm]) => { if (memNow[nid] || V102_MATURITY_RANK[pm.maturity] < 2) return; const kind = nid.split(':')[1] as StrategicInfrastructureNetworkKind;
+      const ghost = { id: nid, networkKind: kind, name: nid.split(':').slice(2).join(':'), regionIds: pm.regions, memberRegionIds: pm.regions, primaryConstraint: null, maturity: 'fragmented', condition: 'disrupted', impairedProjectIds: [], criticalRegionIds: [] } as unknown as StrategicInfrastructureNetwork;
+      const arch = INFRA_NETWORK_ARCHETYPES.find(a => nid.endsWith(`:${a.id}`)); if (arch) ghost.name = arch.label;
+      emit('infrastructure_network_fragmented', ghost, nid, `${ghost.name} no longer functions as a connected network.`, 'major', null, 'fragmented'); });
+  }
+  const keptMem = Object.fromEntries(Object.entries(memNow).sort((a, b) => a[0].localeCompare(b[0])).slice(0, V102_LIMITS.memory));
+  const inputHash = infraNetworkInputHash(i);
+  const persisted: InfraNetworksPersisted = { schemaVersion: '10.2', revision: (prev?.revision || 0) + (derived.length || !prev || prev.inputHash !== inputHash ? 1 : 0), initializedTurn: prev?.initializedTurn ?? turn, lastUpdatedTurn: turn,
+    networks: keptMem, cooldowns: Object.fromEntries(Object.entries(cooldowns).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, V102_LIMITS.cooldowns)), history: history.slice(-V102_LIMITS.history), inputHash };
+  const state: StrategicInfrastructureState = { schemaVersion: '10.2', revision: persisted.revision, networks, criticalPoints: boundedCritical, missingLinks: boundedMissing, effects, projectRoles, regionRoles, national, history: persisted.history, lastUpdatedTurn: turn, inputHash,
+    computeMs: typeof performance !== 'undefined' ? v102R(performance.now() - t0, 2) : 0 };
+  return { state, persisted, derived };
+}
+
+export function buildInfraNetworkInputs(src: { turn: number; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; modifiers?: InfraNetworkInputs['modifiers'] }): InfraNetworkInputs {
+  const raw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return { turn: Number(src.turn) || 0, national: src.national, industries: src.industries, modifiers: src.modifiers,
+    projects: raw.filter((p: any) => p && typeof p.id === 'string').map((p: any) => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), contributions: p.contributions && typeof p.contributions === 'object' ? { ...p.contributions } : undefined })) };
+}
+
+export function sanitizeInfraNetworksPersisted(raw: unknown): InfraNetworksPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const out = createEmptyInfraNetworksPersisted();
+  const num = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const mats = Object.keys(V102_MATURITY_RANK), conds = Object.keys(INFRA_CONDITION_LABEL), reds = Object.keys(V102_RED_RANK), res = ['fragile', 'exposed', 'stable', 'resilient', 'highly_resilient'];
+  out.revision = Math.max(0, Math.floor(num(r.revision)));
+  out.initializedTurn = r.initializedTurn === null || r.initializedTurn === undefined ? null : Math.max(0, Math.floor(num(r.initializedTurn)));
+  out.lastUpdatedTurn = Math.max(0, Math.floor(num(r.lastUpdatedTurn)));
+  Object.entries(r.networks && typeof r.networks === 'object' ? r.networks : {}).slice(0, V102_LIMITS.memory).forEach(([k, v]: [string, any]) => {
+    if (!/^inet:[a-z]+:/.test(k) || !v || typeof v !== 'object') return;
+    out.networks[k.slice(0, 80)] = { maturity: mats.includes(v.maturity) ? v.maturity : 'emerging', condition: conds.includes(v.condition) ? v.condition : 'healthy', redundancyBand: reds.includes(v.redundancyBand) ? v.redundancyBand : 'none',
+      resilienceBand: res.includes(v.resilienceBand) ? v.resilienceBand : 'stable', critical: (Array.isArray(v.critical) ? v.critical : []).filter((x: any) => typeof x === 'string').slice(0, 12), gatewayCritical: Boolean(v.gatewayCritical),
+      regions: (Array.isArray(v.regions) ? v.regions : []).filter((x: any) => REGIONS[x]).slice(0, 8), members: (Array.isArray(v.members) ? v.members : []).filter((x: any) => typeof x === 'string').slice(0, 30) };
+  });
+  Object.entries(r.cooldowns && typeof r.cooldowns === 'object' ? r.cooldowns : {}).slice(0, V102_LIMITS.cooldowns).forEach(([k, v]) => { out.cooldowns[String(k).slice(0, 120)] = Math.floor(num(v)); });
+  const hk = ['formed', 'extended', 'integrated', 'fragmented', 'restored', 'critical_point_formed', 'critical_point_resolved', 'redundancy_improved', 'resilience_declined'];
+  out.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.id === 'string' && typeof h.summary === 'string' && hk.includes(h.kind)).slice(-V102_LIMITS.history).map((h: any) => ({
+    id: h.id.slice(0, 120), turn: Math.floor(num(h.turn)), networkId: String(h.networkId || '').slice(0, 80), kind: h.kind, summary: h.summary.slice(0, 200),
+    sourceProjectIds: (Array.isArray(h.sourceProjectIds) ? h.sourceProjectIds : []).filter((x: any) => typeof x === 'string').slice(0, 6), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4) }));
+  out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  return out;
+}
+
+/** Structural validation (LAB + self-tests) — includes invariants A, E, F. */
+export function validateStrategicInfrastructureNetworks(s: StrategicInfrastructureState, i: InfraNetworkInputs): string[] {
+  const errs: string[] = []; const ids = new Set<string>(); const projIds = new Set(i.projects.map(p => p.id));
+  const fin = (v: number, w: string) => { if (!Number.isFinite(v)) errs.push(`${w} not finite`); };
+  s.networks.forEach(n => {
+    if (ids.has(n.id)) errs.push(`duplicate network ${n.id}`); ids.add(n.id);
+    if (!INFRA_NETWORK_KINDS.includes(n.networkKind)) errs.push(`bad kind ${n.networkKind}`);
+    n.regionIds.forEach(r => { if (!REGIONS[r]) errs.push(`unknown region ${r}`); });
+    const seen = new Set<string>(); n.memberProjectIds.forEach(p => { if (!projIds.has(p)) errs.push(`unknown project ${p}`); if (seen.has(p)) errs.push(`duplicate member ${p}`); seen.add(p);
+      const pr = i.projects.find(x => x.id === p); if (pr && !INFRA_NETWORK_PROFILES[pr.projectType as InfrastructureProjectType]?.contributesTo.some(c => c.network === n.networkKind)) errs.push(`${p} incompatible with ${n.networkKind}`); });
+    n.linkIds.forEach(l => { if (i.national && !i.national.links[l]) errs.push(`unknown V10.0 link ${l}`); });
+    n.impairedProjectIds.forEach(p => { if (v102Functional(i.projects.find(x => x.id === p)?.status || '')) errs.push(`functional project listed as impaired ${p}`); });
+    [n.coverage, n.continuity, n.effectiveCapacity, n.utilization, n.redundancy, n.resilience].forEach((v, k) => fin(v, `${n.id}.metric${k}`));
+  });
+  s.criticalPoints.forEach(c => { if (!ids.has(c.networkId)) errs.push(`critical point ${c.id} references missing network`); if (c.type === 'project' && !projIds.has(c.subjectId)) errs.push(`critical project ${c.subjectId} missing`); if (c.type === 'region' && !REGIONS[c.subjectId]) errs.push(`critical region ${c.subjectId} missing`); });
+  s.missingLinks.forEach(m => m.candidateProjectIds.forEach(p => { if (!projIds.has(p)) errs.push(`missing-link candidate ${p} is not a real project`); }));
+  if (s.history.length > V102_LIMITS.history) errs.push('history exceeds bound');
+  return errs;
+}
+
+/** Network event → World Reaction root event (public; root/depth/budget/dedupe apply). */
+export function infraToWorldEvent(d: InfraNetworkDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  const region = d.subjectRegionId && REGIONS[d.subjectRegionId] ? d.subjectRegionId : null;
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'infrastructure_networks', sourceEventId: null, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: region ? 'region' : 'nation', subjectId: region || 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: d.evidence.slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'projects', 'economy'],
+    tags: ['infrastructure_networks', `infra_network:${d.networkKind}`, `network_id:${d.networkId}`, ...d.regionIds.map(r => `region:${r}`), ...d.sourceProjectIds.map(p => `project:${p}`)], layer: 'world', confidence: 'high',
+    claimKind: d.kind.includes('critical') ? 'inference' : 'calculated', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 3, dedupeKey: `in:${d.kind}:${d.networkId}:${d.turn}`
+  };
+}
+
+// ---- Consumers (read-only helpers) --------------------------------------------------------------------
+
+/** V9.3 content: region → network-state tags. */
+export function infraNetworkRegionStates(s: StrategicInfrastructureState | null, regionId: string): string[] {
+  if (!s) return [];
+  const out = new Set<string>();
+  s.networks.filter(n => n.regionIds.includes(regionId)).forEach(n => {
+    if (n.maturity === 'fragmented') out.add('network_fragmented');
+    if ((n.redundancyBand === 'none' || n.redundancyBand === 'low') && n.regionIds.length >= 3) out.add('redundancy_low');
+    if (s.criticalPoints.some(c => c.networkId === n.id && c.severity !== 'meaningful' && (c.subjectId === regionId || c.affectedRegions.includes(regionId)))) out.add('critical_point');
+    if (n.gatewayProjectIds.length === 1 && s.criticalPoints.some(c => c.networkId === n.id && c.id.includes(':gateway:'))) out.add('critical_gateway');
+  });
+  s.missingLinks.forEach(m => { if (m.candidateProjectIds.length && (m.fromRegionId === regionId || m.toRegionId === regionId)) { out.add('corridor_missing_link'); out.add('network_extension_opportunity'); } });
+  return Array.from(out).sort();
+}
+
+/**
+ * Bounded AI context for a fund_infrastructure candidate (0 … +0.1): projects that close a real missing link,
+ * relieve a critical point or add redundancy score a little higher. Public information only; never an action.
+ */
+export function infraProjectNetworkOutlook(s: StrategicInfrastructureState | null, projectId: string): { factor: number; reason: string | null } {
+  if (!s) return { factor: 0, reason: null };
+  const ml = s.missingLinks.find(m => m.candidateProjectIds.includes(projectId) && m.networkId);
+  if (ml) return { factor: 0.1, reason: `Would close a missing link in ${ml.strategicImportance}` };
+  if (s.national.resilienceOpportunity?.projectId === projectId) return { factor: 0.08, reason: 'Highest-impact resilience opportunity' };
+  if (s.missingLinks.some(m => m.candidateProjectIds.includes(projectId))) return { factor: 0.05, reason: 'Would join two networks' };
+  return { factor: 0, reason: null };
+}
+
+/** Isolated What-If through the whole chain (V10.0 → V10.1 → V10.2): build, damage or restore a project. */
+export function projectInfraNetworkImpact(nsInputs: NationalSystemsInputs, nsPrev: NationalSystemsPersisted | null, indInputs: IndustriesInputs | null, indPrev: IndustriesPersisted | null, netInputs: InfraNetworkInputs, netPrev: InfraNetworksPersisted | null,
+  change: { projectId?: string; projectType?: string; regionId?: string; status: 'active' | 'damaged' }): {
+  before: StrategicInfrastructureState; after: StrategicInfrastructureState;
+  networks: Array<{ name: string; kind: StrategicInfrastructureNetworkKind; from: string; to: string; redundancy: string; resilience: string; regionsFrom: string[]; regionsTo: string[] }>;
+  critical: { added: string[]; removed: string[] }; industries: Array<{ regionId: string; industry: StrategicIndustryKind; from: IndustryCondition; to: IndustryCondition }>; projectTitle: string;
+  supplies: Array<{ regionId: string; supply: StrategicSupplyKind; importedBefore: number; importedAfter: number; from: SupplyCondition; to: SupplyCondition }>;
+} {
+  const apply = <T extends { id: string; status: string }>(list: T[]): T[] => {
+    if (change.projectId && list.some(p => p.id === change.projectId)) return list.map(p => (p.id === change.projectId ? { ...p, status: change.status } : p));
+    if (change.projectType && change.regionId) return [...list, { id: `whatif_${change.projectType}_${change.regionId}`, title: `${REGIONS[change.regionId]?.name || change.regionId} ${change.projectType.replace(/_/g, ' ')}`, regionId: change.regionId, projectType: change.projectType, status: change.status } as unknown as T];
+    return list;
+  };
+  const nsB = computeNationalSystems(nsInputs, nsPrev, { emit: false }).state;
+  const nsA = computeNationalSystems({ ...nsInputs, projects: apply(nsInputs.projects) }, nsPrev, { emit: false }).state;
+  const indB = indInputs ? computeIndustriesSupplyChains({ ...indInputs, national: nsB }, indPrev, { emit: false }).state : null;
+  const indA = indInputs ? computeIndustriesSupplyChains({ ...indInputs, national: nsA, projects: apply(indInputs.projects) }, indPrev, { emit: false }).state : null;
+  const before = computeStrategicInfrastructureNetworks({ ...netInputs, national: nsB, industries: indB }, netPrev, { emit: false, skipOpportunity: true }).state;
+  const after = computeStrategicInfrastructureNetworks({ ...netInputs, national: nsA, industries: indA, projects: apply(netInputs.projects) }, netPrev, { emit: false, skipOpportunity: true }).state;
+  const key = (n: StrategicInfrastructureNetwork) => n.archetypeId || `${n.networkKind}:${n.memberRegionIds[0]}`;
+  const names = Array.from(new Set([...before.networks, ...after.networks].map(key))).sort();
+  const networks = names.map(k => { const b = before.networks.find(n => key(n) === k), a = after.networks.find(n => key(n) === k); const n = (a || b)!;
+    return { name: n.name, kind: n.networkKind, from: b ? `${INFRA_MATURITY_LABEL[b.maturity]} · ${INFRA_CONDITION_LABEL[b.condition]}` : 'none', to: a ? `${INFRA_MATURITY_LABEL[a.maturity]} · ${INFRA_CONDITION_LABEL[a.condition]}` : 'none',
+      redundancy: `${b?.redundancyBand || 'none'} → ${a?.redundancyBand || 'none'}`, resilience: `${b ? NATIONAL_RESILIENCE_LABEL[b.resilienceBand] : '—'} → ${a ? NATIONAL_RESILIENCE_LABEL[a.resilienceBand] : '—'}`, regionsFrom: b?.regionIds || [], regionsTo: a?.regionIds || [] }; })
+    .filter(x => x.from !== x.to || x.redundancy.split(' → ')[0] !== x.redundancy.split(' → ')[1] || x.resilience.split(' → ')[0] !== x.resilience.split(' → ')[1] || x.regionsFrom.join() !== x.regionsTo.join()).slice(0, 6);
+  const cpLabel = (c: InfrastructureCriticalPoint) => `${c.type === 'region' ? REGIONS[c.subjectId]?.name || c.subjectId : c.type === 'link' ? c.subjectId : netInputs.projects.find(p => p.id === c.subjectId)?.title || c.subjectId} (${c.severity})`;
+  const bIds = before.criticalPoints.filter(c => c.severity !== 'meaningful'), aIds = after.criticalPoints.filter(c => c.severity !== 'meaningful');
+  const sameCp = (x: InfrastructureCriticalPoint, y: InfrastructureCriticalPoint) => x.type === y.type && x.subjectId === y.subjectId && x.severity === y.severity;
+  const industries: ReturnType<typeof projectInfraNetworkImpact>['industries'] = [];
+  if (indA && indB) Object.keys(indA.regions).sort().forEach(c => STRATEGIC_INDUSTRIES.forEach(k => { const x = indB.regions[c]?.industries[k], y = indA.regions[c]?.industries[k]; if (x && y && x.condition !== y.condition) industries.push({ regionId: c, industry: k, from: x.condition, to: y.condition }); }));
+  const title = change.projectId ? netInputs.projects.find(p => p.id === change.projectId)?.title || change.projectId : `${change.regionId} ${change.projectType}`;
+  const supplies: ReturnType<typeof projectInfraNetworkImpact>['supplies'] = [];
+  if (indA && indB) Object.keys(indA.supplies).sort().forEach(c => indA.supplies[c].forEach(y => { const x = indB.supplies[c]?.find(z => z.supply === y.supply); if (x && (Math.abs(x.imported - y.imported) >= 1 || x.condition !== y.condition)) supplies.push({ regionId: c, supply: y.supply, importedBefore: Math.round(x.imported), importedAfter: Math.round(y.imported), from: x.condition, to: y.condition }); }));
+  return { supplies: supplies.slice(0, 8), before, after, networks, critical: { added: aIds.filter(a => !bIds.some(b => sameCp(a, b))).map(cpLabel).slice(0, 4), removed: bIds.filter(b => !aIds.some(a => sameCp(a, b))).map(cpLabel).slice(0, 4) }, industries: industries.slice(0, 8), projectTitle: title };
+}
+
+/** Concise BUILD PREVIEW for a project (not the full What-If): local / network / downstream / resilience lines. */
+export function infraBuildPreview(impact: ReturnType<typeof projectInfraNetworkImpact>, project: { projectType: string; regionId: string | null }): string[] {
+  const lines: string[] = [];
+  const local = nationalProjectNetworkEffects(project.projectType).map(e => `${NATIONAL_NETWORK_LABEL[e.network].toLowerCase()} +${e.capacity}`);
+  lines.push(`Local: ${project.regionId || '—'} ${local.join(', ') || 'no network capacity'}.`);
+  const n = impact.networks[0];
+  lines.push(n ? `Network: ${n.name} ${n.from === 'none' ? 'forms' : n.from !== n.to ? `${n.from} → ${n.to}` : n.regionsTo.length > n.regionsFrom.length ? 'extends' : 'reinforced'}.` : 'Network: adds local capacity only — no network change.');
+  lines.push(impact.industries.length ? `Downstream: ${impact.industries.slice(0, 2).map(x => `${x.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()} ${INDUSTRY_CONDITION_LABEL[x.from]} → ${INDUSTRY_CONDITION_LABEL[x.to]}`).join('; ')}.`
+    : impact.supplies.length ? `Downstream: ${impact.supplies.slice(0, 2).map(x => `${x.regionId} ${SUPPLY_LABEL[x.supply].toLowerCase()} imports ${x.importedBefore} → ${x.importedAfter}`).join('; ')}.` : 'Downstream: no industry condition changes.');
+  lines.push(impact.critical.removed.length ? `Resilience: removes ${impact.critical.removed.join(', ')}.` : impact.critical.added.length ? `Resilience: creates ${impact.critical.added.join(', ')}.` : 'Resilience: no change in critical points.');
+  return lines;
+}
+
+/** PLAY: ≤1 structural line, only when relevant (critical single point or fragmentation touching focus regions). */
+export function infraPlayLine(s: StrategicInfrastructureState | null, focus: string[]): { text: string; networkKind: StrategicInfrastructureNetworkKind; tone: 'critical' | 'warning' } | null {
+  if (!s) return null;
+  const frag = s.networks.find(n => n.maturity === 'fragmented' && n.regionIds.some(r => focus.includes(r))) || s.networks.find(n => n.maturity === 'fragmented');
+  if (frag) return { text: `${INFRA_NETWORK_ICON[frag.networkKind]} ${frag.name} is fragmented`, networkKind: frag.networkKind, tone: 'critical' };
+  const cp = s.criticalPoints.find(c => c.severity === 'critical' && (focus.includes(c.subjectId) || c.affectedRegions.some(r => focus.includes(r))));
+  if (cp) { const n = s.networks.find(x => x.id === cp.networkId)!; return { text: `⚠ ${cp.type === 'region' ? REGIONS[cp.subjectId]?.name || cp.subjectId : cp.type === 'link' ? cp.subjectId.replace(/^[a-z]+:/, '') : 'One project'} is a critical single point in ${n.name}`, networkKind: n.networkKind, tone: 'warning' }; }
+  return null;
+}
+
+
+// ---- V10.2 Strategic Infrastructure Networks: Game Intelligence (Fact / Calculated / Inference / Projection) ----
+
+export interface InfraNetworksWorldView { state: StrategicInfrastructureState; inputs: InfraNetworkInputs; persisted: InfraNetworksPersisted | null }
+export type InfraQueryTopic = 'members' | 'why_critical' | 'what_if_damage' | 'industries' | 'lose_access' | 'resilience_how' | 'what_if_build' | 'beneficiaries' | 'redundant' | 'single_gateway' | 'overview';
+export interface InfraQuery { topic: InfraQueryTopic; regionId: string | null; networkId: string | null; kind: StrategicInfrastructureNetworkKind | null; projectId: string | null }
+
+const V102_KIND_WORDS: Array<[StrategicInfrastructureNetworkKind, RegExp]> = [
+  ['mobility', /\b(high[- ]speed rail|passenger|mobility)\b/], ['freight', /\b(freight|rail|logistics|spine)\b/], ['energy', /\b(energy|grid|power|hydro|wind)\b/], ['water', /\b(water|pipeline|desal\w*)\b/],
+  ['trade', /\b(trade|port|export gateway|gateways?)\b/], ['digital', /\b(digital|cable|data|backbone)\b/]
+];
+function v102KindInText(q: string): StrategicInfrastructureNetworkKind | null { return V102_KIND_WORDS.find(([, re]) => re.test(q))?.[0] || null; }
+
+function v102NetworkInText(q: string, s: StrategicInfrastructureState, kind: StrategicInfrastructureNetworkKind | null): StrategicInfrastructureNetwork | null {
+  const byName = s.networks.find(n => q.includes(n.name.toLowerCase().replace(/[–-]/g, ' ').replace(/\s+/g, ' ')) || q.includes(n.name.toLowerCase()));
+  if (byName) return byName;
+  const arch = INFRA_NETWORK_ARCHETYPES.find(a => q.includes(a.label.toLowerCase()));
+  if (arch) return s.networks.find(n => n.archetypeId === arch.id) || null;
+  return kind ? [...s.networks].filter(n => n.networkKind === kind).sort((a, b) => b.regionIds.length - a.regionIds.length || a.id.localeCompare(b.id))[0] || null : null;
+}
+function v102ProjectInText(q: string, v: InfraNetworksWorldView, regionId: string | null, kind: StrategicInfrastructureNetworkKind | null, prefer: 'member' | 'candidate'): InfraNetworkInputs['projects'][number] | null {
+  const words = q.split(/\s+/).filter(w => w.length > 3 && !['what', 'happens', 'would', 'this', 'that', 'project', 'build', 'damaged', 'extend', 'network', 'benefits', 'local', 'capacity'].includes(w));
+  const ranked = v.inputs.projects.map(p => {
+    const prof = INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]; if (!prof) return null;
+    const title = p.title.toLowerCase();
+    const hit = words.filter(w => title.includes(w)).length * 2 + (regionId && p.regionId === regionId ? 3 : 0) + (kind && prof.contributesTo.some(c => c.network === kind) ? 2 : 0)
+      + ((prefer === 'member' ? v102Member(p.status) : !v102Member(p.status) && p.status !== 'locked') ? 2 : 0);
+    return { p, hit };
+  }).filter((x): x is { p: InfraNetworkInputs['projects'][number]; hit: number } => Boolean(x && x.hit >= 3)).sort((a, b) => b.hit - a.hit || a.p.id.localeCompare(b.p.id));
+  return ranked[0]?.p || null;
+}
+
+/** Detects infrastructure-network questions only when a V10.2 view exists (never hijacks other phrasings). */
+export function detectInfraNetworkQuery(raw: string, gw: GIWorld): InfraQuery | null {
+  const v = gw.national?.infra; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const infraWord = /\b(infrastructure|network|corridor|spine|backbone|gateways?|redundan\w*|single point|critical|bridge region|hub|rail project|project)\b/.test(q) || INFRA_NETWORK_ARCHETYPES.some(a => q.includes(a.label.toLowerCase()));
+  if (!infraWord) return null;
+  const regionId = nsRegionInText(q); const kind = v102KindInText(q);
+  const net = v102NetworkInText(q, v.state, kind);
+  const mk = (topic: InfraQueryTopic, extra: Partial<InfraQuery> = {}): InfraQuery => ({ topic, regionId, networkId: net?.id || null, kind: kind || net?.networkKind || null, projectId: null, ...extra });
+  if (/\b(single|one) (gateway|port)\b|\brelying on a single\b/.test(q)) return mk('single_gateway');
+  if (/\bwhich infrastructure is redundant\b|\bredundan(t|cy)\b.{0,20}\b(where|which)\b|\bwhich .{0,20}\bredundan/.test(q)) return mk('redundant');
+  if (/\b(damaged|fails?|failure|destroyed|disrupted|knocked out)\b/.test(q) && /\b(what happens|what if|what would)\b/.test(q)) { const p = v102ProjectInText(q, v, regionId, kind, 'member'); return mk('what_if_damage', { projectId: p?.id || null }); }
+  if (/\bwho benefits\b|\bwho gains\b/.test(q)) { const p = v102ProjectInText(q, v, regionId, kind, 'candidate'); return mk('beneficiaries', { projectId: p?.id || null }); }
+  if (/\b(extend|add local capacity|just add)\b/.test(q) || (/\b(what (happens|would happen)|what if)\b/.test(q) && /\b(build|fund|complete)\b/.test(q))) { const p = v102ProjectInText(q, v, regionId, kind, 'candidate'); if (p) return mk('what_if_build', { projectId: p.id }); }
+  if (/\bwhy is\b.{0,30}\b(critical|a bridge|a hub|important|single point)\b/.test(q) && regionId) return mk('why_critical');
+  if (/\bwhich regions would lose\b|\blose access\b/.test(q)) return mk('lose_access');
+  if (/\bwhich industries\b|\bindustries use\b|\bwho uses\b/.test(q)) return mk('industries');
+  if (/\bhow (can|do|could) i make\b.{0,40}\bresilien\w*\b|\bmore resilient\b/.test(q)) return mk('resilience_how');
+  if (/\bwhich projects\b|\bpart of\b|\bmembers?\b/.test(q) && net) return mk('members');
+  if (net || /\binfrastructure networks?\b/.test(q)) return mk('overview');
+  return null;
+}
+
+export function composeInfraNetworkAnswer(query: InfraQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const nv = gw.national!; const v = nv.infra!; const s = v.state;
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const net = query.networkId ? s.networks.find(n => n.id === query.networkId) || null : null;
+  const title0 = (p: string) => v.inputs.projects.find(x => x.id === p)?.title || p;
+  const nm = (r: string) => REGIONS[r]?.name || r;
+  let title = 'Infrastructure networks'; let shape: GIAnswerShape = 'explanation';
+  const impact = (projectId: string, status: 'active' | 'damaged') => (nv.inputs ? projectInfraNetworkImpact(nv.inputs, nv.persisted, nv.industries?.inputs || null, nv.industries?.persisted || null, v.inputs, v.persisted, { projectId, status }) : null);
+  switch (query.topic) {
+    case 'members': {
+      if (!net) break; title = `${net.name}: members`;
+      say('fact', 'Fact', net.memberProjectIds.slice(0, 8).map(p => C(`${title0(p)} (${v.inputs.projects.find(x => x.id === p)?.regionId}) — ${v.inputs.projects.find(x => x.id === p)?.status}.`, 'fact')));
+      say('calc', 'Calculated', [C(`Regions ${net.regionIds.join(' • ')} · ${INFRA_MATURITY_LABEL[net.maturity]} · ${INFRA_CONDITION_LABEL[net.condition]} · redundancy ${net.redundancyBand} · resilience ${NATIONAL_RESILIENCE_LABEL[net.resilienceBand].toLowerCase()}.`, 'calculated'),
+        net.endpointRegionIds.length ? C(`Served without a local member project: ${net.endpointRegionIds.join(', ')} (economic endpoints).`, 'calculated') : null]);
+      break;
+    }
+    case 'why_critical': {
+      const r = query.regionId!; title = `Why ${nm(r)} is critical`; shape = 'diagnosis';
+      const cps = s.criticalPoints.filter(c => c.type === 'region' && c.subjectId === r);
+      const roles = s.regionRoles[r] || [];
+      if (!cps.length) { say('calc', 'Calculated', [C(`${nm(r)} is not a single point of failure in any current network${roles.length ? ` (roles: ${roles.map(x => `${x.role} in ${s.networks.find(n => n.id === x.networkId)?.name}`).join(', ')})` : ''}.`, 'calculated')]); break; }
+      cps.slice(0, 2).forEach((cp, k) => { const n = s.networks.find(x => x.id === cp.networkId)!;
+        say(`f${k}`, 'Fact', n.memberProjectIds.filter(p => v102Functional(v.inputs.projects.find(x => x.id === p)?.status || '')).slice(0, 3).map(p => C(`${title0(p)} is active.`, 'fact')));
+        say(`c${k}`, 'Calculated', [C(`Removing ${nm(r)} splits ${n.name}: ${cp.affectedRegions.join(', ')} lose the connection to the rest.`, 'calculated'), cp.affectedIndustries.length ? C(`Supply that currently moves through it: ${cp.affectedIndustries.slice(0, 3).join(', ')}.`, 'calculated') : null]);
+        say(`i${k}`, 'Inference', [C(`${nm(r)} is therefore a ${cp.severity} bridge region; a major disruption there would cut ${cp.affectedRegions.join(', ')} off from ${n.name}.`, 'inference')]); });
+      // Targeted projection: which real candidate project of this network's kind would remove this bridge (≤ 4 isolated simulations).
+      const n0 = s.networks.find(x => x.id === cps[0].networkId)!;
+      const cands = v.inputs.projects.filter(p => (p.status === 'unlocked' || p.status === 'under_construction') && INFRA_NETWORK_PROFILES[p.projectType as InfrastructureProjectType]?.contributesTo.some(c => c.network === n0.networkKind && V102_REACH_ROLES.includes(c.role))).slice(0, 4);
+      const scored = cands.map(p => { const imp = impact(p.id, 'active'); const after = imp?.after.criticalPoints.find(c => c.type === 'region' && c.subjectId === r && c.networkId === cps[0].networkId); return { p, after, gain: after ? cps[0].affectedRegions.length - after.affectedRegions.length : cps[0].affectedRegions.length + 1 }; }).filter(x => x.gain > 0).sort((a, b) => b.gain - a.gain || a.p.id.localeCompare(b.p.id));
+      const fix = scored[0];
+      say('proj', 'Projection', [fix ? C(fix.after ? `Completing ${fix.p.title} (${fix.p.regionId}) would likely reduce ${nm(r)}'s exposure: only ${fix.after.affectedRegions.join(', ')} would still depend on it.` : `Completing ${fix.p.title} (${fix.p.regionId}) would likely remove ${nm(r)} as a single point by adding an alternative route.`, 'projection')
+        : C(`No current ${INFRA_NETWORK_LABEL[n0.networkKind].toLowerCase()} project would remove this single point.`, 'projection')]);
+      break;
+    }
+    case 'what_if_damage': case 'lose_access': {
+      const pid = query.projectId || (net ? (s.criticalPoints.find(c => c.networkId === net.id && c.type === 'project')?.subjectId || net.memberProjectIds[0]) : null);
+      if (!pid) break; const imp = impact(pid, 'damaged'); if (!imp) break;
+      title = `What if ${title0(pid)} is damaged`; shape = 'simulation';
+      say('fact', 'Fact', [C('Isolated projection — no project status changes; damage is decided only by the canonical engines.', 'fact')]);
+      say('proj', 'Projection', [...imp.networks.slice(0, 3).map(x => C(`${x.name}: ${x.from} → ${x.to}${x.regionsTo.length < x.regionsFrom.length ? ` (loses ${x.regionsFrom.filter(r => !x.regionsTo.includes(r)).join(', ')})` : ''}.`, 'projection')),
+        ...imp.industries.slice(0, 3).map(x => C(`${x.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()}: ${INDUSTRY_CONDITION_LABEL[x.from]} → ${INDUSTRY_CONDITION_LABEL[x.to]}.`, 'projection')),
+        ...imp.supplies.slice(0, 2).map(x => C(`${x.regionId} ${SUPPLY_LABEL[x.supply].toLowerCase()} imports ${x.importedBefore} → ${x.importedAfter}.`, 'projection'))]);
+      if (!imp.networks.length && !imp.industries.length) say('proj2', null, [C('No network structure would change — this project is not load-bearing for connectivity.', 'projection')]);
+      break;
+    }
+    case 'industries': {
+      if (!net) break; title = `Industries using ${net.name}`;
+      say('calc', 'Calculated', net.downstream.length ? net.downstream.slice(0, 6).map(d => C(d, 'calculated')) : [C(`No meaningful current industry use — ${net.name} exists structurally, but its economic relevance is ${net.economicRelevance}.`, 'calculated')]);
+      break;
+    }
+    case 'resilience_how': {
+      const kind = query.kind || net?.networkKind || 'energy'; const n = net || s.networks.filter(x => x.networkKind === kind).sort((a, b) => b.regionIds.length - a.regionIds.length)[0];
+      title = `Making the ${INFRA_NETWORK_LABEL[kind].toLowerCase()} network more resilient`;
+      if (!n) { say('fact', 'Fact', [C(`No ${INFRA_NETWORK_LABEL[kind].toLowerCase()} network exists yet.`, 'fact')]); break; }
+      say('calc', 'Calculated', [C(`${n.name}: redundancy ${n.redundancyBand}, resilience ${NATIONAL_RESILIENCE_LABEL[n.resilienceBand].toLowerCase()} (${n.resilience}/100), ${s.criticalPoints.filter(c => c.networkId === n.id && c.severity !== 'meaningful').length} serious single points.`, 'calculated'),
+        n.effectiveCapacity >= n.demand * 1.3 ? C('Capacity already exceeds demand comfortably — more capacity alone adds little; a second route adds resilience.', 'calculated') : null]);
+      const opts = s.missingLinks.filter(m => m.networkKind === kind && m.candidateProjectIds.length).slice(0, 2);
+      const projClaims = [...opts.map(m => C(m.reason, 'projection')), ...(s.national.resilienceOpportunity && s.national.resilienceOpportunity.networkId === n.id ? [C(s.national.resilienceOpportunity.reason, 'projection')] : [])];
+      say('proj', 'Projection', projClaims.length ? projClaims : [C('No current project would add an alternative route to this network.', 'projection')]);
+      break;
+    }
+    case 'what_if_build': case 'beneficiaries': {
+      const pid = query.projectId; if (!pid) break; const imp = impact(pid, 'active'); if (!imp) break;
+      const p = v.inputs.projects.find(x => x.id === pid)!;
+      title = query.topic === 'beneficiaries' ? `Who benefits from ${p.title}` : `Build preview: ${p.title}`; shape = 'simulation';
+      say('calc', 'Calculated', infraBuildPreview(imp, p).map(l => C(l, l.startsWith('Local') ? 'calculated' : 'projection')));
+      const regs = Array.from(new Set(imp.after.networks.filter(n => n.memberProjectIds.includes(`whatif_${p.projectType}_${p.regionId}`) || n.memberProjectIds.includes(pid)).flatMap(n => n.regionIds)));
+      const rivals = regs.filter(r => nv.regionOwners[r] === 'rival');
+      say('infer', 'Inference', [C(regs.length > 1 ? `Network value reaches ${regs.join(', ')} — not only ${p.regionId}.` : `Mostly local value in ${p.regionId}.`, 'inference'),
+        rivals.length ? C(`Public good: rival-controlled ${rivals.join(', ')} would benefit too. Funding is provenance, not ownership.`, 'inference') : null]);
+      break;
+    }
+    case 'redundant': {
+      title = 'Redundant infrastructure';
+      const red = s.networks.filter(n => n.redundancyBand === 'moderate' || n.redundancyBand === 'high');
+      say('calc', 'Calculated', red.length ? red.map(n => C(`${n.name}: ${n.linkIds.length - n.criticalLinkIds.length} of ${n.linkIds.length} links have an alternative route (redundancy ${n.redundancyBand}).`, 'calculated')) : [C('No network currently has an alternative route — every connection is a single path.', 'calculated')]);
+      break;
+    }
+    case 'single_gateway': {
+      title = 'Single-gateway dependence';
+      const gw2 = s.criticalPoints.filter(c => c.id.includes(':gateway:'));
+      say('calc', 'Calculated', gw2.length ? gw2.map(c => C(c.reason, 'calculated')) : [C('No network currently depends on a single gateway.', 'calculated')]);
+      if (gw2.length) say('infer', 'Inference', [C('A second port or cable gateway in another region would spread that dependence.', 'inference')]);
+      break;
+    }
+    case 'overview': {
+      title = net ? net.name : 'National infrastructure'; shape = 'status';
+      if (net) { say('calc', 'Calculated', [C(`${net.regionIds.join(' • ')} · ${INFRA_MATURITY_LABEL[net.maturity]} · ${INFRA_CONDITION_LABEL[net.condition]} · capacity ${Math.round(net.effectiveCapacity)} vs demand ${Math.round(net.demand)} (${Math.round(net.utilization * 100)}%) · redundancy ${net.redundancyBand}.`, 'calculated'), net.primaryConstraint ? C(net.primaryConstraint, 'inference') : null]); break; }
+      say('calc', 'Calculated', [C(`${s.networks.length} derived networks. Most developed: ${s.national.mostDevelopedKind ? INFRA_NETWORK_LABEL[s.national.mostDevelopedKind] : '—'}.`, 'calculated'),
+        s.national.primarySinglePoint ? C(`Primary single point: ${s.national.primarySinglePoint.reason}`, 'calculated') : null,
+        s.national.resilienceOpportunity ? C(`Highest-impact resilience opportunity: ${s.national.resilienceOpportunity.reason}`, 'projection') : null]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [C('No infrastructure-network data matches that question yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+
+// ---- V10.2 Strategic Infrastructure Networks: UI (read-only renders of the derived snapshot) -----------------
+
+export type InfraMapLayer = `infra:${StrategicInfrastructureNetworkKind}`;
+const V102_ROLE_ICON: Record<InfrastructureRegionNetworkRole['role'], string> = { hub: '⬢', bridge: '⧉', gateway: '⚓', member: '●', endpoint: '○' };
+
+export function infraMapBadge(s: StrategicInfrastructureState | null, regionId: string, kind: StrategicInfrastructureNetworkKind): { text: string; title: string; tone: 'bad' | 'warn' | 'ok' } | null {
+  const roles = (s?.regionRoles[regionId] || []).filter(r => r.networkKind === kind);
+  if (!roles.length || !s) return null;
+  const r = roles.sort((a, b) => ({ bridge: 4, hub: 3, gateway: 2, member: 1, endpoint: 0 }[b.role] - { bridge: 4, hub: 3, gateway: 2, member: 1, endpoint: 0 }[a.role]))[0];
+  const n = s.networks.find(x => x.id === r.networkId)!;
+  const crit = s.criticalPoints.some(c => c.networkId === n.id && c.subjectId === regionId && c.severity === 'critical');
+  return { tone: n.maturity === 'fragmented' ? 'bad' : crit ? 'warn' : 'ok', text: `${V102_ROLE_ICON[r.role]} ${r.role === 'endpoint' ? 'Served' : r.role[0].toUpperCase() + r.role.slice(1)}${crit ? ' ⚠' : ''}`,
+    title: `${n.name}: ${REGIONS[regionId]?.name || regionId} is a ${r.role}${r.failureImpact ? ` — failure: ${r.failureImpact}` : ''} (${INFRA_MATURITY_LABEL[n.maturity]}, ${INFRA_CONDITION_LABEL[n.condition]})` };
+}
+
+/** Overlay for ONE network kind: active corridors, broken (damaged) segments, critical links, missing links. Bounded. */
+export const InfraNetworkMapOverlay: React.FC<{ state: StrategicInfrastructureState; national: NationalSystemsState; kind: StrategicInfrastructureNetworkKind }> = ({ state, national, kind }) => {
+  const nets = state.networks.filter(n => n.networkKind === kind).slice(0, 4);
+  const pos = (r: string) => REGIONS[r]?.position;
+  const segs: Array<{ key: string; a: string; b: string; kind: 'active' | 'broken' | 'critical' | 'missing' }> = [];
+  nets.forEach(n => n.linkIds.slice(0, 12).forEach(id => { const l = national.links[id]; if (!l) return;
+    segs.push({ key: id, a: l.fromRegionId, b: l.toRegionId, kind: n.brokenLinkIds.includes(id) ? 'broken' : n.criticalLinkIds.includes(id) && state.criticalPoints.some(c => c.subjectId === id && c.severity !== 'meaningful') ? 'critical' : 'active' }); }));
+  state.missingLinks.filter(m => m.networkKind === kind && m.fromRegionId !== m.toRegionId).slice(0, 3).forEach(m => segs.push({ key: `miss_${m.fromRegionId}_${m.toRegionId}`, a: m.fromRegionId, b: m.toRegionId, kind: 'missing' }));
+  const style = { active: { stroke: '#38bdf8', dash: undefined, w: 4 }, critical: { stroke: '#f59e0b', dash: undefined, w: 6 }, broken: { stroke: '#ef4444', dash: '4 4', w: 4 }, missing: { stroke: '#94a3b8', dash: '2 4', w: 2 } } as const;
+  return (
+    <>
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="in-map-links">
+        {segs.map(sg => { const a = pos(sg.a), b = pos(sg.b); if (!a || !b) return null; const st = style[sg.kind];
+          return <line key={sg.key} data-testid={`in-seg-${sg.kind}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={st.stroke} strokeOpacity={0.9} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" vectorEffect="non-scaling-stroke" />; })}
+      </svg>
+      {segs.filter(sg => sg.kind !== 'active').map(sg => { const a = pos(sg.a), b = pos(sg.b); if (!a || !b) return null;
+        return <div key={`lb_${sg.key}`} className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-1/2 text-[9px] whitespace-nowrap bg-slate-950/90 text-slate-100 px-1 rounded z-[5]" style={{ left: `${(a.x + b.x) / 2}%`, top: `${(a.y + b.y) / 2}%` }} data-testid="in-seg-label">
+          {sg.kind === 'broken' ? '✕ damaged' : sg.kind === 'critical' ? '⚠ single link' : '┄ missing'}</div>; })}
+      {nets[0] && <div className="absolute left-1 bottom-1 text-[10px] bg-slate-950/85 text-slate-100 px-1.5 py-0.5 rounded z-[6]" data-testid="in-map-legend">{INFRA_NETWORK_ICON[kind]} {nets.map(n => `${n.name}: ${INFRA_MATURITY_LABEL[n.maturity]} · ${INFRA_CONDITION_LABEL[n.condition]}`).join(' | ')}</div>}
+    </>
+  );
+};
+
+/** Region detail: concise infrastructure-network role(s). */
+export const RegionInfraRolePanel: React.FC<{ state: StrategicInfrastructureState; regionId: string; theme: any; onAsk?: (q: string) => void }> = ({ state, regionId, theme, onAsk }) => {
+  const roles = (state.regionRoles[regionId] || []).filter(r => r.role !== 'endpoint' || r.importance !== 'low').slice(0, 3);
+  if (!roles.length) return null;
+  return (
+    <section aria-label="Infrastructure role" className={`${theme.card} ${theme.border} border rounded-lg p-3 mt-3 text-xs`} data-testid="in-region-panel">
+      <div className="font-bold text-sm">🕸 Infrastructure role</div>
+      {roles.map(r => { const n = state.networks.find(x => x.id === r.networkId)!; return (
+        <div key={r.networkId} className="mt-1">
+          <div><b>{n.name}</b> — {V102_ROLE_ICON[r.role]} {r.role.toUpperCase()} REGION · importance {r.importance.toUpperCase()}</div>
+          {r.failureImpact && <div className="text-amber-300">Failure impact: {r.failureImpact}</div>}
+        </div>); })}
+      {onAsk && roles.some(r => r.role === 'bridge') && <button type="button" className="underline mt-1" onClick={() => onAsk(`Why is ${REGIONS[regionId]?.name || regionId} critical?`)}>Why is it critical?</button>}
+    </section>
+  );
+};
+
+/** Project detail: network role + concise BUILD PREVIEW (computed on demand, isolated). */
+export const ProjectNetworkRoleCard: React.FC<{ state: StrategicInfrastructureState | null; project: { id: string; projectType: string; regionId: string | null; status: string }; preview: () => string[] | null }> = ({ state, project, preview }) => {
+  const [lines, setLines] = useState<string[] | null>(null);
+  if (!state || !INFRA_NETWORK_PROFILES[project.projectType as InfrastructureProjectType]) return null;
+  const roles = state.projectRoles[project.id] || [];
+  const prof = INFRA_NETWORK_PROFILES[project.projectType as InfrastructureProjectType];
+  const opp = state.missingLinks.find(m => m.candidateProjectIds.includes(project.id));
+  return (
+    <div className="text-[11px] rounded border border-sky-700/40 bg-sky-950/30 p-2" data-testid="in-project-card">
+      <div className="font-semibold text-sky-200">NETWORK ROLE · {prof.contributesTo.map(c => `${INFRA_NETWORK_LABEL[c.network]} ${INFRA_ROLE_LABEL[c.role]}`).join(' + ')}</div>
+      {roles.map(r => { const n = state.networks.find(x => x.id === r.networkId); return (
+        <div key={r.networkId}>Part of <b>{n?.name}</b>{r.capacityContribution ? ` · capacity +${Math.round(r.capacityContribution)}` : ''} · criticality {r.criticality.toUpperCase()}{r.downstream.length ? ` · downstream: ${r.downstream.join(', ')}` : ''}{!r.functional ? ' · ✕ damaged — not providing full network function' : ''}</div>); })}
+      {opp && <div className="text-emerald-300">NETWORK OPPORTUNITY: {opp.reason}</div>}
+      {!roles.length && project.status !== 'locked' && (lines
+        ? <div data-testid="in-build-preview">{lines.map(l => <div key={l}>{l}</div>)}</div>
+        : <button type="button" className="underline" data-testid="in-build-preview-btn" onClick={() => setLines(preview())}>Network preview</button>)}
+    </div>
+  );
+};
+
+/** PLAY: a single structural line when relevant (fragmentation / critical single point). */
+export const InfraPlayLine: React.FC<{ state: StrategicInfrastructureState | null; focus: string[]; theme: any; onAsk: (q: string) => void; onMap: (k: StrategicInfrastructureNetworkKind) => void }> = ({ state, focus, theme, onAsk, onMap }) => {
+  const line = infraPlayLine(state, focus);
+  if (!line) return null;
+  return (
+    <section aria-label="Infrastructure network" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="in-play-line">
+      <span className="font-bold uppercase tracking-wide opacity-70">Infrastructure</span>
+      <button type="button" className={`px-2 py-0.5 rounded border ${line.tone === 'critical' ? 'border-red-500' : 'border-amber-500'}`} onClick={() => onMap(line.networkKind)}>{line.text}</button>
+      <button type="button" className="underline opacity-80" onClick={() => onAsk(`How can I make the ${INFRA_NETWORK_LABEL[line.networkKind].toLowerCase()} network more resilient?`)}>What can I do?</button>
+    </section>
+  );
+};
+
+/** INTELLIGENCE › Infrastructure Networks. */
+export const InfraNetworksIntelPanel: React.FC<{ state: StrategicInfrastructureState; theme: any; onAsk: (q: string) => void; onMap: (k: StrategicInfrastructureNetworkKind) => void; names: Record<string, string> }> = ({ state, theme, onAsk, onMap, names }) => {
+  const [tab, setTab] = useState<'overview' | StrategicInfrastructureNetworkKind | 'critical' | 'resilience' | 'contributors'>('overview');
+  const n0 = state.national; const fragile = n0.mostFragileNetworkId ? state.networks.find(n => n.id === n0.mostFragileNetworkId) : null;
+  const row = (n: StrategicInfrastructureNetwork) => (
+    <div key={n.id} className="mb-1">
+      <div className="flex justify-between gap-2"><b>{INFRA_NETWORK_ICON[n.networkKind]} {n.name}</b><button type="button" className="underline" onClick={() => onMap(n.networkKind)}>Map</button></div>
+      <div>{n.regionIds.join(' • ')} · {INFRA_MATURITY_LABEL[n.maturity]} · {INFRA_CONDITION_ICON[n.condition]} {INFRA_CONDITION_LABEL[n.condition]} · capacity {Math.round(n.effectiveCapacity)} / demand {Math.round(n.demand)} ({Math.round(n.utilization * 100)}%) · redundancy {n.redundancyBand} · resilience {NATIONAL_RESILIENCE_LABEL[n.resilienceBand].toLowerCase()} · economic relevance {n.economicRelevance}</div>
+      {n.primaryConstraint && <div className="text-amber-300">{n.primaryConstraint}</div>}
+    </div>);
+  return (
+    <section aria-labelledby="in-intel-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="in-intel-panel">
+      <h3 id="in-intel-h" className="font-bold">🕸 Infrastructure Networks</h3>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs">{(['overview', ...INFRA_NETWORK_KINDS, 'critical', 'resilience', 'contributors'] as const).map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-sky-400 font-bold' : theme.border}`} data-testid={`in-intel-tab-${t}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-0.5" data-testid="in-intel-body">
+        {tab === 'overview' && <>
+          <div>Most developed network: {n0.mostDevelopedKind ? INFRA_NETWORK_LABEL[n0.mostDevelopedKind] : '—'}</div>
+          <div>Most fragile network: {fragile ? `${fragile.name} (${NATIONAL_RESILIENCE_LABEL[fragile.resilienceBand].toLowerCase()})` : '—'}</div>
+          <div>Primary single point: {n0.primarySinglePoint ? n0.primarySinglePoint.reason : 'none'}</div>
+          <div>Highest-impact resilience opportunity: {n0.resilienceOpportunity ? n0.resilienceOpportunity.reason : 'none calculated'}</div>
+          {state.history.length > 0 && <div className="mt-1"><b>Network milestones</b>{state.history.slice(-4).reverse().map(h => <div key={h.id}>Round {h.turn}: {h.summary}</div>)}</div>}
+        </>}
+        {INFRA_NETWORK_KINDS.includes(tab as StrategicInfrastructureNetworkKind) && (state.networks.filter(n => n.networkKind === tab).map(row).concat(state.missingLinks.filter(m => m.networkKind === tab).map(m => <div key={`${m.fromRegionId}-${m.toRegionId}-${m.networkId}`} className="opacity-80">┄ {m.reason}</div>)))}
+        {INFRA_NETWORK_KINDS.includes(tab as StrategicInfrastructureNetworkKind) && !state.networks.some(n => n.networkKind === tab) && <div className="opacity-70">No {tab} network has formed yet.</div>}
+        {tab === 'critical' && (state.criticalPoints.length ? state.criticalPoints.filter(c => c.severity !== 'meaningful').slice(0, 8).map(c => <div key={c.id}>{c.severity === 'critical' ? '⛔' : '⚠'} {c.reason}{c.affectedIndustries.length ? ` Industries: ${c.affectedIndustries.slice(0, 3).join(', ')}.` : ''}</div>) : <div className="opacity-70">No single points of failure.</div>)}
+        {tab === 'resilience' && state.networks.map(n => <div key={n.id}>{n.name}: {NATIONAL_RESILIENCE_LABEL[n.resilienceBand]} ({n.resilience}/100) · capacity use {Math.round(n.utilization * 100)}% · redundancy {n.redundancyBand}{n.gatewayProjectIds.length ? ` · gateways ${n.gatewayProjectIds.length}` : ''}</div>)}
+        {tab === 'contributors' && state.networks.filter(n => Object.keys(n.contributors).length).map(n => <div key={n.id}>{n.name}: {Object.entries(n.contributors).sort((a, b) => b[1] - a[1]).map(([a, v]) => `${names[a] || a} $${Math.round(v).toLocaleString()}`).join(' · ')} <span className="opacity-60">(funding provenance — not ownership)</span></div>)}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{['Where is Australia relying on a single gateway?', 'Which infrastructure is redundant?', 'How can I make the energy network more resilient?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** Debrief: structural network milestones (bounded; never invented). */
+export function buildInfraNetworkDebrief(p: InfraNetworksPersisted | null): string[] {
+  return p && p.history.length ? p.history.slice(-6).map(h => `R${h.turn}: ${h.summary}`) : [];
+}
+
+/** LAB › V10.2 Strategic Infrastructure Inspector. Observes only. */
+export const InfraNetworksInspector: React.FC<{ state: StrategicInfrastructureState | null; persisted: InfraNetworksPersisted | null; inputs: InfraNetworkInputs; theme: any; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }; enabled: boolean }> = ({ state, persisted, inputs, theme, diag, enabled }) => {
+  const [open, setOpen] = useState(false); const [tab, setTab] = useState('networks'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const tabs = ['networks', 'membership', 'topology', 'capacity', 'coverage', 'continuity', 'utilization', 'redundancy', 'critical points', 'gateways', 'hubs', 'missing links', 'contributors', 'downstream industries', 'world reaction', 'history', 'recompute reason', 'performance', 'self-tests'];
+  const issues = state ? validateStrategicInfrastructureNetworks(state, inputs) : [];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV102StrategicInfrastructureNetworksSelfTests()); } catch (err) { console.error('[V10.2 self-tests]', err); } finally { setBusy(false); } };
+  const N = state?.networks || [];
+  return (
+    <section aria-labelledby="in-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="in-inspector">
+      <div className="flex items-center justify-between"><h3 id="in-lab-h" className="font-bold text-sm">🕸 V10.2 Strategic Infrastructure Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="in-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (state ? `rev ${state.revision} · ${N.length} networks · ${state.criticalPoints.length} critical points · ${state.missingLinks.length} missing links · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'waiting for National Systems') : 'Strategic Infrastructure Networks is OFF (V10.0 / V10.1 continue)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-sky-400 font-bold' : theme.border}`} data-testid={`in-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="in-inspector-body">
+            {!state && tab !== 'self-tests' && <div>No snapshot.</div>}
+            {state && tab === 'networks' && <>{N.map(n => <div key={n.id}>{n.id} “{n.name}” {n.maturity}/{n.condition}{n.archetypeId ? ` archetype ${n.archetypeId}${n.archetypeComplete ? '' : ' (partial)'}` : ''}</div>)}{issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}</>}
+            {state && tab === 'membership' && N.map(n => <div key={n.id}>{n.name}: members [{n.memberProjectIds.join(', ')}] impaired [{n.impairedProjectIds.join(', ')}] endpoints [{n.endpointRegionIds.join(', ')}]</div>)}
+            {state && tab === 'topology' && N.map(n => <div key={n.id}>{n.name}: links [{n.linkIds.join(', ')}] broken [{n.brokenLinkIds.join(', ')}]</div>)}
+            {state && tab === 'capacity' && N.map(n => <div key={n.id}>{n.name}: V10.0 capacity {n.effectiveCapacity} demand {n.demand}</div>)}
+            {state && tab === 'coverage' && N.map(n => <div key={n.id}>{n.name}: coverage {n.coverage}</div>)}
+            {state && tab === 'continuity' && N.map(n => <div key={n.id}>{n.name}: continuity {n.continuity} ({n.regionIds.length} regions)</div>)}
+            {state && tab === 'utilization' && N.map(n => <div key={n.id}>{n.name}: utilization {n.utilization}</div>)}
+            {state && tab === 'redundancy' && N.map(n => <div key={n.id}>{n.name}: redundancy {n.redundancy} ({n.redundancyBand}) · resilience {n.resilience} ({n.resilienceBand})</div>)}
+            {state && tab === 'critical points' && (state.criticalPoints.length ? state.criticalPoints.map(c => <div key={c.id} className="mb-1"><div>{c.type} {c.subjectId} — {c.severity.toUpperCase()}</div><div className="opacity-80">• {c.reason}{c.affectedIndustries.length ? ` • supports ${c.affectedIndustries.join(', ')}` : ''} • failure simulation: {c.affectedRegions.join(', ') || '—'} lose continuity</div></div>) : <div>None.</div>)}
+            {state && tab === 'gateways' && N.filter(n => n.gatewayProjectIds.length).map(n => <div key={n.id}>{n.name}: {n.gatewayProjectIds.join(', ')}</div>)}
+            {state && tab === 'hubs' && N.map(n => <div key={n.id}>{n.name}: hubs [{n.hubRegionIds.join(', ')}] bridges [{n.bridgeRegionIds.join(', ')}]</div>)}
+            {state && tab === 'missing links' && (state.missingLinks.length ? state.missingLinks.map((m, k) => <div key={k}>{m.networkKind} {m.fromRegionId}–{m.toRegionId}: [{m.candidateProjectIds.join(', ') || 'no candidate project'}] {m.reason}</div>) : <div>None.</div>)}
+            {state && tab === 'contributors' && N.map(n => <div key={n.id}>{n.name}: {JSON.stringify(n.contributors)}</div>)}
+            {state && tab === 'downstream industries' && N.map(n => <div key={n.id}>{n.name} ({n.economicRelevance}): {n.downstream.join(' | ') || '—'}</div>)}
+            {tab === 'world reaction' && <div>events emitted {diag.eventsEmitted} · kinds: {SWR_IN_KINDS.join(', ')}</div>}
+            {tab === 'history' && ((persisted?.history || []).length ? persisted!.history.map(h => <div key={h.id}>R{h.turn} {h.kind}: {h.summary}</div>) : <div>No network history yet (none is invented for older saves).</div>)}
+            {tab === 'recompute reason' && <div>{diag.lastReason} · recomputes {diag.recomputes} · persisted rev {persisted?.revision ?? '—'}</div>}
+            {tab === 'performance' && <div>last {diag.lastMs} ms · snapshot {state?.computeMs ?? '—'} ms · bounds: history {V102_LIMITS.history}, critical points {V102_LIMITS.criticalPoints}, missing links {V102_LIMITS.missingLinks}, opportunity sims {V102_LIMITS.opportunities}</div>}
+            {tab === 'self-tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="in-run-tests">{busy ? 'Running…' : 'Run V10.2 self-tests'}</button>
+              {tests && <div data-testid="in-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V10.2 Strategic Infrastructure Networks self-tests (pure, deterministic, bounded) ---------------------
+export function createInfraNetworkFixtureWorld(o: { statuses?: Record<string, string>; sectors?: Record<string, Partial<Record<LRSector, number>>>; corridors?: NationalCorridorDef[]; nsModifiers?: NationalSystemsInputs['modifiers'];
+  indModifiers?: IndustriesInputs['modifiers']; contributions?: Record<string, Record<string, number>>; turn?: number; modifiers?: InfraNetworkInputs['modifiers'] } = {}): { nsi: NationalSystemsInputs; ii: IndustriesInputs; xi: InfraNetworkInputs } {
+  const turn = o.turn ?? 5;
+  const projects = [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => ({ id: p.id, title: p.title, regionId: p.regionId, projectType: p.projectType, status: o.statuses?.[p.id] || (p.status === 'locked' ? 'locked' : 'unlocked'), contributions: o.contributions?.[p.id] }));
+  const nsi = createNationalSystemsFixtureInputs({ projects, corridors: o.corridors, modifiers: o.nsModifiers, turn });
+  const ns = computeNationalSystems(nsi).state;
+  const ii: IndustriesInputs = { turn, regions: ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].map(code => ({ code, name: REGIONS[code].name, devScore: 20, momentum: 0, stability: null, sectors: o.sectors?.[code] || {} })), projects, national: ns, modifiers: o.indModifiers };
+  const ind = computeIndustriesSupplyChains(ii).state;
+  return { nsi, ii, xi: buildInfraNetworkInputs({ turn, projects, national: ns, industries: ind, modifiers: o.modifiers }) };
+}
+
+export function runV102StrategicInfrastructureNetworksSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const W = createInfraNetworkFixtureWorld;
+  const run = (w: { xi: InfraNetworkInputs }, prev: InfraNetworksPersisted | null = null) => computeStrategicInfrastructureNetworks(w.xi, prev);
+  const strip = (s: StrategicInfrastructureState) => JSON.stringify({ ...s, computeMs: 0 });
+  const freight = (s: StrategicInfrastructureState) => s.networks.filter(n => n.networkKind === 'freight');
+  const spine = (s: StrategicInfrastructureState) => s.networks.find(n => n.archetypeId === 'eastern_freight_spine') || freight(s).sort((a, b) => b.regionIds.length - a.regionIds.length)[0];
+  const A = 'active';
+  const QLD = 'infra_inland_rail_qld', NSWR = 'infra_v102_nsw_interstate_rail', VICT = 'infra_v102_vic_freight_terminal', SAC = 'infra_v102_sa_freight_corridor', WAF = 'infra_v93_wa_freight_rail';
+  const east = (extra: Record<string, string> = {}) => ({ [QLD]: A, [NSWR]: A, [VICT]: A, ...extra });
+
+  check('in01_determinism', 'Same project state → identical networks', () => { const w = W({ statuses: east() }); return strip(run(w).state) === strip(run(JSON.parse(JSON.stringify(w))).state) || 'differs'; });
+  check('in02_single_project', 'One freight project is a local / emerging network — never a fake national backbone', () => {
+    const n = freight(run(W({ statuses: { [QLD]: A } })).state)[0];
+    return (Boolean(n) && n.memberRegionIds.length === 1 && n.maturity === 'emerging') || JSON.stringify(n && { m: n.maturity, r: n.memberRegionIds });
+  });
+  check('in03_connected', 'Compatible QLD + NSW projects form one connected freight network', () => {
+    const f = freight(run(W({ statuses: { [QLD]: A, [NSWR]: A } })).state);
+    return (f.length === 1 && ['QLD', 'NSW'].every(r => f[0].memberRegionIds.includes(r))) || JSON.stringify(f.map(n => n.regionIds));
+  });
+  check('in04_disconnected', 'Compatible projects in disconnected topology stay separate components', () => {
+    const f = freight(run(W({ statuses: { [QLD]: A, [WAF]: A } })).state);
+    return (f.length === 2 && !f.some(n => n.memberRegionIds.includes('QLD') && n.memberRegionIds.includes('WA'))) || JSON.stringify(f.map(n => n.regionIds));
+  });
+  check('in05_extension', 'Adding VIC freight infrastructure extends coverage where topology supports it', () => {
+    const a = spine(run(W({ statuses: { [QLD]: A, [NSWR]: A } })).state), b = spine(run(W({ statuses: east() })).state);
+    return (b.regionIds.includes('VIC') && b.coverage >= a.coverage && b.memberRegionIds.length > a.memberRegionIds.length) || `${a.coverage}→${b.coverage}`;
+  });
+  check('in06_wrong_type', 'An unrelated desalination plant does not join the freight network', () => {
+    const s = run(W({ statuses: east({ infra_desal_sa: A }) })).state;
+    return (!freight(s).some(n => n.memberProjectIds.includes('infra_desal_sa')) && s.networks.some(n => n.networkKind === 'water' && n.memberProjectIds.includes('infra_desal_sa'))) || 'desal leaked';
+  });
+  check('in07_damaged_member', 'Damaging the critical NSW project fragments the network (condition, resilience drop)', () => {
+    const a = spine(run(W({ statuses: east() })).state), b = spine(run(W({ statuses: east({ [NSWR]: 'damaged' }) })).state);
+    return (b.maturity === 'fragmented' && b.condition === 'disrupted' && b.resilience < a.resilience && b.impairedProjectIds.includes(NSWR)) || JSON.stringify({ m: b.maturity, c: b.condition, r: [a.resilience, b.resilience] });
+  });
+  check('in08_restored', 'Repairing restores the identical network deterministically', () => strip(run(W({ statuses: east() })).state) === strip(run(W({ statuses: east({ [NSWR]: A }) })).state) || 'not restored');
+  check('in09_critical_bridge', 'The only QLD↔VIC connection makes NSW a detected critical bridge', () => {
+    const s = run(W({ statuses: east() })).state;
+    return s.criticalPoints.some(c => c.type === 'region' && c.subjectId === 'NSW' && c.severity !== 'meaningful') || JSON.stringify(s.criticalPoints.map(c => c.id));
+  });
+  check('in10_alternative_route', 'A second route (SA corridor) improves redundancy and removes the NSW–VIC single link', () => {
+    const a = spine(run(W({ statuses: east() })).state), b = spine(run(W({ statuses: east({ [SAC]: A }) })).state);
+    return (b.redundancy > a.redundancy && a.criticalLinkIds.includes('freight:NSW-VIC') && !b.criticalLinkIds.includes('freight:NSW-VIC')) || JSON.stringify({ a: [a.redundancy, a.criticalLinkIds], b: [b.redundancy, b.criticalLinkIds] });
+  });
+  const tradeSectors = { NT: { trade: 70 }, NSW: { trade: 70 } };
+  check('in11_gateway', 'A single active trade gateway for several regions is detected as gateway dependence', () => {
+    const s = run(W({ statuses: { infra_v93_qld_port_automated: A }, sectors: tradeSectors })).state;
+    return s.criticalPoints.some(c => c.id.includes(':gateway:infra_v93_qld_port_automated')) || JSON.stringify(s.networks.filter(n => n.networkKind === 'trade').map(n => n.regionIds));
+  });
+  check('in12_second_gateway', 'A second gateway removes the single-gateway dependence and improves resilience', () => {
+    const a = run(W({ statuses: { infra_v93_qld_port_automated: A }, sectors: tradeSectors })).state, b = run(W({ statuses: { infra_v93_qld_port_automated: A, infra_v93_nsw_port: A }, sectors: tradeSectors })).state;
+    const ta = a.networks.find(n => n.networkKind === 'trade')!, tb = b.networks.find(n => n.networkKind === 'trade')!;
+    return (!b.criticalPoints.some(c => c.id.includes(':gateway:')) && tb.gatewayProjectIds.length === 2 && tb.resilience >= ta.resilience) || JSON.stringify({ a: ta.resilience, b: tb.resilience, g: tb.gatewayProjectIds });
+  });
+  const chainSectors = { QLD: { mining: 85 }, VIC: { manufacturing: 80 } };
+  const chainMods = { NSW: { mining: -40 }, SA: { mining: -40 }, NT: { mining: -40 }, WA: { mining: -40 } } as IndustriesInputs['modifiers'];
+  check('in13_industry_support', 'A network carrying a real V10.1 supply path lists its downstream industries', () => {
+    const n = spine(run(W({ statuses: east(), sectors: chainSectors, indModifiers: chainMods })).state);
+    return (n.downstream.some(d => /VIC Manufacturing/.test(d)) && n.economicRelevance !== 'low') || JSON.stringify(n.downstream);
+  });
+  check('in14_no_industry', 'Without industry use the network still exists structurally but with low economic relevance', () => {
+    const n = spine(run(W({ statuses: east() })).state);
+    return (Boolean(n) && n.economicRelevance === 'low' && !n.downstream.some(d => /←/.test(d))) || JSON.stringify({ rel: n?.economicRelevance, d: n?.downstream });
+  });
+  check('in15_utilization', 'Demand approaching V10.0 capacity makes the network strained/bottlenecked', () => {
+    // Freight demand comes from V10.0's own demand model; stress it with capacity cuts on every region.
+    const n = spine(run(W({ statuses: east(), nsModifiers: Object.fromEntries(['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].map(c => [c, { freight: -70 }])) })).state);
+    return (n.utilization >= 0.92 && (n.condition === 'strained' || n.condition === 'bottlenecked' || n.condition === 'fragile')) || JSON.stringify({ u: n.utilization, c: n.condition });
+  });
+  check('in16_surplus', 'Large spare capacity reads as healthy capacity — no money anywhere', () => {
+    const s = run(W({ statuses: east({ [SAC]: A }), nsModifiers: { QLD: { freight: 80 }, NSW: { freight: 80 }, VIC: { freight: 80 }, SA: { freight: 80 } } })).state; const n = spine(s);
+    return (n.utilization < 0.7 && n.condition === 'healthy' && !/"(money|cash|income)"/.test(JSON.stringify(s))) || JSON.stringify({ u: n.utilization, c: n.condition });
+  });
+  check('in17_double_bonus', 'Joining a network never re-grants canonical bonuses (structural effects only; projects untouched)', () => {
+    const w = W({ statuses: east() }); const before = JSON.stringify(w.xi.projects); const s = run(w).state;
+    const allowed = ['capacity_support', 'bottleneck_relief', 'resilience_support', 'dependency_reduction', 'industry_enablement', 'trade_access', 'mobility_access'];
+    return (JSON.stringify(w.xi.projects) === before && s.effects.every(e => allowed.includes(e.kind)) && !/income_boost|trade_discount|standing_multiplier|providedBonuses/.test(JSON.stringify(s))) || 'bonus leaked';
+  });
+  check('in18_world_reaction', 'EMERGING → INTEGRATED emits exactly one integration event (public root)', () => {
+    const p = run(W({ statuses: { [QLD]: A, [NSWR]: A } })).persisted;
+    const r = run(W({ statuses: east({ [SAC]: A }), turn: 6 }), p);
+    const ev = r.derived.filter(d => d.kind === 'infrastructure_network_integrated');
+    const e = ev[0] ? infraToWorldEvent(ev[0], ['player']) : null;
+    return (ev.length === 1 && e!.visibility === 'public' && e!.reactionDepth === 0) || r.derived.map(d => `${d.kind}:${d.networkId}`).join(',');
+  });
+  check('in19_event_spam', 'Minor capacity changes emit no repeated structural events', () => {
+    let p = run(W({ statuses: east() })).persisted; let n = 0;
+    [1, 2, 3, 2].forEach((d, k) => { const r = run(W({ statuses: east(), nsModifiers: { NSW: { freight: d } }, turn: 6 + k }), p); p = r.persisted; n += r.derived.length; });
+    return n === 0 || `${n} events`;
+  });
+  check('in20_crisis_damage', 'Canonical damage (status) is reflected as fragmentation; V10.2 runs no crisis and sets no status', () => {
+    const p = run(W({ statuses: east() })).persisted; const w = W({ statuses: east({ [NSWR]: 'damaged' }), turn: 6 }); const before = JSON.stringify(w.xi.projects);
+    const r = run(w, p);
+    return (r.derived.some(d => d.kind === 'infrastructure_network_fragmented') && JSON.stringify(w.xi.projects) === before && !('crises' in w.xi)) || r.derived.map(d => d.kind).join(',');
+  });
+  check('in21_contributions', 'Two actors funding one network aggregate canonical provenance correctly', () => {
+    const n = spine(run(W({ statuses: east(), contributions: { [QLD]: { player: 140000 }, [NSWR]: { ai: 55000 }, [VICT]: { player: 10000, ai: 5000 } } })).state);
+    return (n.contributors.player === 150000 && n.contributors.ai === 60000 && !('owner' in (n as any))) || JSON.stringify(n.contributors);
+  });
+  check('in22_public_good', 'A player-funded corridor still serves the (rival-important) VIC industry chain', () => {
+    const n = spine(run(W({ statuses: east(), sectors: chainSectors, indModifiers: chainMods, contributions: { [QLD]: { player: 100000 }, [NSWR]: { player: 100000 } } })).state);
+    return (n.regionIds.includes('VIC') && n.downstream.some(d => /^VIC/.test(d)) && Object.keys(n.contributors).every(k => k === 'player')) || JSON.stringify(n.downstream);
+  });
+  check('in23_whatif_build', 'What-If missing-link project projects integration; live inputs unchanged', () => {
+    const w = W({ statuses: east() }); const b = JSON.stringify(w.xi);
+    const imp = projectInfraNetworkImpact(w.nsi, null, w.ii, null, w.xi, null, { projectId: SAC, status: 'active' });
+    const sp = imp.networks.find(n => n.name === 'Eastern Freight Spine');
+    return (JSON.stringify(w.xi) === b && Boolean(sp) && /Integrated/.test(sp!.to) && imp.critical.removed.length > 0) || JSON.stringify(imp.networks);
+  });
+  check('in24_whatif_damage', 'What-If failure of the critical node projects fragmentation; live inputs unchanged', () => {
+    const w = W({ statuses: east() }); const b = JSON.stringify(w.xi);
+    const imp = projectInfraNetworkImpact(w.nsi, null, w.ii, null, w.xi, null, { projectId: NSWR, status: 'damaged' });
+    return (JSON.stringify(w.xi) === b && imp.networks.some(n => /Fragmented/.test(n.to))) || JSON.stringify(imp.networks);
+  });
+  check('in25_old_save', 'Pre-V10.2 save: networks derived, no fake formation history', () => {
+    const none = sanitizeInfraNetworksPersisted(undefined); const r = run(W({ statuses: east() }), none);
+    return (none === null && r.derived.length === 0 && r.persisted.history.length === 0 && sanitizeInfraNetworksPersisted({ history: [{ junk: 1 }], networks: { bad: 1 } })!.history.length === 0) || 'fake history';
+  });
+  check('in26_save_load', 'Persisted memory round-trips; derived networks identical after load', () => {
+    const w = W({ statuses: east() }); const a = run(w); const loaded = sanitizeInfraNetworksPersisted(JSON.parse(JSON.stringify(a.persisted)))!;
+    return (JSON.stringify(loaded) === JSON.stringify(a.persisted) && strip(run(w, loaded).state) === strip(run(w, a.persisted).state)) || 'round trip differs';
+  });
+  check('in27_replay', 'Replaying infrastructure completions reproduces identical structural events', () => {
+    const seq = [{}, { [QLD]: A }, { [QLD]: A, [NSWR]: A }, east(), east({ [NSWR]: 'damaged' }), east()];
+    const play = () => { let p: InfraNetworksPersisted | null = null; const log: string[] = []; seq.forEach((st, k) => { const r = computeStrategicInfrastructureNetworks(W({ statuses: st as Record<string, string>, turn: 1 + k * 3 }).xi, p); p = r.persisted; log.push(...r.derived.map(d => d.id)); }); return JSON.stringify({ log, p }); };
+    return play() === play() || 'replay diverged';
+  });
+  check('in28_ai', 'AI infrastructure candidates get bounded network context (missing-link closer scores higher)', () => {
+    const s = run(W({ statuses: { [QLD]: A, [NSWR]: A } })).state;
+    const closer = infraProjectNetworkOutlook(s, VICT), unrelated = infraProjectNetworkOutlook(s, 'infra_v93_tas_tourism_precinct');
+    return (closer.factor > 0 && closer.factor <= 0.1 && unrelated.factor === 0) || `${closer.factor} ${unrelated.factor} ${JSON.stringify(s.missingLinks)}`;
+  });
+  check('in29_human_vs_ai', 'Network context only rescales existing candidates; compute never mutates inputs; no AP/turn fields', () => {
+    const w = W({ statuses: { [QLD]: A, [NSWR]: A } });
+    const deep = (o: any) => { Object.freeze(o); Object.values(o).forEach(v => { if (v && typeof v === 'object' && !Object.isFrozen(v)) deep(v); }); return o; };
+    const s = computeStrategicInfrastructureNetworks(deep(JSON.parse(JSON.stringify(w.xi)))).state;
+    const cands = [{ type: 'fund_infrastructure', data: { projectId: VICT }, score: 10 }, { type: 'end_turn', data: {}, score: 1 }];
+    cands.forEach(c => { if (c.type === 'fund_infrastructure') c.score *= 1 + infraProjectNetworkOutlook(s, String(c.data.projectId)).factor; });
+    return (cands.length === 2 && cands[0].score > 10 && cands[1].score === 1 && !/"(actionsUsed|currentTurn|apRemaining)"/.test(JSON.stringify(s))) || JSON.stringify(cands);
+  });
+  check('in30_team_mode', 'Several teammates funding one network: provenance per actor, no ownership invented', () => {
+    const n = spine(run(W({ statuses: east(), contributions: { [QLD]: { player: 50000, ally_ai: 50000 }, [VICT]: { ally_ai: 20000 } } })).state);
+    return (n.contributors.player === 50000 && n.contributors.ally_ai === 70000 && !JSON.stringify(n).includes('"owner')) || JSON.stringify(n.contributors);
+  });
+  check('in31_feature_off', 'OFF: default ON + match-scoped; every consumer inert; V10.0/V10.1 independent of V10.2', () => {
+    const w = W({ statuses: east() }); const a = computeNationalSystems(w.nsi).state, b = computeNationalSystems(w.nsi).state;
+    return ((DEFAULT_GAME_SETTINGS as any).infraNetworksEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('infraNetworksEnabled') && infraProjectNetworkOutlook(null, VICT).factor === 0
+      && infraPlayLine(null, ['NSW']) === null && infraNetworkRegionStates(null, 'NSW').length === 0 && detectInfraNetworkQuery('why is nsw critical', { national: { infra: null } } as any) === null
+      && JSON.stringify({ ...a, computeMs: 0 }) === JSON.stringify({ ...b, computeMs: 0 })) || 'leak';
+  });
+  check('in32_performance', 'Repeated derivations stay cheap (30 recomputes incl. bounded opportunity sims)', () => {
+    const w = W({ statuses: east({ [SAC]: A, [WAF]: A, infra_v93_sa_renewable_grid: A, infra_wind_tas: A }) });
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now(); let p: InfraNetworksPersisted | null = null;
+    for (let k = 0; k < 30; k++) { const r = computeStrategicInfrastructureNetworks({ ...w.xi, turn: k }, p); p = r.persisted; }
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return ms < 2500 || `${Math.round(ms)}ms`;
+  });
+  check('in33_max_catalog', 'Every project active: bounded, valid, no combinatorial explosion', () => {
+    const all = Object.fromEntries([...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => [p.id, A]));
+    const w = W({ statuses: all }); const t0 = Date.now(); const s = run(w).state; const ms = Date.now() - t0;
+    return (validateStrategicInfrastructureNetworks(s, w.xi).length === 0 && s.criticalPoints.length <= V102_LIMITS.criticalPoints && s.missingLinks.length <= V102_LIMITS.missingLinks && ms < 1500) || `${validateStrategicInfrastructureNetworks(s, w.xi).join(';')} ${ms}ms`;
+  });
+  check('in34_naming', 'Same topology → same deterministic name and id (archetype recognised from members)', () => {
+    const a = spine(run(W({ statuses: east() })).state), b = spine(run(W({ statuses: east() })).state);
+    const c = freight(run(W({ statuses: { [WAF]: A } })).state)[0];
+    return (a.name === 'Eastern Freight Spine' && a.id === b.id && a.id === 'inet:freight:eastern_freight_spine' && c.name === c.name && /Western Australia Freight Hub/.test(c.name)) || `${a.name}|${a.id}|${c?.name}`;
+  });
+  check('in35_map_mode', 'Map overlay helpers read only: role text + icon (not colour alone); no canonical mutation', () => {
+    const w = W({ statuses: east() }); const s = run(w).state; const before = JSON.stringify(s) + JSON.stringify(w.xi);
+    const b = INFRA_NETWORK_KINDS.map(k => infraMapBadge(s, 'NSW', k)).filter(Boolean);
+    return (b.length > 0 && b.some(x => /Bridge|Member|Hub|Gateway|Served/.test(x!.text)) && JSON.stringify(s) + JSON.stringify(w.xi) === before) || JSON.stringify(b);
   });
   return results;
 }
@@ -146031,6 +147247,9 @@ function dispatchGameSettingsChange(
 	      // V10.0: bounded national-network awareness — regions whose networks are healthy/improving score slightly
 	      // higher, bottlenecked/dependent ones slightly lower (±10% max). Reads the derived snapshot; adds no actions.
 	      const v10Ns = nsStateRef.current;
+	      // V10.2: infrastructure candidates that close a real missing link / relieve a critical point score a little higher.
+	      const v102In = inStateRef.current;
+	      if (v102In) decisions.forEach(decision => { if (decision.type !== 'fund_infrastructure') return; const o = infraProjectNetworkOutlook(v102In, String(decision.data?.projectId || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
 	      if (v10Ns) {
 	        decisions.forEach(decision => {
 	          if (decision.type !== 'region_deposit' && decision.type !== 'invest' && decision.type !== 'travel') return;
@@ -170104,6 +171323,8 @@ function dispatchGameSettingsChange(
   const [lrFocusRegion, setLrFocusRegion] = useState<string | null>(null);
   const [nsMapNetwork, setNsMapNetwork] = useState<NationalMapNetwork>(null);
   const [scMapLayer, setScMapLayer] = useState<IndustryMapLayer | null>(null);
+  const [inMapKind, setInMapKind] = useState<StrategicInfrastructureNetworkKind | null>(null);
+  const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -170409,6 +171630,7 @@ function dispatchGameSettingsChange(
   const scStateRef = useRef<IndustriesSupplyChainsState | null>(scState);
   scStateRef.current = scState;
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, industries: scState ? { state: scState, inputs: scInputs, persisted: scPersisted } : null };
+  const attachInfraView = () => { if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, infra: inStateRef.current ? { state: inStateRef.current, inputs: inInputsRef.current!, persisted: inPersistedRef.current } : null }; };
   const scDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
     if (!scEnabled || !nsState) return;
@@ -170439,6 +171661,57 @@ function dispatchGameSettingsChange(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scHash, scEnabled]);
 
+  // ---- V10.2 Strategic Infrastructure Networks: derived from canonical projects + V10.0 topology + V10.1 use ----
+  // Recomputed only when the compact hash changes (project status/type, V10.0 / V10.1 revisions) — never per
+  // render. Structural transitions become World Reaction ROOT events; receiving systems decide consequences.
+  const inEnabled = Boolean(nsEnabled && gameSettings.infraNetworksEnabled !== false);
+  const inStoredRaw = (gameState as any).infrastructureNetworks;
+  const inPersisted = useMemo(() => sanitizeInfraNetworksPersisted(inStoredRaw), [inStoredRaw]);
+  const inPersistedRef = useRef<InfraNetworksPersisted | null>(inPersisted);
+  inPersistedRef.current = inPersisted;
+  const inScenarioModifiers = useMemo(() => {
+    const sc: any = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
+    return sc && sc.infrastructureNetworks && typeof sc.infrastructureNetworks === 'object' ? sc.infrastructureNetworks as InfraNetworkInputs['modifiers'] : undefined;
+  }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
+  const inInputs = useMemo<InfraNetworkInputs>(() => buildInfraNetworkInputs({ turn: lrInputs.turn, projects: gameState.infrastructureProjects as any, national: nsState, industries: scState, modifiers: inScenarioModifiers }),
+    [lrInputs.turn, gameState.infrastructureProjects, nsState, scState, inScenarioModifiers]);
+  const inHash = useMemo(() => infraNetworkInputHash(inInputs), [inInputs]);
+  const inState = useMemo<StrategicInfrastructureState | null>(() => (inEnabled && nsState ? computeStrategicInfrastructureNetworks(inInputs, inPersistedRef.current, { emit: false }).state : null),
+    [inEnabled, inHash, inPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inStateRef = useRef<StrategicInfrastructureState | null>(inState);
+  inStateRef.current = inState;
+  const inInputsRef = useRef<InfraNetworkInputs | null>(inInputs); inInputsRef.current = inInputs;
+  attachInfraView();
+  const inDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!inEnabled || !nsState) return;
+    const prev = inPersistedRef.current;
+    if (prev && prev.inputHash === inHash && prev.initializedTurn !== null) return;
+    const res = computeStrategicInfrastructureNetworks(inInputs, prev && prev.initializedTurn !== null ? prev : null);
+    const d = inDiagRef.current;
+    d.recomputes += 1; d.lastMs = res.state.computeMs; d.lastReason = !prev || prev.initializedTurn === null ? 'initialised from current projects (no history invented)' : 'project status / V10.0 topology / V10.1 use changed';
+    if (res.derived.length) {
+      d.eventsEmitted += res.derived.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.derived.map(x => infraToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.derived.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: `infra_${x.kind}`, summary: x.text } as any));
+    }
+    inPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { infrastructureNetworks: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inHash, inEnabled]);
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -170456,7 +171729,7 @@ function dispatchGameSettingsChange(
     const regions: V9CohesionInputs['regions'] = {};
     (lrInputs.regions || []).forEach(r => {
       const reg = lrs?.regions[r.code];
-      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
+      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || (() => { const cp = inState?.criticalPoints.find(c => c.type === 'region' && c.subjectId === r.code && c.severity === 'critical'); return cp ? `Critical bridge in ${inState!.networks.find(n => n.id === cp.networkId)?.name || 'a network'}` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
     });
     const events: V9CohesionEvent[] = [];
     if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
@@ -170510,7 +171783,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [nsState, scState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170559,6 +171832,7 @@ function dispatchGameSettingsChange(
       strategyRegion: goals.find(g => g?.regionId && g.status !== 'completed')?.regionId || null,
       national: nsStateRef.current,
       industries: scStateRef.current,
+      infraNetworks: inStateRef.current,
       campaignVars: gs.campaignState?.campaignVariables || {},
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
       projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
@@ -170751,9 +172025,10 @@ function dispatchGameSettingsChange(
       strategyPhase: v9Cohesion.focus.source === 'strategy' ? (v9Cohesion.focus.breadcrumb.find((b: any) => b.current)?.label || null) : null,
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
+      infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -170849,12 +172124,21 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      infraNetwork: (() => {
+        const n = inState?.networks.filter(x => V102_MATURITY_RANK[x.maturity] >= 2).sort((a, b) => b.memberRegionIds.length - a.memberRegionIds.length || a.id.localeCompare(b.id))[0];
+        return n ? `${n.memberRegionIds.map(r => REGIONS[r]?.name || r).join(' and ')} infrastructure now works as part of the same ${INFRA_NETWORK_LABEL[n.networkKind].toLowerCase()} system: ${n.name}.` : null;
+      })(),
+      infraCriticalPoint: (() => {
+        const cp = inState?.criticalPoints.find(c => c.type === 'region' && c.severity === 'critical');
+        const n = cp ? inState!.networks.find(x => x.id === cp.networkId) : null;
+        return cp && n ? `${n.name} currently has no alternative route around ${REGIONS[cp.subjectId]?.name || cp.subjectId}. If it is disrupted, ${cp.affectedRegions.join(' and ')} may lose much of their connection.` : null;
+      })(),
       supplyDependency: (() => {
         const d = scState?.dependencies.find(x => x.shareBand === 'dominant' || x.importance === 'critical');
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -175233,6 +176517,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v101-setting-industries">
                     <input type="checkbox" checked={gameSettings.industriesEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏭 Industries & Supply Chains', prev => ({ ...prev, industriesEnabled: e.target.checked }))} />
                     Industries &amp; Supply Chains (V10.1): which industries depend on which regions — shortages, surpluses and supply dependencies (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v102-setting-infra-networks">
+                    <input type="checkbox" checked={gameSettings.infraNetworksEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🕸 Strategic Infrastructure Networks', prev => ({ ...prev, infraNetworksEnabled: e.target.checked }))} />
+                    Strategic Infrastructure Networks (V10.2): projects combine into corridors and systems — redundancy, critical points and gateways (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -186780,6 +188068,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {inState && <InfraPlayLine state={inState} focus={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} />}
           {scState && <IndustryPlayStrip state={scState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />}
           {nsState && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
 
@@ -186947,6 +188236,11 @@ function dispatchGameSettingsChange(
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
               </OptionalSurfaceBoundary>
             )}
+            {inState && (
+              <OptionalSurfaceBoundary surface="Infrastructure Networks">
+                <InfraNetworksIntelPanel state={inState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} names={swrInputs.ownerNames} />
+              </OptionalSurfaceBoundary>
+            )}
             {swrEnabled && (
               <WorldChangesPanel state={swrState} viewerId={swrViewerId} viewerTeamId={swrViewerTeamId} turn={dnRound} names={swrInputs.ownerNames} onWhy={showWorldExplanation} onAsk={q => void submitIntelligenceQuery(q)} />
             )}
@@ -187109,6 +188403,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.2 Strategic Infrastructure Inspector">
+          <InfraNetworksInspector state={inState} persisted={inPersisted} inputs={inInputs} theme={themeStyles} diag={inDiagRef.current} enabled={inEnabled} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Release Readiness Center">
           <ReleaseReadinessCenter
@@ -188427,9 +189724,10 @@ function dispatchGameSettingsChange(
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
-                    <select aria-label="Map layer" data-testid="lr-map-mode" value={scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                       {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
+                      {inState && <optgroup label="Infrastructure networks">{INFRA_NETWORK_KINDS.map(k => <option key={k} value={`infra:${k}`}>🕸 {INFRA_NETWORK_ICON[k]} {INFRA_NETWORK_LABEL[k]} network</option>)}</optgroup>}
                       {scState && <optgroup label="Industries & supply chains"><option value="ind">🏭 Industry</option>{INDUSTRY_MAP_SUPPLIES.map(x => <option key={x} value={`sc:${x}`}>⛓ Supply chain: {SUPPLY_LABEL[x]}</option>)}</optgroup>}
                     </select>
                   </label>
@@ -188444,6 +189742,7 @@ function dispatchGameSettingsChange(
               
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
+	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
 	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
@@ -188517,7 +189816,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -188625,6 +189924,7 @@ function dispatchGameSettingsChange(
                           whatIf={ch => projectIndustryImpact(nsInputs, nsPersistedRef.current, scInputs, scPersistedRef.current, { ...ch, regionId: focus })} />
                       </OptionalSurfaceBoundary>
                     )}
+                    {inState && <OptionalSurfaceBoundary surface="Region infrastructure role"><RegionInfraRolePanel state={inState} regionId={focus} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} /></OptionalSurfaceBoundary>}
                   </div>
                 );
               })()}
@@ -188701,6 +190001,7 @@ function dispatchGameSettingsChange(
                         whatIf={ch => projectIndustryImpact(nsInputs, nsPersistedRef.current, scInputs, scPersistedRef.current, { ...ch, regionId: selectedPreviewRegionCode })} />
                     </OptionalSurfaceBoundary>
                   )}
+                  {inState && <OptionalSurfaceBoundary surface="Region infrastructure role"><RegionInfraRolePanel state={inState} regionId={selectedPreviewRegionCode} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} /></OptionalSurfaceBoundary>}
                 </div>
               )}
 
@@ -196838,7 +198139,9 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   // Infrastructure Projects Modal Drawer Component
   const renderInfrastructureProjectsModal = () => {
     if (!uiState.showInfrastructureProjectsModal) return null;
-    const projects = gameState.infrastructureProjects || [];
+    // Projects are stored keyed by id (Record); older states may hold an array. Either way, list them.
+    const projectStore: any = gameState.infrastructureProjects || [];
+    const projects: any[] = Array.isArray(projectStore) ? projectStore : Object.values(projectStore);
     // The canonical computed objective (same source as the Intent panel) — no duplicate objective state.
     const currentObjective = intentLayerComputed.objective;
 
@@ -196902,6 +198205,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                         {isLocked ? <div className="text-violet-200 font-semibold">🔒 {proj.lockedReason || 'Not yet open for investment'}</div> : <div className="text-violet-200">⚖️ Competes with {rivals.map((p: any) => p.name || p.title || p.id).join(', ')} — funding this closes the other.</div>}
                         {V93_INFRA_META_BY_ID[proj.id] && <div className="opacity-80">Development path: {V93_INFRA_META_BY_ID[proj.id].path}</div>}
                       </div>
+                    )}
+                    {inStateRef.current && (
+                      <OptionalSurfaceBoundary surface="Project network role">
+                        <ProjectNetworkRoleCard state={inStateRef.current} project={{ id: proj.id, projectType: proj.projectType, regionId: proj.regionId || proj.stateCode || null, status: String(proj.status) }}
+                          preview={() => { try { const imp = projectInfraNetworkImpact(nsInputs, nsPersistedRef.current, scInputs, scPersistedRef.current, inInputs, inPersistedRef.current, { projectId: proj.id, status: 'active' }); return infraBuildPreview(imp, { projectType: proj.projectType, regionId: proj.regionId || proj.stateCode || null }); } catch { return null; } }} />
+                      </OptionalSurfaceBoundary>
                     )}
 
                     {!isCompleted && !isLocked && (
@@ -197413,6 +198722,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {buildInfraNetworkDebrief(inPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="in-debrief">
+	              <span className="font-bold text-sky-300">Infrastructure network milestones: </span>
+	              {buildInfraNetworkDebrief(inPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildIndustryDebrief(scPersistedRef.current).length > 0 && (
