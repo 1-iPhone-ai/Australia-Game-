@@ -2195,6 +2195,11 @@ export function drawGameplayRandomString(domain?: RngScopeDomain, length: number
   return globalRngRegistry.drawString(domain, length);
 }
 
+export function drawGameplayRandomChoice<T>(domain: RngScopeDomain | undefined, options: T[]): T {
+  const index = Math.min(options.length - 1, Math.floor(drawGameplayRandom(domain) * options.length));
+  return options[index];
+}
+
 export function withRngScope<T>(domain: RngScopeDomain, callback: () => T): T {
   return globalRngRegistry.withScope(domain, callback);
 }
@@ -5835,7 +5840,7 @@ const sanitizeSequenceStep = (value: unknown): SequenceStep | null => {
     targetId: typeof source.targetId === 'string' ? source.targetId : undefined,
     targetTeammateId: typeof source.targetTeammateId === 'string' ? source.targetTeammateId : undefined,
     wagerRule: (source.wagerRule && typeof source.wagerRule === 'object') ? source.wagerRule as SequenceWagerRule : undefined,
-    spendingRule: (source.spendingRule && typeof source.spendingRule === 'object') ? { allowRecoverySpending: false, ...source.spendingRule as SequenceSpendingRule } : undefined,
+    spendingRule: (source.spendingRule && typeof source.spendingRule === 'object') ? { ...source.spendingRule as SequenceSpendingRule, allowRecoverySpending: (source.spendingRule as SequenceSpendingRule).allowRecoverySpending ?? false } : undefined,
     conditionGroup: source.conditionGroup ? sanitizeRequirementGroup(source.conditionGroup) : null,
     fallbackBehavior: SEQUENCE_STEP_FALLBACK_ACTIONS.includes(source.fallbackBehavior as SequenceStepFallbackAction) ? source.fallbackBehavior as SequenceStepFallbackAction : 'use_fallback_action',
     fallbackJumpToStepId: typeof source.fallbackJumpToStepId === 'string' ? source.fallbackJumpToStepId : undefined,
@@ -6150,7 +6155,7 @@ const sanitizeHumanAutomation = (value: unknown): HumanAutomation | null => {
       itemId: typeof paramsSource.itemId === 'string' ? paramsSource.itemId : undefined,
       amount: typeof paramsSource.amount === 'number' && isFinite(paramsSource.amount) ? Math.max(0, paramsSource.amount) : undefined,
       wagerRule: (paramsSource.wagerRule && typeof paramsSource.wagerRule === 'object') ? paramsSource.wagerRule as SequenceWagerRule : undefined,
-      spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { allowRecoverySpending: false, ...paramsSource.spendingRule as SequenceSpendingRule } : undefined
+      spendingRule: (paramsSource.spendingRule && typeof paramsSource.spendingRule === 'object') ? { ...paramsSource.spendingRule as SequenceSpendingRule, allowRecoverySpending: (paramsSource.spendingRule as SequenceSpendingRule).allowRecoverySpending ?? false } : undefined
     },
     priority: typeof source.priority === 'number' && isFinite(source.priority) ? source.priority : 0,
     authorityMode: HUMAN_AUTOMATION_AUTHORITY_MODES.includes(source.authorityMode as HumanAutomationAuthorityMode) ? source.authorityMode as HumanAutomationAuthorityMode : 'confirm_before_running',
@@ -7150,6 +7155,8 @@ type GameSettingsState = {
   aiCalibrationLearningRate?: number;
   enableCounterfactualEvaluation?: boolean;
   enablePersistentOpponentModels?: boolean;
+  opponentModelDecayRate?: number;
+  opponentModelWeight?: number;
   planSwitchingCost?: number;
   teamGovernanceMode?: TeamGovernanceMode;
   aiTacticalIntelligence?: AiTacticalIntelligenceParams;
@@ -9263,6 +9270,8 @@ const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   aiCalibrationLearningRate: 0.05,
   enableCounterfactualEvaluation: true,
   enablePersistentOpponentModels: false,
+  opponentModelDecayRate: 0.05,
+  opponentModelWeight: 15,
   planSwitchingCost: 15.0,
   teamGovernanceMode: 'LEADER_DECIDES',
   aiTacticalIntelligence: {
@@ -9405,6 +9414,7 @@ interface SettingsHubSectionMeta {
   tab: SettingsHubTabId;
   title: string;
   tags: SettingsHubTag[];
+  chips?: SettingsHubChip[];
   fieldKeys: (keyof GameSettingsState)[];
   keywords?: string; // free-text search terms not expressible via the closed SettingsHubTag union
 }
@@ -12048,7 +12058,7 @@ const applyAiStrategyLabOverlayV63 = <T extends AIAction & { score: number }>(
 
   const teamBehind = Boolean(
     context.teamContext?.teamBehind ||
-    context.teamContext?.opponentLead > 0
+    (context.teamContext?.opponentLead ?? 0) > 0
   );
 
   const teamAhead = Boolean(context.teamContext?.teamAhead);
@@ -14418,8 +14428,8 @@ export function executeUniversalActionPipeline<T = unknown>(
     // Stage 6: EXECUTION_STARTED
     attempt.currentStage = 'EXECUTION_STARTED';
     attempt.timestamps.updated = Date.now();
-    attempt.status = 'executing';
-    recordStage('EXECUTION_STARTED', 'executing');
+    attempt.status = 'execution_started';
+    recordStage('EXECUTION_STARTED', 'execution_started');
 
     // Stage 7: STATE_MUTATED
     const rawResult = executeFn(attempt);
@@ -16399,8 +16409,8 @@ const initialGameState = {
   grandTourState: createDefaultGrandTourState(),
   decisionState: createDefaultDecisionState(),
   gameActivityLedger: createDefaultGameActivityLedgerState(),
-  persistentOpponentModels: {} as Record<string, PersistentOpponentModel>,
-  aiCalibrationState: { weightMultipliers: { profit: 1.0, risk: 1.0, momentum: 1.0 } } as AiCalibrationState
+  persistentOpponentModels: {} as Record<string, OpponentModel>,
+  aiCalibrationState: { weightMultipliers: { profit: 1.0, risk: 1.0, momentum: 1.0 } }
 };
 
 type GameStateSnapshot = typeof initialGameState;
@@ -17562,7 +17572,7 @@ export function reexecuteReplayMatch(
   const simTeams: Record<string, { money: number; netWorth: number; treasuryBalance: number; vaultProtectedCash: number; controlledRegions: string[] }> = {};
   if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
     Object.keys(config.teamsById).forEach(tId => {
-      const t = config.teamsById[tId];
+      const t = config.teamsById[tId] as any;
       simTeams[tId] = {
         money: t?.money ?? 10000,
         netWorth: t?.netWorth ?? 10000,
@@ -17579,7 +17589,7 @@ export function reexecuteReplayMatch(
   const simActors: Record<string, { money: number; netWorth: number; region: string; actionsUsedThisTurn: number; riskScore: number; creditScore: number; inventory: Record<string, number> }> = {};
   if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
     Object.keys(config.actorsById).forEach(aId => {
-      const a = config.actorsById[aId];
+      const a = config.actorsById[aId] as any;
       simActors[aId] = {
         money: a?.money ?? 10000,
         netWorth: a?.netWorth ?? 10000,
@@ -17739,10 +17749,10 @@ export function reexecuteReplayMatch(
           simActors[actorId].money = Number(payload.expectedMoney);
         }
         
-        // Resynchronize ALL PRNG streams present in ev.rngAudit.streamAuditSnapshots
-        if (ev.rngAudit?.streamAuditSnapshots) {
-          for (const streamName of Object.keys(ev.rngAudit.streamAuditSnapshots)) {
-            const snap = ev.rngAudit.streamAuditSnapshots[streamName];
+        // Resynchronize ALL PRNG streams present in ev.rngAudit.streams
+        if (ev.rngAudit?.streams) {
+          for (const streamName of Object.keys(ev.rngAudit.streams)) {
+            const snap = ev.rngAudit.streams[streamName];
             if (snap && typeof snap.drawCount === 'number') {
               const expectedDraws = snap.drawCount;
               const stream = simRng.streams[streamName as RngScopeDomain];
@@ -17881,7 +17891,7 @@ export function spawnMatchBranchFromCheckpoint(
     const simRng = new GameplayRngRegistry(config?.worldSeed || 1337);
     simRng.initStreams(config?.worldSeed || 1337);
 
-    const simTeams: Record<string, TeamState> = {};
+    const simTeams: Record<string, any> = {};
     if (config?.teamsById && Object.keys(config.teamsById).length > 0) {
       Object.keys(config.teamsById).forEach(tId => {
         const t = config.teamsById[tId];
@@ -17892,7 +17902,7 @@ export function spawnMatchBranchFromCheckpoint(
       simTeams['team_ai'] = { id: 'team_ai', name: 'AI Team', money: 10000, netWorth: 10000, treasuryBalance: 0, vaultProtectedCash: 0, controlledRegions: ['VIC'] } as any;
     }
 
-    const simActors: Record<string, ActorState> = {};
+    const simActors: Record<string, any> = {};
     if (config?.actorsById && Object.keys(config.actorsById).length > 0) {
       Object.keys(config.actorsById).forEach(aId => {
         const a = config.actorsById[aId];
@@ -17903,7 +17913,7 @@ export function spawnMatchBranchFromCheckpoint(
       simActors['ai'] = { id: 'ai', name: 'AI Opponent', money: 10000, netWorth: 10000, region: 'VIC', actionsUsedThisTurn: 0, riskScore: 0, creditScore: 700, inventory: {} } as any;
     }
 
-    const simTerritories: Record<string, RegionState> = {};
+    const simTerritories: Record<string, any> = {};
     ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'].forEach(rId => {
       simTerritories[rId] = {
         id: rId,
@@ -19044,7 +19054,7 @@ function executeSingleHeadlessMatch(
   const effectiveSettings: GameSettingsState = {
     ...config,
     showDayTransition: false,
-    uiAssistPackEnabled: false,
+    uxAssistPackEnabled: false,
     aiReplayRecordingEnabled: false
   };
 
@@ -19097,11 +19107,12 @@ function executeSingleHeadlessMatch(
 
   const turnOrder = isTeam ? ['player', 'ai', ALLY_AI_ID, ENEMY_SUPPORT_AI_ID] : ['player', 'ai'];
 
-  const actorsMap: Record<string, ActorState> = {
-    player: playerActor,
-    ai: enemyLeader,
-    ...additionalActors
+  const actorsMap: Record<string, ActorState & { netWorth: number }> = {
+    player: { ...playerActor, netWorth: calculateNetWorth(playerActor) },
+    ai: { ...enemyLeader, netWorth: calculateNetWorth(enemyLeader) },
+    ...Object.fromEntries(Object.entries(additionalActors).map(([id, a]) => [id, { ...a, netWorth: calculateNetWorth(a) }]))
   };
+  const teamNetWorth: Record<string, number> = {};
 
   const currentSimState = {
     ...initialGameState,
@@ -19186,10 +19197,10 @@ function executeSingleHeadlessMatch(
 
     // Recalculate team net worth
     if (team) {
-      team.treasury.netWorth = team.actorIds.reduce((sum, aId) => sum + (actorsMap[aId]?.netWorth || 0), 0) + team.treasury.balance;
+      teamNetWorth[team.id] = team.actorIds.reduce((sum, aId) => sum + (actorsMap[aId]?.netWorth || 0), 0) + team.treasury.balance;
     }
 
-    const avgNetWorth = (teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0);
+    const avgNetWorth = (teamNetWorth[TEAM_PLAYER_ID] || 0);
     const avgTreasury = (teamsById[TEAM_PLAYER_ID]?.treasury?.balance || 0);
     economicTrajectory.push({ turn: turn + 1, treasury: avgTreasury, netWorth: avgNetWorth });
 
@@ -19197,8 +19208,8 @@ function executeSingleHeadlessMatch(
     turnHashes.push(currentHash);
 
     // Win condition check
-    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
-    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+    const p1Net = teamNetWorth[TEAM_PLAYER_ID] || 0;
+    const p2Net = teamNetWorth[TEAM_OPPONENT_ID] || 0;
 
     if (p1Net >= goalNetWorth || p2Net >= goalNetWorth) {
       if (p1Net > p2Net) winner = 'team_player';
@@ -19209,8 +19220,8 @@ function executeSingleHeadlessMatch(
   }
 
   if (winner === 'tie') {
-    const p1Net = teamsById[TEAM_PLAYER_ID]?.treasury?.netWorth || 0;
-    const p2Net = teamsById[TEAM_OPPONENT_ID]?.treasury?.netWorth || 0;
+    const p1Net = teamNetWorth[TEAM_PLAYER_ID] || 0;
+    const p2Net = teamNetWorth[TEAM_OPPONENT_ID] || 0;
     if (p1Net > p2Net) winner = 'team_player';
     else if (p2Net > p1Net) winner = 'team_opponent';
     else winner = 'tie';
@@ -19937,11 +19948,20 @@ export function getAiAuditorReport(
     for (const team of Object.values(teamsById)) {
       if (team?.auditor) {
         totalDecisions += team.auditor.eventLog?.length || 0;
+        // team.auditor.incidents only ever holds non-terminal incidents (a terminal status moves
+        // an incident to incidentHistory instead, per this codebase's own established convention
+        // -- see the AA5-era comment above sanitizeAiOperationsAuditorState) -- so every entry here
+        // is definitionally still active; resolved entries must be sourced from incidentHistory.
         const incs = team.auditor.incidents || [];
-        totalIncidents += incs.length;
+        const history = team.auditor.incidentHistory || [];
+        totalIncidents += incs.length + history.length;
+        activeIncidents += incs.length;
         for (const inc of incs) {
-          if (inc.status === 'active') activeIncidents++;
-          else if (inc.status === 'resolved') resolvedIncidents++;
+          const cat = String(inc.category || 'general');
+          incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
+        }
+        for (const inc of history) {
+          if (inc.status === 'resolved' || inc.status === 'resolved_with_warning') resolvedIncidents++;
           const cat = String(inc.category || 'general');
           incidentsByCategory[cat] = (incidentsByCategory[cat] || 0) + 1;
         }
@@ -20369,6 +20389,115 @@ const SettingsSection: React.FC<{
     </div>
   );
 };
+
+// GL9: the new, sole recommended entry point for changing a single GameSettingsState field
+// going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
+// Deliberately NOT a generic function (no `<K extends ...>`), matching this file's own
+// standing rule against bare-type-parameter TSX generics (the exact construct that broke the
+// Sucrase-based external preview earlier this session) — `key`/`value` are typed via
+// `keyof GameSettingsState`/`unknown`, with the single, already-established `as GameSettingsState`
+// cast at the one assignment site. This does not replace the ~300+ existing raw
+// `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
+// migrated call sites should call, proven here at the reset handlers, preset application, and
+// one representative Settings Hub tab.
+export interface DispatchSettingsChangeMetadata {
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  section?: string;
+  settingLabel?: string;
+  [key: string]: unknown;
+}
+
+export interface SettingsChangeAuditLog {
+  key: string;
+  oldValue: unknown;
+  newValue: unknown;
+  source: string;
+  day?: number;
+  turn?: number;
+  actorId?: string;
+  teamId?: string;
+  invalidatesReplay?: boolean;
+  timestamp: number;
+}
+
+/**
+ * Centralized Settings Dispatcher with audit trail logging.
+ * Logs event to Activity Ledger and applies setting changes cleanly.
+ */
+export function dispatchGameSettingsChange(
+  setGameSettingsState: React.Dispatch<React.SetStateAction<GameSettingsState>>,
+  keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState),
+  newValue?: unknown,
+  source: string = 'direct_dispatcher',
+  metadata?: DispatchSettingsChangeMetadata,
+  currentSettings?: GameSettingsState,
+  dispatchLedgerEvent?: (type: string, payload: any) => void
+): void {
+  const timestamp = Date.now();
+  if (typeof keyOrPatch === 'string') {
+    const key = keyOrPatch as keyof GameSettingsState;
+    const oldValue = currentSettings ? currentSettings[key] : undefined;
+    setGameSettingsState(prev => {
+      const actualOld = prev[key];
+      if (actualOld === newValue) return prev;
+      return { ...prev, [key]: newValue };
+    });
+
+    if (dispatchLedgerEvent) {
+      dispatchLedgerEvent('settings_change', {
+        settingKey: String(key),
+        source,
+        summary: `${metadata?.settingLabel || String(key)} changed (${metadata?.section || 'general'}) via ${source.replace(/_/g, ' ')}.`,
+        diagnostics: {
+          previousValue: oldValue,
+          newValue,
+          source,
+          day: metadata?.day,
+          turn: metadata?.turn,
+          actorId: metadata?.actorId,
+          teamId: metadata?.teamId,
+          invalidatesReplay: metadata?.invalidatesReplay ?? false,
+          timestamp,
+          ...metadata
+        }
+      });
+    }
+  } else if (typeof keyOrPatch === 'function' || typeof keyOrPatch === 'object') {
+    setGameSettingsState(prev => typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch });
+
+    if (dispatchLedgerEvent) {
+      const prev = currentSettings || ({} as GameSettingsState);
+      const next = typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch };
+      if (prev !== next) {
+        (Object.keys(next) as Array<keyof GameSettingsState>).forEach(k => {
+          if (prev[k] !== next[k]) {
+            dispatchLedgerEvent('settings_change', {
+              settingKey: String(k),
+              source,
+              summary: `${String(k)} updated (${metadata?.section || 'bulk'}) via ${source.replace(/_/g, ' ')}.`,
+              diagnostics: {
+                previousValue: prev[k],
+                newValue: next[k],
+                source,
+                day: metadata?.day,
+                turn: metadata?.turn,
+                actorId: metadata?.actorId,
+                teamId: metadata?.teamId,
+                invalidatesReplay: metadata?.invalidatesReplay ?? false,
+                timestamp,
+                ...metadata
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+}
 
 // =========================================
 // MAIN COMPONENT
@@ -21096,115 +21225,6 @@ function AustraliaGame() {
   ) => {
     dispatchAuthoritativeGameActivityLedgerEvent(category, fields as any);
   }, [dispatchAuthoritativeGameActivityLedgerEvent]);
-
-  // GL9: the new, sole recommended entry point for changing a single GameSettingsState field
-  // going forward — built on top of (never duplicating) appendGameActivityLedgerEvent above.
-  // Deliberately NOT a generic function (no `<K extends ...>`), matching this file's own
-  // standing rule against bare-type-parameter TSX generics (the exact construct that broke the
-  // Sucrase-based external preview earlier this session) — `key`/`value` are typed via
-  // `keyof GameSettingsState`/`unknown`, with the single, already-established `as GameSettingsState`
-  // cast at the one assignment site. This does not replace the ~300+ existing raw
-  // `setGameSettings(...)` call sites (GL10's job to migrate); it is only the new function new/
-  // migrated call sites should call, proven here at the reset handlers, preset application, and
-  // one representative Settings Hub tab.
-export interface DispatchSettingsChangeMetadata {
-  day?: number;
-  turn?: number;
-  actorId?: string;
-  teamId?: string;
-  invalidatesReplay?: boolean;
-  section?: string;
-  settingLabel?: string;
-  [key: string]: unknown;
-}
-
-export interface SettingsChangeAuditLog {
-  key: string;
-  oldValue: unknown;
-  newValue: unknown;
-  source: string;
-  day?: number;
-  turn?: number;
-  actorId?: string;
-  teamId?: string;
-  invalidatesReplay?: boolean;
-  timestamp: number;
-}
-
-/**
- * Centralized Settings Dispatcher with audit trail logging.
- * Logs event to Activity Ledger and applies setting changes cleanly.
- */
-export function dispatchGameSettingsChange(
-  setGameSettingsState: React.Dispatch<React.SetStateAction<GameSettingsState>>,
-  keyOrPatch: keyof GameSettingsState | Partial<GameSettingsState> | ((prev: GameSettingsState) => GameSettingsState),
-  newValue?: unknown,
-  source: string = 'direct_dispatcher',
-  metadata?: DispatchSettingsChangeMetadata,
-  currentSettings?: GameSettingsState,
-  dispatchLedgerEvent?: (type: string, payload: any) => void
-): void {
-  const timestamp = Date.now();
-  if (typeof keyOrPatch === 'string') {
-    const key = keyOrPatch as keyof GameSettingsState;
-    const oldValue = currentSettings ? currentSettings[key] : undefined;
-    setGameSettingsState(prev => {
-      const actualOld = prev[key];
-      if (actualOld === newValue) return prev;
-      return { ...prev, [key]: newValue };
-    });
-
-    if (dispatchLedgerEvent) {
-      dispatchLedgerEvent('settings_change', {
-        settingKey: String(key),
-        source,
-        summary: `${metadata?.settingLabel || String(key)} changed (${metadata?.section || 'general'}) via ${source.replace(/_/g, ' ')}.`,
-        diagnostics: {
-          previousValue: oldValue,
-          newValue,
-          source,
-          day: metadata?.day,
-          turn: metadata?.turn,
-          actorId: metadata?.actorId,
-          teamId: metadata?.teamId,
-          invalidatesReplay: metadata?.invalidatesReplay ?? false,
-          timestamp,
-          ...metadata
-        }
-      });
-    }
-  } else if (typeof keyOrPatch === 'function' || typeof keyOrPatch === 'object') {
-    setGameSettingsState(prev => typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch });
-
-    if (dispatchLedgerEvent) {
-      const prev = currentSettings || ({} as GameSettingsState);
-      const next = typeof keyOrPatch === 'function' ? keyOrPatch(prev) : { ...prev, ...keyOrPatch };
-      if (prev !== next) {
-        (Object.keys(next) as Array<keyof GameSettingsState>).forEach(k => {
-          if (prev[k] !== next[k]) {
-            dispatchLedgerEvent('settings_change', {
-              settingKey: String(k),
-              source,
-              summary: `${String(k)} updated (${metadata?.section || 'bulk'}) via ${source.replace(/_/g, ' ')}.`,
-              diagnostics: {
-                previousValue: prev[k],
-                newValue: next[k],
-                source,
-                day: metadata?.day,
-                turn: metadata?.turn,
-                actorId: metadata?.actorId,
-                teamId: metadata?.teamId,
-                invalidatesReplay: metadata?.invalidatesReplay ?? false,
-                timestamp,
-                ...metadata
-              }
-            });
-          }
-        });
-      }
-    }
-  }
-}
 
   const updateGameSetting = useCallback((
     key: keyof GameSettingsState,
@@ -24592,10 +24612,10 @@ export function dispatchGameSettingsChange(
       ...baseDecision,
       data: nextData,
       score: nextScore,
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         confidence: Math.max(0, Math.min(1, baseDecision.plan.confidence + confidenceDelta))
-      }
+      } : undefined
     };
     const influenceDelta = nextScore - baseDecision.score;
     const nextDecisionWithMeta = {
@@ -24745,10 +24765,10 @@ export function dispatchGameSettingsChange(
       ...baseDecision,
       data: nextData,
       score: nextScore,
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         confidence: Math.max(0, Math.min(1, baseDecision.plan.confidence + confidenceDelta))
-      }
+      } : undefined
     };
     const influenceDelta = nextScore - baseDecision.score;
     const teammate = getTeammateForSync(options.actorId, teamsByIdRef.current[actor.teamId]);
@@ -24822,14 +24842,14 @@ export function dispatchGameSettingsChange(
           influenceDelta
         }
       },
-      plan: {
+      plan: baseDecision.plan ? {
         ...baseDecision.plan,
         priority: primaryAligned
           ? Math.max(baseDecision.plan.priority, normalizedStrength === 'priority' ? 5 : normalizedStrength === 'high' ? 4 : baseDecision.plan.priority)
           : supportsDirective
             ? Math.max(baseDecision.plan.priority, normalizedStrength === 'priority' ? 4 : normalizedStrength === 'high' ? 3 : baseDecision.plan.priority)
             : baseDecision.plan.priority
-      }
+      } : undefined
     };
     if (nextScore === baseDecision.score) {
       return nextDecision;
@@ -25987,7 +26007,7 @@ export function dispatchGameSettingsChange(
       reason: string;
     } | null = null;
 
-    CRAFTING_RECIPES.forEach(recipe => {
+    for (const recipe of CRAFTING_RECIPES) {
       const missing: Array<{ resource: string; quantity: number }> = [];
       let totalCost = 0;
       let totalMissingUnits = 0;
@@ -26003,22 +26023,22 @@ export function dispatchGameSettingsChange(
         }
       });
 
-      if (missing.length === 0) return;
-      if (totalMissingUnits > 5) return;
-      if (aiState.inventory.length + totalMissingUnits > MAX_INVENTORY) return;
-      if (aiState.money - totalCost < AI_SAFETY_BUFFER) return;
+      if (missing.length === 0) continue;
+      if (totalMissingUnits > 5) continue;
+      if (aiState.inventory.length + totalMissingUnits > MAX_INVENTORY) continue;
+      if (aiState.money - totalCost < AI_SAFETY_BUFFER) continue;
 
       let score = recipe.baseValue - totalCost;
-      if (score <= 50) return;
+      if (score <= 50) continue;
       if (totalMissingUnits <= 2) score *= 1.2;
       if (gameSettings.winCondition === 'money') score *= 1.1;
       if (gameSettings.winCondition === 'netWorth') score *= 1.24;
       if (gameSettings.winCondition === 'regions') score *= 0.92;
       if (recipe.baseValue > 800) score *= 1.15;
-      if (gameSettings.winCondition === 'money' && score < (totalCost * 0.5)) return;
+      if (gameSettings.winCondition === 'money' && score < (totalCost * 0.5)) continue;
       if (gameSettings.winCondition === 'netWorth' && recipe.baseValue > totalCost) score += Math.min(120, (recipe.baseValue - totalCost) * 0.08);
 
-      if (!bestPlan || score > bestPlan.score) {
+      if (!bestPlan || score > (bestPlan as { score: number }).score) {
         bestPlan = {
           score,
           purchases: missing,
@@ -26026,7 +26046,7 @@ export function dispatchGameSettingsChange(
           reason: `buying missing materials for ${recipe.name}`
         };
       }
-    });
+    }
 
     return bestPlan;
   }, [gameSettings.winCondition]);
@@ -26270,7 +26290,7 @@ export function dispatchGameSettingsChange(
 
     let bestMove: { region: string; amount: number; score: number; reason: string } | null = null;
 
-    Object.keys(REGIONS).forEach(regionCode => {
+    for (const regionCode of Object.keys(REGIONS)) {
       const regionEntry = regionDeposits[regionCode] || {};
       const snapshot = getRegionControlSnapshot(regionEntry);
       const aiDeposit = Math.floor(regionEntry.ai || 0);
@@ -26350,7 +26370,7 @@ export function dispatchGameSettingsChange(
         }
       }
 
-      if (amount > 0 && score > -Infinity && (!bestMove || score > bestMove.score)) {
+      if (amount > 0 && score > -Infinity && (!bestMove || score > (bestMove as { score: number }).score)) {
         bestMove = {
           region: regionCode,
           amount: Math.max(1, Math.floor(amount)),
@@ -26358,7 +26378,7 @@ export function dispatchGameSettingsChange(
           reason
         };
       }
-    });
+    }
 
     return bestMove;
   }, [gameSettings.aiRegionsMajorityRushEnabled, gameSettings.aiWinConditionSpendingEnabled, gameSettings.negotiationMode, gameSettings.totalDays, gameSettings.winCondition]);
@@ -26385,16 +26405,16 @@ export function dispatchGameSettingsChange(
 
     let bestCashout: { region: string; refund: number; score: number; reason: string } | null = null;
 
-    Object.keys(REGIONS).forEach(regionCode => {
+    for (const regionCode of Object.keys(REGIONS)) {
       const regionEntry = regionDeposits[regionCode] || {};
       const snapshot = getRegionControlSnapshot(regionEntry);
-      if (snapshot.controllerId !== 'ai') return;
+      if (snapshot.controllerId !== 'ai') continue;
 
       const aiDeposit = Math.floor(regionEntry.ai || 0);
       const playerDeposit = Math.floor(regionEntry.player || 0);
       const holdMargin = aiDeposit - playerDeposit;
       const refund = Math.floor(aiDeposit * 0.5);
-      if (refund <= 0) return;
+      if (refund <= 0) continue;
 
       let score = -Infinity;
       if (desperateForCash && aiDeposit >= 2) {
@@ -26407,7 +26427,7 @@ export function dispatchGameSettingsChange(
         score = Math.max(score, refund + 45 - Math.max(0, holdMargin * 12));
       }
 
-      if (score > -Infinity && (!bestCashout || score > bestCashout.score)) {
+      if (score > -Infinity && (!bestCashout || score > (bestCashout as { score: number }).score)) {
         bestCashout = {
           region: regionCode,
           refund,
@@ -26415,7 +26435,7 @@ export function dispatchGameSettingsChange(
           reason: `liquidating ${regionCode} to reallocate funds`
         };
       }
-    });
+    }
 
     return bestCashout;
   }, [gameSettings.aiRegionsMajorityRushEnabled, gameSettings.allowCashOut, gameSettings.negotiationMode, gameSettings.winCondition]);
@@ -26453,7 +26473,7 @@ export function dispatchGameSettingsChange(
 	      if (cashoutMove) {
 	        decisions.push({
 	          type: 'cashout_region',
-	          description: `Cash out ${REGIONS[cashoutMove.region]?.name || cashoutMove.region}`,
+	          description: `Cash out ${REGIONS[cashoutMove.region as keyof typeof REGIONS]?.name || cashoutMove.region}`,
 	          data: {
 	            region: cashoutMove.region,
 	            reason: cashoutMove.reason
@@ -38048,7 +38068,7 @@ export function dispatchGameSettingsChange(
     const primaryDirectiveStrength = normalizeDirectiveStrength(primaryDirective?.strength);
     const directiveProfile = getEffectiveDirectiveStrengthProfile(primaryDirectiveStrength, { teamMode: true });
     const difficultyBehavior = getTeamDifficultyBehavior();
-    const baseDepth = actor.difficulty || gameSettings.aiDifficulty || 'balanced';
+    const baseDepth = gameState.aiDifficulty || 'balanced';
     const tacticalIntel = getEffectiveTacticalIntelligence(gameSettings, baseDepth);
     const liquidityAnalysis = analyzeTeamLiquidity(actor.teamId, snapshot?.actors);
     const actorLiquidity = liquidityAnalysis.byActorId[actorId] || null;
@@ -38495,23 +38515,23 @@ export function dispatchGameSettingsChange(
         score: number;
         reason: string;
       } = null;
-      CRAFTING_RECIPES.forEach(recipe => {
+      for (const recipe of CRAFTING_RECIPES) {
         const missing = Object.entries(recipe.inputs)
           .map(([resource, requiredCount]) => ({
             resource,
             quantity: Math.max(0, Number(requiredCount) - teammate.inventory.filter(item => item === resource).length)
           }))
           .filter(entry => entry.quantity > 0);
-        if (missing.length !== 1) return;
+        if (missing.length !== 1) continue;
         const missingEntry = missing[0];
         const giverOwned = actor.inventory.filter(item => item === missingEntry.resource).length;
-        if (giverOwned < missingEntry.quantity) return;
-        if ((teammate.inventory?.length || 0) + missingEntry.quantity > MAX_INVENTORY) return;
+        if (giverOwned < missingEntry.quantity) continue;
+        if ((teammate.inventory?.length || 0) + missingEntry.quantity > MAX_INVENTORY) continue;
         const craftProfit = recipe.baseValue - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
           return sum + ((gameState.resourcePrices[resource] || 100) * Number(count));
         }, 0);
         const score = Math.max(0, craftProfit) + (teammateLiquidity?.isRecoveryEligible ? 95 : 42);
-        if (!bestResourceSupport || score > bestResourceSupport.score) {
+        if (!bestResourceSupport || score > (bestResourceSupport as { score: number }).score) {
           bestResourceSupport = {
             recipe,
             resource: missingEntry.resource,
@@ -38520,7 +38540,7 @@ export function dispatchGameSettingsChange(
             reason: `${missingEntry.resource} would unlock ${recipe.output} for ${getActorDisplayName(teammate.id)}.`
           };
         }
-      });
+      }
       if (bestResourceSupport) {
         if (actor.currentRegion === teammate.currentRegion) {
           pushDecision({
@@ -41974,7 +41994,7 @@ export function dispatchGameSettingsChange(
     }
     let actionBudget = getActorActionBudget(actor.id);
     // Wire getEffectiveEconomicCheats: apply cheat bonuses at AI turn initialization
-    const economicCheats = getEffectiveEconomicCheats(gameSettings, actor.difficulty || gameSettings.aiDifficulty || 'balanced');
+    const economicCheats = getEffectiveEconomicCheats(gameSettings, gameState.aiDifficulty || 'balanced');
     if (economicCheats.extraActionPointsPerTurn > 0) {
       actionBudget += economicCheats.extraActionPointsPerTurn;
     }
