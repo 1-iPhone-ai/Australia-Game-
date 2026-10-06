@@ -10817,6 +10817,7 @@ export function canonicalStateFromLiveRuntime(
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
     megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
     nationalDevelopment: sanitizeNationalDevelopmentPersisted((liveState as any).nationalDevelopment || (gameState as any)?.nationalDevelopment),
+    innovation: sanitizeInnovationPersisted((liveState as any).innovation || (gameState as any)?.innovation),
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14089,6 +14090,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   infraNetworksEnabled: true,
   megaprojectsEnabled: true,
   nationalDevelopmentEnabled: true,
+  innovationEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26438,6 +26440,8 @@ export type GameSettingsState = {
   megaprojectsEnabled?: boolean;
   /** V10.4 National Development Strategy (descriptive interpretation of the national structure; off = no profile, nothing else changes). */
   nationalDevelopmentEnabled?: boolean;
+  /** V10.5 Innovation & Emerging Capabilities (needs National Systems; off = no capabilities, no effects, V10.0–V10.4 unchanged). */
+  innovationEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36182,6 +36186,8 @@ export const initialGameState = {
   megaprojects: null as any,
   /** V10.4: national development HISTORY only (hysteresis memory, transitions, milestones) — the profile itself is derived. */
   nationalDevelopment: null as any,
+  /** V10.5: capability maturity hysteresis, knowledge, adoption and bounded history (readiness itself is derived). */
+  innovation: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80146,6 +80152,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.megaprojects = sanitizeMegaprojectsPersisted(migrated.gameState.megaprojects);
   // V10.4: pre-V10.4 saves start with NO national development history (null) — history begins when the match resumes, never invented.
   if (migrated.gameState) migrated.gameState.nationalDevelopment = sanitizeNationalDevelopmentPersisted(migrated.gameState.nationalDevelopment);
+  // V10.5: pre-V10.5 saves start with NO capability history (null) — maturity is derived conservatively on load.
+  if (migrated.gameState) migrated.gameState.innovation = sanitizeInnovationPersisted(migrated.gameState.innovation);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -122110,7 +122118,10 @@ export type SWRKind =
   | 'megaproject_proposed' | 'megaproject_committed' | 'megaproject_stage_completed' | 'megaproject_partially_operational' | 'megaproject_stalled' | 'megaproject_resumed' | 'megaproject_completed' | 'megaproject_abandoned'
   // V10.4 National Development Strategy (interpretation transitions only; no system derives state from these — cycle-safe).
   | 'national_direction_emerged' | 'national_direction_strengthened' | 'national_direction_weakened' | 'national_strategy_transition_started' | 'national_strategy_transition_completed'
-  | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased';
+  | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased'
+  // V10.5 Innovation & Emerging Capabilities (maturity / adoption transitions only — never readiness ticks).
+  | 'capability_emerged' | 'capability_demonstrated' | 'capability_became_operational' | 'capability_scaled' | 'capability_nationally_integrated'
+  | 'capability_adoption_expanded' | 'capability_operational_capacity_declined';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122616,23 +122627,24 @@ const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationshi
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
+const SWR_IC_KINDS: SWRKind[] = ['capability_emerged', 'capability_demonstrated', 'capability_became_operational', 'capability_scaled', 'capability_nationally_integrated', 'capability_adoption_expanded', 'capability_operational_capacity_declined'];
 const SWR_ND_KINDS: SWRKind[] = ['national_direction_emerged', 'national_direction_strengthened', 'national_direction_weakened', 'national_strategy_transition_started', 'national_strategy_transition_completed', 'national_dependency_became_defining', 'national_diversification_improved', 'national_concentration_increased'];
 const SWR_MP_KINDS: SWRKind[] = ['megaproject_proposed', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_resumed', 'megaproject_completed', 'megaproject_abandoned'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['capability_emerged', 'capability_became_operational', 'capability_adoption_expanded', 'national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' || e.sourceSystem === 'innovation' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['capability_became_operational', 'capability_scaled', 'national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
@@ -122641,12 +122653,12 @@ export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['capability_emerged', 'capability_operational_capacity_declined', 'megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['capability_emerged', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'capability_operational_capacity_declined', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123320,6 +123332,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  capability_emerged: 'Capability emerging', capability_demonstrated: 'Capability demonstrated', capability_became_operational: 'Capability operational', capability_scaled: 'Capability scaled',
+  capability_nationally_integrated: 'Capability integrated', capability_adoption_expanded: 'Capability spread', capability_operational_capacity_declined: 'Capability capacity down',
   national_direction_emerged: 'National direction emerged', national_direction_strengthened: 'National direction strengthened', national_direction_weakened: 'National direction weakened',
   national_strategy_transition_started: 'National transition began', national_strategy_transition_completed: 'National transition completed', national_dependency_became_defining: 'Defining national exposure',
   national_diversification_improved: 'Diversification improved', national_concentration_increased: 'Concentration increased',
@@ -124364,6 +124378,10 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
       // V10.2: infrastructure network structure — Living Regions decides the (bounded) regional meaning.
       // V10.3: national programs — modest, explicit program-level momentum; Living Regions decides the regional meaning.
       case 'megaproject_committed': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
+      // V10.5: capabilities originating / operating / spreading here are regional structural evidence (Living Regions decides meaning).
+      case 'capability_emerged': case 'capability_adoption_expanded': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
+      case 'capability_became_operational': case 'capability_scaled': { pulse(0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
+      case 'capability_operational_capacity_declined': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
       case 'megaproject_stage_completed': case 'megaproject_partially_operational': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_completed': { pulse(0.05); lrPushHistory(reg, { turn, kind: 'project', text: e.strategicMeaning.slice(0, 140), sourceEventId: e.id, significance: 'major' }); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_stalled': case 'megaproject_abandoned': { pulse(-0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
@@ -129661,6 +129679,8 @@ export interface ContentContext {
   supplies?: Record<string, Partial<Record<StrategicSupplyKind, SupplyCondition>>> | null;
   /** V10.2: region → infrastructure-network structural states (optional; absent when off). */
   infraStates?: Record<string, string[]> | null;
+  /** V10.5: national capability maturity + regional adoption (optional; absent when off ⇒ capability content never eligible). */
+  capabilities?: ReturnType<typeof innovationContentSnapshot>;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -129698,6 +129718,8 @@ export type ContentReq =
   | { k: 'project'; projectId: string; status: string[] }
   | { k: 'window'; type: string }
   | { k: 'contracts_on' } | { k: 'infra_on' }
+  /** V10.5: a capability's national maturity (and, with `regional`, this region's adoption) reaches `min`. Advanced options only. */
+  | { k: 'capability'; capability: EmergingCapabilityId; min: CapabilityMaturity; regional?: boolean }
   | { k: 'any'; of: ContentReq[] };
 
 const CT_MOM: Record<LRMomentumBand, number> = { declining: 0, weakening: 1, stable: 2, growing: 3, rapid_growth: 4, booming: 5 };
@@ -129753,6 +129775,15 @@ export function evaluateContentReq(req: ContentReq, ctx: ContentContext, regionI
     case 'industry': {
       const c = regionId ? ctx.industries?.[regionId]?.[req.industry] : undefined;
       return res(Boolean(c && req.conditions.includes(c)), `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is ${c ? INDUSTRY_CONDITION_LABEL[c].toLowerCase() : 'absent'}`, `${name} ${INDUSTRY_LABEL[req.industry].toLowerCase()} is not ${req.conditions.join('/')}`);
+    }
+    case 'capability': {
+      const nat = ctx.capabilities?.national?.[req.capability] || 'unavailable';
+      const okNat = CAPABILITY_MATURITY_RANK[nat] >= CAPABILITY_MATURITY_RANK[req.min];
+      const lvl = regionId ? ctx.capabilities?.regional?.[regionId]?.[req.capability] || 'none' : 'none';
+      const want = Math.min(CAPABILITY_MATURITY_RANK[req.min], 3);
+      const okReg = !req.regional || CAPABILITY_ADOPTION_RANK[lvl] >= want;
+      const label = CAPABILITY_DEF_BY_ID[req.capability]?.label || req.capability;
+      return res(okNat && okReg, `${label} is ${CAPABILITY_MATURITY_LABEL[nat].toLowerCase()}${req.regional ? ` (${name}: ${lvl})` : ''}`, `${label} not yet ${CAPABILITY_MATURITY_LABEL[req.min].toLowerCase()}${req.regional && okNat ? ` in ${name}` : ''}`);
     }
     case 'infra_network': {
       const have = regionId ? (ctx.infraStates?.[regionId] || []) : [];
@@ -130033,6 +130064,7 @@ function contentReqSig(reqs: ContentReq[], ctx: ContentContext, regionId: string
       case 'dependency': parts.push(`dp${(ctx.nationalDeps || []).filter(x => !r || x.consumer === r.code).map(x => x.importance).join('')}`); break;
       case 'industry': parts.push(`i${q.industry}${r ? ctx.industries?.[r.code]?.[q.industry] : ''}`); break;
       case 'infra_network': parts.push(`x${r ? (ctx.infraStates?.[r.code] || []).join('.') : ''}`); break;
+      case 'capability': parts.push(`cap${q.capability}${ctx.capabilities?.national?.[q.capability] || ''}${r ? ctx.capabilities?.regional?.[r.code]?.[q.capability] || '' : ''}`); break;
       case 'supply': parts.push(`s${q.supply}${q.scope === 'national' ? Object.values(ctx.supplies || {}).map(m => m[q.supply] || '').join('') : r ? ctx.supplies?.[r.code]?.[q.supply] : ''}`); break;
       case 'project': parts.push(`pj${ctx.projects.find(x => x.id === q.projectId)?.status}`); break;
       case 'window': parts.push(`w${ctx.windows.map(w => w.id).join()}`); break;
@@ -130548,7 +130580,40 @@ export const CONTRACT_TEMPLATE_REGISTRY: ContractTemplate[] = [
   ctpl({ id: 'export_surge_consignment', title: 'Export Surge Consignment', archetype: 'rapid', contractType: 'maritime_export_hub', issuingFactionId: null, regions: ['QLD', 'WA', 'NSW'], themes: ['trade'], roles: ['short_term_opportunity', 'trade'], rarity: 'uncommon',
     text: { '*': { title: 'Export Surge Consignment', description: 'Deliver {n} {item} while the export surge lasts — the window closes fast.' } },
     objective: { type: 'deliver_resource', item: 'region_resource', base: 3 }, requirement: { cashOnHand: 500 }, duration: 4, offerDays: 3,
-    requires: [{ k: 'contracts_on' }, { k: 'flag', key: 'export_surge', value: true }] })
+    requires: [{ k: 'contracts_on' }, { k: 'flag', key: 'export_surge', value: true }] }),
+  // ---- V10.5: capability-gated ADVANCED contracts (eligible only once a capability is real; basic contracts never need one) ----
+  ctpl({ id: 'cap_remote_mining_ops', title: 'Remote Operations Contract', archetype: 'capital', contractType: 'mining_tech_initiative', issuingFactionId: 'pilbara_mining_consortium', regions: ['WA', 'QLD', 'NT'], themes: ['mining', 'technology'], roles: ['economic_growth', 'long_term_investment'],
+    text: { '*': { title: '{region} Remote Operations Contract', description: 'Automated mining is operating in {region}. Co-fund a remote operations centre to run it at scale.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'automated_mining', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_ai_infrastructure', title: 'National AI Infrastructure Contract', archetype: 'development', contractType: 'ai_research_center', issuingFactionId: 'csiro_ai_directorate', regions: ['ACT', 'NSW', 'VIC'], themes: ['technology', 'research'], roles: ['development', 'long_term_investment'],
+    text: { '*': { title: '{region} AI Infrastructure Contract', description: 'AI compute is operational in {region}. Expand compute capacity for national research users.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'ai_compute_infrastructure', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_grid_stabilisation', title: 'Grid Stabilisation Contract', archetype: 'capital', contractType: 'renewable_energy_grid', issuingFactionId: 'sa_clean_energy_council', regions: ['SA', 'TAS', 'VIC', 'QLD', 'NSW'], themes: ['energy', 'renewables'], roles: ['stability', 'long_term_investment'],
+    text: { '*': { title: '{region} Grid Stabilisation Contract', description: 'Grid-scale storage now operates in {region}. Fund stabilisation services that firm renewable output at peak.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'grid_scale_storage', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_farm_technology', title: 'Farm Technology Contract', archetype: 'development', contractType: 'agricultural_logistics', issuingFactionId: 'nsw_farmers_coop', regions: ['NSW', 'QLD', 'VIC', 'SA', 'WA'], themes: ['agriculture', 'technology'], roles: ['economic_growth', 'development'],
+    text: { '*': { title: '{region} Precision Irrigation Program', description: 'Precision agriculture is operating in {region}. Fund sensor networks and precision irrigation.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1200 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'precision_agriculture', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_advanced_production', title: 'Advanced Production Contract', archetype: 'capital', contractType: 'manufacturing_modernization', issuingFactionId: 'vic_technology_council', regions: ['VIC', 'NSW', 'SA', 'QLD'], themes: ['manufacturing', 'technology'], roles: ['economic_growth', 'long_term_investment'],
+    text: { '*': { title: '{region} Advanced Production Line', description: 'Advanced manufacturing is operational in {region}. Back a high-value production line.' } },
+    objective: { type: 'invest_capital', base: 3000 }, requirement: { cashOnHand: 1500 }, duration: 10,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'advanced_manufacturing', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_research_commercialisation', title: 'Research Commercialisation Opportunity', archetype: 'development', contractType: 'ai_research_center', issuingFactionId: null, regions: ['ACT', 'VIC', 'NSW', 'SA', 'QLD'], themes: ['research', 'technology'], roles: ['development', 'economic_growth'],
+    text: { '*': { title: '{region} Research Commercialisation', description: 'Research in {region} is now turning into industry. Fund a spin-out partnership.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1200 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'research_commercialization', min: 'demonstrated', regional: true }] }),
+  ctpl({ id: 'cap_logistics_optimisation', title: 'Logistics Optimisation Contract', archetype: 'infrastructure', contractType: 'freight_capacity', issuingFactionId: 'federal_infrastructure_office', regions: ['NSW', 'QLD', 'VIC', 'WA', 'SA'], themes: ['logistics', 'trade'], roles: ['infrastructure', 'economic_growth'],
+    text: { '*': { title: '{region} Logistics Optimisation', description: 'Advanced logistics operates in {region}. Fund routing systems that get more out of the existing freight network.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1200 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'advanced_logistics', min: 'operational', regional: true }] }),
+  ctpl({ id: 'cap_water_efficiency', title: 'Water Efficiency Program', archetype: 'capital', contractType: 'water_security', issuingFactionId: null, regions: ['SA', 'NSW', 'WA', 'VIC', 'QLD'], themes: ['water', 'agriculture'], roles: ['stability', 'long_term_investment'],
+    text: { '*': { title: '{region} Water Efficiency Program', description: 'Advanced water systems operate in {region}. Fund reuse and efficiency upgrades for farm districts.' } },
+    objective: { type: 'invest_capital', base: 2500 }, requirement: { cashOnHand: 1200 }, duration: 9,
+    requires: [{ k: 'contracts_on' }, { k: 'capability', capability: 'advanced_water_systems', min: 'operational', regional: true }] })
 ];
 
 // ============================================================================
@@ -130792,6 +130857,31 @@ export const DILEMMA_TEMPLATE_REGISTRY: DilemmaTemplate[] = [
     choices: [
       { id: 'follow', label: 'Follow through', pros: ['Credibility with energy stakeholders', 'Hydrogen contracts'], cons: ['Capital committed'], scores: { economy: 0, control: 1, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1500 }, { k: 'standing', delta: 6 }, { k: 'offer_contract', templateId: 'sa_hydrogen_pilot' }], factions: { winners: ['sa_clean_energy_council'], losers: [] } },
       { id: 'pivot', label: 'Pivot to profit', pros: ['Capital freed for higher returns'], cons: ['Stakeholders remember'], scores: { economy: 2, control: -1, stability: 0, longTerm: -1 }, effects: [{ k: 'standing', delta: -5 }, { k: 'flag', key: 'energy_path_broken', value: true }], factions: { winners: [], losers: ['sa_clean_energy_council'] } }
+    ] }),
+  // ---- V10.5: capability tradeoffs (innovation creates new choices, not free buffs) ----------------------------------
+  dtpl({ id: 'cap_workforce_transition', title: 'Workforce Transition in {region}', summary: 'Automated mining is changing work in the mining regions.', regions: ['WA', 'QLD', 'NT'], themes: ['mining', 'technology'], roles: ['economic_growth', 'stability'], conflictType: 'automation_vs_labor', factionIds: ['pilbara_mining_consortium', 'regional_labor_coalition'],
+    prompt: 'Automated mining is spreading in {region}. Productivity is rising — and so is labour concern. How do you handle the transition?',
+    requires: [{ k: 'capability', capability: 'automated_mining', min: 'demonstrated', regional: true }],
+    choices: [
+      { id: 'accelerate', label: 'Accelerate automation', pros: ['Productivity', 'Consortium backing'], cons: ['Labour concern grows'], scores: { economy: 2, control: 0, stability: -1, longTerm: 1 }, effects: [{ k: 'standing', delta: -4 }, { k: 'flag', key: 'mining_automation', value: 'accelerate' }, { k: 'offer_contract', templateId: 'cap_remote_mining_ops' }], factions: { winners: ['pilbara_mining_consortium'], losers: ['regional_labor_coalition'] } },
+      { id: 'transition', label: 'Fund a workforce transition', pros: ['Stability', 'Labour goodwill'], cons: ['Capital'], scores: { economy: -1, control: 1, stability: 2, longTerm: 1 }, effects: [{ k: 'cash', amount: -2000 }, { k: 'standing', delta: 6 }, { k: 'flag', key: 'mining_automation', value: 'transition' }], factions: { winners: ['regional_labor_coalition'], losers: [] } },
+      { id: 'pace', label: 'Let the market set the pace', pros: ['No cost'], cons: ['Tension unresolved'], scores: { economy: 1, control: 0, stability: 0, longTerm: -1 }, effects: [{ k: 'flag', key: 'mining_automation', value: 'market' }] }
+    ] }),
+  dtpl({ id: 'cap_compute_energy_demand', title: 'Compute vs Power in {region}', summary: 'AI compute is raising energy demand.', regions: ['ACT', 'NSW', 'VIC'], themes: ['technology', 'energy'], roles: ['infrastructure', 'development'], conflictType: 'growth_vs_capacity', factionIds: ['csiro_ai_directorate', 'sa_clean_energy_council'],
+    prompt: 'AI compute in {region} is drawing heavily on the grid. Where should the next energy go?',
+    requires: [{ k: 'capability', capability: 'ai_compute_infrastructure', min: 'operational', regional: true }],
+    choices: [
+      { id: 'compute', label: 'Prioritise compute', pros: ['Technology growth'], cons: ['Grid strain rises'], scores: { economy: 2, control: 0, stability: -1, longTerm: 0 }, effects: [{ k: 'flag', key: 'compute_energy', value: 'compute' }, { k: 'offer_contract', templateId: 'cap_ai_infrastructure' }], nav: 'infrastructure' },
+      { id: 'grid', label: 'Build energy capacity first', pros: ['Reliability for everyone'], cons: ['Capital, slower compute growth'], scores: { economy: 0, control: 0, stability: 1, longTerm: 2 }, effects: [{ k: 'cash', amount: -1800 }, { k: 'flag', key: 'compute_energy', value: 'grid' }], nav: 'infrastructure' },
+      { id: 'share', label: 'Share capacity with industry', pros: ['Balanced growth'], cons: ['Neither side fully served'], scores: { economy: 1, control: 1, stability: 0, longTerm: 0 }, effects: [{ k: 'flag', key: 'compute_energy', value: 'share' }] }
+    ] }),
+  dtpl({ id: 'cap_renewable_curtailment', title: 'Renewable Curtailment in {region}', summary: 'Storage changes what to do with surplus renewable power.', regions: ['SA', 'TAS', 'VIC', 'QLD'], themes: ['renewables', 'energy'], roles: ['infrastructure', 'long_term_investment'], conflictType: 'conservation_vs_growth', factionIds: ['sa_clean_energy_council'],
+    prompt: 'Grid-scale storage is emerging in {region}. Store surplus renewables, or attract energy-hungry industry to use it?',
+    requires: [{ k: 'capability', capability: 'grid_scale_storage', min: 'demonstrated', regional: true }],
+    choices: [
+      { id: 'store', label: 'Expand storage', pros: ['Reliability', 'Resilience'], cons: ['Capital'], scores: { economy: 0, control: 0, stability: 2, longTerm: 2 }, effects: [{ k: 'cash', amount: -1800 }, { k: 'flag', key: 'storage_path', value: 'store' }, { k: 'offer_contract', templateId: 'cap_grid_stabilisation' }], nav: 'infrastructure' },
+      { id: 'industry', label: 'Attract energy-hungry industry', pros: ['Growth'], cons: ['Demand rises again'], scores: { economy: 2, control: 1, stability: -1, longTerm: 0 }, effects: [{ k: 'flag', key: 'storage_path', value: 'industry' }] },
+      { id: 'export', label: 'Export the surplus', pros: ['Trade income potential'], cons: ['Local reliability unchanged'], scores: { economy: 1, control: 0, stability: 0, longTerm: 1 }, effects: [{ k: 'flag', key: 'storage_path', value: 'export' }] }
     ] })
 ];
 
@@ -131260,6 +131350,7 @@ function satisfyReq(q: ContentReq, ctx: ContentContext, st: MatchContentState, r
     case 'dependency': ctx.nationalDeps = [...(ctx.nationalDeps || []), { consumer: region || 'NSW', provider: 'SA', network: q.network || 'energy', importance: 'critical' }]; break;
     case 'industry': { const code = region || 'NSW'; ctx.industries = { ...(ctx.industries || {}), [code]: { ...((ctx.industries || {})[code] || {}), [q.industry]: q.conditions[0] } }; break; }
     case 'infra_network': { const code = region || 'NSW'; ctx.infraStates = { ...(ctx.infraStates || {}), [code]: [q.states[0]] }; break; }
+    case 'capability': { const code = region || 'NSW'; const cur = ctx.capabilities || { national: {}, regional: {} }; ctx.capabilities = { national: { ...cur.national, [q.capability]: q.min }, regional: { ...cur.regional, [code]: { ...(cur.regional[code] || {}), [q.capability]: (['none', 'emerging', 'demonstrated', 'operational'] as CapabilityAdoptionLevel[])[Math.min(3, CAPABILITY_MATURITY_RANK[q.min])] } } }; break; }
     case 'supply': { const code = region || 'NSW'; ctx.supplies = { ...(ctx.supplies || {}), [code]: { ...((ctx.supplies || {})[code] || {}), [q.supply]: q.conditions[0] } }; break; }
     case 'project': ctx.projects = [...ctx.projects, { id: q.projectId, regionId: region || 'NSW', projectType: 'x', status: q.status[0] }]; break;
     case 'window': ctx.windows = [...ctx.windows, { id: 'probe', type: q.type, subject: region || 'NSW', expiresTurn: ctx.day + 2, reason: 'probe' }]; break;
@@ -131405,8 +131496,9 @@ function contentSyntheticWorld(seed: number, opening: RegionalOpening, day: numb
 /** Content that only exists after a specific event/decision/rival move — absence in a short simulation is expected. */
 export function contentIsConditionalByDesign(t: ContentTemplateBase): boolean {
   const conditional = (q: ContentReq): boolean => q.k === 'any' ? q.of.every(conditional)
-    // V10/V10.1 structural requirements (network, dependency, industry, supply) only hold when that emergent state exists.
-    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window', 'network', 'dependency', 'industry', 'supply', 'infra_network'].includes(q.k)
+    // V10/V10.1 structural requirements (network, dependency, industry, supply) only hold when that emergent state exists;
+    // V10.5 capability requirements only hold once a capability has actually emerged.
+    : ['flag', 'campaign_var', 'crisis', 'diplomacy', 'faction_conflict', 'in_debt', 'rival_invested', 'rival_withdrew', 'rival_holds', 'stability_max', 'window', 'network', 'dependency', 'industry', 'supply', 'infra_network', 'capability'].includes(q.k)
       || (q.k === 'condition' && (q.kind === 'post_crisis_recovery' || q.kind === 'commodity_boom')) || (q.k === 'opportunity' && q.kind === 'recovery_investment');
   return t.rarity === 'rare' || t.rarity === 'exceptional' || t.kind === 'crisis' || t.requires.some(conditional);
 }
@@ -131485,6 +131577,8 @@ export interface ContentLiveInputs {
   industries?: IndustriesSupplyChainsState | null;
   /** V10.2 infrastructure networks snapshot (optional). */
   infraNetworks?: StrategicInfrastructureState | null;
+  /** V10.5 capability snapshot (maturity + adoption); null when Innovation is off. */
+  capabilities?: ReturnType<typeof innovationContentSnapshot>;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   regionalStability: Record<string, number>;
 }
@@ -131535,6 +131629,7 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     national: i.national ? Object.fromEntries(Object.values(i.national.regions).map(g => [g.regionId, Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, g.networks[n].condition]))])) : null,
     nationalDeps: i.national ? i.national.dependencies.map(d => ({ consumer: d.consumerRegionId, provider: d.providerRegionId, network: d.network, importance: d.importance })) : [],
     infraStates: i.infraNetworks ? Object.fromEntries(Object.keys(REGIONS).map(c => [c, infraNetworkRegionStates(i.infraNetworks!, c)])) : null,
+    capabilities: i.capabilities || null,
     industries: i.industries ? Object.fromEntries(Object.values(i.industries.regions).map(g => [g.regionId, Object.fromEntries(Object.values(g.industries).map(x => [x!.industry, x!.condition]))])) : null,
     supplies: i.industries ? Object.fromEntries(Object.entries(i.industries.supplies).map(([c, l]) => [c, Object.fromEntries(l.map(x => [x.supply, x.condition]))])) : null,
     projects: i.projects || [],
@@ -132720,7 +132815,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled'
 ] as const;
 
 /**
@@ -133076,6 +133171,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         infrastructureNetworks: sanitizeInfraNetworksPersisted(stateData.infrastructureNetworks || raw.gameState?.infrastructureNetworks),
         megaprojects: sanitizeMegaprojectsPersisted(stateData.megaprojects || raw.gameState?.megaprojects),
         nationalDevelopment: sanitizeNationalDevelopmentPersisted(stateData.nationalDevelopment || raw.gameState?.nationalDevelopment),
+        innovation: sanitizeInnovationPersisted(stateData.innovation || raw.gameState?.innovation),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135124,6 +135220,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
+  { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -141916,6 +142013,8 @@ export interface NationalDevelopmentInputs {
   completedContracts: Array<{ contractType: string; regionId: string | null; assignedActorId: string | null }>;
   owners: Record<string, 'you' | 'rival' | 'neutral'>;
   viewer: { cash: number; committedProgramCapital: number } | null;
+  /** V10.5: operational/scaled capabilities as direction evidence (0..1 per direction). Absent ⇒ no factor at all. */
+  capabilities?: Partial<Record<NationalDevelopmentDirectionId, number>> | null;
 }
 export type NationalDevelopmentDerivedKind = 'national_direction_emerged' | 'national_direction_strengthened' | 'national_direction_weakened' | 'national_strategy_transition_started' | 'national_strategy_transition_completed'
   | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased';
@@ -141963,6 +142062,7 @@ export function nationalDevelopmentInputHash(i: NationalDevelopmentInputs): stri
   Object.values(i.megaprojects?.programs || {}).forEach(p => mix(`${p.id}${p.status}${p.stages.filter(s => s.status === 'completed').length}${JSON.stringify(p.choices)}`));
   mix(`c${i.completedContracts.length}`); Object.keys(i.owners).sort().forEach(k => mix(`${k}${i.owners[k]}`));
   if (i.viewer) mix(`v${Math.round(i.viewer.cash / 2500)}|${Math.round(i.viewer.committedProgramCapital / 2500)}`);
+  if (i.capabilities) Object.keys(i.capabilities).sort().forEach(k => mix(`cap${k}${(i.capabilities as any)[k]}`));
   return h.toString(36);
 }
 
@@ -142049,6 +142149,7 @@ export function scoreNationalDirections(i: NationalDevelopmentInputs, m: V104Mea
       f('Industrial diversity', D.industrialDiversity / 100, 0.12, 'industries', 'diversity'), f('Regional diversity of the national model', D.regionalDiversity / 100, 0.14, 'living_regions', 'regional_diversity'),
       f('National network resilience', D.networkResilience / 100, 0.1, 'national_systems', 'resilience'), f('Low dependency concentration', 1 - D.dependencyConcentration / 100, 0.08, 'industries', 'dependencies'), prog('diversified_resilient_economy', 0.06)]
   };
+  if (i.capabilities && Object.keys(i.capabilities).length) NATIONAL_DIRECTIONS.forEach(d => { if (d !== 'diversified_resilient_economy' && d !== 'infrastructure_led_growth') defs[d].push(f('Operational capabilities supporting this model (V10.5)', Number(i.capabilities![d] || 0), 0.06, 'canonical', `capabilities:${d}`)); });
   return NATIONAL_DIRECTIONS.map(d => {
     const fs = defs[d]; const pos = fs.filter(x => !x.negative); const wsum = pos.reduce((a, x) => a + x.weight, 0);
     fs.forEach(x => { x.contribution = v104R((x.negative ? -1 : 1) * x.value * x.weight / wsum * 100, 1); x.value = v104R(x.value, 3); });
@@ -142960,6 +143061,970 @@ export const NationalDevelopmentInspector: React.FC<{ profile: NationalDevelopme
     </section>
   );
 };
+
+// ============================================================================
+// SECTION 20X: V10.5 INNOVATION & EMERGING CAPABILITIES
+// What Australia has become CAPABLE of because of the economy, infrastructure, research and national systems the
+// player built. NO tech tree, NO science points, NO research bar. Readiness is derived continuously from Living Regions,
+// V10.0 networks, V10.1 industries & supplies, V10.2 infrastructure networks, V10.3 megaprojects, canonical projects
+// and contracts. V10.5 owns only applied-capability readiness, emergence, maturity and adoption. Effects are small,
+// bounded modifiers routed through the EXISTING V10.0 / V10.1 modifier hooks (from the previous stable snapshot), plus
+// content eligibility. It never touches inventory, crafting, cash, career, AI difficulty or the V9.6 AI loop.
+// ============================================================================
+
+export type EmergingCapabilityId = 'advanced_logistics' | 'automated_mining' | 'advanced_manufacturing' | 'grid_scale_storage' | 'advanced_water_systems' | 'ai_compute_infrastructure' | 'precision_agriculture' | 'research_commercialization';
+export type CapabilityMaturity = 'unavailable' | 'emerging' | 'demonstrated' | 'operational' | 'scaled' | 'nationally_integrated';
+export type CapabilityKnowledgeState = 'unknown' | 'recognized' | 'demonstrated' | 'established';
+export type CapabilityAdoptionLevel = 'none' | 'emerging' | 'demonstrated' | 'operational';
+export type CapabilityDimension = 'knowledge' | 'infrastructure' | 'industry' | 'network' | 'supply' | 'demand' | 'resilience';
+export type CapabilityMomentum = 'emerging' | 'advancing' | 'stable' | 'weakening' | 'regressing';
+export type CapabilityEffectKind = 'network_efficiency' | 'industry_efficiency' | 'supply_efficiency' | 'resilience_support' | 'content_unlock' | 'contract_relevance' | 'project_efficiency' | 'crisis_mitigation_support' | 'what_if_accuracy';
+
+export const CAPABILITY_IDS: EmergingCapabilityId[] = ['advanced_logistics', 'automated_mining', 'advanced_manufacturing', 'grid_scale_storage', 'advanced_water_systems', 'ai_compute_infrastructure', 'precision_agriculture', 'research_commercialization'];
+export const CAPABILITY_MATURITIES: CapabilityMaturity[] = ['unavailable', 'emerging', 'demonstrated', 'operational', 'scaled', 'nationally_integrated'];
+export const CAPABILITY_MATURITY_RANK: Record<CapabilityMaturity, number> = { unavailable: 0, emerging: 1, demonstrated: 2, operational: 3, scaled: 4, nationally_integrated: 5 };
+export const CAPABILITY_MATURITY_LABEL: Record<CapabilityMaturity, string> = { unavailable: 'Unavailable', emerging: 'Emerging', demonstrated: 'Demonstrated', operational: 'Operational', scaled: 'Scaled', nationally_integrated: 'Nationally Integrated' };
+export const CAPABILITY_ADOPTION_RANK: Record<CapabilityAdoptionLevel, number> = { none: 0, emerging: 1, demonstrated: 2, operational: 3 };
+export const CAPABILITY_DIMENSIONS: CapabilityDimension[] = ['knowledge', 'infrastructure', 'industry', 'network', 'supply', 'demand', 'resilience'];
+export const CAPABILITY_DIM_LABEL: Record<CapabilityDimension, string> = { knowledge: 'Knowledge', infrastructure: 'Infrastructure', industry: 'Industry', network: 'Networks', supply: 'Supply', demand: 'Demand', resilience: 'Resilience' };
+export const CAPABILITY_KNOWLEDGE_LABEL: Record<CapabilityKnowledgeState, string> = { unknown: 'Unknown', recognized: 'Recognized', demonstrated: 'Demonstrated', established: 'Established' };
+
+export interface CapabilityReadiness { knowledge: number; infrastructure: number; industry: number; network: number; supply: number; demand: number; resilience: number; composite: number }
+export type CapabilityReadinessWeights = Partial<Record<Exclude<CapabilityDimension, 'demand'>, number>>;
+/** One evidence rule: a named source read from an existing system (value 0..1). */
+export type CapabilitySource =
+  | { s: 'ind'; k: StrategicIndustryKind } | { s: 'sec'; k: LRSector } | { s: 'proj'; types: string[]; per?: number; national?: boolean }
+  | { s: 'cond'; n: NationalNetworkKind } | { s: 'net'; k: StrategicInfrastructureNetworkKind } | { s: 'sup'; k: StrategicSupplyKind }
+  | { s: 'con'; sectors: LRSector[]; per?: number } | { s: 'prog'; kinds: MegaprojectKind[]; tags?: string[] } | { s: 'need'; c: LRNeedCategory } | { s: 'cap'; id: EmergingCapabilityId };
+export interface CapabilityEvidenceRule { dim: CapabilityDimension; label: string; src: CapabilitySource; w: number; scope?: 'local' | 'national' }
+export interface CapabilityRequirement { id: string; label: string; dim?: CapabilityDimension; src?: CapabilitySource; at?: 'anchor' | 'best'; emerge: number; operate: number }
+export interface CapabilityMaturityThresholds { emerging: number; demonstrated: number; operational: number; scaled: number; integrated: number }
+export interface CapabilityEffectDefinition { kind: CapabilityEffectKind; label: string; target?: { network?: NationalNetworkKind; industry?: StrategicIndustryKind }; max: number; perSector?: LRSector; dependency?: boolean }
+export interface EmergingCapabilityDefinition {
+  id: EmergingCapabilityId; label: string; short: string; icon: string; description: string;
+  category: 'industrial' | 'infrastructure' | 'energy' | 'digital' | 'agriculture' | 'research';
+  readinessWeights: CapabilityReadinessWeights; hardRequirements: CapabilityRequirement[]; supportingEvidence: CapabilityEvidenceRule[];
+  maturityThresholds: CapabilityMaturityThresholds; effects: CapabilityEffectDefinition[]; contentTags: string[]; relevantSectors: LRSector[]; relevantNetworks: NationalNetworkKind[];
+  useEvidence: { projectTypes: string[]; contractSectors: LRSector[]; programs: MegaprojectKind[] };
+  tradeoffs: string[]; directions: NationalDevelopmentDirectionId[]; automation?: boolean; emergenceText: string; operationalText: string;
+}
+export interface CapabilityBottleneck { dimension: Exclude<CapabilityDimension, 'demand'>; severity: 'minor' | 'meaningful' | 'major' | 'blocking'; reason: string; sourceIds: string[] }
+export interface CapabilityEvidence { id: string; dim: CapabilityDimension; label: string; regionId: string | null; value: number; contribution: number; source: string }
+export interface ActiveCapabilityEffect { kind: CapabilityEffectKind; label: string; regionIds: string[]; magnitude: number; target: string | null; dependency: boolean }
+export interface CapabilityHistoryEntry { id: string; turn: number; capabilityId: EmergingCapabilityId; kind: 'emerged' | 'demonstrated' | 'operational' | 'scaled' | 'nationally_integrated' | 'adoption_expanded' | 'capacity_weakened' | 'bottleneck_resolved'; regionIds: string[]; summary: string; sourceEventIds: string[] }
+export interface CapabilityRegionalAdoption { regionId: string; level: CapabilityAdoptionLevel; readiness: number; absorptive: number; blocker: string | null }
+export interface EmergingCapabilityState {
+  id: EmergingCapabilityId; maturity: CapabilityMaturity; readiness: CapabilityReadiness; previousMaturity: CapabilityMaturity | null; momentum: CapabilityMomentum;
+  knowledge: CapabilityKnowledgeState; operationalCapacity: 'full' | 'reduced' | 'none'; relevance: 'LOW' | 'MODERATE' | 'HIGH'; relevanceWhy: string[];
+  originRegionIds: string[]; activeRegionIds: string[]; adoption: CapabilityRegionalAdoption[]; enablingProjectIds: string[]; enablingMegaprojectIds: string[];
+  bottlenecks: CapabilityBottleneck[]; requirements: Array<{ id: string; label: string; value: number; emerge: number; operate: number; met: 'blocking' | 'emerging_only' | 'met'; regionId: string | null }>;
+  effects: ActiveCapabilityEffect[]; evidence: CapabilityEvidence[]; emergedTurn: number | null; operationalTurn: number | null; history: CapabilityHistoryEntry[];
+  qualifiesFor: CapabilityMaturity; nextStep: { maturity: CapabilityMaturity; missing: string[] } | null; mainBlocker: string | null;
+}
+export interface InnovationCapabilitiesState { version: 1; revision: number; turn: number; capabilities: Record<EmergingCapabilityId, EmergingCapabilityState>; leadingResearchRegion: string | null; leadingAdoptionRegion: string | null; inputHash: string; computeMs: number; passes: number }
+
+interface IcCapMemory {
+  maturity: CapabilityMaturity; knowledge: CapabilityKnowledgeState; held: number; qualify: number; fail: number; weakening: boolean;
+  emergedTurn: number | null; operationalTurn: number | null; prev: CapabilityMaturity | null;
+  adoption: Record<string, { level: CapabilityAdoptionLevel; held: number; fail: number }>;
+  blockers: string[]; history: number[];
+}
+export interface InnovationMemory { caps: Record<EmergingCapabilityId, IcCapMemory>; lastTurn: number }
+export interface InnovationPersisted { schemaVersion: '10.5'; revision: number; initializedTurn: number | null; base: InnovationMemory; current: InnovationMemory; history: CapabilityHistoryEntry[]; seq: number; inputHash: string }
+export type CapabilityModifiers = { national: Record<string, Partial<Record<NationalNetworkKind, number>>>; industries: Record<string, Partial<Record<StrategicIndustryKind, number>>> };
+export interface InnovationInputs {
+  turn: number;
+  regions: Array<{ code: string; sectors: Partial<Record<LRSector, number>>; needs: Array<{ category: string; severity: string }> }>;
+  national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string }>;
+  completedContracts: Array<{ contractType: string; regionId: string | null }>;
+  direction: { primary: NationalDevelopmentDirectionId | null; secondary: NationalDevelopmentDirectionId | null } | null;
+  /** The capability modifiers currently applied to V10.0/V10.1 (subtracted so a capability never feeds its own readiness). */
+  applied: CapabilityModifiers | null;
+}
+export type InnovationDerivedKind = 'capability_emerged' | 'capability_demonstrated' | 'capability_became_operational' | 'capability_scaled' | 'capability_nationally_integrated' | 'capability_adoption_expanded' | 'capability_operational_capacity_declined';
+export interface InnovationDerivedEvent { id: string; turn: number; kind: InnovationDerivedKind; capabilityId: EmergingCapabilityId; regionIds: string[]; text: string; significance: 'meaningful' | 'major'; automation: boolean; sectors: LRSector[] }
+
+/** Game-abstraction thresholds (documented; LAB-visible). Maturity advances at most one step per turn. */
+export const V105_THRESHOLDS = { emergeTurns: 2, demonstrateHeld: 2, operateHeld: 2, scaleHeld: 3, integrateHeld: 3, weakenFailTurns: 1, regressFailTurns: 4, adoptionRegressTurns: 3, absorptiveMin: 35, adoptEmerging: 45, adoptDemonstrated: 55, adoptOperational: 62, diffusionCap: 0.85, initialCap: 'emerging' as CapabilityMaturity, maxPasses: 2 } as const;
+export const V105_LIMITS = { history: 60, perCapabilityHistory: 12, evidence: 24, effectCap: 6, regions: 8 } as const;
+
+const ic = (o: EmergingCapabilityDefinition) => o;
+const T = (emerging: number, demonstrated: number, operational: number, scaled: number, integrated: number): CapabilityMaturityThresholds => ({ emerging, demonstrated, operational, scaled, integrated });
+const R = (dim: CapabilityDimension, label: string, src: CapabilitySource, w: number, scope?: 'local' | 'national'): CapabilityEvidenceRule => ({ dim, label, src, w, ...(scope ? { scope } : {}) });
+export const CAPABILITY_DEFINITIONS: EmergingCapabilityDefinition[] = [
+  ic({ id: 'advanced_logistics', label: 'Advanced Logistics', short: 'Adv. Logistics', icon: '🚚', category: 'infrastructure', description: 'Freight, digital and logistics systems strong enough to run national logistics at a higher level — better use of existing freight capacity and better routing resilience.',
+    readinessWeights: { knowledge: 0.12, infrastructure: 0.24, industry: 0.22, network: 0.28, supply: 0.06, resilience: 0.08 },
+    hardRequirements: [{ id: 'freight_network', label: 'Connected freight network', dim: 'network', emerge: 35, operate: 55 }, { id: 'logistics_base', label: 'Logistics / trade industry base', dim: 'industry', emerge: 35, operate: 50 }],
+    supportingEvidence: [R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 1), R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 0.5),
+      R('infrastructure', 'Freight hubs & rail', { s: 'proj', types: ['freight_rail_upgrade', 'inland_rail_hub', 'remote_logistics_base'], per: 2 }, 1.2), R('infrastructure', 'Port & trade infrastructure', { s: 'proj', types: ['port_expansion', 'automated_port'] }, 0.8), R('infrastructure', 'Digital infrastructure', { s: 'proj', types: ['data_center', 'subsea_cable_hub'] }, 0.4),
+      R('industry', 'Trade industry strength', { s: 'ind', k: 'trade' }, 1), R('industry', 'Logistics specialization', { s: 'sec', k: 'logistics' }, 0.8),
+      R('network', 'Freight infrastructure network maturity', { s: 'net', k: 'freight' }, 1), R('network', 'Freight network condition', { s: 'cond', n: 'freight' }, 0.6), R('network', 'Digital connectivity', { s: 'cond', n: 'digital' }, 0.4), R('network', 'Trade network maturity', { s: 'net', k: 'trade' }, 0.4),
+      R('supply', 'Goods moving through the system', { s: 'sup', k: 'manufactured_goods' }, 0.5), R('supply', 'Mineral exports', { s: 'sup', k: 'minerals' }, 0.5),
+      R('demand', 'Transport need', { s: 'need', c: 'transport' }, 1), R('demand', 'Trade need', { s: 'need', c: 'trade' }, 0.6),
+      R('resilience', 'Freight program progress', { s: 'prog', kinds: ['national_freight_modernization', 'northern_export_corridor'] }, 1), R('resilience', 'Freight condition', { s: 'cond', n: 'freight' }, 0.6)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'network_efficiency', label: 'Better use of existing freight capacity', target: { network: 'freight' }, max: 5 }, { kind: 'content_unlock', label: 'Advanced logistics contracts & dilemmas', max: 0 }],
+    contentTags: ['logistics', 'trade'], relevantSectors: ['logistics', 'trade'], relevantNetworks: ['freight', 'digital', 'trade'],
+    useEvidence: { projectTypes: ['freight_rail_upgrade', 'inland_rail_hub', 'automated_port', 'port_expansion'], contractSectors: ['logistics', 'trade'], programs: ['national_freight_modernization', 'northern_export_corridor'] },
+    tradeoffs: ['Higher digital dependence of the freight system'], directions: ['trade_logistics_hub', 'resource_export_powerhouse', 'advanced_manufacturing_economy'],
+    emergenceText: "Australia's freight, digital and logistics systems are now strong enough to support advanced national logistics operations.", operationalText: 'Australia can now reliably run advanced logistics across its integrated freight network.' }),
+  ic({ id: 'automated_mining', label: 'Automated Mining', short: 'Auto Mining', icon: '🤖', category: 'industrial', automation: true, description: 'Remote and automated mining operations, possible where a strong mining base meets technology, research, reliable energy and digital links.',
+    readinessWeights: { knowledge: 0.22, infrastructure: 0.14, industry: 0.28, network: 0.2, supply: 0.06, resilience: 0.1 },
+    hardRequirements: [{ id: 'mining_base', label: 'Strong mining base', dim: 'industry', emerge: 40, operate: 55 }, { id: 'tech_knowledge', label: 'Technology & research knowledge', dim: 'knowledge', emerge: 30, operate: 45 }, { id: 'digital_link', label: 'Digital connectivity in the mining region', src: { s: 'cond', n: 'digital' }, at: 'anchor', emerge: 0.25, operate: 0.45 }],
+    supportingEvidence: [R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 1), R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1),
+      R('infrastructure', 'Remote logistics & rail', { s: 'proj', types: ['remote_logistics_base', 'freight_rail_upgrade'] }, 1), R('infrastructure', 'Mining technology & digital assets', { s: 'proj', types: ['data_center', 'tech_innovation_park', 'subsea_cable_hub'], national: true }, 0.6),
+      R('industry', 'Mining strength', { s: 'ind', k: 'mining' }, 1.4), R('industry', 'Manufacturing support', { s: 'ind', k: 'manufacturing' }, 0.3),
+      R('network', 'Energy reliability', { s: 'cond', n: 'energy' }, 0.8), R('network', 'Digital connectivity', { s: 'cond', n: 'digital' }, 0.8), R('network', 'Freight network maturity', { s: 'net', k: 'freight' }, 0.4),
+      R('supply', 'Mineral supply', { s: 'sup', k: 'minerals' }, 1), R('supply', 'Energy supply', { s: 'sup', k: 'energy' }, 0.5),
+      R('demand', 'Workforce need', { s: 'need', c: 'workforce' }, 0.8), R('demand', 'Resources need', { s: 'need', c: 'resources' }, 0.6),
+      R('resilience', 'Export corridor program', { s: 'prog', kinds: ['northern_export_corridor'], tags: ['mining', 'export_scale'] }, 0.8), R('resilience', 'Advanced Logistics support (previous turn)', { s: 'cap', id: 'advanced_logistics' }, 0.6), R('resilience', 'Energy condition', { s: 'cond', n: 'energy' }, 0.6)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'industry_efficiency', label: 'Higher effective mineral productivity (diminishing)', target: { industry: 'mining' }, max: 5 }, { kind: 'industry_efficiency', label: 'New energy demand from automated operations', target: { network: 'energy' }, max: -2, dependency: true }, { kind: 'industry_efficiency', label: 'Higher digital dependence', target: { network: 'digital' }, max: -1, dependency: true }, { kind: 'content_unlock', label: 'Automation contracts & workforce dilemma', max: 0 }],
+    contentTags: ['mining', 'technology'], relevantSectors: ['mining', 'technology'], relevantNetworks: ['energy', 'digital', 'freight'],
+    useEvidence: { projectTypes: ['remote_logistics_base', 'freight_rail_upgrade'], contractSectors: ['mining', 'technology'], programs: ['northern_export_corridor'] },
+    tradeoffs: ['Higher technology, energy and digital dependence', 'Labour stakeholders may be concerned'], directions: ['resource_export_powerhouse'],
+    emergenceText: "Strong mining regions, technology knowledge and digital links have combined to make automated mining possible.", operationalText: 'Automated mining is now reliably operating, lifting effective mineral output modestly.' }),
+  ic({ id: 'advanced_manufacturing', label: 'Advanced Manufacturing', short: 'Adv. Manufacturing', icon: '🏭', category: 'industrial', automation: true, description: 'High-value industrial production: a manufacturing base with stable mineral and energy inputs, research capability and integrated freight.',
+    readinessWeights: { knowledge: 0.2, infrastructure: 0.16, industry: 0.3, network: 0.14, supply: 0.14, resilience: 0.06 },
+    hardRequirements: [{ id: 'mfg_base', label: 'Manufacturing base', dim: 'industry', emerge: 40, operate: 55 }, { id: 'inputs', label: 'Mineral & energy inputs', dim: 'supply', emerge: 30, operate: 45 }, { id: 'knowledge', label: 'Research / technology knowledge', dim: 'knowledge', emerge: 25, operate: 40 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1), R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 0.8),
+      R('infrastructure', 'Advanced manufacturing precincts', { s: 'proj', types: ['advanced_manufacturing'] }, 1.2), R('infrastructure', 'Industrial freight hubs', { s: 'proj', types: ['inland_rail_hub', 'freight_rail_upgrade'] }, 0.6),
+      R('industry', 'Manufacturing strength', { s: 'ind', k: 'manufacturing' }, 1.5), R('industry', 'Manufacturing specialization', { s: 'sec', k: 'manufacturing' }, 0.4),
+      R('network', 'Energy reliability', { s: 'cond', n: 'energy' }, 1), R('network', 'Freight network maturity', { s: 'net', k: 'freight' }, 0.6),
+      R('supply', 'Mineral supply', { s: 'sup', k: 'minerals' }, 1), R('supply', 'Energy supply', { s: 'sup', k: 'energy' }, 0.8),
+      R('demand', 'Development need', { s: 'need', c: 'development' }, 0.5), R('demand', 'Workforce need', { s: 'need', c: 'workforce' }, 0.5),
+      R('resilience', 'Energy supergrid program', { s: 'prog', kinds: ['eastern_energy_supergrid'] }, 0.6), R('resilience', 'Energy condition', { s: 'cond', n: 'energy' }, 0.8)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'industry_efficiency', label: 'Greater value-chain depth (manufacturing effectiveness)', target: { industry: 'manufacturing' }, max: 5 }, { kind: 'industry_efficiency', label: 'Higher mineral input demand', target: { network: 'freight' }, max: -1, dependency: true }, { kind: 'content_unlock', label: 'Advanced production contracts', max: 0 }],
+    contentTags: ['manufacturing', 'technology'], relevantSectors: ['manufacturing', 'research'], relevantNetworks: ['energy', 'freight'],
+    useEvidence: { projectTypes: ['advanced_manufacturing', 'inland_rail_hub'], contractSectors: ['manufacturing'], programs: ['eastern_energy_supergrid'] },
+    tradeoffs: ['Deeper dependence on mineral and energy inputs', 'Automation can concern labour stakeholders'], directions: ['advanced_manufacturing_economy'],
+    emergenceText: 'A manufacturing base, research capability, energy and mineral inputs have combined to make advanced industrial production possible.', operationalText: 'Advanced manufacturing is now operational — deeper domestic value chains and new advanced production opportunities.' }),
+  ic({ id: 'grid_scale_storage', label: 'Grid-Scale Storage', short: 'Grid Storage', icon: '🔋', category: 'energy', description: 'Large-scale storage that lets the existing energy system use its renewable generation reliably. It shifts energy — it never creates it.',
+    readinessWeights: { knowledge: 0.16, infrastructure: 0.24, industry: 0.22, network: 0.22, supply: 0.06, resilience: 0.1 },
+    hardRequirements: [{ id: 'renewables', label: 'Renewable generation base', dim: 'industry', emerge: 40, operate: 55 }, { id: 'grid', label: 'Integrated energy grid', dim: 'network', emerge: 30, operate: 50 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1), R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 0.5),
+      R('infrastructure', 'Hydro / storage infrastructure', { s: 'proj', types: ['hydro_expansion'] }, 1.2), R('infrastructure', 'Renewable grids', { s: 'proj', types: ['renewable_grid', 'offshore_wind_farm', 'green_hydrogen_terminal'], per: 2 }, 1),
+      R('industry', 'Energy industry strength', { s: 'ind', k: 'energy' }, 1.2), R('industry', 'Renewables specialization', { s: 'sec', k: 'renewables' }, 1), R('industry', 'Manufacturing support', { s: 'ind', k: 'manufacturing' }, 0.3),
+      R('network', 'Energy infrastructure network maturity', { s: 'net', k: 'energy' }, 1), R('network', 'Energy condition', { s: 'cond', n: 'energy' }, 0.6),
+      R('supply', 'Energy surplus available', { s: 'sup', k: 'energy' }, 1),
+      R('demand', 'Energy need', { s: 'need', c: 'energy' }, 1),
+      R('resilience', 'Pumped-hydro / supergrid program', { s: 'prog', kinds: ['eastern_energy_supergrid', 'green_hydrogen_export_network'], tags: ['storage', 'grid'] }, 1)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'resilience_support', label: 'Renewable reliability (shifts existing generation; bounded by the renewables base)', target: { network: 'energy' }, max: 5, perSector: 'renewables' }, { kind: 'content_unlock', label: 'Storage & grid-stabilisation content', max: 0 }],
+    contentTags: ['energy', 'renewables'], relevantSectors: ['renewables', 'energy'], relevantNetworks: ['energy'],
+    useEvidence: { projectTypes: ['hydro_expansion', 'renewable_grid'], contractSectors: ['renewables', 'energy'], programs: ['eastern_energy_supergrid'] },
+    tradeoffs: ['Reliable power invites energy-hungry industry — demand rises again'], directions: ['renewable_energy_powerhouse', 'advanced_manufacturing_economy'],
+    emergenceText: "Renewable generation, grid integration and research have made grid-scale storage possible.", operationalText: 'Australia can now reliably deploy large-scale storage across its integrated energy network.' }),
+  ic({ id: 'advanced_water_systems', label: 'Advanced Water Systems', short: 'Adv. Water', icon: '💧', category: 'infrastructure', description: 'Efficient desalination, transfer and reuse systems. Improves drought resilience — droughts still happen.',
+    readinessWeights: { knowledge: 0.16, infrastructure: 0.34, industry: 0.12, network: 0.24, supply: 0.04, resilience: 0.1 },
+    hardRequirements: [{ id: 'water_infra', label: 'Desalination / pipeline infrastructure', dim: 'infrastructure', emerge: 30, operate: 50 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1),
+      R('infrastructure', 'Desalination plants', { s: 'proj', types: ['desalination_plant'] }, 1), R('infrastructure', 'Water pipelines', { s: 'proj', types: ['water_pipeline'] }, 1),
+      R('industry', 'Agriculture served', { s: 'ind', k: 'agriculture' }, 0.6), R('industry', 'Manufacturing support', { s: 'ind', k: 'manufacturing' }, 0.4),
+      R('network', 'Water infrastructure network maturity', { s: 'net', k: 'water' }, 1), R('network', 'Water condition', { s: 'cond', n: 'water' }, 0.6),
+      R('supply', 'Agricultural goods', { s: 'sup', k: 'agricultural_goods' }, 0.4),
+      R('demand', 'Water need', { s: 'need', c: 'water' }, 1),
+      R('resilience', 'Water security program', { s: 'prog', kinds: ['national_water_security'] }, 1)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'crisis_mitigation_support', label: 'Effective water capacity during drought (crisis still applies)', target: { network: 'water' }, max: 5 }, { kind: 'content_unlock', label: 'Water-efficiency content', max: 0 }],
+    contentTags: ['water', 'agriculture'], relevantSectors: ['agriculture'], relevantNetworks: ['water'],
+    useEvidence: { projectTypes: ['desalination_plant', 'water_pipeline'], contractSectors: ['agriculture'], programs: ['national_water_security'] },
+    tradeoffs: ['Desalination adds energy demand'], directions: ['agricultural_export_economy'],
+    emergenceText: 'Desalination, pipelines and research have combined to make advanced water systems possible.', operationalText: 'Advanced water systems are operational — water-system impact during drought is reduced.' }),
+  ic({ id: 'ai_compute_infrastructure', label: 'AI Compute Infrastructure', short: 'AI Compute', icon: '🧠', category: 'digital', description: "Large-scale national compute: research and technology strength, a digital backbone, data infrastructure and RELIABLE energy. It represents Australia's economy — it never makes the game's opponent AI smarter.",
+    readinessWeights: { knowledge: 0.3, infrastructure: 0.2, industry: 0.14, network: 0.22, supply: 0.06, resilience: 0.08 },
+    hardRequirements: [{ id: 'knowledge', label: 'Research & technology knowledge', dim: 'knowledge', emerge: 45, operate: 60 }, { id: 'digital', label: 'Digital connectivity', dim: 'network', emerge: 35, operate: 55 },
+      { id: 'energy', label: 'Reliable energy where compute operates', src: { s: 'cond', n: 'energy' }, at: 'anchor', emerge: 0.35, operate: 0.7 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1.2), R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 1), R('knowledge', 'Research & AI contracts', { s: 'con', sectors: ['research', 'technology'], per: 2 }, 0.5),
+      R('infrastructure', 'Data centres', { s: 'proj', types: ['data_center'] }, 1.2), R('infrastructure', 'Research campuses & tech parks', { s: 'proj', types: ['research_campus', 'tech_innovation_park'] }, 1), R('infrastructure', 'Subsea cable hubs', { s: 'proj', types: ['subsea_cable_hub'], national: true }, 0.6),
+      R('industry', 'Technology industry', { s: 'ind', k: 'technology' }, 1), R('industry', 'Manufacturing support', { s: 'ind', k: 'manufacturing' }, 0.3),
+      R('network', 'Digital infrastructure network maturity', { s: 'net', k: 'digital' }, 1), R('network', 'Digital condition', { s: 'cond', n: 'digital' }, 0.8),
+      R('supply', 'Technology capability supply', { s: 'sup', k: 'technology_capability' }, 0.6), R('supply', 'Research capability supply', { s: 'sup', k: 'research_capability' }, 0.6),
+      R('demand', 'Technology need', { s: 'need', c: 'technology' }, 1),
+      R('resilience', 'AI Compute / Digital Backbone programs', { s: 'prog', kinds: ['australian_ai_compute_network', 'continental_digital_backbone'] }, 1), R('resilience', 'Energy condition', { s: 'cond', n: 'energy' }, 0.6)],
+    maturityThresholds: T(48, 58, 66, 74, 80),
+    effects: [{ kind: 'industry_efficiency', label: 'Stronger technology economy', target: { industry: 'technology' }, max: 4 }, { kind: 'industry_efficiency', label: 'Research capability uplift', target: { industry: 'research' }, max: 2 }, { kind: 'industry_efficiency', label: 'New energy demand from compute', target: { network: 'energy' }, max: -2, dependency: true }, { kind: 'content_unlock', label: 'AI infrastructure contracts', max: 0 }],
+    contentTags: ['technology', 'research'], relevantSectors: ['technology', 'research'], relevantNetworks: ['digital', 'energy'],
+    useEvidence: { projectTypes: ['data_center', 'research_campus'], contractSectors: ['research', 'technology'], programs: ['australian_ai_compute_network', 'continental_digital_backbone'] },
+    tradeoffs: ['Raises national energy demand', 'Digital infrastructure becomes more critical'], directions: ['technology_research_economy'],
+    emergenceText: 'Research, technology, digital infrastructure and energy have aligned enough for advanced national compute.', operationalText: 'AI compute infrastructure is operational — a national digital capability (not a smarter opponent).' }),
+  ic({ id: 'precision_agriculture', label: 'Precision Agriculture', short: 'Precision Ag', icon: '🌾', category: 'agriculture', description: 'Data-driven farming: agriculture combined with research, digital connectivity, water capability and energy.',
+    readinessWeights: { knowledge: 0.18, infrastructure: 0.16, industry: 0.3, network: 0.22, supply: 0.06, resilience: 0.08 },
+    hardRequirements: [{ id: 'agri_base', label: 'Agricultural base', dim: 'industry', emerge: 40, operate: 55 }, { id: 'digital', label: 'Digital connectivity in farm regions', src: { s: 'cond', n: 'digital' }, at: 'anchor', emerge: 0.25, operate: 0.45 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1), R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 0.6),
+      R('infrastructure', 'Water infrastructure', { s: 'proj', types: ['water_pipeline', 'desalination_plant'] }, 1), R('infrastructure', 'Digital infrastructure', { s: 'proj', types: ['data_center', 'subsea_cable_hub', 'tech_innovation_park'], national: true }, 0.4),
+      R('industry', 'Agriculture strength', { s: 'ind', k: 'agriculture' }, 1.5), R('industry', 'Manufacturing / equipment support', { s: 'ind', k: 'manufacturing' }, 0.3),
+      R('network', 'Digital condition', { s: 'cond', n: 'digital' }, 0.8), R('network', 'Water condition', { s: 'cond', n: 'water' }, 0.8), R('network', 'Energy condition', { s: 'cond', n: 'energy' }, 0.4),
+      R('supply', 'Agricultural goods', { s: 'sup', k: 'agricultural_goods' }, 1),
+      R('demand', 'Water need', { s: 'need', c: 'water' }, 0.6), R('demand', 'Workforce need', { s: 'need', c: 'workforce' }, 0.5),
+      R('resilience', 'Water security program', { s: 'prog', kinds: ['national_water_security'] }, 0.6), R('resilience', 'Advanced Water support (previous turn)', { s: 'cap', id: 'advanced_water_systems' }, 0.6)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'industry_efficiency', label: 'Greater agricultural efficiency', target: { industry: 'agriculture' }, max: 5 }, { kind: 'supply_efficiency', label: 'Better water utilisation', target: { network: 'water' }, max: 1 }, { kind: 'content_unlock', label: 'Farm-technology content', max: 0 }],
+    contentTags: ['agriculture', 'technology'], relevantSectors: ['agriculture'], relevantNetworks: ['water', 'digital'],
+    useEvidence: { projectTypes: ['water_pipeline', 'desalination_plant'], contractSectors: ['agriculture'], programs: ['national_water_security'] },
+    tradeoffs: ['Farms become more dependent on digital and water infrastructure'], directions: ['agricultural_export_economy'],
+    emergenceText: 'Farm regions, research and digital/water infrastructure have combined to make precision agriculture possible.', operationalText: 'Precision agriculture is operational — greater agricultural efficiency and water use.' }),
+  ic({ id: 'research_commercialization', label: 'Research Commercialization', short: 'Research → Industry', icon: '🔬', category: 'research', description: 'Turning research strength into economic activity: research and technology linked to manufacturing, trade and finance.',
+    readinessWeights: { knowledge: 0.3, infrastructure: 0.2, industry: 0.26, network: 0.14, supply: 0.04, resilience: 0.06 },
+    hardRequirements: [{ id: 'research', label: 'Research base', dim: 'knowledge', emerge: 45, operate: 60 }, { id: 'industry', label: 'Industry able to use research', dim: 'industry', emerge: 35, operate: 50 }],
+    supportingEvidence: [R('knowledge', 'Research capability', { s: 'ind', k: 'research' }, 1.4), R('knowledge', 'Technology capability', { s: 'ind', k: 'technology' }, 0.8), R('knowledge', 'Research contracts delivered', { s: 'con', sectors: ['research'], per: 2 }, 0.4),
+      R('infrastructure', 'Research campuses & technology parks', { s: 'proj', types: ['research_campus', 'tech_innovation_park'] }, 1.4), R('infrastructure', 'Advanced manufacturing precincts', { s: 'proj', types: ['advanced_manufacturing'], national: true }, 0.5),
+      R('industry', 'Manufacturing able to absorb research', { s: 'ind', k: 'manufacturing' }, 1), R('industry', 'Technology industry', { s: 'ind', k: 'technology' }, 0.8), R('industry', 'Finance & trade', { s: 'sec', k: 'finance' }, 0.4),
+      R('network', 'Digital connectivity', { s: 'cond', n: 'digital' }, 0.8), R('network', 'Digital network maturity', { s: 'net', k: 'digital' }, 0.6),
+      R('supply', 'Research capability supply', { s: 'sup', k: 'research_capability' }, 1),
+      R('demand', 'Technology need', { s: 'need', c: 'technology' }, 0.6), R('demand', 'Development need', { s: 'need', c: 'development' }, 0.6),
+      R('resilience', 'Public research program choices', { s: 'prog', kinds: ['australian_ai_compute_network', 'national_high_speed_rail'], tags: ['research', 'public_good'] }, 0.6)],
+    maturityThresholds: T(45, 55, 64, 72, 78),
+    effects: [{ kind: 'industry_efficiency', label: 'Research-to-industry linkage (technology)', target: { industry: 'technology' }, max: 2 }, { kind: 'industry_efficiency', label: 'Research-to-industry linkage (manufacturing)', target: { industry: 'manufacturing' }, max: 2 }, { kind: 'content_unlock', label: 'Commercialisation opportunities', max: 0 }],
+    contentTags: ['research', 'technology'], relevantSectors: ['research', 'technology', 'manufacturing'], relevantNetworks: ['digital'],
+    useEvidence: { projectTypes: ['research_campus', 'tech_innovation_park'], contractSectors: ['research', 'technology'], programs: ['australian_ai_compute_network'] },
+    tradeoffs: ['Research regions become strategically valuable to rivals'], directions: ['technology_research_economy', 'advanced_manufacturing_economy'],
+    emergenceText: "Research strength and industries able to use it have combined — Australia is starting to commercialise its research.", operationalText: 'Research commercialization is operational — research now reliably becomes economic activity.' })
+];
+export const CAPABILITY_DEF_BY_ID: Record<EmergingCapabilityId, EmergingCapabilityDefinition> = Object.fromEntries(CAPABILITY_DEFINITIONS.map(d => [d.id, d])) as any;
+
+const v105R = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const v105C = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
+const V105_COND: Record<NationalNetworkCondition, number> = { surplus: 1, healthy: 0.8, strained: 0.5, bottlenecked: 0.25, critical: 0 };
+const V105_SUP: Record<SupplyCondition, number> = { shortage: 0, tight: 0.3, balanced: 0.6, surplus: 0.85, abundant: 1 };
+const V105_MAT: Record<InfrastructureNetworkMaturity, number> = { fragmented: 0.1, emerging: 0.35, connected: 0.6, integrated: 0.85, national_backbone: 1 };
+const V105_SEV: Record<string, number> = { low: 0.25, moderate: 0.5, high: 0.8, critical: 1 };
+const v105Fn = (status: string) => status === 'active' || status === 'upgraded';
+
+function v105EmptyCap(): IcCapMemory { return { maturity: 'unavailable', knowledge: 'unknown', held: 0, qualify: 0, fail: 0, weakening: false, emergedTurn: null, operationalTurn: null, prev: null, adoption: {}, blockers: [], history: [] }; }
+export function createEmptyInnovationMemory(): InnovationMemory { return { caps: Object.fromEntries(CAPABILITY_IDS.map(id => [id, v105EmptyCap()])) as any, lastTurn: 0 }; }
+export function createEmptyInnovationPersisted(): InnovationPersisted { return { schemaVersion: '10.5', revision: 0, initializedTurn: null, base: createEmptyInnovationMemory(), current: createEmptyInnovationMemory(), history: [], seq: 0, inputHash: '' }; }
+
+export function innovationInputHash(i: InnovationInputs): string {
+  let h = 2166136261 >>> 0;
+  const mix = (s: string) => { for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; } };
+  mix(`t${i.turn}`);
+  i.regions.forEach(r => { mix(r.code); Object.keys(r.sectors).sort().forEach(k => mix(`${k}${Math.round(Number((r.sectors as any)[k]) / 3)}`)); r.needs.forEach(n => mix(`${n.category}${n.severity}`)); });
+  i.projects.forEach(p => mix(`${p.id}:${p.status}`));
+  if (i.national) Object.values(i.national.regions).forEach((g: any) => NATIONAL_NETWORKS.forEach(n => mix(g.networks[n]?.condition || '')));
+  if (i.industries) Object.keys(i.industries.regions).sort().forEach(r => STRATEGIC_INDUSTRIES.forEach(k => mix(String(Math.round((i.industries!.regions[r]?.industries?.[k]?.strength ?? 0) / 3)))));
+  if (i.industries) Object.keys(i.industries.supplies).sort().forEach(r => i.industries!.supplies[r].forEach(s => mix(`${s.supply}${s.condition}`)));
+  (i.networks?.networks || []).forEach(n => mix(`${n.id}${n.maturity}`));
+  Object.values(i.megaprojects?.programs || {}).forEach(p => mix(`${p.id}${p.stages.filter(s => s.status === 'completed').length}${JSON.stringify(p.choices)}`));
+  mix(`c${i.completedContracts.length}|${i.direction?.primary || ''}|${i.direction?.secondary || ''}`);
+  return h.toString(36);
+}
+
+/** Inputs from existing snapshots (pure). */
+export function buildInnovationInputs(src: { turn: number; lr: LivingRegionsState | null; national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
+  projects: Record<string, any> | any[] | null | undefined; contracts?: Array<{ contractType: string; regionId: string | null; status: string }> | null; direction?: InnovationInputs['direction']; applied?: CapabilityModifiers | null }): InnovationInputs {
+  const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 1,
+    regions: Object.keys(REGIONS).sort().map(code => { const r: any = src.lr?.regions?.[code]; return { code, sectors: { ...(r?.sectors || {}) }, needs: (r?.needs || []).filter((n: any) => n && n.status !== 'resolved').map((n: any) => ({ category: String(n.category), severity: String(n.severity) })) }; }),
+    national: src.national, industries: src.industries, networks: src.networks, megaprojects: src.megaprojects,
+    projects: list.filter(p => p && typeof p.id === 'string').map(p => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || null, projectType: String(p.projectType || ''), status: String(p.status || '') })).sort((a, b) => a.id.localeCompare(b.id)),
+    completedContracts: (src.contracts || []).filter(c => c && /complet|fulfil/.test(String(c.status))).map(c => ({ contractType: c.contractType, regionId: c.regionId })),
+    direction: src.direction || null, applied: src.applied || null
+  };
+}
+
+// ---- Evidence evaluation ------------------------------------------------------------------------------------------
+interface V105Ctx { i: InnovationInputs; codes: string[]; prevCaps: Record<EmergingCapabilityId, IcCapMemory> | null }
+function v105SourceValue(ctx: V105Ctx, src: CapabilitySource, r: string): { v: number; ids: string[] } {
+  const i = ctx.i;
+  switch (src.s) {
+    case 'ind': {
+      const x = i.industries?.regions?.[r]?.industries?.[src.k];
+      const applied = Number(i.applied?.industries?.[r]?.[src.k] || 0); // never let a capability feed its own readiness
+      return { v: v105C(((x?.strength || 0) - applied) / 100), ids: x ? [`industry:${r}:${src.k}`] : [] };
+    }
+    case 'sec': return { v: v105C(Number((i.regions.find(x => x.code === r)?.sectors as any)?.[src.k] || 0) / 100), ids: [`sector:${r}:${src.k}`] };
+    case 'proj': {
+      const ps = i.projects.filter(p => v105Fn(p.status) && src.types.includes(p.projectType) && (src.national || p.regionId === r));
+      return { v: v105C(ps.length / (src.per || 1)), ids: ps.map(p => p.id) };
+    }
+    case 'cond': { const c = (i.national?.regions as any)?.[r]?.networks?.[src.n]?.condition as NationalNetworkCondition | undefined; return { v: c ? V105_COND[c] : 0.4, ids: c ? [`network:${r}:${src.n}`] : [] }; }
+    case 'net': { const ns = (i.networks?.networks || []).filter(n => n.networkKind === src.k && n.regionIds.includes(r)); const best = ns.reduce((m, n) => Math.max(m, V105_MAT[n.maturity]), 0); return { v: best, ids: ns.map(n => n.id) }; }
+    case 'sup': { const s = (i.industries?.supplies?.[r] || []).find(x => x.supply === src.k); return { v: s ? V105_SUP[s.condition] * (s.production > 0 || s.imported > 0 ? 1 : 0.5) : 0, ids: s ? [`supply:${r}:${src.k}`] : [] }; }
+    case 'con': { const n = i.completedContracts.filter(c => (LR_CONTRACT_SECTORS[c.contractType] || []).some(s => src.sectors.includes(s))).length; return { v: v105C(n / (src.per || 3)), ids: n ? [`contracts:${src.sectors.join('+')}`] : [] }; }
+    case 'prog': {
+      const ps = Object.values(i.megaprojects?.programs || {}).filter(p => src.kinds.includes(p.kind));
+      let v = 0; const ids: string[] = [];
+      ps.forEach(p => {
+        const frac = p.stages.filter(s => s.status === 'completed').length / Math.max(1, p.stages.length); if (frac <= 0) return;
+        const tags = Object.values(p.choices).flatMap(c => MEGAPROJECT_DEF_BY_KIND[p.kind]?.choices.flatMap(ch => ch.options).find(o => o.id === c.optionId)?.effectTags || []);
+        const tagMul = src.tags && src.tags.length ? (tags.some(t => src.tags!.includes(t)) ? 1.15 : 0.85) : 1;
+        v = Math.max(v, frac * tagMul); ids.push(p.id);
+      });
+      return { v: v105C(v), ids };
+    }
+    case 'need': { const n = i.regions.find(x => x.code === r)?.needs.find(x => x.category === src.c); return { v: n ? V105_SEV[n.severity] ?? 0.3 : 0, ids: n ? [`need:${r}:${src.c}`] : [] }; }
+    case 'cap': { const m = ctx.prevCaps?.[src.id]?.maturity || 'unavailable'; return { v: CAPABILITY_MATURITY_RANK[m] >= 3 ? 1 : CAPABILITY_MATURITY_RANK[m] >= 2 ? 0.5 : 0, ids: CAPABILITY_MATURITY_RANK[m] >= 2 ? [`capability:${src.id}`] : [] }; }
+  }
+}
+/** Knowledge diffusion: a region can draw on national knowledge through digital + research connectivity (bounded). */
+function v105Diffusion(ctx: V105Ctx, r: string, def: EmergingCapabilityDefinition): number {
+  const dig = v105SourceValue(ctx, { s: 'cond', n: 'digital' }, r).v, net = v105SourceValue(ctx, { s: 'net', k: 'digital' }, r).v;
+  const prog = def.id === 'ai_compute_infrastructure' ? Object.values(ctx.i.megaprojects?.programs || {}).filter(p => p.kind === 'australian_ai_compute_network').reduce((m, p) => {
+    const tags = Object.values(p.choices).flatMap(c => MEGAPROJECT_DEF_BY_KIND[p.kind]?.choices.flatMap(ch => ch.options).find(o => o.id === c.optionId)?.effectTags || []);
+    return Math.max(m, tags.includes('distributed') ? 0.15 : tags.includes('centralized') ? -0.1 : 0); }, 0) : 0;
+  return v105C(0.5 * dig + 0.4 * net + prog, 0, V105_THRESHOLDS.diffusionCap);
+}
+interface V105RegionEval { r: string; dims: Record<CapabilityDimension, number>; local: Record<CapabilityDimension, number>; composite: number; absorptive: number; parts: CapabilityEvidence[] }
+function v105EvalRegion(ctx: V105Ctx, def: EmergingCapabilityDefinition, r: string, nationalKnowledge: number | null): V105RegionEval {
+  const sums: Record<string, { w: number; v: number }> = {}; const parts: CapabilityEvidence[] = [];
+  def.supportingEvidence.forEach((rule, k) => {
+    const sv = v105SourceValue(ctx, rule.src, r); const s = (sums[rule.dim] = sums[rule.dim] || { w: 0, v: 0 });
+    s.w += rule.w; s.v += rule.w * sv.v;
+    parts.push({ id: `${def.id}:${r}:${k}`, dim: rule.dim, label: rule.label, regionId: r, value: v105R(sv.v, 3), contribution: 0, source: sv.ids.join(',') || rule.src.s });
+  });
+  const local = {} as Record<CapabilityDimension, number>;
+  CAPABILITY_DIMENSIONS.forEach(d => { const s = sums[d]; local[d] = v105R(s && s.w ? (s.v / s.w) * 100 : 0, 1); });
+  parts.forEach(p => { const s = sums[p.dim]; const rule = def.supportingEvidence[Number(p.id.split(':').pop())]; p.contribution = v105R(s && s.w ? (rule.w * p.value) / s.w * 100 : 0, 1); });
+  const dims = { ...local };
+  if (nationalKnowledge !== null) dims.knowledge = v105R(Math.max(local.knowledge, nationalKnowledge * v105Diffusion(ctx, r, def)), 1);
+  const composite = v105Composite(def, dims);
+  return { r, dims, local, composite, absorptive: v105R(Math.min(dims.industry, Math.max(dims.infrastructure, dims.network)), 1), parts };
+}
+function v105Composite(def: EmergingCapabilityDefinition, d: Record<CapabilityDimension, number>): number {
+  const ws = Object.entries(def.readinessWeights) as Array<[CapabilityDimension, number]>; const tw = ws.reduce((a, [, w]) => a + w, 0);
+  return v105R(v105C(ws.reduce((a, [k, w]) => a + w * (d[k] || 0), 0) / Math.max(1e-9, tw), 0, 100), 1);
+}
+
+// ---- Per-capability evaluation (pure; memory advances once per turn) ----------------------------------------------------
+interface V105Eval { readiness: CapabilityReadiness; regions: V105RegionEval[]; anchor: string | null; origin: string[]; reqs: EmergingCapabilityState['requirements']; reqLevel: 0 | 1 | 2; evidence: CapabilityEvidence[]; useEvidence: string[]; enablingProjects: string[]; enablingPrograms: string[] }
+function v105Evaluate(ctx: V105Ctx, def: EmergingCapabilityDefinition): V105Eval {
+  const pre = ctx.codes.map(r => v105EvalRegion(ctx, def, r, null));
+  // National readiness: any region can contribute any dimension (multi-path, multi-region co-development).
+  const nat = {} as Record<CapabilityDimension, number>;
+  CAPABILITY_DIMENSIONS.forEach(d => { nat[d] = pre.reduce((m, x) => Math.max(m, x.local[d]), 0); });
+  const regions = ctx.codes.map(r => v105EvalRegion(ctx, def, r, nat.knowledge));
+  const composite = v105Composite(def, nat);
+  const readiness: CapabilityReadiness = { knowledge: nat.knowledge, infrastructure: nat.infrastructure, industry: nat.industry, network: nat.network, supply: nat.supply, demand: nat.demand, resilience: nat.resilience, composite };
+  const anchor = [...pre].sort((a, b) => b.local.industry - a.local.industry || b.composite - a.composite || a.r.localeCompare(b.r))[0]?.r || null;
+  // Origin: the regions that contribute the most heavily-weighted dimensions (WA mining + ACT research → both).
+  const topDims = (Object.entries(def.readinessWeights) as Array<[CapabilityDimension, number]>).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([d]) => d);
+  const origin = Array.from(new Set(topDims.map(d => { const b = [...pre].sort((x, y) => y.local[d] - x.local[d] || x.r.localeCompare(y.r))[0]; return b && b.local[d] > 0 ? b.r : null; }).filter((x): x is string => Boolean(x)))).sort();
+  const reqs = def.hardRequirements.map(q => {
+    let value: number; let regionId: string | null = null;
+    if (q.dim) value = nat[q.dim];
+    else { regionId = q.at === 'best' ? [...ctx.codes].sort((a, b) => v105SourceValue(ctx, q.src!, b).v - v105SourceValue(ctx, q.src!, a).v || a.localeCompare(b))[0] : anchor; value = regionId ? v105SourceValue(ctx, q.src!, regionId).v : 0; }
+    const met: 'blocking' | 'emerging_only' | 'met' = value >= q.operate ? 'met' : value >= q.emerge ? 'emerging_only' : 'blocking';
+    return { id: q.id, label: q.label, value: v105R(value, 2), emerge: q.emerge, operate: q.operate, met, regionId };
+  });
+  const reqLevel: 0 | 1 | 2 = reqs.some(r => r.met === 'blocking') ? 0 : reqs.some(r => r.met === 'emerging_only') ? 1 : 2;
+  const best = regions.reduce((m: V105RegionEval | null, x) => (!m || x.composite > m.composite ? x : m), null);
+  const evidence = (best ? best.parts : []).filter(p => p.value > 0).sort((a, b) => b.contribution - a.contribution).slice(0, V105_LIMITS.evidence);
+  const enablingProjects = ctx.i.projects.filter(p => v105Fn(p.status) && def.useEvidence.projectTypes.includes(p.projectType)).map(p => p.id).slice(0, 8);
+  const enablingPrograms = Object.values(ctx.i.megaprojects?.programs || {}).filter(p => def.useEvidence.programs.includes(p.kind) && p.stages.some(s => s.status === 'completed')).map(p => p.id);
+  const contracts = ctx.i.completedContracts.filter(c => (LR_CONTRACT_SECTORS[c.contractType] || []).some(s => def.useEvidence.contractSectors.includes(s))).map(c => `contract:${c.contractType}`);
+  return { readiness, regions, anchor, origin, reqs, reqLevel, evidence, useEvidence: [...enablingProjects, ...enablingPrograms, ...contracts], enablingProjects, enablingPrograms };
+}
+
+/** The highest maturity the CURRENT evidence supports (before hysteresis/persistence). */
+function v105Qualifies(def: EmergingCapabilityDefinition, e: V105Eval, adoptedOperational: number): CapabilityMaturity {
+  const c = e.readiness.composite, t = def.maturityThresholds;
+  if (e.reqLevel === 0 || c < t.emerging) return 'unavailable';
+  if (c < t.demonstrated || !e.useEvidence.length) return 'emerging';
+  if (e.reqLevel < 2 || c < t.operational) return 'demonstrated';
+  if (adoptedOperational < 1) return 'demonstrated';
+  if (c < t.scaled || adoptedOperational < 2) return 'operational';
+  if (c < t.integrated || adoptedOperational < 3 || e.readiness.network < 70) return 'scaled';
+  return 'nationally_integrated';
+}
+const V105_HELD_FOR: Record<CapabilityMaturity, number> = { unavailable: V105_THRESHOLDS.emergeTurns, emerging: V105_THRESHOLDS.demonstrateHeld, demonstrated: V105_THRESHOLDS.operateHeld, operational: V105_THRESHOLDS.scaleHeld, scaled: V105_THRESHOLDS.integrateHeld, nationally_integrated: 99 };
+const v105KnowledgeFor = (m: CapabilityMaturity): CapabilityKnowledgeState => (CAPABILITY_MATURITY_RANK[m] >= 3 ? 'established' : CAPABILITY_MATURITY_RANK[m] >= 2 ? 'demonstrated' : CAPABILITY_MATURITY_RANK[m] >= 1 ? 'recognized' : 'unknown');
+const V105_KNOW_RANK: Record<CapabilityKnowledgeState, number> = { unknown: 0, recognized: 1, demonstrated: 2, established: 3 };
+
+export function computeInnovationCapabilities(i: InnovationInputs, prevIn: InnovationPersisted | null, opts: { emit?: boolean } = {}): { state: InnovationCapabilitiesState; persisted: InnovationPersisted; events: InnovationDerivedEvent[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || createEmptyInnovationPersisted();
+  const turn = i.turn; const newTurn = turn > prev.current.lastTurn;
+  const base = newTurn ? prev.current : prev.base; // within a turn always recompute from the previous turn (idempotent)
+  const firstEver = prev.initializedTurn === null;
+  // Cascade guard: capability-to-capability support reads ONLY the previous turn's stable snapshot (never this pass).
+  const ctx: V105Ctx = { i, codes: Object.keys(REGIONS).sort(), prevCaps: base.caps };
+  const mem: InnovationMemory = JSON.parse(JSON.stringify(base)); mem.lastTurn = turn;
+  const events: InnovationDerivedEvent[] = []; const history = [...prev.history]; let seq = prev.seq;
+  const emitOk = opts.emit !== false && !firstEver;
+  const caps = {} as Record<EmergingCapabilityId, EmergingCapabilityState>;
+  CAPABILITY_DEFINITIONS.forEach(def => {
+    const e = v105Evaluate(ctx, def);
+    const m: IcCapMemory = mem.caps[def.id] || v105EmptyCap(); mem.caps[def.id] = m;
+    const wasMaturity = m.maturity; const wasKnowledge = m.knowledge;
+    // ---- Regional adoption (absorptive capacity + local readiness; one step per turn; gradual regression) ----
+    const natRank = CAPABILITY_MATURITY_RANK[m.maturity];
+    const adoption: CapabilityRegionalAdoption[] = e.regions.map(x => {
+      const a = m.adoption[x.r] || { level: 'none' as CapabilityAdoptionLevel, held: 0, fail: 0 };
+      const absorb = x.absorptive >= V105_THRESHOLDS.absorptiveMin;
+      const localReq = def.hardRequirements.filter(q => q.src && q.at === 'anchor').every(q => v105SourceValue(ctx, q.src!, x.r).v >= q.emerge);
+      const target: CapabilityAdoptionLevel = !absorb || !localReq || natRank < 1 ? 'none' : x.composite >= V105_THRESHOLDS.adoptOperational && natRank >= 2 ? 'operational' : x.composite >= V105_THRESHOLDS.adoptDemonstrated && natRank >= 2 ? 'demonstrated' : x.composite >= V105_THRESHOLDS.adoptEmerging ? 'emerging' : 'none';
+      if (newTurn) {
+        if (CAPABILITY_ADOPTION_RANK[target] > CAPABILITY_ADOPTION_RANK[a.level]) { a.level = (['none', 'emerging', 'demonstrated', 'operational'] as CapabilityAdoptionLevel[])[CAPABILITY_ADOPTION_RANK[a.level] + 1]; a.held = 0; a.fail = 0; }
+        else if (CAPABILITY_ADOPTION_RANK[target] < CAPABILITY_ADOPTION_RANK[a.level]) { a.fail += 1; if (a.fail >= V105_THRESHOLDS.adoptionRegressTurns) { a.level = (['none', 'emerging', 'demonstrated', 'operational'] as CapabilityAdoptionLevel[])[CAPABILITY_ADOPTION_RANK[a.level] - 1]; a.fail = 0; a.held = 0; } }
+        else { a.held += 1; a.fail = 0; }
+      }
+      if (a.level !== 'none' || target !== 'none') m.adoption[x.r] = a;
+      const blocker = !absorb ? `Local ${x.dims.industry < x.dims.infrastructure ? 'industry base' : 'infrastructure'} too weak to absorb it` : !localReq ? def.hardRequirements.filter(q => q.src && q.at === 'anchor').map(q => q.label.toLowerCase())[0] || null : null;
+      return { regionId: x.r, level: a.level, readiness: x.composite, absorptive: x.absorptive, blocker };
+    });
+    const adoptedOp = adoption.filter(a => a.level === 'operational').length;
+    // ---- National maturity (hard gates + composite + persistence; ≤ one step per turn; knowledge persists) ----
+    const q = v105Qualifies(def, e, adoptedOp);
+    if (newTurn || firstEver) {
+      const cur = CAPABILITY_MATURITY_RANK[m.maturity], tgt = CAPABILITY_MATURITY_RANK[q];
+      if (tgt > cur) {
+        m.qualify += 1; m.fail = 0; m.weakening = false;
+        const need = firstEver ? 0 : V105_HELD_FOR[m.maturity];
+        if (m.qualify >= need && (m.held >= need || m.maturity === 'unavailable')) {
+          const next = firstEver ? (CAPABILITY_MATURITY_RANK[q] > CAPABILITY_MATURITY_RANK[V105_THRESHOLDS.initialCap] ? V105_THRESHOLDS.initialCap : q) : CAPABILITY_MATURITIES[cur + 1];
+          if (next !== m.maturity) { m.prev = m.maturity; m.maturity = next; m.held = 0; m.qualify = 0; }
+        } else m.held += 1;
+      } else if (tgt < cur) {
+        m.fail += 1; m.qualify = 0; m.weakening = m.fail >= V105_THRESHOLDS.weakenFailTurns;
+        // Gradual regression: only after sustained failure; knowledge floors deployment loss (never forgotten).
+        const floor = V105_KNOW_RANK[m.knowledge] >= 2 ? 2 : 0;
+        if (m.fail >= V105_THRESHOLDS.regressFailTurns && cur > floor) { m.prev = m.maturity; m.maturity = CAPABILITY_MATURITIES[Math.max(floor, cur - 1)]; m.fail = 0; m.held = 0; }
+      } else { m.held += 1; m.fail = 0; m.qualify = 0; m.weakening = false; }
+    }
+    if (m.maturity !== 'unavailable' && m.emergedTurn === null && !firstEver) m.emergedTurn = turn;
+    if (CAPABILITY_MATURITY_RANK[m.maturity] >= 3 && m.operationalTurn === null && !firstEver) m.operationalTurn = turn;
+    const kn = v105KnowledgeFor(m.maturity); if (V105_KNOW_RANK[kn] > V105_KNOW_RANK[m.knowledge]) m.knowledge = kn;
+    // ---- Bottlenecks (explainable) ----
+    const bottlenecks: CapabilityBottleneck[] = [];
+    e.reqs.filter(r => r.met !== 'met').forEach(r => { const q2 = def.hardRequirements.find(x => x.id === r.id)!; bottlenecks.push({ dimension: (q2.dim || (q2.src?.s === 'cond' ? 'network' : 'infrastructure')) as CapabilityBottleneck['dimension'], severity: r.met === 'blocking' ? 'blocking' : 'major', reason: `${r.label}${r.regionId ? ` (${r.regionId})` : ''} is ${r.met === 'blocking' ? 'below the minimum' : 'below the operational requirement'}`, sourceIds: [r.id] }); });
+    (Object.entries(def.readinessWeights) as Array<[Exclude<CapabilityDimension, 'demand'>, number]>).sort((a, b) => b[1] - a[1]).forEach(([d, w]) => {
+      const v = (e.readiness as any)[d] as number; if (bottlenecks.some(b => b.dimension === d)) return;
+      if (w >= 0.14 && v < 35) bottlenecks.push({ dimension: d, severity: v < 20 ? 'major' : 'meaningful', reason: `${CAPABILITY_DIM_LABEL[d]} readiness is weak`, sourceIds: [] });
+      else if (w >= 0.14 && v < 50) bottlenecks.push({ dimension: d, severity: 'minor', reason: `${CAPABILITY_DIM_LABEL[d]} readiness is moderate`, sourceIds: [] });
+    });
+    const sevRank = { blocking: 3, major: 2, meaningful: 1, minor: 0 } as const;
+    bottlenecks.sort((a, b) => sevRank[b.severity] - sevRank[a.severity]);
+    const mainBlocker = bottlenecks[0] ? bottlenecks[0].reason : null;
+    // ---- Relevance (separate from readiness: V10.4 direction + demand; never unlocks) ----
+    const why: string[] = []; let rel = e.readiness.demand / 100 * 0.5;
+    if (i.direction?.primary && def.directions.includes(i.direction.primary)) { rel += 0.4; why.push(`supports the ${NATIONAL_DIRECTION_LABEL[i.direction.primary]} direction`); }
+    else if (i.direction?.secondary && def.directions.includes(i.direction.secondary)) { rel += 0.25; why.push(`supports the secondary ${NATIONAL_DIRECTION_SHORT[i.direction.secondary].toLowerCase()} direction`); }
+    if (e.readiness.demand >= 50) why.push('the economy has a real need for it');
+    const relevance: 'LOW' | 'MODERATE' | 'HIGH' = rel >= 0.6 ? 'HIGH' : rel >= 0.3 ? 'MODERATE' : 'LOW';
+    // ---- Effects (only from operational+ maturity, in operationally adopted regions; bounded) ----
+    const effects = v105ActiveEffects(def, m, adoption, ctx);
+    // ---- Next step (what is missing for the next maturity) ----
+    const nextM = m.maturity === 'nationally_integrated' ? null : CAPABILITY_MATURITIES[CAPABILITY_MATURITY_RANK[m.maturity] + 1];
+    const missing: string[] = [];
+    if (nextM) {
+      const t = def.maturityThresholds; const need = { emerging: t.emerging, demonstrated: t.demonstrated, operational: t.operational, scaled: t.scaled, nationally_integrated: t.integrated, unavailable: 0 }[nextM];
+      if (e.readiness.composite < need) missing.push(`overall readiness ${Math.round(e.readiness.composite)} / ${need}`);
+      e.reqs.filter(r => r.met === 'blocking' || (CAPABILITY_MATURITY_RANK[nextM] >= 3 && r.met !== 'met')).forEach(r => missing.push(r.label));
+      if (nextM === 'demonstrated' && !e.useEvidence.length) missing.push('a first real use (a relevant project, contract or program stage)');
+      if (nextM === 'operational' && adoptedOp < 1) missing.push('one region able to operate it (local readiness + absorptive capacity)');
+      if (nextM === 'scaled' && adoptedOp < 2) missing.push('adoption in a second region');
+      if (nextM === 'nationally_integrated' && (adoptedOp < 3 || e.readiness.network < 70)) missing.push('adoption in three regions on an integrated network');
+    }
+    // ---- Momentum ----
+    const momentum: CapabilityMomentum = CAPABILITY_MATURITY_RANK[m.maturity] < CAPABILITY_MATURITY_RANK[wasMaturity] ? 'regressing' : m.weakening ? 'weakening' : CAPABILITY_MATURITY_RANK[q] > CAPABILITY_MATURITY_RANK[m.maturity] ? (m.maturity === 'unavailable' ? 'emerging' : 'advancing') : m.maturity === 'unavailable' ? 'emerging' : 'stable';
+    // ---- History + events (meaningful transitions only; never readiness ticks) ----
+    const regionsFor = (lvl: CapabilityAdoptionLevel) => adoption.filter(a => CAPABILITY_ADOPTION_RANK[a.level] >= CAPABILITY_ADOPTION_RANK[lvl]).map(a => a.regionId);
+    const push = (kind: CapabilityHistoryEntry['kind'], summary: string, regionIds: string[], evt: InnovationDerivedKind | null, sig: 'meaningful' | 'major') => {
+      seq += 1; const h: CapabilityHistoryEntry = { id: `ich:${seq}`, turn, capabilityId: def.id, kind, regionIds: regionIds.filter(r => REGIONS[r]).slice(0, 4), summary: summary.slice(0, 220), sourceEventIds: [] };
+      history.push(h); m.history = [...m.history, seq].slice(-V105_LIMITS.perCapabilityHistory);
+      if (evt && emitOk) events.push({ id: `ice:${evt}:${def.id}:${turn}`, turn, kind: evt, capabilityId: def.id, regionIds: h.regionIds, text: h.summary, significance: sig, automation: Boolean(def.automation), sectors: def.relevantSectors });
+    };
+    if (!firstEver && newTurn) {
+      if (CAPABILITY_MATURITY_RANK[m.maturity] > CAPABILITY_MATURITY_RANK[wasMaturity]) {
+        const enablers = e.origin.join(' + ') || 'the national system';
+        if (m.maturity === 'emerging') push('emerged', `${def.label} is emerging (origin ${enablers}): ${def.emergenceText}`, e.origin, 'capability_emerged', 'meaningful');
+        if (m.maturity === 'demonstrated') push('demonstrated', `${def.label} was demonstrated in limited form — the knowledge now exists.`, e.origin, 'capability_demonstrated', 'meaningful');
+        if (m.maturity === 'operational') push('operational', `${def.label} became operational in ${regionsFor('operational').join(', ') || enablers}. ${def.operationalText}`, regionsFor('operational'), 'capability_became_operational', 'major');
+        if (m.maturity === 'scaled') push('scaled', `${def.label} is scaled — operating in ${regionsFor('operational').join(', ')}.`, regionsFor('operational'), 'capability_scaled', 'major');
+        if (m.maturity === 'nationally_integrated') push('nationally_integrated', `${def.label} is nationally integrated across ${regionsFor('operational').join(', ')}.`, regionsFor('operational'), 'capability_nationally_integrated', 'major');
+      }
+      const prevAdopt = base.caps[def.id]?.adoption || {};
+      const newly = adoption.filter(a => a.level === 'operational' && prevAdopt[a.regionId]?.level !== 'operational').map(a => a.regionId);
+      if (newly.length && CAPABILITY_MATURITY_RANK[m.maturity] >= 3 && !(m.maturity === 'operational' && wasMaturity !== 'operational')) push('adoption_expanded', `${def.label} spread to ${newly.join(', ')}.`, newly, 'capability_adoption_expanded', 'meaningful');
+      if (m.weakening && !base.caps[def.id]?.weakening && CAPABILITY_MATURITY_RANK[m.maturity] >= 3) push('capacity_weakened', `${def.label} knowledge is retained, but operational capacity is weakening: ${mainBlocker || 'enabling conditions deteriorated'}.`, e.anchor ? [e.anchor] : [], 'capability_operational_capacity_declined', 'meaningful');
+      const prevBlockers = base.caps[def.id]?.blockers || [];
+      const nowBlocking = e.reqs.filter(r => r.met === 'blocking').map(r => r.id);
+      prevBlockers.filter(b => !nowBlocking.includes(b)).slice(0, 1).forEach(b => { if (CAPABILITY_MATURITY_RANK[m.maturity] >= 1) push('bottleneck_resolved', `${def.label}: ${def.hardRequirements.find(x => x.id === b)?.label || b} is no longer blocking.`, e.anchor ? [e.anchor] : [], null, 'meaningful'); });
+    }
+    m.blockers = e.reqs.filter(r => r.met === 'blocking').map(r => r.id);
+    caps[def.id] = {
+      id: def.id, maturity: m.maturity, readiness: e.readiness, previousMaturity: m.prev, momentum, knowledge: m.knowledge,
+      operationalCapacity: CAPABILITY_MATURITY_RANK[m.maturity] < 3 ? 'none' : m.weakening ? 'reduced' : 'full', relevance, relevanceWhy: why,
+      originRegionIds: e.origin, activeRegionIds: adoption.filter(a => a.level !== 'none').map(a => a.regionId), adoption, enablingProjectIds: e.enablingProjects, enablingMegaprojectIds: e.enablingPrograms,
+      bottlenecks: bottlenecks.slice(0, 6), requirements: e.reqs, effects, evidence: e.evidence, emergedTurn: m.emergedTurn, operationalTurn: m.operationalTurn,
+      history: history.filter(h => h.capabilityId === def.id).slice(-V105_LIMITS.perCapabilityHistory), qualifiesFor: q, nextStep: nextM ? { maturity: nextM, missing: missing.slice(0, 5) } : null, mainBlocker
+    };
+    void wasKnowledge;
+  });
+  const inputHash = innovationInputHash(i);
+  const persisted: InnovationPersisted = { schemaVersion: '10.5', revision: prev.revision + (inputHash !== prev.inputHash || newTurn ? 1 : 0), initializedTurn: prev.initializedTurn ?? turn, base, current: mem, history: history.slice(-V105_LIMITS.history), seq, inputHash };
+  const research = Object.keys(i.industries?.regions || {}).sort((a, b) => (i.industries!.regions[b].industries.research?.strength || 0) - (i.industries!.regions[a].industries.research?.strength || 0) || a.localeCompare(b))[0] || null;
+  const adoptCount: Record<string, number> = {}; Object.values(caps).forEach(c => c.adoption.forEach(a => { if (a.level === 'operational') adoptCount[a.regionId] = (adoptCount[a.regionId] || 0) + 1; }));
+  const leadAdopt = Object.entries(adoptCount).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || null;
+  const state: InnovationCapabilitiesState = { version: 1, revision: persisted.revision, turn, capabilities: caps, leadingResearchRegion: research && (i.industries!.regions[research].industries.research?.strength || 0) > 0 ? research : null, leadingAdoptionRegion: leadAdopt, inputHash, computeMs: v105R((typeof performance !== 'undefined' ? performance.now() : 0) - t0, 2), passes: 1 };
+  return { state, persisted, events };
+}
+
+/** Bounded effects of one capability (diminishing by maturity; halved when operational capacity is weakening). */
+function v105ActiveEffects(def: EmergingCapabilityDefinition, m: IcCapMemory, adoption: CapabilityRegionalAdoption[], ctx: V105Ctx | null): ActiveCapabilityEffect[] {
+  const rank = CAPABILITY_MATURITY_RANK[m.maturity]; if (rank < 3) return def.effects.filter(x => x.kind === 'content_unlock' && rank >= 1).map(x => ({ kind: x.kind, label: x.label, regionIds: [], magnitude: 0, target: null, dependency: false }));
+  const scale = (rank >= 5 ? 1 : rank >= 4 ? 0.85 : 0.6) * (m.weakening ? 0.5 : 1);
+  const regs = adoption.filter(a => a.level === 'operational').map(a => a.regionId);
+  return def.effects.map(x => {
+    if (x.kind === 'content_unlock') return { kind: x.kind, label: x.label, regionIds: regs, magnitude: 0, target: null, dependency: false };
+    let mag = v105R(x.max * scale, 2);
+    if (x.perSector && ctx) { const sec = Math.max(0, ...regs.map(r => Number((ctx.i.regions.find(y => y.code === r)?.sectors as any)?.[x.perSector!] || 0))); mag = v105R(Math.sign(x.max) * Math.min(Math.abs(mag), sec * 0.06), 2); }
+    return { kind: x.kind, label: x.label, regionIds: regs, magnitude: mag, target: x.target?.network ? `network:${x.target.network}` : x.target?.industry ? `industry:${x.target.industry}` : null, dependency: Boolean(x.dependency) };
+  });
+}
+/** The modifiers V10.5 hands to V10.0 / V10.1 (from PERSISTED memory = previous stable snapshot; capped per region/key).
+ *  `sectorsByRegion` (Living Regions sectors) bounds sector-limited effects per region; without it they are zero. */
+export function innovationCapabilityModifiers(p: InnovationPersisted | null, sectorsByRegion?: Record<string, Partial<Record<LRSector, number>>>): CapabilityModifiers {
+  const out: CapabilityModifiers = { national: {}, industries: {} };
+  if (!p) return out;
+  CAPABILITY_DEFINITIONS.forEach(def => {
+    const m = p.current.caps[def.id]; if (!m || CAPABILITY_MATURITY_RANK[m.maturity] < 3) return;
+    const adoption = Object.entries(m.adoption).map(([regionId, a]) => ({ regionId, level: a.level, readiness: 0, absorptive: 0, blocker: null }));
+    v105ActiveEffects(def, m, adoption, null).forEach((e, k) => {
+      if (!e.target || !e.magnitude) return;
+      const [kind, key] = e.target.split(':'); const per = def.effects[k]?.perSector;
+      e.regionIds.forEach(r => {
+        // Sector-bounded effects (grid storage) are bounded PER REGION by that region's own base: no capacity from nothing.
+        const mag = per ? Math.sign(e.magnitude) * Math.min(Math.abs(e.magnitude), Math.max(0, Number(sectorsByRegion?.[r]?.[per] || 0)) * 0.06) : e.magnitude;
+        if (!mag) return;
+        const bucket: any = kind === 'network' ? (out.national[r] = out.national[r] || {}) : (out.industries[r] = out.industries[r] || {});
+        bucket[key] = v105R(Math.max(-V105_LIMITS.effectCap, Math.min(V105_LIMITS.effectCap, (bucket[key] || 0) + mag)), 2);
+      });
+    });
+  });
+  return out;
+}
+/** Merge capability modifiers into existing (scenario) modifiers without replacing them. */
+export function mergeCapabilityModifiers<K extends string>(scenario: Record<string, Partial<Record<K, number>>> | undefined, cap: Record<string, Partial<Record<K, number>>>): Record<string, Partial<Record<K, number>>> | undefined {
+  if (!Object.keys(cap).length) return scenario;
+  const out: Record<string, Partial<Record<K, number>>> = JSON.parse(JSON.stringify(scenario || {}));
+  Object.entries(cap).forEach(([r, m]) => Object.entries(m).forEach(([k, v]) => { const b: any = (out[r] = out[r] || {}); b[k] = (Number(b[k]) || 0) + Number(v); }));
+  return out;
+}
+
+// ---- Persistence ----------------------------------------------------------------------------------------------------
+function v105SanCap(raw: any): IcCapMemory {
+  const o = v105EmptyCap(); if (!raw || typeof raw !== 'object') return o;
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+  if (CAPABILITY_MATURITIES.includes(raw.maturity)) o.maturity = raw.maturity;
+  if (['unknown', 'recognized', 'demonstrated', 'established'].includes(raw.knowledge)) o.knowledge = raw.knowledge;
+  if (V105_KNOW_RANK[o.knowledge] < V105_KNOW_RANK[v105KnowledgeFor(o.maturity)]) o.knowledge = v105KnowledgeFor(o.maturity);
+  o.held = n(raw.held); o.qualify = n(raw.qualify); o.fail = n(raw.fail); o.weakening = raw.weakening === true;
+  o.emergedTurn = raw.emergedTurn == null ? null : n(raw.emergedTurn); o.operationalTurn = raw.operationalTurn == null ? null : n(raw.operationalTurn);
+  o.prev = CAPABILITY_MATURITIES.includes(raw.prev) ? raw.prev : null;
+  Object.entries(raw.adoption && typeof raw.adoption === 'object' ? raw.adoption : {}).forEach(([r, a]: [string, any]) => { if (REGIONS[r] && a && ['none', 'emerging', 'demonstrated', 'operational'].includes(a.level)) o.adoption[r] = { level: a.level, held: n(a.held), fail: n(a.fail) }; });
+  o.blockers = (Array.isArray(raw.blockers) ? raw.blockers : []).filter((x: any) => typeof x === 'string').slice(0, 6);
+  o.history = (Array.isArray(raw.history) ? raw.history : []).filter((x: any) => typeof x === 'number').slice(-V105_LIMITS.perCapabilityHistory);
+  return o;
+}
+function v105SanMem(raw: any): InnovationMemory {
+  const o = createEmptyInnovationMemory(); if (!raw || typeof raw !== 'object') return o;
+  CAPABILITY_IDS.forEach(id => { o.caps[id] = v105SanCap(raw.caps?.[id]); });
+  o.lastTurn = typeof raw.lastTurn === 'number' && Number.isFinite(raw.lastTurn) ? Math.max(0, Math.floor(raw.lastTurn)) : 0;
+  return o;
+}
+export function sanitizeInnovationPersisted(raw: unknown): InnovationPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const o = createEmptyInnovationPersisted();
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+  o.revision = n(r.revision); o.seq = n(r.seq); o.initializedTurn = r.initializedTurn == null ? null : n(r.initializedTurn);
+  o.base = v105SanMem(r.base); o.current = v105SanMem(r.current); o.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  const kinds = ['emerged', 'demonstrated', 'operational', 'scaled', 'nationally_integrated', 'adoption_expanded', 'capacity_weakened', 'bottleneck_resolved']; const seen = new Set<string>();
+  o.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.id === 'string' && CAPABILITY_IDS.includes(h.capabilityId) && kinds.includes(h.kind) && typeof h.summary === 'string' && !seen.has(h.id) && seen.add(h.id)).slice(-V105_LIMITS.history)
+    .map((h: any) => ({ id: h.id.slice(0, 40), turn: n(h.turn), capabilityId: h.capabilityId, kind: h.kind, regionIds: (Array.isArray(h.regionIds) ? h.regionIds : []).filter((x: any) => REGIONS[x]).slice(0, 4), summary: h.summary.slice(0, 220), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4) }));
+  return o;
+}
+
+// ---- Validation + invariants --------------------------------------------------------------------------------------
+export function validateEmergingCapabilitiesState(s: InnovationCapabilitiesState, p?: InnovationPersisted | null, projectIds?: string[]): string[] {
+  const issues: string[] = [];
+  Object.entries(s.capabilities).forEach(([id, c]) => {
+    if (!CAPABILITY_IDS.includes(id as EmergingCapabilityId)) issues.push(`unknown capability ${id}`);
+    if (!CAPABILITY_MATURITIES.includes(c.maturity)) issues.push(`${id}: invalid maturity ${c.maturity}`);
+    Object.entries(c.readiness).forEach(([k, v]) => { if (!Number.isFinite(v) || v < 0 || v > 100) issues.push(`${id}: readiness ${k} out of range (${v})`); });
+    [...c.originRegionIds, ...c.activeRegionIds, ...c.adoption.map(a => a.regionId)].forEach(r => { if (!REGIONS[r]) issues.push(`${id}: unknown region ${r}`); });
+    if (projectIds) c.enablingProjectIds.forEach(x => { if (!projectIds.includes(x)) issues.push(`${id}: unknown project ${x}`); });
+    c.enablingMegaprojectIds.forEach(x => { if (!/^mp_/.test(x)) issues.push(`${id}: bad megaproject id ${x}`); });
+    // Invariant G: maturity ≥ operational needs every hard requirement fully met at the time it was reached (only checked for un-weakened).
+    if (CAPABILITY_MATURITY_RANK[c.maturity] >= 3 && c.operationalCapacity === 'full' && c.requirements.some(r => r.met === 'blocking')) issues.push(`${id}: operational at full capacity while a hard requirement is blocking`);
+    if (V105_KNOW_RANK[c.knowledge] < V105_KNOW_RANK[v105KnowledgeFor(c.maturity)]) issues.push(`${id}: knowledge below maturity`);
+    c.effects.forEach(e => { if (!Number.isFinite(e.magnitude) || Math.abs(e.magnitude) > V105_LIMITS.effectCap) issues.push(`${id}: unbounded effect ${e.label}`); if (e.target && !/^(network|industry):/.test(e.target)) issues.push(`${id}: effect target outside V10.0/V10.1`); });
+    c.evidence.forEach(e => { if (!Number.isFinite(e.value) || !Number.isFinite(e.contribution)) issues.push(`${id}: invalid evidence`); });
+  });
+  if (p && p.history.length > V105_LIMITS.history) issues.push('unbounded history');
+  if (p && new Set(p.history.map(h => h.id)).size !== p.history.length) issues.push('duplicate history ids');
+  return issues;
+}
+
+// ---- World Reaction adapter --------------------------------------------------------------------------------------
+export function innovationToWorldEvent(d: InnovationDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'innovation', sourceEventId: null, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: d.regionIds.length === 1 ? 'region' : 'nation', subjectId: d.regionIds.length === 1 ? d.regionIds[0] : 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: [d.text.slice(0, 120)], before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['economy', 'regions'],
+    tags: ['innovation', `capability:${d.capabilityId}`, ...(d.automation ? ['automation'] : []), ...d.sectors.map(s => `sector:${s}`), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: 'fact', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 4, dedupeKey: `ic:${d.kind}:${d.capabilityId}:${d.turn}`
+  };
+}
+
+// ---- Consumers (read-only) -------------------------------------------------------------------------------------------
+/** Content eligibility snapshot: national maturity + per-region adoption (V9.3 `capability` requirement). */
+export function innovationContentSnapshot(s: InnovationCapabilitiesState | null): { national: Partial<Record<EmergingCapabilityId, CapabilityMaturity>>; regional: Record<string, Partial<Record<EmergingCapabilityId, CapabilityAdoptionLevel>>> } | null {
+  if (!s) return null;
+  const regional: Record<string, Partial<Record<EmergingCapabilityId, CapabilityAdoptionLevel>>> = {};
+  Object.values(s.capabilities).forEach(c => c.adoption.forEach(a => { if (a.level !== 'none') (regional[a.regionId] = regional[a.regionId] || {})[c.id] = a.level; }));
+  return { national: Object.fromEntries(Object.values(s.capabilities).map(c => [c.id, c.maturity])), regional };
+}
+/** Bounded rival-AI context (0 … +0.06): investing where a capability is near emergence/adoption, using PUBLIC structure only. */
+export function innovationAiOutlook(s: InnovationCapabilitiesState | null, regionId: string): { factor: number; reason: string | null } {
+  if (!s) return { factor: 0, reason: null };
+  let best = 0; let why: string | null = null;
+  Object.values(s.capabilities).forEach(c => {
+    const a = c.adoption.find(x => x.regionId === regionId); if (!a) return;
+    const near = c.maturity !== 'unavailable' && a.level !== 'operational' && a.readiness >= V105_THRESHOLDS.adoptEmerging - 5;
+    const origin = c.originRegionIds.includes(regionId) && CAPABILITY_MATURITY_RANK[c.maturity] >= 1;
+    const f = (near ? 0.04 : 0) + (origin ? 0.02 : 0);
+    if (f > best) { best = f; why = `${CAPABILITY_DEF_BY_ID[c.id].label} is ${near ? 'close to adoption' : 'anchored'} in ${regionId}`; }
+  });
+  return { factor: Math.min(0.06, best), reason: why };
+}
+/** Capability evidence for V10.4 (operational+ only; descriptive, bounded weight; no runaway — V10.5 never reads V10.4 for readiness). */
+export function innovationDirectionEvidence(s: InnovationCapabilitiesState | null): Partial<Record<NationalDevelopmentDirectionId, number>> {
+  const out: Partial<Record<NationalDevelopmentDirectionId, number>> = {};
+  if (!s) return out;
+  Object.values(s.capabilities).forEach(c => { const r = CAPABILITY_MATURITY_RANK[c.maturity]; if (r < 3) return; CAPABILITY_DEF_BY_ID[c.id].directions.forEach(d => { out[d] = Math.min(1, (out[d] || 0) + (r >= 4 ? 0.6 : 0.4)); }); });
+  return out;
+}
+/** What-If: isolated readiness projection (caller recomputes V10.0–V10.2 for the changed world). */
+export function projectInnovationCapabilities(before: InnovationCapabilitiesState, alt: InnovationInputs, persisted: InnovationPersisted | null): { after: InnovationCapabilitiesState; lines: string[] } {
+  const p = persisted ? JSON.parse(JSON.stringify(persisted)) as InnovationPersisted : null;
+  const after = computeInnovationCapabilities({ ...alt, turn: before.turn }, p, { emit: false }).state;
+  const lines: string[] = [];
+  CAPABILITY_IDS.forEach(id => {
+    const a = before.capabilities[id], b = after.capabilities[id]; const def = CAPABILITY_DEF_BY_ID[id];
+    const changed = (Object.keys(b.readiness) as Array<keyof CapabilityReadiness>).filter(k => k !== 'composite' && Math.abs(b.readiness[k] - a.readiness[k]) >= 5).map(k => `${CAPABILITY_DIM_LABEL[k as CapabilityDimension] || k} ${v105Band(a.readiness[k])} → ${v105Band(b.readiness[k])}`);
+    const unblocked = a.requirements.filter(r => r.met !== 'met').filter(r => b.requirements.find(x => x.id === r.id)?.met === 'met').map(r => r.label);
+    const qa = CAPABILITY_MATURITY_RANK[a.qualifiesFor], qb = CAPABILITY_MATURITY_RANK[b.qualifiesFor];
+    if (!changed.length && !unblocked.length && qa === qb) return;
+    lines.push(`${def.icon} ${def.label}: ${changed.join(', ') || 'readiness unchanged'}${unblocked.length ? ` · removes blocker: ${unblocked.join(', ')}` : ''}${qb > qa ? ` · would reach ${CAPABILITY_MATURITY_LABEL[b.qualifiesFor].toLowerCase()} readiness (maturity still advances one step per turn)` : qb < qa ? ' · readiness would fall' : ''}`);
+  });
+  if (!lines.length) lines.push('No meaningful change to capability readiness.');
+  return { after, lines };
+}
+export const v105Band = (x: number) => (x >= 75 ? 'Strong' : x >= 55 ? 'Healthy' : x >= 35 ? 'Moderate' : x >= 20 ? 'Strained' : 'Weak');
+/** "What would it take?" — strong / needs improvement / blocking, against the capability's own definition. */
+export function capabilityPathPlan(s: InnovationCapabilitiesState, id: EmergingCapabilityId, projects: InnovationInputs['projects']): { strong: string[]; improve: string[]; blocking: string[]; options: string[] } {
+  const c = s.capabilities[id]; const def = CAPABILITY_DEF_BY_ID[id];
+  const dims = (Object.keys(def.readinessWeights) as CapabilityDimension[]);
+  const strong = dims.filter(d => (c.readiness as any)[d] >= 55).map(d => CAPABILITY_DIM_LABEL[d]);
+  const improve = dims.filter(d => (c.readiness as any)[d] < 55 && (c.readiness as any)[d] >= 25).map(d => CAPABILITY_DIM_LABEL[d]);
+  const blocking = [...c.requirements.filter(r => r.met === 'blocking').map(r => `${r.label}${r.regionId ? ` (${r.regionId})` : ''}`), ...dims.filter(d => (c.readiness as any)[d] < 25).map(d => `${CAPABILITY_DIM_LABEL[d]} readiness`)];
+  const types = Array.from(new Set(def.supportingEvidence.filter(r => r.src.s === 'proj').flatMap(r => (r.src as any).types as string[])));
+  const options = projects.filter(p => types.includes(p.projectType) && (p.status === 'unlocked' || p.status === 'under_construction')).map(p => p.title).slice(0, 4);
+  return { strong, improve, blocking: Array.from(new Set(blocking)), options };
+}
+export function innovationPlayLine(s: InnovationCapabilitiesState | null): { capabilityId: EmergingCapabilityId; title: string; status: string; readiness: string; blocker: string | null } | null {
+  if (!s) return null;
+  const caps = Object.values(s.capabilities);
+  const pick = caps.filter(c => c.maturity !== 'unavailable' && c.maturity !== 'nationally_integrated').sort((a, b) => (a.nextStep?.missing.length || 9) - (b.nextStep?.missing.length || 9) || b.readiness.composite - a.readiness.composite || a.id.localeCompare(b.id))[0]
+    || caps.filter(c => c.requirements.every(r => r.met !== 'blocking') && c.readiness.composite >= 35).sort((a, b) => b.readiness.composite - a.readiness.composite)[0];
+  if (!pick) return null;
+  return { capabilityId: pick.id, title: CAPABILITY_DEF_BY_ID[pick.id].label, status: CAPABILITY_MATURITY_LABEL[pick.maturity], readiness: v105Band(pick.readiness.composite), blocker: pick.mainBlocker };
+}
+export function buildInnovationDebrief(s: InnovationCapabilitiesState | null, p: InnovationPersisted | null): string[] {
+  if (!s) return [];
+  const by = (ms: CapabilityMaturity[]) => Object.values(s.capabilities).filter(c => ms.includes(c.maturity)).map(c => CAPABILITY_DEF_BY_ID[c.id].label);
+  const lines: string[] = [];
+  const op = by(['operational']), sc = by(['scaled', 'nationally_integrated']), em = by(['emerging', 'demonstrated']);
+  if (sc.length) lines.push(`Scaled: ${sc.join(', ')}`);
+  if (op.length) lines.push(`Operational: ${op.join(', ')}`);
+  if (em.length) lines.push(`Emerging: ${em.join(', ')}`);
+  if (!lines.length) return [];
+  const origins = Array.from(new Set(Object.values(s.capabilities).filter(c => CAPABILITY_MATURITY_RANK[c.maturity] >= 2).flatMap(c => c.originRegionIds)));
+  if (origins.length) lines.push(`Innovation origin: ${origins.join(' • ')}`);
+  const top = Object.values(s.capabilities).sort((a, b) => CAPABILITY_MATURITY_RANK[b.maturity] - CAPABILITY_MATURITY_RANK[a.maturity] || b.readiness.composite - a.readiness.composite)[0];
+  if (top && CAPABILITY_MATURITY_RANK[top.maturity] >= 3) lines.push(`Defining capability: ${CAPABILITY_DEF_BY_ID[top.id].label}`);
+  const firstOp = (p?.history || []).find(h => h.kind === 'operational');
+  if (firstOp) lines.push(`First operational capability: ${CAPABILITY_DEF_BY_ID[firstOp.capabilityId].label} (round ${firstOp.turn})`);
+  return lines;
+}
+
+// ---- V10.5 self-test fixture -------------------------------------------------------------------------------------
+/** Canonical statuses + LR sectors (+ optional V10.0/V10.1 modifiers, needs) → V10.0 → V10.1 → V10.2 → V10.5 inputs. */
+export function createInnovationFixtureInputs(o: { statuses?: Record<string, string>; sectors?: Record<string, Partial<Record<LRSector, number>>>; turn?: number; nsModifiers?: NationalSystemsInputs['modifiers']; indModifiers?: IndustriesInputs['modifiers'];
+  megaprojects?: MegaprojectsPersisted | null; contracts?: Array<{ contractType: string; regionId: string | null; status: string }>; needs?: Record<string, Array<{ category: string; severity: string }>>; direction?: InnovationInputs['direction']; applied?: CapabilityModifiers | null } = {}): InnovationInputs {
+  const turn = o.turn ?? 5;
+  const w = createInfraNetworkFixtureWorld({ statuses: o.statuses, sectors: o.sectors, nsModifiers: o.nsModifiers, indModifiers: o.indModifiers, turn });
+  const ns = computeNationalSystems(w.nsi).state; const ind = computeIndustriesSupplyChains({ ...w.ii, national: ns }).state;
+  const net = computeStrategicInfrastructureNetworks({ ...w.xi, national: ns, industries: ind }).state;
+  const lr: any = { regions: Object.fromEntries(Object.keys(REGIONS).map(c => [c, { sectors: o.sectors?.[c] || {}, needs: (o.needs?.[c] || []).map(n => ({ ...n, status: 'open' })) }])) };
+  const projects = [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => ({ ...p, status: o.statuses?.[p.id] || (p.status === 'locked' ? 'locked' : 'unlocked') }));
+  return buildInnovationInputs({ turn, lr, national: ns, industries: ind, networks: net, megaprojects: o.megaprojects ?? null, projects, contracts: o.contracts || [], direction: o.direction ?? null, applied: o.applied ?? null });
+}
+
+export function runV105InnovationCapabilitiesSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const A = (...ids: string[]) => Object.fromEntries(ids.map(i => [i, 'active']));
+  type FO = Parameters<typeof createInnovationFixtureInputs>[0];
+  const I = (o: FO = {}) => createInnovationFixtureInputs(o);
+  const J = (x: any) => JSON.stringify(x);
+  const strip = (s: InnovationCapabilitiesState) => J({ ...s, computeMs: 0 });
+  const RANK = CAPABILITY_MATURITY_RANK;
+  /** Runs turns 1..n of the same world (or a per-turn world) through the persisted memory. */
+  const seq = (n: number | InnovationInputs[], f?: (t: number) => InnovationInputs, start: InnovationPersisted | null = null, from = 1) => {
+    let p = start; let last: ReturnType<typeof computeInnovationCapabilities> | null = null; const events: InnovationDerivedEvent[] = []; const states: InnovationCapabilitiesState[] = [];
+    const steps: InnovationInputs[] = typeof n === 'number' ? Array.from({ length: n }, (_, k) => f!(from + k)) : (n as InnovationInputs[]);
+    steps.forEach(i => { last = computeInnovationCapabilities(i, p); p = last.persisted; events.push(...last.events); states.push(last.state); });
+    return { last: last!, persisted: p!, events, states };
+  };
+  const valid = (s: InnovationCapabilitiesState, p?: InnovationPersisted) => { const v = validateEmergingCapabilitiesState(s, p); return v.length ? v.join('; ') : true; };
+  // Worlds (real canonical projects; LR sectors drive V10.1; V10.0 modifiers simulate energy pressure / damage).
+  const TECH_P = A('infra_tech_park_act', 'infra_v93_act_research_campus', 'infra_v93_vic_data_center', 'infra_subsea_nt', 'infra_snowy_nsw', 'infra_v103_eastern_cable_landing');
+  const TECH_S: any = { ACT: { technology: 80, research: 90 }, NSW: { technology: 75, trade: 60 }, VIC: { research: 65, technology: 70, manufacturing: 70 }, SA: { renewables: 70, energy: 70 } };
+  const tech = (turn: number, extra: FO = {}) => I({ statuses: TECH_P, sectors: TECH_S, turn, ...extra });
+  const MINE_P = A('infra_v93_wa_remote_logistics', 'infra_v93_wa_freight_rail', 'infra_hydrogen_wa', 'infra_tech_park_act', 'infra_v93_act_research_campus', 'infra_subsea_nt', 'infra_v93_qld_port_automated');
+  const MINE_S: any = { WA: { mining: 90, logistics: 60, energy: 50 }, QLD: { mining: 60 }, ACT: { research: 85, technology: 70 }, VIC: { manufacturing: 70 } };
+  const mine = (turn: number, extra: FO = {}) => I({ statuses: MINE_P, sectors: MINE_S, turn, ...extra });
+  const ALL = Object.keys(REGIONS);
+  const energyCut = (v = -95) => Object.fromEntries(ALL.map(r => [r, { energy: v }])) as NationalSystemsInputs['modifiers'];
+  const techDamaged = (turn: number) => I({ statuses: { ...TECH_P, infra_v93_vic_data_center: 'damaged', infra_snowy_nsw: 'damaged' }, sectors: TECH_S, turn, nsModifiers: energyCut(-95) });
+  const maturityOf = (s: InnovationCapabilitiesState, id: EmergingCapabilityId) => s.capabilities[id].maturity;
+
+  check('ic1', 'TEST 1 — no foundations: every capability UNAVAILABLE', () => {
+    const r = seq(6, t => I({ turn: t }));
+    const bad = CAPABILITY_IDS.filter(id => maturityOf(r.last.state, id) !== 'unavailable');
+    return (!bad.length && valid(r.last.state, r.persisted) === true) || J({ bad, v: valid(r.last.state) });
+  });
+  check('ic2', 'TEST 2 — research only (huge research, no infrastructure): no advanced capability becomes operational', () => {
+    const r = seq(10, t => I({ turn: t, sectors: { ACT: { research: 100, technology: 100 }, NSW: { research: 90, technology: 90 } } as any }));
+    const op = CAPABILITY_IDS.filter(id => RANK[maturityOf(r.last.state, id)] >= 3);
+    return (!op.length && maturityOf(r.last.state, 'ai_compute_infrastructure') === 'unavailable') || J({ op, ai: r.last.state.capabilities.ai_compute_infrastructure.requirements });
+  });
+  check('ic3', 'TEST 3 — infrastructure only (research absent): knowledge-intensive AI Compute is blocked', () => {
+    const r = seq(8, t => I({ turn: t, statuses: TECH_P }));
+    const ai = r.last.state.capabilities.ai_compute_infrastructure;
+    return (ai.maturity === 'unavailable' && ai.requirements.find(q => q.id === 'knowledge')?.met === 'blocking' && ai.bottlenecks[0]?.severity === 'blocking') || J({ m: ai.maturity, reqs: ai.requirements });
+  });
+  check('ic4', 'TEST 4 — full readiness (research + technology + digital + data centres + energy): AI Compute emerges', () => {
+    const r = seq(4, tech); const ai = r.last.state.capabilities.ai_compute_infrastructure;
+    return (RANK[ai.maturity] >= 1 && ai.requirements.every(q => q.met !== 'blocking') && ai.originRegionIds.includes('ACT')) || J({ m: ai.maturity, reqs: ai.requirements, o: ai.originRegionIds });
+  });
+  check('ic5', 'TEST 5 — hard requirement: high composite but critical energy below threshold blocks AI Compute', () => {
+    const r = seq(8, t => tech(t, { nsModifiers: energyCut(-95) })); const ai = r.last.state.capabilities.ai_compute_infrastructure;
+    const energy = ai.requirements.find(q => q.id === 'energy')!;
+    return (energy.met === 'blocking' && ai.maturity === 'unavailable' && ai.readiness.composite >= 50 && /energy/i.test(ai.mainBlocker || '')) || J({ energy, m: ai.maturity, c: ai.readiness.composite, b: ai.mainBlocker });
+  });
+  check('ic6', 'TEST 6 — maturity progression under sustained evidence: Emerging → Demonstrated → Operational in order, one step per turn at most', () => {
+    const r = seq(10, tech); const path = r.states.map(s => maturityOf(s, 'ai_compute_infrastructure'));
+    const ranks = path.map(m => RANK[m]); const steps = ranks.slice(1).map((x, k) => x - ranks[k]);
+    return (path.includes('emerging') && path.includes('demonstrated') && path.includes('operational') && steps.every(d => d >= 0 && d <= 1) && path.indexOf('emerging') < path.indexOf('demonstrated') && path.indexOf('demonstrated') < path.indexOf('operational')) || path.join(',');
+  });
+  check('ic7', 'TEST 7 — no instant scale: a strong world appearing in one turn (or an old save) never jumps to Nationally Integrated', () => {
+    const empty = seq(3, t => I({ turn: t }));
+    const jump = computeInnovationCapabilities(tech(4), empty.persisted).state;
+    const first = computeInnovationCapabilities(tech(9), null).state; // old-save style: derived conservatively
+    const maxJump = Math.max(...CAPABILITY_IDS.map(id => RANK[maturityOf(jump, id)])), maxFirst = Math.max(...CAPABILITY_IDS.map(id => RANK[maturityOf(first, id)]));
+    return (maxJump <= 1 && maxFirst <= 1) || J({ maxJump, maxFirst });
+  });
+  check('ic8', 'TEST 8 — regional origin: WA (strongest automated-mining evidence) is identified as origin', () => {
+    const r = seq(4, mine); const am = r.last.state.capabilities.automated_mining;
+    return (am.originRegionIds.includes('WA') && RANK[am.maturity] >= 1) || J({ o: am.originRegionIds, m: am.maturity });
+  });
+  check('ic9', 'TEST 9 — multi-region origin: ACT research + VIC manufacturing jointly enable Advanced Manufacturing (both represented)', () => {
+    const r = seq(4, tech); const am = r.last.state.capabilities.advanced_manufacturing;
+    return (am.originRegionIds.includes('ACT') && am.originRegionIds.includes('VIC')) || J(am.originRegionIds);
+  });
+  check('ic10', 'TEST 10 — diffusion needs conditions: operational in VIC, QLD with weak prerequisites does not adopt', () => {
+    const r = seq(10, tech); const ai = r.last.state.capabilities.ai_compute_infrastructure;
+    const vic = ai.adoption.find(a => a.regionId === 'VIC')!, qld = ai.adoption.find(a => a.regionId === 'QLD')!;
+    return (vic.level === 'operational' && qld.level === 'none' && Boolean(qld.blocker)) || J({ vic, qld });
+  });
+  check('ic11', 'TEST 11 — diffusion enabled: QLD develops technology + research capacity and adoption progresses', () => {
+    const base = seq(10, tech);
+    const grown = seq(6, t => I({ statuses: { ...TECH_P, ...A('infra_v93_qld_renewable_grid') }, sectors: { ...TECH_S, QLD: { technology: 80, research: 75 } }, turn: t }), base.persisted, 11);
+    const q0 = base.last.state.capabilities.ai_compute_infrastructure.adoption.find(a => a.regionId === 'QLD')!.level;
+    const q1 = grown.last.state.capabilities.ai_compute_infrastructure.adoption.find(a => a.regionId === 'QLD')!.level;
+    return (CAPABILITY_ADOPTION_RANK[q1] > CAPABILITY_ADOPTION_RANK[q0]) || J({ q0, q1, a: grown.last.state.capabilities.ai_compute_infrastructure.adoption.find(a => a.regionId === 'QLD') });
+  });
+  check('ic12', 'TEST 12 — knowledge persistence: operational capability hit by infrastructure damage keeps its knowledge; deployment weakens', () => {
+    const base = seq(10, tech); if (maturityOf(base.last.state, 'ai_compute_infrastructure') !== 'operational') return `not operational: ${maturityOf(base.last.state, 'ai_compute_infrastructure')}`;
+    const hit = seq(2, techDamaged, base.persisted, 11); const ai = hit.last.state.capabilities.ai_compute_infrastructure;
+    return (ai.maturity === 'operational' && ai.knowledge === 'established' && ai.operationalCapacity === 'reduced' && ai.momentum === 'weakening') || J({ m: ai.maturity, k: ai.knowledge, cap: ai.operationalCapacity, mo: ai.momentum });
+  });
+  check('ic13', 'TEST 13 — regression is gradual: long collapse lowers maturity step by step, never below the knowledge floor, never deleted', () => {
+    const base = seq(10, tech); const hit = seq(14, techDamaged, base.persisted, 11);
+    const path = hit.states.map(s => RANK[maturityOf(s, 'ai_compute_infrastructure')]);
+    const drops = path.slice(1).map((x, k) => path[k] - x);
+    return (path[0] === 3 && Math.min(...path) >= 2 && drops.every(d => d <= 1) && hit.last.state.capabilities.ai_compute_infrastructure.knowledge === 'established' && path.indexOf(2) >= 3) || path.join(',');
+  });
+  check('ic14', 'TEST 14 — AI Compute boundary: scaling it never touches game-AI difficulty, search depth or planning budget', () => {
+    const settingsBefore = J(createDefaultGameSettings()); const limitsBefore = J(V96_SOLO_AI_LIMITS);
+    const r = seq(14, tech); const mods = innovationCapabilityModifiers(r.persisted);
+    const keys = [...Object.values(mods.national).flatMap(m => Object.keys(m)), ...Object.values(mods.industries).flatMap(m => Object.keys(m))];
+    const okKeys = keys.every(k => (NATIONAL_NETWORKS as string[]).includes(k) || (STRATEGIC_INDUSTRIES as string[]).includes(k));
+    return (okKeys && J(createDefaultGameSettings()) === settingsBefore && J(V96_SOLO_AI_LIMITS) === limitsBefore && !/"(difficulty|searchDepth|planningBudget|aiBudget|decisionQuality)"/.test(J(r.last.state))) || J({ keys, okKeys });
+  });
+  check('ic15', 'TEST 15 — inventory boundary: a capability emerging creates no inventory items and does not mutate its inputs', () => {
+    const i = tech(5); const before = J(i); const r = seq([tech(1), tech(2), tech(3), tech(4), i]);
+    return (J(i) === before && !/"inventory"|"items"|"money"|"cash"/.test(J(r.last.state)) && !/inventory|money/i.test(J(innovationCapabilityModifiers(r.persisted)))) || 'inventory/cash/input mutation detected';
+  });
+  check('ic16', 'TEST 16 — crafting boundary: Advanced Manufacturing never changes the canonical recipe table', () => {
+    const before = J(CRAFTING_RECIPES); const r = seq(14, tech);
+    return (J(CRAFTING_RECIPES) === before && RANK[maturityOf(r.last.state, 'advanced_manufacturing')] >= 1 && !CAPABILITY_DEFINITIONS.some(d => d.effects.some(e => /recipe|craft/i.test(e.label)))) || maturityOf(r.last.state, 'advanced_manufacturing');
+  });
+  check('ic17', 'TEST 17 — industry effect: Automated Mining operational ⇒ a bounded mining hook through V10.1 modifiers, no free money', () => {
+    const r = seq(12, mine); const am = r.last.state.capabilities.automated_mining; if (RANK[am.maturity] < 3) return `not operational: ${am.maturity}`;
+    const mods = innovationCapabilityModifiers(r.persisted);
+    const wa = Number(mods.industries.WA?.mining || 0), energy = Number(mods.national.WA?.energy || 0);
+    // Applied to V10.1: mining strength rises a little (diminishing, capped) — never a multiplier.
+    const w = createInfraNetworkFixtureWorld({ statuses: MINE_P, sectors: MINE_S }); const ns = computeNationalSystems(w.nsi).state;
+    const a = computeIndustriesSupplyChains({ ...w.ii, national: ns }).state.regions.WA.industries.mining!.strength;
+    const b = computeIndustriesSupplyChains({ ...w.ii, national: ns, modifiers: mergeCapabilityModifiers(undefined, mods.industries) }).state.regions.WA.industries.mining!.strength;
+    return (wa > 0 && wa <= V105_LIMITS.effectCap && energy < 0 && b > a && b - a <= V105_LIMITS.effectCap + 0.01) || J({ wa, energy, a, b });
+  });
+  check('ic18', 'TEST 18 — grid storage: reliability improves through V10.0 but is bounded by the renewable base (no energy from nothing)', () => {
+    const p = createEmptyInnovationPersisted(); p.current.caps.grid_scale_storage = { ...p.current.caps.grid_scale_storage, maturity: 'operational', knowledge: 'established', adoption: { SA: { level: 'operational', held: 3, fail: 0 }, NT: { level: 'operational', held: 3, fail: 0 } } };
+    const m = innovationCapabilityModifiers(p, { SA: { renewables: 70 }, NT: {} });
+    const sa = Number(m.national.SA?.energy || 0), nt = Number(m.national.NT?.energy || 0);
+    const w = createInfraNetworkFixtureWorld({ sectors: { SA: { renewables: 70, energy: 60 } } as any });
+    const before = computeNationalSystems(w.nsi).state.regions.SA.networks.energy.effectiveCapacity, after = computeNationalSystems({ ...w.nsi, modifiers: mergeCapabilityModifiers(undefined, m.national) }).state.regions.SA.networks.energy.effectiveCapacity;
+    return (sa > 0 && sa <= 5 && nt === 0 && after > before && after - before <= 5.01) || J({ sa, nt, before, after });
+  });
+  check('ic19', 'TEST 19 — crisis: with Advanced Water operational a drought stays active; the water impact is only moderated', () => {
+    const w = createInfraNetworkFixtureWorld({ statuses: A('infra_desal_sa', 'infra_v93_sa_water_pipeline') });
+    const crises = [{ id: 'crisis_drought_sa', name: 'Severe Drought', category: 'environmental', status: 'active', affectedRegions: ['SA'] }];
+    const p = createEmptyInnovationPersisted(); p.current.caps.advanced_water_systems = { ...p.current.caps.advanced_water_systems, maturity: 'operational', knowledge: 'established', adoption: { SA: { level: 'operational', held: 3, fail: 0 } } };
+    const mods = innovationCapabilityModifiers(p);
+    const plain = computeNationalSystems({ ...w.nsi, crises }).state.regions.SA.networks.water, mitigated = computeNationalSystems({ ...w.nsi, crises, modifiers: mergeCapabilityModifiers(undefined, mods.national) }).state.regions.SA.networks.water;
+    const crisisStill = mitigated.sources.some(s => String(s.source).startsWith('crisis:') && s.value < 0);
+    return (crisisStill && mitigated.effectiveCapacity > plain.effectiveCapacity && mitigated.effectiveCapacity - plain.effectiveCapacity <= 5.01) || J({ crisisStill, a: plain.effectiveCapacity, b: mitigated.effectiveCapacity });
+  });
+  check('ic20', 'TEST 20 — faction reaction: automation capability events reach the faction system (it decides); V10.5 sets no relationship', () => {
+    const r = seq(12, mine); const ev = r.events.find(e => e.capabilityId === 'automated_mining' && e.kind === 'capability_became_operational');
+    const swr = ev ? innovationToWorldEvent(ev, ['player']) : null; const sub = SWR_SUBSCRIPTIONS.find(s => s.system === 'factions');
+    return (Boolean(swr) && swr!.tags.includes('automation') && Array.isArray(sub?.kinds) && (sub!.kinds as SWRKind[]).includes('capability_became_operational') && !/relationship|influence/.test(J(r.persisted))) || J({ ev: Boolean(ev), tags: swr?.tags });
+  });
+  check('ic21', 'TEST 21 — content: capability-specific advanced content becomes eligible once the capability is operational', () => {
+    const r = seq(12, mine); const snap = innovationContentSnapshot(r.last.state);
+    const tpl = CONTRACT_TEMPLATE_REGISTRY.find(t => t.id === 'cap_remote_mining_ops')!;
+    const req = tpl.requires.find(q => q.k === 'capability')!;
+    const ctx: any = { regions: { WA: { name: 'Western Australia' } }, capabilities: snap };
+    const ok = evaluateContentReq(req, ctx, 'WA', null); const notHere = evaluateContentReq(req, ctx, 'TAS', null);
+    return (ok.ok && !notHere.ok && contentIsConditionalByDesign(tpl)) || J({ ok, notHere });
+  });
+  check('ic22', 'TEST 22 — basic content stays available: no basic contract needs a capability; with none, capability content is ineligible', () => {
+    const capTpls = [...CONTRACT_TEMPLATE_REGISTRY, ...DILEMMA_TEMPLATE_REGISTRY].filter(t => J(t.requires).includes('"k":"capability"'));
+    const basic = CONTRACT_TEMPLATE_REGISTRY.filter(t => !t.id.startsWith('cap_'));
+    const snap = innovationContentSnapshot(seq(3, t => I({ turn: t })).last.state);
+    const blocked = capTpls.every(t => t.requires.filter(q => q.k === 'capability').some(q => !evaluateContentReq(q, { regions: {}, capabilities: snap } as any, 'NSW', null).ok));
+    return (capTpls.length >= 8 && capTpls.length <= 14 && basic.length > 20 && basic.every(t => !J(t.requires).includes('"k":"capability"')) && blocked) || J({ n: capTpls.length, basic: basic.length, blocked });
+  });
+  check('ic23', 'TEST 23 — national direction: operational AI Compute adds Technology evidence to V10.4 without forcing the direction', () => {
+    const r = seq(12, tech); const ev = innovationDirectionEvidence(r.last.state);
+    const ndi = createNationalDevelopmentFixtureInputs({ statuses: A('infra_v93_qld_port_automated', 'infra_v93_qld_port_partnership', 'infra_v93_wa_remote_logistics', 'infra_v93_wa_freight_rail', 'infra_v93_nt_gateway', 'infra_inland_rail_qld'), sectors: { WA: { mining: 85, logistics: 50 }, QLD: { mining: 70, trade: 40 }, NT: { mining: 65 } } as any });
+    const a = computeNationalDevelopment(ndi, null).profile, b = computeNationalDevelopment({ ...ndi, capabilities: ev }, null).profile;
+    const sc = (p: NationalDevelopmentProfile) => p.scores.find(s => s.directionId === 'technology_research_economy')!.score;
+    return ((ev.technology_research_economy || 0) > 0 && sc(b) > sc(a) && a.primaryDirection === b.primaryDirection && b.primaryDirection === 'resource_export_powerhouse') || J({ ev, a: sc(a), b: sc(b), pa: a.primaryDirection, pb: b.primaryDirection });
+  });
+  check('ic24', 'TEST 24 — strategy relevance: a Manufacturing direction raises Advanced Manufacturing relevance; readiness and maturity are unchanged', () => {
+    const plain = seq(6, mine), dir = seq(6, t => mine(t, { direction: { primary: 'advanced_manufacturing_economy', secondary: null } }));
+    const a = plain.last.state.capabilities.advanced_manufacturing, b = dir.last.state.capabilities.advanced_manufacturing;
+    const same = CAPABILITY_IDS.every(id => J(plain.last.state.capabilities[id].readiness) === J(dir.last.state.capabilities[id].readiness) && plain.last.state.capabilities[id].maturity === dir.last.state.capabilities[id].maturity);
+    return (same && ({ LOW: 0, MODERATE: 1, HIGH: 2 }[b.relevance] > { LOW: 0, MODERATE: 1, HIGH: 2 }[a.relevance]) && b.relevanceWhy.length > 0) || J({ same, a: a.relevance, b: b.relevance });
+  });
+  check('ic25', 'TEST 25 — World Reaction: Emerging → Operational produces exactly ONE capability_became_operational event', () => {
+    const r = seq(14, tech); const ops = r.events.filter(e => e.capabilityId === 'ai_compute_infrastructure' && e.kind === 'capability_became_operational');
+    const swr = ops[0] ? innovationToWorldEvent(ops[0], ['player']) : null;
+    return (ops.length === 1 && swr?.sourceSystem === 'innovation' && swr.reactionDepth === 0 && /^ic:/.test(swr.dedupeKey)) || J(r.events.map(e => [e.turn, e.capabilityId, e.kind]));
+  });
+  check('ic26', 'TEST 26 — no readiness spam: small readiness changes (71 → 72) emit no repeated events', () => {
+    const r = seq(16, t => I({ statuses: TECH_P, sectors: { ...TECH_S, ACT: { technology: 80 + (t % 2), research: 90 - (t % 3) } }, turn: t }));
+    const counts: Record<string, number> = {}; r.events.forEach(e => { const k = `${e.capabilityId}:${e.kind}`; counts[k] = (counts[k] || 0) + 1; });
+    return Object.values(counts).every(c => c <= 1) || J(counts);
+  });
+  check('ic27', 'TEST 27 — no capability cascade: support between capabilities reads the previous snapshot; same-turn recomputes are stable; ≤ 1 step per turn', () => {
+    const r = seq(20, mine); const again = computeInnovationCapabilities(mine(20), r.persisted), again2 = computeInnovationCapabilities(mine(20), again.persisted);
+    const stepOk = CAPABILITY_IDS.every(id => r.states.every((s, k) => k === 0 || RANK[maturityOf(s, id)] - RANK[maturityOf(r.states[k - 1], id)] <= 1));
+    return (stepOk && strip(again.state) === strip(again2.state) && J(again.persisted) === J(again2.persisted) && again.events.length === 0) || J({ stepOk, ev: again.events.length });
+  });
+  check('ic28', 'TEST 28 — rival AI: capability opportunity changes candidate scoring by a bounded factor only (no new action)', () => {
+    const s = seq(8, tech).last.state; const fs = ALL.map(r => innovationAiOutlook(s, r));
+    return (fs.some(o => o.factor > 0) && fs.every(o => o.factor >= 0 && o.factor <= 0.06 && J(Object.keys(o).sort()) === J(['factor', 'reason'])) && innovationAiOutlook(null, 'ACT').factor === 0) || J(fs);
+  });
+  check('ic29', 'TEST 29 — human vs AI: recomputing capabilities after each AI action keeps V9.6 termination (budget exhausted)', () => {
+    const rt = createSoloAiTurnRuntime('ic', 2, 0); let p: InnovationPersisted | null = null; let reason: string | null = null; let guard = 0;
+    while (!(reason = soloAiStopReason(rt)) && guard++ < 20) { const a = { type: 'fund_infrastructure', data: { projectId: 'infra_v93_vic_data_center', amount: 1000 + guard } }; soloAiRecordDecision(rt, a, guard); soloAiRecordCommit(rt, a, `fp${guard}`, guard); p = computeInnovationCapabilities(tech(6), p).persisted; }
+    return (reason === 'budget_exhausted' && rt.successfulActions === 2 && guard <= 3) || `${reason} after ${rt.successfulActions} (${guard})`;
+  });
+  check('ic30', 'TEST 30 — no zero-AP loop: V10.5 adds no action; repeated no-progress commits still end the AI turn', () => {
+    const rt = createSoloAiTurnRuntime('ic0', 50, 0); let guard = 0; let reason: string | null = null;
+    while (!(reason = soloAiStopReason(rt)) && guard++ < 200) { const a = { type: 'invest', data: { region: 'ACT', amount: 1 } }; soloAiRecordDecision(rt, a, guard); soloAiRecordCommit(rt, a, 'same-fingerprint', guard); computeInnovationCapabilities(tech(6), null); }
+    const noActions = !Object.keys(CAPABILITY_DEF_BY_ID).some(id => /command|action|pilot/i.test(J(CAPABILITY_DEF_BY_ID[id as EmergingCapabilityId].effects)));
+    return (Boolean(reason) && guard < 200 && noActions) || J({ reason, guard });
+  });
+  check('ic31', 'TEST 31 — What-If: an infrastructure preview projects readiness; live persisted state unchanged', () => {
+    const live = seq(8, t => tech(t, { nsModifiers: energyCut(-95) })); const before = J(live.persisted);
+    const proj = projectInnovationCapabilities(live.last.state, tech(8), live.persisted);
+    return (J(live.persisted) === before && proj.lines.some(l => /AI Compute/.test(l)) && proj.after.capabilities.ai_compute_infrastructure.requirements.find(q => q.id === 'energy')!.met !== 'blocking') || J(proj.lines);
+  });
+  check('ic32', 'TEST 32 — save / load: knowledge/history restored; current readiness recomputed identically', () => {
+    const r = seq(12, tech); const loaded = sanitizeInnovationPersisted(JSON.parse(J(r.persisted)));
+    const again = computeInnovationCapabilities(tech(12), loaded).state;
+    return (J(loaded) === J(r.persisted) && strip(again) === strip(r.last.state) && again.capabilities.ai_compute_infrastructure.knowledge === 'established') || J({ same: J(loaded) === J(r.persisted) });
+  });
+  check('ic33', 'TEST 33 — old save: derived conservatively (≤ Emerging), no fake historical milestones, no events', () => {
+    const mig = migrateSaveToV71Expansion({ version: '9.0', gameState: { turnCounter: 20 } } as any);
+    const r = computeInnovationCapabilities(tech(20), sanitizeInnovationPersisted((mig as any).migratedData?.gameState?.innovation));
+    const garbage = sanitizeInnovationPersisted({ current: { caps: { ai_compute_infrastructure: { maturity: 'godlike' } } }, history: 'x' });
+    return (sanitizeInnovationPersisted(undefined) === null && r.persisted.history.length === 0 && r.events.length === 0 && CAPABILITY_IDS.every(id => RANK[maturityOf(r.state, id)] <= 1) && CAPABILITY_IDS.every(id => r.state.capabilities[id].emergedTurn === null) && garbage!.current.caps.ai_compute_infrastructure.maturity === 'unavailable') || J({ h: r.persisted.history.length, e: r.events.length });
+  });
+  check('ic34', 'TEST 34 — replay: the same canonical sequence reproduces the same capability transitions', () => {
+    const steps = () => [...Array.from({ length: 8 }, (_, k) => tech(k + 1)), ...Array.from({ length: 6 }, (_, k) => techDamaged(k + 9))];
+    const a = seq(steps()), b = seq(steps());
+    return (J(a.persisted.history) === J(b.persisted.history) && J(a.events) === J(b.events) && a.persisted.history.length >= 3) || J(a.persisted.history.map(h => h.kind));
+  });
+  check('ic35', 'TEST 35 — determinism: same inputs → identical readiness and maturity', () => {
+    const a = computeInnovationCapabilities(mine(3), null), b = computeInnovationCapabilities(mine(3), null);
+    return (strip(a.state) === strip(b.state) && J(a.persisted) === J(b.persisted) && innovationInputHash(mine(3)) === innovationInputHash(mine(3))) || 'differs';
+  });
+  check('ic36', 'TEST 36 — career boundary: a different career level (no game-system change) leaves readiness unchanged', () => {
+    const i = tech(5); const withCareer: any = { ...i, careerLevel: 20, careerXp: 99999, profile: { level: 20 } };
+    return (strip(computeInnovationCapabilities(i, null).state) === strip(computeInnovationCapabilities(withCareer, null).state)) || 'career leaked into readiness';
+  });
+  check('ic37', 'TEST 37 — extreme values: huge / NaN inputs give bounded, finite readiness', () => {
+    const i = tech(5); const x: any = JSON.parse(J(i)); x.regions.forEach((r: any) => { r.sectors = { research: 1e9, technology: NaN, mining: -1e9 }; });
+    Object.values(x.industries.regions).forEach((r: any) => Object.values(r.industries).forEach((k: any) => { k.strength = 1e12; }));
+    const s = computeInnovationCapabilities(x, null).state;
+    const ok = CAPABILITY_IDS.every(id => Object.values(s.capabilities[id].readiness).every(v => Number.isFinite(v) && v >= 0 && v <= 100));
+    return (ok && valid(s) === true) || valid(s);
+  });
+  check('ic38', 'TEST 38 — feature off: no capability modifiers; V10.0 / V10.1 compute exactly as before', () => {
+    const w = createInfraNetworkFixtureWorld({ statuses: TECH_P, sectors: TECH_S });
+    const mods = innovationCapabilityModifiers(null); const ns0 = computeNationalSystems(w.nsi).state, ns1 = computeNationalSystems({ ...w.nsi, modifiers: mergeCapabilityModifiers(w.nsi.modifiers, mods.national) }).state;
+    return ((DEFAULT_GAME_SETTINGS as any).innovationEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('innovationEnabled') && mergeCapabilityModifiers(undefined, mods.national) === undefined && J({ ...ns0, computeMs: 0 }) === J({ ...ns1, computeMs: 0 })) || 'feature-off path changed V10.0';
+  });
+  check('ic39', 'TEST 39 — long match: many capabilities emerge, diffuse, weaken; histories stay bounded, no runaway', () => {
+    const steps: InnovationInputs[] = [];
+    for (let t = 1; t <= 70; t++) steps.push(t % 20 < 14 ? I({ statuses: { ...TECH_P, ...MINE_P }, sectors: { ...TECH_S, ...MINE_S, QLD: { mining: 60, technology: 40 + (t % 7) } }, turn: t }) : techDamaged(t));
+    const r = seq(steps);
+    return (r.persisted.history.length <= V105_LIMITS.history && CAPABILITY_IDS.every(id => r.persisted.current.caps[id].history.length <= V105_LIMITS.perCapabilityHistory) && J(r.persisted).length < 60000 && valid(r.last.state, r.persisted) === true) || J({ h: r.persisted.history.length, size: J(r.persisted).length, v: valid(r.last.state, r.persisted) });
+  });
+  check('ic40', 'TEST 40 — performance: repeated evaluation is cheap', () => {
+    const i = tech(5); let p: InnovationPersisted | null = null; const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    for (let k = 0; k < 40; k++) p = computeInnovationCapabilities({ ...i, turn: 5 + k }, p).persisted;
+    const ms = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) / 40;
+    return ms < 30 || `${ms.toFixed(2)}ms avg`;
+  });
+  return results;
+}
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -179684,6 +180749,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v104-setting-national-development">
                     <input type="checkbox" checked={gameSettings.nationalDevelopmentEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🧭 National Development', prev => ({ ...prev, nationalDevelopmentEnabled: e.target.checked }))} />
                     National Development Strategy (V10.4): a descriptive reading of what kind of Australia is emerging — direction, strengths, exposures, tensions (no bonuses; needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v105-setting-innovation">
+                    <input type="checkbox" checked={gameSettings.innovationEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🔬 Innovation & Capabilities', prev => ({ ...prev, innovationEnabled: e.target.checked }))} />
+                    Innovation & Emerging Capabilities (V10.5): advanced capabilities emerge from the research, industry, infrastructure and networks you build — no tech tree, no science points (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
