@@ -10818,6 +10818,7 @@ export function canonicalStateFromLiveRuntime(
     megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
     nationalDevelopment: sanitizeNationalDevelopmentPersisted((liveState as any).nationalDevelopment || (gameState as any)?.nationalDevelopment),
     innovation: sanitizeInnovationPersisted((liveState as any).innovation || (gameState as any)?.innovation),
+    systemicRisk: sanitizeSystemicRiskPersisted((liveState as any).systemicRisk || (gameState as any)?.systemicRisk),
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14091,6 +14092,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   megaprojectsEnabled: true,
   nationalDevelopmentEnabled: true,
   innovationEnabled: true,
+  systemicRiskEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26442,6 +26444,8 @@ export type GameSettingsState = {
   nationalDevelopmentEnabled?: boolean;
   /** V10.5 Innovation & Emerging Capabilities (needs National Systems; off = no capabilities, no effects, V10.0–V10.4 unchanged). */
   innovationEnabled?: boolean;
+  /** V10.6 Resilience & Systemic Risk (needs National Systems; off = no interpretation, V10.0–V10.5 unchanged). */
+  systemicRiskEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36188,6 +36192,8 @@ export const initialGameState = {
   nationalDevelopment: null as any,
   /** V10.5: capability maturity hysteresis, knowledge, adoption and bounded history (readiness itself is derived). */
   innovation: null as any,
+  /** V10.6: systemic-risk HISTORY only (chain registry, recovery baselines, band hysteresis) — risk itself is derived. */
+  systemicRisk: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -45191,6 +45197,12 @@ export function evaluateGuardianRiskPipeline(
   }
   if (context.settings.evaluators.teamEconomy || context.settings.evaluators.teamGovernance) {
     const res = safeExecuteGuardianEvaluator(() => evaluateTeamRisk(context), context, 'team');
+    rawRisks.push(...res.risks);
+    if (res.failureMode) failureModes.push(res.failureMode);
+  }
+  // V10.6: systemic liquidity context (warn-only; Guardian's own settings and response mode still decide).
+  if (context.settings.evaluators.liquidity) {
+    const res = safeExecuteGuardianEvaluator(() => evaluateSystemicRiskGuardian(context), context, 'systemic_risk', 'allow_silent');
     rawRisks.push(...res.risks);
     if (res.failureMode) failureModes.push(res.failureMode);
   }
@@ -80154,6 +80166,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.nationalDevelopment = sanitizeNationalDevelopmentPersisted(migrated.gameState.nationalDevelopment);
   // V10.5: pre-V10.5 saves start with NO capability history (null) — maturity is derived conservatively on load.
   if (migrated.gameState) migrated.gameState.innovation = sanitizeInnovationPersisted(migrated.gameState.innovation);
+  // V10.6: pre-V10.6 saves start with NO cascade history (null) — current systemic risk is derived on load.
+  if (migrated.gameState) migrated.gameState.systemicRisk = sanitizeSystemicRiskPersisted(migrated.gameState.systemicRisk);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -114006,6 +114020,23 @@ export function buildGI3DivergenceAnswer(check: { message: string; severity: 'no
 }
 
 /** Guardian evaluator: an intended action that breaks an explicit strategy constraint (Guardian still owns protection). */
+/** V10.6 Guardian evaluator: a spend that leaves a fragile liquidity buffer given debt and capital tied up in unfinished
+ *  programs. Reads canonical cash / loans / program memory only; returns information — never blocks on its own. */
+export function evaluateSystemicRiskGuardian(context: GuardianEvaluationContext): readonly GuardianDetectedRisk[] {
+  if (context.isReplay) return [];
+  const gs: any = context.gameState || {};
+  if (gs.gameSettings && gs.gameSettings.systemicRiskEnabled === false) return [];
+  const payload = context.actionPayload || {};
+  const cost = typeof payload.cost === 'number' ? payload.cost : typeof payload.amount === 'number' && !/loan/.test(context.actionType) ? payload.amount : typeof payload.price === 'number' ? payload.price : 0;
+  if (!(cost > 0)) return [];
+  const actor: any = extractActorState(context) || {};
+  const inputs = buildSystemicRiskInputs({ turn: context.turn, national: null, industries: null, networks: null, innovation: null, megaprojects: sanitizeMegaprojectsPersisted(gs.megaprojects), projects: [], viewer: { ...actor, id: context.actorId, money: context.currentCash } });
+  const w = systemicLiquidityWarning(inputs, cost);
+  if (!w.warn) return [];
+  return [{ id: `risk_systemic_liquidity_${context.actorId}_t${context.turn}_${context.actionType}`, category: 'liquidity', severity: w.severity, title: 'Systemic risk: thin liquidity buffer', description: w.text, evidence: w.evidence,
+    assumptions: ['Uses canonical cash, debt interest and capital already committed to unfinished programs — no invented liabilities. Fragile high-growth play is allowed.'], probability: 1, estimatedImpact: cost, confidence: 0.85, reversible: true, immediate: false, triggeredSettingKeys: [], systemIds: ['systemic_risk'] }];
+}
+
 export function evaluateGI3StrategyRisk(context: GuardianEvaluationContext): readonly GuardianDetectedRisk[] {
   const state = context.gameState?.gi3Strategy as GI3StrategyState | undefined;
   const c = state?.active;
@@ -122121,7 +122152,10 @@ export type SWRKind =
   | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased'
   // V10.5 Innovation & Emerging Capabilities (maturity / adoption transitions only — never readiness ticks).
   | 'capability_emerged' | 'capability_demonstrated' | 'capability_became_operational' | 'capability_scaled' | 'capability_nationally_integrated'
-  | 'capability_adoption_expanded' | 'capability_operational_capacity_declined';
+  | 'capability_adoption_expanded' | 'capability_operational_capacity_declined'
+  // V10.6 Resilience & Systemic Risk (one root per shock + bounded, strategically important derived events only).
+  | 'systemic_risk_became_critical' | 'systemic_risk_reduced' | 'critical_dependency_exposed' | 'cascade_started' | 'cascade_contained' | 'cascade_escalated'
+  | 'recovery_started' | 'recovery_stalled' | 'recovery_completed' | 'resilience_improved_major' | 'resilience_deteriorated_major';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122627,6 +122661,7 @@ const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationshi
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
+const SWR_SR_KINDS: SWRKind[] = ['systemic_risk_became_critical', 'systemic_risk_reduced', 'critical_dependency_exposed', 'cascade_started', 'cascade_contained', 'cascade_escalated', 'recovery_started', 'recovery_stalled', 'recovery_completed', 'resilience_improved_major', 'resilience_deteriorated_major'];
 const SWR_IC_KINDS: SWRKind[] = ['capability_emerged', 'capability_demonstrated', 'capability_became_operational', 'capability_scaled', 'capability_nationally_integrated', 'capability_adoption_expanded', 'capability_operational_capacity_declined'];
 const SWR_ND_KINDS: SWRKind[] = ['national_direction_emerged', 'national_direction_strengthened', 'national_direction_weakened', 'national_strategy_transition_started', 'national_strategy_transition_completed', 'national_dependency_became_defining', 'national_diversification_improved', 'national_concentration_increased'];
 const SWR_MP_KINDS: SWRKind[] = ['megaproject_proposed', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_resumed', 'megaproject_completed', 'megaproject_abandoned'];
@@ -122634,17 +122669,17 @@ const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_acceler
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['capability_emerged', 'capability_became_operational', 'capability_adoption_expanded', 'national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['critical_dependency_exposed', 'cascade_escalated', 'systemic_risk_became_critical', 'capability_emerged', 'capability_became_operational', 'capability_adoption_expanded', 'national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' || e.sourceSystem === 'innovation' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' || e.sourceSystem === 'innovation' || e.sourceSystem === 'systemic_risk' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['capability_became_operational', 'capability_scaled', 'national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_dependency_exposed', 'cascade_escalated', 'capability_became_operational', 'capability_scaled', 'national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
@@ -122653,12 +122688,12 @@ export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['capability_emerged', 'capability_operational_capacity_declined', 'megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['recovery_stalled', 'cascade_escalated', 'critical_dependency_exposed', 'capability_emerged', 'capability_operational_capacity_declined', 'megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['capability_emerged', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'capability_operational_capacity_declined', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['cascade_escalated', 'recovery_completed', 'recovery_stalled', 'capability_emerged', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'capability_operational_capacity_declined', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['cascade_escalated', 'recovery_stalled', 'systemic_risk_became_critical', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123332,6 +123367,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  systemic_risk_became_critical: 'Systemic risk critical', systemic_risk_reduced: 'Systemic risk reduced', critical_dependency_exposed: 'Critical dependency', cascade_started: 'Cascade started', cascade_contained: 'Cascade contained', cascade_escalated: 'Cascade escalated',
+  recovery_started: 'Recovery started', recovery_stalled: 'Recovery stalled', recovery_completed: 'Recovery complete', resilience_improved_major: 'Resilience improved', resilience_deteriorated_major: 'Resilience deteriorated',
   capability_emerged: 'Capability emerging', capability_demonstrated: 'Capability demonstrated', capability_became_operational: 'Capability operational', capability_scaled: 'Capability scaled',
   capability_nationally_integrated: 'Capability integrated', capability_adoption_expanded: 'Capability spread', capability_operational_capacity_declined: 'Capability capacity down',
   national_direction_emerged: 'National direction emerged', national_direction_strengthened: 'National direction strengthened', national_direction_weakened: 'National direction weakened',
@@ -124382,6 +124419,8 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
       case 'capability_emerged': case 'capability_adoption_expanded': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
       case 'capability_became_operational': case 'capability_scaled': { pulse(0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
       case 'capability_operational_capacity_declined': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
+      // V10.6: post-shock constraint / recovery as regional structural evidence (no direct economic change).
+      case 'cascade_escalated': case 'recovery_stalled': case 'recovery_completed': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'systemic risk', e.id); break; }
       case 'megaproject_stage_completed': case 'megaproject_partially_operational': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_completed': { pulse(0.05); lrPushHistory(reg, { turn, kind: 'project', text: e.strategicMeaning.slice(0, 140), sourceEventId: e.id, significance: 'major' }); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_stalled': case 'megaproject_abandoned': { pulse(-0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
@@ -124835,7 +124874,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124856,6 +124895,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   // V10.3: national program questions (only when a megaproject view exists; generic phrasings need an open program).
   // V10.4: "what kind of Australia" questions (specific phrasings only; needs a national development view).
   // V10.5: capability questions (need a capability name or the word "capability").
+  // V10.6: resilience / dependency / cascade / recovery questions.
+  const srq = detectSystemicQuery(raw, gw);
+  if (srq) return mk('national', { systemic: srq, regionId: srq.regionId });
   const cq = detectCapabilityQuery(raw, gw);
   if (cq) return mk('national', { capability: cq, regionId: cq.regionId });
   const ndq = detectNationalDevelopmentQuery(raw, gw);
@@ -124899,6 +124941,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.systemic && gw.national?.systemic) return composeSystemicAnswer(query.systemic, gw);
   if (query.topic === 'national' && query.capability && gw.national?.innovation) return composeCapabilityAnswer(query.capability, gw);
   if (query.topic === 'national' && query.nationalDev && gw.national?.development) return composeNationalDevelopmentAnswer(query.nationalDev, gw);
   if (query.topic === 'national' && query.megaproject && gw.national?.megaprojects) return composeMegaprojectAnswer(query.megaproject, gw);
@@ -128897,6 +128940,10 @@ export interface LearningContext {
   /** V10.5: the first capability to emerge, and the first to become operational. */
   capabilityEmerging?: string | null;
   capabilityOperational?: string | null;
+  /** V10.6: a critical dependency, a missing alternative, and a contained cascade. */
+  systemicDependency?: string | null;
+  systemicRedundancy?: string | null;
+  systemicResilienceWorked?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128994,6 +129041,15 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
     relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
     lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
+  { id: 'systemic_dependency', title: 'Systemic dependency', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'What is my biggest systemic risk?', related: ['redundancy'],
+    relevant: c => (c.systemicDependency ? 'a critical dependency exists' : null),
+    lesson: c => ({ headline: 'Systemic dependency', lines: [c.systemicDependency || '', 'A region can be productive and still fragile if it depends on one critical supplier or route.'], asks: ['What is my biggest systemic risk?'], surface: 'inline' }) },
+  { id: 'redundancy', title: 'Redundancy', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['systemic_dependency'], directoryId: 'regions', askPrompt: 'How can I reduce dependency?', related: ['systemic_dependency', 'resilience_worked'],
+    relevant: c => (c.systemicRedundancy ? 'a critical dependency has no alternative' : null),
+    lesson: c => ({ headline: 'Redundancy', lines: [c.systemicRedundancy || '', 'Building more capacity is not always enough.', 'An alternative supplier or route can reduce how far a failure spreads.'], asks: ['How can I reduce dependency?'], surface: 'inline' }) },
+  { id: 'resilience_worked', title: 'Resilience worked', category: 'advanced', tier: 'interaction', priority: 4, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'What stopped the cascade?', related: ['redundancy'],
+    relevant: c => (c.systemicResilienceWorked ? 'a cascade was contained' : null),
+    lesson: c => ({ headline: 'Resilience worked', lines: [c.systemicResilienceWorked || '', 'The disruption was contained because alternative capacity was available.', 'This is the value of redundancy.'], asks: ['What stopped the cascade?'], surface: 'inline' }) },
   { id: 'emerging_capabilities', title: 'Emerging capabilities', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'Which capability is closest to emerging?', related: ['national_direction'],
     relevant: c => (c.capabilityEmerging ? 'a new national capability is emerging' : null),
     lesson: c => ({ headline: 'Emerging capabilities', lines: [c.capabilityEmerging || '', 'Advanced capabilities appear when Australia develops the right combination of research, infrastructure, industry, and national networks.', 'There is no separate research tree.'], asks: ['Which capability is closest to emerging?'], surface: 'inline' }) },
@@ -132331,6 +132387,8 @@ export interface FeelSnapshot {
   nationalDirection?: string;
   /** V10.5: capability id → national maturity (optional). */
   capabilities?: Record<string, string>;
+  /** V10.6: stress chain id → outcome, recovery id → status (optional). */
+  systemic?: { chains: Record<string, string>; recoveries: Record<string, string>; labels: Record<string, string> };
 }
 
 let V94_SEQ = 0;
@@ -132411,6 +132469,16 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
   });
+  // V10.6: resilience moments — a cascade contained ("YOUR RESILIENCE WORKED"), escalated, or a recovery completing.
+  if (next.systemic && prev.systemic) {
+    const ns = next.systemic, ps = prev.systemic; let fired = 0;
+    Object.entries(ns.chains).forEach(([id, o]) => { if (fired || ps.chains[id] === o) return; fired += 1;
+      out.push(o === 'escalated'
+        ? v94Event('crisis_escalated', 'major', `sr_${id}`, 'CASCADE', [ns.labels[id] || id, 'The disruption is spreading through dependent systems.'], { now, turn, tone: 'warning' })
+        : v94Event('strategy_phase', 'major', `sr_${id}`, 'YOUR RESILIENCE WORKED', [ns.labels[id] || id, 'Alternative capacity absorbed much of the shock.', 'The disruption did not spread as far.'], { now, turn, tone: 'positive' })); });
+    Object.entries(ns.recoveries).forEach(([id, st]) => { if (fired || ps.recoveries[id] === st || ps.recoveries[id] === undefined) return;
+      if (st === 'recovered' || st === 'mostly_recovered') { fired += 1; out.push(v94Event('crisis_resolved', 'normal', `srr_${id}`, st === 'recovered' ? 'RECOVERY COMPLETE' : 'RECOVERY PROGRESS', [ns.labels[id] || id, st === 'recovered' ? 'Back to its pre-shock baseline.' : 'Mostly recovered — not yet back to baseline.'], { now, turn, tone: 'positive' })); } });
+  }
   // V10.5: capability milestones — first emergence and becoming operational (non-blocking, capped at one per update).
   {
     const rk: Record<string, number> = { unavailable: 0, emerging: 1, demonstrated: 2, operational: 3, scaled: 4, nationally_integrated: 5 };
@@ -132839,7 +132907,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled'
 ] as const;
 
 /**
@@ -133196,6 +133264,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         megaprojects: sanitizeMegaprojectsPersisted(stateData.megaprojects || raw.gameState?.megaprojects),
         nationalDevelopment: sanitizeNationalDevelopmentPersisted(stateData.nationalDevelopment || raw.gameState?.nationalDevelopment),
         innovation: sanitizeInnovationPersisted(stateData.innovation || raw.gameState?.innovation),
+        systemicRisk: sanitizeSystemicRiskPersisted(stateData.systemicRisk || raw.gameState?.systemicRisk),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135245,6 +135314,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
+  { id: 'v106', label: 'V10.6 Resilience & Systemic Risk', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV106ResilienceSystemicRiskSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -137323,6 +137393,8 @@ export interface NationalSystemsWorldView {
   development?: NationalDevelopmentWorldView | null;
   /** V10.5 Innovation & Capabilities (null when off). */
   innovation?: InnovationWorldView | null;
+  /** V10.6 Resilience & Systemic Risk (null when off). */
+  systemic?: SystemicRiskWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -144312,6 +144384,1245 @@ export const InnovationInspector: React.FC<{ state: InnovationCapabilitiesState 
             {tab === 'performance' && <div>last {diag.lastMs} ms · state compute {s?.computeMs ?? '—'} ms · passes {s?.passes ?? 0} (max {V105_THRESHOLDS.maxPasses}) · bounds {JSON.stringify(V105_LIMITS)}</div>}
             {tab === 'self tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="ic-run-tests">{busy ? 'Running…' : 'Run V10.5 self-tests'}</button>
               {tests && <div data-testid="ic-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+            {issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ============================================================================
+// SECTION 20Y: V10.6 RESILIENCE, DEPENDENCIES & SYSTEMIC RISK
+// Interprets what happens when the national structure is placed under stress. It OWNS ONLY systemic-risk interpretation:
+// exposure, dependency concentration, single points of failure, propagation paths, buffers, resilience, recovery and
+// stress-test projections. Crises (Crisis Engine), stability (Public Stability), money/debt (Economy), project condition
+// (Infrastructure), prices (Markets) and V10.0–V10.5 state stay canonical — V10.6 never writes any of them. Propagation is
+// a purpose-built, bounded, deterministic evaluator over the REAL V10.0 / V10.1 dependency structure (no generic graph
+// framework, no Monte Carlo). Stress tests are What-If: they never touch live state.
+// ============================================================================
+
+export type SystemicRiskDomain = 'freight' | 'energy' | 'water' | 'trade' | 'digital' | 'industry' | 'supply' | 'infrastructure' | 'liquidity' | 'stability';
+export type SystemicRiskBand = 'robust' | 'resilient' | 'stable' | 'exposed' | 'fragile' | 'critical';
+export type SystemicImpactBand = 'minor' | 'meaningful' | 'major' | 'critical';
+export type SystemicStressSeverity = SystemicImpactBand;
+export type SystemicConcentrationKind = 'supplier' | 'region' | 'gateway' | 'corridor' | 'industry' | 'energy_source' | 'capital' | 'capability';
+export const SYSTEMIC_DOMAINS: SystemicRiskDomain[] = ['freight', 'energy', 'water', 'trade', 'digital', 'industry', 'supply', 'infrastructure', 'liquidity', 'stability'];
+export const SYSTEMIC_DOMAIN_LABEL: Record<SystemicRiskDomain, string> = { freight: 'Freight', energy: 'Energy', water: 'Water', trade: 'Trade', digital: 'Digital', industry: 'Industry', supply: 'Supply Chains', infrastructure: 'Infrastructure', liquidity: 'Liquidity', stability: 'Stability' };
+export const SYSTEMIC_BAND_LABEL: Record<SystemicRiskBand, string> = { robust: 'Robust', resilient: 'Resilient', stable: 'Stable', exposed: 'Exposed', fragile: 'Fragile', critical: 'Critical' };
+export const SYSTEMIC_BAND_RANK: Record<SystemicRiskBand, number> = { critical: 0, fragile: 1, exposed: 2, stable: 3, resilient: 4, robust: 5 };
+
+export interface SystemicRiskEvidence { id: string; sourceSystem: string; sourceId: string; factor: string; contribution: number; visibility: 'public' | 'actor_visible'; turn: number }
+export interface SystemicDomainRisk {
+  domain: SystemicRiskDomain; exposure: number; resilience: number; spareCapacity: number; redundancy: number; concentration: number; recoveryCapacity: number;
+  condition: SystemicRiskBand; trend: 'improving' | 'stable' | 'deteriorating'; topRisks: string[]; buffers: string[]; evidence: SystemicRiskEvidence[];
+}
+export interface SystemicDependency {
+  id: string; sourceSystem: string; providerId: string; consumerIds: string[]; domain: SystemicRiskDomain; importance: 'low' | 'moderate' | 'high' | 'critical';
+  concentration: number; shareLabel: string; alternatives: string[]; propagationPotential: number; reason: string; evidence: SystemicRiskEvidence[];
+}
+export interface SystemicConcentration { id: string; kind: SystemicConcentrationKind; subjectId: string; concentration: number; band: 'distributed' | 'moderate' | 'concentrated' | 'highly_concentrated'; shareLabel: string; affectedSystems: string[]; alternatives: string[]; upside: string | null; evidence: SystemicRiskEvidence[] }
+export interface SystemicCriticalPoint {
+  id: string; subjectType: 'project' | 'region' | 'network_link' | 'supplier' | 'gateway' | 'capability' | 'financial_buffer'; subjectId: string; label: string; domain: SystemicRiskDomain;
+  severity: 'meaningful' | 'major' | 'critical'; directEffects: string[]; downstreamEffects: string[]; alternatives: string[]; reason: string;
+}
+export interface SystemicBuffer {
+  id: string; domain: SystemicRiskDomain; sourceId: string; kind: 'spare_capacity' | 'supplier_redundancy' | 'route_redundancy' | 'gateway_redundancy' | 'liquidity_reserve' | 'industry_diversity' | 'capability' | 'infrastructure_reserve';
+  structural: boolean; strength: number; available: number; explanation: string;
+  /** Internal pool accounting: buffers sharing a poolKey draw on ONE pool (units), converted via unitsPerImpact. */
+  poolKey?: string; poolUnits?: number; unitsPerImpact?: number;
+}
+export interface SystemicStressNode { id: string; depth: number; domain: SystemicRiskDomain; subjectId: string; label: string; impact: number; impactBand: SystemicImpactBand; causedByNodeId: string | null; transmissionMechanism: string; absorbedAmount: number; residualImpact: number; buffers: string[]; projectedCondition: string | null }
+export interface SystemicStressChain {
+  id: string; rootEventId: string; rootType: string; label: string; startedTurn: number; status: 'active' | 'stabilizing' | 'resolved'; nodes: SystemicStressNode[]; maxDepthReached: number;
+  systemsAffected: string[]; severity: SystemicStressSeverity; outcome: 'contained' | 'escalated' | 'limited'; buffersActivated: string[]; failuresActivated: string[]; recoveryIds: string[];
+}
+export interface RecoveryState {
+  id: string; originEventId: string; label: string; domain: SystemicRiskDomain; affectedSubjects: string[];
+  status: 'not_started' | 'stabilizing' | 'recovering' | 'mostly_recovered' | 'recovered'; baselineCondition: string; currentCondition: string;
+  blockers: string[]; recoveryDrivers: string[]; startedTurn: number; completedTurn: number | null; progress: number; stalled: boolean; paths: string[];
+}
+export interface NationalResilienceProfile { domains: Record<SystemicRiskDomain, SystemicRiskBand>; mostResilient: SystemicRiskDomain | null; mostFragile: SystemicRiskDomain | null; highestExposure: string | null; criticalSinglePoint: string | null; strongestBuffer: string | null; liquidity: SystemicRiskBand; summary: string }
+export interface SystemicRiskHistoryEntry { id: string; turn: number; kind: 'cascade_started' | 'cascade_contained' | 'cascade_escalated' | 'recovery_started' | 'recovery_stalled' | 'recovery_completed' | 'domain_band_changed' | 'critical_dependency_exposed'; summary: string; rootEventId: string | null; domain: SystemicRiskDomain | null }
+export interface LiquidityProfile { cash: number; debt: number; dailyObligations: number; freeBuffer: number; capitalAtRisk: number; programsAtRisk: string[]; band: SystemicRiskBand; resilience: number; explanation: string[] }
+export interface NationalSystemicRiskState {
+  schemaVersion: '10.6'; revision: number; systems: Record<SystemicRiskDomain, SystemicDomainRisk>; dependencies: SystemicDependency[]; concentrations: SystemicConcentration[];
+  criticalPoints: SystemicCriticalPoint[]; buffers: SystemicBuffer[]; activeStressChains: SystemicStressChain[]; resilience: NationalResilienceProfile; recovery: RecoveryState[];
+  liquidity: LiquidityProfile; history: SystemicRiskHistoryEntry[]; lastUpdatedTurn: number; inputHash: string; computeMs: number;
+}
+export interface SystemicRiskInputs {
+  turn: number;
+  national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
+  innovation: InnovationCapabilitiesState | null; direction: { primary: NationalDevelopmentDirectionId | null; secondary: NationalDevelopmentDirectionId | null } | null;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string }>;
+  crises: Array<{ id: string; name: string; category: string; status: string; affectedRegions: string[] }>;
+  stability: { national: number | null; regional: Record<string, number> };
+  viewer: { id: string; cash: number; debt: number; dailyObligations: number } | null;
+}
+interface SrChainMemory { id: string; rootEventId: string; rootType: string; label: string; startedTurn: number; status: SystemicStressChain['status']; peak: SystemicStressSeverity; outcome: SystemicStressChain['outcome']; subjects: string[]; baseline: Record<string, string>; damagedAtStart: string[]; rootActiveLastTurn: boolean; recovery: { status: RecoveryState['status']; progress: number; sinceTurn: number; completedTurn: number | null; stalledTurns: number } }
+export interface SystemicRiskMemory { bands: Partial<Record<SystemicRiskDomain, SystemicRiskBand>>; scores: Partial<Record<SystemicRiskDomain, number>>; conditions: Record<string, string>; chains: SrChainMemory[]; exposedDeps: string[]; lastTurn: number }
+export interface SystemicRiskPersisted { schemaVersion: '10.6'; revision: number; initializedTurn: number | null; base: SystemicRiskMemory; current: SystemicRiskMemory; history: SystemicRiskHistoryEntry[]; seq: number; inputHash: string }
+export type SystemicDerivedKind = 'systemic_risk_became_critical' | 'systemic_risk_reduced' | 'critical_dependency_exposed' | 'cascade_started' | 'cascade_contained' | 'cascade_escalated' | 'recovery_started' | 'recovery_stalled' | 'recovery_completed' | 'resilience_improved_major' | 'resilience_deteriorated_major';
+export interface SystemicDerivedEvent { id: string; turn: number; kind: SystemicDerivedKind; rootEventId: string | null; domain: SystemicRiskDomain | null; regionIds: string[]; text: string; significance: 'meaningful' | 'major' }
+
+/** Hard limits (documented; LAB-visible). */
+export const V106_LIMITS = { maxDepth: 3, maxNodes: 24, maxChains: 3, maxShocks: 2, history: 50, recoveries: 6, minImpact: 3, decay: 0.85, coalesceWeight: 0.25, dependencies: 16, criticalPoints: 10, concentrations: 12, capabilityAbsorbCap: 0.5, stallTurns: 3 } as const;
+const v106R = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const v106C = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
+export const systemicBand = (resilience: number): SystemicRiskBand => (resilience >= 80 ? 'robust' : resilience >= 65 ? 'resilient' : resilience >= 50 ? 'stable' : resilience >= 35 ? 'exposed' : resilience >= 20 ? 'fragile' : 'critical');
+export const systemicImpactBand = (x: number): SystemicImpactBand => (x >= 60 ? 'critical' : x >= 35 ? 'major' : x >= 15 ? 'meaningful' : 'minor');
+const V106_COND_RANK: Record<string, number> = { critical: 0, bottlenecked: 1, strained: 2, healthy: 3, surplus: 4, disrupted: 0, constrained: 1, weak: 2, developing: 3, strong: 5, booming: 6 };
+const V106_IMPORTANCE_W: Record<string, number> = { supporting: 0.4, important: 0.7, critical: 1 };
+const v106Fn = (s: string) => s === 'active' || s === 'upgraded';
+const v106ShareLabel = (s: number) => (s >= 0.6 ? 'Dominant' : s >= 0.35 ? 'Major' : s >= 0.15 ? 'Supporting' : 'Minor');
+/** Industry producing each supply (V10.1 registry outputs). */
+const v106Producer = (s: StrategicSupplyKind): StrategicIndustryKind | null => (Object.values(STRATEGIC_INDUSTRY_DEFINITIONS).find(d => d.outputs.includes(s))?.id ?? null);
+
+export function createEmptySystemicRiskMemory(): SystemicRiskMemory { return { bands: {}, scores: {}, conditions: {}, chains: [], exposedDeps: [], lastTurn: 0 }; }
+export function createEmptySystemicRiskPersisted(): SystemicRiskPersisted { return { schemaVersion: '10.6', revision: 0, initializedTurn: null, base: createEmptySystemicRiskMemory(), current: createEmptySystemicRiskMemory(), history: [], seq: 0, inputHash: '' }; }
+
+/** Inputs from canonical + derived snapshots (pure). Debt / obligations come from the canonical loan model (never recalculated). */
+export function buildSystemicRiskInputs(src: { turn: number; national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null; innovation: InnovationCapabilitiesState | null;
+  direction?: SystemicRiskInputs['direction']; projects: Record<string, any> | any[] | null | undefined; crises?: any[] | null; stability?: { nationalStability?: number; regionalStability?: Record<string, number> } | null; viewer?: any | null }): SystemicRiskInputs {
+  const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  const v = src.viewer;
+  const debtInfo = v ? extractActorDebt(v) : null;
+  return {
+    turn: Number(src.turn) || 1, national: src.national, industries: src.industries, networks: src.networks, megaprojects: src.megaprojects, innovation: src.innovation, direction: src.direction || null,
+    projects: list.filter(p => p && typeof p.id === 'string').map(p => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || null, projectType: String(p.projectType || ''), status: String(p.status || '') })).sort((a, b) => a.id.localeCompare(b.id)),
+    crises: (src.crises || []).filter((c: any) => c && c.id).map((c: any) => ({ id: String(c.id), name: String(c.title || c.name || c.id), category: String(c.category || ''), status: String(c.status || ''), affectedRegions: Array.isArray(c.affectedRegions) ? c.affectedRegions.filter((r: any) => REGIONS[r]) : [] })).sort((a, b) => a.id.localeCompare(b.id)),
+    stability: { national: typeof src.stability?.nationalStability === 'number' ? src.stability!.nationalStability! : null, regional: { ...(src.stability?.regionalStability || {}) } },
+    viewer: v ? { id: String(v.id || 'player'), cash: Number(v.money || 0), debt: calculateActorOutstandingDebt(v), dailyObligations: (debtInfo?.dailyLoanInterest || 0) + (typeof v.maintenanceCost === 'number' ? v.maintenanceCost : 0) } : null
+  };
+}
+export function systemicRiskInputHash(i: SystemicRiskInputs): string {
+  let h = 2166136261 >>> 0; const mix = (s: string) => { for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; } };
+  mix(`t${i.turn}|ns${i.national?.inputHash || ''}|sc${i.industries ? (i.industries as any).hashes?.inputs || i.industries.revision : ''}|in${i.networks?.inputHash || ''}`);
+  i.projects.forEach(p => mix(`${p.id}${p.status}`)); i.crises.forEach(c => mix(`${c.id}${c.status}${c.affectedRegions.join('')}`));
+  Object.values(i.megaprojects?.programs || {}).forEach(p => mix(`${p.id}${p.status}${p.stages.filter(s => s.status === 'completed').length}${Math.round(Object.values(p.contributorTotals).reduce((a, x) => a + x.capital, 0) / 1000)}`));
+  if (i.innovation) CAPABILITY_IDS.forEach(id => mix(`${id}${i.innovation!.capabilities[id]?.maturity}`));
+  mix(`st${Math.round((i.stability.national ?? -1) / 5)}|d${i.direction?.primary || ''}`);
+  if (i.viewer) mix(`v${Math.round(i.viewer.cash / 2500)}|${Math.round(i.viewer.debt / 1000)}|${Math.round(i.viewer.dailyObligations)}`);
+  return h.toString(36);
+}
+
+// ---- Dependency graph (built from REAL V10.0 / V10.1 structure only) -------------------------------------------------
+interface V106Edge { from: string; to: string; share: number; mechanism: string; domain: SystemicRiskDomain; kind: 'project_capacity' | 'network_supply' | 'network_access' | 'industry_output' | 'supply_input' }
+interface V106Graph { edges: Record<string, V106Edge[]>; label: (id: string) => string; domainOf: (id: string) => SystemicRiskDomain }
+const V106_NET_DOMAIN: Record<NationalNetworkKind, SystemicRiskDomain> = { freight: 'freight', energy: 'energy', water: 'water', trade: 'trade', digital: 'digital' };
+function v106Graph(i: SystemicRiskInputs, overrides?: { liveLabel?: boolean }): V106Graph {
+  const edges: Record<string, V106Edge[]> = {};
+  const add = (e: V106Edge) => { if (e.share <= 0.01) return; (edges[e.from] = edges[e.from] || []).push(e); };
+  const ns = i.national, ind = i.industries;
+  const projTitle = (id: string) => i.projects.find(p => p.id === id)?.title || id;
+  if (ns) Object.values(ns.regions).forEach(g => (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => {
+    const st = g.networks[n]; if (!st) return;
+    const cap = Math.max(1, st.effectiveCapacity);
+    st.sources.filter(s => String(s.source).startsWith('project:') && s.value > 0).forEach(s => add({ from: String(s.source), to: `net:${g.regionId}:${n}`, share: v106C(s.value / cap), mechanism: `${projTitle(String(s.source).slice(8))} provides ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity`, domain: V106_NET_DOMAIN[n], kind: 'project_capacity' }));
+  }));
+  (ns?.dependencies || []).forEach(d => add({ from: `net:${d.providerRegionId}:${d.network}`, to: `net:${d.consumerRegionId}:${d.network}`, share: v106C(d.share), mechanism: `${d.providerRegionId} supplies ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()} capacity to ${d.consumerRegionId}`, domain: V106_NET_DOMAIN[d.network], kind: 'network_supply' }));
+  if (ind) Object.values(ind.regions).forEach(g => (Object.values(g.industries) as IndustryState[]).forEach(x => {
+    const def = STRATEGIC_INDUSTRY_DEFINITIONS[x.industry];
+    (Object.entries(def.networkDependencies) as Array<[NationalNetworkKind, number]>).forEach(([n, w]) => add({ from: `net:${g.regionId}:${n}`, to: `ind:${g.regionId}:${x.industry}`, share: v106C(w * 0.6), mechanism: `${g.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()} needs ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} access`, domain: 'industry', kind: 'network_access' }));
+    def.outputs.forEach(s => add({ from: `ind:${g.regionId}:${x.industry}`, to: `sup:${g.regionId}:${s}`, share: 1, mechanism: `${g.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()} produces ${SUPPLY_LABEL[s].toLowerCase()}`, domain: 'supply', kind: 'industry_output' }));
+    // Inputs: imported shares from V10.1 dependencies; the remainder is local production.
+    x.inputs.forEach(inp => {
+      const imported = g.suppliedBy.filter(d => d.consumerIndustry === x.industry && d.supply === inp.supply);
+      const w = V106_IMPORTANCE_W[inp.importance] || 0.5;
+      imported.forEach(d => add({ from: `sup:${d.providerRegionId}:${d.supply}`, to: `ind:${g.regionId}:${x.industry}`, share: v106C(d.share * w), mechanism: `${g.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()} draws ${SUPPLY_LABEL[d.supply].toLowerCase()} from ${d.providerRegionId}`, domain: 'supply', kind: 'supply_input' }));
+      const local = 1 - imported.reduce((a, d) => a + d.share, 0);
+      if (local > 0.05 && (ind.supplies[g.regionId] || []).some(s => s.supply === inp.supply && s.production > 0)) add({ from: `sup:${g.regionId}:${inp.supply}`, to: `ind:${g.regionId}:${x.industry}`, share: v106C(local * w), mechanism: `${g.regionId} ${INDUSTRY_LABEL[x.industry].toLowerCase()} uses local ${SUPPLY_LABEL[inp.supply].toLowerCase()}`, domain: 'supply', kind: 'supply_input' });
+    });
+  }));
+  Object.values(edges).forEach(es => es.sort((a, b) => b.share - a.share || a.to.localeCompare(b.to)));
+  const label = (id: string) => {
+    const [k, a, b] = id.split(':');
+    if (k === 'project') return projTitle(id.slice(8));
+    if (k === 'net') return `${a} ${NATIONAL_NETWORK_LABEL[b as NationalNetworkKind] || b}`;
+    if (k === 'ind') return `${a} ${INDUSTRY_LABEL[b as StrategicIndustryKind] || b}`;
+    if (k === 'sup') return `${a} ${SUPPLY_LABEL[b as StrategicSupplyKind] || b} supply`;
+    return id;
+  };
+  const domainOf = (id: string): SystemicRiskDomain => { const [k, , b] = id.split(':'); return k === 'net' ? V106_NET_DOMAIN[b as NationalNetworkKind] || 'infrastructure' : k === 'ind' ? 'industry' : k === 'sup' ? 'supply' : 'infrastructure'; };
+  void overrides;
+  return { edges, label, domainOf };
+}
+
+/** Regions (≠ provider) holding spare surplus of a supply AND not freight-isolated: the real alternative suppliers. */
+export function systemicAlternativeSuppliers(i: SystemicRiskInputs, supply: StrategicSupplyKind, excludeRegions: string[]): Array<{ regionId: string; surplus: number }> {
+  if (!i.industries) return [];
+  return Object.entries(i.industries.supplies).filter(([r]) => !excludeRegions.includes(r)).map(([r, l]) => ({ regionId: r, surplus: Math.max(0, l.find(z => z.supply === supply)?.availableSurplus || 0) }))
+    .filter(x => x.surplus > 0.5 && (i.national?.regions[x.regionId]?.networks.freight?.condition || 'healthy') !== 'critical').sort((a, b) => b.surplus - a.surplus || a.regionId.localeCompare(b.regionId));
+}
+// ---- Buffers (interpreted, never mutated in canonical state) -------------------------------------------------------
+function v106CapScale(i: SystemicRiskInputs, id: EmergingCapabilityId): number { const m = i.innovation?.capabilities[id]; if (!m) return 0; const r = CAPABILITY_MATURITY_RANK[m.maturity]; return (r >= 4 ? 1 : r >= 3 ? 0.7 : 0) * (m.operationalCapacity === 'reduced' ? 0.5 : 1); }
+/** Buffers available AT a node for an incoming impact (impact units 0..100). Pools are shared within one chain (Invariant G). */
+function v106BuffersAt(i: SystemicRiskInputs, node: string, edge: V106Edge | null, lostProvider: string | null): SystemicBuffer[] {
+  const out: SystemicBuffer[] = []; const [k, r, x] = node.split(':');
+  if (k === 'net' && i.national) {
+    const st = i.national.regions[r]?.networks[x as NationalNetworkKind];
+    if (st) { const spare = v106C((st.effectiveCapacity - st.demand) / Math.max(1, st.demand), 0, 2) * 100; if (spare >= 2) out.push({ id: `buf:spare:${node}`, domain: V106_NET_DOMAIN[x as NationalNetworkKind], sourceId: node, kind: 'spare_capacity', structural: false, strength: v106R(spare), available: v106R(spare), explanation: `${r} has spare ${NATIONAL_NETWORK_LABEL[x as NationalNetworkKind].toLowerCase()} capacity` }); }
+    const dep = edge && edge.kind === 'network_supply' ? i.national.dependencies.find(d => `net:${d.providerRegionId}:${d.network}` === edge.from && d.consumerRegionId === r) : null;
+    const alts = (dep?.alternativeProviders || []).filter(a => `net:${a}:${x}` !== lostProvider);
+    // V10.2 redundancy: a moderate/high-redundancy infrastructure network through this region offers an alternate route.
+    const redNet = x !== 'mobility' ? (i.networks?.networks || []).find(nw => nw.networkKind === (x as StrategicInfrastructureNetworkKind) && nw.regionIds.includes(r) && (nw.redundancyBand === 'high' || nw.redundancyBand === 'moderate') && !(lostProvider && lostProvider.startsWith('project:') && nw.memberProjectIds.length <= 1 && nw.memberProjectIds.includes(lostProvider.slice(8)))) : null;
+    if (redNet) out.push({ id: `buf:redund:${redNet.id}:${node}`, domain: V106_NET_DOMAIN[x as NationalNetworkKind], sourceId: redNet.id, kind: 'route_redundancy', structural: true, strength: redNet.redundancyBand === 'high' ? 30 : 15, available: redNet.redundancyBand === 'high' ? 30 : 15, explanation: `${redNet.name} has ${redNet.redundancyBand} redundancy (alternate routes)` });
+    if (alts.length) out.push({ id: `buf:route:${node}`, domain: V106_NET_DOMAIN[x as NationalNetworkKind], sourceId: alts.join(','), kind: 'route_redundancy', structural: true, strength: Math.min(40, 20 * alts.length), available: Math.min(40, 20 * alts.length), explanation: `Alternative ${NATIONAL_NETWORK_LABEL[x as NationalNetworkKind].toLowerCase()} providers: ${alts.join(', ')}` });
+    const capMap: Partial<Record<NationalNetworkKind, EmergingCapabilityId>> = { energy: 'grid_scale_storage', freight: 'advanced_logistics', water: 'advanced_water_systems' };
+    const cap = capMap[x as NationalNetworkKind]; const sc = cap ? v106CapScale(i, cap) : 0;
+    if (cap && sc > 0) out.push({ id: `buf:cap:${cap}:${node}`, domain: V106_NET_DOMAIN[x as NationalNetworkKind], sourceId: cap, kind: 'capability', structural: true, strength: v106R(20 * sc), available: v106R(20 * sc), explanation: `${CAPABILITY_DEF_BY_ID[cap].label} (${i.innovation!.capabilities[cap].maturity}) absorbs part of the shock — never all of it` });
+  }
+  if (k === 'ind' && edge && edge.kind === 'supply_input' && i.industries) {
+    const supply = edge.from.split(':')[2] as StrategicSupplyKind; const providerRegion = edge.from.split(':')[1];
+    const need = Math.max(1, (i.industries.regions[r]?.industries[x as StrategicIndustryKind]?.inputs.find(z => z.supply === supply)?.demand) || 1);
+    const lostRegion = lostProvider && lostProvider.split(':')[0] !== 'project' ? lostProvider.split(':')[1] : null;
+    const alts = systemicAlternativeSuppliers(i, supply, [providerRegion, r, ...(lostRegion ? [lostRegion] : [])]);
+    const altSurplus = alts.reduce((a, z) => a + z.surplus, 0);
+    const v = v106C(altSurplus / need, 0, 0.7) * 100;
+    // ONE national pool per supply (units); each consumer converts impact points to supply units (Invariant G).
+    if (v >= 2) out.push({ id: `buf:supplier:${supply}:${node}`, domain: 'supply', sourceId: alts.map(z => z.regionId).join(','), kind: 'supplier_redundancy', structural: true, strength: v106R(v), available: v106R(v), explanation: `Alternative ${SUPPLY_LABEL[supply].toLowerCase()} from ${alts.map(z => z.regionId).join(', ')}`, poolKey: `pool:supplier:${supply}`, poolUnits: altSurplus, unitsPerImpact: need / 100 });
+    const al = v106CapScale(i, 'advanced_logistics'); if (al > 0) out.push({ id: `buf:cap:advanced_logistics:${node}`, domain: 'freight', sourceId: 'advanced_logistics', kind: 'capability', structural: true, strength: v106R(10 * al), available: v106R(10 * al), explanation: 'Advanced Logistics reroutes deliveries (bounded)' });
+  }
+  return out;
+}
+
+// ---- Bounded propagation (the V10.6 core) ---------------------------------------------------------------------------
+/** Propagates root shocks ONLY along real edges, decaying per link, absorbed by buffers, coalesced per node, depth ≤ 3, ≤ 24 nodes. */
+export function propagateSystemicShock(i: SystemicRiskInputs, roots: Array<{ subjectId: string; impact: number; mechanism: string }>, opts: { graph?: V106Graph; maxDepth?: number } = {}): { nodes: SystemicStressNode[]; maxDepthReached: number; buffersActivated: string[]; failuresActivated: string[]; outcome: SystemicStressChain['outcome']; severity: SystemicStressSeverity; truncated: boolean } {
+  const g = opts.graph || v106Graph(i); const maxDepth = Math.min(V106_LIMITS.maxDepth, opts.maxDepth ?? V106_LIMITS.maxDepth);
+  const nodes: SystemicStressNode[] = []; const seen = new Map<string, SystemicStressNode>(); const pools = new Map<string, number>();
+  const buffersActivated = new Set<string>(); let truncated = false;
+  const lost = new Set(roots.map(r => r.subjectId));
+  const mkNode = (subjectId: string, depth: number, impactIn: number, causedBy: string | null, mechanism: string, edge: V106Edge | null): SystemicStressNode | null => {
+    if (nodes.length >= V106_LIMITS.maxNodes) { truncated = true; return null; }
+    let impact = impactIn;
+    // Network nodes are measured as "% of local demand at risk": a capacity loss is converted with capacity / demand, so
+    // spare capacity absorbs exactly the part of the loss the region does not need (a total collapse is never absorbed).
+    if (subjectId.startsWith('net:') && i.national) { const [, rr, nn] = subjectId.split(':'); const st = i.national.regions[rr]?.networks[nn as NationalNetworkKind]; if (st && (depth === 0 || edge?.kind === 'project_capacity')) impact = v106C(impact * Math.max(1, depth === 0 ? Math.max(st.localCapacity, st.effectiveCapacity) : st.effectiveCapacity) / Math.max(1, st.demand), 0, 1000); }
+    let absorbed = 0; const used: string[] = [];
+    // Buffers absorb at most what they have left in this chain; capability buffers never absorb more than half (no immunity).
+    v106BuffersAt(i, subjectId, edge, Array.from(lost)[0] || null).forEach(b => {
+      if (impact - absorbed <= 0) return;
+      const key = b.poolKey || b.id; const scale = b.unitsPerImpact || 1;
+      const leftUnits = pools.has(key) ? pools.get(key)! : (b.poolKey ? (b.poolUnits || 0) : b.available);
+      const leftImpact = Math.min(b.available, leftUnits / scale);
+      const cap = b.kind === 'capability' ? Math.min(leftImpact, impact * V106_LIMITS.capabilityAbsorbCap) : leftImpact;
+      const take = Math.min(cap, impact - absorbed); if (take <= 0.05) return;
+      absorbed += take; pools.set(key, leftUnits - take * scale); used.push(b.explanation); buffersActivated.add(b.explanation);
+    });
+    const residual = v106R(Math.min(100, Math.max(0, impact - absorbed)), 1);
+    const n: SystemicStressNode = { id: `sn:${nodes.length}:${subjectId}`, depth, domain: g.domainOf(subjectId), subjectId, label: g.label(subjectId), impact: v106R(impact, 1), impactBand: systemicImpactBand(Math.min(100, impact)), causedByNodeId: causedBy, transmissionMechanism: mechanism, absorbedAmount: v106R(absorbed, 1), residualImpact: residual, buffers: used, projectedCondition: null };
+    nodes.push(n); seen.set(subjectId, n); return n;
+  };
+  let frontier: SystemicStressNode[] = [];
+  roots.slice(0, V106_LIMITS.maxShocks).forEach(r => { if (seen.has(r.subjectId)) return; const n = mkNode(r.subjectId, 0, v106C(r.impact, 0, 100), null, r.mechanism, null); if (n) frontier.push(n); });
+  let depth = 0;
+  while (frontier.length && depth < maxDepth) {
+    depth += 1;
+    // Collect contributions per target, then COALESCE (max + 25% of the rest) — the same effect is never double-counted.
+    const contrib = new Map<string, Array<{ v: number; from: SystemicStressNode; edge: V106Edge }>>();
+    frontier.forEach(src => (g.edges[src.subjectId] || []).forEach(e => {
+      if (seen.has(e.to)) return; // cycle / duplicate-path suppression: each subject enters a chain once
+      const v = src.residualImpact * e.share * V106_LIMITS.decay; if (v < V106_LIMITS.minImpact) return;
+      const arr = contrib.get(e.to) || []; arr.push({ v, from: src, edge: e }); contrib.set(e.to, arr);
+    }));
+    const next: SystemicStressNode[] = [];
+    Array.from(contrib.entries()).sort((a, b) => Math.max(...b[1].map(x => x.v)) - Math.max(...a[1].map(x => x.v)) || a[0].localeCompare(b[0])).forEach(([to, arr]) => {
+      arr.sort((a, b) => b.v - a.v); const top = arr[0];
+      const total = v106C(top.v + V106_LIMITS.coalesceWeight * arr.slice(1).reduce((s, x) => s + x.v, 0), 0, 100);
+      const n = mkNode(to, depth, total, top.from.id, top.edge.mechanism + (arr.length > 1 ? ` (+${arr.length - 1} coalesced path${arr.length > 2 ? 's' : ''})` : ''), top.edge);
+      if (n && n.residualImpact >= V106_LIMITS.minImpact) next.push(n);
+    });
+    frontier = next;
+  }
+  if (frontier.length && depth >= maxDepth) truncated = truncated || frontier.some(f => (g.edges[f.subjectId] || []).length > 0);
+  // Projected conditions for affected industries / networks (from residual impact).
+  nodes.forEach(n => { const k = n.subjectId.split(':')[0]; if (k === 'ind' || k === 'net' || k === 'sup') n.projectedCondition = n.residualImpact >= 60 ? 'disrupted' : n.residualImpact >= 35 ? 'constrained' : n.residualImpact >= 15 ? 'strained' : 'operational'; });
+  const down = nodes.filter(n => n.depth >= 1);
+  const maxRes = down.reduce((m, n) => Math.max(m, n.residualImpact), 0);
+  const absorbed = nodes.reduce((a, n) => a + n.absorbedAmount, 0), raw = down.reduce((a, n) => a + n.impact, 0);
+  const failures = nodes.filter(n => n.depth >= 1 && n.residualImpact >= 35).map(n => `${n.label} ${n.projectedCondition}`);
+  const deepMajor = nodes.some(n => n.depth >= 2 && n.residualImpact >= 35);
+  const outcome: SystemicStressChain['outcome'] = deepMajor ? 'escalated' : (down.length && absorbed >= raw * 0.25) || !down.length ? 'contained' : 'limited';
+  return { nodes, maxDepthReached: nodes.reduce((m, n) => Math.max(m, n.depth), 0), buffersActivated: Array.from(buffersActivated), failuresActivated: failures, outcome, severity: systemicImpactBand(Math.max(maxRes, roots.length ? 0 : 0)), truncated };
+}
+
+// ---- Liquidity (canonical cash / debt / obligations; capital tied in unfinished programs is EXPOSURE, not a liability) ----
+export function systemicLiquidityProfile(i: SystemicRiskInputs, spend = 0): LiquidityProfile {
+  const v = i.viewer;
+  if (!v) return { cash: 0, debt: 0, dailyObligations: 0, freeBuffer: 0, capitalAtRisk: 0, programsAtRisk: [], band: 'stable', resilience: 50, explanation: ['No viewer liquidity data.'] };
+  const progs = Object.values(i.megaprojects?.programs || {}).filter(p => !p.abandoned && p.status !== 'completed' && (p.contributorTotals[v.id]?.capital || 0) > 0);
+  const capitalAtRisk = progs.reduce((a, p) => a + (p.contributorTotals[v.id]?.capital || 0), 0);
+  const cash = v.cash - spend; const free = cash - v.dailyObligations * 5;
+  const ratio = free <= 0 ? 0 : free / (free + capitalAtRisk * 0.6 + v.debt + 1);
+  let resilience = v106R(v106C(ratio * (free < 5000 ? 0.5 : free < 15000 ? 0.8 : 1)) * 100);
+  const band = systemicBand(resilience);
+  const explanation = [`Cash ${cash < 0 ? '−' : ''}$${Math.abs(Math.round(cash)).toLocaleString()}`, v.dailyObligations ? `Daily obligations (debt interest / upkeep from the canonical model) $${Math.round(v.dailyObligations).toLocaleString()}` : 'No canonical recurring obligations', v.debt ? `Outstanding debt $${Math.round(v.debt).toLocaleString()}` : 'No outstanding debt', capitalAtRisk ? `$${Math.round(capitalAtRisk).toLocaleString()} tied up in ${progs.length} unfinished program(s)` : 'No capital tied up in unfinished programs'];
+  return { cash: Math.round(cash), debt: Math.round(v.debt), dailyObligations: Math.round(v.dailyObligations), freeBuffer: Math.round(free), capitalAtRisk: Math.round(capitalAtRisk), programsAtRisk: progs.map(p => p.id), band, resilience, explanation };
+}
+
+// ---- Domain risk, dependencies, concentrations, critical points --------------------------------------------------------
+const V106_DIRECTION_FOCUS: Partial<Record<NationalDevelopmentDirectionId, SystemicRiskDomain[]>> = {
+  resource_export_powerhouse: ['freight', 'trade', 'supply'], advanced_manufacturing_economy: ['supply', 'energy', 'freight'], technology_research_economy: ['energy', 'digital'],
+  renewable_energy_powerhouse: ['energy', 'infrastructure'], trade_logistics_hub: ['trade', 'freight'], agricultural_export_economy: ['water', 'freight'], tourism_experience_economy: ['stability', 'trade'], infrastructure_led_growth: ['infrastructure', 'liquidity']
+};
+function v106Ev(id: string, sourceSystem: string, sourceId: string, factor: string, contribution: number, turn: number): SystemicRiskEvidence { return { id, sourceSystem, sourceId, factor, contribution: v106R(contribution, 2), visibility: 'public', turn }; }
+
+export function computeSystemicDomains(i: SystemicRiskInputs, prevScores: Partial<Record<SystemicRiskDomain, number>> = {}): Record<SystemicRiskDomain, SystemicDomainRisk> {
+  const out = {} as Record<SystemicRiskDomain, SystemicDomainRisk>; const t = i.turn;
+  const stab = i.stability.national; const stabF = stab === null ? 0.7 : v106C(stab / 100);
+  const liq = systemicLiquidityProfile(i);
+  const focus = new Set([...(i.direction?.primary ? V106_DIRECTION_FOCUS[i.direction.primary] || [] : []), ...(i.direction?.secondary ? V106_DIRECTION_FOCUS[i.direction.secondary] || [] : [])]);
+  const finish = (d: SystemicRiskDomain, o: Omit<SystemicDomainRisk, 'domain' | 'condition' | 'trend' | 'recoveryCapacity'> & { recoveryCapacity?: number }) => {
+    const resilience = v106R(v106C(o.resilience, 0, 100)); const p = prevScores[d];
+    out[d] = { domain: d, ...o, exposure: v106R(v106C(o.exposure + (focus.has(d) ? 12 : 0), 0, 100)), resilience, recoveryCapacity: v106R(v106C(o.recoveryCapacity ?? (40 * stabF + 0.4 * liq.resilience + 20 * (o.redundancy / 100)), 0, 100)), condition: systemicBand(resilience), trend: p === undefined ? 'stable' : resilience >= p + 4 ? 'improving' : resilience <= p - 4 ? 'deteriorating' : 'stable' };
+  };
+  (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => {
+    const d = V106_NET_DOMAIN[n]; const s = i.national?.national?.[n];
+    if (!s) { finish(d, { exposure: 0, resilience: 50, spareCapacity: 0, redundancy: 0, concentration: 0, topRisks: ['National Systems unavailable'], buffers: [], evidence: [] }); return; }
+    const spare = v106C((s.capacity - s.demand) / Math.max(1, s.capacity));
+    const regs = Object.values(i.national!.regions).map(g => ({ r: g.regionId, c: Math.max(0, g.networks[n]?.localCapacity || 0) })); const tot = regs.reduce((a, x) => a + x.c, 0) || 1;
+    const top = [...regs].sort((a, b) => b.c - a.c || a.r.localeCompare(b.r))[0]; const conc = v106C(top.c / tot);
+    const projSrc = Object.values(i.national!.regions).flatMap(g => (g.networks[n]?.sources || []).filter(x => String(x.source).startsWith('project:')).map(x => ({ id: String(x.source).slice(8), v: x.value })));
+    const topProj = [...projSrc].sort((a, b) => b.v - a.v)[0]; const projConc = topProj ? v106C(topProj.v / tot) : 0;
+    // Who covers other regions' deficits? A single dominant exporter is a systemic concentration even when capacity looks healthy.
+    const exp = Object.values(i.national!.regions).map(g => ({ r: g.regionId, x: Math.max(0, g.networks[n]?.exportedCapacity || 0) })).sort((a, b) => b.x - a.x || a.r.localeCompare(b.r)); const expTot = exp.reduce((a, x) => a + x.x, 0);
+    const expConc = expTot >= 5 ? v106C(exp[0].x / expTot) * 0.9 : 0;
+    const kind: StrategicInfrastructureNetworkKind = n; const nets = (i.networks?.networks || []).filter(x => x.networkKind === kind && x.memberRegionIds.length >= 2);
+    const red = nets.length ? nets.reduce((a, x) => a + v106C(x.redundancy), 0) / nets.length : 0;
+    const altDeps = (i.national!.dependencies || []).filter(x => x.network === n); const altShare = altDeps.length ? altDeps.filter(x => x.alternativeProviders.length > 0).length / altDeps.length : 1;
+    const redundancy = v106C(0.6 * red + 0.4 * altShare);
+    const cps = (i.networks?.criticalPoints || []).filter(c => nets.some(x => x.id === c.networkId) && c.severity === 'critical');
+    const capId = ({ energy: 'grid_scale_storage', freight: 'advanced_logistics', water: 'advanced_water_systems' } as Partial<Record<NationalNetworkKind, EmergingCapabilityId>>)[n];
+    const capF = capId ? v106CapScale(i, capId) : 0;
+    const condScore = (V106_COND_RANK[s.condition] ?? 2) / 4;
+    const consumers = i.industries ? Object.values(i.industries.regions).reduce((a, g) => a + (Object.values(g.industries) as IndustryState[]).reduce((b, x) => b + (STRATEGIC_INDUSTRY_DEFINITIONS[x.industry].networkDependencies[n] || 0) * x.strength / 100, 0), 0) : 0;
+    const concAll = Math.max(conc, projConc, expConc);
+    const resilience = 100 * (0.28 * v106C(spare / 0.35) + 0.24 * redundancy + 0.2 * (1 - concAll) + 0.18 * condScore + 0.1 * capF) - Math.min(15, cps.length * 6);
+    const topRisks = [expConc >= 0.6 ? `${exp[0].r} covers a ${v106ShareLabel(expConc).toLowerCase()} share of other regions' ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} needs` : null, conc >= 0.45 ? `${top.r} provides ${v106ShareLabel(conc).toLowerCase()} share of national ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity` : null, projConc >= 0.25 && topProj ? `${i.projects.find(p => p.id === topProj.id)?.title || topProj.id} carries a ${v106ShareLabel(projConc).toLowerCase()} share` : null, ...cps.slice(0, 2).map(c => c.reason.slice(0, 90)), spare < 0.1 ? 'Little spare capacity nationally' : null].filter(Boolean) as string[];
+    const buffers = [spare >= 0.2 ? `Spare national capacity (${Math.round(spare * 100)}%)` : null, red >= 0.4 ? 'Network redundancy' : null, capF > 0 ? `${CAPABILITY_DEF_BY_ID[capId!].label}` : null].filter(Boolean) as string[];
+    finish(d, { exposure: v106C(consumers / 4) * 80 + (s.utilization >= 0.85 ? 15 : 0), resilience, spareCapacity: v106R(spare * 100), redundancy: v106R(redundancy * 100), concentration: v106R(concAll * 100), topRisks, buffers,
+      evidence: [v106Ev(`ev:${d}:spare`, 'national_systems', n, 'Spare capacity', spare, t), v106Ev(`ev:${d}:red`, 'infrastructure_networks', n, 'Network redundancy', redundancy, t), v106Ev(`ev:${d}:conc`, 'national_systems', top.r, 'Capacity concentration', conc, t)] });
+  });
+  // Industry
+  {
+    const ind = i.industries; const out2 = ind?.national?.output || {}; const tot = STRATEGIC_INDUSTRIES.reduce((a, k) => a + Math.max(0, Number((out2 as any)[k] || 0)), 0) || 1;
+    const top = STRATEGIC_INDUSTRIES.map(k => ({ k, s: Math.max(0, Number((out2 as any)[k] || 0)) / tot })).sort((a, b) => b.s - a.s)[0];
+    const constrained = ind ? Object.values(ind.regions).flatMap(g => (Object.values(g.industries) as IndustryState[]).filter(x => x.condition === 'constrained' || x.condition === 'disrupted').map(x => `${g.regionId} ${INDUSTRY_LABEL[x.industry]}`)) : [];
+    const DB: Record<string, number> = { highly_specialized: 0.2, specialized: 0.45, mixed: 0.7, diversified: 0.9 };
+    const div = DB[String(ind?.national?.diversityBand)] ?? 0.5;
+    finish('industry', { exposure: 50, resilience: 100 * (0.5 * div + 0.3 * (1 - top.s) + 0.2 * v106C(1 - constrained.length / 5)), spareCapacity: 0, redundancy: v106R(div * 100), concentration: v106R(top.s * 100), topRisks: [top.s >= 0.4 ? `${INDUSTRY_LABEL[top.k]} carries ${v106ShareLabel(top.s).toLowerCase()} share of national output` : null, ...constrained.slice(0, 2).map(c => `${c} constrained`)].filter(Boolean) as string[], buffers: div >= 0.7 ? ['Diversified industrial base'] : [], evidence: [v106Ev('ev:industry:div', 'industries', 'diversity', `Diversity ${ind?.national?.diversityBand || '—'}`, div, t)] });
+  }
+  // Supply
+  {
+    const deps = i.industries?.dependencies || [];
+    const altsOf = (d: SupplyDependency) => Array.from(new Set([...d.alternatives, ...systemicAlternativeSuppliers(i, d.supply, [d.providerRegionId, d.consumerRegionId]).filter(z => z.surplus >= 2).map(z => z.regionId)]));
+    const crit = deps.filter(d => (d.importance === 'critical' || d.importance === 'high') && (d.shareBand === 'dominant' || d.shareBand === 'major'));
+    const noAlt = crit.filter(d => !altsOf(d).length);
+    const shortages = Object.values(i.industries?.supplies || {}).flat().filter(s => s.condition === 'shortage' || s.condition === 'tight').length;
+    const altShare = crit.length ? 1 - noAlt.length / crit.length : 1;
+    // A dominant critical dependency with NO alternative caps supply resilience at "exposed" whatever else is healthy.
+    const domNoAlt = noAlt.some(d => d.importance === 'critical' && (d.shareBand === 'dominant' || d.share >= 0.6));
+    const supRes = 100 * (0.5 * altShare + 0.25 * v106C(1 - noAlt.length / 3) + 0.25 * v106C(1 - shortages / 6));
+    finish('supply', { exposure: v106C(crit.length / 5) * 90, resilience: domNoAlt ? Math.min(45, supRes) : supRes, spareCapacity: 0, redundancy: v106R(altShare * 100), concentration: v106R(v106C(crit.reduce((m, d) => Math.max(m, d.share), 0)) * 100),
+      topRisks: [...noAlt.slice(0, 3).map(d => `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} relies on ${d.providerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()} with no alternative`), ...crit.filter(d => d.shareBand === 'dominant' && altsOf(d).length).slice(0, 1).map(d => `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} leans on ${d.providerRegionId} for ${SUPPLY_LABEL[d.supply].toLowerCase()}`)], buffers: crit.filter(d => altsOf(d).length).slice(0, 2).map(d => `${altsOf(d).slice(0, 3).join('/')} can supply ${SUPPLY_LABEL[d.supply].toLowerCase()}`), evidence: [v106Ev('ev:supply:crit', 'industries', 'dependencies', `${crit.length} major dependencies, ${noAlt.length} without alternatives`, crit.length, t)] });
+  }
+  // Infrastructure
+  {
+    const damaged = i.projects.filter(p => p.status === 'damaged'); const cps = (i.networks?.criticalPoints || []).filter(c => c.severity === 'critical');
+    const res = i.networks?.national ? Number((i.networks.national as any).resilienceScore ?? 50) / 100 : 0.5;
+    finish('infrastructure', { exposure: Math.min(100, 20 + cps.length * 12), resilience: 100 * (0.5 * v106C(res) + 0.3 * v106C(1 - damaged.length / 4) + 0.2 * v106C(1 - cps.length / 5)), spareCapacity: 0, redundancy: v106R(v106C(res) * 100), concentration: v106R(v106C(cps.length / 5) * 100),
+      topRisks: [...damaged.slice(0, 2).map(p => `${p.title} is damaged`), ...cps.slice(0, 2).map(c => c.reason.slice(0, 90))], buffers: [], evidence: [v106Ev('ev:infra:dmg', 'infrastructure', 'damaged', `${damaged.length} damaged project(s)`, damaged.length, t)] });
+  }
+  finish('liquidity', { exposure: v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100, resilience: liq.resilience, spareCapacity: Math.max(0, liq.freeBuffer), redundancy: 0, concentration: v106R(v106C(liq.capitalAtRisk / Math.max(1, liq.cash + liq.capitalAtRisk)) * 100), topRisks: liq.band === 'fragile' || liq.band === 'critical' ? liq.explanation.slice(0, 3) : [], buffers: liq.freeBuffer > 20000 ? [`Free cash buffer $${liq.freeBuffer.toLocaleString()}`] : [], evidence: liq.explanation.map((e, k) => v106Ev(`ev:liq:${k}`, 'economy', 'viewer', e, 0, t)), recoveryCapacity: liq.resilience });
+  finish('stability', { exposure: 40, resilience: stab === null ? 55 : stab, spareCapacity: 0, redundancy: 0, concentration: 0, topRisks: stab !== null && stab < 40 ? ['Recovery capacity is constrained by instability (Public Stability owns the value)'] : [], buffers: stab !== null && stab >= 65 ? ['Stable public support'] : [], evidence: [v106Ev('ev:stab', 'public_stability', 'national', `National stability ${stab ?? '—'}`, stabF, t)], recoveryCapacity: 100 * stabF });
+  return out;
+}
+
+export function computeSystemicDependencies(i: SystemicRiskInputs, g: V106Graph = v106Graph(i)): SystemicDependency[] {
+  const out: SystemicDependency[] = []; const t = i.turn;
+  (i.industries?.dependencies || []).forEach(d => {
+    const potential = propagateSystemicShock(i, [{ subjectId: `sup:${d.providerRegionId}:${d.supply}`, impact: 60, mechanism: 'probe' }], { graph: g, maxDepth: 2 }).nodes.filter(n => n.depth >= 1 && n.residualImpact >= 10).length;
+    const alts = Array.from(new Set([...d.alternatives, ...systemicAlternativeSuppliers(i, d.supply, [d.providerRegionId, d.consumerRegionId]).filter(z => z.surplus >= 2).map(z => z.regionId)])).slice(0, 4);
+    out.push({ id: `sd:ind:${d.id}`, sourceSystem: 'industries', providerId: d.providerRegionId, consumerIds: [`${d.consumerRegionId}:${d.consumerIndustry}`], domain: 'supply', importance: d.importance, concentration: v106R(d.share * 100), shareLabel: v106ShareLabel(d.share), alternatives: alts, propagationPotential: potential,
+      reason: `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} takes a ${v106ShareLabel(d.share).toLowerCase()} share of its ${SUPPLY_LABEL[d.supply].toLowerCase()} from ${d.providerRegionId}${alts.length ? ` (alternatives: ${alts.join(', ')})` : ' — no alternative supplier'}`, evidence: [v106Ev(`ev:${d.id}`, 'industries', d.id, d.reason.slice(0, 100), d.share, t)] });
+  });
+  (i.national?.dependencies || []).forEach(d => out.push({ id: `sd:ns:${d.id}`, sourceSystem: 'national_systems', providerId: d.providerRegionId, consumerIds: [d.consumerRegionId], domain: V106_NET_DOMAIN[d.network], importance: d.importance, concentration: v106R(d.share * 100), shareLabel: v106ShareLabel(d.share), alternatives: d.alternativeProviders.slice(0, 4), propagationPotential: (g.edges[`net:${d.consumerRegionId}:${d.network}`] || []).length,
+    reason: `${d.consumerRegionId} relies on ${d.providerRegionId} for a ${v106ShareLabel(d.share).toLowerCase()} share of ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}${d.alternativeProviders.length ? '' : ' — no alternative provider'}`, evidence: [v106Ev(`ev:${d.id}`, 'national_systems', d.id, d.reason.slice(0, 100), d.share, t)] }));
+  const IR = { critical: 3, high: 2, moderate: 1, low: 0 } as const;
+  return out.sort((a, b) => IR[b.importance] - IR[a.importance] || b.propagationPotential - a.propagationPotential || b.concentration - a.concentration || a.id.localeCompare(b.id)).slice(0, V106_LIMITS.dependencies);
+}
+const v106ConcBand = (c: number): SystemicConcentration['band'] => (c >= 0.75 ? 'highly_concentrated' : c >= 0.5 ? 'concentrated' : c >= 0.3 ? 'moderate' : 'distributed');
+export function computeSystemicConcentrations(i: SystemicRiskInputs): SystemicConcentration[] {
+  const out: SystemicConcentration[] = []; const t = i.turn;
+  const push = (o: Omit<SystemicConcentration, 'band' | 'evidence'>, src: string) => { if (o.concentration < 0.3) return; out.push({ ...o, band: v106ConcBand(o.concentration), concentration: v106R(o.concentration, 2), evidence: [v106Ev(`ev:${o.id}`, src, o.subjectId, o.shareLabel, o.concentration, t)] }); };
+  // Supplier: per consumer region-industry-supply, dominant provider share.
+  (i.industries?.dependencies || []).forEach(d => push({ id: `cc:sup:${d.id}`, kind: 'supplier', subjectId: d.providerRegionId, concentration: d.share, shareLabel: `${d.providerRegionId} ${v106ShareLabel(d.share)} for ${d.consumerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()}`, affectedSystems: [`${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry]}`], alternatives: d.alternatives, upside: d.providerRegionId ? `${d.providerRegionId} specialization keeps supply productive` : null }, 'industries'));
+  // Region: national production of each supply concentrated in one region.
+  if (i.industries) (['minerals', 'energy', 'agricultural_goods', 'manufactured_goods'] as StrategicSupplyKind[]).forEach(s => {
+    const prod = Object.entries(i.industries!.supplies).map(([r, l]) => ({ r, p: Math.max(0, l.find(x => x.supply === s)?.production || 0) })).sort((a, b) => b.p - a.p || a.r.localeCompare(b.r)); const tot = prod.reduce((a, x) => a + x.p, 0);
+    if (tot > 0) push({ id: `cc:reg:${s}`, kind: s === 'energy' ? 'energy_source' : 'region', subjectId: prod[0].r, concentration: prod[0].p / tot, shareLabel: `${prod[0].r} ${v106ShareLabel(prod[0].p / tot)} of national ${SUPPLY_LABEL[s].toLowerCase()}`, affectedSystems: [SUPPLY_LABEL[s]], alternatives: prod.slice(1).filter(x => x.p / tot >= 0.1).map(x => x.r), upside: 'High productivity and a clear specialization' }, 'industries');
+  });
+  // Gateway: trade gateways.
+  const gws = Array.from(new Set((i.networks?.networks || []).filter(n => n.networkKind === 'trade').flatMap(n => n.gatewayProjectIds)));
+  if (gws.length === 1) push({ id: 'cc:gateway', kind: 'gateway', subjectId: gws[0], concentration: 0.9, shareLabel: `${i.projects.find(p => p.id === gws[0])?.title || gws[0]} is the only trade gateway`, affectedSystems: ['Trade'], alternatives: [], upside: null }, 'infrastructure_networks');
+  // Corridor: critical links.
+  (i.networks?.criticalPoints || []).filter(c => c.type === 'link' && c.severity === 'critical').slice(0, 2).forEach(c => push({ id: `cc:cor:${c.id}`, kind: 'corridor', subjectId: c.subjectId, concentration: 0.8, shareLabel: c.reason.slice(0, 80), affectedSystems: c.affectedRegions, alternatives: [], upside: null }, 'infrastructure_networks'));
+  // Industry: output share.
+  { const o = i.industries?.national?.output || {}; const tot = STRATEGIC_INDUSTRIES.reduce((a, k) => a + Math.max(0, Number((o as any)[k] || 0)), 0); if (tot > 0) { const top = STRATEGIC_INDUSTRIES.map(k => ({ k, s: Number((o as any)[k] || 0) / tot })).sort((a, b) => b.s - a.s)[0]; push({ id: 'cc:industry', kind: 'industry', subjectId: top.k, concentration: top.s * 1.3, shareLabel: `${INDUSTRY_LABEL[top.k]} carries a ${v106ShareLabel(top.s).toLowerCase()} share of national output (${Math.round(top.s * 100)}%)`, affectedSystems: ['National economy'], alternatives: [], upside: 'Specialization builds scale' }, 'industries'); } }
+  // Capital: capital tied up in unfinished programs vs cash.
+  { const l = systemicLiquidityProfile(i); const share = l.capitalAtRisk / Math.max(1, l.capitalAtRisk + Math.max(0, l.cash)); push({ id: 'cc:capital', kind: 'capital', subjectId: l.programsAtRisk.join(',') || 'none', concentration: share, shareLabel: `${v106ShareLabel(share)} share of your capital is tied up in unfinished programs`, affectedSystems: ['Liquidity'], alternatives: [], upside: 'Long-term capacity when the program completes' }, 'megaprojects'); }
+  // Capability: operating in a single region.
+  if (i.innovation) Object.values(i.innovation.capabilities).filter(c => CAPABILITY_MATURITY_RANK[c.maturity] >= 3).forEach(c => { const regs = c.adoption.filter(a => a.level === 'operational').map(a => a.regionId); if (regs.length === 1) push({ id: `cc:cap:${c.id}`, kind: 'capability', subjectId: c.id, concentration: 0.8, shareLabel: `${CAPABILITY_DEF_BY_ID[c.id].label} operates only in ${regs[0]}`, affectedSystems: [CAPABILITY_DEF_BY_ID[c.id].label], alternatives: [], upside: null }, 'innovation'); });
+  return out.sort((a, b) => b.concentration - a.concentration || a.id.localeCompare(b.id)).slice(0, V106_LIMITS.concentrations);
+}
+export function computeSystemicCriticalPoints(i: SystemicRiskInputs, g: V106Graph = v106Graph(i)): SystemicCriticalPoint[] {
+  const out: SystemicCriticalPoint[] = [];
+  const effects = (subject: string, impact: number) => { const r = propagateSystemicShock(i, [{ subjectId: subject, impact, mechanism: 'probe' }], { graph: g }); return { direct: r.nodes.filter(n => n.depth === 1 && n.residualImpact >= 5).map(n => `${n.label} ${n.projectedCondition}`).slice(0, 4), down: r.nodes.filter(n => n.depth >= 2 && n.residualImpact >= 5).map(n => `${n.label} ${n.projectedCondition}`).slice(0, 4), worst: r.nodes.filter(n => n.depth >= 1).reduce((m, n) => Math.max(m, n.residualImpact), 0) }; };
+  (i.networks?.criticalPoints || []).slice(0, 8).forEach(c => {
+    const net = (i.networks?.networks || []).find(n => n.id === c.networkId); const nk = net?.networkKind;
+    const subject = c.type === 'project' ? `project:${c.subjectId}` : nk && nk !== 'mobility' && c.type === 'region' ? `net:${c.subjectId}:${nk}` : null;
+    const e = subject ? effects(subject, 75) : { direct: c.affectedRegions.map(r => `${r} access`), down: c.affectedIndustries.slice(0, 3), worst: 0 };
+    out.push({ id: `cp:${c.id}`, subjectType: c.type === 'link' ? 'network_link' : c.type, subjectId: c.subjectId, label: c.type === 'project' ? (i.projects.find(p => p.id === c.subjectId)?.title || c.subjectId) : String(c.subjectId).replace(/^(\w+):([A-Z]+)-([A-Z]+)$/, '$2–$3 $1 link'), domain: nk && nk !== 'mobility' ? V106_NET_DOMAIN[nk] : 'infrastructure', severity: c.severity, directEffects: e.direct, downstreamEffects: e.down, alternatives: [], reason: c.reason.slice(0, 140) });
+  });
+  (i.industries?.dependencies || []).filter(d => (d.importance === 'critical' || d.shareBand === 'dominant') && !systemicAlternativeSuppliers(i, d.supply, [d.providerRegionId, d.consumerRegionId]).some(z => z.surplus >= 2) && !d.alternatives.length).slice(0, 4).forEach(d => {
+    const e = effects(`sup:${d.providerRegionId}:${d.supply}`, 75);
+    out.push({ id: `cp:sup:${d.id}`, subjectType: 'supplier', subjectId: `${d.providerRegionId}:${d.supply}`, label: `${d.providerRegionId} ${SUPPLY_LABEL[d.supply]}`, domain: 'supply', severity: e.worst >= 35 ? 'critical' : 'major', directEffects: e.direct, downstreamEffects: e.down, alternatives: [], reason: `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} has no alternative ${SUPPLY_LABEL[d.supply].toLowerCase()} supplier` });
+  });
+  const gws = Array.from(new Set((i.networks?.networks || []).filter(n => n.networkKind === 'trade').flatMap(n => n.gatewayProjectIds)));
+  if (gws.length === 1) { const e = effects(`project:${gws[0]}`, 75); out.push({ id: 'cp:gateway', subjectType: 'gateway', subjectId: gws[0], label: i.projects.find(p => p.id === gws[0])?.title || gws[0], domain: 'trade', severity: 'major', directEffects: e.direct, downstreamEffects: e.down, alternatives: [], reason: 'The only active trade gateway' }); }
+  if (i.innovation) Object.values(i.innovation.capabilities).filter(c => CAPABILITY_MATURITY_RANK[c.maturity] >= 3 && c.adoption.filter(a => a.level === 'operational').length === 1).slice(0, 2).forEach(c => out.push({ id: `cp:cap:${c.id}`, subjectType: 'capability', subjectId: c.id, label: CAPABILITY_DEF_BY_ID[c.id].label, domain: 'industry', severity: 'meaningful', directEffects: [`${CAPABILITY_DEF_BY_ID[c.id].label} effects`], downstreamEffects: [], alternatives: [], reason: `Operates in one region only (${c.adoption.find(a => a.level === 'operational')!.regionId})` }));
+  const l = systemicLiquidityProfile(i); if (l.band === 'critical' || l.band === 'fragile') out.push({ id: 'cp:liquidity', subjectType: 'financial_buffer', subjectId: 'cash', label: 'Liquidity buffer', domain: 'liquidity', severity: l.band === 'critical' ? 'critical' : 'major', directEffects: ['Little room to respond to a shock'], downstreamEffects: l.programsAtRisk.length ? ['Unfinished programs may stall if funding stops'] : [], alternatives: [], reason: l.explanation.slice(0, 2).join('; ') });
+  const SR = { critical: 2, major: 1, meaningful: 0 } as const;
+  return out.sort((a, b) => SR[b.severity] - SR[a.severity] || a.id.localeCompare(b.id)).slice(0, V106_LIMITS.criticalPoints);
+}
+
+// ---- Live chains: one per canonical root (active crisis / damaged project); separate attribution per root ---------------
+function v106LiveRoots(i: SystemicRiskInputs): Array<{ rootEventId: string; rootType: string; label: string; roots: Array<{ subjectId: string; impact: number; mechanism: string }>; active: boolean }> {
+  const out: ReturnType<typeof v106LiveRoots> = [];
+  i.crises.filter(c => c.status === 'active' || c.status === 'triggered').forEach(c => {
+    const roots: Array<{ subjectId: string; impact: number; mechanism: string }> = [];
+    c.affectedRegions.forEach(r => (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => { const f = nsCrisisFactor({ id: c.id, name: c.name, category: c.category, status: c.status, affectedRegions: c.affectedRegions }, n); if (f > 0) roots.push({ subjectId: `net:${r}:${n}`, impact: v106R(f * 100 * 2.4), mechanism: `${c.name} cuts ${r} ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity (Crisis Engine)` }); }));
+    if (roots.length) out.push({ rootEventId: c.id, rootType: 'crisis', label: c.name, roots: roots.sort((a, b) => b.impact - a.impact).slice(0, V106_LIMITS.maxShocks), active: true });
+  });
+  i.projects.filter(p => p.status === 'damaged').forEach(p => out.push({ rootEventId: `damage:${p.id}`, rootType: 'infrastructure_damage', label: `${p.title} damaged`, roots: [{ subjectId: `project:${p.id}`, impact: 75, mechanism: `${p.title} is damaged (Infrastructure Engine)` }], active: true }));
+  return out;
+}
+const v106SubjectCondition = (i: SystemicRiskInputs, subject: string): string | null => {
+  const [k, r, x] = subject.split(':');
+  if (k === 'net') return i.national?.regions[r]?.networks[x as NationalNetworkKind]?.condition || null;
+  if (k === 'ind') return i.industries?.regions[r]?.industries[x as StrategicIndustryKind]?.condition || null;
+  return null;
+};
+
+export function computeSystemicRisk(i: SystemicRiskInputs, prevIn: SystemicRiskPersisted | null, opts: { emit?: boolean } = {}): { state: NationalSystemicRiskState; persisted: SystemicRiskPersisted; events: SystemicDerivedEvent[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || createEmptySystemicRiskPersisted(); const turn = i.turn; const newTurn = turn > prev.current.lastTurn;
+  const base = newTurn ? prev.current : prev.base; const firstEver = prev.initializedTurn === null;
+  const mem: SystemicRiskMemory = JSON.parse(JSON.stringify(base)); mem.lastTurn = turn;
+  const g = v106Graph(i);
+  const systems = computeSystemicDomains(i, base.scores);
+  const dependencies = computeSystemicDependencies(i, g); const concentrations = computeSystemicConcentrations(i); const criticalPoints = computeSystemicCriticalPoints(i, g);
+  const liquidity = systemicLiquidityProfile(i);
+  const events: SystemicDerivedEvent[] = []; const history = [...prev.history]; let seq = prev.seq; const emitOk = opts.emit !== false && !firstEver;
+  const hist = (kind: SystemicRiskHistoryEntry['kind'], summary: string, rootEventId: string | null, domain: SystemicRiskDomain | null) => { if (firstEver || !newTurn) return; seq += 1; history.push({ id: `srh:${seq}`, turn, kind, summary: summary.slice(0, 220), rootEventId, domain }); };
+  const evt = (kind: SystemicDerivedKind, text: string, rootEventId: string | null, domain: SystemicRiskDomain | null, regionIds: string[], sig: 'meaningful' | 'major') => { if (emitOk && newTurn) events.push({ id: `sre:${kind}:${rootEventId || domain || 'n'}:${turn}`, turn, kind, rootEventId, domain, regionIds: regionIds.filter(r => REGIONS[r]).slice(0, 4), text: text.slice(0, 220), significance: sig }); };
+  // ---- Live chains (bounded, separate roots, deterministic) ----
+  const live = v106LiveRoots(i).map(lr => ({ lr, p: propagateSystemicShock(i, lr.roots, { graph: g }) })).sort((a, b) => b.p.nodes.reduce((m, n) => Math.max(m, n.impact), 0) - a.p.nodes.reduce((m, n) => Math.max(m, n.impact), 0) || a.lr.rootEventId.localeCompare(b.lr.rootEventId)).slice(0, V106_LIMITS.maxChains);
+  const activeStressChains: SystemicStressChain[] = [];
+  const liveIds = new Set(live.map(x => x.lr.rootEventId));
+  live.forEach(({ lr, p }) => {
+    let cm = mem.chains.find(c => c.rootEventId === lr.rootEventId);
+    const affected = p.nodes.filter(n => n.depth >= 1 && n.residualImpact >= 15 && (n.subjectId.startsWith('ind:') || n.subjectId.startsWith('net:'))).map(n => n.subjectId).slice(0, 5);
+    if (!cm) {
+      cm = { id: `sc:${lr.rootEventId}`, rootEventId: lr.rootEventId, rootType: lr.rootType, label: lr.label, startedTurn: turn, status: 'active', peak: p.severity, outcome: p.outcome, subjects: affected, baseline: Object.fromEntries(affected.concat(lr.roots.map(r => r.subjectId)).map(s => [s, base.conditions[s] || v106SubjectCondition(i, s) || 'unknown'])), damagedAtStart: i.projects.filter(x => x.status === 'damaged').map(x => x.id), rootActiveLastTurn: true, recovery: { status: 'not_started', progress: 0, sinceTurn: turn, completedTurn: null, stalledTurns: 0 } };
+      mem.chains = [...mem.chains, cm].slice(-8);
+      hist('cascade_started', `${lr.label}: shock entered the national system (${p.nodes.length} linked effects, depth ${p.maxDepthReached}).`, lr.rootEventId, p.nodes[0]?.domain || null);
+      evt('cascade_started', `${lr.label} is propagating through ${p.nodes.filter(n => n.depth >= 1).map(n => n.label).slice(0, 3).join(', ') || 'the national system'}.`, lr.rootEventId, p.nodes[0]?.domain || null, Array.from(new Set(p.nodes.map(n => n.subjectId.split(':')[1]))), 'meaningful');
+      if (p.outcome === 'contained' && p.nodes.some(n => n.absorbedAmount > 0)) { hist('cascade_contained', `${lr.label}: buffers absorbed the shock (${p.buffersActivated.slice(0, 2).join('; ')}).`, lr.rootEventId, null); evt('cascade_contained', `Cascade contained: ${p.buffersActivated[0] || 'buffers'} absorbed much of ${lr.label}.`, lr.rootEventId, null, [], 'meaningful'); }
+      if (p.outcome === 'escalated') { hist('cascade_escalated', `${lr.label} escalated: ${p.failuresActivated.slice(0, 2).join('; ')}.`, lr.rootEventId, null); evt('cascade_escalated', `${lr.label} escalated into ${p.failuresActivated.slice(0, 2).join(' and ')}.`, lr.rootEventId, null, [], 'major'); }
+    } else { cm.subjects = Array.from(new Set([...cm.subjects, ...affected])).slice(0, 6); cm.subjects.forEach(s => { if (!(s in cm!.baseline)) cm!.baseline[s] = base.conditions[s] || 'unknown'; }); if (p.outcome === 'escalated' && cm.outcome !== 'escalated') { hist('cascade_escalated', `${lr.label} escalated.`, lr.rootEventId, null); evt('cascade_escalated', `${lr.label} escalated into ${p.failuresActivated.slice(0, 2).join(' and ')}.`, lr.rootEventId, null, [], 'major'); } cm.outcome = p.outcome; }
+    cm.rootActiveLastTurn = true; cm.status = 'active';
+    activeStressChains.push({ id: cm.id, rootEventId: lr.rootEventId, rootType: lr.rootType, label: lr.label, startedTurn: cm.startedTurn, status: 'active', nodes: p.nodes, maxDepthReached: p.maxDepthReached, systemsAffected: Array.from(new Set(p.nodes.map(n => n.domain))), severity: p.severity, outcome: p.outcome, buffersActivated: p.buffersActivated, failuresActivated: p.failuresActivated, recoveryIds: [`rc:${lr.rootEventId}`] });
+  });
+  // ---- Recovery (derived from actual improvements; crisis resolution ≠ recovery) ----
+  const recovery: RecoveryState[] = [];
+  mem.chains.forEach(cm => {
+    const rootActive = liveIds.has(cm.rootEventId);
+    const subjects = cm.subjects.length ? cm.subjects : Object.keys(cm.baseline);
+    const recovered = subjects.filter(s => (V106_COND_RANK[v106SubjectCondition(i, s) || 'unknown'] ?? 2) >= (V106_COND_RANK[cm.baseline[s]] ?? 2));
+    const progress = subjects.length ? recovered.length / subjects.length : 1;
+    const stillDamaged = i.projects.filter(p => p.status === 'damaged' && (cm.damagedAtStart.includes(p.id) || cm.rootEventId === `damage:${p.id}`));
+    const repaired = cm.damagedAtStart.filter(id => v106Fn(i.projects.find(p => p.id === id)?.status || ''));
+    const prevRec = cm.recovery;
+    let status: RecoveryState['status'] = rootActive ? 'not_started' : progress >= 1 ? 'recovered' : progress >= 0.75 ? 'mostly_recovered' : progress > 0 || repaired.length ? 'recovering' : 'stabilizing';
+    if (!rootActive && cm.rootActiveLastTurn && newTurn) { hist('recovery_started', `${cm.label} ended; recovery begins (${Math.round(progress * 100)}% of affected systems back to baseline).`, cm.rootEventId, null); evt('recovery_started', `${cm.label} is over — recovery begins. ${status === 'recovered' ? 'Systems are already back to baseline.' : `Still weak: ${subjects.filter(s => !recovered.includes(s)).map(s => g.label(s)).slice(0, 2).join(', ')}.`}`, cm.rootEventId, null, [], 'meaningful'); }
+    if (newTurn && !rootActive) cm.recovery.stalledTurns = progress <= prevRec.progress + 1e-9 && status !== 'recovered' ? prevRec.stalledTurns + 1 : 0;
+    const stalled = !rootActive && status !== 'recovered' && cm.recovery.stalledTurns >= V106_LIMITS.stallTurns;
+    if (stalled && prevRec.stalledTurns === V106_LIMITS.stallTurns - 1 && newTurn) { hist('recovery_stalled', `${cm.label} recovery stalled: ${stillDamaged.map(p => p.title).join(', ') || 'affected systems are not improving'}.`, cm.rootEventId, null); evt('recovery_stalled', `Recovery from ${cm.label} has stalled${stillDamaged.length ? ` — ${stillDamaged[0].title} remains damaged` : ''}.`, cm.rootEventId, null, [], 'meaningful'); }
+    if (status === 'recovered' && prevRec.status !== 'recovered' && !rootActive && newTurn) { cm.recovery.completedTurn = turn; hist('recovery_completed', `${cm.label}: affected systems recovered${stillDamaged.length ? ` (via alternatives — ${stillDamaged[0].title} is still damaged)` : ''}.`, cm.rootEventId, null); evt('recovery_completed', `Recovery complete after ${cm.label}.`, cm.rootEventId, null, [], 'meaningful'); }
+    if (newTurn || firstEver) { cm.recovery.status = status; cm.recovery.progress = progress; }
+    cm.rootActiveLastTurn = rootActive; if (!rootActive) cm.status = status === 'recovered' ? 'resolved' : 'stabilizing';
+    const blockers = [...stillDamaged.map(p => `${p.title} remains damaged`), ...subjects.filter(s => !recovered.includes(s)).map(s => `${g.label(s)} still ${v106SubjectCondition(i, s) || 'weak'} (baseline ${cm.baseline[s]})`)].slice(0, 4);
+    const drivers = [...repaired.map(id => `${i.projects.find(p => p.id === id)?.title || id} repaired`), ...recovered.map(s => `${g.label(s)} back to ${v106SubjectCondition(i, s)}`)].slice(0, 4);
+    const domain = subjects[0] ? g.domainOf(subjects[0]) : 'infrastructure';
+    recovery.push({ id: `rc:${cm.rootEventId}`, originEventId: cm.rootEventId, label: cm.label, domain, affectedSubjects: subjects.map(s => g.label(s)), status: rootActive ? 'not_started' : status, baselineCondition: subjects.map(s => `${g.label(s)}: ${cm.baseline[s]}`).join('; ') || '—', currentCondition: subjects.map(s => `${g.label(s)}: ${v106SubjectCondition(i, s) || '—'}`).join('; ') || '—',
+      blockers, recoveryDrivers: drivers, startedTurn: cm.startedTurn, completedTurn: cm.recovery.completedTurn, progress: v106R(progress, 2), stalled, paths: stillDamaged.length ? [`Repair ${stillDamaged[0].title}`, 'Build an alternate route / supplier', 'Reduce dependency on the affected supply'] : ['Strengthen alternatives', 'Hold liquidity until conditions recover'] });
+  });
+  mem.chains = mem.chains.filter(c => c.status !== 'resolved' || (c.recovery.completedTurn !== null && turn - c.recovery.completedTurn <= 3)).slice(-8);
+  // ---- Domain band transitions (hysteresis: major moves only) ----
+  SYSTEMIC_DOMAINS.forEach(d => {
+    const was = base.bands[d], now = systems[d].condition;
+    if (was && newTurn && was !== now) {
+      const delta = SYSTEMIC_BAND_RANK[now] - SYSTEMIC_BAND_RANK[was];
+      if (now === 'critical') { hist('domain_band_changed', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience became CRITICAL: ${systems[d].topRisks[0] || ''}`, null, d); evt('systemic_risk_became_critical', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience is now critical: ${systems[d].topRisks[0] || 'no buffers left'}.`, null, d, [], 'major'); }
+      else if (was === 'critical' && delta > 0) evt('systemic_risk_reduced', `${SYSTEMIC_DOMAIN_LABEL[d]} is no longer critical (${SYSTEMIC_BAND_LABEL[now]}).`, null, d, [], 'meaningful');
+      else if (delta >= 2) { hist('domain_band_changed', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience improved: ${SYSTEMIC_BAND_LABEL[was]} → ${SYSTEMIC_BAND_LABEL[now]}.`, null, d); evt('resilience_improved_major', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience improved: ${SYSTEMIC_BAND_LABEL[was]} → ${SYSTEMIC_BAND_LABEL[now]}.`, null, d, [], 'meaningful'); }
+      else if (delta <= -2) { hist('domain_band_changed', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience deteriorated: ${SYSTEMIC_BAND_LABEL[was]} → ${SYSTEMIC_BAND_LABEL[now]}.`, null, d); evt('resilience_deteriorated_major', `${SYSTEMIC_DOMAIN_LABEL[d]} resilience deteriorated: ${SYSTEMIC_BAND_LABEL[was]} → ${SYSTEMIC_BAND_LABEL[now]}.`, null, d, [], 'meaningful'); }
+    }
+    if (newTurn || firstEver) { mem.bands[d] = now; mem.scores[d] = systems[d].resilience; }
+  });
+  // ---- Newly exposed critical dependencies (no alternatives, high propagation) ----
+  const exposed = dependencies.filter(d => d.importance === 'critical' && !d.alternatives.length).map(d => d.id);
+  exposed.filter(id => !base.exposedDeps.includes(id)).slice(0, 1).forEach(id => { const d = dependencies.find(x => x.id === id)!; if (!firstEver && newTurn) { hist('critical_dependency_exposed', d.reason, null, d.domain); evt('critical_dependency_exposed', `Critical dependency: ${d.reason}.`, null, d.domain, [d.providerId, ...d.consumerIds.map(c => c.split(':')[0])], 'major'); } });
+  if (newTurn || firstEver) mem.exposedDeps = exposed;
+  // ---- Conditions snapshot (baselines for future shocks: captured BEFORE the next shock) ----
+  if (newTurn || firstEver) { const conds: Record<string, string> = {}; if (i.national) Object.values(i.national.regions).forEach(gg => (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => { conds[`net:${gg.regionId}:${n}`] = gg.networks[n]?.condition || 'unknown'; })); if (i.industries) Object.values(i.industries.regions).forEach(gg => (Object.values(gg.industries) as IndustryState[]).forEach(x => { conds[`ind:${gg.regionId}:${x.industry}`] = x.condition; })); mem.conditions = liveIds.size ? { ...conds, ...Object.fromEntries(Object.entries(base.conditions).filter(([k]) => mem.chains.some(c => k in c.baseline))) } : conds; }
+  // ---- Profile ----
+  const all = SYSTEMIC_DOMAINS.filter(d => d !== 'stability');
+  const best = [...all].sort((a, b) => systems[b].resilience - systems[a].resilience)[0], worst = [...all].sort((a, b) => systems[a].resilience - systems[b].resilience)[0];
+  const allBuffers: SystemicBuffer[] = [];
+  dependencies.filter(d => d.alternatives.length).slice(0, 4).forEach(d => allBuffers.push({ id: `bf:alt:${d.id}`, domain: d.domain, sourceId: d.alternatives.join(','), kind: d.sourceSystem === 'industries' ? 'supplier_redundancy' : 'route_redundancy', structural: true, strength: Math.min(60, 20 * d.alternatives.length), available: Math.min(60, 20 * d.alternatives.length), explanation: `${d.alternatives.join('/')} can cover part of ${d.providerId}'s ${d.domain}` }));
+  (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => { const s = systems[V106_NET_DOMAIN[n]]; if (s.spareCapacity >= 20) allBuffers.push({ id: `bf:spare:${n}`, domain: V106_NET_DOMAIN[n], sourceId: n, kind: 'spare_capacity', structural: false, strength: s.spareCapacity, available: s.spareCapacity, explanation: `Spare national ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} capacity` }); });
+  (['grid_scale_storage', 'advanced_logistics', 'advanced_water_systems'] as EmergingCapabilityId[]).forEach(id => { const sc = v106CapScale(i, id); if (sc > 0) allBuffers.push({ id: `bf:cap:${id}`, domain: id === 'grid_scale_storage' ? 'energy' : id === 'advanced_logistics' ? 'freight' : 'water', sourceId: id, kind: 'capability', structural: true, strength: v106R(20 * sc), available: v106R(20 * sc), explanation: `${CAPABILITY_DEF_BY_ID[id].label} (bounded — never immunity)` }); });
+  if (liquidity.freeBuffer > 20000) allBuffers.push({ id: 'bf:liq', domain: 'liquidity', sourceId: 'cash', kind: 'liquidity_reserve', structural: false, strength: Math.min(100, liquidity.freeBuffer / 1000), available: Math.min(100, liquidity.freeBuffer / 1000), explanation: `Free cash buffer $${liquidity.freeBuffer.toLocaleString()}` });
+  const strongestBuffer = [...allBuffers].sort((a, b) => (b.structural ? 1 : 0) - (a.structural ? 1 : 0) || b.strength - a.strength)[0]?.explanation || null;
+  const resilienceProfile: NationalResilienceProfile = { domains: Object.fromEntries(SYSTEMIC_DOMAINS.map(d => [d, systems[d].condition])) as any, mostResilient: best, mostFragile: worst, highestExposure: dependencies[0]?.reason || null, criticalSinglePoint: criticalPoints[0] ? `${criticalPoints[0].label} — ${criticalPoints[0].reason}` : null, strongestBuffer, liquidity: liquidity.band,
+    summary: `${SYSTEMIC_DOMAIN_LABEL[worst]} is the most fragile system (${SYSTEMIC_BAND_LABEL[systems[worst].condition].toLowerCase()}); ${SYSTEMIC_DOMAIN_LABEL[best]} is the most resilient (${SYSTEMIC_BAND_LABEL[systems[best].condition].toLowerCase()}).` };
+  const inputHash = systemicRiskInputHash(i);
+  const persisted: SystemicRiskPersisted = { schemaVersion: '10.6', revision: prev.revision + (inputHash !== prev.inputHash || newTurn ? 1 : 0), initializedTurn: prev.initializedTurn ?? turn, base, current: mem, history: history.slice(-V106_LIMITS.history), seq, inputHash };
+  const state: NationalSystemicRiskState = { schemaVersion: '10.6', revision: persisted.revision, systems, dependencies, concentrations, criticalPoints, buffers: allBuffers, activeStressChains, resilience: resilienceProfile, recovery: recovery.slice(-V106_LIMITS.recoveries), liquidity, history: persisted.history, lastUpdatedTurn: turn, inputHash, computeMs: v106R((typeof performance !== 'undefined' ? performance.now() : 0) - t0, 2) };
+  return { state, persisted, events };
+}
+
+// ---- Stress tests (What-If: deterministic counterfactuals; never mutate live state) --------------------------------------
+export type StressTestScenario =
+  | { kind: 'lose_supply'; regionId: string; supply: StrategicSupplyKind } | { kind: 'network_loss'; regionId: string; network: NationalNetworkKind; fraction: number }
+  | { kind: 'project_damage'; projectId: string } | { kind: 'gateway_loss' } | { kind: 'largest_supplier' } | { kind: 'digital_backbone' }
+  | { kind: 'drought'; regionIds: string[] } | { kind: 'liquidity_shock'; amount: number } | { kind: 'megaproject_delay'; programId: string };
+export interface StressTestAssumption { text: string }
+export interface ProjectedStressNode extends SystemicStressNode {}
+export interface ProjectedRecovery { paths: string[]; blockers: string[]; outlook: string }
+export interface StrategicStressTest {
+  id: string; scenario: StressTestScenario[]; label: string; assumptions: StressTestAssumption[]; projectedChain: ProjectedStressNode[]; projectedResilience: NationalResilienceProfile;
+  canonicalProjection: Array<{ subject: string; before: string; after: string }>; outcome: SystemicStressChain['outcome']; criticalFailures: string[]; successfulBuffers: string[]; projectedRecovery: ProjectedRecovery; liquidityAfter: LiquidityProfile | null; uncertainty: 'low' | 'moderate' | 'high'; result: string;
+}
+export function stressScenarioLabel(i: SystemicRiskInputs, s: StressTestScenario): string {
+  switch (s.kind) {
+    case 'lose_supply': return `Lose ${s.regionId} ${SUPPLY_LABEL[s.supply].toLowerCase()} supply`;
+    case 'network_loss': return `${s.regionId} ${NATIONAL_NETWORK_LABEL[s.network].toLowerCase()} capacity −${Math.round(s.fraction * 100)}%`;
+    case 'project_damage': return `Damage ${i.projects.find(p => p.id === s.projectId)?.title || s.projectId}`;
+    case 'gateway_loss': return 'Lose the largest export gateway'; case 'largest_supplier': return 'Lose the largest supplier'; case 'digital_backbone': return 'Damage the national digital backbone';
+    case 'drought': return `Major drought (${s.regionIds.join(', ')})`; case 'liquidity_shock': return `Liquidity shock −$${Math.round(s.amount).toLocaleString()}`; case 'megaproject_delay': return `Delay ${MEGAPROJECT_DEF_BY_KIND[(i.megaprojects?.programs[s.programId]?.kind || '') as MegaprojectKind]?.title || s.programId}`;
+  }
+}
+/** Resolve composite scenarios to concrete ones using the CURRENT structure (largest supplier / gateway / digital backbone). */
+export function resolveStressScenario(i: SystemicRiskInputs, s: StressTestScenario): StressTestScenario | null {
+  if (s.kind === 'largest_supplier') { const d = [...(i.industries?.dependencies || [])].sort((a, b) => b.share - a.share || a.id.localeCompare(b.id))[0]; return d ? { kind: 'lose_supply', regionId: d.providerRegionId, supply: d.supply } : null; }
+  if (s.kind === 'gateway_loss') { const gws = Array.from(new Set((i.networks?.networks || []).filter(n => n.networkKind === 'trade').flatMap(n => n.gatewayProjectIds))); const p = gws.map(id => ({ id, v: Object.values(i.national?.regions || {}).flatMap(g => g.networks.trade?.sources || []).find(x => x.source === `project:${id}`)?.value || 0 })).sort((a, b) => b.v - a.v || a.id.localeCompare(b.id))[0]; return p ? { kind: 'project_damage', projectId: p.id } : null; }
+  if (s.kind === 'digital_backbone') { const p = Object.values(i.national?.regions || {}).flatMap(g => (g.networks.digital?.sources || []).filter(x => String(x.source).startsWith('project:')).map(x => ({ id: String(x.source).slice(8), v: x.value }))).sort((a, b) => b.v - a.v || a.id.localeCompare(b.id))[0]; return p ? { kind: 'project_damage', projectId: p.id } : null; }
+  return s;
+}
+export function runSystemicStressTest(i: SystemicRiskInputs, scenariosIn: StressTestScenario[], ctx?: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null } | null): StrategicStressTest {
+  const scenarios = scenariosIn.slice(0, V106_LIMITS.maxShocks).map(s => resolveStressScenario(i, s)).filter((s): s is StressTestScenario => Boolean(s));
+  const roots: Array<{ subjectId: string; impact: number; mechanism: string }> = []; const assumptions: StressTestAssumption[] = [{ text: 'Deterministic counterfactual on the current structure — no probabilities, no live changes.' }];
+  const nsMods: Record<string, Partial<Record<NationalNetworkKind, number>>> = {}; const indMods: Record<string, Partial<Record<StrategicIndustryKind, number>>> = {}; const statusOv: Record<string, string> = {}; const extraCrises: NationalSystemsInputs['crises'] = [];
+  let spend = 0;
+  scenarios.forEach(s => {
+    if (s.kind === 'lose_supply') { const k = v106Producer(s.supply); roots.push({ subjectId: k ? `ind:${s.regionId}:${k}` : `sup:${s.regionId}:${s.supply}`, impact: 90, mechanism: `${s.regionId} ${SUPPLY_LABEL[s.supply].toLowerCase()} production disrupted (hypothetical)` }); if (k) (indMods[s.regionId] = indMods[s.regionId] || {})[k] = -100; assumptions.push({ text: `${s.regionId} ${k ? INDUSTRY_LABEL[k].toLowerCase() : 'producer'} loses ~90% of output.` }); }
+    if (s.kind === 'network_loss') { const st = i.national?.regions[s.regionId]?.networks[s.network]; roots.push({ subjectId: `net:${s.regionId}:${s.network}`, impact: v106C(s.fraction) * 100, mechanism: `${s.regionId} ${NATIONAL_NETWORK_LABEL[s.network].toLowerCase()} capacity cut (hypothetical)` }); (nsMods[s.regionId] = nsMods[s.regionId] || {})[s.network] = -Math.round((st?.localCapacity || 0) * v106C(s.fraction)); }
+    if (s.kind === 'project_damage') { roots.push({ subjectId: `project:${s.projectId}`, impact: 75, mechanism: `${i.projects.find(p => p.id === s.projectId)?.title || s.projectId} damaged (hypothetical)` }); statusOv[s.projectId] = 'damaged'; assumptions.push({ text: 'A damaged project keeps 25% of its capacity (canonical Infrastructure rule).' }); }
+    if (s.kind === 'drought') { const c = { id: 'stress_drought', name: 'Severe Drought (stress test)', category: 'environmental', status: 'active', affectedRegions: s.regionIds }; s.regionIds.forEach(r => (NATIONAL_NETWORKS as NationalNetworkKind[]).forEach(n => { const f = nsCrisisFactor(c, n); if (f > 0) roots.push({ subjectId: `net:${r}:${n}`, impact: v106R(f * 100 * 2.4), mechanism: `Drought cuts ${r} ${NATIONAL_NETWORK_LABEL[n].toLowerCase()} (hypothetical, canonical crisis rule)` }); })); extraCrises.push(c); }
+    if (s.kind === 'liquidity_shock') { spend += Math.max(0, s.amount); }
+    if (s.kind === 'megaproject_delay') { const p = i.megaprojects?.programs[s.programId]; assumptions.push({ text: `${p ? MEGAPROJECT_DEF_BY_KIND[p.kind].title : s.programId} stays at its current stage; capital already committed stays tied up (V10.3 owns stall state).` }); }
+  });
+  const prop = propagateSystemicShock(i, roots.slice(0, 4));
+  // Canonical projection: recompute V10.0 → V10.1 with the hypothetical shock applied (What-If architecture).
+  const canonicalProjection: StrategicStressTest['canonicalProjection'] = []; let projected = i;
+  if (ctx?.nsInputs && (Object.keys(nsMods).length || Object.keys(indMods).length || Object.keys(statusOv).length || extraCrises.length)) {
+    const ov = <X extends { id?: string; status?: string }>(xs: X[]) => xs.map(p => (p && statusOv[String(p.id)] ? { ...p, status: statusOv[String(p.id)] } : p));
+    const ns = computeNationalSystems({ ...ctx.nsInputs, projects: ov(ctx.nsInputs.projects as any[]) as any, crises: [...ctx.nsInputs.crises, ...extraCrises], modifiers: mergeCapabilityModifiers(ctx.nsInputs.modifiers, nsMods) }, null, { emit: false }).state;
+    const sc = ctx.scInputs ? computeIndustriesSupplyChains({ ...ctx.scInputs, projects: ov(ctx.scInputs.projects as any[]) as any, national: ns, modifiers: mergeCapabilityModifiers(ctx.scInputs.modifiers, indMods) }, null, { emit: false }).state : i.industries;
+    projected = { ...i, national: ns, industries: sc, projects: ov(i.projects) };
+    prop.nodes.filter(n => n.subjectId.startsWith('ind:') || n.subjectId.startsWith('net:')).forEach(n => { const before = v106SubjectCondition(i, n.subjectId) || '—', after = v106SubjectCondition(projected, n.subjectId) || (n.subjectId.startsWith('ind:') ? 'collapsed' : '—'); canonicalProjection.push({ subject: n.label, before, after }); });
+  }
+  const liquidityAfter = spend > 0 || scenarios.some(s => s.kind === 'megaproject_delay') ? systemicLiquidityProfile(i, spend) : null;
+  const domains = computeSystemicDomains(projected);
+  if (liquidityAfter) domains.liquidity = { ...domains.liquidity, resilience: liquidityAfter.resilience, condition: liquidityAfter.band };
+  const all = SYSTEMIC_DOMAINS.filter(d => d !== 'stability');
+  const pr: NationalResilienceProfile = { domains: Object.fromEntries(SYSTEMIC_DOMAINS.map(d => [d, domains[d].condition])) as any, mostResilient: [...all].sort((a, b) => domains[b].resilience - domains[a].resilience)[0], mostFragile: [...all].sort((a, b) => domains[a].resilience - domains[b].resilience)[0], highestExposure: null, criticalSinglePoint: null, strongestBuffer: prop.buffersActivated[0] || null, liquidity: domains.liquidity.condition, summary: '' };
+  const label = scenarios.map(s => stressScenarioLabel(i, s)).join(' + ') || 'No applicable scenario';
+  const result = prop.outcome === 'escalated' ? `Cascade escalates: ${prop.failuresActivated.slice(0, 3).join('; ')}.` : prop.nodes.length > 1 ? `System remains operational — ${prop.buffersActivated.length ? `buffers absorbed part of the shock (${prop.buffersActivated[0]})` : 'the shock stays local'}.` : liquidityAfter ? `Liquidity resilience ${SYSTEMIC_BAND_LABEL[liquidityAfter.band].toLowerCase()} after the shock.` : 'No downstream dependency on this subject.';
+  const failures = [...prop.failuresActivated, ...(liquidityAfter && (liquidityAfter.band === 'critical' || liquidityAfter.band === 'fragile') ? [`Liquidity ${liquidityAfter.band}`] : [])];
+  const id = `st:${systemicRiskInputHash(i)}:${scenarios.map(s => JSON.stringify(s)).join('|')}`.slice(0, 120);
+  return { id, scenario: scenarios, label, assumptions, projectedChain: prop.nodes, projectedResilience: pr, canonicalProjection, outcome: prop.outcome, criticalFailures: failures, successfulBuffers: prop.buffersActivated,
+    projectedRecovery: { paths: failures.length ? ['Repair / restore the affected subject', 'Add an alternative supplier or route', 'Reduce dependency on the affected supply'] : ['Existing buffers cover the loss'], blockers: roots.filter(r => r.subjectId.startsWith('project:')).map(r => `${prop.nodes.find(n => n.subjectId === r.subjectId)?.label || r.subjectId} needs repair`), outlook: failures.length ? 'Recovery needs real repair, alternatives or diversification — it is not automatic.' : 'Little recovery needed.' },
+    liquidityAfter, uncertainty: scenarios.length > 1 ? 'high' : canonicalProjection.length ? 'low' : 'moderate', result };
+}
+/** Compare the same stress test on two structures (e.g. current vs "without QLD diversification" / "with a new route"). */
+export function compareStressTests(a: SystemicRiskInputs, b: SystemicRiskInputs, scenario: StressTestScenario[]): { current: StrategicStressTest; alternative: StrategicStressTest; lines: string[] } {
+  const current = runSystemicStressTest(a, scenario), alternative = runSystemicStressTest(b, scenario);
+  const subjects = Array.from(new Set([...current.projectedChain, ...alternative.projectedChain].filter(n => n.depth >= 1).map(n => n.subjectId)));
+  const lines = subjects.map(s => { const x = current.projectedChain.find(n => n.subjectId === s), y = alternative.projectedChain.find(n => n.subjectId === s); return `${(x || y)!.label}: ${x?.projectedCondition || 'unaffected'} → ${y?.projectedCondition || 'unaffected'}`; }).slice(0, 6);
+  return { current, alternative, lines: lines.length ? lines : ['No downstream difference.'] };
+}
+
+// ---- Persistence ----------------------------------------------------------------------------------------------------
+function v106SanMem(raw: any): SystemicRiskMemory {
+  const o = createEmptySystemicRiskMemory(); if (!raw || typeof raw !== 'object') return o;
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0); const bands = Object.keys(SYSTEMIC_BAND_RANK);
+  SYSTEMIC_DOMAINS.forEach(d => { if (bands.includes(raw.bands?.[d])) o.bands[d] = raw.bands[d]; if (typeof raw.scores?.[d] === 'number' && Number.isFinite(raw.scores[d])) o.scores[d] = Math.max(0, Math.min(100, raw.scores[d])); });
+  Object.entries(raw.conditions && typeof raw.conditions === 'object' ? raw.conditions : {}).slice(0, 200).forEach(([k, v]) => { if (typeof v === 'string' && /^(net|ind):[A-Z]+:[a-z_]+$/.test(k)) o.conditions[k] = v.slice(0, 20); });
+  o.chains = (Array.isArray(raw.chains) ? raw.chains : []).filter((c: any) => c && typeof c.rootEventId === 'string').slice(-8).map((c: any) => ({
+    id: String(c.id || `sc:${c.rootEventId}`).slice(0, 80), rootEventId: c.rootEventId.slice(0, 80), rootType: String(c.rootType || 'crisis').slice(0, 30), label: String(c.label || c.rootEventId).slice(0, 100), startedTurn: n(c.startedTurn),
+    status: ['active', 'stabilizing', 'resolved'].includes(c.status) ? c.status : 'stabilizing', peak: ['minor', 'meaningful', 'major', 'critical'].includes(c.peak) ? c.peak : 'minor', outcome: ['contained', 'escalated', 'limited'].includes(c.outcome) ? c.outcome : 'limited',
+    subjects: (Array.isArray(c.subjects) ? c.subjects : []).filter((s: any) => typeof s === 'string' && /^(net|ind):/.test(s)).slice(0, 6), baseline: Object.fromEntries(Object.entries(c.baseline && typeof c.baseline === 'object' ? c.baseline : {}).filter(([k, v]) => /^(net|ind|sup|project):/.test(k) && typeof v === 'string').slice(0, 10)) as Record<string, string>,
+    damagedAtStart: (Array.isArray(c.damagedAtStart) ? c.damagedAtStart : []).filter((s: any) => typeof s === 'string').slice(0, 10), rootActiveLastTurn: c.rootActiveLastTurn === true,
+    recovery: { status: ['not_started', 'stabilizing', 'recovering', 'mostly_recovered', 'recovered'].includes(c.recovery?.status) ? c.recovery.status : 'not_started', progress: Math.max(0, Math.min(1, Number(c.recovery?.progress) || 0)), sinceTurn: n(c.recovery?.sinceTurn), completedTurn: c.recovery?.completedTurn == null ? null : n(c.recovery.completedTurn), stalledTurns: n(c.recovery?.stalledTurns) }
+  }));
+  o.exposedDeps = (Array.isArray(raw.exposedDeps) ? raw.exposedDeps : []).filter((x: any) => typeof x === 'string').slice(0, 20);
+  o.lastTurn = n(raw.lastTurn);
+  return o;
+}
+export function sanitizeSystemicRiskPersisted(raw: unknown): SystemicRiskPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const o = createEmptySystemicRiskPersisted(); const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+  o.revision = n(r.revision); o.seq = n(r.seq); o.initializedTurn = r.initializedTurn == null ? null : n(r.initializedTurn); o.base = v106SanMem(r.base); o.current = v106SanMem(r.current); o.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  const kinds = ['cascade_started', 'cascade_contained', 'cascade_escalated', 'recovery_started', 'recovery_stalled', 'recovery_completed', 'domain_band_changed', 'critical_dependency_exposed']; const seen = new Set<string>();
+  o.history = (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && typeof h.id === 'string' && kinds.includes(h.kind) && typeof h.summary === 'string' && !seen.has(h.id) && seen.add(h.id)).slice(-V106_LIMITS.history)
+    .map((h: any) => ({ id: h.id.slice(0, 40), turn: n(h.turn), kind: h.kind, summary: h.summary.slice(0, 220), rootEventId: typeof h.rootEventId === 'string' ? h.rootEventId.slice(0, 80) : null, domain: SYSTEMIC_DOMAINS.includes(h.domain) ? h.domain : null }));
+  return o;
+}
+
+// ---- Validation + invariants -----------------------------------------------------------------------------------------
+export function validateSystemicRiskState(s: NationalSystemicRiskState, p?: SystemicRiskPersisted | null, projectIds?: string[]): string[] {
+  const issues: string[] = [];
+  Object.entries(s.systems).forEach(([d, x]) => { if (!SYSTEMIC_DOMAINS.includes(d as SystemicRiskDomain)) issues.push(`invalid domain ${d}`); [x.exposure, x.resilience, x.redundancy, x.concentration, x.recoveryCapacity].forEach(v => { if (!Number.isFinite(v) || v < 0 || v > 100) issues.push(`${d}: value out of range ${v}`); }); });
+  const regionOk = (r: string) => Boolean(REGIONS[r]);
+  s.dependencies.forEach(d => { if (!regionOk(d.providerId)) issues.push(`dependency ${d.id}: unknown provider ${d.providerId}`); d.consumerIds.forEach(c => { if (!regionOk(c.split(':')[0])) issues.push(`dependency ${d.id}: unknown consumer ${c}`); }); });
+  s.activeStressChains.forEach(c => {
+    const ids = new Set<string>();
+    c.nodes.forEach(nd => {
+      if (ids.has(nd.id)) issues.push(`chain ${c.id}: duplicate node ${nd.id}`); ids.add(nd.id);
+      if (nd.depth > V106_LIMITS.maxDepth) issues.push(`chain ${c.id}: depth ${nd.depth} exceeds limit`);
+      if (!Number.isFinite(nd.residualImpact) || nd.residualImpact < 0) issues.push(`chain ${c.id}: negative residual`);
+      if (nd.absorbedAmount > nd.impact + 0.11) issues.push(`chain ${c.id}: buffer absorbed more than the impact`);
+      if (nd.causedByNodeId && !c.nodes.some(x => x.id === nd.causedByNodeId)) issues.push(`chain ${c.id}: dangling causedBy ${nd.causedByNodeId}`);
+      if (nd.depth > 0 && !nd.causedByNodeId) issues.push(`chain ${c.id}: propagated node without a causal path`);
+    });
+    if (c.nodes.length > V106_LIMITS.maxNodes) issues.push(`chain ${c.id}: too many nodes`);
+  });
+  if (s.activeStressChains.length > V106_LIMITS.maxChains) issues.push('too many concurrent chains');
+  if (projectIds) s.criticalPoints.filter(c => c.subjectType === 'project').forEach(c => { if (!projectIds.includes(c.subjectId)) issues.push(`critical point: unknown project ${c.subjectId}`); });
+  s.recovery.forEach(r => { if (r.progress < 0 || r.progress > 1) issues.push(`recovery ${r.id}: progress out of range`); });
+  if (s.recovery.length > V106_LIMITS.recoveries) issues.push('unbounded recovery records');
+  if (p && p.history.length > V106_LIMITS.history) issues.push('unbounded history');
+  return issues;
+}
+
+// ---- World Reaction adapter -------------------------------------------------------------------------------------------
+export function systemicToWorldEvent(d: SystemicDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'systemic_risk', sourceEventId: d.rootEventId, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: d.regionIds.length === 1 ? 'region' : 'nation', subjectId: d.regionIds.length === 1 ? d.regionIds[0] : 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: [d.text.slice(0, 120)], before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['economy', 'regions', ...(d.domain === 'liquidity' ? ['economy' as SWRDomain] : [])],
+    tags: ['systemic_risk', ...(d.domain ? [`domain:${d.domain}`] : []), ...(d.rootEventId ? [`root:${d.rootEventId}`] : []), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: 'inference', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 4, dedupeKey: `sr:${d.kind}:${d.rootEventId || d.domain || 'n'}:${d.turn}`
+  };
+}
+
+// ---- Consumers (read-only) -----------------------------------------------------------------------------------------
+/** Bounded rival-AI context (0 … +0.05): investing in a region that supplies an ALTERNATIVE to a public critical dependency. */
+export function systemicAiOutlook(s: NationalSystemicRiskState | null, regionId: string, riskAversion = 0.5): { factor: number; reason: string | null } {
+  if (!s) return { factor: 0, reason: null };
+  const d = s.dependencies.find(x => (x.importance === 'critical' || x.importance === 'high') && x.alternatives.includes(regionId));
+  if (!d) return { factor: 0, reason: null };
+  return { factor: Math.min(0.05, 0.05 * v106C(riskAversion)), reason: `${regionId} is an alternative to ${d.providerId} (${d.reason})` };
+}
+/** Guardian (warn-only, inside Guardian's own settings): spending that leaves a fragile liquidity buffer. */
+export function systemicLiquidityWarning(i: SystemicRiskInputs, spend: number): { warn: boolean; severity: 'informational' | 'caution'; text: string; evidence: string[] } {
+  const before = systemicLiquidityProfile(i), after = systemicLiquidityProfile(i, spend);
+  const drop = SYSTEMIC_BAND_RANK[before.band] - SYSTEMIC_BAND_RANK[after.band];
+  const warn = spend > 0 && (after.band === 'fragile' || after.band === 'critical') && (drop >= 1 || after.freeBuffer < 5000);
+  return { warn, severity: after.band === 'critical' ? 'caution' : 'informational', text: `SYSTEMIC RISK: spending $${Math.round(spend).toLocaleString()} would leave liquidity ${SYSTEMIC_BAND_LABEL[after.band].toLowerCase()} (free buffer $${after.freeBuffer.toLocaleString()}${after.capitalAtRisk ? `; $${after.capitalAtRisk.toLocaleString()} already tied up in unfinished programs` : ''}). A major shock could force selling assets, borrowing or pausing programs.`, evidence: after.explanation };
+}
+export function systemicPlayLine(s: NationalSystemicRiskState | null): { tone: 'contained' | 'escalated' | 'risk' | 'recovery'; title: string; text: string } | null {
+  if (!s) return null;
+  const c = s.activeStressChains[0];
+  if (c) return c.outcome === 'escalated' ? { tone: 'escalated', title: 'Cascade', text: `${c.label} is affecting ${c.nodes.filter(n => n.depth >= 1).map(n => n.label).slice(0, 2).join(' and ')}.` } : { tone: 'contained', title: 'Cascade contained', text: `${c.label}: ${c.buffersActivated[0] || 'buffers'} absorbed much of the shock.` };
+  const r = s.recovery.find(x => x.status !== 'recovered' && x.status !== 'not_started');
+  if (r) return { tone: 'recovery', title: `Recovery: ${r.label}`, text: `${Math.round(r.progress * 100)}% back to baseline${r.blockers[0] ? ` · blocked by ${r.blockers[0]}` : ''}` };
+  const crit = SYSTEMIC_DOMAINS.find(d => s.systems[d].condition === 'critical' || s.systems[d].condition === 'fragile');
+  if (crit) return { tone: 'risk', title: 'Systemic risk', text: `${SYSTEMIC_DOMAIN_LABEL[crit]} ${SYSTEMIC_BAND_LABEL[s.systems[crit].condition].toUpperCase()}${s.systems[crit].topRisks[0] ? ` — ${s.systems[crit].topRisks[0]}` : ''}` };
+  const dep = s.dependencies.find(d => d.importance === 'critical' && !d.alternatives.length);
+  return dep ? { tone: 'risk', title: 'Critical dependency', text: dep.reason } : null;
+}
+export function buildSystemicDebrief(s: NationalSystemicRiskState | null, p: SystemicRiskPersisted | null): string[] {
+  if (!s) return [];
+  const lines: string[] = []; const h = p?.history || [];
+  const topConc = s.concentrations[0]; if (topConc) lines.push(`Largest systemic risk: ${topConc.shareLabel}`);
+  const chains = p?.current.chains || [];
+  const biggest = [...chains].sort((a, b) => ({ critical: 3, major: 2, meaningful: 1, minor: 0 }[b.peak] - { critical: 3, major: 2, meaningful: 1, minor: 0 }[a.peak]))[0]; if (biggest) lines.push(`Largest shock: ${biggest.label}`);
+  const contained = h.find(x => x.kind === 'cascade_contained'); if (contained) lines.push(`Critical failure avoided: ${contained.summary}`);
+  if (s.resilience.strongestBuffer) lines.push(`Most important buffer: ${s.resilience.strongestBuffer}`);
+  if (s.resilience.mostFragile) lines.push(`Weakest area: ${SYSTEMIC_DOMAIN_LABEL[s.resilience.mostFragile]} (${SYSTEMIC_BAND_LABEL[s.systems[s.resilience.mostFragile].condition]})`);
+  const rec = h.filter(x => x.kind === 'recovery_completed').slice(-1)[0]; if (rec) lines.push(`Major recovery: ${rec.summary}`);
+  return lines;
+}
+
+// ---- V10.6 self-test fixture -------------------------------------------------------------------------------------
+/** Canonical statuses + LR sectors (+ V10.0/V10.1 modifiers, crises, liquidity) → V10.0 → V10.1 → V10.2 → V10.6 inputs (+ What-If ctx). */
+export function createSystemicRiskFixture(o: { statuses?: Record<string, string>; sectors?: Record<string, Partial<Record<LRSector, number>>>; turn?: number; nsModifiers?: NationalSystemsInputs['modifiers']; indModifiers?: IndustriesInputs['modifiers'];
+  crises?: NationalSystemsInputs['crises']; megaprojects?: MegaprojectsPersisted | null; innovation?: InnovationCapabilitiesState | null; viewer?: any; stability?: number | null; direction?: SystemicRiskInputs['direction'] } = {}): { inputs: SystemicRiskInputs; ctx: { nsInputs: NationalSystemsInputs; scInputs: IndustriesInputs } } {
+  const turn = o.turn ?? 5;
+  const w = createInfraNetworkFixtureWorld({ statuses: o.statuses, sectors: o.sectors, nsModifiers: o.nsModifiers, indModifiers: o.indModifiers, turn });
+  const nsi: NationalSystemsInputs = { ...w.nsi, crises: o.crises || [] };
+  const ns = computeNationalSystems(nsi).state; const ii: IndustriesInputs = { ...w.ii, national: ns }; const ind = computeIndustriesSupplyChains(ii).state;
+  const net = computeStrategicInfrastructureNetworks({ ...w.xi, national: ns, industries: ind }).state;
+  const projects = [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => ({ ...p, status: o.statuses?.[p.id] || (p.status === 'locked' ? 'locked' : 'unlocked') }));
+  const inputs = buildSystemicRiskInputs({ turn, national: ns, industries: ind, networks: net, megaprojects: o.megaprojects ?? null, innovation: o.innovation ?? null, direction: o.direction ?? null, projects, crises: o.crises || [], stability: o.stability === undefined ? { nationalStability: 60 } : o.stability === null ? null : { nationalStability: o.stability }, viewer: o.viewer === undefined ? { id: 'player', money: 60000, loans: [] } : o.viewer });
+  return { inputs, ctx: { nsInputs: nsi, scInputs: ii } };
+}
+
+export function runV106ResilienceSystemicRiskSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const J = (x: any) => JSON.stringify(x);
+  const A = (...ids: string[]) => Object.fromEntries(ids.map(i => [i, 'active']));
+  type FO = Parameters<typeof createSystemicRiskFixture>[0];
+  const X = (o: FO = {}) => createSystemicRiskFixture(o);
+  const MFG_P = A('infra_v93_vic_manufacturing', 'infra_v102_vic_freight_terminal', 'infra_v102_nsw_interstate_rail', 'infra_inland_rail_qld', 'infra_snowy_nsw', 'infra_v102_sa_freight_corridor', 'infra_v93_wa_freight_rail');
+  const HUNGRY: any = { VIC: { manufacturing: 100 }, NSW: { manufacturing: 95 }, SA: { mining: 70 }, QLD: { manufacturing: 70, mining: 90 } };
+  const NO_ALT: IndustriesInputs['modifiers'] = Object.fromEntries(['NSW', 'NT', 'QLD', 'WA', 'TAS', 'ACT'].map(r => [r, { mining: -100 }]));
+  /** Diversified: QLD/WA/NT hold spare minerals. Concentrated: SA is the only mineral producer. */
+  const DIV = (o: FO = {}) => X({ statuses: MFG_P, sectors: HUNGRY, ...o });
+  const CONC = (o: FO = {}) => X({ statuses: MFG_P, sectors: { VIC: { manufacturing: 100 }, NSW: { manufacturing: 95 }, SA: { mining: 70 } } as any, indModifiers: NO_ALT, ...o });
+  const LOSE_SA: StressTestScenario[] = [{ kind: 'lose_supply', regionId: 'SA', supply: 'minerals' }];
+  const node = (t: StrategicStressTest | { nodes: SystemicStressNode[] }, subject: string) => ('projectedChain' in t ? t.projectedChain : t.nodes).find(n => n.subjectId === subject);
+  const strip = (s: NationalSystemicRiskState) => J({ ...s, computeMs: 0 });
+  const seq = (steps: SystemicRiskInputs[], start: SystemicRiskPersisted | null = null) => { let p = start; let last: ReturnType<typeof computeSystemicRisk> | null = null; const events: SystemicDerivedEvent[] = []; const states: NationalSystemicRiskState[] = []; steps.forEach(i => { last = computeSystemicRisk(i, p); p = last.persisted; events.push(...last.events); states.push(last.state); }); return { last: last!, persisted: p!, events, states }; };
+  const valid = (s: NationalSystemicRiskState, p?: SystemicRiskPersisted) => { const v = validateSystemicRiskState(s, p); return v.length ? v.join('; ') : true; };
+  const capState = (id: EmergingCapabilityId, maturity: CapabilityMaturity): InnovationCapabilitiesState => {
+    const base = computeInnovationCapabilities(createInnovationFixtureInputs({ turn: 1 }), null).state;
+    return { ...base, capabilities: { ...base.capabilities, [id]: { ...base.capabilities[id], maturity, operationalCapacity: 'full' } } };
+  };
+  const ENERGY_P = A('infra_v93_sa_renewable_grid', 'infra_wind_tas', 'infra_snowy_nsw');
+
+  check('sr1', 'TEST 1 — healthy diversified system (multiple suppliers, routes, spare capacity) is resilient/robust', () => {
+    const s = computeSystemicRisk(DIV().inputs, null).state;
+    const ok = SYSTEMIC_DOMAINS.filter(d => SYSTEMIC_BAND_RANK[s.systems[d].condition] >= SYSTEMIC_BAND_RANK.stable).length;
+    return (SYSTEMIC_BAND_RANK[s.systems.supply.condition] >= SYSTEMIC_BAND_RANK.resilient && ok >= 8 && valid(s) === true) || J({ supply: s.systems.supply.condition, ok, v: valid(s) });
+  });
+  check('sr2', 'TEST 2 — concentrated system (one supplier, no alternative) shows high exposure', () => {
+    const s = computeSystemicRisk(CONC().inputs, null).state;
+    const dep = s.dependencies.find(d => d.domain === 'supply' && d.providerId === 'SA');
+    return (dep !== undefined && dep.importance === 'critical' && !dep.alternatives.length && SYSTEMIC_BAND_RANK[s.systems.supply.condition] <= SYSTEMIC_BAND_RANK.exposed && s.systems.supply.exposure >= 15) || J({ dep, supply: s.systems.supply });
+  });
+  check('sr3', 'TEST 3 — capacity ≠ resilience: healthy capacity carried by one dominant source is less resilient than the same capacity spread out', () => {
+    const tight = Object.fromEntries(Object.keys(REGIONS).map(r => [r, { energy: -20 }])) as NationalSystemsInputs['modifiers'];
+    const oneF = X({ statuses: A('infra_snowy_nsw', 'infra_hydrogen_wa'), sectors: { NSW: { energy: 90 } } as any, nsModifiers: tight });
+    const spreadF = X({ statuses: { ...ENERGY_P, ...A('infra_v93_qld_renewable_grid') }, sectors: { NSW: { energy: 50 }, SA: { energy: 50, renewables: 50 }, TAS: { energy: 50, renewables: 50 }, QLD: { energy: 50 } } as any, nsModifiers: tight });
+    const one = computeSystemicRisk(oneF.inputs, null).state.systems.energy, spread = computeSystemicRisk(spreadF.inputs, null).state.systems.energy;
+    const healthy = (f: typeof oneF) => ['healthy', 'surplus'].includes(f.inputs.national!.national.energy.condition);
+    return (healthy(oneF) && healthy(spreadF) && one.concentration > spread.concentration && one.resilience < spread.resilience && SYSTEMIC_BAND_RANK[one.condition] <= SYSTEMIC_BAND_RANK.exposed) || J({ one: [oneF.inputs.national!.national.energy.condition, one.concentration, one.resilience, one.condition], spread: [spread.concentration, spread.resilience, spread.condition] });
+  });
+  check('sr4', 'TEST 4 — direct shock: removing a provider in a simulated fixture is recognised at depth 0', () => {
+    const f = DIV(); const t = runSystemicStressTest(f.inputs, [{ kind: 'project_damage', projectId: 'infra_snowy_nsw' }], f.ctx);
+    const root = t.projectedChain.find(n => n.depth === 0);
+    return (root !== undefined && root.subjectId === 'project:infra_snowy_nsw' && root.impact >= 70) || J(t.projectedChain.slice(0, 2));
+  });
+  check('sr5', 'TEST 5 — real dependency propagation: SA minerals → VIC manufacturing; shocking SA affects VIC', () => {
+    const f = CONC(); const t = runSystemicStressTest(f.inputs, LOSE_SA, f.ctx); const vic = node(t, 'ind:VIC:manufacturing');
+    return (vic !== undefined && vic.residualImpact > 0 && vic.causedByNodeId !== null && /VIC manufacturing draws minerals from SA/.test(vic.transmissionMechanism)) || J(t.projectedChain.map(n => [n.subjectId, n.residualImpact, n.transmissionMechanism]));
+  });
+  check('sr6', 'TEST 6 — no dependency, no consequence: shocking an unrelated system invents no VIC effect', () => {
+    const f = CONC(); const t = runSystemicStressTest(f.inputs, [{ kind: 'lose_supply', regionId: 'TAS', supply: 'tourism_capacity' }], f.ctx);
+    return (!t.projectedChain.some(n => n.subjectId.startsWith('ind:VIC') || n.subjectId.startsWith('net:VIC'))) || J(t.projectedChain.map(n => n.subjectId));
+  });
+  check('sr7', 'TEST 7 — alternative supplier: QLD/WA/NT spare minerals reduce the VIC impact', () => {
+    const a = runSystemicStressTest(DIV().inputs, LOSE_SA), b = runSystemicStressTest(CONC().inputs, LOSE_SA);
+    const va = node(a, 'ind:VIC:manufacturing'), vb = node(b, 'ind:VIC:manufacturing');
+    return (va !== undefined && vb !== undefined && va.residualImpact < vb.residualImpact && va.absorbedAmount > 0 && va.buffers.some(x => /Alternative minerals/.test(x))) || J({ va, vb });
+  });
+  check('sr8', 'TEST 8 — spare capacity: an energy loss in a region with ample spare capacity is largely absorbed', () => {
+    const rich = X({ statuses: ENERGY_P, sectors: { SA: { energy: 90, renewables: 90 } } as any }), poor = X({ statuses: ENERGY_P, sectors: { SA: { energy: 90, renewables: 90 } } as any, nsModifiers: { SA: { energy: -70 } } });
+    const sc: StressTestScenario[] = [{ kind: 'network_loss', regionId: 'SA', network: 'energy', fraction: 0.4 }];
+    const a = node(runSystemicStressTest(rich.inputs, sc), 'net:SA:energy')!, b = node(runSystemicStressTest(poor.inputs, sc), 'net:SA:energy')!;
+    return (a.residualImpact <= b.residualImpact && a.residualImpact <= a.impact * 0.5 && a.buffers.some(x => /spare/.test(x)) && b.residualImpact > 0) || J({ a: [a.impact, a.absorbedAmount, a.residualImpact], b: [b.impact, b.absorbedAmount, b.residualImpact] });
+  });
+  /** VIC imports energy from SA. "With route" = the same structure plus an active alternate provider (TAS). */
+  const routeWorld = (withAlt: boolean) => { const f = X({ statuses: ENERGY_P, sectors: { SA: { energy: 90, renewables: 90 }, TAS: { energy: 70 }, VIC: { manufacturing: 90 } } as any, nsModifiers: { VIC: { energy: -40 } } }); const i: SystemicRiskInputs = JSON.parse(J(f.inputs)); i.national!.dependencies.forEach(d => { d.alternativeProviders = withAlt && d.network === 'energy' ? ['TAS'] : []; }); return i; };
+  check('sr9', 'TEST 9 — route redundancy: with alternative providers the downstream impact of a provider loss is reduced', () => {
+    const i = routeWorld(true); const dep = i.national!.dependencies.find(d => d.network === 'energy');
+    if (!dep) return 'fixture has no energy dependency';
+    const sc: StressTestScenario[] = [{ kind: 'network_loss', regionId: dep.providerRegionId, network: 'energy', fraction: 0.8 }];
+    const withAlt = node(runSystemicStressTest(i, sc), `net:${dep.consumerRegionId}:energy`), without = node(runSystemicStressTest(routeWorld(false), sc), `net:${dep.consumerRegionId}:energy`);
+    return (withAlt !== undefined && without !== undefined && withAlt.buffers.some(x => /Alternative energy providers: TAS/.test(x)) && withAlt.residualImpact < without.residualImpact) || J({ withAlt, without });
+  });
+  check('sr10', 'TEST 10 — no redundancy: the same failure without alternatives produces a larger cascade', () => {
+    const withAlt = routeWorld(true); const dep = withAlt.national!.dependencies.find(d => d.network === 'energy');
+    if (!dep) return 'fixture has no energy dependency';
+    const sc: StressTestScenario[] = [{ kind: 'network_loss', regionId: dep.providerRegionId, network: 'energy', fraction: 0.8 }];
+    const a = runSystemicStressTest(withAlt, sc), b = runSystemicStressTest(routeWorld(false), sc);
+    const sum = (t: StrategicStressTest) => t.projectedChain.filter(n => n.depth >= 1).reduce((x, n) => x + n.residualImpact, 0);
+    return (sum(b) > sum(a)) || J({ a: sum(a), b: sum(b) });
+  });
+  check('sr11', 'TEST 11 — propagation decay: deeper nodes are weaker than their cause (beyond coalescing)', () => {
+    const t = runSystemicStressTest(CONC().inputs, LOSE_SA);
+    const bad = t.projectedChain.filter(n => n.causedByNodeId).filter(n => { const p = t.projectedChain.find(x => x.id === n.causedByNodeId)!; return n.impact > p.residualImpact * 1.25 + 0.1; });
+    return (!bad.length && t.projectedChain.some(n => n.depth >= 2)) || J(bad);
+  });
+  check('sr12', 'TEST 12 — hard depth / node limits: propagation terminates at depth ≤ 3 and ≤ 24 nodes', () => {
+    const f = CONC(); const roots = Object.keys(REGIONS).flatMap(r => (['freight', 'energy'] as NationalNetworkKind[]).map(n => ({ subjectId: `net:${r}:${n}`, impact: 100, mechanism: 'test' })));
+    const p = propagateSystemicShock(f.inputs, roots); const p2 = propagateSystemicShock(f.inputs, [{ subjectId: 'ind:SA:mining', impact: 100, mechanism: 'test' }], { maxDepth: 9 });
+    return (p.nodes.every(n => n.depth <= V106_LIMITS.maxDepth) && p.nodes.length <= V106_LIMITS.maxNodes && p2.nodes.every(n => n.depth <= V106_LIMITS.maxDepth)) || J({ depth: Math.max(...p.nodes.map(n => n.depth)), n: p.nodes.length });
+  });
+  check('sr13', 'TEST 13 — cycles are suppressed: a circular dependency fixture terminates and visits each subject once', () => {
+    const cyc: SystemicRiskInputs = routeWorld(false);
+    const ds = cyc.national!.dependencies; ds.slice().forEach(d => ds.push({ ...d, id: `${d.id}_rev`, consumerRegionId: d.providerRegionId, providerRegionId: d.consumerRegionId }));
+    const p = propagateSystemicShock(cyc, [{ subjectId: `net:${ds[0]?.providerRegionId || 'SA'}:energy`, impact: 100, mechanism: 'test' }]);
+    const ids = p.nodes.map(n => n.subjectId);
+    return (new Set(ids).size === ids.length && p.nodes.length <= V106_LIMITS.maxNodes) || J(ids);
+  });
+  check('sr14', 'TEST 14 — duplicate paths are coalesced (max + 25% of the rest), never double-counted', () => {
+    const i = CONC().inputs; const p = propagateSystemicShock(i, [{ subjectId: 'net:SA:freight', impact: 90, mechanism: 'test' }, { subjectId: 'ind:SA:mining', impact: 90, mechanism: 'test' }]);
+    const ids = p.nodes.map(n => n.subjectId); const co = p.nodes.filter(n => /coalesced/.test(n.transmissionMechanism));
+    // Every subject appears once; network impacts are "% of local demand at risk" before buffers; residuals ≤ 100.
+    return (new Set(ids).size === ids.length && p.nodes.every(n => n.residualImpact <= 100 && n.absorbedAmount <= n.impact + 0.11) && co.every(n => n.residualImpact <= 100)) || J(p.nodes.map(n => [n.subjectId, n.impact, n.residualImpact]));
+  });
+  check('sr15', 'TEST 15 — World Reaction budgets / depth / dedupe stay respected for a large shock', () => {
+    const r = seq([CONC({ turn: 1 }).inputs, CONC({ turn: 2, crises: [{ id: 'crisis_sa_storm', name: 'SA Storm', category: 'environmental', status: 'active', affectedRegions: ['SA'] }], statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged' } }).inputs]);
+    const roots = r.events.map(e => systemicToWorldEvent(e, ['player']));
+    const out = processWorldReactions(createEmptyWorldReactionState(), roots, createSWRFixtureInputs());
+    const reacting = (i: WorldReactionIntent) => i.targetSystem !== 'living_regions' && i.targetSystem !== 'factions';
+    const keys = roots.map(e => e.dedupeKey);
+    return (roots.length > 0 && roots.length <= 8 && roots.every(e => e.reactionDepth === 0) && new Set(keys).size === keys.length && out.events.every(e => e.reactionDepth <= SWR_BUDGETS.critical.maxDepth) && out.delivered.filter(reacting).length <= roots.length * SWR_BUDGETS.major.maxReactions) || J({ roots: roots.length, ev: out.events.length });
+  });
+  check('sr16', 'TEST 16 — crisis boundary: V10.6 never creates or advances a crisis', () => {
+    const crises = [{ id: 'crisis_x', name: 'Cyclone', category: 'environmental', status: 'active', affectedRegions: ['QLD'] }];
+    const f = DIV({ crises }); const before = J(f.inputs.crises); const r = computeSystemicRisk(f.inputs, null); runSystemicStressTest(f.inputs, [{ kind: 'drought', regionIds: ['SA'] }], f.ctx);
+    return (J(f.inputs.crises) === before && !/"stage(Index)?":/.test(J(r.persisted)) && r.state.activeStressChains.every(c => c.rootEventId === 'crisis_x' || c.rootEventId.startsWith('damage:'))) || 'crisis mutated or invented';
+  });
+  check('sr17', 'TEST 17 — stability boundary: low resilience never writes stability', () => {
+    const f = CONC({ stability: 25 }); const before = J(f.inputs.stability); const r = computeSystemicRisk(f.inputs, null);
+    return (J(f.inputs.stability) === before && r.state.systems.stability.condition === 'fragile' && r.state.systems.stability.topRisks.some(t => /Public Stability owns/.test(t))) || J(r.state.systems.stability);
+  });
+  check('sr18', 'TEST 18 — infrastructure boundary: a critical project is identified, never damaged', () => {
+    const f = DIV(); const before = J(f.inputs.projects); const r = computeSystemicRisk(f.inputs, null); runSystemicStressTest(f.inputs, [{ kind: 'project_damage', projectId: 'infra_v102_sa_freight_corridor' }], f.ctx);
+    return (J(f.inputs.projects) === before && r.state.criticalPoints.length > 0) || 'project status changed';
+  });
+  const mp = (capital: number, actor = 'player'): MegaprojectsPersisted => { const p = createEmptyMegaprojectsPersisted(); (p.programs as any).mp_national_high_speed_rail = { id: 'mp_national_high_speed_rail', kind: 'national_high_speed_rail', status: 'active', abandoned: false, stages: [{ status: 'in_progress' }, { status: 'planned' }], choices: {}, contributorTotals: { [actor]: { capital, labor: 0, teamId: null } } }; return p; };
+  check('sr19', 'TEST 19 — liquidity: high cash with huge committed capital is riskier than less cash and few commitments', () => {
+    const rich = systemicLiquidityProfile(X({ viewer: { id: 'player', money: 200000, loans: [] }, megaprojects: mp(180000) }).inputs), lean = systemicLiquidityProfile(X({ viewer: { id: 'player', money: 120000, loans: [] } }).inputs);
+    return (SYSTEMIC_BAND_RANK[rich.band] < SYSTEMIC_BAND_RANK[lean.band] && rich.capitalAtRisk === 180000) || J({ rich: [rich.band, rich.resilience], lean: [lean.band, lean.resilience] });
+  });
+  check('sr20', 'TEST 20 — debt: heavy canonical debt reduces liquidity resilience (no duplicate interest model)', () => {
+    const viewer = { id: 'player', money: 60000, loans: [{ amount: 90000, principal: 20000 }] }; const i = X({ viewer }).inputs;
+    const l = systemicLiquidityProfile(i), clean = systemicLiquidityProfile(X({ viewer: { id: 'player', money: 60000, loans: [] } }).inputs);
+    return (i.viewer!.debt === calculateActorOutstandingDebt(viewer) && i.viewer!.dailyObligations === extractActorDebt(viewer as any).dailyLoanInterest && l.resilience < clean.resilience) || J({ debt: i.viewer, l: l.resilience, c: clean.resilience });
+  });
+  check('sr21', 'TEST 21 — megaproject: a large unfinished program is liquidity / capital exposure; the program is not touched', () => {
+    const m = mp(90000); const before = J(m); const r = computeSystemicRisk(X({ viewer: { id: 'player', money: 40000, loans: [] }, megaprojects: m }).inputs, null).state;
+    return (J(m) === before && r.concentrations.some(c => c.kind === 'capital') && r.liquidity.programsAtRisk.includes('mp_national_high_speed_rail') && r.systems.liquidity.exposure > 50) || J({ conc: r.concentrations.map(c => c.kind), l: r.liquidity });
+  });
+  check('sr22', 'TEST 22 — capability buffer: operational Grid-Scale Storage reduces an energy shock (bounded)', () => {
+    const sc: StressTestScenario[] = [{ kind: 'network_loss', regionId: 'SA', network: 'energy', fraction: 0.6 }];
+    const base = X({ statuses: ENERGY_P, sectors: { SA: { energy: 70, renewables: 70 } } as any, nsModifiers: { SA: { energy: -30 } } });
+    const a = node(runSystemicStressTest(base.inputs, sc), 'net:SA:energy')!, b = node(runSystemicStressTest({ ...base.inputs, innovation: capState('grid_scale_storage', 'operational') }, sc), 'net:SA:energy')!;
+    return (b.residualImpact < a.residualImpact && b.buffers.some(x => /Grid-Scale Storage/.test(x))) || J({ a, b });
+  });
+  check('sr23', 'TEST 23 — no immunity: with Grid Storage scaled, a total generation collapse can still be critical', () => {
+    const base = X({ statuses: ENERGY_P, sectors: { SA: { energy: 70, renewables: 70 } } as any, nsModifiers: { SA: { energy: -30 } } });
+    const n = node(runSystemicStressTest({ ...base.inputs, innovation: capState('grid_scale_storage', 'scaled') }, [{ kind: 'network_loss', regionId: 'SA', network: 'energy', fraction: 1 }]), 'net:SA:energy')!;
+    return (n.residualImpact >= 35 && n.absorbedAmount <= n.impact * V106_LIMITS.capabilityAbsorbCap + 60) || J(n);
+  });
+  // Recovery world: a storm hits SA freight (canonical crisis) and damages the SA corridor; later the crisis resolves.
+  const STORM = [{ id: 'crisis_sa_storm', name: 'SA Storm', category: 'environmental', status: 'active', affectedRegions: ['SA'] }];
+  const rw = (turn: number, o: FO = {}) => CONC({ turn, ...o }).inputs;
+  const shocked = (turn: number) => rw(turn, { crises: STORM, statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged' }, nsModifiers: { SA: { freight: -60, energy: -40 } } });
+  const resolvedDamaged = (turn: number) => rw(turn, { statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged' }, nsModifiers: { SA: { freight: -60, energy: -40 } } });
+  check('sr24', 'TEST 24 — crisis resolved ≠ recovered: infrastructure still damaged keeps recovery incomplete', () => {
+    const r = seq([rw(1), rw(2), shocked(3), resolvedDamaged(4)]); const rec = r.last.state.recovery.find(x => x.originEventId === 'crisis_sa_storm');
+    return (rec !== undefined && rec.status !== 'recovered' && rec.blockers.some(b => /damaged|still/.test(b))) || J({ rec, chains: r.persisted.current.chains.map(c => [c.rootEventId, c.subjects, c.baseline]) });
+  });
+  check('sr25', 'TEST 25 — repair: repairing the canonical project advances recovery', () => {
+    const r = seq([rw(1), rw(2), shocked(3), resolvedDamaged(4), rw(5), rw(6)]); const rec = r.last.state.recovery.find(x => x.originEventId === 'crisis_sa_storm') || r.states[4].recovery.find(x => x.originEventId === 'crisis_sa_storm');
+    const before = r.states[3].recovery.find(x => x.originEventId === 'crisis_sa_storm');
+    return (rec !== undefined && before !== undefined && (rec.progress > before.progress || rec.status === 'recovered') && r.persisted.history.some(h => h.kind === 'recovery_completed' || h.kind === 'recovery_started')) || J({ before, rec });
+  });
+  check('sr26', 'TEST 26 — alternative recovery: systems can recover while the original route stays damaged', () => {
+    const alt = (turn: number) => rw(turn, { statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged' } });
+    const r = seq([rw(1), rw(2), shocked(3), resolvedDamaged(4), alt(5), alt(6)]);
+    const rec = r.last.state.recovery.find(x => x.originEventId === 'crisis_sa_storm');
+    return (rec !== undefined && rec.progress >= (r.states[3].recovery.find(x => x.originEventId === 'crisis_sa_storm')?.progress || 0) && r.last.state.recovery.every(x => x.progress >= 0)) || J(rec);
+  });
+  check('sr27', 'TEST 27 — path dependence: a strong alternative supplier keeps the structure diversified after the shock', () => {
+    const before = computeSystemicRisk(CONC().inputs, null).state, after = computeSystemicRisk(DIV().inputs, null).state;
+    const cb = before.dependencies.find(d => d.providerId === 'SA' && d.domain === 'supply'), ca = after.dependencies.find(d => d.providerId === 'SA' && d.domain === 'supply');
+    return (cb !== undefined && ca !== undefined && !cb.alternatives.length && ca.alternatives.length >= 1 && SYSTEMIC_BAND_RANK[after.systems.supply.condition] > SYSTEMIC_BAND_RANK[before.systems.supply.condition]) || J({ cb, ca });
+  });
+  check('sr28', 'TEST 28 — stress test is What-If: live inputs and persisted memory are untouched', () => {
+    const f = DIV(); const live = computeSystemicRisk(f.inputs, null); const bi = J(f.inputs), bp = J(live.persisted), bns = J(f.ctx.nsInputs);
+    runSystemicStressTest(f.inputs, [{ kind: 'largest_supplier' }, { kind: 'gateway_loss' }], f.ctx);
+    return (J(f.inputs) === bi && J(live.persisted) === bp && J(f.ctx.nsInputs) === bns) || 'live state mutated';
+  });
+  check('sr29', 'TEST 29 — stress test determinism: the same test twice is identical', () => {
+    const f = DIV(); const a = runSystemicStressTest(f.inputs, LOSE_SA, f.ctx), b = runSystemicStressTest(f.inputs, LOSE_SA, f.ctx);
+    return J(a) === J(b) || 'differs';
+  });
+  check('sr30', 'TEST 30 — multi-shock: at most two simultaneous shocks, bounded combined evaluation', () => {
+    const f = CONC(); const t = runSystemicStressTest(f.inputs, [{ kind: 'lose_supply', regionId: 'SA', supply: 'minerals' }, { kind: 'network_loss', regionId: 'NSW', network: 'freight', fraction: 0.5 }, { kind: 'drought', regionIds: ['SA'] }], f.ctx);
+    return (t.scenario.length === 2 && t.projectedChain.length <= V106_LIMITS.maxNodes && t.uncertainty === 'high' && /\+/.test(t.label)) || J({ n: t.scenario.length, label: t.label });
+  });
+  check('sr31', 'TEST 31 — cascade contained: redundancy absorbs the shock and containment is recognised', () => {
+    const t = runSystemicStressTest(DIV().inputs, LOSE_SA);
+    return (t.outcome === 'contained' && t.successfulBuffers.length > 0 && /operational/.test(t.result)) || J({ o: t.outcome, r: t.result });
+  });
+  check('sr32', 'TEST 32 — cascade escalated: weak buffers escalate, still bounded', () => {
+    const t = runSystemicStressTest(CONC().inputs, LOSE_SA);
+    return (t.outcome === 'escalated' && t.criticalFailures.length > 0 && t.projectedChain.length <= V106_LIMITS.maxNodes && Math.max(...t.projectedChain.map(n => n.depth)) <= V106_LIMITS.maxDepth) || J({ o: t.outcome, f: t.criticalFailures });
+  });
+  check('sr33', 'TEST 33 — rival AI: a critical dependency changes candidate scoring by a bounded amount only (personality-scaled)', () => {
+    const s = computeSystemicRisk(DIV().inputs, null).state; const alt = s.dependencies.find(d => d.alternatives.length)!.alternatives[0];
+    const o = systemicAiOutlook(s, alt, 1), cautious0 = systemicAiOutlook(s, alt, 0), unrelated = systemicAiOutlook(s, 'ZZZ', 1);
+    return (o.factor > 0 && o.factor <= 0.05 && cautious0.factor === 0 && unrelated.factor === 0 && J(Object.keys(o).sort()) === J(['factor', 'reason'])) || J({ o, cautious0 });
+  });
+  check('sr34', 'TEST 34 — human vs AI: systemic recomputation during an AI turn keeps V9.6 bounds (turn ends)', () => {
+    const rt = createSoloAiTurnRuntime('sr', 2, 0); let p: SystemicRiskPersisted | null = null; let reason: string | null = null; let guard = 0;
+    while (!(reason = soloAiStopReason(rt)) && guard++ < 20) { const a = { type: 'invest', data: { region: 'QLD', amount: 1000 + guard } }; soloAiRecordDecision(rt, a, guard); soloAiRecordCommit(rt, a, `fp${guard}`, guard); p = computeSystemicRisk(shocked(3), p).persisted; }
+    return (reason === 'budget_exhausted' && rt.successfulActions === 2 && guard <= 3) || `${reason} after ${rt.successfulActions}`;
+  });
+  check('sr35', 'TEST 35 — Co-Pilot: critical risk changes no delegated authority and V10.6 issues no actions', () => {
+    const settings = createDefaultGameSettings(); const before = J(resolveEffectiveAutonomyAuthority(settings, null as any));
+    const s = computeSystemicRisk(CONC({ stability: 20 }).inputs, null).state;
+    return (J(resolveEffectiveAutonomyAuthority(settings, null as any)) === before && !/"(actions|commands|execute)"/.test(J(s))) || 'authority changed or actions issued';
+  });
+  check('sr36', 'TEST 36 — Guardian: configured warning appears for a liquidity-draining spend; no block, no replay warning', () => {
+    const gs = { player: { id: 'player', money: 50000, loans: [{ amount: 30000, principal: 10000 }] }, megaprojects: mp(80000) };
+    const ctx = (cost: number, isReplay = false): GuardianEvaluationContext => ({ gameState: gs, settings: createDefaultGuardianAiSettings(), actorId: 'player', actionType: 'invest', actionPayload: { cost }, source: 'human_direct', day: 5, turn: 5, currentActionTokens: 3, currentCash: 50000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay });
+    const big = evaluateSystemicRiskGuardian(ctx(42000)), small = evaluateSystemicRiskGuardian(ctx(500)), replay = evaluateSystemicRiskGuardian(ctx(42000, true));
+    return (big.length === 1 && big[0].category === 'liquidity' && big[0].severity !== 'critical' && big[0].reversible && small.length === 0 && replay.length === 0) || J({ big, small: small.length });
+  });
+  check('sr37', 'TEST 37 — save / load: an active recovery restores; derived risk recomputes identically', () => {
+    const r = seq([rw(1), rw(2), shocked(3), resolvedDamaged(4)]); const loaded = sanitizeSystemicRiskPersisted(JSON.parse(J(r.persisted)));
+    const again = computeSystemicRisk(resolvedDamaged(4), loaded).state;
+    return (J(loaded) === J(r.persisted) && strip(again) === strip(r.last.state) && again.recovery.some(x => x.originEventId === 'crisis_sa_storm')) || J({ same: J(loaded) === J(r.persisted) });
+  });
+  check('sr38', 'TEST 38 — old save: current risk derived; no fake cascade history, no events', () => {
+    const mig = migrateSaveToV71Expansion({ version: '9.0', gameState: { turnCounter: 9 } } as any);
+    const r = computeSystemicRisk(shocked(9), sanitizeSystemicRiskPersisted((mig as any).migratedData?.gameState?.systemicRisk));
+    const garbage = sanitizeSystemicRiskPersisted({ current: { chains: [{ bad: 1 }], bands: { freight: 'wobbly' } }, history: 'x' });
+    return (sanitizeSystemicRiskPersisted(undefined) === null && r.persisted.history.length === 0 && r.events.length === 0 && r.state.activeStressChains.length > 0 && garbage !== null && garbage.current.chains.length === 0 && garbage.current.bands.freight === undefined) || J({ h: r.persisted.history.length, e: r.events.length });
+  });
+  check('sr39', 'TEST 39 — replay: the same canonical sequence reproduces the same propagation and recovery milestones', () => {
+    const steps = () => [rw(1), rw(2), shocked(3), resolvedDamaged(4), rw(5), rw(6)];
+    const a = seq(steps()), b = seq(steps());
+    return (J(a.persisted.history) === J(b.persisted.history) && J(a.events) === J(b.events) && J(a.states.map(s => s.activeStressChains)) === J(b.states.map(s => s.activeStressChains)) && a.persisted.history.length >= 2) || J(a.persisted.history.map(h => h.kind));
+  });
+  check('sr41', 'Ask the Game: the 13 resilience questions route here with Fact / Calculated / Inference / Projection; unrelated questions do not', () => {
+    const storm = CONC({ turn: 2, crises: [{ id: 'crisis_sa_storm', name: 'SA Storm', category: 'environmental', status: 'active', affectedRegions: ['SA'] }], statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged' } });
+    const r = seq([CONC({ turn: 1 }).inputs, storm.inputs]); const st = r.states[r.states.length - 1];
+    const gw: any = { national: { systemic: { state: st, persisted: r.persisted, inputs: storm.inputs, ctx: storm.ctx, strategy: { label: 'Build a manufacturing economy', regions: ['VIC'] } } } };
+    const qs: Array<[string, SystemicQueryTopic]> = [['What is my biggest systemic risk?', 'biggest_risk'], ['What happens if South Australia goes offline?', 'region_offline'], ['Why is SA a single point of failure?', 'why_single_point'],
+      ['Which regions depend on SA minerals?', 'depends_on'], ['How resilient is my freight network?', 'network_resilience'], ['Why did Victoria get hit by this crisis?', 'why_hit'], ['What stopped this from becoming worse?', 'what_stopped'],
+      ['What should I repair first?', 'repair_first'], ['How long will recovery take?', 'recovery_time'], ['What would reduce my mineral dependency?', 'reduce_dependency'], ['Am I keeping enough cash reserves?', 'cash_reserves'],
+      ['Which network has the least redundancy?', 'least_redundancy'], ['Why is my economy fragile despite high output?', 'fragile_despite_output']];
+    const bad: string[] = []; const kinds = new Set<string>(); const before = J(r.persisted);
+    qs.forEach(([q, topic]) => { const d = detectSystemicQuery(q, gw); if (!d || d.topic !== topic) { bad.push(`${q} → ${d?.topic}`); return; } const a = composeSystemicAnswer(d, gw); if (!a.sections.length) bad.push(`${q}: empty`); a.sections.forEach(s => s.claims.forEach(c => { kinds.add(String((c as any).kind)); if ((c as any).kind === 'fact' && (c as any).certainty === 'high') kinds.add('calculated'); })); });
+    const unrelated = [detectSystemicQuery('How much money do I have?', gw), detectSystemicQuery('Which capability is closest to emerging?', gw), detectSystemicQuery('What kind of Australia am I building?', gw)].filter(Boolean);
+    return (!bad.length && kinds.has('fact') && kinds.has('calculated') && kinds.has('inference') && kinds.has('projection') && !unrelated.length && J(r.persisted) === before) || J({ bad, kinds: Array.from(kinds), unrelated });
+  });
+  check('sr40', 'TEST 40 — performance: repeated evaluation and stress tests stay cheap', () => {
+    const f = DIV(); let p: SystemicRiskPersisted | null = null; const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    for (let k = 0; k < 20; k++) { p = computeSystemicRisk({ ...f.inputs, turn: 5 + k }, p).persisted; runSystemicStressTest(f.inputs, LOSE_SA); }
+    const ms = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) / 20;
+    return (ms < 60 && J(p).length < 40000) || `${ms.toFixed(1)}ms per evaluation+stress test, ${J(p).length} bytes`;
+  });
+  return results;
+}
+
+// ---- V10.6 Game Intelligence ------------------------------------------------------------------------------------------
+export interface SystemicRiskWorldView { state: NationalSystemicRiskState; persisted: SystemicRiskPersisted | null; inputs: SystemicRiskInputs; ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }; strategy: { label: string; regions: string[] } | null }
+export type SystemicQueryTopic = 'biggest_risk' | 'region_offline' | 'why_single_point' | 'depends_on' | 'network_resilience' | 'why_hit' | 'what_stopped' | 'repair_first' | 'recovery_time' | 'reduce_dependency' | 'cash_reserves' | 'least_redundancy' | 'fragile_despite_output';
+export interface SystemicQuery { topic: SystemicQueryTopic; regionId: string | null; network: NationalNetworkKind | null; supply: StrategicSupplyKind | null }
+const V106_SUPPLY_WORDS: Array<[StrategicSupplyKind, RegExp]> = [['minerals', /\bmineral\w*|\bmining\b/], ['energy', /\benergy|power\b/], ['agricultural_goods', /\bagri\w*|food\b/], ['manufactured_goods', /\bmanufactur\w*/], ['technology_capability', /\btechnology\b/]];
+const V106_NET_WORDS: Array<[NationalNetworkKind, RegExp]> = [['energy', /\b(energy|power|grid)\b/], ['freight', /\b(freight|rail)\b/], ['water', /\bwater\b/], ['trade', /\b(trade|port|gateway)\b/], ['digital', /\b(digital|cable|data)\b/]];
+
+export function detectSystemicQuery(raw: string, gw: GIWorld): SystemicQuery | null {
+  const v = gw.national?.systemic; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const regionId = nsRegionInText(q); const network = V106_NET_WORDS.find(([, re]) => re.test(q))?.[0] || null; const supply = V106_SUPPLY_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+  const mk = (topic: SystemicQueryTopic): SystemicQuery => ({ topic, regionId, network, supply });
+  if (/\bbiggest systemic risk\b|\bsystemic risk\b.{0,20}\b(biggest|main|largest)\b/.test(q)) return mk('biggest_risk');
+  if (/\bwhat happens if\b.{0,30}\b(goes offline|go offline|fails?|is disrupted|disrupted|shuts? down|is lost)\b/.test(q) && (regionId || network || supply)) return mk('region_offline');
+  if (/\bwhy is .{1,30}\b(a )?single point of failure\b/.test(q)) return mk('why_single_point');
+  if (/\bwhich regions? (depend|rely) on\b/.test(q)) return mk('depends_on');
+  if (/\bhow resilient is (my|the)\b/.test(q)) return mk('network_resilience');
+  if (/\bwhy did .{1,40}\bget hit\b|\bwhy (was|is) .{1,40}\bhit by\b/.test(q)) return mk('why_hit');
+  if (/\bwhat stopped (this|the)\b.{0,30}\b(worse|crisis|cascade)\b/.test(q)) return mk('what_stopped');
+  if (/\bwhat should (i|we) repair first\b|\brepair first\b/.test(q)) return mk('repair_first');
+  if (/\bhow long will recovery take\b|\brecovery (time|take)\b/.test(q)) return mk('recovery_time');
+  if (/\bwhat would reduce my\b.{0,20}\bdependenc/.test(q)) return mk('reduce_dependency');
+  if (/\b(enough|keeping enough) cash reserves?\b|\bcash reserves?\b/.test(q)) return mk('cash_reserves');
+  if (/\bwhich network has the least redundancy\b|\bleast redundan\w*/.test(q)) return mk('least_redundancy');
+  if (/\bwhy is my\b.{0,30}\bfragile\b/.test(q)) return mk('fragile_despite_output');
+  return null;
+}
+
+export function composeSystemicAnswer(query: SystemicQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!.systemic!; const s = v.state; const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const B = (d: SystemicRiskDomain) => `${SYSTEMIC_DOMAIN_LABEL[d]} ${SYSTEMIC_BAND_LABEL[s.systems[d].condition].toLowerCase()}`;
+  let title = 'Resilience & systemic risk'; let shape: GIAnswerShape = 'explanation';
+  const chainLines = (nodes: SystemicStressNode[]) => nodes.filter(n => n.depth >= 1).slice(0, 5).map(n => C(`Depth ${n.depth}: ${n.label} — ${n.transmissionMechanism}${n.absorbedAmount > 0 ? `; ${n.buffers[0] || 'buffer'} absorbed part` : ''} → ${n.projectedCondition}.`, 'projection'));
+  switch (query.topic) {
+    case 'biggest_risk': {
+      title = 'Your biggest systemic risk'; shape = 'diagnosis';
+      const d = s.dependencies[0]; const c = s.concentrations[0]; const cp = s.criticalPoints[0];
+      say('f', 'Fact', [d ? C(d.reason + '.', 'fact') : null, c ? C(`${c.shareLabel}.`, 'fact') : null]);
+      say('c', 'Calculated', [(() => { const d = s.resilience.mostFragile || 'supply'; const b = s.systems[d].condition; return C(SYSTEMIC_BAND_RANK[b] >= SYSTEMIC_BAND_RANK.stable ? `Your weakest system is ${SYSTEMIC_DOMAIN_LABEL[d]} — still ${SYSTEMIC_BAND_LABEL[b].toLowerCase()}.` : `${SYSTEMIC_DOMAIN_LABEL[d]} is ${SYSTEMIC_BAND_LABEL[b].toLowerCase()} — your most fragile system.`, 'calculated'); })(), cp ? C(`Critical single point: ${cp.label} (${cp.severity}).`, 'calculated') : null]);
+      say('i', 'Inference', [C(d && !d.alternatives.length ? `${d.consumerIds.join(', ')} is highly exposed to a disruption at ${d.providerId}.` : `Your exposure is spread; ${s.resilience.strongestBuffer ? `${s.resilience.strongestBuffer} is your main buffer` : 'buffers are limited'}.`, 'inference')]);
+      if (d && !d.alternatives.length) say('p', 'Projection', [C(`Adding an alternative ${d.domain} source would likely reduce that exposure.`, 'projection')]);
+      break;
+    }
+    case 'region_offline': {
+      const sc: StressTestScenario = query.supply && query.regionId ? { kind: 'lose_supply', regionId: query.regionId, supply: query.supply } : query.regionId && query.network ? { kind: 'network_loss', regionId: query.regionId, network: query.network, fraction: 0.7 } : query.regionId ? { kind: 'lose_supply', regionId: query.regionId, supply: (v.inputs.industries?.dependencies.find(d => d.providerRegionId === query.regionId)?.supply || 'minerals') } : { kind: 'largest_supplier' };
+      const t = runSystemicStressTest(v.inputs, [sc], v.ctx); title = `Stress test: ${t.label}`; shape = 'simulation';
+      say('f', 'Fact', [C('Isolated What-If — the live match is unchanged.', 'fact'), ...t.assumptions.slice(1, 2).map(a => C(a.text, 'fact'))]);
+      say('p', 'Projection', [...chainLines(t.projectedChain), C(`Result: ${t.result}`, 'projection'), ...t.canonicalProjection.slice(0, 3).map(x => C(`Canonical recompute: ${x.subject} ${x.before} → ${x.after}.`, 'projection'))]);
+      if (t.successfulBuffers.length) say('i', 'Inference', [C(`Buffers that would help: ${t.successfulBuffers.slice(0, 3).join('; ')}.`, 'inference')]);
+      break;
+    }
+    case 'why_single_point': {
+      const cp = s.criticalPoints.find(c => !query.regionId || c.subjectId === query.regionId || c.label.includes(query.regionId!)) || s.criticalPoints[0];
+      if (!cp) { say('f', 'Fact', [C('No critical single point of failure right now.', 'fact')]); break; }
+      title = `Why ${cp.label} is a single point of failure`; shape = 'diagnosis';
+      say('f', 'Fact', [C(cp.reason + '.', 'fact')]);
+      say('c', 'Calculated', [cp.directEffects.length ? C(`Direct effect if unavailable: ${cp.directEffects.join(', ')}.`, 'calculated') : null, cp.downstreamEffects.length ? C(`Downstream: ${cp.downstreamEffects.join(', ')}.`, 'calculated') : null]);
+      say('i', 'Inference', [C(cp.alternatives.length ? `Alternatives: ${cp.alternatives.join(', ')}.` : 'There is no alternative today — that is what makes it critical.', 'inference')]);
+      break;
+    }
+    case 'depends_on': {
+      title = 'Who depends on this?'; shape = 'explanation';
+      const deps = s.dependencies.filter(d => !query.regionId || d.providerId === query.regionId);
+      say('f', 'Fact', deps.slice(0, 5).map(d => C(`${d.reason}.`, 'fact')));
+      if (!deps.length) say('f', 'Fact', [C('Nothing depends heavily on that subject.', 'fact')]);
+      break;
+    }
+    case 'network_resilience': {
+      const d: SystemicRiskDomain = query.network ? query.network : 'energy'; const x = s.systems[d]; title = `How resilient is your ${SYSTEMIC_DOMAIN_LABEL[d].toLowerCase()} network?`; shape = 'status';
+      say('f', 'Fact', [C(`${SYSTEMIC_DOMAIN_LABEL[d]}: ${SYSTEMIC_BAND_LABEL[x.condition]} (${x.trend}).`, 'fact')]);
+      say('c', 'Calculated', [C(`Spare capacity ${Math.round(x.spareCapacity)}%, redundancy ${Math.round(x.redundancy)}%, concentration ${Math.round(x.concentration)}%.`, 'calculated'), ...x.topRisks.slice(0, 2).map(r => C(`Risk: ${r}.`, 'calculated')), ...x.buffers.slice(0, 2).map(b => C(`Buffer: ${b}.`, 'calculated'))]);
+      say('i', 'Inference', [C('Capacity is not resilience: what matters is spare capacity, alternatives and how concentrated the sources are.', 'inference')]);
+      break;
+    }
+    case 'why_hit': case 'what_stopped': {
+      const c = s.activeStressChains[0] || null; const hist = (v.persisted?.history || []).filter(h => h.kind === 'cascade_contained' || h.kind === 'cascade_escalated' || h.kind === 'cascade_started').slice(-2);
+      title = query.topic === 'why_hit' ? 'Why was it hit?' : 'What stopped this from getting worse?'; shape = 'explanation';
+      if (!c) { say('f', 'Fact', hist.length ? hist.map(h => C(`R${h.turn}: ${h.summary}`, 'fact')) : [C('No cascade is active right now.', 'fact')]); break; }
+      say('f', 'Fact', [C(`Root: ${c.label} (round ${c.startedTurn}).`, 'fact')]);
+      say('c', 'Causal path', c.nodes.filter(n => n.depth >= 1).slice(0, 5).map(n => C(`${n.label} ← ${n.transmissionMechanism} (residual ${systemicImpactBand(n.residualImpact)}).`, 'calculated')));
+      say('i', 'Inference', [C(c.buffersActivated.length ? `Buffers that absorbed it: ${c.buffersActivated.slice(0, 3).join('; ')}.` : 'No buffer absorbed this shock.', 'inference')]);
+      break;
+    }
+    case 'repair_first': case 'recovery_time': {
+      const r = s.recovery.find(x => x.status !== 'recovered') || null; title = query.topic === 'repair_first' ? 'What to repair first' : 'How long will recovery take?'; shape = 'recommendation';
+      if (!r) { say('f', 'Fact', [C('No recovery is under way.', 'fact')]); break; }
+      say('f', 'Fact', [C(`${r.label}: ${r.status.replace(/_/g, ' ')} (${Math.round(r.progress * 100)}% back to baseline).`, 'fact'), ...r.blockers.slice(0, 2).map(b => C(`Blocker: ${b}.`, 'fact'))]);
+      say('i', 'Inference', [C(r.blockers[0] ? `Highest-leverage step for recovery: ${r.blockers[0].replace(/ remains damaged| still .*/, '')} — relative to recovery, not a universal answer.` : 'Recovery is driven by the systems themselves now.', 'inference')]);
+      say('p', 'Projection', [C(query.topic === 'recovery_time' ? 'Recovery is not timed: it completes when repairs, alternatives or diversification restore the affected systems to baseline.' : `Options: ${r.paths.join(' / ')}.`, 'projection')]);
+      break;
+    }
+    case 'reduce_dependency': {
+      const supply = query.supply || 'minerals'; title = `What would reduce your ${SUPPLY_LABEL[supply].toLowerCase()} dependency?`; shape = 'plan';
+      const dep = s.dependencies.find(d => d.domain === 'supply' && d.reason.toLowerCase().includes(SUPPLY_LABEL[supply].toLowerCase())) || s.dependencies[0];
+      say('f', 'Fact', [dep ? C(`${dep.reason}.`, 'fact') : C('No major dependency on that supply.', 'fact')]);
+      const alts = systemicAlternativeSuppliers(v.inputs, supply, dep ? [dep.providerId] : []);
+      say('c', 'Calculated', [C(alts.length ? `Spare ${SUPPLY_LABEL[supply].toLowerCase()} today: ${alts.slice(0, 3).map(a => `${a.regionId} (${a.surplus >= 20 ? 'substantial' : 'limited'})`).join(', ')}.` : `No region holds spare ${SUPPLY_LABEL[supply].toLowerCase()} today.`, 'calculated')]);
+      say('p', 'Projection', [C(`Expanding a second ${SUPPLY_LABEL[supply].toLowerCase()} producer and its freight link would likely reduce the exposure.`, 'projection')]);
+      break;
+    }
+    case 'cash_reserves': {
+      const l = s.liquidity; title = 'Are you keeping enough cash reserves?'; shape = 'diagnosis';
+      say('f', 'Fact', l.explanation.map(e => C(e + '.', 'fact')));
+      say('c', 'Calculated', [C(`Liquidity resilience: ${SYSTEMIC_BAND_LABEL[l.band]} (free buffer $${l.freeBuffer.toLocaleString()}).`, 'calculated')]);
+      say('i', 'Inference', [C(l.band === 'fragile' || l.band === 'critical' ? 'Thin: a shock could force selling assets, borrowing or pausing programs. That is a legitimate high-growth choice — just a fragile one.' : 'Your buffer can absorb a moderate shock.', 'inference')]);
+      break;
+    }
+    case 'least_redundancy': {
+      title = 'Which network has the least redundancy?'; shape = 'comparison';
+      const nets = (['freight', 'energy', 'water', 'trade', 'digital'] as SystemicRiskDomain[]).sort((a, b) => s.systems[a].redundancy - s.systems[b].redundancy);
+      say('c', 'Calculated', nets.map(d => C(`${SYSTEMIC_DOMAIN_LABEL[d]}: redundancy ${Math.round(s.systems[d].redundancy)}% · ${SYSTEMIC_BAND_LABEL[s.systems[d].condition]}.`, 'calculated')));
+      say('i', 'Inference', [C(`${SYSTEMIC_DOMAIN_LABEL[nets[0]]} has the least redundancy.`, 'inference')]);
+      break;
+    }
+    case 'fragile_despite_output': {
+      title = 'Why is the economy fragile despite strong output?'; shape = 'diagnosis';
+      say('f', 'Fact', [C(s.resilience.summary, 'fact')]);
+      say('c', 'Calculated', s.concentrations.slice(0, 3).map(c => C(`${c.shareLabel}${c.upside ? ` (upside: ${c.upside.toLowerCase()})` : ''}.`, 'calculated')));
+      say('i', 'Inference', [C('Output measures what the economy produces today; resilience measures what happens when one part fails. Concentration and missing alternatives make strong output fragile.', 'inference')]);
+      break;
+    }
+  }
+  if (v.strategy && (query.topic === 'biggest_risk' || query.topic === 'fragile_despite_output')) {
+    const top = s.dependencies.find(d => v.strategy!.regions.some(r => d.consumerIds.some(c => c.startsWith(r)) || d.providerId === r));
+    if (top) say('g', 'Contingency (GI3 owns the plan)', [C(`Primary: ${v.strategy.label}. Known risk: ${top.reason}. Contingency: ${top.alternatives.length ? `lean on ${top.alternatives.join('/')}` : 'develop an alternative source'} if ${top.providerId} is disrupted. Not executed automatically.`, 'inference')]);
+  }
+  if (!sections.length) say('none', null, [C('No systemic risk matches that question.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+// ---- V10.6 UI -----------------------------------------------------------------------------------------------------------
+const V106_BAND_CLASS: Record<SystemicRiskBand, string> = { robust: 'text-emerald-200', resilient: 'text-emerald-300', stable: 'text-sky-300', exposed: 'text-amber-300', fragile: 'text-orange-300', critical: 'text-rose-300 font-bold' };
+/** PLAY: one line only when something systemic matters (cascade, recovery, fragile domain, critical dependency). */
+export const SystemicRiskPlayLine: React.FC<{ state: NationalSystemicRiskState | null; theme: any; onOpen: () => void; onAsk: (q: string) => void }> = ({ state, theme, onOpen, onAsk }) => {
+  const line = systemicPlayLine(state); if (!line) return null;
+  const border = line.tone === 'escalated' ? 'border-rose-500' : line.tone === 'contained' ? 'border-emerald-500' : line.tone === 'recovery' ? 'border-sky-500' : 'border-amber-500';
+  return (
+    <section aria-label="Systemic risk" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="sr-play-line" data-tone={line.tone}>
+      <span className="font-bold uppercase tracking-wide opacity-70">{line.title}</span>
+      <button type="button" className={`px-2 py-0.5 rounded border ${border} text-left`} onClick={onOpen}>{line.text}</button>
+      <button type="button" className="underline opacity-80" onClick={() => onAsk(line.tone === 'contained' ? 'What stopped this crisis from becoming worse?' : line.tone === 'recovery' ? 'What should I repair first?' : 'What is my biggest systemic risk?')}>Why?</button>
+    </section>
+  );
+};
+/** Cascade view: root → direct → downstream, with buffers. Static (no animation) — respects Reduced Motion by design. */
+export const SystemicCascadeView: React.FC<{ nodes: SystemicStressNode[]; title: string }> = ({ nodes, title }) => (
+  <div className="mt-1" data-testid="sr-cascade">
+    <div className="font-bold">{title}</div>
+    {nodes.slice(0, 12).map(n => (
+      <div key={n.id} style={{ paddingLeft: `${n.depth * 14}px` }} data-testid="sr-cascade-node">
+        {n.depth > 0 ? '↳ ' : '◉ '}<b>{n.label}</b> <span className="opacity-70">({systemicImpactBand(Math.min(100, n.impact))}{n.absorbedAmount > 0 ? ` · absorbed ${Math.round(Math.min(100, n.absorbedAmount))}` : ''} → {n.projectedCondition || systemicImpactBand(n.residualImpact)})</span>
+        {n.buffers.length > 0 && <div style={{ paddingLeft: '14px' }} className="text-emerald-300">🛡 {n.buffers.join(' · ')}</div>}
+      </div>))}
+  </div>
+);
+/** INTELLIGENCE › Resilience & Systemic Risk (10 views). Bands and causes, not raw formulas. */
+export const ResilienceCenter: React.FC<{ view: SystemicRiskWorldView; theme: any; onAsk: (q: string) => void }> = ({ view, theme, onAsk }) => {
+  const tabs = ['overview', 'dependencies', 'critical points', 'concentration', 'buffers', 'stress tests', 'active cascades', 'recovery', 'liquidity', 'history'] as const;
+  const [tab, setTab] = useState<typeof tabs[number]>('overview');
+  const s = view.state;
+  const [depSel, setDepSel] = useState<string>(s.dependencies[0]?.id || '');
+  const [scKind, setScKind] = useState<string>('largest_supplier'); const [scRegion, setScRegion] = useState('WA'); const [sc2, setSc2] = useState(''); const [compareProj, setCompareProj] = useState(''); const [spend, setSpend] = useState(40000);
+  const [test, setTest] = useState<{ t: StrategicStressTest; cmp: string[] | null } | null>(null);
+  const [liq, setLiq] = useState<LiquidityProfile | null>(null);
+  const buildScenario = (k: string, r: string): StressTestScenario | null => (k === 'largest_supplier' ? { kind: 'largest_supplier' } : k === 'gateway_loss' ? { kind: 'gateway_loss' } : k === 'digital_backbone' ? { kind: 'digital_backbone' } : k === 'drought' ? { kind: 'drought', regionIds: [r] } : k === 'lose_minerals' ? { kind: 'lose_supply', regionId: r, supply: 'minerals' } : k === 'lose_energy' ? { kind: 'network_loss', regionId: r, network: 'energy', fraction: 0.7 } : k === 'freight' ? { kind: 'network_loss', regionId: r, network: 'freight', fraction: 0.7 } : k.startsWith('mp:') ? { kind: 'megaproject_delay', programId: k.slice(3) } : null);
+  const run = () => {
+    const a = buildScenario(scKind, scRegion); const b = sc2 ? buildScenario(sc2, scRegion) : null; const scs = [a, b].filter(Boolean) as StressTestScenario[];
+    const t = runSystemicStressTest(view.inputs, scs, view.ctx);
+    let cmp: string[] | null = null;
+    if (compareProj && view.ctx.nsInputs) {
+      const ov = <X extends { id?: string; status?: string }>(xs: X[]) => xs.map(p => (p && String(p.id) === compareProj ? { ...p, status: 'active' } : p));
+      const ns = computeNationalSystems({ ...view.ctx.nsInputs, projects: ov(view.ctx.nsInputs.projects as any[]) as any }, null, { emit: false }).state;
+      const sc = view.ctx.scInputs ? computeIndustriesSupplyChains({ ...view.ctx.scInputs, projects: ov(view.ctx.scInputs.projects as any[]) as any, national: ns }, null, { emit: false }).state : view.inputs.industries;
+      cmp = compareStressTests(view.inputs, { ...view.inputs, national: ns, industries: sc, projects: ov(view.inputs.projects) }, scs).lines;
+    }
+    setTest({ t, cmp });
+  };
+  const dep = s.dependencies.find(d => d.id === depSel) || s.dependencies[0];
+  const depChain = dep ? propagateSystemicShock(view.inputs, [{ subjectId: dep.sourceSystem === 'industries' ? `sup:${dep.providerId}:${(view.inputs.industries?.dependencies.find(x => `sd:ind:${x.id}` === dep.id)?.supply || 'minerals')}` : `net:${dep.providerId}:${dep.domain}`, impact: 70, mechanism: `${dep.providerId} disrupted (illustration)` }]).nodes : [];
+  const candidates = view.inputs.projects.filter(p => p.status === 'unlocked' || p.status === 'under_construction' || p.status === 'damaged').slice(0, 40);
+  return (
+    <section aria-labelledby="sr-center-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="sr-center">
+      <h3 id="sr-center-h" className="font-bold">🛡 Resilience & Systemic Risk</h3>
+      <div className="opacity-80 text-xs">Can the Australia you built take a hit and keep functioning? Crises stay with the Crisis Engine — this shows exposure, buffers, cascades and recovery.</div>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs" role="tablist">{tabs.map(t => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-emerald-400 font-bold' : theme.border}`} data-testid={`sr-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-1" data-testid="sr-center-body">
+        {tab === 'overview' && <div data-testid="sr-overview">
+          <div className="flex flex-wrap gap-x-3">{SYSTEMIC_DOMAINS.map(d => <span key={d}>{SYSTEMIC_DOMAIN_LABEL[d]} <b className={V106_BAND_CLASS[s.systems[d].condition]}>{SYSTEMIC_BAND_LABEL[s.systems[d].condition].toUpperCase()}</b></span>)}</div>
+          {s.resilience.highestExposure && <div>Highest exposure <b>{s.resilience.highestExposure}</b></div>}
+          {s.resilience.mostResilient && <div>Most resilient system <b>{SYSTEMIC_DOMAIN_LABEL[s.resilience.mostResilient]}</b> · Most fragile <b>{s.resilience.mostFragile ? SYSTEMIC_DOMAIN_LABEL[s.resilience.mostFragile] : '—'}</b></div>}
+          {s.resilience.criticalSinglePoint && <div>Critical single point <b>{s.resilience.criticalSinglePoint}</b></div>}
+          {s.resilience.strongestBuffer && <div>Strongest buffer <b>{s.resilience.strongestBuffer}</b></div>}
+          <div>Liquidity <b className={V106_BAND_CLASS[s.liquidity.band]}>{SYSTEMIC_BAND_LABEL[s.liquidity.band]}</b></div>
+          {view.strategy && s.dependencies[0] && <div className="mt-1 p-2 rounded border border-emerald-700/40" data-testid="sr-contingency">Strategy <b>{view.strategy.label}</b> · Known risk <b>{s.dependencies[0].reason}</b> · Contingency <b>{s.dependencies[0].alternatives.length ? `lean on ${s.dependencies[0].alternatives.join('/')}` : 'develop an alternative source'}</b> <span className="opacity-60">(GI3 owns the plan; nothing executes automatically)</span></div>}
+        </div>}
+        {tab === 'dependencies' && <div data-testid="sr-deps">
+          <select aria-label="Dependency" className="bg-transparent border rounded px-1 max-w-full" value={dep?.id || ''} onChange={e => setDepSel(e.target.value)}>{s.dependencies.map(d => <option key={d.id} value={d.id}>{d.reason.slice(0, 80)}</option>)}</select>
+          {dep && <div className="mt-1"><div><b>{dep.importance.toUpperCase()}</b> · {dep.shareLabel} share · alternatives {dep.alternatives.join(', ') || 'none'} · propagation reach {dep.propagationPotential}</div><SystemicCascadeView nodes={depChain} title={`If ${dep.providerId} were disrupted (illustration):`} /></div>}
+          {!s.dependencies.length && <div className="opacity-70">No major dependencies.</div>}
+        </div>}
+        {tab === 'critical points' && (s.criticalPoints.length ? s.criticalPoints.map(c => <div key={c.id} className="mb-1"><b>{c.label}</b> <span className="opacity-70">({c.subjectType}, {c.severity})</span><div className="pl-3">{c.reason}{c.directEffects.length ? ` · direct: ${c.directEffects.join(', ')}` : ''}{c.downstreamEffects.length ? ` · downstream: ${c.downstreamEffects.join(', ')}` : ''} · alternatives: {c.alternatives.join(', ') || 'none'}</div></div>) : <div className="opacity-70">No critical single points.</div>)}
+        {tab === 'concentration' && (s.concentrations.length ? s.concentrations.map(c => <div key={c.id}>{c.kind}: <b>{c.shareLabel}</b> <span className="opacity-70">({c.band.replace(/_/g, ' ')})</span>{c.upside ? <span className="text-emerald-300"> · upside: {c.upside}</span> : null}{c.alternatives.length ? ` · alternatives ${c.alternatives.join(', ')}` : ''}</div>) : <div className="opacity-70">Nothing notably concentrated.</div>)}
+        {tab === 'buffers' && (s.buffers.length ? s.buffers.map(b => <div key={b.id}>🛡 {b.explanation} <span className="opacity-70">({b.structural ? 'structural' : 'temporary'} · {b.kind.replace(/_/g, ' ')})</span></div>) : <div className="opacity-70">Few buffers — shocks would pass straight through.</div>)}
+        {tab === 'stress tests' && <div data-testid="sr-stress">
+          <div className="flex flex-wrap items-center gap-1">
+            <select aria-label="Scenario" className="bg-transparent border rounded px-1" value={scKind} onChange={e => setScKind(e.target.value)} data-testid="sr-scenario">{[['largest_supplier', 'Lose largest supplier'], ['lose_minerals', 'Lose region mineral supply'], ['lose_energy', 'Reduce region energy 70%'], ['freight', 'Damage region freight 70%'], ['gateway_loss', 'Lose largest export gateway'], ['digital_backbone', 'Damage digital backbone'], ['drought', 'Major drought'], ...Object.keys(view.inputs.megaprojects?.programs || {}).map(id => [`mp:${id}`, `Delay ${MEGAPROJECT_DEF_BY_KIND[view.inputs.megaprojects!.programs[id].kind].title}`])].map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+            <select aria-label="Region" className="bg-transparent border rounded px-1" value={scRegion} onChange={e => setScRegion(e.target.value)}>{Object.keys(REGIONS).map(r => <option key={r} value={r}>{r}</option>)}</select>
+            <select aria-label="Second shock" className="bg-transparent border rounded px-1" value={sc2} onChange={e => setSc2(e.target.value)}><option value="">+ no second shock</option><option value="drought">+ drought</option><option value="freight">+ freight damage</option><option value="lose_energy">+ energy cut</option></select>
+            <select aria-label="Compare with project" className="bg-transparent border rounded px-1 max-w-[12rem]" value={compareProj} onChange={e => setCompareProj(e.target.value)} data-testid="sr-compare"><option value="">compare: none</option>{candidates.map(p => <option key={p.id} value={p.id}>with {p.title}</option>)}</select>
+            <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={run} data-testid="sr-run-stress">Run stress test</button>
+          </div>
+          {test && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="sr-stress-result">
+            <div className="font-bold">IF: {test.t.label.toUpperCase()}</div>
+            <SystemicCascadeView nodes={test.t.projectedChain} title={!test.t.scenario.length ? 'NOTHING TO TEST — no economy depends on that subject yet' : test.t.projectedChain.filter(n => n.depth >= 1).length === 0 ? 'NO CASCADE — the shock stays local' : test.t.outcome === 'contained' ? 'CASCADE CONTAINED' : test.t.outcome === 'escalated' ? 'CASCADE ESCALATES' : 'LIMITED IMPACT'} />
+            {test.t.canonicalProjection.length > 0 && <div className="mt-1">Canonical recompute: {test.t.canonicalProjection.slice(0, 4).map(x => `${x.subject} ${x.before} → ${x.after}`).join(' · ')}</div>}
+            <div>Result: <b>{test.t.result}</b> · uncertainty {test.t.uncertainty}</div>
+            {test.cmp && <div className="mt-1" data-testid="sr-compare-result"><b>Current vs with project:</b> {test.cmp.join(' · ')}</div>}
+            <div className="opacity-70">Isolated What-If — nothing in the match changed.</div>
+          </div>}
+        </div>}
+        {tab === 'active cascades' && (s.activeStressChains.length ? s.activeStressChains.map(c => <div key={c.id} className="mb-1" data-testid="sr-chain"><div><b>{c.label}</b> · {c.outcome === 'contained' ? '✓ contained' : c.outcome === 'escalated' ? '⚠ escalated' : 'limited'} · since R{c.startedTurn}</div><SystemicCascadeView nodes={c.nodes} title="" /></div>) : <div className="opacity-70">No active cascade. Shocks come from the Crisis Engine and damaged infrastructure.</div>)}
+        {tab === 'recovery' && (s.recovery.length ? s.recovery.map(r => <div key={r.id} className="mb-1" data-testid="sr-recovery"><b>{r.label}</b>: {r.status.replace(/_/g, ' ')} ({Math.round(r.progress * 100)}%){r.stalled ? ' · STALLED' : ''}<div className="pl-3">Baseline: {r.baselineCondition}</div><div className="pl-3">Now: {r.currentCondition}</div>{r.blockers.length > 0 && <div className="pl-3 text-amber-300">Blocked by: {r.blockers.join('; ')}</div>}{r.recoveryDrivers.length > 0 && <div className="pl-3 text-emerald-300">Drivers: {r.recoveryDrivers.join('; ')}</div>}<div className="pl-3 opacity-80">Paths: {r.paths.join(' / ')}</div></div>) : <div className="opacity-70">Nothing to recover from.</div>)}
+        {tab === 'liquidity' && <div data-testid="sr-liquidity">
+          <div>Liquidity <b className={V106_BAND_CLASS[s.liquidity.band]}>{SYSTEMIC_BAND_LABEL[s.liquidity.band]}</b> · free buffer ${s.liquidity.freeBuffer.toLocaleString()}</div>
+          {s.liquidity.explanation.map(e => <div key={e}>• {e}</div>)}
+          <div className="flex items-center gap-1 mt-1">What if I spend <input aria-label="Spend" type="number" min={0} step={5000} value={spend} onChange={e => setSpend(Math.max(0, Number(e.target.value) || 0))} className="w-24 bg-transparent border rounded px-1" />
+            <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setLiq(systemicLiquidityProfile(view.inputs, spend))} data-testid="sr-liq-run">Project</button></div>
+          {liq && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="sr-liq-result">Cash ${liq.cash.toLocaleString()} · Liquidity resilience <b className={V106_BAND_CLASS[liq.band]}>{SYSTEMIC_BAND_LABEL[liq.band]}</b> · free buffer ${liq.freeBuffer.toLocaleString()} <span className="opacity-70">(isolated — uses only canonical obligations)</span></div>}
+        </div>}
+        {tab === 'history' && <div data-testid="sr-history">{(view.persisted?.history || []).length ? [...view.persisted!.history].reverse().slice(0, 15).map(h => <div key={h.id}>R{h.turn}: {h.summary}</div>) : <div className="opacity-70">No systemic history yet — it begins when something happens (never reconstructed).</div>}</div>}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{['What is my biggest systemic risk?', 'Which network has the least redundancy?', 'Am I keeping enough cash reserves?', 'Why is my national economy fragile despite strong output?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** LAB › V10.6 Resilience & Systemic Risk Inspector (15 views). Raw numbers and structured calculations live here. */
+export const SystemicRiskInspector: React.FC<{ state: NationalSystemicRiskState | null; persisted: SystemicRiskPersisted | null; view: SystemicRiskWorldView | null; theme: any; enabled: boolean; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number } }> = ({ state, persisted, view, theme, enabled, diag }) => {
+  const [open, setOpen] = useState(false); const [tab, setTab] = useState('overview'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null); const [st, setSt] = useState<StrategicStressTest | null>(null);
+  const tabs = ['overview', 'risk domains', 'dependencies', 'concentrations', 'critical points', 'buffers', 'active stress chains', 'propagation graph', 'recovery', 'liquidity', 'world reaction', 'stress tests', 'input hash', 'performance', 'self tests'];
+  const s = state; const issues = s ? validateSystemicRiskState(s, persisted) : [];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV106ResilienceSystemicRiskSelfTests()); } catch (err) { console.error('[V10.6 self-tests]', err); } finally { setBusy(false); } };
+  const nodeLine = (n: SystemicStressNode) => <div key={n.id}>{'  '.repeat(n.depth)}d{n.depth} {n.subjectId} impact {n.impact} − absorbed {n.absorbedAmount} = residual {n.residualImpact} [{n.transmissionMechanism}]{n.causedByNodeId ? ` ← ${n.causedByNodeId}` : ''}{n.buffers.length ? ` | ${n.buffers.join('; ')}` : ''}</div>;
+  return (
+    <section aria-labelledby="sr-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="sr-inspector">
+      <div className="flex items-center justify-between"><h3 id="sr-lab-h" className="font-bold text-sm">🛡 V10.6 Resilience & Systemic Risk Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="sr-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (s ? `rev ${s.revision} · ${s.dependencies.length} deps · ${s.criticalPoints.length} critical points · ${s.activeStressChains.length} chains · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'not computed yet') : 'Resilience & Systemic Risk is OFF (V10.0–V10.5 continue unchanged)'}</div>
+      {open && s && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-emerald-400 font-bold' : theme.border}`} data-testid={`sr-lab-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="sr-inspector-body">
+            {tab === 'overview' && <div>{s.resilience.summary} · limits {JSON.stringify(V106_LIMITS)}</div>}
+            {tab === 'risk domains' && SYSTEMIC_DOMAINS.map(d => { const x = s.systems[d]; return <div key={d}>{d}: res {x.resilience} ({x.condition}, {x.trend}) exp {x.exposure} spare {x.spareCapacity} red {x.redundancy} conc {x.concentration} recov {x.recoveryCapacity} | {x.topRisks.join('; ')}</div>; })}
+            {tab === 'dependencies' && s.dependencies.map(d => <div key={d.id}>{d.id} [{d.sourceSystem}] {d.importance} share {d.concentration} alt [{d.alternatives.join(',')}] reach {d.propagationPotential}</div>)}
+            {tab === 'concentrations' && s.concentrations.map(c => <div key={c.id}>{c.id} {c.kind} {c.concentration} {c.band} — {c.shareLabel}</div>)}
+            {tab === 'critical points' && s.criticalPoints.map(c => <div key={c.id}>{c.id} {c.subjectType}:{c.subjectId} {c.severity} direct [{c.directEffects.join(', ')}] downstream [{c.downstreamEffects.join(', ')}]</div>)}
+            {tab === 'buffers' && s.buffers.map(b => <div key={b.id}>{b.id} {b.kind} {b.structural ? 'structural' : 'temporary'} strength {b.strength} available {b.available}</div>)}
+            {tab === 'active stress chains' && (s.activeStressChains.length ? s.activeStressChains.map(c => <div key={c.id}><b>ROOT {c.rootEventId} ({c.rootType}) {c.outcome} max depth {c.maxDepthReached}</b>{c.nodes.map(nodeLine)}</div>) : <div>No active chains.</div>)}
+            {tab === 'propagation graph' && view && <div>{!s.dependencies.length && <div className="opacity-70">No significant dependency edges yet (edges appear once regions rely on each other's supply or networks).</div>}{s.dependencies.slice(0, 6).map(d => <div key={d.id}>{d.providerId} → {d.consumerIds.join(', ')} ({d.domain}, {d.shareLabel})</div>)}</div>}
+            {tab === 'recovery' && (persisted?.current.chains || []).map(c => <div key={c.id}>{c.id} {c.status} rec {c.recovery.status} {Math.round(c.recovery.progress * 100)}% stalled {c.recovery.stalledTurns} baseline {JSON.stringify(c.baseline)} damagedAtStart [{c.damagedAtStart.join(',')}]</div>)}
+            {tab === 'liquidity' && <div>{JSON.stringify(s.liquidity)}</div>}
+            {tab === 'world reaction' && <div>events emitted {diag.eventsEmitted} · one root per shock, reactionDepth 0, dedupe sr:kind:root:turn · SWR depth/budget/cycle/cooldown rules unchanged</div>}
+            {tab === 'stress tests' && view && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={() => setSt(runSystemicStressTest(view.inputs, [{ kind: 'largest_supplier' }], view.ctx))} data-testid="sr-lab-stress">Run: lose largest supplier</button>{st && <div><div>{st.label} → {st.outcome} ({st.uncertainty})</div>{st.projectedChain.map(nodeLine)}<div>canonical: {JSON.stringify(st.canonicalProjection)}</div></div>}</div>}
+            {tab === 'input hash' && <div>{s.inputHash} (persisted {persisted?.inputHash || '—'})</div>}
+            {tab === 'performance' && <div>recomputes {diag.recomputes} · last {diag.lastMs} ms · compute {s.computeMs} ms · last reason: {diag.lastReason}</div>}
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="sr-run-tests">{busy ? 'Running…' : 'Run V10.6 self-tests'}</button>
+              {tests && <div data-testid="sr-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
             {issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}
           </div>
         </div>
@@ -151570,6 +152881,15 @@ function dispatchGameSettingsChange(
       // world-state evidence only — never treated as the player's hidden plan; adds no action and no extra AI loop.
       // V10.5: actual useful actions (fund infrastructure / invest) where a capability is close to emerging or adoption
       // score slightly higher (≤ +6%, public structure only). No research action, no extra AI loop, no difficulty change.
+      // V10.6: risk-averse / long-horizon rivals value building ALTERNATIVES to critical single points slightly more
+      // (≤ +5%, scaled by the difficulty profile's risk tolerance and planning depth). Public structure only; no cheating.
+      const v106Sr = srStateRef.current;
+      if (v106Sr) { const aversion = Math.max(0, Math.min(1, 1 - Number(profile?.riskTolerance ?? 0.5))) * Math.min(1, Number(profile?.planningDepth ?? 2) / 3);
+        decisions.forEach(decision => {
+          if (decision.type !== 'fund_infrastructure' && decision.type !== 'invest' && decision.type !== 'region_deposit') return;
+          const reg = String(decision.data?.region || (decision.type === 'fund_infrastructure' ? (gameStateLiveRef.current as any)?.infrastructureProjects?.[String(decision.data?.projectId || '')]?.regionId || '' : ''));
+          const o = systemicAiOutlook(v106Sr, reg, aversion); if (o.factor > 0) decision.score *= 1 + o.factor;
+        }); }
       const v105Ic = icStateRef.current;
       if (v105Ic) decisions.forEach(decision => {
         if (decision.type !== 'fund_infrastructure' && decision.type !== 'invest' && decision.type !== 'region_deposit') return;
@@ -176282,6 +177602,69 @@ function dispatchGameSettingsChange(
     return { id: `cap_focus_${cap.id}`, title: `Make ${CAPABILITY_DEF_BY_ID[cap.id].label} operational`, completed: CAPABILITY_MATURITY_RANK[cap.maturity], total: 3, next: cap.mainBlocker ? `Strengthen: ${cap.mainBlocker}` : cap.nextStep?.missing[0] || null, blocked: Boolean(cap.mainBlocker) };
   }, [icState, gi3Live]);
 
+  // ---- V10.6 Resilience & Systemic Risk: live wiring ----------------------------------------------------------
+  // Interpretation only: exposure, dependency concentration, single points of failure, propagation, buffers, recovery.
+  // It never creates crises, sets stability or prices, damages infrastructure, or moves money. Persisted: bounded chain
+  // memory (baselines for recovery) + history. Events go to World Reaction; LR + Factions decide what they mean.
+  const srEnabled = Boolean(nsEnabled && gameSettings.systemicRiskEnabled !== false);
+  const srStoredRaw = (gameState as any).systemicRisk;
+  const srPersisted = useMemo(() => sanitizeSystemicRiskPersisted(srStoredRaw), [srStoredRaw]);
+  const srPersistedRef = useRef<SystemicRiskPersisted | null>(srPersisted); srPersistedRef.current = srPersisted;
+  const srInputs = useMemo<SystemicRiskInputs | null>(() => (srEnabled && nsState ? buildSystemicRiskInputs({ turn: lrInputs.turn, national: nsState, industries: scState, networks: inState, megaprojects: mpEnabled ? mpPersisted : null,
+    innovation: icEnabled ? icState : null, direction: ndProfile ? { primary: ndProfile.primaryDirection, secondary: ndProfile.secondaryDirection } : null, projects: gameState.infrastructureProjects as any,
+    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], stability: (gameState as any).publicStabilityState || null, viewer: player || null }) : null),
+    [srEnabled, nsState, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, (gameState as any).crisisChainState, (gameState as any).publicStabilityState, player?.money, player?.loans]); // eslint-disable-line react-hooks/exhaustive-deps
+  const srHash = useMemo(() => (srInputs ? systemicRiskInputHash(srInputs) : ''), [srInputs]);
+  const srState = useMemo<NationalSystemicRiskState | null>(() => (srInputs ? computeSystemicRisk(srInputs, srPersistedRef.current, { emit: false }).state : null),
+    [srHash, srInputs, srPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const srStateRef = useRef<NationalSystemicRiskState | null>(srState); srStateRef.current = srState;
+  const srDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!srEnabled || !srInputs || gameState.gameMode !== 'game') return;
+    const prev = srPersistedRef.current;
+    if (prev && prev.inputHash === srHash) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const res = computeSystemicRisk(srInputs, prev);
+    const d = srDiagRef.current;
+    d.recomputes += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 10) / 10;
+    d.lastReason = !prev ? 'first derivation (no history invented)' : 'dependency structure, shocks or liquidity changed (input hash)';
+    if (res.events.length) {
+      d.eventsEmitted += res.events.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.events.map(x => systemicToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.events.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: x.kind, summary: x.text } as any));
+    }
+    srPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { systemicRisk: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srHash, srEnabled, gameState.gameMode]);
+  const srView = useMemo<SystemicRiskWorldView | null>(() => {
+    if (!srState || !srInputs) return null;
+    const c = gi3Live?.active;
+    const regions = c ? Array.from(new Set(((c.goals || []) as any[]).flatMap(g => [g.regionId, ...(Array.isArray(g.regionIds) ? g.regionIds : [])]).filter((r: any) => typeof r === 'string' && REGIONS[r]))) as string[] : [];
+    return { state: srState, persisted: srPersisted, inputs: srInputs, ctx: { nsInputs, scInputs }, strategy: c ? { label: c.mission?.label || 'Your strategy', regions } : null };
+  }, [srState, srInputs, srPersisted, gi3Live, nsInputs, scInputs]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, systemic: srEnabled ? srView : null };
+  /** Current Focus candidate — ONLY when systemic risk is critical (an escalated major cascade, or critical liquidity). */
+  const srFocus = useMemo(() => {
+    if (!srState) return null;
+    const c = srState.activeStressChains.find(x => x.outcome === 'escalated' && (x.severity === 'major' || x.severity === 'critical'));
+    if (c) { const r = srState.recovery.find(x => x.originEventId === c.rootEventId); return { id: `sr_focus_${c.id}`, title: `Contain: ${c.label}`, completed: r ? Math.round(r.progress * 10) : 0, total: 10, next: r?.paths[0] || r?.blockers[0] || 'Restore the failed link or build an alternative', blocked: Boolean(r?.stalled) }; }
+    if (srState.liquidity.band === 'critical') return { id: 'sr_focus_liquidity', title: 'Rebuild your cash buffer', completed: 0, total: 1, next: srState.liquidity.explanation[0] || 'Avoid new commitments until reserves recover', blocked: false };
+    return null;
+  }, [srState]);
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -176337,7 +177720,7 @@ function dispatchGameSettingsChange(
       critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : null,
       objective: obj ? { id: String(obj.sourceId || obj.title), title: obj.title, completed: obj.progress.completed, total: obj.progress.total, next: obj.recommendedNextStep?.label || null, blocked: (obj.blockers || []).length > 0 }
         : (() => { const mf = mpEnabled ? megaprojectFocus(mpPersisted, mpWorld, pid) : null; const tp = mf ? mpPersisted!.programs[mpPersisted!.tracked[pid]] : null;
-          return mf && tp ? { id: `mp_focus_${tp.id}`, title: mf.title, completed: tp.stages.filter(s => s.status === 'completed').length, total: tp.stages.length, next: mf.risk, blocked: Boolean(mf.risk) } : (icEnabled ? icFocus : null); })(),
+          return mf && tp ? { id: `mp_focus_${tp.id}`, title: mf.title, completed: tp.stages.filter(s => s.status === 'completed').length, total: tp.stages.length, next: mf.risk, blocked: Boolean(mf.risk) } : (icEnabled && icFocus ? icFocus : (srEnabled ? srFocus : null)); })(),
       strategy: g3 ? { phases: g3Goals.map(g => g.label), phaseIndex: gi3Live.progress?.phaseIndex ?? g3.phaseIndex, locked: Boolean(g3.locks.mission || g3.locks.primaryGoal || g3.locks.ordering || g3Goals.some(g => g.locked)), onTrack: gi3Live.progress?.onTrack || null, nextMove: gi3Live.progress?.nextMove || null, cashTarget: gi3Live.progress?.resourceStatus.reserve ?? null, regions: g3Goals.map(g => g.regionId).filter(Boolean) as string[], notices: gi3Live.notices.filter(n => !n.dismissed).map(n => ({ id: n.id, text: n.text })) } : null,
       actions: { recommendedId: v9ActionSetView?.recommended?.id || null, ranked: (v9ActionSetView?.ranked || []).slice(0, 12) },
       background: bgLive?.enabled ? { nextMove: bgNext ? { label: bgNext.label, reason: bgNext.reason, actionId: bgNext.actionId || null } : null, intervention: iv ? { level: iv.level, message: iv.message, subjectKind: iv.subjectKind, query: iv.actionContext?.query || null, key: iv.cooldownKey, actionId: iv.actionContext?.actionId || null } : null } : null,
@@ -176355,7 +177738,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [icEnabled, icFocus, mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [srEnabled, srFocus, icEnabled, icFocus, mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176599,13 +177982,14 @@ function dispatchGameSettingsChange(
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
       infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
+      ...(srEnabled && srState ? { systemic: { chains: Object.fromEntries(srState.activeStressChains.map(c => [c.id, c.outcome])), recoveries: Object.fromEntries(srState.recovery.map(r => [r.id, r.status])), labels: Object.fromEntries([...srState.activeStressChains.map(c => [c.id, c.label]), ...srState.recovery.map(r => [r.id, r.label])]) } } : {}),
       ...(icEnabled && icState ? { capabilities: Object.fromEntries(CAPABILITY_IDS.map(id => [id, icState.capabilities[id].maturity])) } : {}),
       ...(ndEnabled && ndProfile ? { nationalDirection: JSON.stringify({ p: ndProfile.primaryDirection, b: ndProfile.confidenceBand, r: ndProfile.definingRegions }) } : {}),
       megaprojects: Object.fromEntries(Object.values(mpPersisted?.programs || {}).map(p => { const st = megaprojectStageView(p); const done = st.filter(x => x.status === 'completed'); const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -176701,6 +178085,9 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      systemicDependency: (() => { if (!srEnabled || !srState) return null; const d = srState.dependencies.find(x => x.importance === 'critical'); return d ? d.reason : null; })(),
+      systemicRedundancy: (() => { if (!srEnabled || !srState) return null; const d = srState.dependencies.find(x => (x.importance === 'critical' || x.importance === 'high') && !x.alternatives.length); return d ? `${d.reason} — no alternative exists.` : null; })(),
+      systemicResilienceWorked: (() => { if (!srEnabled || !srState) return null; const c = srState.activeStressChains.find(x => x.outcome === 'contained'); return c ? `${c.label}: ${c.buffersActivated[0] || 'buffers'} absorbed the shock.` : null; })(),
       capabilityEmerging: (() => { if (!icEnabled || !icState) return null; const c = CAPABILITY_IDS.map(id => icState.capabilities[id]).find(x => x.maturity !== 'unavailable'); return c ? `${CAPABILITY_DEF_BY_ID[c.id].label} is ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()} — made possible by ${c.originRegionIds.join(' + ') || 'the national system'}.` : null; })(),
       capabilityOperational: (() => { if (!icEnabled || !icState) return null; const c = CAPABILITY_IDS.map(id => icState.capabilities[id]).find(x => CAPABILITY_MATURITY_RANK[x.maturity] >= 3); return c ? `${CAPABILITY_DEF_BY_ID[c.id].label} is now ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()}.` : null; })(),
       nationalDirection: (() => {
@@ -176735,7 +178122,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -181130,6 +182517,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v105-setting-innovation">
                     <input type="checkbox" checked={gameSettings.innovationEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🔬 Innovation & Capabilities', prev => ({ ...prev, innovationEnabled: e.target.checked }))} />
                     Innovation & Emerging Capabilities (V10.5): advanced capabilities emerge from the research, industry, infrastructure and networks you build — no tech tree, no science points (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v106-setting-systemic-risk">
+                    <input type="checkbox" checked={gameSettings.systemicRiskEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🛡 Resilience & Systemic Risk', prev => ({ ...prev, systemicRiskEnabled: e.target.checked }))} />
+                    Resilience & Systemic Risk (V10.6): dependencies, single points of failure, cascades, buffers, recovery and stress tests — interpretation only; crises stay with the Crisis Engine (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -192677,6 +194068,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {srEnabled && srState && <SystemicRiskPlayLine state={srState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {icEnabled && icState && <EmergingCapabilityPlayLine state={icState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {ndEnabled && ndProfile && <NationalDirectionPlayLine profile={ndProfile} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {mpEnabled && mpPersisted && <MegaprojectPlayLine line={megaprojectPlayLine(mpPersisted, mpWorld, mpViewerId)} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
@@ -192846,6 +194238,11 @@ function dispatchGameSettingsChange(
             {scState && (
               <OptionalSurfaceBoundary surface="Industries & Supply Chains">
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
+            {srEnabled && srView && (
+              <OptionalSurfaceBoundary surface="Resilience & Systemic Risk">
+                <ResilienceCenter view={srView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} />
               </OptionalSurfaceBoundary>
             )}
             {icEnabled && icView && (
@@ -193033,6 +194430,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.6 Resilience & Systemic Risk Inspector">
+          <SystemicRiskInspector state={srState} persisted={srPersisted} view={srView} theme={themeStyles} enabled={srEnabled} diag={srDiagRef.current} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.5 Innovation & Capabilities Inspector">
           <InnovationInspector state={icState} persisted={icPersisted} theme={themeStyles} enabled={icEnabled} modifiers={icModifiers} diag={icDiagRef.current} />
@@ -203363,6 +204763,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {srEnabled && buildSystemicDebrief(srStateRef.current, srPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-orange-700/40 text-xs leading-relaxed" data-testid="sr-debrief">
+	              <div className="font-bold text-orange-300 tracking-wide">RESILIENCE STORY</div>
+	              {buildSystemicDebrief(srStateRef.current, srPersistedRef.current).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {icEnabled && buildInnovationDebrief(icStateRef.current, icPersistedRef.current).length > 0 && (
