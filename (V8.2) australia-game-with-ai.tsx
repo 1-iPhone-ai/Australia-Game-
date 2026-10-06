@@ -6397,6 +6397,8 @@ export interface ContextualRecommendation {
   objectiveAlignment?: number;
   /** GI3: how this (already legal) action fits the active strategy — a ranking signal only, never legality. */
   strategyAlignment?: GI3ActionAlignment | null;
+  /** V10.7: relation to a live national priority — ranking metadata only (small weight, never legality). */
+  nationalPriorityAlignment?: NationalPriorityActionAlignment | null;
 }
 
 export interface PlayerAttentionSnapshot {
@@ -10819,6 +10821,7 @@ export function canonicalStateFromLiveRuntime(
     nationalDevelopment: sanitizeNationalDevelopmentPersisted((liveState as any).nationalDevelopment || (gameState as any)?.nationalDevelopment),
     innovation: sanitizeInnovationPersisted((liveState as any).innovation || (gameState as any)?.innovation),
     systemicRisk: sanitizeSystemicRiskPersisted((liveState as any).systemicRisk || (gameState as any)?.systemicRisk),
+    nationalPriorities: sanitizeNationalPrioritiesPersisted((liveState as any).nationalPriorities || (gameState as any)?.nationalPriorities),
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14093,6 +14096,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   nationalDevelopmentEnabled: true,
   innovationEnabled: true,
   systemicRiskEnabled: true,
+  nationalPrioritiesEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26446,6 +26450,8 @@ export type GameSettingsState = {
   innovationEnabled?: boolean;
   /** V10.6 Resilience & Systemic Risk (needs National Systems; off = no interpretation, V10.0–V10.5 unchanged). */
   systemicRiskEnabled?: boolean;
+  /** V10.7 Dynamic National Priorities (needs National Systems; off = no national attention layer, V10.0–V10.6 unchanged). */
+  nationalPrioritiesEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36194,6 +36200,8 @@ export const initialGameState = {
   innovation: null as any,
   /** V10.6: systemic-risk HISTORY only (chain registry, recovery baselines, band hysteresis) — risk itself is derived. */
   systemicRisk: null as any,
+  /** V10.7: national-priority lifecycle memory (activation, hysteresis, contribution milestones, history). Evidence is derived. */
+  nationalPriorities: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -45205,6 +45213,10 @@ export function evaluateGuardianRiskPipeline(
     const res = safeExecuteGuardianEvaluator(() => evaluateSystemicRiskGuardian(context), context, 'systemic_risk', 'allow_silent');
     rawRisks.push(...res.risks);
     if (res.failureMode) failureModes.push(res.failureMode);
+    // V10.7: a CRITICAL national priority makes a near-total cash spend worth a word (information only).
+    const npRes = safeExecuteGuardianEvaluator(() => evaluateNationalPriorityGuardian(context), context, 'national_priorities', 'allow_silent');
+    rawRisks.push(...npRes.risks);
+    if (npRes.failureMode) failureModes.push(npRes.failureMode);
   }
   // GI3: explicit constraints of the player's active strategy (context only — Guardian keeps its own rules).
   {
@@ -66252,7 +66264,7 @@ export function isRoutineActivityNotification(n: any): boolean {
 export function rankContextualRecommendations(
   candidates: any[] | null | undefined,
   objective: CurrentObjective | null,
-  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any; strategy?: GI3RankingContext | null }
+  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any; strategy?: GI3RankingContext | null; nationalPriority?: NationalPriorityRankingContext | null }
 ): ContextualRecommendation[] {
   const apRemaining = options?.apRemaining;
   const limit = options?.limit ?? 3;
@@ -66293,8 +66305,10 @@ export function rankContextualRecommendations(
     if (objective?.recommendedNextStep?.actionType && c.actionType === objective.recommendedNextStep.actionType) alignment += 25;
     // GI3: strategic alignment is scored only for candidates that already passed every legality filter above.
     const strategy = options?.strategy ? scoreGI3ActionAlignment(c, options.strategy) : null;
-    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15 + (strategy ? strategy.score * 0.6 : 0);
-    return { c, score, alignment, strategy };
+    // V10.7: national relevance is ONE small factor (≤ ±2.5) — Current Objective and GI3 stay far more important.
+    const np = options?.nationalPriority ? nationalPriorityActionAlignment(options.nationalPriority, c) : null;
+    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15 + (strategy ? strategy.score * 0.6 : 0) + (np ? np.score * 0.25 : 0);
+    return { c, score, alignment, strategy, np };
   }).sort((a, b) => b.score - a.score);
 
   const picked: typeof scored = [];
@@ -66314,7 +66328,7 @@ export function rankContextualRecommendations(
     }
   }
 
-  return picked.map(({ c, alignment, score, strategy }) => {
+  return picked.map(({ c, alignment, score, strategy, np }) => {
     const whyPoints: string[] = [];
     if (strategy && (strategy.label === 'high' || strategy.label === 'medium')) whyPoints.push(`fits your strategy: ${strategy.reason}`);
     if (alignment >= 20 && objective) whyPoints.push(`advances your current goal: ${objective.title}`);
@@ -66322,6 +66336,8 @@ export function rankContextualRecommendations(
     if ((c.costEstimate || 0) === 0) whyPoints.push('no extra cash required');
     if ((c.expectedStateDelta?.cashDelta || 0) > 0) whyPoints.push(`expected +$${Math.round(c.expectedStateDelta.cashDelta).toLocaleString()}`);
     if ((c.rewardScore || 0) >= 70) whyPoints.push('strong expected return');
+    if (np && (np.band === 'strong' || np.band === 'moderate')) whyPoints.push(`also ${np.reason.charAt(0).toLowerCase()}${np.reason.slice(1)}`);
+    else if (np && np.band === 'conflict') whyPoints.push(`note: ${np.reason.charAt(0).toLowerCase()}${np.reason.slice(1)}`);
     if (!whyPoints.length) whyPoints.push(c.expectedOutcome || c.description || 'legal this turn');
     const costBits = [
       (c.costEstimate || 0) > 0 ? `$${Number(c.costEstimate).toLocaleString()}` : null,
@@ -66339,7 +66355,8 @@ export function rankContextualRecommendations(
       whyPoints,
       relevanceScore: score,
       objectiveAlignment: alignment,
-      strategyAlignment: strategy
+      strategyAlignment: strategy,
+      nationalPriorityAlignment: np
     };
   });
 }
@@ -80168,6 +80185,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.innovation = sanitizeInnovationPersisted(migrated.gameState.innovation);
   // V10.6: pre-V10.6 saves start with NO cascade history (null) — current systemic risk is derived on load.
   if (migrated.gameState) migrated.gameState.systemicRisk = sanitizeSystemicRiskPersisted(migrated.gameState.systemicRisk);
+  // V10.7: pre-V10.7 saves carry NO priority history (null) — current priorities are derived conservatively on load.
+  if (migrated.gameState) migrated.gameState.nationalPriorities = sanitizeNationalPrioritiesPersisted(migrated.gameState.nationalPriorities);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -100575,6 +100594,8 @@ export interface ContextualActionCandidate {
   scoreBreakdown: ContextualActionScoreFactor[];
   /** GI3: alignment with the active strategy (metadata only — legality is decided before this). */
   strategyAlignment?: GI3ActionAlignment | null;
+  /** V10.7: alignment with a live national priority (metadata only). */
+  nationalPriorityAlignment?: NationalPriorityActionAlignment | null;
   /** Background AI: its own ranking of this canonical action and why (metadata only — never legality). */
   backgroundRank?: number | null;
   backgroundReason?: string | null;
@@ -100693,6 +100714,8 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
     const strat = rec.strategyAlignment || null;
     const stratPoints = strat ? Math.round(strat.score * 0.6) : 0;
     if (strat && stratPoints) breakdown.push({ factor: stratPoints > 0 ? `Strategy fit (${strat.label}): ${strat.reason}` : `Strategy conflict: ${strat.reason}`, points: stratPoints });
+    const npA = rec.nationalPriorityAlignment || null; const npPoints = npA ? Math.round(npA.score * 0.25) : 0;
+    if (npA && npPoints) breakdown.push({ factor: npPoints > 0 ? `National priority: ${npA.reason}` : `National priority tension: ${npA.reason}`, points: npPoints });
     if (addressesAttention && urgencyBoost) breakdown.push({ factor: `Addresses: ${attention?.label}`, points: urgencyBoost });
     const relevance = breakdown.reduce((sum, f) => sum + f.points, 0);
     const cost = Number(rec.costEstimate || 0);
@@ -100726,7 +100749,8 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       confidence: Number.isFinite(Number(c.rewardScore)) ? Math.max(0, Math.min(1, Number(c.rewardScore) / 100)) : null,
       requiresConfirmation: false,
       scoreBreakdown: breakdown,
-      strategyAlignment: strat
+      strategyAlignment: strat,
+      nationalPriorityAlignment: npA
     });
   }
 
@@ -114037,6 +114061,19 @@ export function evaluateSystemicRiskGuardian(context: GuardianEvaluationContext)
     assumptions: ['Uses canonical cash, debt interest and capital already committed to unfinished programs — no invented liabilities. Fragile high-growth play is allowed.'], probability: 1, estimatedImpact: cost, confidence: 0.85, reversible: true, immediate: false, triggeredSettingKeys: [], systemIds: ['systemic_risk'] }];
 }
 
+/** V10.7 Guardian evaluator: spending most remaining cash while a national priority is CRITICAL. Warn-only — no forced altruism. */
+export function evaluateNationalPriorityGuardian(context: GuardianEvaluationContext): readonly GuardianDetectedRisk[] {
+  if (context.isReplay) return [];
+  const gs: any = context.gameState || {};
+  if (gs.gameSettings && (gs.gameSettings.nationalPrioritiesEnabled === false || gs.gameSettings.nationalSystemsEnabled === false)) return [];
+  const payload = context.actionPayload || {};
+  const cost = typeof payload.cost === 'number' ? payload.cost : typeof payload.amount === 'number' && !/loan/.test(context.actionType) ? payload.amount : typeof payload.price === 'number' ? payload.price : 0;
+  const w = nationalPriorityGuardianWarning(gs.nationalPriorities || null, Number(context.currentCash) || 0, cost);
+  if (!w.warn) return [];
+  return [{ id: `risk_national_priority_${context.actorId}_t${context.turn}_${context.actionType}`, category: 'liquidity', severity: 'informational', title: 'National priority is critical', description: w.text, evidence: [`Critical national priority: ${w.priority}`, `Spend $${Math.round(cost).toLocaleString()} of $${Math.round(Number(context.currentCash) || 0).toLocaleString()}`],
+    assumptions: ['Uses the public national-priority state and canonical cash only. Ignoring a national priority is a legitimate strategy.'], probability: 1, estimatedImpact: cost, confidence: 0.8, reversible: true, immediate: false, triggeredSettingKeys: [], systemIds: ['national_priorities'] }];
+}
+
 export function evaluateGI3StrategyRisk(context: GuardianEvaluationContext): readonly GuardianDetectedRisk[] {
   const state = context.gameState?.gi3Strategy as GI3StrategyState | undefined;
   const c = state?.active;
@@ -122155,7 +122192,9 @@ export type SWRKind =
   | 'capability_adoption_expanded' | 'capability_operational_capacity_declined'
   // V10.6 Resilience & Systemic Risk (one root per shock + bounded, strategically important derived events only).
   | 'systemic_risk_became_critical' | 'systemic_risk_reduced' | 'critical_dependency_exposed' | 'cascade_started' | 'cascade_contained' | 'cascade_escalated'
-  | 'recovery_started' | 'recovery_stalled' | 'recovery_completed' | 'resilience_improved_major' | 'resilience_deteriorated_major';
+  | 'recovery_started' | 'recovery_stalled' | 'recovery_completed' | 'resilience_improved_major' | 'resilience_deteriorated_major'
+  // V10.7 Dynamic National Priorities (structural lifecycle transitions only — never score drift).
+  | 'national_priority_emerged' | 'national_priority_activated' | 'national_priority_became_urgent' | 'national_priority_improved' | 'national_priority_worsened' | 'national_priority_resolved' | 'national_priority_superseded';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122661,6 +122700,7 @@ const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationshi
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
+const SWR_NP_KINDS: SWRKind[] = ['national_priority_emerged', 'national_priority_activated', 'national_priority_became_urgent', 'national_priority_improved', 'national_priority_worsened', 'national_priority_resolved', 'national_priority_superseded'];
 const SWR_SR_KINDS: SWRKind[] = ['systemic_risk_became_critical', 'systemic_risk_reduced', 'critical_dependency_exposed', 'cascade_started', 'cascade_contained', 'cascade_escalated', 'recovery_started', 'recovery_stalled', 'recovery_completed', 'resilience_improved_major', 'resilience_deteriorated_major'];
 const SWR_IC_KINDS: SWRKind[] = ['capability_emerged', 'capability_demonstrated', 'capability_became_operational', 'capability_scaled', 'capability_nationally_integrated', 'capability_adoption_expanded', 'capability_operational_capacity_declined'];
 const SWR_ND_KINDS: SWRKind[] = ['national_direction_emerged', 'national_direction_strengthened', 'national_direction_weakened', 'national_strategy_transition_started', 'national_strategy_transition_completed', 'national_dependency_became_defining', 'national_diversification_improved', 'national_concentration_increased'];
@@ -122669,17 +122709,17 @@ const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_acceler
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['critical_dependency_exposed', 'cascade_escalated', 'systemic_risk_became_critical', 'capability_emerged', 'capability_became_operational', 'capability_adoption_expanded', 'national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['national_priority_activated', 'national_priority_became_urgent', 'national_priority_resolved', 'critical_dependency_exposed', 'cascade_escalated', 'systemic_risk_became_critical', 'capability_emerged', 'capability_became_operational', 'capability_adoption_expanded', 'national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' || e.sourceSystem === 'innovation' || e.sourceSystem === 'systemic_risk' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_NP_KINDS, ...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_NP_KINDS, ...SWR_SR_KINDS, ...SWR_IC_KINDS, ...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' || e.sourceSystem === 'innovation' || e.sourceSystem === 'systemic_risk' || e.sourceSystem === 'national_priorities' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_dependency_exposed', 'cascade_escalated', 'capability_became_operational', 'capability_scaled', 'national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['national_priority_activated', 'national_priority_became_urgent', 'critical_dependency_exposed', 'cascade_escalated', 'capability_became_operational', 'capability_scaled', 'national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
@@ -122688,12 +122728,12 @@ export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['recovery_stalled', 'cascade_escalated', 'critical_dependency_exposed', 'capability_emerged', 'capability_operational_capacity_declined', 'megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['national_priority_activated', 'national_priority_became_urgent', 'national_priority_resolved', 'recovery_stalled', 'cascade_escalated', 'critical_dependency_exposed', 'capability_emerged', 'capability_operational_capacity_declined', 'megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['cascade_escalated', 'recovery_completed', 'recovery_stalled', 'capability_emerged', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'capability_operational_capacity_declined', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['national_priority_activated', 'national_priority_resolved', 'cascade_escalated', 'recovery_completed', 'recovery_stalled', 'capability_emerged', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'capability_operational_capacity_declined', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['cascade_escalated', 'recovery_stalled', 'systemic_risk_became_critical', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['national_priority_activated', 'national_priority_became_urgent', 'national_priority_resolved', 'cascade_escalated', 'recovery_stalled', 'systemic_risk_became_critical', 'capability_became_operational', 'capability_scaled', 'capability_adoption_expanded', 'megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123367,6 +123407,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  national_priority_emerged: 'National priority emerging', national_priority_activated: 'National priority', national_priority_became_urgent: 'National priority urgent', national_priority_improved: 'National priority improving',
+  national_priority_worsened: 'National priority worsened', national_priority_resolved: 'National priority resolved', national_priority_superseded: 'National priority superseded',
   systemic_risk_became_critical: 'Systemic risk critical', systemic_risk_reduced: 'Systemic risk reduced', critical_dependency_exposed: 'Critical dependency', cascade_started: 'Cascade started', cascade_contained: 'Cascade contained', cascade_escalated: 'Cascade escalated',
   recovery_started: 'Recovery started', recovery_stalled: 'Recovery stalled', recovery_completed: 'Recovery complete', resilience_improved_major: 'Resilience improved', resilience_deteriorated_major: 'Resilience deteriorated',
   capability_emerged: 'Capability emerging', capability_demonstrated: 'Capability demonstrated', capability_became_operational: 'Capability operational', capability_scaled: 'Capability scaled',
@@ -124421,6 +124463,8 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
       case 'capability_operational_capacity_declined': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'capability', e.id); break; }
       // V10.6: post-shock constraint / recovery as regional structural evidence (no direct economic change).
       case 'cascade_escalated': case 'recovery_stalled': case 'recovery_completed': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'systemic risk', e.id); break; }
+      // V10.7: national attention on this region's systems (evidence only).
+      case 'national_priority_activated': case 'national_priority_resolved': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national priority', e.id); break; }
       case 'megaproject_stage_completed': case 'megaproject_partially_operational': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_completed': { pulse(0.05); lrPushHistory(reg, { turn, kind: 'project', text: e.strategicMeaning.slice(0, 140), sourceEventId: e.id, significance: 'major' }); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'megaproject_stalled': case 'megaproject_abandoned': { pulse(-0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
@@ -124874,7 +124918,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery; priority?: NationalPriorityQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124896,6 +124940,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   // V10.4: "what kind of Australia" questions (specific phrasings only; needs a national development view).
   // V10.5: capability questions (need a capability name or the word "capability").
   // V10.6: resilience / dependency / cascade / recovery questions.
+  // V10.7: national-priority questions (what Australia needs vs. what helps YOUR strategy).
+  const npq = detectNationalPriorityQuery(raw, gw);
+  if (npq) return mk('national', { priority: npq, regionId: npq.regionId });
   const srq = detectSystemicQuery(raw, gw);
   if (srq) return mk('national', { systemic: srq, regionId: srq.regionId });
   const cq = detectCapabilityQuery(raw, gw);
@@ -124941,6 +124988,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.priority && gw.national?.priorities) return composeNationalPriorityAnswer(query.priority, gw);
   if (query.topic === 'national' && query.systemic && gw.national?.systemic) return composeSystemicAnswer(query.systemic, gw);
   if (query.topic === 'national' && query.capability && gw.national?.innovation) return composeCapabilityAnswer(query.capability, gw);
   if (query.topic === 'national' && query.nationalDev && gw.national?.development) return composeNationalDevelopmentAnswer(query.nationalDev, gw);
@@ -126021,6 +126069,18 @@ function rfDerive(d: Omit<RFDerivedEvent, 'id' | 'turn' | 'causedByEventId' | 'r
   return { ...d, id: `rfe_${turn}_${rfHash([d.kind, d.factionId, d.regionId, d.actorId, cause?.id || 'round'])}`, turn, causedByEventId: cause?.id || null, rootEventId: cause?.rootEventId || null, reactionDepth: cause ? cause.reactionDepth + 1 : 0 };
 }
 
+/** V10.7: a faction's OWN stance on a national priority, from its own preferences (owned by the faction system). */
+export type RFPriorityStance = 'strong_support' | 'support' | 'conditional' | 'neutral';
+export const RF_PRIORITY_STANCE_LABEL: Record<RFPriorityStance, string> = { strong_support: 'Strong support', support: 'Supports', conditional: 'Support with conditions', neutral: 'Neutral' };
+export function rfNationalPriorityStance(def: RFFactionDef, pid: NationalPriorityId): RFPriorityStance {
+  const p = NATIONAL_PRIORITY_BY_ID[pid]; if (!p) return 'neutral';
+  const pref = p.projectTypes.filter(t => def.preferredInfrastructure.includes(t)).length; const opp = p.projectTypes.filter(t => def.opposedInfrastructure.includes(t)).length;
+  const sect = p.industries.some(k => (def.supportedSectors as string[]).includes(k)) || p.themes.some(t => (def.supportedSectors as string[]).includes(t));
+  if (pref && opp) return 'conditional';
+  if (pref >= 1 && sect) return 'strong_support';
+  if (pref || sect) return opp ? 'conditional' : 'support';
+  return opp ? 'conditional' : 'neutral';
+}
 export function rfApplyWorldEvent(stateIn: RegionalFactionsState, e: StrategicWorldEvent, s: RFInputs): { state: RegionalFactionsState; derived: RFDerivedEvent[] } {
   if (RF_SKIP_KINDS.has(e.kind)) return { state: stateIn, derived: [] };
   const codes = lrEventRegions(e, s.lr);
@@ -126106,6 +126166,12 @@ export function rfApplyWorldEvent(stateIn: RegionalFactionsState, e: StrategicWo
     }
     return { ...r, status: 'fulfilled' as const, fulfilledBy: by, resolvedTurn: turn };
   });
+  // V10.7: factions note national priorities through their own agenda (stance via rfNationalPriorityStance; no blanket +/-).
+  if (e.kind === 'national_priority_activated' || e.kind === 'national_priority_became_urgent' || e.kind === 'national_priority_resolved') {
+    const pid = e.tags.find(t => t.startsWith('priority:'))?.slice(9) as NationalPriorityId | undefined;
+    if (pid && NATIONAL_PRIORITY_BY_ID[pid]) attentive.forEach(def => { const stance = rfNationalPriorityStance(def, pid); if (stance === 'neutral') return;
+      st.factions[def.id] = { ...st.factions[def.id], recentHistory: [...st.factions[def.id].recentHistory, { turn, text: `${RF_PRIORITY_STANCE_LABEL[stance]}: ${NATIONAL_PRIORITY_BY_ID[pid].label} (${e.kind === 'national_priority_resolved' ? 'resolved' : 'national priority'})`, sourceEventId: e.id }].slice(-RF_LIMITS.factionHistory) }; });
+  }
   if (e.kind === 'crisis_escalated' || e.kind === 'crisis_resolved' || e.kind === 'market_shift_major') attentive.forEach(def => { st.factions[def.id] = { ...st.factions[def.id], recentHistory: [...st.factions[def.id].recentHistory, { turn, text: e.kind === 'market_shift_major' ? `Reacted to ${e.subjectId} prices` : e.kind === 'crisis_escalated' ? 'Shifted priorities to crisis relief' : 'Crisis over; priorities returning to normal', sourceEventId: e.id }].slice(-RF_LIMITS.factionHistory) }; });
   st.conflictByRegion = rfConflictLevels(st, s);
   st.derived = [...st.derived, ...derived].slice(-RF_LIMITS.derived);
@@ -128944,6 +129010,10 @@ export interface LearningContext {
   systemicDependency?: string | null;
   systemicRedundancy?: string | null;
   systemicResilienceWorked?: string | null;
+  /** V10.7: first national priority, a national-vs-personal tradeoff, and a rival contribution the player benefits from. */
+  npFirst?: string | null;
+  npSelfInterest?: string | null;
+  npFreeRide?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -129041,6 +129111,15 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
     relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
     lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
+  { id: 'national_priorities', title: 'National priorities', category: 'advanced', tier: 'interaction', priority: 4, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: "What is Australia's current national priority?", related: ['national_vs_personal'],
+    relevant: c => (c.npFirst ? 'a national priority is active' : null),
+    lesson: c => ({ headline: 'National priorities', lines: [c.npFirst || '', 'National Priorities show what Australia currently needs or can capitalize on.', 'They are not missions.', 'You can support them, ignore them, or pursue a strategy that conflicts with them.'], asks: ["What is Australia's current national priority?"], surface: 'inline' }) },
+  { id: 'national_vs_personal', title: 'National vs personal interest', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['national_priorities'], directoryId: 'regions', askPrompt: 'Does this priority help my strategy?', related: ['priority_free_riding'],
+    relevant: c => (c.npSelfInterest ? 'a national priority mostly helps someone else' : null),
+    lesson: c => ({ headline: 'National vs personal interest', lines: [c.npSelfInterest || '', 'Solving a national problem can help every player, including your rivals.', 'Supporting a priority is not always the best competitive move.'], asks: ['Does this priority help my strategy?'], surface: 'inline' }) },
+  { id: 'priority_free_riding', title: 'Letting others pay', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['national_priorities'], directoryId: 'regions', askPrompt: 'Who has contributed most?', related: ['national_vs_personal'],
+    relevant: c => (c.npFreeRide ? 'a rival improved a national priority' : null),
+    lesson: c => ({ headline: 'Free riding', lines: [c.npFreeRide || '', 'You benefit from the stronger national system too — without paying for it.'], asks: ['Who has contributed most?'], surface: 'inline' }) },
   { id: 'systemic_dependency', title: 'Systemic dependency', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'What is my biggest systemic risk?', related: ['redundancy'],
     relevant: c => (c.systemicDependency ? 'a critical dependency exists' : null),
     lesson: c => ({ headline: 'Systemic dependency', lines: [c.systemicDependency || '', 'A region can be productive and still fragile if it depends on one critical supplier or route.'], asks: ['What is my biggest systemic risk?'], surface: 'inline' }) },
@@ -129751,6 +129830,8 @@ export interface ContentContext {
   infraStates?: Record<string, string[]> | null;
   /** V10.5: national capability maturity + regional adoption (optional; absent when off ⇒ capability content never eligible). */
   capabilities?: ReturnType<typeof innovationContentSnapshot>;
+  /** V10.7: themes of live national priorities (small bounded relevance bonus; never forces content). */
+  nationalPriorityThemes?: ContentTheme[] | null;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -130174,7 +130255,8 @@ export function scoreContentCandidate(t: ContentTemplateBase, regionId: string |
   const rival = Math.max(1, ...t.roles.map(ro => RIVAL_ROLE_WEIGHT[profile.rivalProfile][ro] || 1));
   const strategy = regionId && ctx.strategyRegion === regionId ? 1.35 : 1; // GI3 raises relevance only
   const recent = t.kind === 'rare' && (profile.recentRare || []).includes(t.id) ? 0.35 : 1; // cross-match variety
-  return Math.round(theme * region * identity * rival * strategy * recent * CONTENT_RARITY_WEIGHT[t.rarity] * 1000) / 1000;
+  const national = (ctx.nationalPriorityThemes || []).some(x => t.themes.includes(x)) ? 1.2 : 1; // V10.7: shapes, never floods
+  return Math.round(theme * region * identity * rival * strategy * recent * national * CONTENT_RARITY_WEIGHT[t.rarity] * 1000) / 1000;
 }
 
 function onCooldown(state: MatchContentState, key: string, day: number): number | null {
@@ -131649,6 +131731,8 @@ export interface ContentLiveInputs {
   infraNetworks?: StrategicInfrastructureState | null;
   /** V10.5 capability snapshot (maturity + adoption); null when Innovation is off. */
   capabilities?: ReturnType<typeof innovationContentSnapshot>;
+  /** V10.7 live national-priority themes (optional). */
+  nationalPriorityThemes?: ContentTheme[] | null;
   projects: Array<{ id: string; regionId: string; projectType: string; status: string }>;
   regionalStability: Record<string, number>;
 }
@@ -131700,6 +131784,7 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     nationalDeps: i.national ? i.national.dependencies.map(d => ({ consumer: d.consumerRegionId, provider: d.providerRegionId, network: d.network, importance: d.importance })) : [],
     infraStates: i.infraNetworks ? Object.fromEntries(Object.keys(REGIONS).map(c => [c, infraNetworkRegionStates(i.infraNetworks!, c)])) : null,
     capabilities: i.capabilities || null,
+    nationalPriorityThemes: i.nationalPriorityThemes && i.nationalPriorityThemes.length ? i.nationalPriorityThemes : null,
     industries: i.industries ? Object.fromEntries(Object.values(i.industries.regions).map(g => [g.regionId, Object.fromEntries(Object.values(g.industries).map(x => [x!.industry, x!.condition]))])) : null,
     supplies: i.industries ? Object.fromEntries(Object.entries(i.industries.supplies).map(([c, l]) => [c, Object.fromEntries(l.map(x => [x.supply, x.condition]))])) : null,
     projects: i.projects || [],
@@ -132389,6 +132474,8 @@ export interface FeelSnapshot {
   capabilities?: Record<string, string>;
   /** V10.6: stress chain id → outcome, recovery id → status (optional). */
   systemic?: { chains: Record<string, string>; recoveries: Record<string, string>; labels: Record<string, string> };
+  /** V10.7: live priority → urgency|label, resolved keys, top rival contribution per priority (optional). */
+  priorities?: { active: Record<string, string>; resolved: string[]; rival: Record<string, string> };
 }
 
 let V94_SEQ = 0;
@@ -132469,6 +132556,16 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
   });
+  // V10.7: national-priority moments — activation (critical gets stronger treatment), resolution, a rival's contribution.
+  if (next.priorities && prev.priorities) {
+    const np = next.priorities, pp = prev.priorities; let fired = 0; const rk: Record<string, number> = { none: 0, indirect: 1, supporting: 2, major: 3, defining: 4 };
+    Object.entries(np.active).forEach(([id, v]) => { if (fired || pp.active[id] !== undefined) return; const [urg, label] = v.split('|'); fired += 1;
+      out.push(v94Event('strategy_phase', urg === 'critical' ? 'critical' : 'normal', `np_${id}`, 'NATIONAL PRIORITY', [String(label || id).toUpperCase(), String(urg || '').toUpperCase(), 'What Australia needs now — supporting it is your choice.'], { now, turn, tone: urg === 'critical' ? 'critical' : 'neutral' })); });
+    np.resolved.filter(k => !pp.resolved.includes(k)).slice(0, 1).forEach(k => { if (fired) return; fired += 1; const [label, summary] = k.split('|');
+      out.push(v94Event('strategy_phase', 'major', `npr_${label}`, 'NATIONAL PRIORITY RESOLVED', [String(label).toUpperCase(), String(summary || '')], { now, turn, tone: 'positive' })); });
+    Object.entries(np.rival).forEach(([id, v]) => { if (fired) return; const [who, band, label] = v.split('|'); const was = (pp.rival[id] || '||').split('|')[1] || 'none'; if ((rk[band] || 0) < 2 || (rk[band] || 0) <= (rk[was] || 0)) return; fired += 1;
+      out.push(v94Event('strategy_phase', 'normal', `npc_${id}`, `${String(who).toUpperCase()} CONTRIBUTED`, [`${who}'s project improved the national ${label} priority.`, 'You benefit from the stronger system too.'], { now, turn, tone: 'neutral' })); });
+  }
   // V10.6: resilience moments — a cascade contained ("YOUR RESILIENCE WORKED"), escalated, or a recovery completing.
   if (next.systemic && prev.systemic) {
     const ns = next.systemic, ps = prev.systemic; let fired = 0;
@@ -132907,7 +133004,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled'
 ] as const;
 
 /**
@@ -133265,6 +133362,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         nationalDevelopment: sanitizeNationalDevelopmentPersisted(stateData.nationalDevelopment || raw.gameState?.nationalDevelopment),
         innovation: sanitizeInnovationPersisted(stateData.innovation || raw.gameState?.innovation),
         systemicRisk: sanitizeSystemicRiskPersisted(stateData.systemicRisk || raw.gameState?.systemicRisk),
+        nationalPriorities: sanitizeNationalPrioritiesPersisted(stateData.nationalPriorities || raw.gameState?.nationalPriorities),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135315,6 +135413,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
   { id: 'v106', label: 'V10.6 Resilience & Systemic Risk', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV106ResilienceSystemicRiskSelfTests() },
+  { id: 'v107', label: 'V10.7 Dynamic National Priorities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV107DynamicNationalPrioritiesSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -137395,6 +137494,8 @@ export interface NationalSystemsWorldView {
   innovation?: InnovationWorldView | null;
   /** V10.6 Resilience & Systemic Risk (null when off). */
   systemic?: SystemicRiskWorldView | null;
+  /** V10.7 Dynamic National Priorities (null when off). */
+  priorities?: NationalPrioritiesWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -145632,6 +145733,1464 @@ export const SystemicRiskInspector: React.FC<{ state: NationalSystemicRiskState 
 };
 
 // ============================================================================
+// SECTION 20Z: V10.7 DYNAMIC NATIONAL PRIORITIES
+// "Given everything happening in Australia right now, what should the country care about most?" — and, separately,
+// "does helping with that actually make sense for YOUR strategy?". V10.7 owns TEMPORARY NATIONAL ATTENTION only:
+// identification, evidence, urgency, momentum, lifecycle, outcome signals, contribution interpretation, alignment and
+// outcome history. Priorities are derived world-state interpretations — NOT missions, contracts, GI3 goals, Current
+// Objectives or win conditions. No currency, no rewards, no penalties, no executable actions. Resolution comes only from
+// the canonical V10.0–V10.6 world improving. Deterministic and bounded (12 definitions × 8 regions).
+// ============================================================================
+
+export type NationalPriorityId = 'water_security' | 'energy_resilience' | 'freight_modernization' | 'supply_chain_security' | 'economic_diversification' | 'technology_competitiveness'
+  | 'industrial_capacity' | 'infrastructure_recovery' | 'public_stability_recovery' | 'national_resilience' | 'regional_rebalancing' | 'export_capacity';
+export type NationalPriorityMode = 'problem' | 'opportunity';
+export type NationalPriorityStatus = 'emerging' | 'active' | 'improving' | 'resolved' | 'superseded';
+export type NationalPriorityUrgency = 'watch' | 'important' | 'urgent' | 'critical';
+export type PriorityStrategyAlignment = 'strong' | 'moderate' | 'weak' | 'conflict' | 'neutral';
+export type PriorityContributionBand = 'none' | 'indirect' | 'supporting' | 'major' | 'defining';
+export type NationalPriorityEvidenceCategory = 'capacity' | 'demand' | 'redundancy' | 'concentration' | 'crisis' | 'damage' | 'stability' | 'capability' | 'direction' | 'dependency' | 'surplus' | 'growth' | 'liquidity' | 'recovery' | 'development';
+export type NationalPrioritySource = 'national_systems' | 'industries' | 'infrastructure_networks' | 'megaprojects' | 'national_development' | 'innovation' | 'systemic_risk' | 'public_stability' | 'crisis' | 'canonical';
+export const NATIONAL_PRIORITY_SOURCES: NationalPrioritySource[] = ['national_systems', 'industries', 'infrastructure_networks', 'megaprojects', 'national_development', 'innovation', 'systemic_risk', 'public_stability', 'crisis', 'canonical'];
+
+export interface NationalPriorityEvidence { id: string; sourceSystem: NationalPrioritySource; sourceId: string; category: NationalPriorityEvidenceCategory; label: string; weight: number; regionIds: string[] }
+/** Descriptive rule (LAB / explanation): the categories of structural evidence that must co-occur. Evaluation itself is per-priority code. */
+export interface NationalPriorityRule { id: string; label: string; categories: NationalPriorityEvidenceCategory[]; minimum: number }
+export interface NationalPriorityScoreWeights { severity: number; reach: number; systemic: number; direction: number; opportunity: number }
+export interface NationalPriorityDefinition {
+  id: NationalPriorityId; label: string; icon: string; mode: NationalPriorityMode; description: string; wording: string; relevantDomains: string[];
+  activationRules: NationalPriorityRule[]; resolutionRules: NationalPriorityRule[]; scoringWeights: NationalPriorityScoreWeights;
+  minimumPersistenceTurns: number; cooldownTurns: number; contentTags: string[]; themes: ContentTheme[];
+  /** Relevance of canonical actions (contribution + action alignment): networks / industries / project types it touches. */
+  networks: NationalNetworkKind[]; industries: StrategicIndustryKind[]; projectTypes: string[];
+  /** Project types that add pressure on this priority when built in its regions (tension / action conflict). */
+  pressureTypes: string[];
+  /** National directions it serves / pulls against (strategy alignment; never a judgment). */
+  directions: NationalDevelopmentDirectionId[]; conflictDirections: NationalDevelopmentDirectionId[];
+  systemicDomains: SystemicRiskDomain[]; resolveText: string; ignoreText: string; helps: string[];
+}
+export interface NationalPriorityOutcomeSignal { id: string; label: string; state: 'critical' | 'weak' | 'improving' | 'healthy'; value?: number; sourceSystem: string; sourceId: string; explanation: string }
+export interface NationalPriorityActorState { actorId: string; alignment: PriorityStrategyAlignment; contribution: PriorityContributionBand; contributionEvidenceIds: string[]; benefited: boolean; lastRelevantTurn: number | null }
+export interface NationalPriorityHistoryEntry { id: string; turn: number; priorityId: string; kind: 'emerged' | 'activated' | 'urgency_changed' | 'actor_contributed' | 'improved' | 'worsened' | 'resolved' | 'superseded'; actorId?: string; summary: string; sourceIds: string[] }
+export interface NationalPriority {
+  id: string; definitionId: NationalPriorityId; label: string; mode: NationalPriorityMode; status: NationalPriorityStatus; urgency: NationalPriorityUrgency; confidence: number; score: number;
+  momentum: 'rising' | 'stable' | 'improving' | 'worsening'; startedTurn: number; lastUpdatedTurn: number; resolvedTurn: number | null;
+  relevantRegionIds: string[]; affectedSystems: string[]; evidence: NationalPriorityEvidence[]; outcomeSignals: NationalPriorityOutcomeSignal[];
+  actors: Record<string, NationalPriorityActorState>; history: NationalPriorityHistoryEntry[];
+  /** Plain-language "why it emerged" (top evidence) and what would resolve / help it. */
+  why: string[]; summary: string; overall: 'worsening' | 'stable' | 'improving';
+}
+export interface NationalPriorityScoreComponent { label: string; value: number }
+export interface NationalPriorityCandidate {
+  definitionId: NationalPriorityId; mode: NationalPriorityMode; eligible: boolean; national: boolean; score: number; rawScore: number; severity: number; reach: number; systemic: number; direction: number; opportunity: number;
+  components: NationalPriorityScoreComponent[]; categories: NationalPriorityEvidenceCategory[]; evidence: NationalPriorityEvidence[]; regionIds: string[]; affectedSystems: string[];
+  signals: NationalPriorityOutcomeSignal[]; whyNot: string | null; urgency: NationalPriorityUrgency;
+}
+export interface NationalPriorityTension { id: string; priorityAId: string; priorityBId: string; severity: 'minor' | 'meaningful' | 'major'; reason: string; sharedResources: string[]; evidence: NationalPriorityEvidence[] }
+export interface NationalPriorityActionAlignment { score: number; band: 'strong' | 'moderate' | 'weak' | 'none' | 'conflict'; reason: string; priorityId: string }
+
+export interface NationalPriorityInputs {
+  turn: number;
+  sr: SystemicRiskInputs; systemic: NationalSystemicRiskState | null; development: NationalDevelopmentProfile | null;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; contributions: Record<string, number> }>;
+  /** Region → controlling actor id (public map control). */
+  controllers: Record<string, string | null>;
+  actors: Array<{ id: string; name: string; isHuman: boolean }>;
+  /** Actor → its OWN strategy (player: GI3; rivals: only what is public/permitted). Null = unknown. */
+  strategies: Record<string, { label: string; text: string; regionIds: string[] } | null>;
+}
+export interface NationalPriorityContributionMemory { w: number; direct: number; indirect: number; projects: string[]; band: PriorityContributionBand }
+export interface NationalPriorityMemoryEntry {
+  definitionId: NationalPriorityId; status: NationalPriorityStatus; mode: NationalPriorityMode; startedTurn: number; activatedTurn: number | null; heldTurns: number; lowTurns: number;
+  peakScore: number; lastScore: number; urgency: NationalPriorityUrgency; peakUrgency?: NationalPriorityUrgency; regions: string[]; baseline: Record<string, string>;
+  contributions: Record<string, NationalPriorityContributionMemory>; benefited: string[]; lastRelevant: Record<string, number>; resolvedTurn: number | null; supersededTurn: number | null; summary: string;
+}
+export interface NationalPriorityMemory { lastTurn: number; entries: Partial<Record<NationalPriorityId, NationalPriorityMemoryEntry>>; primaryId: NationalPriorityId | null; emergingId: NationalPriorityId | null; candidateTurns: Partial<Record<NationalPriorityId, number>>; cooldownUntil: Partial<Record<NationalPriorityId, number>>; functional: string[]; damaged: string[]; resolved: NationalPriorityResolvedRecord[] }
+export interface NationalPriorityResolvedRecord { definitionId: NationalPriorityId; label: string; startedTurn: number; resolvedTurn: number; contributors: Record<string, PriorityContributionBand>; benefited: string[]; summary: string }
+export interface NationalPrioritiesPersisted {
+  schemaVersion: '10.7'; revision: number; initializedTurn: number | null; base: NationalPriorityMemory; current: NationalPriorityMemory; history: NationalPriorityHistoryEntry[]; seq: number; inputHash: string;
+  /** Player-declared stance (interpretation preference only — GI3 itself is never edited by V10.7). */
+  stances: Record<string, Partial<Record<NationalPriorityId, 'adopted' | 'rejected'>>>;
+}
+export interface NationalPrioritiesState {
+  schemaVersion: '10.7'; revision: number; turn: number; primary: NationalPriority | null; secondary: NationalPriority | null; emerging: NationalPriority | null; active: NationalPriority[]; superseded: NationalPriority[];
+  candidates: NationalPriorityCandidate[]; tensions: NationalPriorityTension[]; history: NationalPriorityHistoryEntry[]; resolved: NationalPriorityResolvedRecord[]; inputHash: string; computeMs: number;
+}
+export type NationalPriorityDerivedKind = 'national_priority_emerged' | 'national_priority_activated' | 'national_priority_became_urgent' | 'national_priority_improved' | 'national_priority_worsened' | 'national_priority_resolved' | 'national_priority_superseded';
+export interface NationalPriorityDerivedEvent { id: string; turn: number; kind: NationalPriorityDerivedKind; definitionId: NationalPriorityId; regionIds: string[]; text: string; significance: 'meaningful' | 'major' }
+
+/** Hard limits + thresholds (documented; LAB-visible). Budget: 1 primary + up to 1 secondary (+1 emerging watch item). */
+export const V107_LIMITS = { active: 2, history: 60, resolvedLog: 12, evidence: 8, signals: 6, regions: 5, tensions: 4, projects: 6, functional: 160 } as const;
+export const V107_THRESHOLDS = { watch: 35, activate: 55, resolve: 38, vanish: 15, important: 50, urgent: 68, critical: 82, criticalSeverity: 0.85, urgencyMargin: 4, candidateTurns: 2, resolveTurns: 2, supersedeMargin: 15, primaryMargin: 5, ineligibleCap: 49 } as const;
+const v107R = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const v107C = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
+export const NATIONAL_PRIORITY_URGENCY_RANK: Record<NationalPriorityUrgency, number> = { watch: 0, important: 1, urgent: 2, critical: 3 };
+export const NATIONAL_PRIORITY_URGENCY_LABEL: Record<NationalPriorityUrgency, string> = { watch: 'Watch', important: 'Important', urgent: 'Urgent', critical: 'Critical' };
+export const PRIORITY_CONTRIBUTION_RANK: Record<PriorityContributionBand, number> = { none: 0, indirect: 1, supporting: 2, major: 3, defining: 4 };
+export const PRIORITY_ALIGNMENT_LABEL: Record<PriorityStrategyAlignment, string> = { strong: 'Strong', moderate: 'Moderate', weak: 'Weak', conflict: 'Conflict', neutral: 'Neutral' };
+
+const npRule = (id: string, label: string, categories: NationalPriorityEvidenceCategory[], minimum = 2): NationalPriorityRule => ({ id, label, categories, minimum });
+const NP_PROBLEM_W: NationalPriorityScoreWeights = { severity: 42, reach: 24, systemic: 18, direction: 6, opportunity: 0 };
+const NP_OPP_W: NationalPriorityScoreWeights = { severity: 0, reach: 22, systemic: 0, direction: 10, opportunity: 48 };
+export const NATIONAL_PRIORITY_DEFINITIONS: NationalPriorityDefinition[] = [
+  { id: 'water_security', label: 'Water Security', icon: '💧', mode: 'problem', description: 'Water capacity, redundancy and drought exposure as a national constraint.', wording: 'Water shortages and low redundancy are becoming a national constraint.', relevantDomains: ['water', 'agriculture'],
+    activationRules: [npRule('a1', 'Strained water capacity with national reach', ['capacity', 'demand', 'dependency', 'crisis', 'redundancy', 'damage'])], resolutionRules: [npRule('r1', 'Water capacity and redundancy comfortably recovered for several evaluations', ['capacity', 'redundancy'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['water', 'agriculture', 'drought'], themes: ['water', 'agriculture'], networks: ['water'], industries: ['agriculture'], projectTypes: ['water_pipeline', 'desalination_plant'], pressureTypes: ['advanced_manufacturing', 'data_center'],
+    directions: ['agricultural_export_economy', 'diversified_resilient_economy'], conflictDirections: [], systemicDomains: ['water'], resolveText: 'Water capacity recovers, redundancy improves and agricultural exposure falls — and stays that way.', ignoreText: 'Water-dependent regions keep operating under strain; drought exposure stays high.', helps: ['Water pipelines or desalination in strained regions', 'Interregional water redundancy', 'Advanced water systems capability'] },
+  { id: 'energy_resilience', label: 'Energy Resilience', icon: '⚡', mode: 'problem', description: 'High energy utilization, concentrated generation and weak redundancy.', wording: "Australia's energy network has high utilization and low redundancy.", relevantDomains: ['energy'],
+    activationRules: [npRule('a1', 'Energy strain + economic dependence or low redundancy', ['capacity', 'demand', 'redundancy', 'concentration', 'capability', 'crisis', 'damage'])], resolutionRules: [npRule('r1', 'Critical dependence reduced, redundancy improved, consumers adequately supplied', ['capacity', 'redundancy'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['energy', 'grid', 'renewables'], themes: ['energy', 'renewables'], networks: ['energy'], industries: ['energy'], projectTypes: ['renewable_grid', 'offshore_wind_farm', 'hydro_expansion', 'green_hydrogen_terminal'], pressureTypes: ['data_center', 'advanced_manufacturing'],
+    directions: ['renewable_energy_powerhouse', 'advanced_manufacturing_economy', 'technology_research_economy'], conflictDirections: [], systemicDomains: ['energy'], resolveText: 'Critical energy dependence is reduced, redundancy improves and major consumers have adequate capacity for several turns.', ignoreText: 'Energy-dependent industry keeps running close to its limit; a single failure would spread further.', helps: ['Generation or interconnection in strained regions', 'A second energy route to dependent regions', 'Grid-scale storage capability'] },
+  { id: 'freight_modernization', label: 'Freight Modernization', icon: '🚆', mode: 'problem', description: 'Freight bottlenecks and fragile corridors constraining supply chains.', wording: 'Freight bottlenecks are constraining several supply chains.', relevantDomains: ['freight', 'supply'],
+    activationRules: [npRule('a1', 'Freight strain + industrial demand, or critical corridor + low redundancy', ['capacity', 'demand', 'dependency', 'concentration', 'redundancy', 'damage', 'crisis'])], resolutionRules: [npRule('r1', 'Bottleneck relieved, redundancy improved, supply constraints eased', ['capacity', 'redundancy'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['freight', 'logistics', 'rail'], themes: ['logistics', 'trade'], networks: ['freight'], industries: ['mining', 'manufacturing'], projectTypes: ['inland_rail_hub', 'freight_rail_upgrade', 'remote_logistics_base', 'automated_port', 'port_expansion'], pressureTypes: [],
+    directions: ['trade_logistics_hub', 'advanced_manufacturing_economy', 'resource_export_powerhouse'], conflictDirections: [], systemicDomains: ['freight'], resolveText: 'The freight bottleneck is relieved, route redundancy improves and important supply constraints ease.', ignoreText: 'Supply chains keep losing output at the constrained corridor.', helps: ['Freight capacity on the constrained corridor', 'An alternate corridor', 'Port investment', 'Advanced logistics capability', 'Supplier diversification'] },
+  { id: 'supply_chain_security', label: 'Supply Chain Security', icon: '🔗', mode: 'problem', description: 'Critical single-region supplier dependence, shortages and critical gateways.', wording: 'Key industries depend on a single supplier region with no alternative.', relevantDomains: ['supply', 'industry'],
+    activationRules: [npRule('a1', 'Critical supplier concentration with cross-region dependence', ['dependency', 'concentration', 'capacity', 'redundancy', 'crisis', 'damage'])], resolutionRules: [npRule('r1', 'Viable alternative suppliers exist; no critical single-region dependency', ['dependency', 'concentration'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['supply', 'minerals', 'industry'], themes: ['mining', 'manufacturing', 'logistics'], networks: ['freight', 'trade'], industries: ['mining', 'agriculture', 'energy'], projectTypes: ['inland_rail_hub', 'freight_rail_upgrade', 'remote_logistics_base'], pressureTypes: ['advanced_manufacturing'],
+    directions: ['diversified_resilient_economy', 'resource_export_powerhouse'], conflictDirections: [], systemicDomains: ['supply'], resolveText: 'A second viable supplier emerges and no industry depends critically on one region.', ignoreText: 'A disruption in the supplier region would reach every dependent industry.', helps: ['Develop the same supply in another region', 'Freight links from alternative suppliers', 'Reduce reliance on the dominant supplier'] },
+  { id: 'economic_diversification', label: 'Economic Diversification', icon: '🧩', mode: 'problem', description: 'Concentration in one sector or region that has become a systemic exposure.', wording: 'National output is concentrated enough to be a strategic exposure.', relevantDomains: ['industry', 'supply'],
+    activationRules: [npRule('a1', 'High concentration AND systemic exposure (specialization alone is not a problem)', ['concentration', 'redundancy', 'dependency'])], resolutionRules: [npRule('r1', 'Concentration eased or no longer a systemic exposure', ['concentration', 'redundancy'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 4, cooldownTurns: 6, contentTags: ['diversification', 'investment'], themes: ['finance', 'manufacturing', 'technology'], networks: [], industries: ['manufacturing', 'technology', 'research', 'agriculture', 'tourism'], projectTypes: ['research_campus', 'tech_innovation_park', 'advanced_manufacturing', 'tourism_precinct'], pressureTypes: [],
+    directions: ['diversified_resilient_economy'], conflictDirections: ['resource_export_powerhouse'], systemicDomains: ['industry', 'supply'], resolveText: 'The dominant sector or region no longer creates a systemic exposure.', ignoreText: 'A shock to the dominant sector would hit most of the national economy at once.', helps: ['Develop a second strong industry', 'Grow output outside the dominant region'] },
+  { id: 'technology_competitiveness', label: 'Technology Competitiveness', icon: '🔬', mode: 'opportunity', description: 'Unusually favourable conditions to accelerate higher-value technology capability.', wording: 'Australia currently has favourable conditions for accelerating technology capability.', relevantDomains: ['digital', 'research'],
+    activationRules: [npRule('a1', 'Research/technology strength + digital and energy capacity available', ['growth', 'capacity', 'capability', 'direction'], 3)], resolutionRules: [npRule('r1', 'The window closes (capability operational, or enablers lost)', ['growth', 'capacity'], 1)],
+    scoringWeights: NP_OPP_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['technology', 'research', 'digital'], themes: ['technology', 'research'], networks: ['digital'], industries: ['technology', 'research'], projectTypes: ['research_campus', 'tech_innovation_park', 'data_center', 'subsea_cable_hub'], pressureTypes: [],
+    directions: ['technology_research_economy'], conflictDirections: ['resource_export_powerhouse'], systemicDomains: [], resolveText: 'The opportunity is taken (AI Compute / Research Commercialization operational) or its enablers fade.', ignoreText: 'The window may pass — another region or rival may capture it.', helps: ['Research campuses / tech parks', 'Data centers where energy and digital are healthy', 'Subsea / digital backbone'] },
+  { id: 'industrial_capacity', label: 'Industrial Capacity', icon: '🏭', mode: 'opportunity', description: 'Strong manufacturing demand with available inputs and spare network capacity.', wording: 'Manufacturing demand, inputs and spare network capacity line up for industrial growth.', relevantDomains: ['industry'],
+    activationRules: [npRule('a1', 'Demand + available inputs + spare capacity (not merely because manufacturing exists)', ['demand', 'surplus', 'capacity', 'growth', 'capability'], 3)], resolutionRules: [npRule('r1', 'Spare capacity used up or demand satisfied', ['demand', 'capacity'], 1)],
+    scoringWeights: NP_OPP_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['manufacturing', 'industry'], themes: ['manufacturing'], networks: [], industries: ['manufacturing'], projectTypes: ['advanced_manufacturing'], pressureTypes: [],
+    directions: ['advanced_manufacturing_economy'], conflictDirections: [], systemicDomains: [], resolveText: 'The spare capacity is used or demand is met.', ignoreText: 'Unused industrial potential stays on the table.', helps: ['Advanced manufacturing where inputs and networks have headroom'] },
+  { id: 'infrastructure_recovery', label: 'Infrastructure Recovery', icon: '🛠', mode: 'problem', description: 'Damaged projects, fragmented networks and stalled recovery after shocks.', wording: 'Damaged infrastructure is fragmenting national networks.', relevantDomains: ['infrastructure'],
+    activationRules: [npRule('a1', 'Several damaged projects, or damage + fragmented network / stalled recovery', ['damage', 'redundancy', 'recovery', 'crisis'])], resolutionRules: [npRule('r1', 'Damaged assets repaired or replaced; networks whole again', ['damage'], 1)],
+    scoringWeights: { ...NP_PROBLEM_W, severity: 46 }, minimumPersistenceTurns: 2, cooldownTurns: 4, contentTags: ['recovery', 'infrastructure'], themes: ['governance', 'logistics'], networks: ['freight', 'energy', 'water', 'trade', 'digital'], industries: [], projectTypes: [], pressureTypes: [],
+    directions: ['infrastructure_led_growth'], conflictDirections: [], systemicDomains: ['infrastructure'], resolveText: 'Damaged assets are repaired or replaced and networks are whole again.', ignoreText: 'Dependent systems keep running on reduced capacity.', helps: ['Repair damaged projects', 'Build an alternative route around the damage'] },
+  { id: 'public_stability_recovery', label: 'Public Stability Recovery', icon: '🏛', mode: 'problem', description: 'Low canonical public stability across several regions.', wording: 'Public stability is low across several regions.', relevantDomains: ['stability'],
+    activationRules: [npRule('a1', 'Low national or multi-region stability + a structural cause', ['stability', 'crisis', 'capacity', 'recovery'])], resolutionRules: [npRule('r1', 'Canonical stability recovered', ['stability'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['stability', 'governance'], themes: ['governance'], networks: [], industries: [], projectTypes: [], pressureTypes: [],
+    directions: [], conflictDirections: [], systemicDomains: ['stability'], resolveText: 'Canonical Public Stability recovers (V10.7 never changes it).', ignoreText: 'Unstable regions stay unstable until their causes ease.', helps: ['Resolve the active crises', 'Restore disrupted national systems'] },
+  { id: 'national_resilience', label: 'National Resilience', icon: '🛡', mode: 'problem', description: 'Several exposed systems at once — broader than any one network.', wording: 'Several national systems are exposed at the same time.', relevantDomains: ['freight', 'energy', 'water', 'trade', 'digital', 'supply', 'liquidity'],
+    activationRules: [npRule('a1', 'Multiple exposed domains + critical points / low redundancy / fragile liquidity / high concentration', ['redundancy', 'concentration', 'liquidity'])], resolutionRules: [npRule('r1', 'Fewer than three exposed domains', ['redundancy'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 4, cooldownTurns: 6, contentTags: ['resilience'], themes: ['governance', 'energy', 'logistics'], networks: ['freight', 'energy', 'water', 'trade', 'digital'], industries: [], projectTypes: [], pressureTypes: [],
+    directions: ['diversified_resilient_economy'], conflictDirections: [], systemicDomains: ['freight', 'energy', 'water', 'trade', 'digital', 'supply'], resolveText: 'Fewer than three national systems remain exposed.', ignoreText: 'Any one shock is more likely to spread across systems.', helps: ['Redundancy in the most exposed systems', 'Alternatives to critical single points'] },
+  { id: 'regional_rebalancing', label: 'Regional Rebalancing', icon: '🗺', mode: 'problem', description: 'National growth concentrated in one region while several lag, creating exposure.', wording: 'National growth depends overwhelmingly on one region.', relevantDomains: ['industry'],
+    activationRules: [npRule('a1', 'High regional concentration + systemic exposure + several underdeveloped regions', ['concentration', 'redundancy', 'dependency', 'development'], 3)], resolutionRules: [npRule('r1', 'Regional concentration no longer an exposure', ['concentration'], 1)],
+    scoringWeights: NP_PROBLEM_W, minimumPersistenceTurns: 4, cooldownTurns: 6, contentTags: ['regional', 'investment'], themes: ['finance', 'governance'], networks: [], industries: [], projectTypes: [], pressureTypes: [],
+    directions: ['diversified_resilient_economy'], conflictDirections: [], systemicDomains: ['industry'], resolveText: 'Output is spread enough that one region is no longer a national exposure.', ignoreText: 'A shock to the leading region remains a shock to the nation.', helps: ['Develop industry outside the leading region'] },
+  { id: 'export_capacity', label: 'Export Capacity', icon: '🚢', mode: 'opportunity', description: 'Large strategic surpluses against trade capacity and gateways.', wording: 'Australia has exportable surpluses — trade capacity decides how much reaches the world.', relevantDomains: ['trade'],
+    activationRules: [npRule('a1', 'Strategic surplus + trade constraint or export-oriented direction', ['surplus', 'capacity', 'concentration', 'direction'])], resolutionRules: [npRule('r1', 'Surplus absorbed or trade constraint relieved', ['surplus', 'capacity'], 1)],
+    scoringWeights: { ...NP_OPP_W, severity: 20 }, minimumPersistenceTurns: 3, cooldownTurns: 5, contentTags: ['trade', 'export', 'ports'], themes: ['trade', 'logistics'], networks: ['trade', 'freight'], industries: ['trade', 'mining', 'agriculture'], projectTypes: ['automated_port', 'port_expansion'], pressureTypes: [],
+    directions: ['resource_export_powerhouse', 'trade_logistics_hub', 'agricultural_export_economy'], conflictDirections: ['diversified_resilient_economy'], systemicDomains: ['trade'], resolveText: 'The surplus is absorbed or trade capacity catches up.', ignoreText: 'Surplus output stays stranded behind trade constraints.', helps: ['Port and gateway capacity', 'Freight to the gateways'] }
+];
+export const NATIONAL_PRIORITY_BY_ID: Record<NationalPriorityId, NationalPriorityDefinition> = Object.fromEntries(NATIONAL_PRIORITY_DEFINITIONS.map(d => [d.id, d])) as any;
+export const NATIONAL_PRIORITY_IDS: NationalPriorityId[] = NATIONAL_PRIORITY_DEFINITIONS.map(d => d.id);
+
+export function createEmptyNationalPriorityMemory(): NationalPriorityMemory { return { lastTurn: 0, entries: {}, primaryId: null, emergingId: null, candidateTurns: {}, cooldownUntil: {}, functional: [], damaged: [], resolved: [] }; }
+export function createEmptyNationalPrioritiesPersisted(): NationalPrioritiesPersisted { return { schemaVersion: '10.7', revision: 0, initializedTurn: null, base: createEmptyNationalPriorityMemory(), current: createEmptyNationalPriorityMemory(), history: [], seq: 0, inputHash: '', stances: {} }; }
+
+export function buildNationalPriorityInputs(src: { turn: number; sr: SystemicRiskInputs; systemic: NationalSystemicRiskState | null; development: NationalDevelopmentProfile | null; projects: Record<string, any> | any[] | null | undefined;
+  controllers?: Record<string, string | null> | null; actors?: Array<{ id: string; name: string; isHuman: boolean }> | null; strategies?: NationalPriorityInputs['strategies'] | null }): NationalPriorityInputs {
+  const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 1, sr: src.sr, systemic: src.systemic, development: src.development,
+    projects: list.filter(p => p && typeof p.id === 'string').map(p => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || null, projectType: String(p.projectType || ''), status: String(p.status || ''),
+      contributions: Object.fromEntries(Object.entries(p.contributions || {}).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)])) })).sort((a, b) => a.id.localeCompare(b.id)),
+    controllers: Object.fromEntries(Object.keys(REGIONS).sort().map(r => [r, src.controllers?.[r] || null])),
+    actors: (src.actors || []).map(a => ({ id: String(a.id), name: String(a.name || a.id), isHuman: Boolean(a.isHuman) })),
+    strategies: { ...(src.strategies || {}) }
+  };
+}
+export function nationalPriorityInputHash(i: NationalPriorityInputs): string {
+  let h = 2166136261 >>> 0; const mix = (s: string) => { for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; } };
+  mix(`t${i.turn}|sr${systemicRiskInputHash(i.sr)}|sys${i.systemic?.inputHash || ''}|dev${i.development?.inputHash || ''}${i.development?.primaryDirection || ''}${i.development?.secondaryDirection || ''}`);
+  i.projects.forEach(p => mix(`${p.id}${p.status}${Object.entries(p.contributions).sort().map(([k, v]) => `${k}${Math.round(v)}`).join('')}`));
+  Object.entries(i.controllers).forEach(([r, a]) => mix(`${r}${a || ''}`));
+  Object.keys(i.strategies).sort().forEach(k => { const s = i.strategies[k]; mix(`${k}${s ? s.text + s.regionIds.join('') : '-'}`); });
+  i.actors.forEach(a => mix(a.id));
+  return h.toString(36);
+}
+
+// ---- Evaluation context (one pass over the canonical snapshots) -----------------------------------------------------
+const V107_SEV: Record<string, number> = { surplus: 0, healthy: 0, strained: 0.45, bottlenecked: 0.75, critical: 1 };
+const V107_BAND_SEV: Record<SystemicRiskBand, number> = { critical: 1, fragile: 0.75, exposed: 0.45, stable: 0.15, resilient: 0, robust: 0 };
+const V107_IND_GOOD = new Set<IndustryCondition>(['healthy', 'strong', 'booming']);
+const V107_BS: Record<string, number> = { minor: 0.25, meaningful: 0.45, major: 0.7, critical: 0.95 };
+const v107Fn = (s: string) => s === 'active' || s === 'upgraded';
+const v107Name = (r: string) => REGIONS[r]?.name || r;
+interface V107Ctx {
+  i: NationalPriorityInputs; regions: string[]; cond: (r: string, n: NationalNetworkKind) => NationalNetworkCondition; ind: (r: string, k: StrategicIndustryKind) => IndustryState | null;
+  weight: Record<string, number>; crises: SystemicRiskInputs['crises']; damaged: NationalPriorityInputs['projects']; dirRel: (d: NationalPriorityDefinition) => number;
+  domainSev: (d: SystemicRiskDomain) => number; capMat: (id: EmergingCapabilityId) => number;
+}
+function v107Ctx(i: NationalPriorityInputs): V107Ctx {
+  const ns = i.sr.national, ind = i.sr.industries; const regions = Object.keys(REGIONS).sort();
+  const out: Record<string, number> = {}; regions.forEach(r => { out[r] = Object.values(ind?.regions[r]?.industries || {}).reduce((s, x) => s + Math.max(0, Number(x?.effectiveOutput || 0)), 0); });
+  const max = Math.max(1e-9, ...Object.values(out));
+  const dev = i.development;
+  return {
+    i, regions, cond: (r, n) => (ns?.regions[r]?.networks[n]?.condition || 'healthy'), ind: (r, k) => (ind?.regions[r]?.industries[k] || null),
+    weight: Object.fromEntries(regions.map(r => [r, v107R(out[r] / max, 2)])), crises: i.sr.crises.filter(c => c.status === 'active' || c.status === 'triggered'),
+    damaged: i.projects.filter(p => p.status === 'damaged'),
+    dirRel: d => (dev?.primaryDirection && d.directions.includes(dev.primaryDirection) ? 1 : dev?.secondaryDirection && d.directions.includes(dev.secondaryDirection) ? 0.5 : 0),
+    domainSev: d => (i.systemic ? V107_BAND_SEV[i.systemic.systems[d]?.condition || 'stable'] : 0),
+    capMat: id => CAPABILITY_MATURITY_RANK[i.sr.innovation?.capabilities?.[id]?.maturity || 'unavailable']
+  };
+}
+interface V107Eval { evidence: NationalPriorityEvidence[]; severity: number; reach: number; opportunity: number; national: boolean; eligible: boolean; whyNot: string | null; signals: NationalPriorityOutcomeSignal[]; affectedSystems: string[]; mode?: NationalPriorityMode }
+const npEv = (def: NationalPriorityId, sourceSystem: NationalPrioritySource, sourceId: string, category: NationalPriorityEvidenceCategory, label: string, weight: number, regionIds: string[] = []): NationalPriorityEvidence =>
+  ({ id: `npe:${def}:${sourceSystem}:${sourceId}:${category}`, sourceSystem, sourceId, category, label, weight: v107R(v107C(weight), 2), regionIds: Array.from(new Set(regionIds.filter(r => REGIONS[r]))).sort() });
+const npSig = (id: string, label: string, state: NationalPriorityOutcomeSignal['state'], sourceSystem: string, sourceId: string, explanation: string, value?: number): NationalPriorityOutcomeSignal => ({ id, label, state, ...(value !== undefined ? { value: v107R(value, 2) } : {}), sourceSystem, sourceId, explanation });
+const npCondState = (c: NationalNetworkCondition): NationalPriorityOutcomeSignal['state'] => (c === 'critical' || c === 'bottlenecked' ? 'critical' : c === 'strained' ? 'weak' : 'healthy');
+const npBandState = (b: SystemicRiskBand | undefined): NationalPriorityOutcomeSignal['state'] => (b === 'critical' || b === 'fragile' ? 'critical' : b === 'exposed' ? 'weak' : 'healthy');
+const npReach = (ev: NationalPriorityEvidence[], deps: number) => { const regs = Array.from(new Set(ev.flatMap(e => e.regionIds))); return { regs, reach: v107C(((Math.min(regs.length, 5) - 1) / 4) * 0.6 + Math.min(1, deps / 2) * 0.4) }; };
+
+/** Network-shaped problem priorities (water / energy / freight): strain + economic relevance + national reach. */
+function v107NetworkPriority(C: V107Ctx, def: NationalPriorityDefinition, n: NationalNetworkKind, o: { domain: SystemicRiskDomain; crisisRe: RegExp; extra?: (ev: NationalPriorityEvidence[]) => void }): V107Eval {
+  const i = C.i, ns = i.sr.national, ind = i.sr.industries, sys = i.systemic; const ev: NationalPriorityEvidence[] = []; const L = NATIONAL_NETWORK_LABEL[n];
+  const hit = C.regions.filter(r => V107_SEV[C.cond(r, n)] >= 0.45);
+  hit.forEach(r => ev.push(npEv(def.id, 'national_systems', `${r}:${n}`, 'capacity', `${r} ${L.toLowerCase()} capacity is ${NATIONAL_CONDITION_LABEL[C.cond(r, n)].toLowerCase()}`, V107_SEV[C.cond(r, n)], [r])));
+  const nat = ns?.national?.[n]; if (nat && nat.utilization >= 0.85) ev.push(npEv(def.id, 'national_systems', `nat:${n}`, 'demand', `National ${L.toLowerCase()} utilization is very high (${Math.round(nat.utilization * 100)}%)`, (nat.utilization - 0.75) / 0.35));
+  // National reach comes from OTHER regions depending on a strained provider (a strained importer is a local issue).
+  const deps = (ns?.dependencies || []).filter(d => d.network === n && (d.importance === 'critical' || d.importance === 'high') && (hit.includes(d.providerRegionId) || (hit.includes(d.consumerRegionId) && (C.weight[d.consumerRegionId] || 0) >= 0.5)));
+  deps.slice(0, 3).forEach(d => ev.push(npEv(def.id, 'national_systems', d.id, 'dependency', d.reason, d.importance === 'critical' ? 0.85 : 0.6, [d.consumerRegionId, d.providerRegionId])));
+  (ind?.bottlenecks || []).filter(b => b.kind === `${n}_constraint`).slice(0, 3).forEach(b => ev.push(npEv(def.id, 'industries', b.id, 'demand', b.reason, V107_BS[b.severity] || 0.4, [b.regionId, ...b.affectedRegions])));
+  hit.forEach(r => def.industries.concat(['manufacturing'] as StrategicIndustryKind[]).forEach(k => { const s = C.ind(r, k); if (s && (V107_IND_GOOD.has(s.condition) || s.condition === 'constrained')) ev.push(npEv(def.id, 'industries', `${r}:${k}`, 'demand', `${INDUSTRY_LABEL[k]} in ${r} depends on ${L.toLowerCase()}`, 0.5, [r])); }));
+  const dom = sys?.systems[o.domain]; const dsev = dom ? V107_BAND_SEV[dom.condition] : 0;
+  if (dom && dsev >= 0.45) ev.push(npEv(def.id, 'systemic_risk', o.domain, 'redundancy', `${SYSTEMIC_DOMAIN_LABEL[o.domain]} resilience is ${SYSTEMIC_BAND_LABEL[dom.condition].toLowerCase()}${dom.topRisks[0] ? ` — ${dom.topRisks[0]}` : ''}`, dsev));
+  (sys?.criticalPoints || []).filter(cp => cp.domain === o.domain && cp.severity !== 'meaningful').slice(0, 2).forEach(cp => ev.push(npEv(def.id, 'systemic_risk', cp.id, 'concentration', `${cp.label} is a single point of failure`, cp.severity === 'critical' ? 0.85 : 0.6, [])));
+  (i.sr.networks?.networks || []).filter(x => x.networkKind === n && x.memberRegionIds.length >= 2 && (x.redundancyBand === 'none' || x.redundancyBand === 'low') && x.economicRelevance !== 'low').slice(0, 1)
+    .forEach(x => ev.push(npEv(def.id, 'infrastructure_networks', x.id, 'redundancy', `${x.name} has ${x.redundancyBand} redundancy`, 0.5, x.memberRegionIds)));
+  C.crises.filter(c => o.crisisRe.test(`${c.name} ${c.category}`.toLowerCase())).forEach(c => ev.push(npEv(def.id, 'crisis', c.id, 'crisis', `${c.name} affects ${c.affectedRegions.join(', ') || 'the nation'}`, 0.8, c.affectedRegions)));
+  C.damaged.filter(p => nationalProjectNetworkEffects(p.projectType).some(e => e.network === n)).slice(0, 2).forEach(p => ev.push(npEv(def.id, 'canonical', p.id, 'damage', `${p.title} is damaged`, 0.65, p.regionId ? [p.regionId] : [])));
+  o.extra?.(ev);
+  const cats = new Set(ev.map(e => e.category));
+  const capSev = Math.max(0, ...ev.filter(e => e.category === 'capacity').map(e => e.weight));
+  const severity = v107C(Math.max(capSev, dsev * 0.9, cats.has('crisis') && hit.length ? 0.8 : 0, cats.has('damage') ? 0.6 : 0, ...ev.filter(e => e.category === 'demand' && e.sourceId.startsWith('nat:')).map(e => e.weight)) + (cats.has('crisis') && capSev >= 0.45 ? 0.15 : 0));
+  const { reach } = npReach(ev, deps.length);
+  // Affected = strained regions + regions depending on them + crisis / industry-constraint regions (never mere suppliers TO a strained region).
+  const regs = Array.from(new Set([...hit, ...deps.filter(d => hit.includes(d.providerRegionId)).map(d => d.consumerRegionId), ...ev.filter(e => e.category === 'crisis' || (e.category === 'demand' && e.sourceSystem === 'industries')).flatMap(e => e.regionIds)]));
+  const econ = regs.reduce((s, r) => s + (C.weight[r] || 0), 0);
+  const national = regs.length >= 3 || (regs.length >= 2 && (deps.length > 0 || econ >= 0.5)) || (regs.length >= 1 && econ >= 0.8 && ev.some(e => e.sourceId.startsWith('nat:')));
+  const eligible = national && cats.size >= 2 && severity >= 0.4;
+  const worst = hit.length ? hit.map(r => C.cond(r, n)).sort((a, b) => V107_SEV[b] - V107_SEV[a])[0] : (nat?.condition || 'healthy');
+  const signals: NationalPriorityOutcomeSignal[] = [
+    npSig(`${n}_capacity`, `${L} capacity`, npCondState(worst as NationalNetworkCondition), 'national_systems', n, hit.length ? `${hit.join(', ')} ${hit.length > 1 ? 'are' : 'is'} under strain` : `${L} capacity is adequate`),
+    npSig(`${n}_redundancy`, `${L} redundancy`, dom ? npBandState(dom.condition) : 'healthy', 'systemic_risk', o.domain, dom ? `${SYSTEMIC_DOMAIN_LABEL[o.domain]} ${SYSTEMIC_BAND_LABEL[dom.condition].toLowerCase()}` : 'Not measured'),
+    npSig(`${n}_dependence`, 'Single-region dependence', deps.some(d => d.importance === 'critical' && !d.alternativeProviders.length) ? 'critical' : deps.length ? 'weak' : 'healthy', 'national_systems', n, deps[0]?.reason || 'No critical single-region dependence')
+  ];
+  if (cats.has('crisis')) signals.push(npSig(`${n}_crisis`, 'Crisis pressure', 'critical', 'crisis', n, ev.find(e => e.category === 'crisis')!.label));
+  const bn = (ind?.bottlenecks || []).filter(b => b.kind === `${n}_constraint`); if (bn.length || def.industries.length) signals.push(npSig(`${n}_industry`, `${def.industries[0] ? INDUSTRY_LABEL[def.industries[0]] : 'Industry'} exposure`, bn.length ? 'weak' : 'healthy', 'industries', n, bn[0]?.reason || 'No industry constrained by this network'));
+  return { evidence: ev, severity, reach, opportunity: 0, national, eligible, whyNot: eligible ? null : !national ? 'The strain is local — it does not yet reach several regions or national dependencies.' : cats.size < 2 ? 'Only one kind of evidence so far.' : 'Severity is still low.', signals, affectedSystems: [`${L} network`, ...(bn.length ? ['Industries'] : []), ...(dom ? ['Systemic risk'] : [])] };
+}
+
+function v107Evaluate(C: V107Ctx, def: NationalPriorityDefinition): V107Eval {
+  const i = C.i, ns = i.sr.national, ind = i.sr.industries, sys = i.systemic, dev = i.development, inn = i.sr.innovation; const id = def.id;
+  switch (id) {
+    case 'water_security': return v107NetworkPriority(C, def, 'water', { domain: 'water', crisisRe: /drought|heat|water/ });
+    case 'energy_resilience': return v107NetworkPriority(C, def, 'energy', { domain: 'energy', crisisRe: /grid|blackout|energy|power|fuel|heat/, extra: ev => {
+      if (C.capMat('ai_compute_infrastructure') >= 1) ev.push(npEv(id, 'innovation', 'ai_compute_infrastructure', 'capability', 'AI Compute growth is adding energy demand', 0.45));
+      Object.values(inn?.capabilities || {}).filter(c => c.mainBlocker && /energy|grid|power/i.test(c.mainBlocker)).slice(0, 1).forEach(c => ev.push(npEv(id, 'innovation', c.id, 'capability', `${CAPABILITY_DEF_BY_ID[c.id].label} is blocked by energy: ${c.mainBlocker}`, 0.5)));
+      (sys?.concentrations || []).filter(c => c.kind === 'energy_source' && (c.band === 'highly_concentrated' || c.band === 'concentrated')).slice(0, 1).forEach(c => ev.push(npEv(id, 'systemic_risk', c.id, 'concentration', c.shareLabel, c.band === 'highly_concentrated' ? 0.75 : 0.5)));
+    } });
+    case 'freight_modernization': return v107NetworkPriority(C, def, 'freight', { domain: 'freight', crisisRe: /port|strike|supply|freight|rail|cyclone|flood|storm/, extra: ev => {
+      (ind?.flows || []).filter(f => f.strainedCorridor).slice(0, 2).forEach(f => ev.push(npEv(id, 'industries', `${f.fromRegionId}-${f.toRegionId}:${f.supply}`, 'dependency', `${SUPPLY_LABEL[f.supply]} from ${f.fromRegionId} to ${f.toRegionId} moves through a strained corridor`, 0.55, [f.fromRegionId, f.toRegionId])));
+      (ns?.bottlenecks || []).filter(b => b.network === 'freight' && b.linkId).slice(0, 2).forEach(b => ev.push(npEv(id, 'national_systems', b.id, 'capacity', b.reason, V107_BS[b.severity] || 0.45, b.affectedRegionIds)));
+    } });
+    case 'supply_chain_security': {
+      const ev: NationalPriorityEvidence[] = [];
+      const deps = (ind?.dependencies || []).filter(d => (d.importance === 'critical' || d.importance === 'high') && !d.alternatives.length && d.consumerRegionId !== d.providerRegionId);
+      deps.slice(0, 4).forEach(d => ev.push(npEv(id, 'industries', d.id, 'dependency', `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} depends on ${d.providerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()} with no alternative`, d.importance === 'critical' ? 0.9 : 0.6, [d.consumerRegionId, d.providerRegionId])));
+      (ind?.national.shortages || []).slice(0, 2).forEach(s => ev.push(npEv(id, 'industries', `short:${s}`, 'capacity', `National shortage of ${SUPPLY_LABEL[s].toLowerCase()}`, 0.6)));
+      (sys?.concentrations || []).filter(c => c.kind === 'supplier' && (c.band === 'highly_concentrated' || c.band === 'concentrated')).slice(0, 2).forEach(c => ev.push(npEv(id, 'systemic_risk', c.id, 'concentration', c.shareLabel, c.band === 'highly_concentrated' ? 0.8 : 0.55)));
+      (sys?.criticalPoints || []).filter(cp => cp.subjectType === 'supplier' || cp.subjectType === 'gateway').slice(0, 2).forEach(cp => ev.push(npEv(id, 'systemic_risk', cp.id, 'concentration', `${cp.label}: ${cp.reason}`, cp.severity === 'critical' ? 0.85 : 0.6)));
+      const dsev = C.domainSev('supply'); if (dsev >= 0.45) ev.push(npEv(id, 'systemic_risk', 'supply', 'redundancy', `Supply-chain resilience is ${SYSTEMIC_BAND_LABEL[sys!.systems.supply.condition].toLowerCase()}`, dsev));
+      const providers = Array.from(new Set(deps.map(d => d.providerRegionId)));
+      C.crises.filter(c => c.affectedRegions.some(r => providers.includes(r))).forEach(c => ev.push(npEv(id, 'crisis', c.id, 'crisis', `${c.name} hits supplier region ${c.affectedRegions.filter(r => providers.includes(r)).join(', ')}`, 0.85, c.affectedRegions)));
+      C.damaged.filter(p => p.regionId && providers.includes(p.regionId)).slice(0, 2).forEach(p => ev.push(npEv(id, 'canonical', p.id, 'damage', `${p.title} (supplier region) is damaged`, 0.7, [p.regionId!])));
+      const cats = new Set(ev.map(e => e.category));
+      const severity = v107C(Math.max(0, ...ev.map(e => e.weight)) + (cats.has('crisis') && deps.length ? 0.1 : 0));
+      const { reach } = npReach(ev, deps.length); const national = deps.length > 0 || (cats.has('capacity') && cats.has('concentration'));
+      const eligible = national && cats.size >= 2 && severity >= 0.5;
+      const top = deps[0];
+      return { evidence: ev, severity, reach, opportunity: 0, national, eligible, whyNot: eligible ? null : !deps.length ? 'No critical cross-region supplier dependence without alternatives.' : 'Only one kind of evidence so far.', affectedSystems: ['Supply chains', 'Industries', ...(dsev ? ['Systemic risk'] : [])],
+        signals: [npSig('critical_dependence', 'Critical single-region dependence', deps.some(d => d.importance === 'critical') ? 'critical' : deps.length ? 'weak' : 'healthy', 'industries', top?.id || 'none', top ? `${top.providerRegionId} supplies ${top.consumerRegionId} with no alternative` : 'No critical single-supplier dependence'),
+          npSig('alternatives', 'Alternative suppliers', deps.length ? 'weak' : 'healthy', 'industries', 'alternatives', deps.length ? `${deps.length} dependenc${deps.length === 1 ? 'y has' : 'ies have'} no alternative` : 'Alternatives exist'),
+          npSig('shortages', 'Shortages', (ind?.national.shortages || []).length ? 'weak' : 'healthy', 'industries', 'shortages', (ind?.national.shortages || []).map(s => SUPPLY_LABEL[s]).join(', ') || 'None'),
+          npSig('supply_resilience', 'Supply-chain resilience', npBandState(sys?.systems.supply?.condition), 'systemic_risk', 'supply', sys ? SYSTEMIC_BAND_LABEL[sys.systems.supply.condition] : 'Not measured')] };
+    }
+    case 'economic_diversification': {
+      const ev: NationalPriorityEvidence[] = [];
+      if (dev && dev.sectorConcentration.band === 'HIGH' && dev.sectorConcentration.sector) ev.push(npEv(id, 'national_development', `sector:${dev.sectorConcentration.sector}`, 'concentration', `${INDUSTRY_LABEL[dev.sectorConcentration.sector]} is ${Math.round(dev.sectorConcentration.share * 100)}% of national output`, dev.sectorConcentration.share));
+      if (dev && dev.regionalConcentration.band === 'HIGH') ev.push(npEv(id, 'national_development', 'regional', 'concentration', `${dev.regionalConcentration.regionIds.join(' + ')} produce ${Math.round(dev.regionalConcentration.share * 100)}% of output`, dev.regionalConcentration.share * 0.9, dev.regionalConcentration.regionIds));
+      if (ind && (ind.national.diversityBand === 'highly_specialized')) ev.push(npEv(id, 'industries', 'diversity', 'dependency', 'Few alternative industries at national scale', 0.55));
+      const exp = Math.max(C.domainSev('industry'), C.domainSev('supply'));
+      if (exp >= 0.45) ev.push(npEv(id, 'systemic_risk', 'industry', 'redundancy', `Industry / supply resilience is ${SYSTEMIC_BAND_LABEL[[sys!.systems.industry.condition, sys!.systems.supply.condition].sort((a, b) => SYSTEMIC_BAND_RANK[a] - SYSTEMIC_BAND_RANK[b])[0]].toLowerCase()}`, exp));
+      (sys?.concentrations || []).filter(c => (c.kind === 'industry' || c.kind === 'region') && c.band === 'highly_concentrated').slice(0, 1).forEach(c => ev.push(npEv(id, 'systemic_risk', c.id, 'concentration', c.shareLabel, 0.6)));
+      // Systemic exposure: concentration only matters when a single failure would spread (critical supplier dependence without alternatives).
+      const critDeps = (ind?.dependencies || []).filter(d => d.importance === 'critical' && !d.alternatives.length && d.consumerRegionId !== d.providerRegionId);
+      if (critDeps.length) ev.push(npEv(id, 'industries', critDeps[0].id, 'dependency', `${critDeps.length} critical supply dependenc${critDeps.length === 1 ? 'y has' : 'ies have'} no alternative`, Math.min(0.8, 0.5 + critDeps.length * 0.1), critDeps.flatMap(d => [d.consumerRegionId, d.providerRegionId])));
+      const cats = new Set(ev.map(e => e.category)); const conc = Math.max(0, ...ev.filter(e => e.category === 'concentration').map(e => e.weight));
+      const exposure = Math.max(exp, cats.has('dependency') ? Math.max(...ev.filter(e => e.category === 'dependency').map(e => e.weight)) : 0);
+      const eligible = cats.has('concentration') && (cats.has('redundancy') || (cats.has('dependency') && exposure >= 0.6)) && conc >= 0.45;
+      const severity = v107C(conc * 0.6 + exposure * 0.5);
+      return { evidence: ev, severity, reach: v107C(0.5 + exposure * 0.5), opportunity: 0, national: true, eligible, whyNot: eligible ? null : !cats.has('concentration') ? 'Output is not concentrated enough to matter strategically.' : 'Specialized but resilient — concentration is not creating systemic exposure.', affectedSystems: ['National economy', 'Industries'],
+        signals: [npSig('sector_concentration', 'Sector concentration', dev?.sectorConcentration.band === 'HIGH' ? 'weak' : 'healthy', 'national_development', 'sector', dev ? `${dev.sectorConcentration.band}` : 'Unknown'),
+          npSig('regional_concentration', 'Regional concentration', dev?.regionalConcentration.band === 'HIGH' ? 'weak' : 'healthy', 'national_development', 'regional', dev ? `${dev.regionalConcentration.band}` : 'Unknown'),
+          npSig('systemic_exposure', 'Systemic exposure', exposure >= 0.75 ? 'critical' : exposure >= 0.45 ? 'weak' : 'healthy', 'systemic_risk', 'industry', exposure >= 0.45 ? 'Concentration is creating exposure' : 'Exposure is contained')] };
+    }
+    case 'technology_competitiveness': {
+      const ev: NationalPriorityEvidence[] = [];
+      const best = (k: StrategicIndustryKind) => C.regions.map(r => ({ r, s: C.ind(r, k) })).filter(x => x.s && V107_IND_GOOD.has(x.s.condition)).sort((a, b) => b.s!.strength - a.s!.strength || a.r.localeCompare(b.r));
+      const res = best('research'), tech = best('technology');
+      if (res.length) ev.push(npEv(id, 'industries', 'research', 'growth', `Research is ${res[0].s!.condition} in ${res.map(x => x.r).slice(0, 3).join(', ')}`, 0.7, res.map(x => x.r).slice(0, 3)));
+      if (tech.length) ev.push(npEv(id, 'industries', 'technology', 'growth', `Technology is ${tech[0].s!.condition} in ${tech.map(x => x.r).slice(0, 3).join(', ')}`, 0.7, tech.map(x => x.r).slice(0, 3)));
+      const digOk = ns ? ['healthy', 'surplus'].includes(ns.national.digital.condition) : false; const enOk = ns ? ['healthy', 'surplus'].includes(ns.national.energy.condition) : false;
+      if (digOk) ev.push(npEv(id, 'national_systems', 'digital', 'capacity', `Digital connectivity is ${NATIONAL_CONDITION_LABEL[ns!.national.digital.condition].toLowerCase()}`, 0.6));
+      if (enOk) ev.push(npEv(id, 'national_systems', 'energy', 'capacity', `Energy capacity is available (${NATIONAL_CONDITION_LABEL[ns!.national.energy.condition].toLowerCase()})`, 0.5));
+      (['ai_compute_infrastructure', 'research_commercialization'] as EmergingCapabilityId[]).forEach(c => { const m = C.capMat(c); if (m >= 1 && m <= 2) ev.push(npEv(id, 'innovation', c, 'capability', `${CAPABILITY_DEF_BY_ID[c].label} is ${CAPABILITY_MATURITY_LABEL[inn!.capabilities[c].maturity].toLowerCase()} — close to operational`, 0.7)); });
+      if (C.dirRel(def) > 0) ev.push(npEv(id, 'national_development', 'direction', 'direction', 'National direction is technology-oriented', C.dirRel(def)));
+      const met = [res.length > 0, tech.length > 0, digOk, enOk, ev.some(e => e.category === 'capability'), C.dirRel(def) > 0].filter(Boolean).length;
+      const eligible = (res.length > 0 || tech.length > 0) && digOk && enOk && met >= 4;
+      const regs = Array.from(new Set([...res, ...tech].map(x => x.r)));
+      return { evidence: ev, severity: 0, reach: v107C((regs.length - 1) / 3), opportunity: v107C(met / 5), national: regs.length >= 1, eligible,
+        whyNot: eligible ? null : !digOk ? 'Digital capacity is constrained — it blocks the opportunity.' : !enOk ? 'Energy capacity is constrained — it blocks the opportunity.' : !(res.length || tech.length) ? 'No strong research or technology base yet.' : 'Too few enablers line up yet.', affectedSystems: ['Technology', 'Research', 'Digital network'],
+        signals: [npSig('research_base', 'Research base', res.length ? 'healthy' : 'weak', 'industries', 'research', res.length ? res.map(x => x.r).slice(0, 3).join(', ') : 'Weak'),
+          npSig('digital', 'Digital connectivity', digOk ? 'healthy' : 'weak', 'national_systems', 'digital', ns ? NATIONAL_CONDITION_LABEL[ns.national.digital.condition] : 'Unknown'),
+          npSig('energy_headroom', 'Energy headroom', enOk ? 'healthy' : 'weak', 'national_systems', 'energy', ns ? NATIONAL_CONDITION_LABEL[ns.national.energy.condition] : 'Unknown'),
+          npSig('capability', 'Technology capability', C.capMat('ai_compute_infrastructure') >= 3 || C.capMat('research_commercialization') >= 3 ? 'healthy' : ev.some(e => e.category === 'capability') ? 'improving' : 'weak', 'innovation', 'ai_compute_infrastructure', 'AI Compute / Research Commercialization maturity')] };
+    }
+    case 'industrial_capacity': {
+      const ev: NationalPriorityEvidence[] = [];
+      const strong = C.regions.filter(r => { const s = C.ind(r, 'manufacturing'); return s && (s.condition === 'strong' || s.condition === 'booming' || (s.condition === 'healthy' && s.trend === 'growing')); });
+      const mgTight = (ind?.national.shortages || []).includes('manufactured_goods');
+      if (strong.length) ev.push(npEv(id, 'industries', 'manufacturing', 'demand', `Manufacturing is strong in ${strong.join(', ')}`, 0.7, strong));
+      if (mgTight) ev.push(npEv(id, 'industries', 'manufactured_goods', 'demand', 'Manufactured goods are in national shortage', 0.6));
+      const inputsOk = ind ? !(ind.national.shortages || []).includes('minerals') && !(ind.dependencies || []).some(d => d.supply === 'minerals' && d.importance === 'critical' && !d.alternatives.length) : false;
+      if (inputsOk) ev.push(npEv(id, 'industries', 'minerals', 'surplus', 'Mineral inputs are available without critical single-supplier exposure', 0.6));
+      const spare = ns ? ns.national.freight.utilization < 0.8 && ns.national.energy.utilization < 0.8 : false;
+      if (spare) ev.push(npEv(id, 'national_systems', 'headroom', 'capacity', `Freight (${Math.round(ns!.national.freight.utilization * 100)}%) and energy (${Math.round(ns!.national.energy.utilization * 100)}%) have headroom`, 0.6));
+      const resOk = C.regions.some(r => { const s = C.ind(r, 'research'); return s && V107_IND_GOOD.has(s.condition); }); if (resOk) ev.push(npEv(id, 'industries', 'research', 'growth', 'Research capability supports higher-value manufacturing', 0.4));
+      const am = C.capMat('advanced_manufacturing'); if (am >= 1) ev.push(npEv(id, 'innovation', 'advanced_manufacturing', 'capability', `Advanced Manufacturing is ${CAPABILITY_MATURITY_LABEL[inn!.capabilities.advanced_manufacturing.maturity].toLowerCase()}`, 0.6));
+      const demand = strong.length > 0 || mgTight; const met = [demand, inputsOk, spare, resOk, am >= 1].filter(Boolean).length;
+      const eligible = demand && inputsOk && spare && met >= 4;
+      return { evidence: ev, severity: 0, reach: v107C((strong.length + (mgTight ? 1 : 0) - 1) / 3), opportunity: v107C(met / 5), national: strong.length >= 1, eligible,
+        whyNot: eligible ? null : !demand ? 'Manufacturing exists but demand is not strong.' : !inputsOk ? 'Inputs are not secure enough.' : !spare ? 'Networks have no headroom for expansion.' : 'Too few enablers line up yet.', affectedSystems: ['Manufacturing', 'Supply chains'],
+        signals: [npSig('demand', 'Manufacturing demand', demand ? 'healthy' : 'weak', 'industries', 'manufacturing', strong.join(', ') || 'Weak'), npSig('inputs', 'Input availability', inputsOk ? 'healthy' : 'weak', 'industries', 'minerals', inputsOk ? 'Available' : 'Constrained'), npSig('headroom', 'Network headroom', spare ? 'healthy' : 'weak', 'national_systems', 'headroom', spare ? 'Available' : 'Tight')] };
+    }
+    case 'infrastructure_recovery': {
+      const ev: NationalPriorityEvidence[] = [];
+      C.damaged.slice(0, 4).forEach(p => ev.push(npEv(id, 'canonical', p.id, 'damage', `${p.title} is damaged`, 0.6, p.regionId ? [p.regionId] : [])));
+      const frag = (i.sr.networks?.networks || []).filter(x => x.condition === 'disrupted' || x.brokenLinkIds.length > 0);
+      frag.slice(0, 2).forEach(x => ev.push(npEv(id, 'infrastructure_networks', x.id, 'redundancy', `${x.name} is ${x.condition === 'disrupted' ? 'disrupted' : 'fragmented'}`, 0.65, x.memberRegionIds)));
+      const critDam = (i.sr.networks?.criticalPoints || []).filter(cp => cp.type === 'project' && C.damaged.some(p => p.id === cp.subjectId));
+      critDam.slice(0, 1).forEach(cp => ev.push(npEv(id, 'infrastructure_networks', cp.id, 'damage', `A critical network point is damaged: ${cp.reason}`, 0.85, cp.affectedRegions)));
+      const stalled = (sys?.recovery || []).filter(r => r.stalled); stalled.slice(0, 1).forEach(r => ev.push(npEv(id, 'systemic_risk', r.id, 'recovery', `${r.label} recovery has stalled`, 0.7)));
+      if (C.damaged.length && C.crises.length) ev.push(npEv(id, 'crisis', C.crises[0].id, 'crisis', `${C.crises[0].name} is still constraining repairs`, 0.5, C.crises[0].affectedRegions));
+      const cats = new Set(ev.map(e => e.category)); const n = C.damaged.length;
+      const severity = v107C(0.22 * Math.min(n, 4) + (stalled.length ? 0.25 : 0) + (frag.length ? 0.2 : 0) + (critDam.length ? 0.2 : 0));
+      const regs = Array.from(new Set(ev.flatMap(e => e.regionIds)));
+      const national = n >= 2 || frag.length > 0 || critDam.length > 0; const eligible = national && (n >= 2 || (n >= 1 && (stalled.length > 0 || frag.length > 0 || critDam.length > 0))) && cats.size >= 2;
+      return { evidence: ev, severity, reach: v107C((regs.length - 1) / 4 + (frag.length ? 0.3 : 0)), opportunity: 0, national, eligible, whyNot: eligible ? null : n === 0 ? 'Nothing is damaged.' : 'A single damaged asset without wider network effects is a local repair, not a national priority.', affectedSystems: ['Infrastructure', 'National networks'],
+        signals: [npSig('damaged', 'Damaged assets', n >= 3 ? 'critical' : n ? 'weak' : 'healthy', 'canonical', 'damaged', `${n} damaged`, n), npSig('networks', 'Network continuity', frag.length ? 'weak' : 'healthy', 'infrastructure_networks', 'continuity', frag.map(x => x.name).join(', ') || 'Whole'), npSig('recovery', 'Recovery momentum', stalled.length ? 'critical' : (sys?.recovery || []).some(r => r.status === 'recovering' || r.status === 'mostly_recovered') ? 'improving' : 'healthy', 'systemic_risk', 'recovery', stalled[0]?.label ? `${stalled[0].label} stalled` : 'Not stalled')] };
+    }
+    case 'public_stability_recovery': {
+      const ev: NationalPriorityEvidence[] = []; const nat = i.sr.stability.national; const regional = Object.entries(i.sr.stability.regional || {}).filter(([r, v]) => REGIONS[r] && Number(v) < 40).map(([r]) => r).sort();
+      if (typeof nat === 'number' && nat < 45) ev.push(npEv(id, 'public_stability', 'national', 'stability', `National stability is low (${Math.round(nat)})`, (50 - nat) / 30));
+      if (regional.length >= 2) ev.push(npEv(id, 'public_stability', 'regional', 'stability', `${regional.length} regions are unstable (${regional.join(', ')})`, Math.min(1, regional.length / 4), regional));
+      C.crises.slice(0, 2).forEach(c => ev.push(npEv(id, 'crisis', c.id, 'crisis', `${c.name} is active`, 0.6, c.affectedRegions)));
+      const crit = C.regions.filter(r => NATIONAL_NETWORKS.some(n => C.cond(r, n) === 'critical')); if (crit.length) ev.push(npEv(id, 'national_systems', 'critical', 'capacity', `National systems are disrupted in ${crit.join(', ')}`, 0.5, crit));
+      (sys?.recovery || []).filter(r => r.status !== 'recovered').slice(0, 1).forEach(r => ev.push(npEv(id, 'systemic_risk', r.id, 'recovery', `${r.label} is not yet recovered`, 0.45)));
+      const cats = new Set(ev.map(e => e.category)); const low = (typeof nat === 'number' && nat < 45) || regional.length >= 2;
+      const severity = v107C(Math.max(0, ...ev.filter(e => e.category === 'stability').map(e => e.weight)) + (cats.has('crisis') ? 0.1 : 0));
+      const eligible = low && cats.size >= 2;
+      return { evidence: ev, severity, reach: v107C(0.4 + regional.length / 8 + (typeof nat === 'number' && nat < 45 ? 0.3 : 0)), opportunity: 0, national: low, eligible, whyNot: eligible ? null : !low ? 'Canonical stability is not low nationally or across several regions.' : 'Low stability without a structural cause V10.7 can point to.', affectedSystems: ['Public Stability'],
+        signals: [npSig('national_stability', 'National stability', typeof nat !== 'number' ? 'healthy' : nat < 30 ? 'critical' : nat < 45 ? 'weak' : 'healthy', 'public_stability', 'national', typeof nat === 'number' ? `${Math.round(nat)}` : 'Unknown', typeof nat === 'number' ? nat : undefined), npSig('unstable_regions', 'Unstable regions', regional.length >= 3 ? 'critical' : regional.length ? 'weak' : 'healthy', 'public_stability', 'regional', regional.join(', ') || 'None', regional.length)] };
+    }
+    case 'national_resilience': {
+      const ev: NationalPriorityEvidence[] = []; if (!sys) return { evidence: [], severity: 0, reach: 0, opportunity: 0, national: false, eligible: false, whyNot: 'Systemic risk is not available.', signals: [], affectedSystems: [] };
+      const doms = SYSTEMIC_DOMAINS.filter(d => d !== 'stability' && d !== 'liquidity' && V107_BAND_SEV[sys.systems[d].condition] >= 0.45);
+      if (doms.length) ev.push(npEv(id, 'systemic_risk', 'domains', 'redundancy', `${doms.length} systems are exposed or worse: ${doms.map(d => SYSTEMIC_DOMAIN_LABEL[d]).join(', ')}`, Math.min(1, doms.length / 5)));
+      const cps = sys.criticalPoints.filter(c => c.severity !== 'meaningful'); if (cps.length >= 2) ev.push(npEv(id, 'systemic_risk', 'critical_points', 'concentration', `${cps.length} major single points of failure`, Math.min(1, cps.length / 5)));
+      if (sys.liquidity.band === 'fragile' || sys.liquidity.band === 'critical') ev.push(npEv(id, 'systemic_risk', 'liquidity', 'liquidity', `Liquidity buffer is ${SYSTEMIC_BAND_LABEL[sys.liquidity.band].toLowerCase()}`, V107_BAND_SEV[sys.liquidity.band]));
+      const hc = sys.concentrations.filter(c => c.band === 'highly_concentrated'); if (hc.length >= 2) ev.push(npEv(id, 'systemic_risk', 'concentrations', 'concentration', `${hc.length} highly concentrated dependencies`, 0.6));
+      const cats = new Set(ev.map(e => e.category)); const eligible = doms.length >= 3 && cats.size >= 2;
+      const severity = v107C(doms.reduce((s, d) => s + V107_BAND_SEV[sys.systems[d].condition], 0) / 4);
+      return { evidence: ev, severity, reach: v107C(doms.length / 6 + 0.3), opportunity: 0, national: doms.length >= 3, eligible, whyNot: eligible ? null : doms.length < 3 ? 'Fewer than three systems are exposed — one small risk is not a national-resilience problem.' : 'Exposure without critical points, liquidity or concentration pressure.', affectedSystems: doms.map(d => SYSTEMIC_DOMAIN_LABEL[d]),
+        signals: [npSig('exposed_domains', 'Exposed systems', doms.length >= 5 ? 'critical' : doms.length >= 3 ? 'weak' : 'healthy', 'systemic_risk', 'domains', doms.map(d => SYSTEMIC_DOMAIN_LABEL[d]).join(', ') || 'None', doms.length), npSig('critical_points', 'Single points of failure', cps.length >= 4 ? 'critical' : cps.length >= 2 ? 'weak' : 'healthy', 'systemic_risk', 'critical_points', `${cps.length} major`, cps.length), npSig('liquidity', 'Liquidity buffer', npBandState(sys.liquidity.band), 'systemic_risk', 'liquidity', SYSTEMIC_BAND_LABEL[sys.liquidity.band])] };
+    }
+    case 'regional_rebalancing': {
+      const ev: NationalPriorityEvidence[] = [];
+      if (dev && dev.regionalConcentration.band === 'HIGH' && dev.regionalConcentration.share >= 0.5) ev.push(npEv(id, 'national_development', 'regional', 'concentration', `${dev.regionalConcentration.regionIds.join(' + ')} produce ${Math.round(dev.regionalConcentration.share * 100)}% of national output`, dev.regionalConcentration.share, dev.regionalConcentration.regionIds));
+      const under = C.regions.filter(r => r !== 'ACT' && (C.weight[r] || 0) < 0.15); if (under.length >= 3) ev.push(npEv(id, 'industries', 'underdeveloped', 'development', `${under.length} regions are materially underdeveloped (${under.join(', ')})`, Math.min(1, under.length / 6), under));
+      if (dev && dev.definingRegions.length === 1 && dev.primaryDirection) ev.push(npEv(id, 'national_development', 'defining', 'dependency', `The national direction rests on ${dev.definingRegions[0]} alone`, 0.6, dev.definingRegions));
+      (sys?.concentrations || []).filter(c => c.kind === 'region' && (c.band === 'highly_concentrated' || c.band === 'concentrated')).slice(0, 1).forEach(c => ev.push(npEv(id, 'systemic_risk', c.id, 'redundancy', c.shareLabel, c.band === 'highly_concentrated' ? 0.7 : 0.5)));
+      const cats = new Set(ev.map(e => e.category)); const eligible = cats.has('concentration') && (cats.has('redundancy') || cats.has('dependency')) && cats.has('development');
+      return { evidence: ev, severity: v107C(Math.max(0, ...ev.map(e => e.weight)) * 0.8), reach: v107C(under.length / 6 + 0.2), opportunity: 0, national: true, eligible, whyNot: eligible ? null : 'Uneven development alone is not a national problem — it must also create systemic exposure.', affectedSystems: ['Regional economies'],
+        signals: [npSig('regional_concentration', 'Regional concentration', dev?.regionalConcentration.band === 'HIGH' ? 'weak' : 'healthy', 'national_development', 'regional', dev ? `${Math.round(dev.regionalConcentration.share * 100)}%` : 'Unknown'), npSig('underdeveloped', 'Underdeveloped regions', under.length >= 4 ? 'weak' : 'healthy', 'industries', 'underdeveloped', under.join(', ') || 'None', under.length)] };
+    }
+    case 'export_capacity': default: {
+      const ev: NationalPriorityEvidence[] = [];
+      const surplus = (ind?.national.surpluses || []).filter(s => s !== 'tourism_capacity' && s !== 'research_capability'); surplus.slice(0, 3).forEach(s => ev.push(npEv(id, 'industries', `surplus:${s}`, 'surplus', `National surplus of ${SUPPLY_LABEL[s].toLowerCase()}`, 0.6)));
+      const tradeHit = C.regions.filter(r => V107_SEV[C.cond(r, 'trade')] >= 0.45); tradeHit.forEach(r => ev.push(npEv(id, 'national_systems', `${r}:trade`, 'capacity', `${r} trade capacity is ${NATIONAL_CONDITION_LABEL[C.cond(r, 'trade')].toLowerCase()}`, V107_SEV[C.cond(r, 'trade')], [r])));
+      (sys?.criticalPoints || []).filter(cp => cp.subjectType === 'gateway').slice(0, 1).forEach(cp => ev.push(npEv(id, 'systemic_risk', cp.id, 'concentration', `${cp.label} is the only active trade gateway`, 0.6)));
+      if (C.dirRel(def) > 0) ev.push(npEv(id, 'national_development', 'direction', 'direction', `National direction is export-oriented (${NATIONAL_DIRECTION_LABEL[dev!.primaryDirection!] || ''})`, C.dirRel(def)));
+      const cats = new Set(ev.map(e => e.category)); const constrained = tradeHit.length > 0 || cats.has('concentration');
+      const eligible = surplus.length >= 1 && (constrained || (cats.has('direction') && surplus.length >= 2)) && cats.size >= 2;
+      return { evidence: ev, severity: constrained ? v107C(Math.max(0, ...ev.filter(e => e.category === 'capacity' || e.category === 'concentration').map(e => e.weight))) : 0, reach: v107C((surplus.length + tradeHit.length) / 5), opportunity: v107C(surplus.length / 3 * 0.7 + (cats.has('direction') ? 0.3 : 0)), national: surplus.length >= 1, eligible, mode: constrained ? 'problem' : 'opportunity',
+        whyNot: eligible ? null : !surplus.length ? 'No exportable strategic surplus.' : 'Surplus without trade pressure or an export-oriented direction.', affectedSystems: ['Trade', 'Ports'],
+        signals: [npSig('surplus', 'Exportable surplus', surplus.length ? 'healthy' : 'weak', 'industries', 'surplus', surplus.map(s => SUPPLY_LABEL[s]).join(', ') || 'None', surplus.length), npSig('trade_capacity', 'Trade capacity', tradeHit.length ? npCondState(tradeHit.map(r => C.cond(r, 'trade')).sort((a, b) => V107_SEV[b] - V107_SEV[a])[0]) : 'healthy', 'national_systems', 'trade', tradeHit.join(', ') || 'Adequate')] };
+    }
+  }
+}
+
+/** Score = explainable components (no opaque classifier). Ineligible candidates are capped below activation. */
+function v107Score(def: NationalPriorityDefinition, e: V107Eval, C: V107Ctx, candTurns: number): { score: number; raw: number; components: NationalPriorityScoreComponent[]; systemic: number; direction: number } {
+  const w = def.scoringWeights; const systemic = def.systemicDomains.length ? Math.max(...def.systemicDomains.map(d => C.domainSev(d))) : 0; const direction = C.dirRel(def);
+  const cats = new Set(e.evidence.map(x => x.category)).size;
+  const mode = e.mode || def.mode;
+  const comps: NationalPriorityScoreComponent[] = [
+    { label: mode === 'problem' ? 'Severity' : 'Problem pressure', value: v107R((mode === 'problem' ? Math.max(w.severity, 30) : w.severity) * e.severity) },
+    { label: 'National reach', value: v107R(w.reach * e.reach) },
+    { label: 'Systemic exposure', value: v107R(w.systemic * systemic) },
+    { label: 'National direction relevance', value: v107R(w.direction * direction) },
+    { label: 'Opportunity window', value: v107R(w.opportunity * e.opportunity) },
+    { label: 'Persistence', value: Math.min(8, candTurns * 2) },
+    { label: 'Evidence breadth', value: Math.min(6, Math.max(0, cats - 2) * 2) }
+  ].filter(c => c.value !== 0);
+  const raw = v107R(Math.min(100, comps.reduce((s, c) => s + c.value, 0)));
+  return { score: e.eligible ? raw : Math.min(raw, V107_THRESHOLDS.ineligibleCap), raw, components: comps, systemic, direction };
+}
+function v107Urgency(mode: NationalPriorityMode, score: number, severity: number, prev: NationalPriorityUrgency | null): NationalPriorityUrgency {
+  const T = V107_THRESHOLDS;
+  const raw: NationalPriorityUrgency = mode === 'opportunity' ? (score >= T.important ? 'important' : 'watch') : score >= T.critical && severity >= T.criticalSeverity ? 'critical' : score >= T.urgent ? 'urgent' : score >= T.important ? 'important' : 'watch';
+  if (!prev || NATIONAL_PRIORITY_URGENCY_RANK[raw] >= NATIONAL_PRIORITY_URGENCY_RANK[prev]) return raw;
+  // Downgrade only once the score is comfortably below the previous band's entry threshold (hysteresis).
+  const floor = prev === 'critical' ? T.critical : prev === 'urgent' ? T.urgent : prev === 'important' ? T.important : 0;
+  return score < floor - T.urgencyMargin || (prev === 'critical' && severity < T.criticalSeverity - 0.1) ? raw : prev;
+}
+
+/** Candidate list (deterministic order: score desc, id asc). Pure; never touches memory. */
+export function deriveNationalPriorityCandidates(i: NationalPriorityInputs, mem?: NationalPriorityMemory | null): NationalPriorityCandidate[] {
+  const C = v107Ctx(i);
+  return NATIONAL_PRIORITY_DEFINITIONS.map(def => {
+    const e = v107Evaluate(C, def); const s = v107Score(def, e, C, mem?.candidateTurns[def.id] || 0);
+    const evidence = [...e.evidence].sort((a, b) => b.weight - a.weight || a.id.localeCompare(b.id));
+    const regionIds = Array.from(new Set(evidence.flatMap(x => x.regionIds))).sort((a, b) => (evidence.filter(x => x.regionIds.includes(b)).reduce((t, x) => t + x.weight, 0) - evidence.filter(x => x.regionIds.includes(a)).reduce((t, x) => t + x.weight, 0)) || a.localeCompare(b)).slice(0, V107_LIMITS.regions);
+    const mode = e.mode || def.mode;
+    return { definitionId: def.id, mode, eligible: e.eligible, national: e.national, score: s.score, rawScore: s.raw, severity: v107R(e.severity, 2), reach: v107R(e.reach, 2), systemic: v107R(s.systemic, 2), direction: s.direction, opportunity: v107R(e.opportunity, 2),
+      components: s.components, categories: Array.from(new Set(evidence.map(x => x.category))).sort(), evidence: evidence.slice(0, V107_LIMITS.evidence), regionIds, affectedSystems: e.affectedSystems, signals: e.signals.slice(0, V107_LIMITS.signals), whyNot: e.whyNot,
+      urgency: v107Urgency(mode, s.score, e.severity, mem?.entries[def.id]?.status === 'active' || mem?.entries[def.id]?.status === 'improving' ? mem!.entries[def.id]!.urgency : null) };
+  }).sort((a, b) => b.score - a.score || a.definitionId.localeCompare(b.definitionId));
+}
+
+// ---- Contribution / relevance (canonical actions only; no special button) --------------------------------------------
+/** How a canonical project relates to a priority: direct (its networks / types in the priority's regions), indirect, or none. */
+export function nationalPriorityProjectRelevance(def: NationalPriorityDefinition, p: { projectType: string; regionId: string | null }, regions: string[], repaired = false): 'direct' | 'indirect' | null {
+  if (def.id === 'infrastructure_recovery') return repaired ? 'direct' : null;
+  const nets = nationalProjectNetworkEffects(p.projectType).map(e => e.network); const caps = Object.keys(INDUSTRY_PROJECT_CAPABILITY[p.projectType] || {}) as StrategicIndustryKind[];
+  const inRegion = !regions.length || (p.regionId ? regions.includes(p.regionId) : false);
+  const typeHit = def.projectTypes.includes(p.projectType) || nets.some(n => def.networks.includes(n));
+  const indHit = caps.some(k => def.industries.includes(k));
+  if (typeHit && inRegion) return 'direct';
+  if (typeHit || (indHit && inRegion)) return 'indirect';
+  if (indHit) return 'indirect';
+  return null;
+}
+function v107Band(c: NationalPriorityContributionMemory | undefined, total: number): PriorityContributionBand {
+  if (!c || c.w <= 0) return 'none';
+  if (c.direct === 0) return c.w >= 3 ? 'supporting' : 'indirect';
+  if (c.w >= 6 || (c.w >= 3 && total >= 6 && c.w / total >= 0.6)) return 'defining';
+  if (c.w >= 3) return 'major';
+  return 'supporting';
+}
+
+// ---- Strategy alignment (GI3 stays authoritative; V10.7 only compares) -----------------------------------------------
+export function nationalPriorityStrategyAlignment(def: NationalPriorityDefinition, regions: string[], strategy: { label: string; text: string; regionIds: string[] } | null, stance?: 'adopted' | 'rejected' | null): { alignment: PriorityStrategyAlignment; reason: string } {
+  if (stance === 'adopted') return { alignment: 'strong', reason: `You chose to make ${def.label} part of how your strategy is evaluated.` };
+  if (!strategy) return { alignment: 'neutral', reason: 'No active strategy to compare with.' };
+  const implied = V104_STRATEGY_WORDS.filter(([, re]) => re.test(strategy.text)).map(([d]) => d);
+  const dir = def.directions.filter(d => implied.includes(d)); const conflict = def.conflictDirections.filter(d => implied.includes(d)); const reg = strategy.regionIds.filter(r => regions.includes(r));
+  const rej = stance === 'rejected' ? ' You set this priority aside — it stays active in the world.' : '';
+  if (conflict.length && !dir.length) return { alignment: 'conflict', reason: `Your strategy (${strategy.label}) pulls toward ${NATIONAL_DIRECTION_LABEL[conflict[0]]}, which ${def.label} works against. This does not block your plan.${rej}` };
+  if (dir.length && reg.length) return { alignment: 'strong', reason: `Your strategy depends on the same systems in ${reg.join(', ')} that ${def.label} targets.${rej}` };
+  if (dir.length) return { alignment: 'moderate', reason: `Your strategy (${strategy.label}) benefits from ${def.label.toLowerCase()}, though not in the regions most affected.${rej}` };
+  if (reg.length) return { alignment: 'moderate', reason: `Your strategy operates in ${reg.join(', ')}, where ${def.label.toLowerCase()} matters — but it is not directly about it.${rej}` };
+  return { alignment: 'weak', reason: `Your strategy (${strategy.label}) has limited direct dependence on what ${def.label} targets — though prolonged national weakness could still affect your position.${rej}` };
+}
+/** "Your interest" view: direct benefit (regions you control), indirect (national reach), help to rivals. */
+export function nationalPriorityInterest(p: NationalPriority, actorId: string, controllers: Record<string, string | null>): { direct: 'HIGH' | 'MODERATE' | 'LOW'; indirect: 'HIGH' | 'MODERATE' | 'LOW'; helpsRival: 'HIGH' | 'MODERATE' | 'LOW'; rivalIds: string[]; alignment: PriorityStrategyAlignment } {
+  const regs = p.relevantRegionIds; const mine = regs.filter(r => controllers[r] === actorId).length; const other = regs.filter(r => controllers[r] && controllers[r] !== actorId);
+  const lvl = (x: number) => (x >= 0.5 ? 'HIGH' : x > 0 ? 'MODERATE' : 'LOW') as 'HIGH' | 'MODERATE' | 'LOW';
+  return { direct: lvl(regs.length ? mine / regs.length : 0), indirect: NATIONAL_PRIORITY_URGENCY_RANK[p.urgency] >= 2 ? 'HIGH' : 'MODERATE', helpsRival: lvl(regs.length ? other.length / regs.length : 0), rivalIds: Array.from(new Set(other.map(r => controllers[r]!))).sort(), alignment: p.actors[actorId]?.alignment || 'neutral' };
+}
+
+// ---- Tensions (two national priorities pulling on the same resources) ------------------------------------------------
+const V107_TENSION_RULES: Array<{ a: NationalPriorityId; b: NationalPriorityId; shared: string[]; reason: string }> = [
+  { a: 'industrial_capacity', b: 'water_security', shared: ['water'], reason: 'Manufacturing expansion would strengthen national industrial output but increase water pressure in already constrained regions.' },
+  { a: 'industrial_capacity', b: 'energy_resilience', shared: ['energy'], reason: 'Rapid manufacturing expansion adds energy demand while the energy system needs capacity and redundancy first.' },
+  { a: 'industrial_capacity', b: 'supply_chain_security', shared: ['minerals'], reason: 'Manufacturing already depends heavily on a constrained mineral supplier — growth now would deepen the same dependency Australia is trying to reduce.' },
+  { a: 'technology_competitiveness', b: 'energy_resilience', shared: ['energy'], reason: 'Technology growth (data centers, AI Compute) adds demand to an energy system that is already exposed.' },
+  { a: 'export_capacity', b: 'economic_diversification', shared: ['investment'], reason: 'Expanding resource exports deepens the very concentration diversification is trying to reduce.' },
+  { a: 'industrial_capacity', b: 'regional_rebalancing', shared: ['investment'], reason: 'The best industrial sites are in the leading region — growth there widens the regional gap.' }
+];
+function v107Tensions(cands: NationalPriorityCandidate[], activeIds: string[]): NationalPriorityTension[] {
+  const by = Object.fromEntries(cands.map(c => [c.definitionId, c])) as Record<NationalPriorityId, NationalPriorityCandidate>;
+  // Both sides carry real attention (raw score ≥ watch) and at least one is a live / eligible national priority.
+  return V107_TENSION_RULES.filter(t => by[t.a] && by[t.b] && by[t.a].rawScore >= V107_THRESHOLDS.watch && by[t.b].rawScore >= V107_THRESHOLDS.watch && (by[t.a].eligible || activeIds.includes(t.a) || by[t.b].eligible || activeIds.includes(t.b))).map(t => {
+    const both = activeIds.includes(t.a) && activeIds.includes(t.b); const one = activeIds.includes(t.a) || activeIds.includes(t.b);
+    return { id: `npt:${t.a}:${t.b}`, priorityAId: t.a, priorityBId: t.b, severity: (both ? 'major' : one ? 'meaningful' : 'minor') as NationalPriorityTension['severity'], reason: t.reason, sharedResources: t.shared, evidence: [...by[t.a].evidence.slice(0, 1), ...by[t.b].evidence.slice(0, 1)] };
+  }).sort((x, y) => ({ major: 0, meaningful: 1, minor: 2 }[x.severity] - { major: 0, meaningful: 1, minor: 2 }[y.severity]) || x.id.localeCompare(y.id)).slice(0, V107_LIMITS.tensions);
+}
+
+// ---- Lifecycle (turn-boundary only; within a turn the previous-turn memory is reused → idempotent) --------------------
+export function computeNationalPriorities(i: NationalPriorityInputs, prevIn: NationalPrioritiesPersisted | null, opts: { emit?: boolean } = {}): { state: NationalPrioritiesState; persisted: NationalPrioritiesPersisted; events: NationalPriorityDerivedEvent[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0; const T = V107_THRESHOLDS;
+  const prev = prevIn || createEmptyNationalPrioritiesPersisted(); const turn = i.turn;
+  // The initialization turn (first evaluation / pre-V10.7 save) is conservative and writes no history.
+  const fresh = prev.initializedTurn === null || prev.initializedTurn === turn;
+  const newTurn = !fresh && turn !== prev.current.lastTurn;
+  // Lifecycle always replays deterministically from the START-OF-TURN memory → same-turn recomputes are idempotent.
+  const base = fresh ? createEmptyNationalPriorityMemory() : newTurn ? prev.current : prev.base;
+  const mem: NationalPriorityMemory = JSON.parse(JSON.stringify(base)); mem.lastTurn = turn;
+  const history = [...prev.history]; let seq = prev.seq; const events: NationalPriorityDerivedEvent[] = [];
+  const hist = (kind: NationalPriorityHistoryEntry['kind'], priorityId: string, summary: string, sourceIds: string[] = [], actorId?: string): boolean => {
+    if (fresh) return false;
+    if (history.some(h => h.turn === turn && h.kind === kind && h.priorityId === priorityId && (h.actorId || '') === (actorId || ''))) return false; // dedupe same-turn replays
+    seq += 1; history.push({ id: `nph:${seq}`, turn, priorityId, kind, ...(actorId ? { actorId } : {}), summary: summary.slice(0, 200), sourceIds: sourceIds.slice(0, 4) }); return true;
+  };
+  const evt = (logged: boolean, kind: NationalPriorityDerivedKind, d: NationalPriorityId, text: string, regionIds: string[], sig: 'meaningful' | 'major') => { if (logged && opts.emit !== false) events.push({ id: `npev:${kind}:${d}:${turn}`, turn, kind, definitionId: d, regionIds: regionIds.slice(0, 4), text: text.slice(0, 220), significance: sig }); };
+  // Candidate persistence counters (structural evidence must hold for several evaluations before activation).
+  deriveNationalPriorityCandidates(i, base).forEach(c => { mem.candidateTurns[c.definitionId] = c.eligible && c.score >= T.watch ? (base.candidateTurns[c.definitionId] || 0) + 1 : 0; });
+  const cands = deriveNationalPriorityCandidates(i, mem); const byId = Object.fromEntries(cands.map(c => [c.definitionId, c])) as Record<NationalPriorityId, NationalPriorityCandidate>;
+  const isLive = (e?: NationalPriorityMemoryEntry) => Boolean(e && (e.status === 'active' || e.status === 'improving'));
+  const label = (d: NationalPriorityId) => NATIONAL_PRIORITY_BY_ID[d].label;
+  const why = (c: NationalPriorityCandidate) => c.evidence.slice(0, 2).map(e => e.label).join('; ');
+  const nameOf = (a: string) => i.actors.find(x => x.id === a)?.name || a;
+  const benefit = (e: NationalPriorityMemoryEntry) => { e.benefited = Array.from(new Set([...e.benefited, ...e.regions.map(r => i.controllers[r]).filter(Boolean) as string[]])).sort(); };
+  // ---- 1. Live entries: urgency / improvement / resolution (sustained, after minimum persistence) ----
+  (Object.keys(mem.entries) as NationalPriorityId[]).sort().forEach(d => {
+    const e = mem.entries[d]!; const c = byId[d]; const def = NATIONAL_PRIORITY_BY_ID[d];
+    if (e.status === 'resolved') { if (e.resolvedTurn !== null && turn - e.resolvedTurn > def.cooldownTurns) delete mem.entries[d]; return; }
+    if (e.status === 'emerging' || e.status === 'superseded') return;
+    if (!fresh) e.heldTurns += 1;
+    e.lastScore = c.score; e.peakScore = Math.max(e.peakScore, c.score); e.regions = c.regionIds.length ? c.regionIds : e.regions;
+    e.lowTurns = c.score < T.resolve ? e.lowTurns + 1 : 0;
+    const vanished = c.score < T.vanish && !c.eligible;
+    if (!fresh && ((e.heldTurns >= def.minimumPersistenceTurns && e.lowTurns >= T.resolveTurns) || vanished)) {
+      e.status = 'resolved'; e.resolvedTurn = turn; mem.cooldownUntil[d] = turn + def.cooldownTurns; benefit(e);
+      const total = Object.values(e.contributions).reduce((s, x) => s + x.w, 0);
+      const contributors = Object.fromEntries(Object.entries(e.contributions).map(([a, x]) => [a, v107Band(x, total)]).filter(([, b]) => b !== 'none')) as Record<string, PriorityContributionBand>;
+      const names = Object.entries(contributors).sort((a, b) => PRIORITY_CONTRIBUTION_RANK[b[1]] - PRIORITY_CONTRIBUTION_RANK[a[1]] || a[0].localeCompare(b[0])).map(([a]) => nameOf(a));
+      const summary = `${label(d)} resolved: ${c.signals.filter(s => s.state === 'healthy').map(s => `${s.label.toLowerCase()} now healthy`).slice(0, 2).join(', ') || 'the underlying conditions improved'}${names.length ? `. Contributors: ${names.join(' • ')}` : ''}.`;
+      if (mem.primaryId === d) mem.primaryId = null;
+      mem.resolved = [...mem.resolved, { definitionId: d, label: label(d), startedTurn: e.startedTurn, resolvedTurn: turn, contributors, benefited: e.benefited, summary }].slice(-V107_LIMITS.resolvedLog);
+      evt(hist('resolved', d, summary), 'national_priority_resolved', d, summary, e.regions, 'major');
+      return;
+    }
+    const prevUrg = e.urgency; e.urgency = c.urgency;
+    const dr = NATIONAL_PRIORITY_URGENCY_RANK[e.urgency] - NATIONAL_PRIORITY_URGENCY_RANK[prevUrg];
+    const improving = e.mode === 'problem' && (NATIONAL_PRIORITY_URGENCY_RANK[e.urgency] < NATIONAL_PRIORITY_URGENCY_RANK[e.peakUrgency || e.urgency] || c.score <= e.peakScore - 10 || c.signals.some(s => e.baseline[s.id] && s.state === 'healthy' && e.baseline[s.id] !== 'healthy'));
+    if (NATIONAL_PRIORITY_URGENCY_RANK[e.urgency] > NATIONAL_PRIORITY_URGENCY_RANK[e.peakUrgency || 'watch']) e.peakUrgency = e.urgency;
+    const wasImproving = e.status === 'improving'; e.status = improving ? 'improving' : 'active';
+    if (dr > 0) {
+      const s = `${label(d)} became ${NATIONAL_PRIORITY_URGENCY_LABEL[e.urgency].toUpperCase()}: ${why(c)}`;
+      if (NATIONAL_PRIORITY_URGENCY_RANK[e.urgency] >= 2) evt(hist('urgency_changed', d, s, c.evidence.slice(0, 2).map(x => x.sourceId)), 'national_priority_became_urgent', d, s, e.regions, 'major');
+      else evt(hist('worsened', d, `${label(d)} worsened (${NATIONAL_PRIORITY_URGENCY_LABEL[prevUrg]} → ${NATIONAL_PRIORITY_URGENCY_LABEL[e.urgency]}): ${why(c)}`), 'national_priority_worsened', d, `${label(d)} worsened: ${why(c)}`, e.regions, 'meaningful');
+    } else if (dr < 0 || (improving && !wasImproving)) {
+      const s = `${label(d)} is improving${dr < 0 ? ` (${NATIONAL_PRIORITY_URGENCY_LABEL[prevUrg]} → ${NATIONAL_PRIORITY_URGENCY_LABEL[e.urgency]})` : ''}: ${c.signals.filter(x => x.state === 'healthy' && e.baseline[x.id] && e.baseline[x.id] !== 'healthy').map(x => `${x.label.toLowerCase()} recovered`).slice(0, 2).join(', ') || 'pressure is easing'}.`;
+      benefit(e); evt(hist('improved', d, s), 'national_priority_improved', d, s, e.regions, 'meaningful');
+    }
+    e.summary = why(c);
+  });
+  // ---- 2. Contributions: canonical completions / repairs during a live priority (no button, no points shown) ----
+  const nowFunctional = i.projects.filter(p => v107Fn(p.status)).map(p => p.id).sort();
+  const newly = fresh ? [] : i.projects.filter(p => v107Fn(p.status) && !base.functional.includes(p.id));
+  newly.forEach(p => (Object.keys(mem.entries) as NationalPriorityId[]).sort().forEach(d => {
+    const e = mem.entries[d]!; if (!isLive(e)) return; const def = NATIONAL_PRIORITY_BY_ID[d];
+    const rel = nationalPriorityProjectRelevance(def, p, e.regions, base.damaged.includes(p.id)); if (!rel) return;
+    const tot = Object.values(p.contributions).reduce((s, v) => s + v, 0); if (tot <= 0) return;
+    const inRegion = p.regionId ? e.regions.includes(p.regionId) : false;
+    Object.entries(p.contributions).sort().forEach(([a, v]) => {
+      const share = v / tot; if (share < 0.15) return;
+      const add = (rel === 'direct' ? (inRegion ? 3 : 1.5) : 1) * Math.min(1, share * 1.5);
+      const cm = e.contributions[a] || { w: 0, direct: 0, indirect: 0, projects: [], band: 'none' as PriorityContributionBand };
+      const before = cm.band; cm.w = v107R(cm.w + add, 2); if (rel === 'direct') cm.direct += 1; else cm.indirect += 1; cm.projects = Array.from(new Set([...cm.projects, p.id])).slice(-V107_LIMITS.projects);
+      e.contributions[a] = cm; e.lastRelevant[a] = turn;
+      cm.band = v107Band(cm, Object.values(e.contributions).reduce((s, x) => s + x.w, 0));
+      if (PRIORITY_CONTRIBUTION_RANK[cm.band] > PRIORITY_CONTRIBUTION_RANK[before] && PRIORITY_CONTRIBUTION_RANK[cm.band] >= 2) hist('actor_contributed', d, `${nameOf(a)}'s ${p.title} ${rel === 'direct' ? 'directly' : 'indirectly'} strengthened ${label(d)} (${cm.band.toUpperCase()}).`, [p.id], a);
+    });
+  }));
+  // ---- 3. Activation / preemption inside the budget (1 primary + up to 1 secondary) ----
+  const liveIds = () => (Object.keys(mem.entries) as NationalPriorityId[]).filter(d => isLive(mem.entries[d]));
+  cands.filter(c => c.eligible && c.score >= T.activate && !isLive(mem.entries[c.definitionId]) && (mem.entries[c.definitionId]?.status !== 'resolved' || c.urgency === 'critical')).forEach(c => {
+    const d = c.definitionId; const def = NATIONAL_PRIORITY_BY_ID[d]; const critical = c.urgency === 'critical';
+    if (fresh ? c.score < T.activate + 5 : (!critical && (mem.candidateTurns[d] || 0) < T.candidateTurns)) return; // conservative on first evaluation; persistence otherwise
+    if (!critical && (mem.cooldownUntil[d] || 0) > turn) return;
+    const live = liveIds();
+    if (live.length >= V107_LIMITS.active) {
+      const ranked = [...live].sort((a, b) => (mem.entries[a]!.urgency === 'critical' ? 1 : 0) - (mem.entries[b]!.urgency === 'critical' ? 1 : 0) || (NATIONAL_PRIORITY_BY_ID[b].mode === 'opportunity' ? 1 : 0) - (NATIONAL_PRIORITY_BY_ID[a].mode === 'opportunity' ? 1 : 0) || byId[a].score - byId[b].score || a.localeCompare(b));
+      const low = ranked[0]; const le = mem.entries[low]!;
+      const preempt = critical && le.urgency !== 'critical';
+      const outrank = c.score >= byId[low].score + T.supersedeMargin && le.heldTurns >= NATIONAL_PRIORITY_BY_ID[low].minimumPersistenceTurns && le.urgency !== 'critical';
+      if (!preempt && !outrank) return;
+      le.status = 'superseded'; le.supersededTurn = turn; if (mem.primaryId === low) mem.primaryId = null;
+      const s = `${label(low)} gave way to ${label(d)}${preempt ? ' (a critical national condition)' : ''}. It still matters and stays on the watch list.`;
+      evt(hist('superseded', low, s), 'national_priority_superseded', low, s, le.regions, 'meaningful');
+    }
+    const old = mem.entries[d];
+    mem.entries[d] = { definitionId: d, status: 'active', mode: c.mode, startedTurn: old && old.status === 'emerging' ? old.startedTurn : turn, activatedTurn: turn, heldTurns: 0, lowTurns: 0, peakScore: c.score, lastScore: c.score, urgency: c.urgency, peakUrgency: c.urgency, regions: c.regionIds,
+      baseline: Object.fromEntries(c.signals.map(s => [s.id, s.state])), contributions: {}, benefited: [], lastRelevant: {}, resolvedTurn: null, supersededTurn: null, summary: why(c) };
+    if (mem.emergingId === d) mem.emergingId = null;
+    evt(hist('activated', d, `${label(d)} became a national priority (${NATIONAL_PRIORITY_URGENCY_LABEL[c.urgency].toUpperCase()}): ${why(c)}`, c.evidence.slice(0, 3).map(x => x.sourceId)), 'national_priority_activated', d, `${label(d)} became a national priority. ${def.wording}`, c.regionIds, 'major');
+  });
+  // ---- 4. Primary (hysteresis: a challenger must clearly lead, or be critical) ----
+  const live = liveIds();
+  if (!mem.primaryId || !live.includes(mem.primaryId)) mem.primaryId = [...live].sort((a, b) => (mem.entries[b]!.urgency === 'critical' ? 1 : 0) - (mem.entries[a]!.urgency === 'critical' ? 1 : 0) || byId[b].score - byId[a].score || a.localeCompare(b))[0] || null;
+  else { const ch = live.filter(x => x !== mem.primaryId).sort((a, b) => byId[b].score - byId[a].score)[0]; if (ch && (byId[ch].score > byId[mem.primaryId].score + T.primaryMargin || (mem.entries[ch]!.urgency === 'critical' && mem.entries[mem.primaryId]!.urgency !== 'critical'))) mem.primaryId = ch; }
+  // ---- 5. One emerging watch item (INTELLIGENCE; PLAY stays simple) ----
+  const em = cands.find(c => c.eligible && c.score >= T.watch && !isLive(mem.entries[c.definitionId]) && mem.entries[c.definitionId]?.status !== 'resolved') || null;
+  if (mem.emergingId && (!em || em.definitionId !== mem.emergingId) && mem.entries[mem.emergingId]?.status === 'emerging') delete mem.entries[mem.emergingId];
+  if (em) {
+    const old = mem.entries[em.definitionId];
+    if (!old) { mem.entries[em.definitionId] = { definitionId: em.definitionId, status: 'emerging', mode: em.mode, startedTurn: turn, activatedTurn: null, heldTurns: 0, lowTurns: 0, peakScore: em.score, lastScore: em.score, urgency: 'watch', peakUrgency: 'watch', regions: em.regionIds, baseline: {}, contributions: {}, benefited: [], lastRelevant: {}, resolvedTurn: null, supersededTurn: null, summary: why(em) };
+      // Watch items can trade places; announce an emergence at most once per 6 turns per priority (no churn spam).
+      const recent = history.some(h => h.priorityId === em.definitionId && h.kind === 'emerged' && turn - h.turn < 6 && h.turn !== turn);
+      if (!recent) evt(hist('emerged', em.definitionId, `${label(em.definitionId)} is emerging as a national issue: ${why(em)}`), 'national_priority_emerged', em.definitionId, `${label(em.definitionId)} is emerging: ${why(em)}`, em.regionIds, 'meaningful'); }
+    else if (old.status === 'emerging') { old.lastScore = em.score; old.regions = em.regionIds; old.summary = why(em); }
+    mem.emergingId = em.definitionId;
+  } else mem.emergingId = null;
+  // Superseded entries fade only once their evidence is gone (never silently while still relevant).
+  (Object.keys(mem.entries) as NationalPriorityId[]).forEach(d => { const e = mem.entries[d]!; if (e.status === 'superseded' && byId[d].score < T.watch && e.supersededTurn !== null && turn - e.supersededTurn >= 3) delete mem.entries[d]; });
+  mem.functional = nowFunctional.slice(-V107_LIMITS.functional);
+  mem.damaged = i.projects.filter(p => p.status === 'damaged').map(p => p.id).sort().slice(-V107_LIMITS.functional);
+  // ---- Derived view ----
+  const stancesOf = (a: string) => prev.stances[a] || {};
+  const SR: Record<NationalPriorityOutcomeSignal['state'], number> = { critical: 0, weak: 1, improving: 2, healthy: 3 };
+  const toPriority = (e: NationalPriorityMemoryEntry): NationalPriority => {
+    const c = byId[e.definitionId]; const def = NATIONAL_PRIORITY_BY_ID[e.definitionId]; const total = Object.values(e.contributions).reduce((s, x) => s + x.w, 0);
+    const signals = c.signals.map(s => (e.baseline[s.id] && s.state !== 'healthy' && SR[s.state] > (SR[e.baseline[s.id] as NationalPriorityOutcomeSignal['state']] ?? 3)) ? { ...s, state: 'improving' as const } : s);
+    const regions = e.status === 'emerging' ? c.regionIds : e.regions;
+    const actors: Record<string, NationalPriorityActorState> = Object.fromEntries(i.actors.map(a => { const al = nationalPriorityStrategyAlignment(def, regions, i.strategies[a.id] || null, stancesOf(a.id)[e.definitionId] || null);
+      return [a.id, { actorId: a.id, alignment: al.alignment, contribution: v107Band(e.contributions[a.id], total), contributionEvidenceIds: e.contributions[a.id]?.projects || [], benefited: e.benefited.includes(a.id), lastRelevantTurn: e.lastRelevant[a.id] ?? null }]; }));
+    const baseScore = base.entries[e.definitionId]?.lastScore ?? c.score;
+    const momentum: NationalPriority['momentum'] = e.status === 'emerging' || turn - e.startedTurn <= 1 ? 'rising' : c.score >= baseScore + 4 ? (e.mode === 'problem' ? 'worsening' : 'rising') : c.score <= baseScore - 4 || e.status === 'improving' ? 'improving' : 'stable';
+    const overall: NationalPriority['overall'] = e.status === 'improving' || signals.some(s => s.state === 'improving') ? 'improving' : momentum === 'worsening' ? 'worsening' : 'stable';
+    return { id: `np:${e.definitionId}:${e.startedTurn}`, definitionId: e.definitionId, label: def.label, mode: e.mode, status: e.status, urgency: e.status === 'emerging' ? 'watch' : e.urgency, confidence: v107R(v107C(c.categories.length / 4 * 0.6 + (c.eligible ? 0.4 : 0.1)), 2), score: c.score, momentum,
+      startedTurn: e.startedTurn, lastUpdatedTurn: turn, resolvedTurn: e.resolvedTurn, relevantRegionIds: regions, affectedSystems: c.affectedSystems, evidence: c.evidence, outcomeSignals: signals, actors,
+      history: history.filter(h => h.priorityId === e.definitionId).slice(-8), why: c.evidence.slice(0, 4).map(x => x.label), summary: def.wording, overall };
+  };
+  const liveEntries = (Object.values(mem.entries) as NationalPriorityMemoryEntry[]).filter(e => isLive(e)).sort((a, b) => (a.definitionId === mem.primaryId ? -1 : b.definitionId === mem.primaryId ? 1 : 0) || byId[b.definitionId].score - byId[a.definitionId].score || a.definitionId.localeCompare(b.definitionId));
+  const active = liveEntries.map(toPriority);
+  const emE = mem.emergingId ? mem.entries[mem.emergingId] : null;
+  const superseded = (Object.values(mem.entries) as NationalPriorityMemoryEntry[]).filter(e => e.status === 'superseded').map(toPriority);
+  const persisted: NationalPrioritiesPersisted = { schemaVersion: '10.7', revision: prev.revision + 1, initializedTurn: prev.initializedTurn ?? turn, base: fresh ? createEmptyNationalPriorityMemory() : newTurn ? prev.current : prev.base, current: mem,
+    history: history.slice(-V107_LIMITS.history), seq, inputHash: nationalPriorityInputHash(i), stances: prev.stances };
+  const state: NationalPrioritiesState = { schemaVersion: '10.7', revision: persisted.revision, turn, primary: active[0] || null, secondary: active[1] || null, emerging: emE && emE.status === 'emerging' ? toPriority(emE) : null, active, superseded,
+    candidates: cands, tensions: v107Tensions(cands, active.map(a => a.definitionId)), history: persisted.history, resolved: mem.resolved, inputHash: persisted.inputHash, computeMs: v107R((typeof performance !== 'undefined' ? performance.now() : 0) - t0, 2) };
+  return { state, persisted, events };
+}
+
+/** Player stance (adopt / set aside) — an interpretation preference only; GI3 is never edited. */
+export function setNationalPriorityStance(p: NationalPrioritiesPersisted | null, actorId: string, d: NationalPriorityId, stance: 'adopted' | 'rejected' | null): NationalPrioritiesPersisted {
+  const base = p || createEmptyNationalPrioritiesPersisted(); const cur = { ...(base.stances[actorId] || {}) };
+  if (stance) cur[d] = stance; else delete cur[d];
+  return { ...base, revision: base.revision + 1, stances: { ...base.stances, [actorId]: cur } };
+}
+
+// ---- Persistence / validation ------------------------------------------------------------------------------------------
+function v107SanMem(raw: any): NationalPriorityMemory {
+  const m = createEmptyNationalPriorityMemory(); if (!raw || typeof raw !== 'object') return m;
+  m.lastTurn = Number.isFinite(raw.lastTurn) ? Number(raw.lastTurn) : 0;
+  const ok = (d: any): d is NationalPriorityId => typeof d === 'string' && (NATIONAL_PRIORITY_IDS as string[]).includes(d);
+  m.primaryId = ok(raw.primaryId) ? raw.primaryId : null; m.emergingId = ok(raw.emergingId) ? raw.emergingId : null;
+  Object.entries(raw.candidateTurns || {}).forEach(([k, v]) => { if (ok(k) && Number.isFinite(v)) m.candidateTurns[k] = Math.max(0, Math.min(999, Number(v))); });
+  Object.entries(raw.cooldownUntil || {}).forEach(([k, v]) => { if (ok(k) && Number.isFinite(v)) m.cooldownUntil[k] = Number(v); });
+  m.functional = Array.isArray(raw.functional) ? raw.functional.filter((x: any) => typeof x === 'string').slice(-V107_LIMITS.functional) : [];
+  m.damaged = Array.isArray(raw.damaged) ? raw.damaged.filter((x: any) => typeof x === 'string').slice(-V107_LIMITS.functional) : [];
+  m.resolved = (Array.isArray(raw.resolved) ? raw.resolved : []).filter((x: any) => x && (NATIONAL_PRIORITY_IDS as string[]).includes(x.definitionId) && Number.isFinite(x.resolvedTurn)).map((x: any) => ({ definitionId: x.definitionId, label: NATIONAL_PRIORITY_BY_ID[x.definitionId as NationalPriorityId].label, startedTurn: Number(x.startedTurn) || 0, resolvedTurn: Number(x.resolvedTurn),
+    contributors: Object.fromEntries(Object.entries(x.contributors || {}).filter(([, b]) => (['indirect', 'supporting', 'major', 'defining'] as string[]).includes(String(b)))) as any, benefited: Array.isArray(x.benefited) ? x.benefited.map(String) : [], summary: String(x.summary || '').slice(0, 220) })).slice(-V107_LIMITS.resolvedLog);
+  const statuses: NationalPriorityStatus[] = ['emerging', 'active', 'improving', 'resolved', 'superseded'];
+  Object.entries(raw.entries || {}).forEach(([k, e]: [string, any]) => {
+    if (!ok(k) || !e || typeof e !== 'object' || !statuses.includes(e.status)) return;
+    const contributions: Record<string, NationalPriorityContributionMemory> = {};
+    Object.entries(e.contributions || {}).forEach(([a, c]: [string, any]) => { if (c && Number.isFinite(c.w)) contributions[a] = { w: Number(c.w), direct: Number(c.direct) || 0, indirect: Number(c.indirect) || 0, projects: Array.isArray(c.projects) ? c.projects.filter((x: any) => typeof x === 'string').slice(-V107_LIMITS.projects) : [], band: (['none', 'indirect', 'supporting', 'major', 'defining'] as const).includes(c.band) ? c.band : 'none' }; });
+    m.entries[k] = { definitionId: k, status: e.status, mode: e.mode === 'opportunity' ? 'opportunity' : 'problem', startedTurn: Number(e.startedTurn) || 0, activatedTurn: Number.isFinite(e.activatedTurn) ? Number(e.activatedTurn) : null, heldTurns: Number(e.heldTurns) || 0, lowTurns: Number(e.lowTurns) || 0,
+      peakScore: Number(e.peakScore) || 0, lastScore: Number(e.lastScore) || 0, urgency: (['watch', 'important', 'urgent', 'critical'] as const).includes(e.urgency) ? e.urgency : 'watch', peakUrgency: (['watch', 'important', 'urgent', 'critical'] as const).includes(e.peakUrgency) ? e.peakUrgency : undefined, regions: Array.isArray(e.regions) ? e.regions.filter((r: any) => REGIONS[r]).slice(0, V107_LIMITS.regions) : [],
+      baseline: Object.fromEntries(Object.entries(e.baseline || {}).filter(([, v]) => typeof v === 'string')) as Record<string, string>, contributions, benefited: Array.isArray(e.benefited) ? e.benefited.filter((x: any) => typeof x === 'string') : [],
+      lastRelevant: Object.fromEntries(Object.entries(e.lastRelevant || {}).filter(([, v]) => Number.isFinite(v))) as Record<string, number>, resolvedTurn: Number.isFinite(e.resolvedTurn) ? Number(e.resolvedTurn) : null, supersededTurn: Number.isFinite(e.supersededTurn) ? Number(e.supersededTurn) : null, summary: String(e.summary || '').slice(0, 200) };
+  });
+  // Budget is an invariant even for tampered saves.
+  const live = (Object.keys(m.entries) as NationalPriorityId[]).filter(d => m.entries[d]!.status === 'active' || m.entries[d]!.status === 'improving').sort((a, b) => m.entries[b]!.lastScore - m.entries[a]!.lastScore || a.localeCompare(b));
+  live.slice(V107_LIMITS.active).forEach(d => { m.entries[d]!.status = 'superseded'; });
+  if (m.primaryId && !live.slice(0, V107_LIMITS.active).includes(m.primaryId)) m.primaryId = live[0] || null;
+  return m;
+}
+export function sanitizeNationalPrioritiesPersisted(raw: unknown): NationalPrioritiesPersisted | null {
+  if (!raw || typeof raw !== 'object') return null; const r: any = raw;
+  if (r.schemaVersion !== '10.7') return null;
+  const ok = (d: any) => (NATIONAL_PRIORITY_IDS as string[]).includes(d);
+  const kinds: NationalPriorityHistoryEntry['kind'][] = ['emerged', 'activated', 'urgency_changed', 'actor_contributed', 'improved', 'worsened', 'resolved', 'superseded'];
+  const stances: NationalPrioritiesPersisted['stances'] = {};
+  Object.entries(r.stances || {}).forEach(([a, m]: [string, any]) => { const o: any = {}; Object.entries(m || {}).forEach(([d, s]) => { if (ok(d) && (s === 'adopted' || s === 'rejected')) o[d] = s; }); stances[a] = o; });
+  return { schemaVersion: '10.7', revision: Number(r.revision) || 0, initializedTurn: Number.isFinite(r.initializedTurn) ? Number(r.initializedTurn) : null, base: v107SanMem(r.base), current: v107SanMem(r.current),
+    history: (Array.isArray(r.history) ? r.history : []).filter((h: any) => h && ok(h.priorityId) && kinds.includes(h.kind) && Number.isFinite(h.turn)).map((h: any) => ({ id: String(h.id), turn: Number(h.turn), priorityId: h.priorityId, kind: h.kind, ...(h.actorId ? { actorId: String(h.actorId) } : {}), summary: String(h.summary || '').slice(0, 200), sourceIds: Array.isArray(h.sourceIds) ? h.sourceIds.map(String).slice(0, 4) : [] })).slice(-V107_LIMITS.history),
+    seq: Number(r.seq) || 0, inputHash: String(r.inputHash || ''), stances };
+}
+export function validateNationalPrioritiesState(s: NationalPrioritiesState, p?: NationalPrioritiesPersisted | null, actorIds?: string[]): string[] {
+  const out: string[] = []; const ids = new Set<string>(NATIONAL_PRIORITY_IDS);
+  if (s.active.length > V107_LIMITS.active) out.push(`budget exceeded: ${s.active.length} active`);
+  const seen = new Set<string>(); s.active.forEach(a => { if (seen.has(a.definitionId)) out.push(`duplicate active ${a.definitionId}`); seen.add(a.definitionId); });
+  [...s.active, ...(s.emerging ? [s.emerging] : []), ...s.superseded].forEach(a => {
+    if (!ids.has(a.definitionId)) out.push(`bad definition ${a.definitionId}`);
+    if (!a.id.startsWith(`np:${a.definitionId}:`)) out.push(`bad priority id ${a.id}`);
+    if (!Number.isFinite(a.score) || a.score < 0 || a.score > 100) out.push(`bad score ${a.definitionId}`);
+    if (!(a.urgency in NATIONAL_PRIORITY_URGENCY_RANK)) out.push(`bad urgency ${a.definitionId}`);
+    if (!['emerging', 'active', 'improving', 'resolved', 'superseded'].includes(a.status)) out.push(`bad status ${a.definitionId}`);
+    a.relevantRegionIds.forEach(r => { if (!REGIONS[r]) out.push(`bad region ${r}`); });
+    a.evidence.forEach(e => { if (!NATIONAL_PRIORITY_SOURCES.includes(e.sourceSystem)) out.push(`bad source ${e.sourceSystem}`); if (!e.id.startsWith(`npe:${a.definitionId}:`)) out.push(`bad evidence ref ${e.id}`); });
+    if (actorIds) Object.keys(a.actors).forEach(x => { if (!actorIds.includes(x)) out.push(`bad actor ${x}`); });
+  });
+  if (s.emerging && s.active.some(a => a.definitionId === s.emerging!.definitionId)) out.push('emerging duplicates an active priority');
+  s.candidates.forEach(c => { if (!Number.isFinite(c.score)) out.push(`non-finite candidate ${c.definitionId}`); });
+  if (p && p.history.length > V107_LIMITS.history) out.push('history unbounded');
+  if (p && p.current.resolved.length > V107_LIMITS.resolvedLog) out.push('resolved log unbounded');
+  return out;
+}
+
+// ---- World Reaction / AI / ranking / Guardian / content / debrief adapters --------------------------------------------
+export function nationalPriorityToWorldEvent(d: NationalPriorityDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  const def = NATIONAL_PRIORITY_BY_ID[d.definitionId];
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'national_priorities', sourceEventId: d.definitionId, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: d.regionIds.length === 1 ? 'region' : 'nation', subjectId: d.regionIds.length === 1 ? d.regionIds[0] : 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: [d.text.slice(0, 120)], before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['economy', 'regions'],
+    tags: ['national_priority', `priority:${d.definitionId}`, ...def.contentTags.map(t => `theme:${t}`), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: 'inference', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 4, dedupeKey: `np:${d.kind}:${d.definitionId}:${d.turn}`
+  };
+}
+/** Persisted-only ranking context (cheap; usable before the live V10.7 state exists in the render). */
+export interface NationalPriorityRankingContext { priorities: Array<{ definitionId: NationalPriorityId; urgency: NationalPriorityUrgency; regions: string[] }>; projects: Record<string, { projectType: string; regionId: string | null }> }
+export function nationalPriorityRankingContext(p: NationalPrioritiesPersisted | null | undefined, projects: Record<string, any> | any[] | null | undefined): NationalPriorityRankingContext | null {
+  const s = p ? sanitizeNationalPrioritiesPersisted(p) : null; if (!s) return null;
+  const pr = (Object.values(s.current.entries) as NationalPriorityMemoryEntry[]).filter(e => e.status === 'active' || e.status === 'improving').map(e => ({ definitionId: e.definitionId, urgency: e.urgency, regions: e.regions }));
+  if (!pr.length) return null;
+  const list: any[] = Array.isArray(projects) ? projects : Object.values(projects || {});
+  return { priorities: pr, projects: Object.fromEntries(list.filter(x => x && x.id).map(x => [String(x.id), { projectType: String(x.projectType || ''), regionId: x.regionId || null }])) };
+}
+/** Contextual Actions: ONE bounded ranking dimension for already-legal candidates (never legality, never dominant). */
+export function nationalPriorityActionAlignment(ctx: NationalPriorityRankingContext | null, c: any): NationalPriorityActionAlignment | null {
+  if (!ctx || !c) return null;
+  const pid = String(c.targetId || c.data?.projectId || c.projectId || ''); const proj = ctx.projects[pid];
+  const projectType = String(c.projectType || c.data?.projectType || proj?.projectType || ''); const region = String(c.data?.region || c.regionId || proj?.regionId || c.requiredLocation || '');
+  const blob = `${c.title || ''} ${c.description || ''} ${c.category || ''} ${c.actionType || ''}`.toLowerCase();
+  let best: NationalPriorityActionAlignment | null = null;
+  ctx.priorities.forEach(p => {
+    const def = NATIONAL_PRIORITY_BY_ID[p.definitionId]; const uw = p.urgency === 'critical' ? 1 : p.urgency === 'urgent' ? 0.85 : p.urgency === 'important' ? 0.7 : 0.4;
+    let band: NationalPriorityActionAlignment['band'] = 'none'; let reason = '';
+    if (projectType && def.pressureTypes.includes(projectType) && region && p.regions.includes(region)) { band = 'conflict'; reason = `Adds pressure on national ${def.label} in ${region}`; }
+    else if (projectType) { const rel = nationalPriorityProjectRelevance(def, { projectType, regionId: region || null }, p.regions); if (rel === 'direct') { band = region && p.regions.includes(region) ? 'strong' : 'moderate'; reason = `${band === 'strong' ? 'Strongly supports' : 'Supports'} national ${def.label}`; } else if (rel === 'indirect') { band = 'weak'; reason = `Indirectly supports national ${def.label}`; } }
+    else if (def.contentTags.some(t => blob.includes(t)) && region && p.regions.includes(region)) { band = 'weak'; reason = `Touches national ${def.label} in ${region}`; }
+    const score = v107R({ strong: 10, moderate: 6, weak: 2, none: 0, conflict: -3 }[band] * uw);
+    if (band !== 'none' && (!best || Math.abs(score) > Math.abs(best.score))) best = { score, band, reason, priorityId: p.definitionId };
+  });
+  return best;
+}
+/** Rival AI (≤ +6%): urgency × OWN expected benefit, discounted for helping others, free-riding chances, thin liquidity and victory pressure. Public structure only. */
+export function nationalPriorityAiOutlook(s: NationalPrioritiesState | null, actorId: string, p: { projectType: string; regionId: string | null; projectId?: string }, ctx: { controllers: Record<string, string | null>; othersFunding?: number; cash?: number; victoryPressure?: number; riskTolerance?: number } ): { factor: number; reason: string | null } {
+  if (!s || !p.projectType) return { factor: 0, reason: null };
+  let best = { factor: 0, reason: null as string | null };
+  s.active.forEach(pr => {
+    const def = NATIONAL_PRIORITY_BY_ID[pr.definitionId]; const rel = nationalPriorityProjectRelevance(def, p, pr.relevantRegionIds); if (!rel) return;
+    const urg = { watch: 0.2, important: 0.5, urgent: 0.8, critical: 1 }[pr.urgency];
+    const regs = pr.relevantRegionIds; const own = regs.filter(r => ctx.controllers[r] === actorId).length / Math.max(1, regs.length); const others = regs.filter(r => ctx.controllers[r] && ctx.controllers[r] !== actorId).length / Math.max(1, regs.length);
+    const benefit = (p.regionId && ctx.controllers[p.regionId] === actorId ? 1 : 0.25 + own * 0.6) * (others > own ? 0.5 : 1);
+    const freeRide = (ctx.othersFunding || 0) > 0 ? 0.4 : 1; const liq = typeof ctx.cash === 'number' && ctx.cash < 20000 ? 0.5 : 1; const vp = 1 - 0.6 * v107C(ctx.victoryPressure || 0);
+    const f = v107R(Math.min(0.06, 0.06 * urg * benefit * freeRide * liq * vp * (rel === 'direct' ? 1 : 0.5)), 3);
+    if (f > best.factor) best = { factor: f, reason: `${def.label} (${pr.urgency})${freeRide < 1 ? ' — others are already funding a solution' : ''}${others > own ? ' — mostly helps rivals' : ''}` };
+  });
+  return best;
+}
+/** Guardian (warn-only): a spend that uses most remaining cash while a national priority is CRITICAL. */
+export function nationalPriorityGuardianWarning(p: NationalPrioritiesPersisted | null, cash: number, spend: number): { warn: boolean; text: string; priority: string | null } {
+  const s = p ? sanitizeNationalPrioritiesPersisted(p) : null; const crit = s ? (Object.values(s.current.entries) as NationalPriorityMemoryEntry[]).find(e => (e.status === 'active' || e.status === 'improving') && e.urgency === 'critical') : null;
+  if (!crit || !(spend > 0) || !(cash > 0) || spend < cash * 0.7) return { warn: false, text: '', priority: null };
+  const label = NATIONAL_PRIORITY_BY_ID[crit.definitionId].label;
+  return { warn: true, priority: crit.definitionId, text: `⚠ ${label.toUpperCase()}: this would use most of your remaining cash while ${label} is currently Critical. You would have little flexibility to respond if conditions worsen. (Information only — supporting the priority is your choice.)` };
+}
+/** V9.3 content: themes of live priorities (bounded relevance bonus only — never floods content). */
+export function nationalPriorityContentThemes(s: NationalPrioritiesState | null): ContentTheme[] { return s ? Array.from(new Set(s.active.flatMap(a => NATIONAL_PRIORITY_BY_ID[a.definitionId].themes))).sort() as ContentTheme[] : []; }
+export function nationalPriorityPlayLine(s: NationalPrioritiesState | null, viewerId: string): { icon: string; label: string; urgency: NationalPriorityUrgency; reason: string; alignment: PriorityStrategyAlignment; mode: NationalPriorityMode } | null {
+  const p = s?.primary; if (!p) return null;
+  return { icon: NATIONAL_PRIORITY_BY_ID[p.definitionId].icon, label: p.label, urgency: p.urgency, reason: p.why[0] ? `${p.summary}` : p.summary, alignment: p.actors[viewerId]?.alignment || 'neutral', mode: p.mode };
+}
+/** Debrief (neutral language — never a moral judgment). */
+export function buildNationalPriorityDebrief(s: NationalPrioritiesState | null, p: NationalPrioritiesPersisted | null, viewerId: string, names: Record<string, string>): { timeline: string[]; story: string[] } {
+  if (!s || !p) return { timeline: [], story: [] };
+  const nm = (a: string) => (a === viewerId ? 'You' : names[a] || a);
+  const timeline = p.history.filter(h => h.kind !== 'emerged' && h.kind !== 'urgency_changed').slice(-12).map(h => `Turn ${h.turn} — ${h.kind === 'actor_contributed' && h.actorId === viewerId ? h.summary.replace(new RegExp(`^${(names[viewerId] || viewerId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'s`), 'Your') : h.summary}`);
+  const story: string[] = [];
+  const counts: Record<string, number> = {}; p.history.filter(h => h.kind === 'activated').forEach(h => { counts[h.priorityId] = (counts[h.priorityId] || 0) + 1; });
+  const largest = [...p.current.resolved.map(r => ({ id: r.definitionId, len: r.resolvedTurn - r.startedTurn })), ...s.active.map(a => ({ id: a.definitionId, len: s.turn - a.startedTurn }))].sort((a, b) => b.len - a.len)[0];
+  if (largest) story.push(`Largest national priority: ${NATIONAL_PRIORITY_BY_ID[largest.id as NationalPriorityId].label}`);
+  const mine = [...p.current.resolved.map(r => r.contributors[viewerId]), ...s.active.map(a => a.actors[viewerId]?.contribution)].filter(Boolean) as PriorityContributionBand[];
+  const topMine = mine.sort((a, b) => PRIORITY_CONTRIBUTION_RANK[b] - PRIORITY_CONTRIBUTION_RANK[a])[0]; story.push(`Your contribution: ${topMine ? topMine.charAt(0).toUpperCase() + topMine.slice(1) : 'None'}`);
+  const rivalTop = p.current.resolved.flatMap(r => Object.entries(r.contributors).filter(([a]) => a !== viewerId).map(([a, b]) => ({ a, b, l: r.label }))).sort((x, y) => PRIORITY_CONTRIBUTION_RANK[y.b] - PRIORITY_CONTRIBUTION_RANK[x.b])[0];
+  if (rivalTop) story.push(`Most important rival contribution: ${nm(rivalTop.a)} — ${rivalTop.l} (${rivalTop.b})`);
+  const ignored = [...p.current.resolved.filter(r => !r.contributors[viewerId]).map(r => r.label), ...s.active.filter(a => (a.actors[viewerId]?.contribution || 'none') === 'none' && s.turn - a.startedTurn >= 3).map(a => a.label)][0];
+  if (ignored) story.push(`You made no major contribution to the ${ignored} response.`);
+  story.push(`National priorities resolved: ${p.current.resolved.length}`); story.push(`National priorities still active: ${s.active.length}`);
+  return { timeline, story };
+}
+
+// ---- What-If (isolated; never touches live state) ------------------------------------------------------------------
+/** Recompute V10.0 → V10.1 → V10.2 → V10.6 with project overrides / a hypothetical project, then re-derive priorities. */
+export function nationalPriorityWhatIf(i: NationalPriorityInputs, ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }, change: { overrides?: Record<string, string>; add?: { projectType: string; regionId: string; title?: string } | null }, before: NationalPrioritiesState): { lines: string[]; after: NationalPriorityCandidate[]; label: string } {
+  if (!ctx.nsInputs || !ctx.scInputs) return { lines: ['What-If needs the national systems snapshot.'], after: before.candidates, label: 'Unavailable' };
+  const ov = change.overrides || {};
+  const synth = change.add ? [{ id: `whatif:${change.add.projectType}:${change.add.regionId}`, title: change.add.title || `${change.add.projectType.replace(/_/g, ' ')} (${change.add.regionId})`, regionId: change.add.regionId, projectType: change.add.projectType, status: 'active' }] : [];
+  const flip = <X extends { id: string; status: string }>(xs: X[]) => xs.map(p => (ov[p.id] ? { ...p, status: ov[p.id] } : p));
+  const nsProjects = [...flip(ctx.nsInputs.projects as any[]), ...synth]; const scProjects = [...flip(ctx.scInputs.projects as any[]), ...synth];
+  const ns = computeNationalSystems({ ...ctx.nsInputs, projects: nsProjects }).state; const ind = computeIndustriesSupplyChains({ ...ctx.scInputs, projects: scProjects, national: ns }).state;
+  const net = computeStrategicInfrastructureNetworks(buildInfraNetworkInputs({ turn: i.turn, projects: nsProjects, national: ns, industries: ind })).state;
+  const srI: SystemicRiskInputs = { ...i.sr, national: ns, industries: ind, networks: net, projects: [...flip(i.sr.projects as any[]), ...synth.map(s => ({ ...s }))] };
+  const sys = computeSystemicRisk(srI, null, { emit: false }).state;
+  const after = deriveNationalPriorityCandidates({ ...i, sr: srI, systemic: sys, projects: [...flip(i.projects as any[]), ...synth.map(s => ({ ...s, contributions: {} }))] }, null);
+  const by = Object.fromEntries(after.map(c => [c.definitionId, c])) as Record<NationalPriorityId, NationalPriorityCandidate>;
+  const label = change.add ? `Build ${synth[0].title}` : Object.keys(ov).map(k => `${i.projects.find(p => p.id === k)?.title || k} → ${ov[k]}`).join(', ');
+  const lines: string[] = [];
+  const watch = [...before.active, ...(before.emerging ? [before.emerging] : [])];
+  watch.forEach(p => { const a = by[p.definitionId]; if (!a) return;
+    const changedSignals = a.signals.filter(s => { const b = p.outcomeSignals.find(x => x.id === s.id); return b && b.state !== s.state; }).map(s => `${s.label}: ${p.outcomeSignals.find(x => x.id === s.id)!.state} → ${s.state}`);
+    // Compare like with like: an emerging (watch-list) item is compared on its candidate urgency before and after.
+    const bc = before.candidates.find(x => x.definitionId === p.definitionId);
+    const urgNow = p.status === 'emerging' ? (bc && bc.eligible ? bc.urgency : 'watch') : p.urgency, urgAfter = a.eligible ? a.urgency : 'watch';
+    lines.push(`${p.label}: ${changedSignals.length ? changedSignals.slice(0, 3).join('; ') : 'no structural change'} · likely ${NATIONAL_PRIORITY_URGENCY_LABEL[urgNow].toUpperCase()} → ${NATIONAL_PRIORITY_URGENCY_LABEL[urgAfter].toUpperCase()}`); });
+  after.filter(a => a.eligible && a.score >= V107_THRESHOLDS.activate && !watch.some(w => w.definitionId === a.definitionId)).slice(0, 2).forEach(a => {
+    const b = before.candidates.find(x => x.definitionId === a.definitionId); if (!b || b.score + 6 <= a.score) lines.push(`${NATIONAL_PRIORITY_BY_ID[a.definitionId].label} would likely become more pressing (${b ? Math.round(b.score) : '—'} → ${Math.round(a.score)} attention).`); });
+  if (!lines.length) lines.push('No national priority would materially change.');
+  return { lines, after, label };
+}
+/** "What if I ignore it for N turns?" — projected ONLY from known persistent trends / current conditions. No invented events. */
+export function nationalPriorityIgnoreProjection(p: NationalPriority, turns = 5): { lines: string[]; uncertainty: 'moderate' | 'high' } {
+  const def = NATIONAL_PRIORITY_BY_ID[p.definitionId]; const lines: string[] = [];
+  lines.push(`Known now: ${p.why.slice(0, 2).join('; ') || def.wording}`);
+  if (p.momentum === 'worsening') lines.push(`Trend: worsening — without a response, ${def.label} would likely stay ${NATIONAL_PRIORITY_URGENCY_LABEL[p.urgency].toLowerCase()} or rise over ${turns} turns.`);
+  else if (p.momentum === 'improving' || p.status === 'improving') lines.push(`Trend: improving — others' investments or easing conditions may resolve it without you.`);
+  else lines.push(`Trend: stable — conditions do not fix themselves; it would likely persist for ${turns} turns unless someone acts.`);
+  lines.push(`If nobody addresses it: ${def.ignoreText}`);
+  lines.push('No penalty is applied for ignoring it — only the underlying conditions remain. Future crises are not predicted.');
+  return { lines, uncertainty: p.momentum === 'stable' ? 'moderate' : 'high' };
+}
+
+// ---- V10.7 self-test fixture -------------------------------------------------------------------------------------
+/** Canonical statuses + sectors (+ modifiers, crises, stability, contributions, control, strategies) → V10.0 → … → V10.6 + V10.4 → V10.7 inputs. */
+export function createNationalPriorityFixture(o: Parameters<typeof createSystemicRiskFixture>[0] & { contributions?: Record<string, Record<string, number>>; controllers?: Record<string, string | null>;
+  strategies?: NationalPriorityInputs['strategies']; actors?: NationalPriorityInputs['actors']; regionalStability?: Record<string, number>; noDevelopment?: boolean } = {}): { inputs: NationalPriorityInputs; ctx: { nsInputs: NationalSystemsInputs; scInputs: IndustriesInputs } } {
+  const turn = o.turn ?? 5; const f = createSystemicRiskFixture(o);
+  const sr: SystemicRiskInputs = o.regionalStability ? { ...f.inputs, stability: { ...f.inputs.stability, regional: { ...o.regionalStability } } } : f.inputs;
+  const sys = computeSystemicRisk(sr, null, { emit: false }).state;
+  const lr: any = { regions: Object.fromEntries(Object.keys(REGIONS).map(c => [c, { sectors: o.sectors?.[c] || {}, development: { score: 20 }, momentum: { value: 0 }, stability: { value: 60 } }])) };
+  const dev = o.noDevelopment ? null : computeNationalDevelopment(buildNationalDevelopmentInputs({ turn, lr, national: sr.national, industries: sr.industries, networks: sr.networks, megaprojects: null, projects: sr.projects as any, contracts: [], owners: {}, viewer: null }), null).profile;
+  const projects = sr.projects.map(p => ({ ...p, contributions: o.contributions?.[p.id] || {} }));
+  return { inputs: buildNationalPriorityInputs({ turn, sr, systemic: sys, development: dev, projects, controllers: o.controllers || {}, actors: o.actors || [{ id: 'player', name: 'You', isHuman: true }, { id: 'riley', name: 'Riley', isHuman: false }], strategies: o.strategies || {} }), ctx: f.ctx };
+}
+
+export function runV107DynamicNationalPrioritiesSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const J = (x: any) => JSON.stringify(x);
+  const A = (...ids: string[]) => Object.fromEntries(ids.map(i => [i, 'active']));
+  type FO = Parameters<typeof createNationalPriorityFixture>[0];
+  const X = (o: FO = {}) => createNationalPriorityFixture(o);
+  const MFG_P = A('infra_v93_vic_manufacturing', 'infra_v102_vic_freight_terminal', 'infra_v102_nsw_interstate_rail', 'infra_inland_rail_qld', 'infra_snowy_nsw', 'infra_v102_sa_freight_corridor', 'infra_v93_wa_freight_rail');
+  const HUNGRY: any = { VIC: { manufacturing: 100 }, NSW: { manufacturing: 95 }, SA: { mining: 70 }, QLD: { manufacturing: 70, mining: 90 } };
+  const NO_ALT: IndustriesInputs['modifiers'] = Object.fromEntries(['NSW', 'NT', 'QLD', 'WA', 'TAS', 'ACT'].map(r => [r, { mining: -100 }]));
+  const WS: any = { SA: { agriculture: 80 }, VIC: { agriculture: 70, manufacturing: 60 }, NSW: { agriculture: 60 } };
+  const CTRL = { SA: 'player', VIC: 'riley', NSW: 'riley' };
+  /** Water world: k = water capacity modifier in SA / VIC / NSW (−40 severe, −25 moderate, 0 healthy). */
+  const W = (turn: number, k = -40, o: FO = {}) => X({ turn, sectors: WS, nsModifiers: k ? { SA: { water: k }, VIC: { water: k }, NSW: { water: k } } : {}, controllers: CTRL, ...o });
+  const ENERGY = (turn: number, o: FO = {}) => X({ turn, statuses: MFG_P, sectors: HUNGRY, nsModifiers: { VIC: { energy: -60 }, NSW: { energy: -50 }, SA: { energy: -40 } }, controllers: { VIC: 'riley', NSW: 'riley', SA: 'player' }, ...o });
+  const TECH_S: any = { VIC: { technology: 90, research: 90 }, NSW: { technology: 80, research: 85 }, ACT: { research: 80 } };
+  const TECH = (turn: number, o: FO = {}) => X({ turn, statuses: A('infra_v93_vic_manufacturing'), sectors: TECH_S, ...o });
+  const seq = (steps: NationalPriorityInputs[], start: NationalPrioritiesPersisted | null = null) => {
+    let p = start; let last: ReturnType<typeof computeNationalPriorities> | null = null; const events: NationalPriorityDerivedEvent[] = []; const states: NationalPrioritiesState[] = [];
+    steps.forEach(i => { last = computeNationalPriorities(i, p); p = last.persisted; events.push(...last.events); states.push(last.state); });
+    return { p: p!, last: last!, events, states };
+  };
+  const turns = (from: number, to: number, f: (t: number) => NationalPriorityInputs) => Array.from({ length: to - from + 1 }, (_, k) => f(from + k));
+  const cand = (i: NationalPriorityInputs, d: NationalPriorityId) => deriveNationalPriorityCandidates(i, null).find(c => c.definitionId === d)!;
+  const live = (s: NationalPrioritiesState, d: NationalPriorityId) => s.active.find(a => a.definitionId === d) || null;
+  const strip = (s: NationalPrioritiesState) => J({ ...s, computeMs: 0 });
+  const valid = (s: NationalPrioritiesState, p?: NationalPrioritiesPersisted) => { const v = validateNationalPrioritiesState(s, p, ['player', 'riley']); return v.length ? v.join('; ') : true; };
+  /** Healthy turn 1, then the given world from turn 2 (history only starts after the initialization turn). */
+  const waterRun = (n: number, f: (t: number) => NationalPriorityInputs = t => W(t).inputs) => seq([W(1, 0).inputs, ...turns(2, n, f)]);
+  const Wp = (turn: number, k: number, st: Record<string, string>, contributions: Record<string, Record<string, number>>) => X({ turn, sectors: WS, nsModifiers: k ? { SA: { water: k }, VIC: { water: k }, NSW: { water: k } } : {}, statuses: st, contributions, controllers: CTRL });
+
+  check('np1', 'TEST 1 — no national issue: healthy systems force no problem priority', () => {
+    const r = seq(turns(1, 5, t => X({ turn: t }).inputs));
+    const probs = r.last.state.candidates.filter(c => c.mode === 'problem' && c.eligible);
+    return (!probs.length && r.last.state.active.every(a => a.mode === 'opportunity') && valid(r.last.state, r.p) === true) || J({ probs: probs.map(c => c.definitionId), active: r.last.state.active.map(a => a.definitionId) });
+  });
+  check('np2', 'TEST 2 — water strain + national dependency → Water Security candidate high', () => {
+    const c = cand(W(5).inputs, 'water_security'); const top = deriveNationalPriorityCandidates(W(5).inputs, null)[0];
+    return (c.eligible && c.national && c.score >= V107_THRESHOLDS.activate && top.definitionId === 'water_security' && c.categories.length >= 2) || J({ s: c.score, e: c.eligible, top: top.definitionId });
+  });
+  check('np3', 'TEST 3 — an isolated low-importance regional water issue is not automatically national', () => {
+    const c = cand(X({ nsModifiers: { NT: { water: -40 } } }).inputs, 'water_security');
+    return (!c.eligible && !c.national && c.score < V107_THRESHOLDS.activate && /local/i.test(c.whyNot || '')) || J({ s: c.score, e: c.eligible, n: c.national, w: c.whyNot });
+  });
+  check('np4', 'TEST 4 — high energy demand + low redundancy → Energy Resilience', () => {
+    const c = cand(ENERGY(5).inputs, 'energy_resilience');
+    return (c.eligible && NATIONAL_PRIORITY_URGENCY_RANK[c.urgency] >= 2 && c.categories.includes('capacity') && (c.categories.includes('redundancy') || c.categories.includes('dependency'))) || J({ s: c.score, u: c.urgency, cats: c.categories });
+  });
+  check('np5', 'TEST 5 — a freight bottleneck constraining several supply chains activates Freight Modernization', () => {
+    const F = (t: number) => X({ turn: t, statuses: MFG_P, sectors: HUNGRY, nsModifiers: t === 1 ? {} : { SA: { freight: -80 }, VIC: { freight: -80 }, NSW: { freight: -80 }, QLD: { freight: -80 } } }).inputs;
+    const r = seq(turns(1, 4, F));
+    return (Boolean(live(r.last.state, 'freight_modernization')) && r.events.some(e => e.kind === 'national_priority_activated' && e.definitionId === 'freight_modernization')) || J({ active: r.last.state.active.map(a => a.definitionId), c: cand(F(4), 'freight_modernization').score });
+  });
+  check('np6', 'TEST 6 — research + digital + technology + energy strong → Technology Competitiveness opportunity may emerge', () => {
+    const c = cand(TECH(5).inputs, 'technology_competitiveness'); const r = seq(turns(1, 5, t => TECH(t).inputs));
+    const seen = live(r.last.state, 'technology_competitiveness') || (r.last.state.emerging?.definitionId === 'technology_competitiveness' ? r.last.state.emerging : null);
+    return (c.eligible && c.mode === 'opportunity' && c.score >= V107_THRESHOLDS.watch && Boolean(seen)) || J({ s: c.score, e: c.eligible, w: c.whyNot });
+  });
+  check('np7', 'TEST 7 — research strong but digital / energy constrained → technology opportunity weak or inactive', () => {
+    const blocked = X({ statuses: A('infra_v93_vic_manufacturing'), sectors: TECH_S, nsModifiers: Object.fromEntries(Object.keys(REGIONS).map(r => [r, { digital: -200, energy: -200 }])) }).inputs;
+    const c = cand(blocked, 'technology_competitiveness');
+    return (!c.eligible && c.score < V107_THRESHOLDS.activate && /constrained|blocks/i.test(c.whyNot || '')) || J({ s: c.score, e: c.eligible, w: c.whyNot });
+  });
+  const MONO_DEP = (t = 5) => X({ turn: t, statuses: MFG_P, sectors: { SA: { mining: 100 }, VIC: { manufacturing: 40 }, NSW: { manufacturing: 30 } }, indModifiers: NO_ALT });
+  const SPEC_OK = (t = 5) => X({ turn: t, statuses: MFG_P, sectors: { SA: { mining: 100 }, WA: { mining: 95 }, QLD: { mining: 90 }, VIC: { manufacturing: 20 } } });
+  check('np8', 'TEST 8 — high national concentration + systemic exposure → Economic Diversification relevant', () => {
+    const c = cand(MONO_DEP().inputs, 'economic_diversification');
+    return (c.eligible && c.categories.includes('concentration') && c.score >= V107_THRESHOLDS.activate) || J({ s: c.score, cats: c.categories, w: c.whyNot });
+  });
+  check('np9', 'TEST 9 — specialized but resilient (several suppliers, low risk) → diversification significantly lower', () => {
+    const a = cand(MONO_DEP().inputs, 'economic_diversification'), b = cand(SPEC_OK().inputs, 'economic_diversification');
+    return (!b.eligible && b.score <= a.score - 20 && /resilient/i.test(b.whyNot || '')) || J({ a: a.score, b: b.score, w: b.whyNot });
+  });
+  const MANY = (t: number) => X({ turn: t, statuses: { ...MFG_P, infra_v102_sa_freight_corridor: 'damaged', infra_v102_nsw_interstate_rail: 'damaged' }, sectors: { ...HUNGRY, SA: { mining: 70, agriculture: 80 }, VIC: { manufacturing: 100, agriculture: 60 } }, indModifiers: NO_ALT, stability: 30, regionalStability: { SA: 30, VIC: 35, NSW: 30 },
+    nsModifiers: t === 1 ? {} : { VIC: { energy: -60, water: -40 }, NSW: { energy: -50, water: -40 }, SA: { energy: -40, water: -40 } }, crises: t === 1 ? [] : [{ id: 'c_unrest', name: 'Unrest', category: 'social', status: 'active', affectedRegions: ['SA'] }] });
+  check('np10', 'TEST 10 — five strong candidates → only the primary/secondary budget is active', () => {
+    const r = seq(turns(1, 6, t => MANY(t).inputs)); const strong = r.last.state.candidates.filter(c => c.eligible && c.score >= V107_THRESHOLDS.activate);
+    return (strong.length >= 4 && r.last.state.active.length === V107_LIMITS.active && r.states.every(s => s.active.length <= V107_LIMITS.active) && valid(r.last.state, r.p) === true) || J({ strong: strong.map(c => c.definitionId), active: r.states.map(s => s.active.length) });
+  });
+  check('np11', 'TEST 11 — a third-ranked candidate above the watch threshold appears as Emerging only', () => {
+    const s = seq(turns(1, 6, t => MANY(t).inputs)).last.state;
+    return (Boolean(s.emerging) && s.emerging!.status === 'emerging' && !s.active.some(a => a.definitionId === s.emerging!.definitionId) && s.emerging!.score >= V107_THRESHOLDS.watch) || J({ em: s.emerging?.definitionId, active: s.active.map(a => a.definitionId) });
+  });
+  check('np12', 'TEST 12 — a candidate fluctuating near the threshold does not flicker active/inactive', () => {
+    // Activate at −32, then oscillate between just-below-activation (−30) and below-resolution (−28) readings.
+    const r = waterRun(14, t => W(t, t <= 3 ? -32 : t % 2 ? -30 : -28).inputs);
+    const acts = r.events.filter(e => e.kind === 'national_priority_activated' && e.definitionId === 'water_security').length; const res = r.events.filter(e => e.kind === 'national_priority_resolved' && e.definitionId === 'water_security').length;
+    const states = r.states.slice(3).map(s => Boolean(live(s, 'water_security')));
+    return (acts === 1 && res === 0 && states.every(Boolean)) || J({ acts, res, states });
+  });
+  check('np13', 'TEST 13 — an active priority that improves slightly for one turn does not instantly resolve', () => {
+    const r = waterRun(6, t => W(t, t === 6 ? -25 : -40).inputs);
+    return (Boolean(live(r.last.state, 'water_security')) && !r.events.some(e => e.kind === 'national_priority_resolved')) || J({ active: r.last.state.active.map(a => `${a.definitionId}:${a.status}`) });
+  });
+  check('np14', 'TEST 14 — sustained underlying improvement resolves the priority (after persistence; not on the first good turn)', () => {
+    const r = waterRun(12, t => W(t, t <= 6 ? -40 : -25).inputs);
+    const resolvedAt = r.events.find(e => e.kind === 'national_priority_resolved' && e.definitionId === 'water_security')?.turn ?? null;
+    return (resolvedAt !== null && resolvedAt >= 8 && !live(r.last.state, 'water_security') && r.last.state.resolved.some(x => x.definitionId === 'water_security')) || J({ resolvedAt, ev: r.events.map(e => `${e.turn}:${e.kind}:${e.definitionId}`) });
+  });
+  check('np15', 'TEST 15 — no point system: relevant actions improve the world through canonical systems, no hidden currency', () => {
+    const last = Wp(5, -40, A('infra_desal_sa'), { infra_desal_sa: { player: 100000 } }).inputs; const before = J(last);
+    const r = seq([W(1, 0).inputs, ...turns(2, 4, t => W(t).inputs), last]);
+    const blob = J(r.p) + J(r.last.state);
+    return (!/"(points|priorityPoints|supportPoints|currency|tokens?|reward|rewards|money|cash|bonus)"\s*:/i.test(blob) && J(last) === before) || 'a priority currency / reward field appeared, or canonical inputs changed';
+  });
+  /** Moderate-severe water strain (−32) active from turn 3; the change lands on turn 5. */
+  const D3 = A('infra_desal_sa', 'infra_v93_sa_water_pipeline', 'infra_v103_murray_water_grid');
+  const contrib = (o: { k?: number; st?: Record<string, string>; c?: Record<string, Record<string, number>> } = {}) => seq([W(1, 0).inputs, ...turns(2, 4, t => W(t, -32).inputs), Wp(5, o.k ?? -32, o.st || {}, o.c || {}).inputs, Wp(6, o.k ?? -32, o.st || {}, o.c || {}).inputs]);
+  check('np16', 'TEST 16 — a player project that materially improves the outcome is recognised as a contribution', () => {
+    const r = contrib({ st: A('infra_desal_sa'), c: { infra_desal_sa: { player: 120000 } } }); const p = live(r.last.state, 'water_security');
+    const before = cand(Wp(6, -32, {}, {}).inputs, 'water_security'), after = cand(Wp(6, -32, A('infra_desal_sa'), {}).inputs, 'water_security');
+    return (Boolean(p) && after.signals.some(s => s.id === 'water_capacity') && before.evidence.some(e => e.label.startsWith('SA water')) && !after.evidence.some(e => e.label.startsWith('SA water')) && PRIORITY_CONTRIBUTION_RANK[p!.actors.player.contribution] >= 3 && r.p.history.some(h => h.kind === 'actor_contributed' && h.actorId === 'player')) || J({ p: p?.actors, h: r.p.history.map(h => h.kind) });
+  });
+  check('np17', 'TEST 17 — an action that helps through a downstream / out-of-region path is classified Indirect', () => {
+    const E = (t: number, extra: Record<string, string> = {}, c: any = {}) => X({ turn: t, statuses: { ...MFG_P, ...extra }, sectors: HUNGRY, nsModifiers: t === 1 ? {} : { VIC: { energy: -60 }, NSW: { energy: -50 }, SA: { energy: -40 } }, contributions: c }).inputs;
+    const pre = seq(turns(1, 4, t => E(t))).last.state; const regs = live(pre, 'energy_resilience')?.relevantRegionIds || [];
+    const pick = [['infra_v93_qld_renewable_grid', 'renewable_grid', 'QLD'], ['infra_hydrogen_wa', 'green_hydrogen_terminal', 'WA']].find(x => !regs.includes(x[2]))!;
+    const r = seq([...turns(1, 4, t => E(t)), E(5, A(pick[0]), { [pick[0]]: { player: 90000 } })]); const p = live(r.last.state, 'energy_resilience');
+    const rel = nationalPriorityProjectRelevance(NATIONAL_PRIORITY_BY_ID.energy_resilience, { projectType: pick[1], regionId: pick[2] }, regs);
+    return (Boolean(p) && rel === 'indirect' && p!.actors.player.contribution === 'indirect') || J({ regs, pick, rel, band: p?.actors.player.contribution });
+  });
+  check('np18', 'TEST 18 — an unrelated action earns no contribution', () => {
+    const r = contrib({ st: A('infra_v93_tas_tourism_precinct'), c: { infra_v93_tas_tourism_precinct: { player: 80000 } } }); const p = live(r.last.state, 'water_security');
+    return (Boolean(p) && p!.actors.player.contribution === 'none' && !r.p.history.some(h => h.kind === 'actor_contributed')) || J(p?.actors);
+  });
+  check('np19', 'TEST 19 — free rider: Riley solves a major part, the player contributes nothing, the priority improves for everyone', () => {
+    const base = contrib(); const r = contrib({ st: D3, c: { infra_desal_sa: { riley: 120000 }, infra_v93_sa_water_pipeline: { riley: 90000 }, infra_v103_murray_water_grid: { riley: 150000 } } });
+    const a = cand(Wp(6, -32, {}, {}).inputs, 'water_security'), b = cand(Wp(6, -32, D3, {}).inputs, 'water_security');
+    const p = live(r.last.state, 'water_security') || null; const rec = r.last.state.resolved.find(x => x.definitionId === 'water_security');
+    const rileyBand = p ? p.actors.riley.contribution : rec?.contributors.riley || 'none'; const playerBand = p ? p.actors.player.contribution : rec?.contributors.player || 'none';
+    return (b.score < a.score && PRIORITY_CONTRIBUTION_RANK[rileyBand as PriorityContributionBand] >= 3 && playerBand === 'none' && Boolean(live(base.last.state, 'water_security'))) || J({ a: a.score, b: b.score, rileyBand, playerBand });
+  });
+  check('np20', 'TEST 20 — beneficiary ≠ contributor: the player gains from Riley\'s public-good investment while contributing nothing', () => {
+    const r = seq([W(1, 0).inputs, ...turns(2, 6, t => W(t, -32).inputs), ...turns(7, 12, t => Wp(t, -32, D3, { infra_desal_sa: { riley: 120000 }, infra_v93_sa_water_pipeline: { riley: 90000 }, infra_v103_murray_water_grid: { riley: 150000 } }).inputs)]);
+    const p = live(r.last.state, 'water_security'); const rec = r.last.state.resolved.find(x => x.definitionId === 'water_security');
+    const benefited = p ? p.actors.player.benefited : Boolean(rec?.benefited.includes('player')); const band = p ? p.actors.player.contribution : rec?.contributors.player || 'none';
+    return (benefited && band === 'none') || J({ p: p?.actors.player, rec });
+  });
+  check('np21', 'TEST 21 — GI3 boundary: a conflicting strategy stays unchanged; the conflict is explained', () => {
+    const strategies = { player: { label: 'Double down on WA mining', text: 'Double down on WA mining resource exports', regionIds: ['WA'] } };
+    const i = { ...MONO_DEP().inputs, strategies }; const before = J(strategies);
+    const r = computeNationalPriorities(i, null); const al = nationalPriorityStrategyAlignment(NATIONAL_PRIORITY_BY_ID.economic_diversification, ['SA'], strategies.player);
+    return (al.alignment === 'conflict' && /does not block/i.test(al.reason) && J(strategies) === before && J(i.strategies) === before && !('gi3Strategy' in (r.persisted as any))) || J(al);
+  });
+  check('np22', 'TEST 22 — Current Objective boundary: a manual objective still outranks a critical national priority', () => {
+    const objective: any = { id: 'obj', title: 'Complete VIC Contract', description: 'contract VIC', sourceType: 'contract', sourceId: 'c1', completionState: 'active', recommendedNextStep: { label: 'Complete VIC Contract', actionType: 'complete_contract' } };
+    const ctx: NationalPriorityRankingContext = { priorities: [{ definitionId: 'water_security', urgency: 'critical', regions: ['SA'] }], projects: { infra_desal_sa: { projectType: 'desalination_plant', regionId: 'SA' } } };
+    const cands = [{ id: 'a', actionType: 'complete_contract', category: 'contract', title: 'Complete VIC Contract', utilityScore: 50 }, { id: 'b', actionType: 'fund_infrastructure', title: 'Fund SA Desalination', targetId: 'infra_desal_sa', utilityScore: 50 }];
+    const ranked = rankContextualRecommendations(cands, objective, { apRemaining: 3, cash: 100000, limit: 2, nationalPriority: ctx });
+    return (ranked[0].id === 'a' && objective.title === 'Complete VIC Contract') || J(ranked.map(r => r.id));
+  });
+  check('np23', 'TEST 23 — contextual actions: a legal action gets a priority-alignment factor; legality is never overridden', () => {
+    const ctx: NationalPriorityRankingContext = { priorities: [{ definitionId: 'water_security', urgency: 'urgent', regions: ['SA', 'VIC'] }], projects: { infra_desal_sa: { projectType: 'desalination_plant', regionId: 'SA' } } };
+    const legal = { id: 'b', actionType: 'fund_infrastructure', title: 'Fund SA Desalination', targetId: 'infra_desal_sa', utilityScore: 30 };
+    const illegal = { ...legal, id: 'c', isValid: false };
+    const ranked = rankContextualRecommendations([illegal, legal], null, { apRemaining: 3, cash: 100000, limit: 5, nationalPriority: ctx });
+    const al = nationalPriorityActionAlignment(ctx, legal);
+    return (al?.band === 'strong' && ranked.length === 1 && ranked[0].id === 'b' && ranked[0].nationalPriorityAlignment?.band === 'strong') || J({ al, ranked: ranked.map(r => r.id) });
+  });
+  check('np24', 'TEST 24 — recommendation: an action that strongly helps GI3 AND the priority mentions both', () => {
+    const gi3: any = { contract: { goals: [{ id: 'g', type: 'protect_region', regionId: 'SA', status: 'active', label: 'Hold SA' }], constraints: { loanPolicy: 'allowed', minimumCashReserve: 0, deprioritizedRegions: [] } }, progress: { phaseIndex: 0, resourceStatus: { cash: 0 } }, cash: 200000 };
+    const ctx: NationalPriorityRankingContext = { priorities: [{ definitionId: 'water_security', urgency: 'urgent', regions: ['SA'] }], projects: { infra_desal_sa: { projectType: 'desalination_plant', regionId: 'SA' } } };
+    const c = { id: 'b', actionType: 'fund_infrastructure', title: 'Fund desalination and secure SA', regionId: 'SA', targetId: 'infra_desal_sa', utilityScore: 40 };
+    const r = rankContextualRecommendations([c], null, { apRemaining: 3, cash: 200000, limit: 1, strategy: gi3, nationalPriority: ctx })[0];
+    return (r.whyPoints.some(w => /strategy/i.test(w)) && r.whyPoints.some(w => /national water security/i.test(w))) || J(r.whyPoints);
+  });
+  check('np25', 'TEST 25 — self-interest: nationally good but mostly helps the rival → tradeoff explained, not automatically recommended', () => {
+    const s = waterRun(5).last.state; const p = live(s, 'water_security')!; const it = nationalPriorityInterest(p, 'player', Object.fromEntries(p.relevantRegionIds.map(r => [r, 'riley'])));
+    const ctx: NationalPriorityRankingContext = { priorities: [{ definitionId: 'water_security', urgency: 'urgent', regions: p.relevantRegionIds }], projects: { infra_v103_murray_water_grid: { projectType: 'water_pipeline', regionId: 'NSW' } } };
+    const ranked = rankContextualRecommendations([{ id: 'x', actionType: 'fund_infrastructure', title: 'Fund Murray Water Grid', targetId: 'infra_v103_murray_water_grid', utilityScore: 40 }, { id: 'y', actionType: 'sell', title: 'Sell goods', utilityScore: 50 }], null, { apRemaining: 3, cash: 1e5, limit: 2, nationalPriority: ctx });
+    return (it.direct === 'LOW' && it.helpsRival === 'HIGH' && ranked[0].id === 'y') || J({ it, r: ranked.map(r => r.id) });
+  });
+  check('np26', 'TEST 26 — rival AI evaluates the priority against its own position: supports where it benefits, little where it does not', () => {
+    const s = waterRun(5).last.state;
+    const mine = nationalPriorityAiOutlook(s, 'riley', { projectType: 'water_pipeline', regionId: 'VIC' }, { controllers: CTRL });
+    const theirs = nationalPriorityAiOutlook(s, 'riley', { projectType: 'desalination_plant', regionId: 'SA' }, { controllers: CTRL });
+    const none = nationalPriorityAiOutlook(s, 'riley', { projectType: 'automated_port', regionId: 'VIC' }, { controllers: CTRL });
+    return (mine.factor > theirs.factor && none.factor === 0 && mine.factor <= 0.06) || J({ mine, theirs, none });
+  });
+  check('np27', 'TEST 27 — AI free-riding: when others already fund a solution the AI rationally avoids redundant spending', () => {
+    const s = waterRun(5).last.state;
+    const a = nationalPriorityAiOutlook(s, 'riley', { projectType: 'water_pipeline', regionId: 'VIC' }, { controllers: CTRL }), b = nationalPriorityAiOutlook(s, 'riley', { projectType: 'water_pipeline', regionId: 'VIC' }, { controllers: CTRL, othersFunding: 50000 });
+    return (b.factor < a.factor && /already funding/.test(b.reason || '')) || J({ a, b });
+  });
+  check('np28', 'TEST 28 — Human VS AI: evaluation is pure context — no actions, no extra loop, bounded score multipliers only', () => {
+    const s = seq(turns(1, 6, t => MANY(t).inputs)).last.state;
+    const decisions = Array.from({ length: 8 }, (_, k) => ({ type: k % 2 ? 'fund_infrastructure' : 'invest', score: 100, data: { region: ['SA', 'VIC', 'NSW', 'WA'][k % 4] } }));
+    const before = decisions.length;
+    decisions.forEach(d => { const o = nationalPriorityAiOutlook(s, 'riley', { projectType: d.type === 'fund_infrastructure' ? 'water_pipeline' : '', regionId: d.data.region }, { controllers: CTRL }); d.score *= 1 + o.factor; });
+    const keys = Object.keys(computeNationalPriorities(MANY(7).inputs, null));
+    return (decisions.length === before && decisions.every(d => d.score <= 106.0001) && J(keys) === J(['state', 'persisted', 'events'])) || J({ keys, scores: decisions.map(d => d.score) });
+  });
+  check('np29', 'TEST 29 — Co-Pilot: an urgent priority never lets a candidate exceed delegated authority', () => {
+    const ctx: NationalPriorityRankingContext = { priorities: [{ definitionId: 'water_security', urgency: 'critical', regions: ['SA'] }], projects: { infra_desal_sa: { projectType: 'desalination_plant', regionId: 'SA' } } };
+    const c = { id: 'b', actionType: 'fund_infrastructure', title: 'Fund SA Desalination', targetId: 'infra_desal_sa', utilityScore: 90, requiresCoPilotAuthority: true };
+    const r = rankContextualRecommendations([c], null, { apRemaining: 3, cash: 1e5, limit: 3, settings: { coPilotSettings: { authorityMode: 'off' } }, nationalPriority: ctx });
+    return r.length === 0 || J(r.map(x => x.id));
+  });
+  check('np30', 'TEST 30 — Guardian: warn-only, and only for a critical priority + a near-total cash spend', () => {
+    const crit = waterRun(5).p; const cur: any = JSON.parse(J(crit)); Object.values(cur.current.entries).forEach((e: any) => { if (e.status === 'active') e.urgency = 'critical'; });
+    const a = nationalPriorityGuardianWarning(cur, 100000, 85000), b = nationalPriorityGuardianWarning(cur, 100000, 30000), c = nationalPriorityGuardianWarning(crit, 100000, 85000);
+    return (a.warn && /information only/i.test(a.text) && !b.warn && !c.warn) || J({ a: a.warn, b: b.warn, c: c.warn });
+  });
+  check('np31', 'TEST 31 — Team mode: Team OS hears priority transitions; the priority itself assigns nothing', () => {
+    const sub = SWR_SUBSCRIPTIONS.find(x => x.system === 'team_os'); const s = waterRun(5).last.state;
+    return (Boolean(sub) && (sub!.kinds === '*' || (sub!.kinds as SWRKind[]).includes('national_priority_activated')) && !/assign/i.test(J(s.active))) || 'Team OS not subscribed or an assignment field exists';
+  });
+  check('np32', 'TEST 32 — factions read a relevant priority through their own system (stance), with no blanket relationship change', () => {
+    const stances = RF_FACTION_DEFS.map(def => rfNationalPriorityStance(def, 'water_security'));
+    const src = rfApplyWorldEvent.toString();
+    return (stances.some(s => s !== 'neutral') && stances.some(s => s === 'neutral' || s === 'conditional') && !/national_priority[\s\S]{0,400}relChange/.test(src.slice(src.indexOf('V10.7'), src.indexOf('V10.7') + 900))) || J(stances);
+  });
+  check('np33', 'TEST 33 — crisis: drought raises Water Security urgency; V10.7 never advances the crisis', () => {
+    const crises = [{ id: 'c_drought', name: 'Severe Drought', category: 'environmental', status: 'active', affectedRegions: ['SA', 'VIC'] }];
+    const before = J(crises); const a = cand(W(5, -25).inputs, 'water_security'), b = cand(W(5, -25, { crises }).inputs, 'water_security');
+    computeNationalPriorities(W(5, -25, { crises }).inputs, null);
+    return (b.score > a.score && NATIONAL_PRIORITY_URGENCY_RANK[b.urgency] >= NATIONAL_PRIORITY_URGENCY_RANK[a.urgency] && b.categories.includes('crisis') && J(crises) === before) || J({ a: [a.score, a.urgency], b: [b.score, b.urgency] });
+  });
+  check('np34', 'TEST 34 — systemic risk: a V10.6 critical supply dependency raises Supply Chain Security', () => {
+    const conc = cand(X({ statuses: MFG_P, sectors: { VIC: { manufacturing: 100 }, NSW: { manufacturing: 95 }, SA: { mining: 70 } }, indModifiers: NO_ALT }).inputs, 'supply_chain_security');
+    const div = cand(X({ statuses: MFG_P, sectors: { VIC: { manufacturing: 30 }, SA: { mining: 70 }, QLD: { mining: 90 }, WA: { mining: 90 } } }).inputs, 'supply_chain_security');
+    return (conc.eligible && conc.score > div.score + 10 && conc.evidence.some(e => e.sourceSystem === 'systemic_risk' || e.category === 'dependency')) || J({ conc: conc.score, div: div.score });
+  });
+  check('np35', 'TEST 35 — capability: AI Compute nearly operational raises the technology opportunity; nothing is unlocked', () => {
+    const base = computeInnovationCapabilities(createInnovationFixtureInputs({ turn: 1 }), null).state;
+    const inn: InnovationCapabilitiesState = { ...base, capabilities: { ...base.capabilities, ai_compute_infrastructure: { ...base.capabilities.ai_compute_infrastructure, maturity: 'demonstrated' } } };
+    const before = J(inn); const a = cand(TECH(5).inputs, 'technology_competitiveness'), b = cand(TECH(5, { innovation: inn }).inputs, 'technology_competitiveness');
+    return (b.score > a.score && b.categories.includes('capability') && J(inn) === before) || J({ a: a.score, b: b.score });
+  });
+  check('np36', 'TEST 36 — tension: industrial expansion vs a resource-constrained priority is identified, never forced', () => {
+    const i = X({ statuses: MFG_P, sectors: { ...HUNGRY, SA: { mining: 70, agriculture: 70 }, NSW: { manufacturing: 95, agriculture: 60 } }, nsModifiers: { SA: { water: -40 }, VIC: { water: -40 }, NSW: { water: -40 } } }).inputs;
+    const s = computeNationalPriorities(i, null).state; const t = s.tensions.find(x => x.priorityAId === 'industrial_capacity');
+    return (Boolean(t) && t!.reason.length > 20 && t!.sharedResources.length > 0 && !('resolution' in (t as any))) || J(s.tensions);
+  });
+  check('np37', 'TEST 37 — World Reaction: activation produces exactly one meaningful event (with a dedupe key)', () => {
+    const r = waterRun(4); const acts = r.events.filter(e => e.kind === 'national_priority_activated' && e.definitionId === 'water_security');
+    const we = acts[0] ? nationalPriorityToWorldEvent(acts[0], ['player'], 1) : null;
+    return (acts.length === 1 && Boolean(we) && we!.dedupeKey === `np:national_priority_activated:water_security:${acts[0].turn}` && we!.significance === 'major') || J(r.events.map(e => `${e.turn}:${e.kind}`));
+  });
+  check('np38', 'TEST 38 — event spam: small score changes produce no World Reaction events', () => {
+    const r = waterRun(4); const p2 = seq([W(5, -38).inputs, W(6, -40).inputs, W(7, -39).inputs], r.p);
+    return p2.events.length === 0 || J(p2.events.map(e => `${e.turn}:${e.kind}`));
+  });
+  check('np39', 'TEST 39 — What-If: previewing infrastructure projects the priority change; live state unchanged', () => {
+    const f = W(5); const s = computeNationalPriorities(f.inputs, waterRun(4).p).state; const before = J(f.inputs);
+    const w = nationalPriorityWhatIf(f.inputs, f.ctx, { overrides: { infra_desal_sa: 'active', infra_v93_sa_water_pipeline: 'active', infra_v103_murray_water_grid: 'active' } }, s);
+    const ws = w.after.find(c => c.definitionId === 'water_security')!; const now = s.candidates.find(c => c.definitionId === 'water_security')!;
+    return (w.lines.some(l => /Water Security/.test(l)) && ws.score < now.score && J(f.inputs) === before) || J({ lines: w.lines, a: now.score, b: ws.score });
+  });
+  check('np40', 'TEST 40 — win condition: solving a national priority never changes the canonical winner (Riley wins on cash)', () => {
+    const r = contrib({ st: A('infra_desal_sa'), c: { infra_desal_sa: { player: 120000 } } });
+    const state: any = { teamsById: { team_player: { actorIds: ['player'] }, team_ai: { actorIds: ['ai'] } }, actorsById: { player: { money: 10000 }, ai: { money: 60000 } } };
+    const r1 = evaluateNeutralMatchVictory(state, { ...createDefaultGameSettings(), winCondition: 'money' } as any);
+    const r2 = evaluateNeutralMatchVictory({ ...state, nationalPriorities: r.p }, { ...createDefaultGameSettings(), winCondition: 'money' } as any);
+    return (r1.winner === 'team_opponent' && r2.winner === 'team_opponent' && r2.playerScore === r1.playerScore) || J({ r1: r1.winner, r2: r2.winner });
+  });
+  check('np41', 'TEST 41 — save / load: lifecycle, hysteresis and history restore; evidence is recomputed', () => {
+    const r = waterRun(6); const loaded = sanitizeNationalPrioritiesPersisted(JSON.parse(J(r.p)))!;
+    const a = computeNationalPriorities(W(7).inputs, r.p), b = computeNationalPriorities(W(7).inputs, loaded);
+    return (strip(a.state) === strip(b.state) && J(a.events) === J(b.events) && loaded.history.length === r.p.history.length && loaded.current.candidateTurns.water_security === r.p.current.candidateTurns.water_security) || 'round-trip diverged';
+  });
+  check('np42', 'TEST 42 — old save: current priorities are derived conservatively; no fake history or events', () => {
+    const r = computeNationalPriorities(MANY(12).inputs, sanitizeNationalPrioritiesPersisted(undefined));
+    return (r.events.length === 0 && r.persisted.history.length === 0 && r.state.active.every(a => a.startedTurn === 12 && a.score >= V107_THRESHOLDS.activate + 5) && r.state.active.length <= V107_LIMITS.active) || J({ ev: r.events.length, h: r.persisted.history.length, a: r.state.active.map(a => [a.definitionId, a.startedTurn, a.score]) });
+  });
+  check('np43', 'TEST 43 — replay: the same canonical sequence reproduces the same transitions', () => {
+    const steps = [W(1, 0).inputs, ...turns(2, 12, t => W(t, t <= 6 ? -40 : -25).inputs)];
+    const a = seq(steps), b = seq(steps);
+    return (J(a.p.history) === J(b.p.history) && J(a.events) === J(b.events) && strip(a.last.state) === strip(b.last.state)) || 'replay diverged';
+  });
+  check('np44', 'TEST 44 — determinism: the same world state yields the same ranking and active priorities', () => {
+    const i = MANY(6).inputs; const a = deriveNationalPriorityCandidates(i, null), b = deriveNationalPriorityCandidates(JSON.parse(J(i)), null);
+    const x = computeNationalPriorities(i, null), y = computeNationalPriorities(i, null);
+    return (J(a) === J(b) && strip(x.state) === strip(y.state)) || 'non-deterministic ranking';
+  });
+  check('np46', 'Ask the Game: national-priority questions route here with Fact / Calculated / Inference / Projection; unrelated questions do not', () => {
+    const steps = seq([W(1, 0).inputs, ...turns(2, 6, t => MANY(t).inputs)]); const f = MANY(6); const before = J(steps.p);
+    const gw: any = { national: { priorities: { state: steps.last.state, persisted: steps.p, inputs: { ...f.inputs, strategies: { player: { label: 'Expand WA Resource Exports', text: 'Expand WA resource exports mining', regionIds: ['WA'] } } }, ctx: f.ctx, viewerId: 'player', names: { player: 'You', riley: 'Riley' }, strategy: { label: 'Expand WA Resource Exports' } } } };
+    const qs: Array<[string, NationalPriorityQueryTopic]> = [["What is Australia's current national priority?", 'current'], ['Why is Water Security the priority?', 'why_priority'], ["Why isn't Energy the main priority?", 'why_not'],
+      ['What happens if nobody addresses it?', 'nobody'], ['Does this priority help my strategy?', 'helps_strategy'], ['Does Riley benefit more than I do?', 'rival_benefit'], ['Who has contributed most?', 'who_contributed'],
+      ['What actions could help this priority?', 'actions'], ['Can I ignore it?', 'can_ignore'], ['Why did the national priority change?', 'why_changed'], ['What would resolve Freight Modernization?', 'resolve_what'],
+      ['Why is Technology Competitiveness only secondary?', 'why_secondary'], ['What national problem is emerging next?', 'next_emerging'], ['Which priority conflicts with my strategy?', 'conflicts'],
+      ['What happens to the national priority if I build the SA Desalination plant?', 'whatif_build'], ['What if I ignore this priority for five turns?', 'whatif_ignore'], ['What if I expand VIC manufacturing instead?', 'whatif_instead'],
+      ['Make Energy Resilience part of my strategy', 'adopt'], ['Ignore the national priority. Keep focusing on WA exports.', 'reject']];
+    const bad: string[] = []; const kinds = new Set<string>();
+    qs.forEach(([q, topic]) => { const d = detectNationalPriorityQuery(q, gw); if (!d || d.topic !== topic) { bad.push(`${q} → ${d?.topic}`); return; } const a = composeNationalPriorityAnswer(d, gw); if (!a.sections.length) bad.push(`${q}: empty`);
+      a.sections.forEach(s => s.claims.forEach(c => { kinds.add(String((c as any).kind)); if ((c as any).kind === 'fact' && (c as any).certainty === 'high') kinds.add('calculated'); })); });
+    const unrelated = [detectNationalPriorityQuery('How much money do I have?', gw), detectNationalPriorityQuery('What is my biggest systemic risk?', gw), detectNationalPriorityQuery('Which capability is closest to emerging?', gw)].filter(Boolean);
+    return (!bad.length && ['fact', 'calculated', 'inference', 'projection'].every(k => kinds.has(k)) && !unrelated.length && J(steps.p) === before) || J({ bad, kinds: Array.from(kinds), unrelated: unrelated.map(u => u!.topic) });
+  });
+  check('np45', 'TEST 45 — performance: repeated evaluation is cheap and the save stays bounded', () => {
+    const steps = turns(1, 30, t => MANY(t).inputs); const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let p: NationalPrioritiesPersisted | null = null; steps.forEach(i => { p = computeNationalPriorities(i, p).persisted; });
+    const ms = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) / steps.length;
+    return (ms < 40 && J(p).length < 60000 && p!.history.length <= V107_LIMITS.history) || `${ms.toFixed(1)}ms per evaluation, ${J(p).length} bytes`;
+  });
+  return results;
+}
+
+// ---- V10.7 Game Intelligence ------------------------------------------------------------------------------------------
+export interface NationalPrioritiesWorldView {
+  state: NationalPrioritiesState; persisted: NationalPrioritiesPersisted | null; inputs: NationalPriorityInputs; ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null };
+  viewerId: string; names: Record<string, string>; strategy: { label: string } | null;
+}
+export type NationalPriorityQueryTopic = 'current' | 'why_priority' | 'why_not' | 'nobody' | 'helps_strategy' | 'rival_benefit' | 'who_contributed' | 'actions' | 'can_ignore' | 'why_changed' | 'resolve_what' | 'why_secondary'
+  | 'next_emerging' | 'conflicts' | 'whatif_build' | 'whatif_ignore' | 'whatif_instead' | 'adopt' | 'reject';
+export interface NationalPriorityQuery { topic: NationalPriorityQueryTopic; priorityId: NationalPriorityId | null; regionId: string | null; turns: number; projectType: string | null; projectId: string | null }
+const V107_PRIORITY_WORDS: Array<[NationalPriorityId, RegExp]> = [
+  ['water_security', /\bwater\b/], ['energy_resilience', /\benergy\b/], ['freight_modernization', /\bfreight\b/], ['supply_chain_security', /\bsupply[- ]chain/], ['economic_diversification', /\bdiversif\w*/],
+  ['technology_competitiveness', /\btechnology\b|\btech\b/], ['industrial_capacity', /\bindustrial\b/], ['infrastructure_recovery', /\binfrastructure recovery\b|\brecovery\b/], ['public_stability_recovery', /\bstability\b/],
+  ['national_resilience', /\bnational resilience\b/], ['regional_rebalancing', /\brebalanc\w*/], ['export_capacity', /\bexport capacity\b|\bexports?\b/]
+];
+const V107_SECTOR_TYPE: Array<[RegExp, string]> = [[/manufactur\w*/, 'advanced_manufacturing'], [/tech\w*|data/, 'data_center'], [/research/, 'research_campus'], [/energy|renewab\w*|grid/, 'renewable_grid'], [/water/, 'water_pipeline'], [/export|port|trade/, 'port_expansion'], [/touris\w*/, 'tourism_precinct'], [/freight|rail|logistics/, 'freight_rail_upgrade'], [/hydrogen/, 'green_hydrogen_terminal']];
+const V107_NUMBER: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, ten: 10 };
+
+export function detectNationalPriorityQuery(raw: string, gw: GIWorld): NationalPriorityQuery | null {
+  const v = gw.national?.priorities; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const named = V107_PRIORITY_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+  const live = v.state.primary?.definitionId || null;
+  const mk = (topic: NationalPriorityQueryTopic, o: Partial<NationalPriorityQuery> = {}): NationalPriorityQuery => ({ topic, priorityId: named || live, regionId: nsRegionInText(q), turns: 5, projectType: null, projectId: null, ...o });
+  const hasPriority = /\bpriorit(y|ies)\b/.test(q);
+  if (/\bwhat happens to the (national )?priorit(y|ies) if i build\b/.test(q)) {
+    const proj = v.inputs.projects.filter(p => !v107Fn(p.status)).find(p => p.title.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3 && !['national', 'project', 'expansion', 'upgrade'].includes(w)).some(w => q.includes(` ${w}`)));
+    const st = V107_SECTOR_TYPE.find(([re]) => re.test(q))?.[1] || null;
+    return mk('whatif_build', { projectId: proj?.id || null, projectType: proj ? proj.projectType : st, regionId: proj?.regionId || nsRegionInText(q) });
+  }
+  const ig = q.match(/\bwhat if i ignore (?:this |the |it )?(?:national )?(?:priority )?(?:for )?(\w+) turns?\b/); if (ig) return mk('whatif_ignore', { turns: Number(ig[1]) || V107_NUMBER[ig[1]] || 5 });
+  const inst = q.match(/\bwhat if i (?:expand|grow|build up|invest in) (.+?) instead\b/); if (inst) return mk('whatif_instead', { projectType: V107_SECTOR_TYPE.find(([re]) => re.test(inst[1]))?.[1] || 'advanced_manufacturing', regionId: nsRegionInText(` ${inst[1]} `) || 'VIC' });
+  if (/\bmake .+ part of my strategy\b/.test(q) && named) return mk('adopt');
+  if (/\bignore the national priorit(y|ies)\b/.test(q)) return mk('reject');
+  if (/\bwhat is (australia's |the )?(current |main )?national priorit(y|ies)\b|\bwhat does australia need\b/.test(q)) return mk('current');
+  if (/\bwhy (isn't|is not) .{1,40}\b(the )?(main |primary |national )?priorit(y|ies)\b/.test(q)) return mk('why_not');
+  if (/\bwhy is .{1,40}\bonly secondary\b/.test(q)) return mk('why_secondary');
+  if (/\bwhy is .{1,40}\bthe (national |main )?priorit(y|ies)\b/.test(q)) return mk('why_priority');
+  if (/\bwhy did the (national )?priorit(y|ies) change\b/.test(q)) return mk('why_changed');
+  if (/\bwhat would resolve\b/.test(q)) return mk('resolve_what');
+  if (/\bwhat (national )?(problem|priority|issue) is emerging( next)?\b|\bemerging next\b/.test(q)) return mk('next_emerging');
+  if (/\bwhich priorit(y|ies) conflicts? with my strategy\b/.test(q)) return mk('conflicts');
+  if (!live && !named) return null;
+  if (/\bwhat happens if nobody (addresses|fixes|deals with|responds to)\b/.test(q)) return mk('nobody');
+  if (/\bdoes (this|the) (national )?priorit(y|ies) help my strategy\b/.test(q)) return mk('helps_strategy');
+  if (/\bdoes \w+ benefit more than (i do|me)\b/.test(q)) return mk('rival_benefit');
+  if (/\bwho (has )?contributed (the )?most\b/.test(q)) return mk('who_contributed');
+  if (/\bwhat actions could help\b/.test(q) && (hasPriority || named)) return mk('actions');
+  if (/\bcan i ignore (it|this|the (national )?priorit(y|ies))\b/.test(q)) return mk('can_ignore');
+  return null;
+}
+
+export function composeNationalPriorityAnswer(query: NationalPriorityQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!.priorities!; const s = v.state; const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const all = [...s.active, ...(s.emerging ? [s.emerging] : []), ...s.superseded];
+  const p = (query.priorityId && all.find(a => a.definitionId === query.priorityId)) || s.primary;
+  const cand = (d: NationalPriorityId) => s.candidates.find(c => c.definitionId === d)!;
+  const nm = (a: string) => (a === v.viewerId ? 'You' : v.names[a] || a);
+  const U = (u: NationalPriorityUrgency) => NATIONAL_PRIORITY_URGENCY_LABEL[u].toUpperCase();
+  let title = 'National priorities'; let shape: GIAnswerShape = 'explanation';
+  const needP = () => { if (!p) say('f', 'Fact', [C('Australia has no active national priority right now — no national problem or opportunity is important enough yet.', 'fact')]); return Boolean(p); };
+  switch (query.topic) {
+    case 'current': {
+      title = "Australia's national priorities"; shape = 'explanation';
+      if (!s.primary) { say('f', 'Fact', [C('No national priority is active. Problems stay regional until they reach several regions or national dependencies.', 'fact')]); if (s.emerging) say('i', 'Inference', [C(`Emerging: ${s.emerging.label} — ${s.emerging.why[0] || ''}`, 'inference')]); break; }
+      say('f', 'Fact', [C(`Primary: ${s.primary.label} (${U(s.primary.urgency)}) — ${s.primary.summary}`, 'fact'), s.secondary ? C(`Secondary: ${s.secondary.label} (${U(s.secondary.urgency)}).`, 'fact') : null, s.emerging ? C(`Emerging: ${s.emerging.label}.`, 'fact') : null]);
+      say('c', 'Calculated', s.primary.why.slice(0, 3).map(w => C(w, 'calculated')));
+      say('i', 'Inference', [C('A national priority is what Australia needs now — not an order. Supporting it, ignoring it, or letting others pay for it are all valid strategies.', 'inference')]);
+      break;
+    }
+    case 'why_priority': case 'resolve_what': case 'nobody': case 'can_ignore': case 'actions': {
+      if (!needP()) break; const def = NATIONAL_PRIORITY_BY_ID[p!.definitionId];
+      if (query.topic === 'why_priority') {
+        title = `Why ${p!.label} is the priority`; shape = 'diagnosis';
+        say('f', 'Fact', p!.why.slice(0, 2).map(w => C(w, 'fact')));
+        say('c', 'Calculated', [...p!.why.slice(2, 4).map(w => C(w, 'calculated')), C(`It reaches ${p!.relevantRegionIds.join(', ') || 'the national system'} and affects ${p!.affectedSystems.join(', ')}.`, 'calculated')]);
+        say('i', 'Inference', [C(`${p!.label} is therefore ${p!.definitionId === s.primary?.definitionId ? 'the strongest' : 'a leading'} current national ${p!.mode === 'problem' ? 'problem' : 'opportunity'}.`, 'inference')]);
+        say('p', 'Projection', [C(`${def.helps[0] || 'Addressing the underlying constraint'} would likely reduce its urgency.`, 'projection')]);
+      } else if (query.topic === 'resolve_what') {
+        title = `What would resolve ${p!.label}`; shape = 'explanation';
+        say('f', 'Fact', p!.outcomeSignals.map(x => C(`${x.label}: ${x.state.toUpperCase()} — ${x.explanation}`, 'fact')));
+        say('i', 'Inference', [C(def.resolveText, 'inference'), C('It resolves only when the underlying world improves and stays improved for several turns — not after a number of actions.', 'inference')]);
+      } else if (query.topic === 'nobody') {
+        title = `If nobody addresses ${p!.label}`; shape = 'simulation';
+        const ig = nationalPriorityIgnoreProjection(p!, 5);
+        say('f', 'Fact', [C(ig.lines[0], 'fact')]); say('p', 'Projection', ig.lines.slice(1).map(l => C(l, 'projection')));
+      } else if (query.topic === 'can_ignore') {
+        title = `Can you ignore ${p!.label}?`; shape = 'explanation';
+        say('f', 'Fact', [C('Yes. National priorities are not missions: there is no penalty, no deadline and no score for ignoring one.', 'fact')]);
+        say('i', 'Inference', [C(`What remains is the underlying condition: ${def.ignoreText}`, 'inference'), C(`Your alignment: ${PRIORITY_ALIGNMENT_LABEL[p!.actors[v.viewerId]?.alignment || 'neutral']}.`, 'inference')]);
+      } else {
+        title = `What could help ${p!.label}`; shape = 'explanation';
+        say('f', 'Fact', def.helps.map(h => C(h, 'fact')));
+        say('i', 'Inference', [C('These are ordinary actions (infrastructure, contracts, investment, programs, diplomacy) — V10.7 adds no special action. Who benefits depends on who controls the affected regions.', 'inference')]);
+      }
+      break;
+    }
+    case 'why_not': case 'why_secondary': {
+      const d = query.priorityId; const c = d ? cand(d) : null; const top = s.primary;
+      title = d ? `Why ${NATIONAL_PRIORITY_BY_ID[d].label} is not the main priority` : 'Why not the main priority?'; shape = 'diagnosis';
+      if (!c) { say('f', 'Fact', [C('That is not a national priority candidate.', 'fact')]); break; }
+      say('f', 'Fact', [top ? C(`${top.label} currently leads (${U(top.urgency)}).`, 'fact') : C('No priority is active.', 'fact')]);
+      say('c', 'Calculated', [C(`${NATIONAL_PRIORITY_BY_ID[d!].label}: ${c.components.map(x => `${x.label.toLowerCase()} ${Math.round(x.value)}`).join(', ') || 'no structural evidence'}${top ? ` — versus ${top.label}: ${cand(top.definitionId).components.map(x => `${x.label.toLowerCase()} ${Math.round(x.value)}`).slice(0, 3).join(', ')}` : ''}.`, 'calculated')]);
+      say('i', 'Inference', [C(c.whyNot ? c.whyNot : query.topic === 'why_secondary' ? `It is real, but less national in reach or severity than ${top?.label || 'the primary'}. Opportunities rarely outrank genuine national problems.` : `It ranks lower on severity and national reach right now.`, 'inference')]);
+      break;
+    }
+    case 'helps_strategy': case 'rival_benefit': case 'conflicts': {
+      if (query.topic === 'conflicts') { title = 'Which priority conflicts with your strategy'; const cf = all.filter(a => a.actors[v.viewerId]?.alignment === 'conflict'); say('f', 'Fact', cf.length ? cf.map(a => C(`${a.label}: ${nationalPriorityStrategyAlignment(NATIONAL_PRIORITY_BY_ID[a.definitionId], a.relevantRegionIds, v.inputs.strategies[v.viewerId] || null).reason}`, 'fact')) : [C(v.strategy ? 'No national priority conflicts with your current strategy.' : 'You have no active strategy to compare with.', 'fact')]); say('i', 'Inference', [C('A conflict never blocks your plan — it only means the country is pulling another way.', 'inference')]); break; }
+      if (!needP()) break; const it = nationalPriorityInterest(p!, v.viewerId, v.inputs.controllers); const al = nationalPriorityStrategyAlignment(NATIONAL_PRIORITY_BY_ID[p!.definitionId], p!.relevantRegionIds, v.inputs.strategies[v.viewerId] || null, v.persisted?.stances[v.viewerId]?.[p!.definitionId] || null);
+      title = query.topic === 'helps_strategy' ? `Does ${p!.label} help your strategy?` : `Who benefits from ${p!.label}?`; shape = 'diagnosis';
+      say('f', 'Fact', [C(`Affected regions: ${p!.relevantRegionIds.map(r => `${r}${v.inputs.controllers[r] ? ` (${nm(v.inputs.controllers[r]!)})` : ''}`).join(', ')}.`, 'fact')]);
+      say('c', 'Calculated', [C(`Your direct benefit: ${it.direct} · indirect: ${it.indirect} · helps rivals: ${it.helpsRival}${it.rivalIds.length ? ` (${it.rivalIds.map(nm).join(', ')})` : ''}.`, 'calculated'), C(`Strategy alignment: ${PRIORITY_ALIGNMENT_LABEL[al.alignment].toUpperCase()}.`, 'calculated')]);
+      say('i', 'Inference', [C(al.reason, 'inference'), it.helpsRival === 'HIGH' && it.direct !== 'HIGH' ? C('National benefit is high, but most of it lands with a rival — supporting it may not be your best competitive move.', 'inference') : null]);
+      break;
+    }
+    case 'who_contributed': {
+      if (!needP()) break; title = `National response: ${p!.label}`;
+      const rows = Object.values(p!.actors).sort((a, b) => PRIORITY_CONTRIBUTION_RANK[b.contribution] - PRIORITY_CONTRIBUTION_RANK[a.contribution]);
+      say('f', 'Fact', rows.map(a => C(`${nm(a.actorId)}: ${a.contribution.toUpperCase()}${a.contributionEvidenceIds.length ? ` — ${a.contributionEvidenceIds.map(id => v.inputs.projects.find(x => x.id === id)?.title || id).join(', ')}` : ''}${a.benefited ? ' · benefited' : ''}`, 'fact')));
+      say('i', 'Inference', [C('Contribution comes from real completed projects that improved the priority; benefiting and contributing are tracked separately. There is no leaderboard.', 'inference')]);
+      break;
+    }
+    case 'why_changed': {
+      title = 'Why the national priority changed'; const h = [...s.history].reverse().filter(x => x.kind === 'activated' || x.kind === 'superseded' || x.kind === 'resolved' || x.kind === 'urgency_changed').slice(0, 4);
+      say('f', 'Fact', h.length ? h.map(x => C(`Turn ${x.turn}: ${x.summary}`, 'fact')) : [C('The national priorities have not changed yet.', 'fact')]);
+      say('i', 'Inference', [C('Priorities change only when the world changes — never on a timer.', 'inference')]);
+      break;
+    }
+    case 'next_emerging': {
+      title = 'What is emerging next'; const em = s.emerging || null; const next = s.candidates.filter(c => !s.active.some(a => a.definitionId === c.definitionId)).slice(0, 2);
+      say('f', 'Fact', em ? [C(`${em.label} is on the watch list: ${em.why[0] || ''}`, 'fact')] : [C('Nothing new is close to national importance.', 'fact')]);
+      say('c', 'Calculated', next.map(c => C(`${NATIONAL_PRIORITY_BY_ID[c.definitionId].label}: ${c.eligible ? 'eligible' : c.whyNot || 'not eligible'}.`, 'calculated')));
+      break;
+    }
+    case 'whatif_build': case 'whatif_instead': {
+      const ov = query.projectId ? { [query.projectId]: 'active' } : undefined; const add = !query.projectId && query.projectType ? { projectType: query.projectType, regionId: query.regionId || 'VIC' } : null;
+      if (!ov && !add) { say('f', 'Fact', [C('Name a project (or a sector and region) to preview.', 'fact')]); break; }
+      const w = nationalPriorityWhatIf(v.inputs, v.ctx, { overrides: ov, add }, s); title = `What-If: ${w.label}`; shape = 'simulation';
+      say('f', 'Fact', [C('Isolated What-If — the live match is unchanged; development direction is held constant.', 'fact')]);
+      say('p', 'Projection', w.lines.map(l => C(l, 'projection')));
+      break;
+    }
+    case 'whatif_ignore': {
+      if (!needP()) break; const ig = nationalPriorityIgnoreProjection(p!, query.turns); title = `If you ignore ${p!.label} for ${query.turns} turns`; shape = 'simulation';
+      say('f', 'Fact', [C(ig.lines[0], 'fact')]); say('p', 'Projection', [...ig.lines.slice(1).map(l => C(l, 'projection')), C(`Uncertainty: ${ig.uncertainty}.`, 'projection')]);
+      break;
+    }
+    case 'adopt': case 'reject': {
+      title = query.topic === 'adopt' ? 'Adopting a national priority' : 'Setting national priorities aside';
+      say('f', 'Fact', [C(query.topic === 'adopt' ? 'Your strategy (GI3) is never edited automatically by a national priority.' : 'The national priority stays active in the world; your strategy is unchanged.', 'fact')]);
+      say('i', 'Inference', [C(query.topic === 'adopt' ? `Use "Adopt into my strategy view" in INTELLIGENCE › National Priorities to count ${query.priorityId ? NATIONAL_PRIORITY_BY_ID[query.priorityId].label : 'it'} as aligned, or add a goal to your strategy explicitly.` : 'Use "Set aside" in INTELLIGENCE › National Priorities; recommendations keep favouring your own strategy and Current Objective.', 'inference')]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [C('No national priority matches that question.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+// ---- V10.7 UI -----------------------------------------------------------------------------------------------------------
+const V107_URG_CLASS: Record<NationalPriorityUrgency, string> = { watch: 'text-slate-300', important: 'text-sky-300', urgent: 'text-amber-300', critical: 'text-rose-300 font-bold' };
+const V107_AL_CLASS: Record<PriorityStrategyAlignment, string> = { strong: 'text-emerald-300', moderate: 'text-sky-300', weak: 'text-slate-300', conflict: 'text-orange-300', neutral: 'text-slate-400' };
+const V107_SIG_ICON: Record<NationalPriorityOutcomeSignal['state'], string> = { critical: '⛔', weak: '●', improving: '↗', healthy: '✓' };
+/** PLAY: a compact card BELOW Current Focus — name, urgency, one line, your alignment, Why?. Never an order. */
+export const NationalPriorityPlayCard: React.FC<{ state: NationalPrioritiesState | null; viewerId: string; theme: any; onOpen: () => void; onAsk: (q: string) => void }> = ({ state, viewerId, theme, onOpen, onAsk }) => {
+  const line = nationalPriorityPlayLine(state, viewerId); if (!line) return null;
+  const border = line.urgency === 'critical' ? 'border-rose-500 border-2' : line.urgency === 'urgent' ? 'border-amber-500' : 'border-sky-700';
+  return (
+    <section aria-label="National priority" className={`${theme.card} ${border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="np-play-card" data-urgency={line.urgency}>
+      <span className="font-bold uppercase tracking-wide opacity-70">National priority</span>
+      <button type="button" className="text-left" onClick={onOpen}><b>{line.icon} {line.label}</b> <span className={V107_URG_CLASS[line.urgency]}>{NATIONAL_PRIORITY_URGENCY_LABEL[line.urgency].toUpperCase()}</span>{line.mode === 'opportunity' ? <span className="opacity-70"> · opportunity</span> : null}</button>
+      <span className="opacity-80">{line.reason}</span>
+      <span>Your strategy: <span className={V107_AL_CLASS[line.alignment]}>{PRIORITY_ALIGNMENT_LABEL[line.alignment]}</span></span>
+      <button type="button" className="underline opacity-80" onClick={() => onAsk(`Why is ${line.label} the priority?`)}>Why?</button>
+    </section>
+  );
+};
+const NpSignals: React.FC<{ p: NationalPriority }> = ({ p }) => (
+  <div data-testid="np-signals">{p.outcomeSignals.map(x => <div key={x.id}>{V107_SIG_ICON[x.state]} <b>{x.label}</b> <span className="opacity-80">{x.state.toUpperCase()}</span> <span className="opacity-60">— {x.explanation}</span></div>)}
+    <div className="mt-1">Overall: <b>{p.overall.toUpperCase()}</b></div></div>
+);
+const NpDetail: React.FC<{ p: NationalPriority | null; empty: string }> = ({ p, empty }) => {
+  if (!p) return <div className="opacity-70">{empty}</div>;
+  const def = NATIONAL_PRIORITY_BY_ID[p.definitionId];
+  return (
+    <div data-testid="np-detail">
+      <div className="font-bold">{def.icon} {p.label.toUpperCase()}</div>
+      <div>Status <b>{p.status.toUpperCase()}</b> · Urgency <b className={V107_URG_CLASS[p.urgency]}>{NATIONAL_PRIORITY_URGENCY_LABEL[p.urgency].toUpperCase()}</b> · {p.mode === 'problem' ? 'Problem' : 'Opportunity'} · since turn {p.startedTurn}</div>
+      <div className="mt-1 font-semibold">Why it emerged</div>{p.why.map(w => <div key={w}>• {w}</div>)}
+      <div className="mt-1">Regions most affected: <b>{p.relevantRegionIds.join(' • ') || '—'}</b></div>
+      <div className="mt-1 font-semibold">Current response</div><NpSignals p={p} />
+      <div className="mt-1">What would resolve it: <span className="opacity-80">{def.resolveText}</span></div>
+    </div>
+  );
+};
+/** INTELLIGENCE › National Priorities (11 views + self-interest, contributions, tensions, What-If). Bands, not scores. */
+export const NationalPrioritiesCenter: React.FC<{ view: NationalPrioritiesWorldView; theme: any; onAsk: (q: string) => void; onStance: (d: NationalPriorityId, stance: 'adopted' | 'rejected' | null) => void }> = ({ view, theme, onAsk, onStance }) => {
+  const tabs = ['overview', 'primary', 'secondary', 'emerging', 'why this matters', 'outcome signals', 'regional impact', 'actor contributions', 'strategy alignment', 'priority tensions', 'history'] as const;
+  const [tab, setTab] = useState<typeof tabs[number]>('overview');
+  const s = view.state; const me = view.viewerId; const nm = (a: string) => (a === me ? 'You' : view.names[a] || a);
+  const focus = s.primary || s.emerging; const all = [...s.active, ...(s.emerging ? [s.emerging] : [])];
+  const candidates = view.inputs.projects.filter(p => !v107Fn(p.status) && p.status !== 'damaged').slice(0, 40);
+  const [proj, setProj] = useState<string>(''); const [wi, setWi] = useState<string[] | null>(null); const [ig, setIg] = useState<string[] | null>(null);
+  const stance = (d: NationalPriorityId) => view.persisted?.stances[me]?.[d] || null;
+  return (
+    <section aria-label="National Priorities" className={`${theme.card} ${theme.border} border rounded-xl p-3 text-xs`} data-testid="np-center">
+      <div className="font-bold text-sm">🇦🇺 National Priorities</div>
+      <div className="opacity-70">What Australia currently needs or can capitalize on. Not missions — you can support them, ignore them, or pursue a strategy that conflicts with them.</div>
+      <div className="flex flex-wrap gap-1 mt-2" role="tablist">{tabs.map(t => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-emerald-400 font-bold' : theme.border}`} data-testid={`np-tab-${t.replace(/ /g, '-')}`}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}</div>
+      <div className="mt-2" data-testid="np-center-body">
+        {tab === 'overview' && <div data-testid="np-overview">
+          <div>PRIMARY: {s.primary ? <b>{s.primary.label} <span className={V107_URG_CLASS[s.primary.urgency]}>{NATIONAL_PRIORITY_URGENCY_LABEL[s.primary.urgency].toUpperCase()}</span></b> : <span className="opacity-70">none — no national issue is important enough</span>}</div>
+          <div>SECONDARY: {s.secondary ? <b>{s.secondary.label} <span className={V107_URG_CLASS[s.secondary.urgency]}>{NATIONAL_PRIORITY_URGENCY_LABEL[s.secondary.urgency].toUpperCase()}</span></b> : <span className="opacity-70">none</span>}</div>
+          <div>EMERGING: {s.emerging ? <b>{s.emerging.label}</b> : <span className="opacity-70">none</span>}</div>
+          {(() => { const h = [...s.history].reverse().find(x => x.kind === 'improved' || x.kind === 'resolved'); return h ? <div className="mt-1">Recent improvement: {h.summary}</div> : null; })()}
+          {s.tensions[0] && <div className="mt-1">Main conflict: <b>{NATIONAL_PRIORITY_BY_ID[s.tensions[0].priorityAId as NationalPriorityId].label} vs {NATIONAL_PRIORITY_BY_ID[s.tensions[0].priorityBId as NationalPriorityId].label}</b></div>}
+          <div className="mt-1 opacity-70">National priority = what Australia needs · Your strategy = what you want · Current focus = what you're working on now.</div>
+        </div>}
+        {tab === 'primary' && <NpDetail p={s.primary} empty="No primary national priority." />}
+        {tab === 'secondary' && <NpDetail p={s.secondary} empty="No secondary national priority." />}
+        {tab === 'emerging' && <NpDetail p={s.emerging} empty="Nothing is emerging." />}
+        {tab === 'why this matters' && <div>{all.length ? all.map(p => <div key={p.id} className="mb-1"><b>{p.label}</b>: {p.summary} <span className="opacity-70">Reach: {p.relevantRegionIds.join(', ')} · Affects {p.affectedSystems.join(', ')}</span></div>) : <div className="opacity-70">No national priority right now.</div>}
+          {s.candidates.filter(c => !all.some(a => a.definitionId === c.definitionId)).slice(0, 3).map(c => <div key={c.definitionId} className="opacity-70">{NATIONAL_PRIORITY_BY_ID[c.definitionId].label}: {c.whyNot || 'below the activation threshold'}</div>)}</div>}
+        {tab === 'outcome signals' && <div>{s.active.length ? s.active.map(p => <div key={p.id} className="mb-1"><b>{p.label}</b><NpSignals p={p} /></div>) : <div className="opacity-70">No active priority.</div>}</div>}
+        {tab === 'regional impact' && <div>{all.map(p => <div key={p.id}><b>{p.label}</b>: {p.relevantRegionIds.map(r => `${r}${view.inputs.controllers[r] ? ` (${nm(view.inputs.controllers[r]!)})` : ''}`).join(' • ') || 'national'}</div>)}{!all.length && <div className="opacity-70">No regional impact.</div>}</div>}
+        {tab === 'actor contributions' && <div data-testid="np-contributions">{s.active.length ? s.active.map(p => <div key={p.id} className="mb-1"><div className="font-semibold">NATIONAL RESPONSE — {p.label}</div>
+          {Object.values(p.actors).map(a => <div key={a.actorId}>{nm(a.actorId)}: <b>{a.contribution.toUpperCase()}</b>{a.contributionEvidenceIds.length ? <span className="opacity-70"> — {a.contributionEvidenceIds.map(id => view.inputs.projects.find(x => x.id === id)?.title || id).join(', ')}</span> : null}{a.benefited ? <span className="text-emerald-300"> · benefited</span> : null}</div>)}</div>) : <div className="opacity-70">No active priority.</div>}
+          {s.resolved.slice(-3).map(r => <div key={r.definitionId + r.resolvedTurn} className="opacity-80">Resolved turn {r.resolvedTurn}: {r.label} — {Object.entries(r.contributors).map(([a, b]) => `${nm(a)} ${b}`).join(' • ') || 'no recorded contributors'}</div>)}
+          <div className="opacity-60 mt-1">Contribution is derived from completed projects that improved the priority. Benefiting is tracked separately. No leaderboard, no points.</div></div>}
+        {tab === 'strategy alignment' && <div data-testid="np-interest">{all.length ? all.map(p => { const it = nationalPriorityInterest(p, me, view.inputs.controllers); const al = nationalPriorityStrategyAlignment(NATIONAL_PRIORITY_BY_ID[p.definitionId], p.relevantRegionIds, view.inputs.strategies[me] || null, stance(p.definitionId)); return (
+          <div key={p.id} className="mb-2"><div className="font-semibold">YOUR INTEREST — {p.label}</div>
+            <div>Direct benefit <b>{it.direct}</b> · Indirect benefit <b>{it.indirect}</b> · Helps rival <b>{it.helpsRival}</b>{it.rivalIds.length ? ` (${it.rivalIds.map(nm).join(', ')})` : ''} · Strategy alignment <b className={V107_AL_CLASS[al.alignment]}>{PRIORITY_ALIGNMENT_LABEL[al.alignment].toUpperCase()}</b></div>
+            <div className="opacity-80">{al.reason}</div>
+            <div className="flex gap-2 mt-1">
+              <button type="button" className={`px-2 py-0.5 rounded border ${stance(p.definitionId) === 'adopted' ? 'border-emerald-400 font-bold' : theme.border}`} onClick={() => onStance(p.definitionId, stance(p.definitionId) === 'adopted' ? null : 'adopted')} data-testid="np-adopt">{stance(p.definitionId) === 'adopted' ? '✓ Adopted into my strategy view' : 'Adopt into my strategy view'}</button>
+              <button type="button" className={`px-2 py-0.5 rounded border ${stance(p.definitionId) === 'rejected' ? 'border-orange-400 font-bold' : theme.border}`} onClick={() => onStance(p.definitionId, stance(p.definitionId) === 'rejected' ? null : 'rejected')} data-testid="np-reject">{stance(p.definitionId) === 'rejected' ? '✓ Set aside' : 'Set aside'}</button>
+            </div>
+            <div className="opacity-60">Neither changes your GI3 strategy or Current Objective — both are yours to edit.</div></div>); }) : <div className="opacity-70">No national priority to compare with your strategy.</div>}</div>}
+        {tab === 'priority tensions' && <div data-testid="np-tensions">{s.tensions.length ? s.tensions.map(t => <div key={t.id} className="mb-1"><b>{NATIONAL_PRIORITY_BY_ID[t.priorityAId as NationalPriorityId].label.toUpperCase()} vs {NATIONAL_PRIORITY_BY_ID[t.priorityBId as NationalPriorityId].label.toUpperCase()}</b> <span className="opacity-70">({t.severity})</span><div>{t.reason}</div><div className="opacity-60">Neither is automatically correct. Shared: {t.sharedResources.join(', ')}</div></div>) : <div className="opacity-70">No national priorities are pulling against each other.</div>}</div>}
+        {tab === 'history' && <div data-testid="np-history">{s.history.length ? [...s.history].reverse().slice(0, 14).map(h => <div key={h.id}>Turn {h.turn} — {h.summary}</div>) : <div className="opacity-70">No national-priority history yet — it begins when something changes (never reconstructed).</div>}</div>}
+      </div>
+      <div className="mt-2 border-t pt-2" data-testid="np-whatif">
+        <div className="font-semibold">What-If (isolated — nothing in the match changes)</div>
+        <div className="flex flex-wrap gap-1 items-center">
+          <select aria-label="Project" className="bg-transparent border rounded px-1 max-w-[16rem]" value={proj} onChange={e => setProj(e.target.value)} data-testid="np-whatif-project"><option value="">Choose a project…</option>{candidates.map(p => <option key={p.id} value={p.id}>{p.title} ({p.regionId})</option>)}</select>
+          <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} disabled={!proj} onClick={() => setWi(nationalPriorityWhatIf(view.inputs, view.ctx, { overrides: { [proj]: 'active' } }, s).lines)} data-testid="np-whatif-run">Preview</button>
+          {focus && <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setIg(nationalPriorityIgnoreProjection(focus, 5).lines)} data-testid="np-ignore-run">What if I ignore {focus.label} for 5 turns?</button>}
+        </div>
+        {wi && <div className="mt-1" data-testid="np-whatif-result">{wi.map(l => <div key={l}>{l}</div>)}</div>}
+        {ig && <div className="mt-1" data-testid="np-ignore-result">{ig.map(l => <div key={l}>{l}</div>)}</div>}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">{["What is Australia's current national priority?", 'Does this priority help my strategy?', 'Who has contributed most?', 'What national problem is emerging next?'].map(q => <button key={q} type="button" className="underline opacity-80" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+/** LAB: V10.7 National Priorities Inspector (16 views; raw scores and thresholds are LAB-only). */
+export const NationalPrioritiesInspector: React.FC<{ state: NationalPrioritiesState | null; persisted: NationalPrioritiesPersisted | null; theme: any; enabled: boolean; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number; lastEvents: string[] } }> = ({ state, persisted, theme, enabled, diag }) => {
+  const [open, setOpen] = useState(false);
+  const tabs = ['candidate priorities', 'scores', 'activation evidence', 'active priorities', 'urgency', 'outcome signals', 'actor contributions', 'strategy alignment', 'priority tensions', 'hysteresis', 'cooldowns', 'world reaction', 'history', 'input hash', 'performance', 'self tests'];
+  const [tab, setTab] = useState(tabs[0]); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const s = state; const mem = persisted?.current; const v = s ? validateNationalPrioritiesState(s, persisted) : [];
+  return (
+    <section className={`${theme.card} ${theme.border} border rounded-xl p-3 text-xs mt-3`} data-testid="np-inspector">
+      <div className="flex items-center gap-2"><span className="font-bold">🇦🇺 V10.7 National Priorities Inspector</span><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="np-inspector-toggle">{open ? 'Hide' : 'Show'}</button>
+        <span className="opacity-70">{enabled ? `rev ${s?.revision ?? 0} · ${s?.active.length ?? 0} active · ${s?.candidates.filter(c => c.eligible).length ?? 0} eligible · validation ${v.length ? v.join('; ') : 'OK'}` : 'disabled'}</span></div>
+      {open && <>
+        <div className="flex flex-wrap gap-1 mt-2">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-emerald-400 font-bold' : theme.border}`} data-testid={`np-lab-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+        <div className="mt-2 font-mono whitespace-pre-wrap break-words" data-testid="np-inspector-body">
+          {!s ? 'Not computed (National Systems / National Priorities off).' : <>
+            {tab === 'candidate priorities' && s.candidates.map(c => <div key={c.definitionId}>{c.definitionId} · {c.mode} · score {c.score} (raw {c.rawScore}) · eligible {String(c.eligible)} · national {String(c.national)} · {c.urgency}{c.whyNot ? ` · ${c.whyNot}` : ''}</div>)}
+            {tab === 'scores' && s.candidates.slice(0, 6).map(c => <div key={c.definitionId} className="mb-1"><b>{NATIONAL_PRIORITY_BY_ID[c.definitionId].label.toUpperCase()}</b> internal score {c.score}{c.components.map(x => `\n  ${x.label} +${x.value}`).join('')}{`\n  Activation ${c.eligible && c.score >= V107_THRESHOLDS.activate ? 'YES' : 'NO'} · Urgency ${c.urgency.toUpperCase()}`}</div>)}
+            {tab === 'activation evidence' && s.candidates.filter(c => c.evidence.length).slice(0, 6).map(c => <div key={c.definitionId} className="mb-1"><b>{c.definitionId}</b> [{c.categories.join(', ')}]{c.evidence.map(e => `\n  ${e.category} · ${e.sourceSystem}:${e.sourceId} · ${e.weight} · ${e.label}`).join('')}</div>)}
+            {tab === 'active priorities' && [...s.active, ...(s.emerging ? [s.emerging] : []), ...s.superseded].map(p => <div key={p.id}>{p.id} · {p.status} · {p.urgency} · momentum {p.momentum} · regions {p.relevantRegionIds.join(',')} · primary {String(p.definitionId === s.primary?.definitionId)}</div>)}
+            {tab === 'urgency' && `critical ≥ ${V107_THRESHOLDS.critical} & severity ≥ ${V107_THRESHOLDS.criticalSeverity} · urgent ≥ ${V107_THRESHOLDS.urgent} · important ≥ ${V107_THRESHOLDS.important} · downgrade margin ${V107_THRESHOLDS.urgencyMargin}\n${s.active.map(p => `${p.definitionId}: ${p.urgency} (score ${p.score})`).join('\n')}`}
+            {tab === 'outcome signals' && s.active.map(p => <div key={p.id}><b>{p.definitionId}</b>{p.outcomeSignals.map(x => `\n  ${x.id}: ${x.state} (${x.sourceSystem}:${x.sourceId}) baseline ${mem?.entries[p.definitionId]?.baseline[x.id] || '—'}`).join('')}</div>)}
+            {tab === 'actor contributions' && s.active.map(p => <div key={p.id}><b>{p.definitionId}</b>{Object.entries(mem?.entries[p.definitionId]?.contributions || {}).map(([a, c]) => `\n  ${a}: w ${c.w} · direct ${c.direct} · indirect ${c.indirect} · ${c.band} · ${c.projects.join(',')}`).join('') || '\n  none'} · benefited {(mem?.entries[p.definitionId]?.benefited || []).join(',') || '—'}</div>)}
+            {tab === 'strategy alignment' && [...s.active, ...(s.emerging ? [s.emerging] : [])].map(p => <div key={p.id}>{p.definitionId}: {Object.values(p.actors).map(a => `${a.actorId}=${a.alignment}`).join(' · ')} · stances {J107(persisted?.stances || {})}</div>)}
+            {tab === 'priority tensions' && (s.tensions.length ? s.tensions.map(t => <div key={t.id}>{t.id} · {t.severity} · {t.sharedResources.join(',')} · {t.reason}</div>) : 'none')}
+            {tab === 'hysteresis' && `watch ${V107_THRESHOLDS.watch} · activate ${V107_THRESHOLDS.activate} (after ${V107_THRESHOLDS.candidateTurns} consecutive evaluations; critical immediately) · resolve < ${V107_THRESHOLDS.resolve} for ${V107_THRESHOLDS.resolveTurns} evaluations after minimum persistence · vanish < ${V107_THRESHOLDS.vanish} · supersede margin ${V107_THRESHOLDS.supersedeMargin} · primary margin ${V107_THRESHOLDS.primaryMargin}\ncandidateTurns ${J107(mem?.candidateTurns || {})}\n${Object.values(mem?.entries || {}).map((e: any) => `${e.definitionId}: ${e.status} held ${e.heldTurns} low ${e.lowTurns} peak ${e.peakScore} last ${e.lastScore} min ${NATIONAL_PRIORITY_BY_ID[e.definitionId as NationalPriorityId].minimumPersistenceTurns}`).join('\n')}`}
+            {tab === 'cooldowns' && `${J107(mem?.cooldownUntil || {})}\n${NATIONAL_PRIORITY_DEFINITIONS.map(d => `${d.id}: cooldown ${d.cooldownTurns} · persistence ${d.minimumPersistenceTurns}`).join('\n')}`}
+            {tab === 'world reaction' && `events emitted ${diag.eventsEmitted}\n${diag.lastEvents.join('\n') || 'none yet'}\nKinds: emerged · activated · became_urgent · improved · worsened · resolved · superseded (transitions only — never score drift)`}
+            {tab === 'history' && (s.history.length ? s.history.map(h => <div key={h.id}>t{h.turn} {h.kind} {h.priorityId}{h.actorId ? ` (${h.actorId})` : ''}: {h.summary}</div>) : 'empty')}
+            {tab === 'input hash' && `input ${s.inputHash} · persisted ${persisted?.inputHash || '—'} · init turn ${persisted?.initializedTurn ?? '—'} · memory turn ${mem?.lastTurn ?? '—'} · revision ${s.revision}`}
+            {tab === 'performance' && `last ${diag.lastMs}ms (${s.computeMs}ms core) · recomputes ${diag.recomputes} · reason: ${diag.lastReason}\nbounded: ${NATIONAL_PRIORITY_DEFINITIONS.length} definitions × 8 regions · history ≤ ${V107_LIMITS.history} · resolved ≤ ${V107_LIMITS.resolvedLog}`}
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => setTests(runV107DynamicNationalPrioritiesSelfTests())} data-testid="np-run-tests">Run V10.7 self-tests</button>
+              {tests && <div data-testid="np-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => `\n✗ ${t.id} ${t.name}: ${t.detail}`).join('')}</div>}</div>}
+          </>}
+        </div>
+      </>}
+    </section>
+  );
+};
+const J107 = (x: any) => JSON.stringify(x);
+
+// ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
 // ============================================================================
 function AustraliaGame() {
@@ -147975,6 +149534,7 @@ function dispatchGameSettingsChange(
     const gi3Objective = !gameState.playerTrackedObjective ? projectGI3CurrentObjective(gi3Stored) : null;
     const objective = gi3Objective || resolveCurrentObjective(gameState, gameSettings, actor, gameState.playerTrackedObjective);
     const gi3Ranking = gi3RankingContext(gi3Stored, actor?.money || 0);
+    const npRanking = gameSettings.nationalPrioritiesEnabled !== false && gameSettings.nationalSystemsEnabled !== false ? nationalPriorityRankingContext((gameState as any).nationalPriorities, gameState.infrastructureProjects) : null;
     const apLeft = typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(actor, gameSettings) : 3;
     const recs = rankContextualRecommendations(intentRecCandidates, objective, {
       apRemaining: apLeft,
@@ -147983,7 +149543,8 @@ function dispatchGameSettingsChange(
       settings: gameSettings,
       actor,
       state: gameState,
-      strategy: gi3Ranking
+      strategy: gi3Ranking,
+      nationalPriority: npRanking
     });
     // V9 Contextual Action System: the same canonical ranking, widened so PLAY can show
     // Recommended / Useful Now and Game Intelligence can offer real alternatives.
@@ -147994,7 +149555,8 @@ function dispatchGameSettingsChange(
       settings: gameSettings,
       actor,
       state: gameState,
-      strategy: gi3Ranking
+      strategy: gi3Ranking,
+      nationalPriority: npRanking
     });
     return {
       actor,
@@ -152883,6 +154445,14 @@ function dispatchGameSettingsChange(
       // score slightly higher (≤ +6%, public structure only). No research action, no extra AI loop, no difficulty change.
       // V10.6: risk-averse / long-horizon rivals value building ALTERNATIVES to critical single points slightly more
       // (≤ +5%, scaled by the difficulty profile's risk tolerance and planning depth). Public structure only; no cheating.
+      const v107Np = npStateRef.current; const v107Ctrl: Record<string, string | null> = npInputsRef.current?.controllers || {};
+      if (v107Np && npInputsRef.current) decisions.forEach(decision => {
+        if (decision.type !== 'fund_infrastructure') return;
+        const pid = String(decision.data?.projectId || ''); const proj = (gameStateLiveRef.current as any)?.infrastructureProjects?.[pid]; if (!proj) return;
+        const aiId = String(aiState?.id || 'ai'); const others = Object.entries(proj.contributions || {}).filter(([a]) => a !== aiId).reduce((s2, [, x]) => s2 + Number(x || 0), 0);
+        const o = nationalPriorityAiOutlook(v107Np, aiId, { projectType: String(proj.projectType || ''), regionId: proj.regionId || null }, { controllers: v107Ctrl, othersFunding: others, cash: Number(aiState?.money || 0) });
+        if (o.factor > 0) decision.score *= 1 + o.factor;
+      });
       const v106Sr = srStateRef.current;
       if (v106Sr) { const aversion = Math.max(0, Math.min(1, 1 - Number(profile?.riskTolerance ?? 0.5))) * Math.min(1, Number(profile?.planningDepth ?? 2) / 3);
         decisions.forEach(decision => {
@@ -177665,6 +179235,74 @@ function dispatchGameSettingsChange(
     return null;
   }, [srState]);
 
+  // ---- V10.7 Dynamic National Priorities: live wiring ------------------------------------------------------------
+  // Temporary NATIONAL ATTENTION derived from V10.0–V10.6 + Public Stability + crises. Never a mission, never an order:
+  // it never edits GI3, never replaces the Current Objective, never moves money and never decides a winner.
+  const npEnabled = Boolean(nsEnabled && gameSettings.nationalPrioritiesEnabled !== false);
+  const npStoredRaw = (gameState as any).nationalPriorities;
+  const npPersisted = useMemo(() => sanitizeNationalPrioritiesPersisted(npStoredRaw), [npStoredRaw]);
+  const npPersistedRef = useRef<NationalPrioritiesPersisted | null>(npPersisted); npPersistedRef.current = npPersisted;
+  const npViewerId = String(player?.id || 'player');
+  const npActors = useMemo(() => [player, aiPlayer].filter(Boolean).map((a: any) => ({ id: String(a.id), name: String(a.name || a.id), isHuman: a === player })), [player?.id, player?.name, aiPlayer?.id, aiPlayer?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  const npControllers = useMemo(() => Object.fromEntries((lrInputs.regions || []).map((r: any) => [r.code, r.controller || null])), [lrInputs.regions]);
+  const npStrategyKey = JSON.stringify(gi3Live?.active ? [gi3Live.active.mission?.label, (gi3Live.active.goals || []).map((g: any) => [g.label, g.regionId])] : null);
+  const npSr = useMemo<SystemicRiskInputs | null>(() => (npEnabled && nsState ? (srInputs || buildSystemicRiskInputs({ turn: lrInputs.turn, national: nsState, industries: scState, networks: inState, megaprojects: mpEnabled ? mpPersisted : null,
+    innovation: icEnabled ? icState : null, direction: ndProfile ? { primary: ndProfile.primaryDirection, secondary: ndProfile.secondaryDirection } : null, projects: gameState.infrastructureProjects as any,
+    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], stability: (gameState as any).publicStabilityState || null, viewer: player || null })) : null),
+    [npEnabled, nsState, srInputs, lrInputs.turn, scState, inState, mpEnabled, mpPersisted, icEnabled, icState, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, gameState.infrastructureProjects, (gameState as any).crisisChainState, (gameState as any).publicStabilityState]); // eslint-disable-line react-hooks/exhaustive-deps
+  const npInputs = useMemo<NationalPriorityInputs | null>(() => {
+    if (!npSr) return null; const c = gi3Live?.active;
+    const strategy = c && c.status === 'active' ? { label: String(c.mission?.label || 'Your strategy'), text: [c.mission?.label || '', ...((c.goals || []) as any[]).map(g => String(g.label || ''))].join(' '), regionIds: Array.from(new Set(((c.goals || []) as any[]).map(g => g.regionId).filter((r: any) => typeof r === 'string' && REGIONS[r]))) as string[] } : null;
+    return buildNationalPriorityInputs({ turn: lrInputs.turn, sr: npSr, systemic: srEnabled ? srState : null, development: ndEnabled ? ndProfile : null, projects: gameState.infrastructureProjects as any, controllers: npControllers, actors: npActors, strategies: { [npViewerId]: strategy } });
+  }, [npSr, srEnabled, srState, ndEnabled, ndProfile, gameState.infrastructureProjects, npControllers, npActors, npViewerId, npStrategyKey, lrInputs.turn]); // eslint-disable-line react-hooks/exhaustive-deps
+  const npInputsRef = useRef<NationalPriorityInputs | null>(npInputs); npInputsRef.current = npInputs;
+  const npHash = useMemo(() => (npInputs ? nationalPriorityInputHash(npInputs) : ''), [npInputs]);
+  const npState = useMemo<NationalPrioritiesState | null>(() => (npInputs ? computeNationalPriorities(npInputs, npPersistedRef.current, { emit: false }).state : null),
+    [npHash, npInputs, npPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const npStateRef = useRef<NationalPrioritiesState | null>(npState); npStateRef.current = npState;
+  const npThemesRef = useRef<ContentTheme[]>([]); npThemesRef.current = npEnabled ? nationalPriorityContentThemes(npState) : [];
+  const npDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0, lastEvents: [] as string[] });
+  useEffect(() => {
+    if (!npEnabled || !npInputs || gameState.gameMode !== 'game') return;
+    const prev = npPersistedRef.current;
+    if (prev && prev.inputHash === npHash) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const res = computeNationalPriorities(npInputs, prev);
+    const d = npDiagRef.current;
+    d.recomputes += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 10) / 10;
+    d.lastReason = !prev ? 'first evaluation (conservative; no history invented)' : prev.current.lastTurn !== npInputs.turn ? 'turn boundary' : 'national systems / projects / control changed (input hash)';
+    if (res.events.length) {
+      d.eventsEmitted += res.events.length; d.lastEvents = [...res.events.map(x => `t${x.turn} ${x.kind} ${x.definitionId}`), ...d.lastEvents].slice(0, 12);
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.events.map(x => nationalPriorityToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.events.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: x.kind, summary: x.text } as any));
+    }
+    npPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalPriorities: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [npHash, npEnabled, gameState.gameMode]);
+  /** Player stance (adopt / set aside): an interpretation preference only — GI3 and the Current Objective are untouched. */
+  const npSetStance = useCallback((d: NationalPriorityId, stance: 'adopted' | 'rejected' | null) => {
+    const next = setNationalPriorityStance(npPersistedRef.current, npViewerId, d, stance);
+    npPersistedRef.current = next; dispatchGameState({ type: 'LOAD_STATE', payload: { nationalPriorities: next } as any });
+  }, [npViewerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const npView = useMemo<NationalPrioritiesWorldView | null>(() => {
+    if (!npState || !npInputs) return null;
+    return { state: npState, persisted: npPersisted, inputs: npInputs, ctx: { nsInputs, scInputs }, viewerId: npViewerId, names: Object.fromEntries(npActors.map(a => [a.id, a.id === npViewerId ? 'You' : a.name])), strategy: npInputs.strategies[npViewerId] ? { label: npInputs.strategies[npViewerId]!.label } : null };
+  }, [npState, npInputs, npPersisted, nsInputs, scInputs, npViewerId, npActors]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, priorities: npEnabled ? npView : null };
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -177789,6 +179427,7 @@ function dispatchGameSettingsChange(
       industries: scStateRef.current,
       infraNetworks: inStateRef.current,
       capabilities: icContentRef.current,
+      nationalPriorityThemes: npThemesRef.current,
       campaignVars: gs.campaignState?.campaignVariables || {},
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
       projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
@@ -177982,6 +179621,8 @@ function dispatchGameSettingsChange(
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
       infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
+      ...(npEnabled && npState && npView ? { priorities: { active: Object.fromEntries(npState.active.map(p => [p.definitionId, `${p.urgency}|${p.label}`])), resolved: npState.resolved.map(r => `${r.label}|${r.summary}`),
+        rival: Object.fromEntries(npState.active.map(p => { const top = Object.values(p.actors).filter(a => a.actorId !== npView.viewerId).sort((a, b) => PRIORITY_CONTRIBUTION_RANK[b.contribution] - PRIORITY_CONTRIBUTION_RANK[a.contribution])[0]; return [p.definitionId, `${top ? npView.names[top.actorId] || top.actorId : ''}|${top?.contribution || 'none'}|${p.label}`]; })) } } : {}),
       ...(srEnabled && srState ? { systemic: { chains: Object.fromEntries(srState.activeStressChains.map(c => [c.id, c.outcome])), recoveries: Object.fromEntries(srState.recovery.map(r => [r.id, r.status])), labels: Object.fromEntries([...srState.activeStressChains.map(c => [c.id, c.label]), ...srState.recovery.map(r => [r.id, r.label])]) } } : {}),
       ...(icEnabled && icState ? { capabilities: Object.fromEntries(CAPABILITY_IDS.map(id => [id, icState.capabilities[id].maturity])) } : {}),
       ...(ndEnabled && ndProfile ? { nationalDirection: JSON.stringify({ p: ndProfile.primaryDirection, b: ndProfile.confidenceBand, r: ndProfile.definingRegions }) } : {}),
@@ -177989,7 +179630,7 @@ function dispatchGameSettingsChange(
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -178085,6 +179726,9 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      npFirst: (() => { if (!npEnabled || !npState?.primary) return null; return `${npState.primary.label} is a national priority (${NATIONAL_PRIORITY_URGENCY_LABEL[npState.primary.urgency].toLowerCase()}): ${npState.primary.why[0] || npState.primary.summary}`; })(),
+      npSelfInterest: (() => { if (!npEnabled || !npState?.primary || !npView) return null; const it = nationalPriorityInterest(npState.primary, npView.viewerId, npView.inputs.controllers); return it.helpsRival === 'HIGH' && it.direct !== 'HIGH' ? `${npState.primary.label} mostly strengthens regions controlled by ${it.rivalIds.map(a => npView.names[a] || a).join(', ')}.` : null; })(),
+      npFreeRide: (() => { if (!npEnabled || !npState || !npView) return null; for (const p of npState.active) { const r = Object.values(p.actors).find(a => a.actorId !== npView.viewerId && PRIORITY_CONTRIBUTION_RANK[a.contribution] >= 2); if (r && (p.actors[npView.viewerId]?.contribution || 'none') === 'none') return `${(npView.names[r.actorId] || r.actorId).toUpperCase()} CONTRIBUTED — ${npView.names[r.actorId] || r.actorId}'s projects improved ${p.label}.`; } return null; })(),
       systemicDependency: (() => { if (!srEnabled || !srState) return null; const d = srState.dependencies.find(x => x.importance === 'critical'); return d ? d.reason : null; })(),
       systemicRedundancy: (() => { if (!srEnabled || !srState) return null; const d = srState.dependencies.find(x => (x.importance === 'critical' || x.importance === 'high') && !x.alternatives.length); return d ? `${d.reason} — no alternative exists.` : null; })(),
       systemicResilienceWorked: (() => { if (!srEnabled || !srState) return null; const c = srState.activeStressChains.find(x => x.outcome === 'contained'); return c ? `${c.label}: ${c.buffersActivated[0] || 'buffers'} absorbed the shock.` : null; })(),
@@ -178122,7 +179766,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -182521,6 +184165,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v106-setting-systemic-risk">
                     <input type="checkbox" checked={gameSettings.systemicRiskEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🛡 Resilience & Systemic Risk', prev => ({ ...prev, systemicRiskEnabled: e.target.checked }))} />
                     Resilience & Systemic Risk (V10.6): dependencies, single points of failure, cascades, buffers, recovery and stress tests — interpretation only; crises stay with the Crisis Engine (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v107-setting-national-priorities">
+                    <input type="checkbox" checked={gameSettings.nationalPrioritiesEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🇦🇺 National Priorities', prev => ({ ...prev, nationalPrioritiesEnabled: e.target.checked }))} />
+                    Dynamic National Priorities (V10.7): what Australia currently needs or can capitalize on — derived from the world, optional to support, never missions or win conditions (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -194068,6 +195716,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {npEnabled && npState?.primary && <NationalPriorityPlayCard state={npState} viewerId={npViewerId} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {srEnabled && srState && <SystemicRiskPlayLine state={srState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {icEnabled && icState && <EmergingCapabilityPlayLine state={icState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {ndEnabled && ndProfile && <NationalDirectionPlayLine profile={ndProfile} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
@@ -194238,6 +195887,11 @@ function dispatchGameSettingsChange(
             {scState && (
               <OptionalSurfaceBoundary surface="Industries & Supply Chains">
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
+            {npEnabled && npView && (
+              <OptionalSurfaceBoundary surface="National Priorities">
+                <NationalPrioritiesCenter view={npView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onStance={npSetStance} />
               </OptionalSurfaceBoundary>
             )}
             {srEnabled && srView && (
@@ -194430,6 +196084,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.7 National Priorities Inspector">
+          <NationalPrioritiesInspector state={npState} persisted={npPersisted} theme={themeStyles} enabled={npEnabled} diag={npDiagRef.current} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.6 Resilience & Systemic Risk Inspector">
           <SystemicRiskInspector state={srState} persisted={srPersisted} view={srView} theme={themeStyles} enabled={srEnabled} diag={srDiagRef.current} />
@@ -204765,6 +206422,13 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
+	          {npEnabled && (() => { const db = buildNationalPriorityDebrief(npStateRef.current, npPersistedRef.current, npViewerId, Object.fromEntries(npActors.map(a => [a.id, a.name]))); return db.timeline.length || db.story.length > 2 ? (
+	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="np-debrief">
+	              <div className="font-bold text-sky-300 tracking-wide">NATIONAL PRIORITIES</div>
+	              {db.timeline.map(l => <div key={l}>{l}</div>)}
+	              {db.story.map(l => <div key={l} className="opacity-90">{l}</div>)}
+	              <div className="opacity-60">National priorities never decide the winner — the canonical win condition does.</div>
+	            </div>) : null; })()}
 	          {srEnabled && buildSystemicDebrief(srStateRef.current, srPersistedRef.current).length > 0 && (
 	            <div className="p-3 rounded-xl bg-black/20 border border-orange-700/40 text-xs leading-relaxed" data-testid="sr-debrief">
 	              <div className="font-bold text-orange-300 tracking-wide">RESILIENCE STORY</div>
